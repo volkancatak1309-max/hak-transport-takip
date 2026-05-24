@@ -175,3 +175,44 @@ body {
     font-family: var(--font-mono), ui-monospace, monospace;
   }
 }
+
+/* Leaflet custom fleet marker */
+.hak-marker-wrap {
+  background: transparent;
+  border: none;
+}
+.hak-pin {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  background: var(--color-brand);
+  border: 3px solid oklch(0.22 0.04 250);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.35);
+  transition: transform 240ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.hak-pin:hover {
+  transform: scale(1.1);
+}
+.hak-route-pin {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+/* Leaflet popup theme alignment */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--popover);
+  color: var(--popover-foreground);
+}
+.leaflet-popup-content {
+  margin: 0.75rem;
+}

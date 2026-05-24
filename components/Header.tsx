@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { LanguageToggle } from "./LanguageToggle";
 import { ThemeToggle } from "./ThemeToggle";
+import { OfflineBadge } from "./OfflineBadge";
 import { UserAvatar } from "./UserAvatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -70,6 +71,7 @@ export function Header({ user }: Props) {
     ? user.isAdmin
       ? [
           { href: "/admin", label: t("admin") },
+          { href: "/admin/harita", label: t("map") },
           { href: "/admin/workers", label: t("workers") },
         ]
       : [{ href: "/panel", label: t("panel") }]
@@ -115,6 +117,7 @@ export function Header({ user }: Props) {
         </div>
 
         <div className="flex items-center gap-1">
+          <OfflineBadge />
           <LanguageToggle />
           <ThemeToggle />
           {user && (

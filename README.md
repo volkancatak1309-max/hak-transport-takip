@@ -1,45 +1,68 @@
-# HAK Transport — Saat & KM Takip
+# HAK Transport — Schicht & KM
 
-HAK Transport GmbH için çalışan vardiya ve kilometre takip web uygulaması.
+HAK Transport GmbH için iki dilli (TR/DE) çalışan vardiya, mola ve kilometre takip web uygulaması.
 
-**Stack:** Next.js 16 (App Router) + TypeScript + Tailwind v4 + Supabase + iron-session
+**Stack:** Next.js 16 (App Router) · TypeScript · Tailwind v4 · shadcn/ui (base-nova / Base UI) · Supabase · iron-session · next-intl · next-themes · Recharts · @react-pdf/renderer
 
-## Özellikler
+## Sayfalar
 
-### Çalışan paneli (`/panel`)
-- Telefon + 4 haneli PIN ile giriş
-- Tek tuş **Vardiya Başlat** / **Vardiya Bitir**
-- Aktif vardiya: canlı saniye sayacı
-- Son 30 günün geçmişi (süre, km farkı, plaka, not)
-- Mobil-first tasarım, büyük butonlar
+| Yol | Açıklama |
+|---|---|
+| `/` | Giriş (telefon + 4 hane PIN) |
+| `/panel` | Çalışan paneli: aktif vardiya, mola, bugün/bu hafta özet, son 5 vardiya |
+| `/panel/gecmis` | Tam vardiya geçmişi (paginated, tarih filtreli) |
+| `/admin` | Yönetici: 4 özet kart, 7-günlük bar grafik, filtre, tablo, edit/sil |
+| `/admin/workers` | Çalışan listesi (son vardiya, bu ay saat) |
+| `/admin/workers/[id]` | Çalışan detayı: bu ay özet, tam geçmiş, kişiye özel PDF |
 
-### Yönetici paneli (`/admin`)
-- Bugün / bu hafta / bu ay / özel tarih aralığı filtresi
-- Çalışan filtresi
-- Özet kartlar: toplam saat, toplam km, aktif vardiya, 9 saati aşan
-- Aktif vardiyalar **yeşil** satır + canlı sayaç
-- 9 saati aşan (Avusturya AZG sınırı) vardiyalar **kırmızı** uyarı
-- CSV export (Excel uyumlu, BOM + noktalı virgül)
-- Çalışan ekleme dialogu
+## Yeni Özellikler (v2)
 
-### Çalışan yönetimi (`/admin/workers`)
-- Aktif/pasif toggle
-- PIN sıfırlama (yeni 4 haneli üretir + 1 kez gösterir)
+1. **Mola takibi** — panelden mola başlat/bitir toggle, dakikalar `break_minutes`'a birikir
+2. **Kargo sayısı** — vardiya açılırken beklenen, kapanırken teslim edilen
+3. **Düzenle/Sil** — admin tablosundan vardiya satırlarını edit/delete (`updated_at` + `updated_by` audit)
+4. **PDF rapor** — A4 portrait, brand header, AZG footer (tüm liste + kişiye özel)
+5. **Haftalık bar grafik** — son 7 gün toplam çalışılan saat (Recharts, dark/light token uyumlu)
+6. **i18n (TR/DE)** — cookie-based, URL temiz, header toggle ile anında değişir
+7. **Dark/Light/System tema** — next-themes, OKLCH token seti
+8. **PWA** — manifest + minimal SW, "Ana ekrana ekle"
+9. **Çalışan detay sayfası** — bağımsız rapor + profil aksiyonları
 
 ## Güvenlik
 
-- **service_role key sadece server-side** — `lib/supabase.ts` `import "server-only"` ile korunur, client'a bile **anon key** gönderilmez
+- `SUPABASE_SERVICE_ROLE_KEY` **sadece server-side** (`lib/supabase.ts` `import "server-only"`)
 - iron-session **httpOnly + secure (prod) + sameSite=lax** cookie
 - bcryptjs ile PIN hash (10 round)
 - Her server action `requireWorker()` / `requireAdmin()` ile yetki kontrolü
-- Çalışan kendi `worker_id`'sinin dışındaki time_entries'e erişemez
-- Zod ile server-side validation (km, PIN format, telefon)
-- Aynı çalışanın 2 aktif vardiyası olamaz (insert öncesi kontrol)
+- Worker kendi `worker_id` dışındaki entry'lere erişemez (`.eq("worker_id", session.worker_id)`)
+- Zod ile server-side validation (km, PIN, telefon, break_minutes, cargo_count)
+- Aynı çalışanın 2 aktif vardiyası olamaz
 - Bitiş km < başlangıç km olamaz
 
-## Veritabanı Şeması
+## Kurulum
 
-Supabase'te zaten kurulu:
+```bash
+git clone https://github.com/volkancatak1309-max/hak-transport-takip.git
+cd hak-transport-takip
+npm install
+cp .env.example .env.local   # değerleri doldur
+npm run dev
+```
+
+`http://localhost:3000`
+
+### Ortam değişkenleri
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service_role JWT (Supabase Dashboard > Settings > API)>
+SESSION_PASSWORD=<en az 32 karakter random — node -e "console.log(require('crypto').randomBytes(32).toString('hex'))">
+```
+
+> `service_role` RLS'i bypass eder — sadece server. Client component'lerden Supabase'e doğrudan erişim yoktur.
+
+## Veritabanı Migration
+
+### v2 öncesi (mevcut)
 
 ```sql
 create table workers (
@@ -64,35 +87,23 @@ create table time_entries (
   notes text,
   created_at timestamptz not null default now()
 );
-
-create index idx_time_entries_worker_active on time_entries(worker_id) where ended_at is null;
-create index idx_time_entries_started_at on time_entries(started_at desc);
 ```
 
-## Yerel Kurulum
+### v2 migration — ⚠️ DEPLOY ÖNCESİ ÇALIŞTIR
 
-```bash
-git clone https://github.com/volkancatak1309-max/hak-transport-takip.git
-cd hak-transport-takip
-npm install
-cp .env.example .env.local
-# .env.local'ı doldur (aşağıya bak)
-npm run dev
+Supabase SQL Editor'da `db/migrations/002_add_break_cargo.sql` içeriğini çalıştır:
+
+```sql
+alter table public.time_entries
+  add column if not exists break_minutes integer default 0,
+  add column if not exists cargo_count integer,
+  add column if not exists updated_at timestamptz,
+  add column if not exists updated_by uuid references public.workers(id);
+create index if not exists idx_time_entries_started_date
+  on public.time_entries(date(started_at at time zone 'Europe/Vienna'));
 ```
 
-`http://localhost:3000` üzerinde açılır.
-
-## Ortam Değişkenleri
-
-`.env.local` dosyasında (asla commit etmeyin — `.gitignore`'da):
-
-```
-NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=<service_role JWT (Supabase Dashboard > Settings > API)>
-SESSION_PASSWORD=<en az 32 karakter random — `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` ile üret>
-```
-
-> **Önemli:** `SUPABASE_SERVICE_ROLE_KEY` RLS'i bypass eder; sadece server'da kullanılır. Client component'lerden Supabase'e doğrudan erişim YOKTUR.
+(Constraint'ler + index dosyada hazır)
 
 ## Test Hesapları (seed)
 
@@ -103,37 +114,51 @@ SESSION_PASSWORD=<en az 32 karakter random — `node -e "console.log(require('cr
 
 ## Vercel'e Deploy
 
-1. Vercel Dashboard → **Import Project** → bu repo'yu seç
-2. Framework: **Next.js** (otomatik algılanır)
-3. Environment Variables ekle:
+1. **Migration'ı önce Supabase'de çalıştır** (yukarıdaki SQL).
+2. Vercel Dashboard → Import Project → bu repo'yu seç.
+3. Framework: **Next.js** (otomatik algılanır).
+4. Environment Variables:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `SESSION_PASSWORD`
-4. Deploy.
+5. Deploy.
 
-Tüm sayfalar `export const dynamic = "force-dynamic"` ile dinamik — build'de DB'ye bağlanmaz.
+Tüm sayfalar dinamik (`force-dynamic`); build'de DB'ye bağlanmaz.
 
 ## Test Senaryosu
 
-### Çalışan akışı
-1. `/` → `+436991234567` + `1234` → `/panel`
-2. **Vardiya Başlat** → KM gir (örn. 125300), Plaka (default `W-1234AB`) → Kaydet
-3. Canlı sayacın saniyede arttığını gör
-4. **Vardiya Bitir** → bitiş KM gir (örn. 125450), not yaz → Kaydet
-5. Son 30 gün tablosunda kayıt görünür
+### Çalışan akışı (`/panel`)
+1. `+436991234567` / `1234` → `/panel`
+2. **Vardiya Başlat** → km, plaka, opsiyonel beklenen kargo
+3. Canlı sayaç + **Mola Başlat** → sayaç griye düşer + biriken dakikalar header'da
+4. **Mola Bitir** → DB'ye dakika eklenir
+5. **Vardiya Bitir** → bitiş km, teslim edilen kargo, mola dakikası (otomatik dolu), not
+6. Son 5 vardiya kart altında, "Tümünü Gör" → `/panel/gecmis`
 
-### Admin akışı
-1. `/` → `+905551234567` + `1234` → `/admin`
-2. Bugün / bu hafta / özel filtresi dene
-3. Aktif vardiyanın yeşil satırda canlı sayaçla göründüğünü doğrula
-4. **Excel'e Aktar** → CSV indir
-5. **+ Çalışan Ekle** → yeni kayıt
-6. `/admin/workers` → pasifleştir / PIN sıfırla
+### Admin akışı (`/admin`)
+1. `+905551234567` / `1234` → `/admin`
+2. 4 özet kart + 7-günlük bar grafik
+3. Filtre: tarih aralığı (today/week/month/custom) + çalışan + durum
+4. Aktif satırlar: turuncu sol border + AKTİF badge
+5. 9 saat aşan satırlar: kırmızı sol border + 9h+ badge + pulse
+6. **Excel'e Aktar** → CSV (BOM, TR karakterleri OK)
+7. **PDF Rapor** → A4 portrait, HAK brand header, AZG footer
+8. **Düzenle** (kalem ikon) → tüm alanlar (datetime, km, mola, kargo, plaka, not)
+9. **Sil** (çöp ikon) → confirm sonrası hard delete
+10. `+ Çalışan Ekle`
 
-## Yol Haritası (v2)
+### Worker mgmt (`/admin/workers`)
+1. Liste: son vardiya tarihi + bu ay saat
+2. Satır click → `/admin/workers/[id]` detay
+3. Detayda 4 özet kart (vardiya/saat/km/kargo) + tam geçmiş + bu çalışan için PDF
 
-- Almanca dil desteği
-- Sürücü mobil app (PWA) + push bildirim
+### i18n / Tema
+1. Header sağ üst: globe ikon → TR/DE seç → sayfa yenilenir, cookie kaydedilir
+2. Sun/moon → Light/Dark/System
+
+## Yol Haritası (v3)
 - Tachograf entegrasyonu
 - Müşteri portali + sipariş takip
 - Steuerberater BMD/RZL export
+- Push bildirim (PWA service worker)
+- Multi-select worker filter (cmdk command palette)

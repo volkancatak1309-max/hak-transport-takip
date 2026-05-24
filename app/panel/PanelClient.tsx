@@ -53,6 +53,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { LocationTracker } from "@/components/LocationTracker";
+import { tryServerAction } from "@/lib/offline-aware";
 
 type Totals = {
   todayMs: number;
@@ -75,6 +77,7 @@ type Props = {
 export function PanelClient({ active, past, defaultPlate, totals }: Props) {
   const t = useTranslations("panel");
   const tc = useTranslations("common");
+  const tOffline = useTranslations("offline");
   const locale = useLocale();
   const router = useRouter();
   const [startOpen, setStartOpen] = useState(false);
@@ -125,13 +128,23 @@ export function PanelClient({ active, past, defaultPlate, totals }: Props) {
       setPendingBreakMinutes((m) => m + elapsedMin);
       if (elapsedMin > 0) {
         startTransition(async () => {
-          const res = await addBreakMinutesAction(elapsedMin);
-          if (res.ok) {
+          const r = await tryServerAction(
+            "break",
+            { minutes: elapsedMin },
+            new Date().toISOString(),
+            () => addBreakMinutesAction(elapsedMin)
+          );
+          if (r.queued) {
+            toast.warning(tOffline("queued_toast"));
+            setPendingBreakMinutes(0);
+            return;
+          }
+          if (r.result.ok) {
             toast.success(t("breakEnded"));
             setPendingBreakMinutes(0);
             router.refresh();
           } else {
-            toast.error(res.error ?? "Error");
+            toast.error(r.result.error ?? "Error");
           }
         });
       } else {
@@ -141,14 +154,29 @@ export function PanelClient({ active, past, defaultPlate, totals }: Props) {
   }
 
   function handleStart(formData: FormData) {
+    const payload = {
+      start_km: formData.get("start_km"),
+      plate: formData.get("plate") || null,
+      expected_cargo: formData.get("expected_cargo") || null,
+    };
     startTransition(async () => {
-      const res = await startShiftAction(formData);
-      if (res.ok) {
+      const r = await tryServerAction(
+        "start",
+        payload,
+        new Date().toISOString(),
+        () => startShiftAction(formData)
+      );
+      if (r.queued) {
+        toast.warning(tOffline("queued_toast"));
+        setStartOpen(false);
+        return;
+      }
+      if (r.result.ok) {
         toast.success(t("shiftStarted"));
         setStartOpen(false);
         router.refresh();
       } else {
-        toast.error(mapErr(res.error));
+        toast.error(mapErr(r.result.error));
       }
     });
   }
@@ -161,14 +189,31 @@ export function PanelClient({ active, past, defaultPlate, totals }: Props) {
       formData.set("break_minutes", String(currentBreakField + elapsedMin));
       setBreakStartLocal(null);
     }
+    const payload = {
+      end_km: formData.get("end_km"),
+      plate: formData.get("plate") || null,
+      notes: formData.get("notes") || null,
+      break_minutes: formData.get("break_minutes") || null,
+      cargo_count: formData.get("cargo_count") || null,
+    };
     startTransition(async () => {
-      const res = await endShiftAction(formData);
-      if (res.ok) {
+      const r = await tryServerAction(
+        "end",
+        payload,
+        new Date().toISOString(),
+        () => endShiftAction(formData)
+      );
+      if (r.queued) {
+        toast.warning(tOffline("queued_toast"));
+        setEndOpen(false);
+        return;
+      }
+      if (r.result.ok) {
         toast.success(t("shiftEnded"));
         setEndOpen(false);
         router.refresh();
       } else {
-        toast.error(mapErr(res.error));
+        toast.error(mapErr(r.result.error));
       }
     });
   }
@@ -269,6 +314,7 @@ export function PanelClient({ active, past, defaultPlate, totals }: Props) {
                     {t("endShift")}
                   </Button>
                 </div>
+                <LocationTracker shiftId={active.id} />
               </>
             ) : (
               <div className="py-6 text-center space-y-3">

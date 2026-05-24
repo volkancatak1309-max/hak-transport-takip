@@ -2,18 +2,24 @@
 
 HAK Transport GmbH için iki dilli (TR/DE) çalışan vardiya, mola ve kilometre takip web uygulaması.
 
-**Stack:** Next.js 16 (App Router) · TypeScript · Tailwind v4 · shadcn/ui (base-nova / Base UI) · Supabase · iron-session · next-intl · next-themes · Recharts · @react-pdf/renderer
+**Stack:** Next.js 16 (App Router) · TypeScript · Tailwind v4 · shadcn/ui (base-nova / Base UI) · Supabase · iron-session · next-intl · next-themes · Recharts · @react-pdf/renderer · Leaflet / react-leaflet
 
 ## Sayfalar
 
 | Yol | Açıklama |
 |---|---|
 | `/` | Giriş (telefon + 4 hane PIN) |
-| `/panel` | Çalışan paneli: aktif vardiya, mola, bugün/bu hafta özet, son 5 vardiya |
+| `/panel` | Çalışan paneli: aktif vardiya, mola, bugün/bu hafta özet, son 5 vardiya, canlı konum |
 | `/panel/gecmis` | Tam vardiya geçmişi (paginated, tarih filtreli) |
 | `/admin` | Yönetici: 4 özet kart, 7-günlük bar grafik, filtre, tablo, edit/sil |
+| `/admin/harita` | Canlı filo haritası (aktif sürücü marker'ları, sadece admin) |
 | `/admin/workers` | Çalışan listesi (son vardiya, bu ay saat) |
-| `/admin/workers/[id]` | Çalışan detayı: bu ay özet, tam geçmiş, kişiye özel PDF |
+| `/admin/workers/[id]` | Çalışan detayı: bu ay özet, bugünkü güzergah, tam geçmiş, kişiye özel PDF |
+
+## Yeni Özellikler (Faz 1 — Görsel Şov)
+
+- **Canlı araç konumu haritası** — şoför aktif vardiyada her 60 sn konum gönderir (izin opsiyonel); admin `/admin/harita`'da Leaflet/OSM haritada canlı marker görür (30 sn polling). Sürücü detayında "Bugünkü Güzergah" polyline (yeşil başlangıç / turuncu son).
+- **Offline çalışma garantisi** — internet yokken vardiya başlat/bitir/mola IndexedDB kuyruğuna girer; bağlantı gelince (`online` event veya SW background sync) otomatik gönderilir. Header'da çevrimiçi/çevrimdışı + bekleyen kayıt badge'i.
 
 ## Yeni Özellikler (v2)
 
@@ -104,6 +110,28 @@ create index if not exists idx_time_entries_started_date
 ```
 
 (Constraint'ler + index dosyada hazır)
+
+### Faz 1 migration — ⚠️ DEPLOY ÖNCESİ ÇALIŞTIR
+
+Canlı konum haritası için Supabase SQL Editor'da `db/migrations/003_locations.sql` içeriğini çalıştır:
+
+```sql
+create table if not exists public.driver_locations (
+  id uuid primary key default gen_random_uuid(),
+  worker_id uuid not null references public.workers(id) on delete cascade,
+  time_entry_id uuid references public.time_entries(id) on delete set null,
+  latitude double precision not null,
+  longitude double precision not null,
+  accuracy double precision,
+  recorded_at timestamptz not null default now()
+);
+create index if not exists idx_driver_locations_worker_recent
+  on public.driver_locations(worker_id, recorded_at desc);
+create index if not exists idx_driver_locations_time_entry
+  on public.driver_locations(time_entry_id) where time_entry_id is not null;
+```
+
+> `003` çalıştırılmadan `/admin/harita` ve panel konum gönderimi 500 verir. `nav.map` ("Harita" sekmesi) yalnızca admin'e görünür.
 
 ## Test Hesapları (seed)
 

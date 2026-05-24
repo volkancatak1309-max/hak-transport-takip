@@ -2,16 +2,68 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition, useEffect } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Modal } from "@/components/Modal";
-import { createWorkerAction } from "../actions/workers";
 import {
-  formatDateTimeTR,
-  formatDateTR,
-  formatTimeTR,
-  formatDurationShort,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertTriangle,
+  Pencil,
+  Trash2,
+  Download,
+  FileText,
+  Plus,
+  Loader2,
+} from "lucide-react";
+import { WeeklyChart, type WeeklyDatum } from "@/components/WeeklyChart";
+import {
+  formatDate,
+  formatTime,
   formatDuration,
+  formatDurationShort,
+  workedMs,
+  kmDiff,
 } from "@/lib/format";
+import {
+  createWorkerAction,
+} from "../actions/workers";
+import {
+  editEntryAction,
+  deleteEntryAction,
+} from "../actions/shift";
 import type { TimeEntryWithWorker, Worker } from "@/lib/types";
 
 const NINE_HOURS = 9 * 60 * 60 * 1000;
@@ -23,12 +75,9 @@ type Props = {
   from: string;
   to: string;
   workerFilter: string;
-  summary: {
-    totalMs: number;
-    totalKm: number;
-    activeCount: number;
-    overLimit: number;
-  };
+  statusFilter: string;
+  summary: { totalMs: number; totalKm: number; activeCount: number; overLimit: number };
+  weekly: WeeklyDatum[];
 };
 
 export function AdminClient({
@@ -38,11 +87,19 @@ export function AdminClient({
   from,
   to,
   workerFilter,
+  statusFilter,
   summary,
+  weekly,
 }: Props) {
+  const t = useTranslations("admin");
+  const tc = useTranslations("common");
+  const tpdf = useTranslations("pdf");
+  const locale = useLocale();
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const params = useSearchParams();
+
   const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState<TimeEntryWithWorker | null>(null);
   const [pending, startTransition] = useTransition();
   const [now, setNow] = useState(Date.now());
 
@@ -53,56 +110,97 @@ export function AdminClient({
   }, [summary.activeCount]);
 
   function setParam(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) params.set(key, value);
-    else params.delete(key);
+    const u = new URLSearchParams(params.toString());
+    if (value && value !== "all") u.set(key, value);
+    else u.delete(key);
     if (key === "range" && value !== "custom") {
-      params.delete("from");
-      params.delete("to");
+      u.delete("from");
+      u.delete("to");
     }
-    router.push(`/admin?${params.toString()}`);
+    router.push(`/admin?${u.toString()}`);
   }
 
   function handleCreate(formData: FormData) {
     startTransition(async () => {
       const res = await createWorkerAction(formData);
       if (res.ok) {
-        toast.success("Çalışan eklendi");
+        toast.success(t("workerAdded"));
         setAddOpen(false);
         router.refresh();
       } else {
-        toast.error(res.error ?? "Hata");
+        toast.error(res.error ?? "Error");
       }
     });
   }
 
+  function handleEdit(formData: FormData) {
+    startTransition(async () => {
+      const res = await editEntryAction(formData);
+      if (res.ok) {
+        toast.success(t("updated"));
+        setEditOpen(null);
+        router.refresh();
+      } else {
+        toast.error(mapErr(res.error));
+      }
+    });
+  }
+
+  function handleDelete(entry: TimeEntryWithWorker) {
+    if (
+      !confirm(
+        t("deleteConfirm", {
+          name: entry.workers?.name ?? "—",
+          date: formatDate(entry.started_at, locale),
+        })
+      )
+    )
+      return;
+    startTransition(async () => {
+      const res = await deleteEntryAction(entry.id);
+      if (res.ok) {
+        toast.success(t("deleted"));
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "Error");
+      }
+    });
+  }
+
+  function mapErr(e?: string): string {
+    if (!e) return "Error";
+    if (e.startsWith("km_low:")) {
+      const [, end, start] = e.split(":");
+      return `KM ${end} < ${start}`;
+    }
+    return e;
+  }
+
   function exportCsv() {
     const header = [
-      "Çalışan",
-      "Tarih",
-      "Başla",
-      "Bitiş",
-      "Süre (saat:dk)",
-      "Başla KM",
-      "Bitiş KM",
-      "KM Farkı",
-      "Plaka",
-      "Not",
+      t("tblWorker"),
+      t("tblDate"),
+      t("tblStart"),
+      t("tblEnd"),
+      t("tblWorked"),
+      t("tblBreak"),
+      t("tblKm"),
+      t("tblCargo"),
+      t("tblPlate"),
+      t("tblNote"),
     ];
     const rows = entries.map((e) => {
-      const startTs = new Date(e.started_at).getTime();
-      const endTs = e.ended_at ? new Date(e.ended_at).getTime() : Date.now();
-      const dur = endTs - startTs;
-      const km = e.end_km !== null && e.start_km !== null ? e.end_km - e.start_km : "";
+      const w = workedMs(e);
+      const km = kmDiff(e);
       return [
         e.workers?.name ?? "",
-        formatDateTR(e.started_at),
-        formatTimeTR(e.started_at),
-        e.ended_at ? formatTimeTR(e.ended_at) : "AKTİF",
-        formatDurationShort(dur),
-        String(e.start_km ?? ""),
-        e.end_km !== null ? String(e.end_km) : "",
-        km !== "" ? String(km) : "",
+        formatDate(e.started_at, locale),
+        formatTime(e.started_at, locale),
+        e.ended_at ? formatTime(e.ended_at, locale) : "ACTIVE",
+        formatDurationShort(w, locale),
+        String(e.break_minutes ?? 0),
+        km !== null ? String(km) : "",
+        e.cargo_count !== null ? String(e.cargo_count) : "",
         e.plate ?? "",
         (e.notes ?? "").replace(/[\r\n]+/g, " "),
       ];
@@ -114,236 +212,478 @@ export function AdminClient({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `hak-vardiyalar-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `hak-${range}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
+  async function exportPdf() {
+    const { downloadPdf } = await import("@/components/pdf/ShiftReport");
+    await downloadPdf({
+      title: tpdf("title"),
+      company: tpdf("company"),
+      address: tpdf("address"),
+      period: `${tpdf("period")}: ${range}`,
+      generatedAt: `${tpdf("generatedAt")}: ${new Date().toLocaleString(
+        locale === "de" ? "de-AT" : "tr-TR",
+        { timeZone: "Europe/Vienna" }
+      )}`,
+      footer: tpdf("footer"),
+      headers: {
+        worker: t("tblWorker"),
+        date: t("tblDate"),
+        start: t("tblStart"),
+        end: t("tblEnd"),
+        worked: t("tblWorked"),
+        breakMin: t("tblBreak"),
+        km: t("tblKm"),
+        cargo: t("tblCargo"),
+        plate: t("tblPlate"),
+      },
+      rows: entries.map((e) => {
+        const w = workedMs(e);
+        const km = kmDiff(e);
+        return {
+          worker: e.workers?.name ?? "—",
+          date: formatDate(e.started_at, locale),
+          start: formatTime(e.started_at, locale),
+          end: e.ended_at ? formatTime(e.ended_at, locale) : "—",
+          worked: formatDurationShort(w, locale),
+          breakMin: String(e.break_minutes ?? 0),
+          km: km !== null ? String(km) : "—",
+          cargo: e.cargo_count !== null ? String(e.cargo_count) : "—",
+          plate: e.plate ?? "—",
+        };
+      }),
+      filename: `hak-report-${range}-${new Date().toISOString().slice(0, 10)}.pdf`,
+    });
+  }
+
+  const nf = locale === "de" ? "de-AT" : "tr-TR";
+
   return (
-    <>
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <SummaryCard label="Toplam Saat" value={formatDuration(summary.totalMs)} mono />
-        <SummaryCard label="Toplam KM" value={summary.totalKm.toLocaleString("tr-TR")} mono />
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <SummaryCard label={t("totalHours")} value={formatDuration(summary.totalMs)} nums />
+        <SummaryCard label={t("totalKm")} value={summary.totalKm.toLocaleString(nf)} nums />
         <SummaryCard
-          label="Aktif Vardiya"
+          label={t("activeShifts")}
           value={String(summary.activeCount)}
-          color={summary.activeCount > 0 ? "emerald" : undefined}
+          highlight={summary.activeCount > 0 ? "primary" : undefined}
         />
         <SummaryCard
-          label="9 Saati Aşan"
+          label={t("overLimit")}
           value={String(summary.overLimit)}
-          color={summary.overLimit > 0 ? "red" : undefined}
+          highlight={summary.overLimit > 0 ? "destructive" : undefined}
+          pulse={summary.overLimit > 0}
         />
-      </section>
+      </div>
 
-      <section className="card p-4 mb-6">
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="label">Zaman Aralığı</label>
-            <select
-              value={range}
-              onChange={(e) => setParam("range", e.target.value)}
-              className="input min-h-11"
-            >
-              <option value="today">Bugün</option>
-              <option value="week">Bu Hafta</option>
-              <option value="month">Bu Ay</option>
-              <option value="custom">Özel</option>
-            </select>
-          </div>
-          {range === "custom" && (
-            <>
-              <div>
-                <label className="label">Başlangıç</label>
-                <input
-                  type="date"
-                  value={from}
-                  onChange={(e) => setParam("from", e.target.value)}
-                  className="input min-h-11"
-                />
-              </div>
-              <div>
-                <label className="label">Bitiş</label>
-                <input
-                  type="date"
-                  value={to}
-                  onChange={(e) => setParam("to", e.target.value)}
-                  className="input min-h-11"
-                />
-              </div>
-            </>
-          )}
-          <div>
-            <label className="label">Çalışan</label>
-            <select
-              value={workerFilter}
-              onChange={(e) => setParam("worker", e.target.value)}
-              className="input min-h-11"
-            >
-              <option value="all">Tümü</option>
-              {workers.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex gap-2 ml-auto">
-            <button onClick={exportCsv} className="btn-secondary btn-md">
-              Excel'e Aktar
-            </button>
-            <button onClick={() => setAddOpen(true)} className="btn-primary btn-md">
-              + Çalışan Ekle
-            </button>
-          </div>
-        </div>
-      </section>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            {t("weeklyChart")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <WeeklyChart data={weekly} />
+        </CardContent>
+      </Card>
 
-      <section className="card overflow-hidden">
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label>{t("dateRange")}</Label>
+              <Select value={range} onValueChange={(v) => setParam("range", v ?? "today")}>
+                <SelectTrigger className="h-10 w-[160px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">{t("rangeToday")}</SelectItem>
+                  <SelectItem value="week">{t("rangeWeek")}</SelectItem>
+                  <SelectItem value="month">{t("rangeMonth")}</SelectItem>
+                  <SelectItem value="custom">{t("rangeCustom")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {range === "custom" && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>{t("from")}</Label>
+                  <Input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setParam("from", e.target.value)}
+                    className="h-10 nums"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t("to")}</Label>
+                  <Input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setParam("to", e.target.value)}
+                    className="h-10 nums"
+                  />
+                </div>
+              </>
+            )}
+            <div className="space-y-1.5">
+              <Label>{t("worker")}</Label>
+              <Select value={workerFilter} onValueChange={(v) => setParam("worker", v ?? "all")}>
+                <SelectTrigger className="h-10 w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("statusAll")}</SelectItem>
+                  {workers.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("status")}</Label>
+              <Select value={statusFilter} onValueChange={(v) => setParam("status", v ?? "all")}>
+                <SelectTrigger className="h-10 w-[180px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("statusAll")}</SelectItem>
+                  <SelectItem value="active">{t("statusActive")}</SelectItem>
+                  <SelectItem value="completed">{t("statusCompleted")}</SelectItem>
+                  <SelectItem value="over">{t("statusOver")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2 ml-auto items-end">
+              <Button variant="outline" size="sm" onClick={exportCsv} disabled={!entries.length}>
+                <Download className="size-4" />
+                {t("exportExcel")}
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportPdf} disabled={!entries.length}>
+                <FileText className="size-4" />
+                {t("exportPdf")}
+              </Button>
+              <Button size="sm" onClick={() => setAddOpen(true)}>
+                <Plus className="size-4" />
+                {t("addWorker")}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="overflow-hidden">
         {entries.length === 0 ? (
-          <div className="p-6 text-center text-sm text-slate-500">
-            Bu filtrede vardiya bulunmuyor
+          <div className="p-10 text-center text-sm text-muted-foreground">
+            {t("noEntries")}
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="table-base">
-              <thead>
-                <tr>
-                  <th>Çalışan</th>
-                  <th>Tarih</th>
-                  <th>Başla</th>
-                  <th>Bitiş</th>
-                  <th>Süre</th>
-                  <th>Başla KM</th>
-                  <th>Bitiş KM</th>
-                  <th>KM Farkı</th>
-                  <th>Plaka</th>
-                  <th>Not</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("tblWorker")}</TableHead>
+                  <TableHead>{t("tblDate")}</TableHead>
+                  <TableHead>{t("tblStart")}</TableHead>
+                  <TableHead>{t("tblEnd")}</TableHead>
+                  <TableHead>{t("tblWorked")}</TableHead>
+                  <TableHead>{t("tblBreak")}</TableHead>
+                  <TableHead>{t("tblKm")}</TableHead>
+                  <TableHead>{t("tblCargo")}</TableHead>
+                  <TableHead>{t("tblPlate")}</TableHead>
+                  <TableHead className="max-w-[200px]">{t("tblNote")}</TableHead>
+                  <TableHead className="text-right">{t("tblActions")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {entries.map((e) => {
-                  const startTs = new Date(e.started_at).getTime();
                   const isActive = e.ended_at === null;
-                  const endTs = isActive ? now : new Date(e.ended_at!).getTime();
-                  const dur = endTs - startTs;
-                  const over = dur > NINE_HOURS;
-                  const km =
-                    e.end_km !== null && e.start_km !== null ? e.end_km - e.start_km : null;
-                  const rowClass = isActive
-                    ? "bg-emerald-50"
+                  const w = isActive ? workedMs(e, now) : workedMs(e);
+                  const over = w > NINE_HOURS;
+                  const km = kmDiff(e);
+                  const borderClass = isActive
+                    ? "border-l-4 border-l-primary"
                     : over
-                    ? "bg-red-50"
+                    ? "border-l-4 border-l-destructive"
                     : "";
                   return (
-                    <tr key={e.id} className={rowClass}>
-                      <td className="font-medium">{e.workers?.name ?? "—"}</td>
-                      <td>{formatDateTR(e.started_at)}</td>
-                      <td className="font-mono">{formatTimeTR(e.started_at)}</td>
-                      <td className="font-mono">
+                    <TableRow key={e.id} className={borderClass}>
+                      <TableCell className="font-medium">{e.workers?.name ?? "—"}</TableCell>
+                      <TableCell>{formatDate(e.started_at, locale)}</TableCell>
+                      <TableCell className="nums">{formatTime(e.started_at, locale)}</TableCell>
+                      <TableCell className="nums">
                         {isActive ? (
-                          <span className="text-emerald-700 font-semibold">AKTİF</span>
+                          <Badge variant="default" className="text-[10px]">
+                            {t("active")}
+                          </Badge>
                         ) : (
-                          formatTimeTR(e.ended_at)
+                          formatTime(e.ended_at, locale)
                         )}
-                      </td>
-                      <td className={`font-mono ${over ? "text-red-700 font-semibold" : ""}`}>
-                        {isActive ? formatDuration(dur) : formatDurationShort(dur)}
-                      </td>
-                      <td className="font-mono">{e.start_km.toLocaleString("tr-TR")}</td>
-                      <td className="font-mono">
-                        {e.end_km !== null ? e.end_km.toLocaleString("tr-TR") : "—"}
-                      </td>
-                      <td className="font-mono">
-                        {km !== null ? km.toLocaleString("tr-TR") : "—"}
-                      </td>
-                      <td className="font-mono">{e.plate ?? "—"}</td>
-                      <td className="max-w-[200px] truncate" title={e.notes ?? ""}>
+                      </TableCell>
+                      <TableCell className="nums">
+                        {isActive ? formatDuration(w) : formatDurationShort(w, locale)}
+                        {over && (
+                          <Badge
+                            variant="destructive"
+                            className="ml-2 text-[10px] gap-1"
+                            title={t("overWarn")}
+                          >
+                            <AlertTriangle className="size-3" />
+                            9h+
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="nums">{e.break_minutes ?? 0}</TableCell>
+                      <TableCell className="nums">
+                        {km !== null ? km.toLocaleString(nf) : "—"}
+                      </TableCell>
+                      <TableCell className="nums">{e.cargo_count ?? "—"}</TableCell>
+                      <TableCell className="nums">{e.plate ?? "—"}</TableCell>
+                      <TableCell className="max-w-[200px] truncate" title={e.notes ?? ""}>
                         {e.notes ?? "—"}
-                      </td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditOpen(e)}
+                            aria-label={tc("edit")}
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDelete(e)}
+                            disabled={pending}
+                            aria-label={tc("delete")}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
-      </section>
+      </Card>
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Yeni Çalışan Ekle">
-        <form action={handleCreate} className="space-y-4">
-          <div>
-            <label htmlFor="name" className="label">Ad Soyad</label>
-            <input id="name" name="name" required className="input input-lg" />
-          </div>
-          <div>
-            <label htmlFor="phone" className="label">Telefon</label>
-            <input
-              id="phone"
-              name="phone"
-              type="tel"
-              required
-              placeholder="+43 699 1234567"
-              className="input input-lg"
-            />
-          </div>
-          <div>
-            <label htmlFor="pin" className="label">PIN (4 hane)</label>
-            <input
-              id="pin"
-              name="pin"
-              type="text"
-              inputMode="numeric"
-              pattern="\d{4}"
-              maxLength={4}
-              required
-              className="input input-lg tracking-widest"
-            />
-          </div>
-          <div>
-            <label htmlFor="plate" className="label">Plaka (opsiyonel)</label>
-            <input id="plate" name="plate" className="input input-lg font-mono uppercase" />
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="is_admin" className="size-4" />
-            Yönetici yetkisi ver
-          </label>
-          <button type="submit" disabled={pending} className="btn-primary btn-lg w-full">
-            {pending ? "Kaydediliyor…" : "Çalışan Ekle"}
-          </button>
-        </form>
-      </Modal>
-    </>
+      {/* Add Worker */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("createWorker")}</DialogTitle>
+          </DialogHeader>
+          <form action={handleCreate} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="name">{t("name")}</Label>
+              <Input id="name" name="name" required className="h-11" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="phone">{t("phone")}</Label>
+              <Input id="phone" name="phone" type="tel" required placeholder="+43 699 1234567" className="h-11" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pin">{t("pin")}</Label>
+              <Input
+                id="pin"
+                name="pin"
+                inputMode="numeric"
+                pattern="\d{4}"
+                maxLength={4}
+                required
+                className="h-11 tracking-widest"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="plate">{t("plate")}</Label>
+              <Input id="plate" name="plate" className="h-11 nums uppercase" />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox name="is_admin" id="is_admin" />
+              {t("isAdmin")}
+            </label>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
+                {tc("cancel")}
+              </Button>
+              <Button type="submit" disabled={pending}>
+                {pending && <Loader2 className="size-4 animate-spin" />}
+                {pending ? tc("saving") : tc("save")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Entry */}
+      <Dialog open={!!editOpen} onOpenChange={(o) => !o && setEditOpen(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t("editTitle")}</DialogTitle>
+            <DialogDescription>
+              {editOpen?.workers?.name} · {editOpen && formatDate(editOpen.started_at, locale)}
+            </DialogDescription>
+          </DialogHeader>
+          {editOpen && (
+            <form action={handleEdit} className="space-y-3">
+              <input type="hidden" name="id" value={editOpen.id} />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="e_start">{t("tblStart")}</Label>
+                  <Input
+                    id="e_start"
+                    type="datetime-local"
+                    name="started_at"
+                    defaultValue={toLocalInput(editOpen.started_at)}
+                    required
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="e_end">{t("tblEnd")}</Label>
+                  <Input
+                    id="e_end"
+                    type="datetime-local"
+                    name="ended_at"
+                    defaultValue={editOpen.ended_at ? toLocalInput(editOpen.ended_at) : ""}
+                    className="h-10"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="e_sk">{t("tblKm")} ({t("tblStart")})</Label>
+                  <Input
+                    id="e_sk"
+                    type="number"
+                    name="start_km"
+                    defaultValue={editOpen.start_km}
+                    required
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="e_ek">{t("tblKm")} ({t("tblEnd")})</Label>
+                  <Input
+                    id="e_ek"
+                    type="number"
+                    name="end_km"
+                    defaultValue={editOpen.end_km ?? ""}
+                    className="h-10"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="e_br">{t("tblBreak")}</Label>
+                  <Input
+                    id="e_br"
+                    type="number"
+                    name="break_minutes"
+                    defaultValue={editOpen.break_minutes ?? 0}
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="e_cg">{t("tblCargo")}</Label>
+                  <Input
+                    id="e_cg"
+                    type="number"
+                    name="cargo_count"
+                    defaultValue={editOpen.cargo_count ?? ""}
+                    className="h-10"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="e_pl">{t("tblPlate")}</Label>
+                <Input
+                  id="e_pl"
+                  name="plate"
+                  defaultValue={editOpen.plate ?? ""}
+                  className="h-10 nums uppercase"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="e_nt">{t("tblNote")}</Label>
+                <Textarea
+                  id="e_nt"
+                  name="notes"
+                  defaultValue={editOpen.notes ?? ""}
+                  rows={2}
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditOpen(null)}>
+                  {tc("cancel")}
+                </Button>
+                <Button type="submit" disabled={pending}>
+                  {pending && <Loader2 className="size-4 animate-spin" />}
+                  {tc("save")}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
 function SummaryCard({
   label,
   value,
-  mono,
-  color,
+  nums,
+  highlight,
+  pulse,
 }: {
   label: string;
   value: string;
-  mono?: boolean;
-  color?: "emerald" | "red";
+  nums?: boolean;
+  highlight?: "primary" | "destructive";
+  pulse?: boolean;
 }) {
-  const colorClass =
-    color === "emerald"
-      ? "text-emerald-600"
-      : color === "red"
-      ? "text-red-600"
-      : "text-slate-900";
+  const color =
+    highlight === "primary"
+      ? "text-primary"
+      : highlight === "destructive"
+      ? "text-destructive"
+      : "text-foreground";
   return (
-    <div className="card p-4">
-      <p className="text-xs text-slate-500 uppercase tracking-wide">{label}</p>
-      <p
-        className={`text-2xl font-bold mt-1 ${colorClass} ${
-          mono ? "font-mono tabular-nums" : ""
-        }`}
-      >
-        {value}
-      </p>
-    </div>
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+        <div
+          className={`text-2xl font-bold mt-1 ${color} ${nums ? "nums" : ""} ${
+            pulse ? "pulse-soft" : ""
+          }`}
+        >
+          {value}
+        </div>
+      </CardContent>
+    </Card>
   );
+}
+
+function toLocalInput(iso: string): string {
+  // datetime-local needs YYYY-MM-DDTHH:mm in local zone — we use Vienna
+  const d = new Date(iso);
+  const tz = new Date(d.toLocaleString("en-US", { timeZone: "Europe/Vienna" }));
+  const yyyy = tz.getFullYear();
+  const mm = String(tz.getMonth() + 1).padStart(2, "0");
+  const dd = String(tz.getDate()).padStart(2, "0");
+  const hh = String(tz.getHours()).padStart(2, "0");
+  const mi = String(tz.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
 }

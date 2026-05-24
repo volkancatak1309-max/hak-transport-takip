@@ -1,142 +1,193 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Modal } from "@/components/Modal";
+import { Loader2, KeyRound } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { toggleActiveAction, resetPinAction } from "../../actions/workers";
-import type { Worker } from "@/lib/types";
+import { formatDate, formatDurationShort } from "@/lib/format";
+import type { WorkerWithStats } from "./page";
 
-type Props = { workers: Worker[] };
+type Props = { workers: WorkerWithStats[] };
 
 export function WorkersClient({ workers }: Props) {
   const router = useRouter();
+  const t = useTranslations("workers");
+  const tc = useTranslations("common");
+  const locale = useLocale();
   const [pending, startTransition] = useTransition();
   const [shownPin, setShownPin] = useState<{ worker: string; pin: string } | null>(null);
 
-  function handleToggle(w: Worker) {
+  function handleToggle(w: WorkerWithStats) {
     if (
       !confirm(
-        `${w.name} adlı çalışanı ${w.is_active ? "PASİF" : "AKTİF"} duruma getirmek istediğinize emin misiniz?`
+        t("confirmStatus", {
+          name: w.name,
+          action: w.is_active ? tc("passive") : tc("active"),
+        })
       )
     )
       return;
     startTransition(async () => {
       const res = await toggleActiveAction(w.id);
       if (res.ok) {
-        toast.success("Güncellendi");
+        toast.success(tc("save"));
         router.refresh();
       } else {
-        toast.error(res.error ?? "Hata");
+        toast.error(res.error ?? "Error");
       }
     });
   }
 
-  function handleReset(w: Worker) {
-    if (!confirm(`${w.name} adlı çalışanın PIN'i sıfırlansın mı?`)) return;
+  function handleReset(w: WorkerWithStats) {
+    if (!confirm(t("confirmPin", { name: w.name }))) return;
     startTransition(async () => {
       const res = await resetPinAction(w.id);
       if (res.ok && res.newPin) {
         setShownPin({ worker: w.name, pin: res.newPin });
         router.refresh();
       } else {
-        toast.error(res.error ?? "Hata");
+        toast.error(res.error ?? "Error");
       }
     });
   }
 
   return (
     <>
-      <section className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="table-base">
-            <thead>
-              <tr>
-                <th>Ad</th>
-                <th>Telefon</th>
-                <th>Plaka</th>
-                <th>Rol</th>
-                <th>Durum</th>
-                <th className="text-right">İşlem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {workers.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="text-center text-slate-500 py-6">
-                    Çalışan yok
-                  </td>
-                </tr>
-              ) : (
-                workers.map((w) => (
-                  <tr key={w.id} className={!w.is_active ? "opacity-50" : ""}>
-                    <td className="font-medium">{w.name}</td>
-                    <td className="font-mono">{w.phone}</td>
-                    <td className="font-mono">{w.plate ?? "—"}</td>
-                    <td>
-                      {w.is_admin ? (
-                        <span className="rounded-full bg-slate-900 text-white text-xs px-2 py-1">
-                          Yönetici
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-500">Çalışan</span>
-                      )}
-                    </td>
-                    <td>
-                      {w.is_active ? (
-                        <span className="text-emerald-700 text-sm font-medium">Aktif</span>
-                      ) : (
-                        <span className="text-red-700 text-sm font-medium">Pasif</span>
-                      )}
-                    </td>
-                    <td className="text-right">
-                      <div className="flex gap-2 justify-end">
-                        <button
-                          onClick={() => handleReset(w)}
-                          disabled={pending}
-                          className="btn-secondary btn-sm"
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("title")}</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("tblName")}</TableHead>
+                  <TableHead>{t("tblPhone")}</TableHead>
+                  <TableHead>{t("tblPlate")}</TableHead>
+                  <TableHead>{t("tblStatus")}</TableHead>
+                  <TableHead>{t("tblLastShift")}</TableHead>
+                  <TableHead>{t("tblMonthHours")}</TableHead>
+                  <TableHead className="text-right">{t("tblActions")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {workers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                      {t("noWorkers")}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  workers.map((w) => (
+                    <TableRow key={w.id} className={!w.is_active ? "opacity-60" : ""}>
+                      <TableCell className="font-medium">
+                        <Link
+                          href={`/admin/workers/${w.id}`}
+                          className="hover:text-primary hover:underline"
                         >
-                          PIN Sıfırla
-                        </button>
-                        <button
-                          onClick={() => handleToggle(w)}
-                          disabled={pending}
-                          className={w.is_active ? "btn-danger btn-sm" : "btn-success btn-sm"}
-                        >
-                          {w.is_active ? "Pasifleştir" : "Aktifleştir"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <Modal
-        open={!!shownPin}
-        onClose={() => setShownPin(null)}
-        title="Yeni PIN"
-      >
-        {shownPin && (
-          <div className="text-center space-y-4">
-            <p className="text-sm text-slate-600">
-              <strong>{shownPin.worker}</strong> için yeni PIN:
-            </p>
-            <p className="font-mono text-5xl font-bold tracking-widest text-slate-900 bg-slate-100 rounded-lg py-6">
-              {shownPin.pin}
-            </p>
-            <p className="text-xs text-red-600">
-              Bu PIN sadece şimdi görüntülenir. Çalışana iletip kapatın.
-            </p>
-            <button onClick={() => setShownPin(null)} className="btn-primary btn-md w-full">
-              Anladım, Kapat
-            </button>
+                          {w.name}
+                        </Link>
+                        {w.is_admin && (
+                          <Badge variant="secondary" className="ml-2 text-[10px]">
+                            {tc("admin")}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="nums">{w.phone}</TableCell>
+                      <TableCell className="nums">{w.plate ?? "—"}</TableCell>
+                      <TableCell>
+                        {w.is_active ? (
+                          <Badge variant="default">{tc("active")}</Badge>
+                        ) : (
+                          <Badge variant="outline">{tc("passive")}</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {w.lastShiftAt ? formatDate(w.lastShiftAt, locale) : "—"}
+                      </TableCell>
+                      <TableCell className="nums">
+                        {formatDurationShort(w.monthHoursMs, locale)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleReset(w)}
+                            disabled={pending}
+                          >
+                            <KeyRound className="size-4" />
+                            <span className="hidden md:inline ml-1">{t("resetPin")}</span>
+                          </Button>
+                          <Button
+                            variant={w.is_active ? "outline" : "default"}
+                            size="sm"
+                            onClick={() => handleToggle(w)}
+                            disabled={pending}
+                          >
+                            {w.is_active ? t("deactivate") : t("activate")}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </div>
-        )}
-      </Modal>
+        </CardContent>
+      </Card>
+
+      <Dialog open={!!shownPin} onOpenChange={(o) => !o && setShownPin(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("newPin")}</DialogTitle>
+          </DialogHeader>
+          {shownPin && (
+            <div className="text-center space-y-4">
+              <p className="text-sm text-muted-foreground">
+                {t("newPinFor", { name: shownPin.worker })}
+              </p>
+              <p className="nums text-5xl font-bold tracking-widest text-foreground bg-secondary rounded-lg py-6">
+                {shownPin.pin}
+              </p>
+              <p className="text-xs text-destructive">{t("newPinWarn")}</p>
+              <DialogFooter>
+                <Button onClick={() => setShownPin(null)} className="w-full">
+                  {t("newPinClose")}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

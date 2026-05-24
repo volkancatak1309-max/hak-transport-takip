@@ -48,6 +48,7 @@ export type ActiveDriver = {
   latitude: number;
   longitude: number;
   recorded_at: string;
+  route: [number, number][];
 };
 
 export type SessionData = {

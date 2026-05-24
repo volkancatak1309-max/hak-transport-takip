@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import L from "leaflet";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import "leaflet/dist/leaflet.css";
@@ -65,6 +65,16 @@ export function FleetMap({ drivers }: { drivers: ActiveDriver[] }) {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <FitBounds points={points} />
+      {drivers.map(
+        (d) =>
+          d.route.length > 1 && (
+            <Polyline
+              key={`route-${d.worker_id}`}
+              positions={d.route}
+              pathOptions={{ color: "var(--color-brand)", weight: 3, opacity: 0.6 }}
+            />
+          )
+      )}
       {drivers.map((d) => {
         const minutesActive = Math.max(
           0,

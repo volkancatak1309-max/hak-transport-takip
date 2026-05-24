@@ -27,7 +27,28 @@
   "nav": {
     "panel": "Mein Panel",
     "admin": "Verwaltung",
-    "workers": "Mitarbeiter"
+    "workers": "Mitarbeiter",
+    "map": "Karte"
+  },
+  "map": {
+    "title": "Flottenkarte",
+    "no_active": "Derzeit keine aktive Schicht",
+    "active_since": "Aktiv seit {minutes} Minuten",
+    "last_update": "Letzte Aktualisierung: {time}",
+    "location_permission_needed": "Standortberechtigung für Karte erforderlich",
+    "location_sharing": "Standort wird geteilt",
+    "location_off": "Standort aus",
+    "today_route": "Heutige Route",
+    "no_route_data": "Keine Standortdaten für diese Schicht",
+    "view_detail": "Details anzeigen",
+    "start_point": "Start",
+    "end_point": "Letzte Position"
+  },
+  "offline": {
+    "online": "Online",
+    "offline_with_count": "Offline — {count} ausstehende Einträge",
+    "queued_toast": "Kein Internet, Eintrag wird auf dem Gerät gespeichert. Wird bei Verbindung automatisch gesendet.",
+    "flushed_toast": "Ausstehende Einträge wurden gesendet"
   },
   "login": {
     "title": "Anmelden",

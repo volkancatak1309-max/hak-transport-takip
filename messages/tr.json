@@ -27,7 +27,28 @@
   "nav": {
     "panel": "Panelim",
     "admin": "Yönetici",
-    "workers": "Çalışanlar"
+    "workers": "Çalışanlar",
+    "map": "Harita"
+  },
+  "map": {
+    "title": "Filo Haritası",
+    "no_active": "Şu an aktif vardiya bulunmuyor",
+    "active_since": "{minutes} dakikadır aktif",
+    "last_update": "Son güncelleme: {time}",
+    "location_permission_needed": "Harita için konum izni gerekli",
+    "location_sharing": "Konum paylaşılıyor",
+    "location_off": "Konum kapalı",
+    "today_route": "Bugünkü Güzergah",
+    "no_route_data": "Bu vardiya için konum verisi yok",
+    "view_detail": "Detayını gör",
+    "start_point": "Başlangıç",
+    "end_point": "Son konum"
+  },
+  "offline": {
+    "online": "Çevrimiçi",
+    "offline_with_count": "Çevrimdışı — {count} bekleyen kayıt",
+    "queued_toast": "İnternet yok, kayıt cihazda tutuluyor. Bağlantı gelince otomatik gönderilecek.",
+    "flushed_toast": "Bekleyen kayıtlar gönderildi"
   },
   "login": {
     "title": "Giriş Yap",

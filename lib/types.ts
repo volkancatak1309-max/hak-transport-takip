@@ -18,6 +18,10 @@ export type TimeEntry = {
   end_km: number | null;
   plate: string | null;
   notes: string | null;
+  break_minutes: number | null;
+  cargo_count: number | null;
+  updated_at: string | null;
+  updated_by: string | null;
   created_at: string;
 };
 

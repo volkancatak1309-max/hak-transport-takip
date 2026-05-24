@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import { toggleActiveAction, resetPinAction } from "../../actions/workers";
 import { formatDate, formatDurationShort } from "@/lib/format";
+import { UserAvatar } from "@/components/UserAvatar";
 import type { WorkerWithStats } from "./page";
 
 type Props = { workers: WorkerWithStats[] };
@@ -110,15 +111,16 @@ export function WorkersClient({ workers }: Props) {
                       <TableCell className="font-medium">
                         <Link
                           href={`/admin/workers/${w.id}`}
-                          className="hover:text-primary hover:underline"
+                          className="flex items-center gap-2 hover:text-primary"
                         >
-                          {w.name}
+                          <UserAvatar name={w.name} size="sm" />
+                          <span className="hover:underline">{w.name}</span>
+                          {w.is_admin && (
+                            <Badge variant="secondary" className="text-[10px]">
+                              {tc("admin")}
+                            </Badge>
+                          )}
                         </Link>
-                        {w.is_admin && (
-                          <Badge variant="secondary" className="ml-2 text-[10px]">
-                            {tc("admin")}
-                          </Badge>
-                        )}
                       </TableCell>
                       <TableCell className="nums">{w.phone}</TableCell>
                       <TableCell className="nums">{w.plate ?? "—"}</TableCell>

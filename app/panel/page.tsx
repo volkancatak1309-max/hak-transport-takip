@@ -73,7 +73,14 @@ export default async function PanelPage() {
   const avgDailyMs = weekDays > 0 ? weekMs / weekDays : 0;
 
   return (
-    <AppShell user={{ name: session.name!, isAdmin: false }}>
+    <AppShell
+      user={{
+        id: session.worker_id!,
+        name: session.name!,
+        phone: session.phone ?? "",
+        isAdmin: false,
+      }}
+    >
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6">
         <PanelClient
           active={active}

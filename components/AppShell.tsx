@@ -1,11 +1,11 @@
-import { Header } from "./Header";
+import { Header, type HeaderUser } from "./Header";
 import { Footer } from "./Footer";
 
 export function AppShell({
   user,
   children,
 }: {
-  user: { name: string; isAdmin: boolean } | null;
+  user: HeaderUser | null;
   children: React.ReactNode;
 }) {
   return (

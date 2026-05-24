@@ -57,6 +57,7 @@ import {
   workedMs,
   kmDiff,
 } from "@/lib/format";
+import { UserAvatar } from "@/components/UserAvatar";
 import {
   createWorkerAction,
 } from "../actions/workers";
@@ -297,7 +298,17 @@ export function AdminClient({
               <Label>{t("dateRange")}</Label>
               <Select value={range} onValueChange={(v) => setParam("range", v ?? "today")}>
                 <SelectTrigger className="h-10 w-[160px]">
-                  <SelectValue />
+                  <SelectValue>
+                    {((v: unknown) => {
+                      const map: Record<string, string> = {
+                        today: t("rangeToday"),
+                        week: t("rangeWeek"),
+                        month: t("rangeMonth"),
+                        custom: t("rangeCustom"),
+                      };
+                      return map[String(v)] ?? t("rangeToday");
+                    }) as never}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="today">{t("rangeToday")}</SelectItem>
@@ -332,14 +343,21 @@ export function AdminClient({
             <div className="space-y-1.5">
               <Label>{t("worker")}</Label>
               <Select value={workerFilter} onValueChange={(v) => setParam("worker", v ?? "all")}>
-                <SelectTrigger className="h-10 w-[180px]">
-                  <SelectValue />
+                <SelectTrigger className="h-10 w-[200px]">
+                  <SelectValue>
+                    {((v: unknown) => {
+                      const id = String(v);
+                      if (id === "all") return t("statusAll");
+                      return workers.find((w) => w.id === id)?.name ?? t("statusAll");
+                    }) as never}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t("statusAll")}</SelectItem>
                   {workers.map((w) => (
                     <SelectItem key={w.id} value={w.id}>
-                      {w.name}
+                      <UserAvatar name={w.name} size="xs" />
+                      <span>{w.name}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -349,7 +367,17 @@ export function AdminClient({
               <Label>{t("status")}</Label>
               <Select value={statusFilter} onValueChange={(v) => setParam("status", v ?? "all")}>
                 <SelectTrigger className="h-10 w-[180px]">
-                  <SelectValue />
+                  <SelectValue>
+                    {((v: unknown) => {
+                      const map: Record<string, string> = {
+                        all: t("statusAll"),
+                        active: t("statusActive"),
+                        completed: t("statusCompleted"),
+                        over: t("statusOver"),
+                      };
+                      return map[String(v)] ?? t("statusAll");
+                    }) as never}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t("statusAll")}</SelectItem>
@@ -413,7 +441,12 @@ export function AdminClient({
                     : "";
                   return (
                     <TableRow key={e.id} className={borderClass}>
-                      <TableCell className="font-medium">{e.workers?.name ?? "—"}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <UserAvatar name={e.workers?.name ?? "?"} size="xs" />
+                          <span>{e.workers?.name ?? "—"}</span>
+                        </div>
+                      </TableCell>
                       <TableCell>{formatDate(e.started_at, locale)}</TableCell>
                       <TableCell className="nums">{formatTime(e.started_at, locale)}</TableCell>
                       <TableCell className="nums">

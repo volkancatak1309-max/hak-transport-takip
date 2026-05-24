@@ -32,6 +32,7 @@ export type TimeEntryWithWorker = TimeEntry & {
 export type SessionData = {
   worker_id?: string;
   name?: string;
+  phone?: string;
   is_admin?: boolean;
   plate?: string | null;
 };

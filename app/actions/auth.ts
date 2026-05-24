@@ -39,6 +39,7 @@ export async function loginAction(
   const session = await getSession();
   session.worker_id = worker.id;
   session.name = worker.name;
+  session.phone = worker.phone;
   session.is_admin = worker.is_admin;
   session.plate = worker.plate;
   await session.save();

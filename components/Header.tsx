@@ -2,13 +2,24 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useTranslations } from "next-intl";
-import { useState } from "react";
-import { Menu, LogOut, User, X } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
+import { useRef, useState, useTransition } from "react";
+import { useTheme } from "next-themes";
+import {
+  Menu,
+  LogOut,
+  X,
+  ChevronDown,
+  Sun,
+  Moon,
+  Globe,
+  User as UserIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LanguageToggle } from "./LanguageToggle";
 import { ThemeToggle } from "./ThemeToggle";
+import { UserAvatar } from "./UserAvatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -19,16 +30,42 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { logoutAction } from "@/app/actions/auth";
+import { setLocaleAction } from "@/app/actions/preferences";
 
-type Props = {
-  user: { name: string; isAdmin: boolean } | null;
+export type HeaderUser = {
+  id: string;
+  name: string;
+  phone: string;
+  isAdmin: boolean;
 };
+
+type Props = { user: HeaderUser | null };
 
 export function Header({ user }: Props) {
   const t = useTranslations("nav");
   const tc = useTranslations("common");
+  const router = useRouter();
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { resolvedTheme, setTheme } = useTheme();
+  const locale = useLocale();
+  const [, startLocaleTransition] = useTransition();
+  const logoutFormRef = useRef<HTMLFormElement>(null);
+
+  const isDark = resolvedTheme === "dark";
+
+  function flipTheme() {
+    setTheme(isDark ? "light" : "dark");
+  }
+  function flipLocale() {
+    const next = locale === "tr" ? "de" : "tr";
+    startLocaleTransition(async () => {
+      await setLocaleAction(next);
+    });
+  }
+  function submitLogout() {
+    logoutFormRef.current?.requestSubmit();
+  }
 
   const navItems = user
     ? user.isAdmin
@@ -43,7 +80,10 @@ export function Header({ user }: Props) {
     <header className="sticky top-0 z-40 w-full border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex items-center gap-6 min-w-0">
-          <Link href={user ? (user.isAdmin ? "/admin" : "/panel") : "/"} className="flex items-center gap-2">
+          <Link
+            href={user ? (user.isAdmin ? "/admin" : "/panel") : "/"}
+            className="flex items-center gap-2"
+          >
             <Image
               src="/logo.png"
               alt="HAK Transport"
@@ -55,7 +95,8 @@ export function Header({ user }: Props) {
           </Link>
           <nav className="hidden md:flex items-center gap-1">
             {navItems.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(item.href + "/");
+              const active =
+                pathname === item.href || pathname.startsWith(item.href + "/");
               return (
                 <Link
                   key={item.href}
@@ -82,24 +123,74 @@ export function Header({ user }: Props) {
               <div className="hidden md:block">
                 <DropdownMenu>
                   <DropdownMenuTrigger
-                    render={<Button variant="ghost" size="sm" className="gap-2 max-w-40" />}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-2 h-10 px-1.5 max-w-56"
+                      />
+                    }
                   >
-                    <User className="size-4" />
-                    <span className="truncate text-sm">{user.name}</span>
+                    <UserAvatar name={user.name} size="sm" />
+                    <span className="truncate text-sm font-medium hidden lg:inline">
+                      {user.name}
+                    </span>
+                    <ChevronDown className="size-4 text-muted-foreground" />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="min-w-44">
-                    <DropdownMenuLabel className="font-normal">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium">{user.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {user.isAdmin ? tc("admin") : tc("worker")}
+                  <DropdownMenuContent align="end" className="w-60">
+                    <DropdownMenuLabel className="font-normal py-2">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium leading-tight">
+                          {user.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground nums leading-tight">
+                          {user.phone}
                         </span>
                       </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
+                    {user.isAdmin && (
+                      <DropdownMenuItem
+                        onClick={() => router.push(`/admin/workers/${user.id}`)}
+                      >
+                        <UserIcon className="size-4" />
+                        Profil
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem
-                      onClick={() => logoutAction()}
-                      className="gap-2 text-destructive focus:text-destructive"
+                      closeOnClick={false}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        flipTheme();
+                      }}
+                    >
+                      {isDark ? (
+                        <Sun className="size-4" />
+                      ) : (
+                        <Moon className="size-4" />
+                      )}
+                      <span className="flex-1">{tc("theme")}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {isDark ? tc("themeDark") : tc("themeLight")}
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      closeOnClick={false}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        flipLocale();
+                      }}
+                    >
+                      <Globe className="size-4" />
+                      <span className="flex-1">{tc("language")}</span>
+                      <span className="text-xs text-muted-foreground nums">
+                        {locale.toUpperCase()}
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={submitLogout}
                     >
                       <LogOut className="size-4" />
                       {tc("logout")}
@@ -111,43 +202,62 @@ export function Header({ user }: Props) {
                 variant="ghost"
                 size="sm"
                 className="md:hidden"
-                onClick={() => setOpen((v) => !v)}
+                onClick={() => setMobileOpen((v) => !v)}
                 aria-label="Menu"
               >
-                {open ? <X className="size-5" /> : <Menu className="size-5" />}
+                {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
               </Button>
             </>
           )}
         </div>
       </div>
 
-      {open && user && (
+      {mobileOpen && user && (
         <div className="md:hidden border-t border-border/60 bg-background">
           <nav className="mx-auto max-w-7xl px-4 py-3 space-y-1">
             {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={() => setOpen(false)}
+                onClick={() => setMobileOpen(false)}
                 className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-secondary"
               >
                 {item.label}
               </Link>
             ))}
-            <div className="border-t border-border/60 pt-3 mt-3">
-              <div className="px-3 py-1.5 text-xs text-muted-foreground">{user.name}</div>
-              <form action={logoutAction}>
-                <button
-                  type="submit"
-                  className="w-full text-left rounded-md px-3 py-2 text-sm text-destructive hover:bg-destructive/10 flex items-center gap-2"
-                >
-                  <LogOut className="size-4" /> {tc("logout")}
-                </button>
-              </form>
+            {user.isAdmin && (
+              <Link
+                href={`/admin/workers/${user.id}`}
+                onClick={() => setMobileOpen(false)}
+                className="block rounded-md px-3 py-2 text-sm font-medium hover:bg-secondary"
+              >
+                Profil
+              </Link>
+            )}
+            <div className="border-t border-border/60 pt-3 mt-3 flex items-center gap-3 px-3">
+              <UserAvatar name={user.name} size="sm" />
+              <div className="flex flex-col">
+                <span className="text-sm font-medium leading-tight">
+                  {user.name}
+                </span>
+                <span className="text-xs text-muted-foreground nums leading-tight">
+                  {user.phone}
+                </span>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={submitLogout}
+              className="w-full text-left rounded-md px-3 py-2 text-sm text-destructive hover:bg-destructive/10 flex items-center gap-2"
+            >
+              <LogOut className="size-4" /> {tc("logout")}
+            </button>
           </nav>
         </div>
       )}
+
+      {/* Programmatic logout target — survives BaseUI Menu portal handling */}
+      <form ref={logoutFormRef} action={logoutAction} className="hidden" />
     </header>
   );
 }

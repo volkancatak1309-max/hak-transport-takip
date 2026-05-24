@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { UserAvatar } from "@/components/UserAvatar";
 import { WorkerDetailClient } from "./WorkerDetailClient";
 import { startOfMonthVienna, workedMs, kmDiff } from "@/lib/format";
 import type { Worker, TimeEntry } from "@/lib/types";
@@ -66,7 +67,14 @@ export default async function WorkerDetailPage({
   }
 
   return (
-    <AppShell user={{ name: session.name!, isAdmin: true }}>
+    <AppShell
+      user={{
+        id: session.worker_id!,
+        name: session.name!,
+        phone: session.phone ?? "",
+        isAdmin: true,
+      }}
+    >
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 space-y-6">
         <div className="flex items-center gap-3">
           <Link href="/admin/workers">
@@ -80,14 +88,17 @@ export default async function WorkerDetailPage({
         <Card>
           <CardHeader>
             <div className="flex items-start justify-between flex-wrap gap-3">
-              <div>
-                <CardTitle className="text-2xl">{w.name}</CardTitle>
-                <div className="mt-2 flex flex-wrap gap-3 text-sm text-muted-foreground">
-                  <span className="nums">{w.phone}</span>
-                  <span>•</span>
-                  <span className="nums">{w.plate ?? "—"}</span>
-                  <span>•</span>
-                  <span>{w.is_admin ? tc("admin") : tc("worker")}</span>
+              <div className="flex items-center gap-4">
+                <UserAvatar name={w.name} size="lg" />
+                <div>
+                  <CardTitle className="text-2xl">{w.name}</CardTitle>
+                  <div className="mt-2 flex flex-wrap gap-3 text-sm text-muted-foreground">
+                    <span className="nums">{w.phone}</span>
+                    <span>•</span>
+                    <span className="nums">{w.plate ?? "—"}</span>
+                    <span>•</span>
+                    <span>{w.is_admin ? tc("admin") : tc("worker")}</span>
+                  </div>
                 </div>
               </div>
               {w.is_active ? (

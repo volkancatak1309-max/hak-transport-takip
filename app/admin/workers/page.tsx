@@ -54,7 +54,14 @@ export default async function WorkersPage() {
   }));
 
   return (
-    <AppShell user={{ name: session.name!, isAdmin: true }}>
+    <AppShell
+      user={{
+        id: session.worker_id!,
+        name: session.name!,
+        phone: session.phone ?? "",
+        isAdmin: true,
+      }}
+    >
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6">
         <WorkersClient workers={enriched} />
       </div>

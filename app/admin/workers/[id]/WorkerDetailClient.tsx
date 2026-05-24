@@ -2,9 +2,12 @@
 
 import { useLocale, useTranslations } from "next-intl";
 import { useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, FileText, KeyRound } from "lucide-react";
+import { Loader2, FileText, KeyRound, Route } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { RoutePoint } from "@/components/RouteMap";
 import {
   Card,
   CardContent,
@@ -31,17 +34,32 @@ import {
 import { toggleActiveAction, resetPinAction } from "../../../actions/workers";
 import type { Worker, TimeEntry } from "@/lib/types";
 
+const RouteMap = dynamic(
+  () => import("@/components/RouteMap").then((m) => m.RouteMap),
+  {
+    ssr: false,
+    loading: () => <Skeleton className="h-[50vh] w-full rounded-lg" />,
+  }
+);
+
 type Props = {
   worker: Worker;
   entries: TimeEntry[];
+  routePoints: RoutePoint[];
   monthSummary: { shifts: number; ms: number; km: number; cargo: number };
 };
 
-export function WorkerDetailClient({ worker, entries, monthSummary }: Props) {
+export function WorkerDetailClient({
+  worker,
+  entries,
+  routePoints,
+  monthSummary,
+}: Props) {
   const t = useTranslations("workers");
   const ta = useTranslations("admin");
   const tc = useTranslations("common");
   const tpdf = useTranslations("pdf");
+  const tmap = useTranslations("map");
   const locale = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -181,6 +199,26 @@ export function WorkerDetailClient({ worker, entries, monthSummary }: Props) {
           {t("pdfForWorker")}
         </Button>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <Route className="size-4 text-primary" />
+            {tmap("today_route")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {routePoints.length === 0 ? (
+            <p className="px-6 pb-6 text-sm text-muted-foreground">
+              {tmap("no_route_data")}
+            </p>
+          ) : (
+            <div className="h-[50vh] w-full overflow-hidden rounded-b-lg">
+              <RouteMap points={routePoints} />
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

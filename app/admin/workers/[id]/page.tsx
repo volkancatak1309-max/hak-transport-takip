@@ -14,8 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/UserAvatar";
 import { WorkerDetailClient } from "./WorkerDetailClient";
-import { startOfMonthVienna, workedMs, kmDiff } from "@/lib/format";
-import type { Worker, TimeEntry } from "@/lib/types";
+import { startOfMonthVienna, startOfTodayVienna, workedMs, kmDiff } from "@/lib/format";
+import type { Worker, TimeEntry, DriverLocation } from "@/lib/types";
 import { getTranslations } from "next-intl/server";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,8 @@ export default async function WorkerDetailPage({
   const w = worker as Worker;
 
   const monthStart = startOfMonthVienna();
-  const [monthEntriesResult, allEntriesResult] = await Promise.all([
+  const todayStart = startOfTodayVienna();
+  const [monthEntriesResult, allEntriesResult, todayLocsResult] = await Promise.all([
     supabaseAdmin
       .from("time_entries")
       .select("*")
@@ -51,10 +52,22 @@ export default async function WorkerDetailPage({
       .eq("worker_id", id)
       .order("started_at", { ascending: false })
       .limit(200),
+    supabaseAdmin
+      .from("driver_locations")
+      .select("*")
+      .eq("worker_id", id)
+      .gte("recorded_at", todayStart.toISOString())
+      .order("recorded_at", { ascending: true }),
   ]);
 
   const monthEntries = (monthEntriesResult.data ?? []) as TimeEntry[];
   const allEntries = (allEntriesResult.data ?? []) as TimeEntry[];
+  const todayLocations = (todayLocsResult.data ?? []) as DriverLocation[];
+  const routePoints = todayLocations.map((l) => ({
+    lat: l.latitude,
+    lng: l.longitude,
+    recorded_at: l.recorded_at,
+  }));
 
   let monthMs = 0;
   let monthKm = 0;
@@ -113,6 +126,7 @@ export default async function WorkerDetailPage({
         <WorkerDetailClient
           worker={w}
           entries={allEntries}
+          routePoints={routePoints}
           monthSummary={{
             shifts: monthEntries.length,
             ms: monthMs,

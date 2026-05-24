@@ -29,6 +29,27 @@ export type TimeEntryWithWorker = TimeEntry & {
   workers: Pick<Worker, "id" | "name" | "plate"> | null;
 };
 
+export type DriverLocation = {
+  id: string;
+  worker_id: string;
+  time_entry_id: string | null;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  recorded_at: string;
+};
+
+export type ActiveDriver = {
+  worker_id: string;
+  name: string;
+  plate: string | null;
+  shift_started_at: string;
+  time_entry_id: string;
+  latitude: number;
+  longitude: number;
+  recorded_at: string;
+};
+
 export type SessionData = {
   worker_id?: string;
   name?: string;

@@ -1,35 +1,46 @@
 "use client";
 
 import { useActionState } from "react";
+import { useTranslations } from "next-intl";
+import { Loader2 } from "lucide-react";
 import { loginAction, type LoginState } from "./actions/auth";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 const initial: LoginState = {};
 
 export function LoginForm() {
+  const t = useTranslations("login");
   const [state, formAction, pending] = useActionState(loginAction, initial);
+
+  const errMsg =
+    state.error === "invalid" || state.error === "validation"
+      ? t("errInvalid")
+      : state.error === "inactive"
+      ? t("errInactive")
+      : state.error === "db"
+      ? t("errDb")
+      : null;
 
   return (
     <form action={formAction} className="space-y-4">
-      <div>
-        <label htmlFor="phone" className="label">
-          Telefon Numarası
-        </label>
-        <input
+      <div className="space-y-1.5">
+        <Label htmlFor="phone">{t("phone")}</Label>
+        <Input
           id="phone"
           name="phone"
           type="tel"
           autoComplete="tel"
           inputMode="tel"
           required
-          placeholder="+43 699 1234567"
-          className="input input-lg"
+          placeholder={t("phonePlaceholder")}
+          className="h-12 text-base"
         />
       </div>
-      <div>
-        <label htmlFor="pin" className="label">
-          PIN (4 hane)
-        </label>
-        <input
+      <div className="space-y-1.5">
+        <Label htmlFor="pin">{t("pin")}</Label>
+        <Input
           id="pin"
           name="pin"
           type="password"
@@ -39,17 +50,18 @@ export function LoginForm() {
           maxLength={4}
           required
           placeholder="••••"
-          className="input input-lg tracking-widest"
+          className="h-12 text-base tracking-widest"
         />
       </div>
-      {state.error && (
-        <p className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
-          {state.error}
+      {errMsg && (
+        <p className="rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive">
+          {errMsg}
         </p>
       )}
-      <button type="submit" disabled={pending} className="btn-primary btn-lg w-full">
-        {pending ? "Giriş yapılıyor…" : "Giriş Yap"}
-      </button>
+      <Button type="submit" disabled={pending} className="w-full h-12 text-base font-semibold">
+        {pending && <Loader2 className="size-4 animate-spin" />}
+        {pending ? t("pending") : t("submit")}
+      </Button>
     </form>
   );
 }

@@ -6,7 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getSession } from "@/lib/session";
 import { loginSchema } from "@/lib/validation";
 
-export type LoginState = { error?: string };
+export type LoginState = { error?: "invalid" | "inactive" | "db" | "validation" };
 
 function normalizePhone(raw: string): string {
   return raw.replace(/[\s\-()]/g, "");
@@ -20,9 +20,7 @@ export async function loginAction(
     phone: formData.get("phone"),
     pin: formData.get("pin"),
   });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Geçersiz giriş" };
-  }
+  if (!parsed.success) return { error: "validation" };
   const phone = normalizePhone(parsed.data.phone);
 
   const { data: worker, error } = await supabaseAdmin
@@ -31,12 +29,12 @@ export async function loginAction(
     .eq("phone", phone)
     .maybeSingle();
 
-  if (error) return { error: "Veritabanı hatası" };
-  if (!worker) return { error: "Telefon veya PIN hatalı" };
-  if (!worker.is_active) return { error: "Hesap pasif. Yönetici ile görüşün." };
+  if (error) return { error: "db" };
+  if (!worker) return { error: "invalid" };
+  if (!worker.is_active) return { error: "inactive" };
 
   const ok = await bcrypt.compare(parsed.data.pin, worker.pin_hash);
-  if (!ok) return { error: "Telefon veya PIN hatalı" };
+  if (!ok) return { error: "invalid" };
 
   const session = await getSession();
   session.worker_id = worker.id;

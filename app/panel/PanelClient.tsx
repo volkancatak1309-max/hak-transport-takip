@@ -30,7 +30,7 @@ import {
   kmDiff,
   rawDurationMs,
 } from "@/lib/format";
-import type { TimeEntry } from "@/lib/types";
+import type { TimeEntry, AssignmentWithWorker } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +56,7 @@ import {
 import { LocationTracker } from "@/components/LocationTracker";
 import { LenkzeitWarning } from "@/components/LenkzeitWarning";
 import { TelegramLink } from "@/components/TelegramLink";
+import { TodayAssignments } from "@/components/TodayAssignments";
 import { tryServerAction } from "@/lib/offline-aware";
 
 type Totals = {
@@ -74,10 +75,11 @@ type Props = {
   past: TimeEntry[];
   defaultPlate: string;
   telegram: { linked: boolean; username: string | null };
+  todayAssignments: AssignmentWithWorker[];
   totals: Totals;
 };
 
-export function PanelClient({ active, past, defaultPlate, telegram, totals }: Props) {
+export function PanelClient({ active, past, defaultPlate, telegram, todayAssignments, totals }: Props) {
   const t = useTranslations("panel");
   const tc = useTranslations("common");
   const tOffline = useTranslations("offline");
@@ -369,6 +371,8 @@ export function PanelClient({ active, past, defaultPlate, telegram, totals }: Pr
           </CardContent>
         </Card>
       </div>
+
+      <TodayAssignments assignments={todayAssignments} />
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="md:col-span-3">

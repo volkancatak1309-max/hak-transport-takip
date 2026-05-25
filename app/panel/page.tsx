@@ -5,7 +5,9 @@ import { PanelClient } from "./PanelClient";
 import {
   startOfTodayVienna,
   startOfWeekVienna,
+  viennaDayKey,
 } from "@/lib/format";
+import { getAssignments } from "@/app/actions/assignments";
 import type { TimeEntry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +38,12 @@ export default async function PanelPage() {
     linked: !!me?.telegram_chat_id,
     username: (me?.telegram_username as string) ?? null,
   };
+
+  const myAssignments = await getAssignments({ mine: true });
+  const todayKey = viennaDayKey(new Date());
+  const todayAssignments = myAssignments.filter(
+    (a) => viennaDayKey(a.scheduled_at) === todayKey && a.status !== "cancelled"
+  );
 
   const todayStart = startOfTodayVienna();
   const weekStart = startOfWeekVienna();
@@ -97,6 +105,7 @@ export default async function PanelPage() {
           past={past.slice(0, 5)}
           defaultPlate={session.plate ?? ""}
           telegram={telegram}
+          todayAssignments={todayAssignments}
           totals={{
             todayMs,
             todayKm,

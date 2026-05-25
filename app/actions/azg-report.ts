@@ -19,8 +19,22 @@ export type AZGViolation = {
 
 export type AZGPerWorker = {
   name: string;
+  shifts: number;
+  totalHours: string;
+  warnings: number;
+  violations: number;
   total: number;
   worst: AZGSeverity | "none";
+};
+
+// Micro shifts (< 5 min) — likely test or mis-entries. Kept out of the
+// statistics but surfaced separately so nothing is silently hidden.
+export type AZGSuspicious = {
+  date: string;
+  worker: string;
+  start: string;
+  end: string;
+  duration: string;
 };
 
 export type AZGData = {
@@ -29,8 +43,12 @@ export type AZGData = {
   totalShifts: number;
   totalWorkers: number;
   totalViolations: number;
+  warningCount: number;
+  violationCount: number;
+  seriousCount: number;
   perWorker: AZGPerWorker[];
   violations: AZGViolation[];
+  suspicious: AZGSuspicious[];
 };
 
 export type AZGResult =
@@ -99,8 +117,12 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         totalShifts: 0,
         totalWorkers: 0,
         totalViolations: 0,
+        warningCount: 0,
+        violationCount: 0,
+        seriousCount: 0,
         perWorker: [],
         violations: [],
+        suspicious: [],
       },
     };
   }
@@ -124,6 +146,11 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     string,
     { startTs: number; endTs: number; iso: string }[]
   >();
+  // Suspicious (micro) shifts are excluded from the statistics below and shown
+  // in their own section. Meaningful shifts are counted per worker for the
+  // "Schichten" / "Stunden gesamt" columns.
+  const suspicious: AZGSuspicious[] = [];
+  const statByWorker = new Map<string, { shifts: number; ms: number }>();
 
   for (const e of entries) {
     const worker = nameById.get(e.worker_id) ?? "—";
@@ -187,7 +214,15 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     if (new Date(e.started_at) < new Date(dacc.iso)) dacc.iso = e.started_at;
     daily.set(dk, dacc);
 
-    if (ms >= MICRO_MS) {
+    if (ms < MICRO_MS) {
+      suspicious.push({
+        date: dateStr,
+        worker,
+        start: formatTime(e.started_at, "de"),
+        end: endStr,
+        duration: `${fmtH(hours)} Std.`,
+      });
+    } else {
       const arr = restByWorker.get(e.worker_id) ?? [];
       arr.push({
         startTs: new Date(e.started_at).getTime(),
@@ -195,6 +230,11 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         iso: e.started_at,
       });
       restByWorker.set(e.worker_id, arr);
+
+      const s = statByWorker.get(worker) ?? { shifts: 0, ms: 0 };
+      s.shifts += 1;
+      s.ms += ms;
+      statByWorker.set(worker, s);
     }
   }
 
@@ -289,33 +329,65 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
 
   violations.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]);
 
-  const perWorkerMap = new Map<string, { total: number; worst: number }>();
+  // Per-worker violation tally (warnings vs. violations+serious) + worst level.
+  const vByWorker = new Map<
+    string,
+    { warnings: number; violations: number; worst: number }
+  >();
   for (const v of violations) {
-    const cur = perWorkerMap.get(v.worker) ?? { total: 0, worst: 0 };
-    cur.total += 1;
+    const cur = vByWorker.get(v.worker) ?? { warnings: 0, violations: 0, worst: 0 };
+    if (v.severity === "warning") cur.warnings += 1;
+    else cur.violations += 1;
     cur.worst = Math.max(cur.worst, SEVERITY_RANK[v.severity]);
-    perWorkerMap.set(v.worker, cur);
+    vByWorker.set(v.worker, cur);
   }
-  const perWorker: AZGPerWorker[] = [...perWorkerMap.entries()]
-    .map(([name, v]) => ({
-      name,
-      total: v.total,
-      worst: (Object.keys(SEVERITY_RANK).find(
-        (k) => SEVERITY_RANK[k as AZGSeverity] === v.worst
-      ) as AZGSeverity) ?? "none",
-    }))
-    .sort((a, b) => b.total - a.total);
+
+  const names = new Set([...statByWorker.keys(), ...vByWorker.keys()]);
+  const perWorker: AZGPerWorker[] = [...names]
+    .map((name) => {
+      const s = statByWorker.get(name) ?? { shifts: 0, ms: 0 };
+      const v = vByWorker.get(name) ?? { warnings: 0, violations: 0, worst: 0 };
+      return {
+        name,
+        shifts: s.shifts,
+        totalHours: fmtH(s.ms / 3_600_000),
+        warnings: v.warnings,
+        violations: v.violations,
+        total: v.warnings + v.violations,
+        worst:
+          v.worst === 0
+            ? ("none" as const)
+            : ((Object.keys(SEVERITY_RANK).find(
+                (k) => SEVERITY_RANK[k as AZGSeverity] === v.worst
+              ) as AZGSeverity) ?? "none"),
+      };
+    })
+    .sort((a, b) => b.total - a.total || b.shifts - a.shifts);
+
+  const warningCount = violations.filter((v) => v.severity === "warning").length;
+  const violationCount = violations.filter((v) => v.severity === "violation").length;
+  const seriousCount = violations.filter(
+    (v) => v.severity === "serious_violation"
+  ).length;
+  const meaningfulShifts = [...statByWorker.values()].reduce(
+    (n, s) => n + s.shifts,
+    0
+  );
 
   return {
     ok: true,
     data: {
       monthLabel: month,
       generatedAt: new Date().toISOString(),
-      totalShifts: entries.length,
+      totalShifts: meaningfulShifts,
       totalWorkers: workerIds.length,
       totalViolations: violations.length,
+      warningCount,
+      violationCount,
+      seriousCount,
       perWorker,
       violations,
+      suspicious,
     },
   };
 }

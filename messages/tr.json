@@ -50,6 +50,37 @@
     "queued_toast": "İnternet yok, kayıt cihazda tutuluyor. Bağlantı gelince otomatik gönderilecek.",
     "flushed_toast": "Bekleyen kayıtlar gönderildi"
   },
+  "lenkzeit": {
+    "warning_30min": "Lenkzeit uyarısı: 30 dakika içinde mola yapmanız gerekiyor",
+    "violation_title": "ZORUNLU MOLA",
+    "violation_body": "Yasal sürüş süreniz doldu (4.5 saat). Lütfen en az 45 dakika mola yapın.",
+    "violation_legal": "EU 561/2006 — Avrupa Birliği Sürüş ve Dinlenme Süreleri Yönetmeliği",
+    "snooze": "5 dk sonra hatırlat",
+    "start_break": "Hemen Mola Başlat",
+    "driving_time": "Sürüş süresi",
+    "sound_off": "Sesi kapat",
+    "sound_on": "Sesi aç"
+  },
+  "azg": {
+    "report_title": "AZG Denetim Raporu",
+    "report_modal_desc": "Seçtiğiniz ay için tüm filo AZG ihlal raporu PDF olarak indirilir",
+    "select_month": "Ay seçin",
+    "generate": "Rapor Oluştur",
+    "generating": "Rapor hazırlanıyor...",
+    "success": "AZG raporu indirildi",
+    "error": "Rapor oluşturulamadı, tekrar deneyin",
+    "no_data": "Seçilen ay için veri bulunamadı"
+  },
+  "export": {
+    "datev": "DATEV'e Aktar",
+    "bmd": "BMD'ye Aktar",
+    "datev_tooltip": "Almanya muhasebe yazılımı için CSV formatı",
+    "bmd_tooltip": "Avusturya muhasebe yazılımı için CSV formatı",
+    "datev_success": "DATEV dosyası indirildi. Muhasebenize gönderebilirsiniz.",
+    "bmd_success": "BMD dosyası indirildi. Muhasebenize gönderebilirsiniz.",
+    "error": "Export hatası, tekrar deneyin",
+    "no_data": "Bu aralıkta tamamlanmış vardiya yok"
+  },
   "login": {
     "title": "Giriş Yap",
     "subtitle": "Telefon ve PIN'inizle giriş yapın",

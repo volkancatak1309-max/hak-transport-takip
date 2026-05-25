@@ -50,6 +50,37 @@
     "queued_toast": "Kein Internet, Eintrag wird auf dem Gerät gespeichert. Wird bei Verbindung automatisch gesendet.",
     "flushed_toast": "Ausstehende Einträge wurden gesendet"
   },
+  "lenkzeit": {
+    "warning_30min": "Lenkzeit-Warnung: In 30 Minuten Pause erforderlich",
+    "violation_title": "PFLICHTPAUSE",
+    "violation_body": "Ihre gesetzliche Lenkzeit ist abgelaufen (4,5 Stunden). Bitte mindestens 45 Minuten Pause einlegen.",
+    "violation_legal": "VO (EG) 561/2006 — EU-Lenk- und Ruhezeitenverordnung",
+    "snooze": "In 5 Min erinnern",
+    "start_break": "Pause sofort starten",
+    "driving_time": "Lenkzeit",
+    "sound_off": "Ton aus",
+    "sound_on": "Ton ein"
+  },
+  "azg": {
+    "report_title": "AZG-Prüfbericht",
+    "report_modal_desc": "Für den gewählten Monat wird ein AZG-Konformitätsbericht als PDF heruntergeladen",
+    "select_month": "Monat wählen",
+    "generate": "Bericht erstellen",
+    "generating": "Bericht wird erstellt...",
+    "success": "AZG-Bericht heruntergeladen",
+    "error": "Bericht konnte nicht erstellt werden, bitte erneut versuchen",
+    "no_data": "Keine Daten für den gewählten Monat"
+  },
+  "export": {
+    "datev": "DATEV-Export",
+    "bmd": "BMD-Export",
+    "datev_tooltip": "CSV-Format für deutsche Lohnabrechnungssoftware",
+    "bmd_tooltip": "CSV-Format für österreichische Lohnabrechnungssoftware",
+    "datev_success": "DATEV-Datei heruntergeladen. Sie können sie Ihrem Steuerberater senden.",
+    "bmd_success": "BMD-Datei heruntergeladen. Sie können sie Ihrem Steuerberater senden.",
+    "error": "Export-Fehler, bitte erneut versuchen",
+    "no_data": "Keine abgeschlossenen Schichten in diesem Zeitraum"
+  },
   "login": {
     "title": "Anmelden",
     "subtitle": "Bitte mit Telefon und PIN anmelden",

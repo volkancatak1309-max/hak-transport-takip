@@ -71,6 +71,7 @@ export function Header({ user }: Props) {
     ? user.isAdmin
       ? [
           { href: "/admin", label: t("admin") },
+          { href: "/admin/seferler", label: t("assignments") },
           { href: "/admin/harita", label: t("map") },
           { href: "/admin/workers", label: t("workers") },
           { href: "/admin/telegram", label: t("telegram") },

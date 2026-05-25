@@ -12,6 +12,7 @@ export type AZGViolation = {
   end: string;
   workedHours: string;
   type: string;
+  description: string;
   legalRef: string;
   severity: AZGSeverity;
 };
@@ -41,6 +42,16 @@ const SEVERITY_RANK: Record<AZGSeverity, number> = {
   violation: 2,
   serious_violation: 3,
 };
+
+// Austrian (German) locale uses a comma decimal separator — never a dot.
+const fmtH = (hours: number): string => hours.toFixed(2).replace(".", ",");
+
+// Vienna calendar day (YYYY-MM-DD) for an ISO timestamp. Used to group shifts
+// by the day they *started* — including shifts that run past midnight, which
+// are attributed to their start date (simple, defensible rule).
+function viennaDateKey(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: "Europe/Vienna" });
+}
 
 function isoWeekKey(iso: string): string {
   const d = new Date(iso);
@@ -103,6 +114,9 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
 
   const violations: AZGViolation[] = [];
   const weekly = new Map<string, { hours: number; worker: string; iso: string }>();
+  // Daily totals include EVERY shift (even micro ones): legally every worked
+  // minute counts toward the daily cap. Grouped by the shift's start date.
+  const daily = new Map<string, { ms: number; worker: string; iso: string }>();
 
   for (const e of entries) {
     const worker = nameById.get(e.worker_id) ?? "—";
@@ -112,17 +126,19 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
       break_minutes: e.break_minutes ?? 0,
     });
     const hours = ms / 3_600_000;
-    const hoursStr = hours.toFixed(2);
     const dateStr = formatDate(e.started_at, "de");
     const endStr = formatTime(e.ended_at, "de");
 
+    // Single-shift checks (kept as an extra layer on top of the daily total —
+    // one shift alone exceeding the limit is still its own violation).
     if (hours > 10) {
       violations.push({
         date: dateStr,
         worker,
         end: endStr,
-        workedHours: hoursStr,
-        type: "Tägliche Höchstarbeitszeit überschritten (>10 h)",
+        workedHours: fmtH(hours),
+        type: "Einzelschicht über 10 Stunden",
+        description: `Einzelschicht ${fmtH(hours)} Std. (Max: 10 Std.)`,
         legalRef: "§ 9 Abs. 1 AZG — Überschreitung (Geldstrafe 72–1.815 €)",
         severity: "serious_violation",
       });
@@ -131,8 +147,9 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         date: dateStr,
         worker,
         end: endStr,
-        workedHours: hoursStr,
-        type: "Arbeitszeit über 9 Stunden",
+        workedHours: fmtH(hours),
+        type: "Einzelschicht über 9 Stunden",
+        description: `Einzelschicht ${fmtH(hours)} Std. (über 9 Std.)`,
         legalRef: "§ 9 Abs. 1 AZG (max. 10 Stunden täglich)",
         severity: "warning",
       });
@@ -144,8 +161,9 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         date: dateStr,
         worker,
         end: endStr,
-        workedHours: hoursStr,
-        type: `Unzureichende Ruhepause (${breakMin} Min)`,
+        workedHours: fmtH(hours),
+        type: "Unzureichende Ruhepause",
+        description: `Ruhepause ${breakMin} Min bei ${fmtH(hours)} Std. Arbeit (mind. 30 Min)`,
         legalRef: "§ 11 Abs. 1 AZG (mind. 30 Min nach 6 Std)",
         severity: "violation",
       });
@@ -155,6 +173,50 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     const acc = weekly.get(wk) ?? { hours: 0, worker, iso: e.started_at };
     acc.hours += hours;
     weekly.set(wk, acc);
+
+    const dk = `${e.worker_id}:${viennaDateKey(e.started_at)}`;
+    const dacc = daily.get(dk) ?? { ms: 0, worker, iso: e.started_at };
+    dacc.ms += ms;
+    if (new Date(e.started_at) < new Date(dacc.iso)) dacc.iso = e.started_at;
+    daily.set(dk, dacc);
+  }
+
+  // Daily total work time — § 9 Abs. 1 AZG. This is the check the old report
+  // was missing: individual shifts can each stay under 10 h while the day's
+  // total blows past it (e.g. 0,01 + 5,18 + 4,57 + 1,84 = 11,60 h).
+  for (const d of daily.values()) {
+    const h = d.ms / 3_600_000;
+    let severity: AZGSeverity | null = null;
+    let limitLabel = "";
+    let legalRef = "";
+    let type = "";
+    if (h > 12) {
+      severity = "serious_violation";
+      limitLabel = "Absolut: 12 Std.";
+      type = "Absolute Tageshöchstgrenze überschritten";
+      legalRef = "§ 9 Abs. 1 AZG — absolute Höchstgrenze (Geldstrafe 72–1.815 €)";
+    } else if (h > 10) {
+      severity = "violation";
+      limitLabel = "Max: 10 Std.";
+      type = "Tägliche Höchstarbeitszeit überschritten";
+      legalRef = "§ 9 Abs. 1 AZG (max. 10 Std. täglich)";
+    } else if (h > 8) {
+      severity = "warning";
+      limitLabel = "Normal: 8 Std.";
+      type = "Tägliche Normalarbeitszeit überschritten";
+      legalRef = "§ 9 Abs. 1 AZG (Normalarbeitszeit 8 Std. täglich)";
+    }
+    if (!severity) continue;
+    violations.push({
+      date: formatDate(d.iso, "de"),
+      worker: d.worker,
+      end: "—",
+      workedHours: fmtH(h),
+      type,
+      description: `Tägliche Arbeitszeit ${fmtH(h)} Std. (${limitLabel})`,
+      legalRef,
+      severity,
+    });
   }
 
   for (const acc of weekly.values()) {
@@ -163,8 +225,9 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         date: formatDate(acc.iso, "de"),
         worker: acc.worker,
         end: "—",
-        workedHours: acc.hours.toFixed(2),
-        type: `Wochenarbeitszeit überschritten (${acc.hours.toFixed(1)} h)`,
+        workedHours: fmtH(acc.hours),
+        type: "Wöchentliche Höchstarbeitszeit überschritten",
+        description: `Wochenarbeitszeit ${fmtH(acc.hours)} Std. (Max: 48 Std.)`,
         legalRef: "§ 9 Abs. 1 AZG (max. 48 Stunden wöchentlich)",
         severity: "violation",
       });

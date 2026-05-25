@@ -33,10 +33,10 @@
   },
   "telegram": {
     "title": "Telegram-Benachrichtigungen",
-    "link_button": "Telegram-Benachrichtigungen verknüpfen",
+    "link_button": "Telegram verbinden",
     "linked": "Telegram verbunden",
     "unlink": "Verknüpfung aufheben",
-    "scan_qr": "QR-Code scannen oder Link öffnen",
+    "scan_qr": "Scannen Sie den QR-Code in der Telegram-App. Symbol oben rechts.",
     "link_instructions": "Telegram-App öffnen, Code einfügen",
     "code_expires": "Code 15 Minuten gültig",
     "linked_success": "Telegram-Benachrichtigungen aktiviert",

@@ -33,10 +33,10 @@
   },
   "telegram": {
     "title": "Telegram Bildirimleri",
-    "link_button": "Telegram Bildirimleri Bağla",
+    "link_button": "Telegram'a Bağlan",
     "linked": "Telegram bağlı",
     "unlink": "Bağlantıyı Kaldır",
-    "scan_qr": "QR kodu okutun veya linke tıklayın",
+    "scan_qr": "Telegram uygulamanızda QR kodu okutun. Sağ üstte kamera ikonu var.",
     "link_instructions": "Telegram uygulamasını açın, kodu yapıştırın",
     "code_expires": "Kod 15 dakika geçerli",
     "linked_success": "Telegram bildirimleriniz aktif",

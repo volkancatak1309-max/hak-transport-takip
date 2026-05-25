@@ -130,15 +130,15 @@ export function TelegramLink({ linked, username }: Props) {
               <img
                 src={qr}
                 alt="Telegram QR"
-                width={200}
-                height={200}
-                className="rounded-md border"
+                width={300}
+                height={300}
+                className="h-[300px] w-[300px] rounded-md border"
               />
             )}
             {code && (
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">{t("link_instructions")}</p>
-                <p className="mt-1 text-3xl font-bold tracking-widest nums">{code}</p>
+                <p className="mt-1 text-5xl font-bold tracking-[0.2em] nums">{code}</p>
               </div>
             )}
             {deepLink && (

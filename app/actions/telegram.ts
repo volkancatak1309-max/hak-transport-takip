@@ -51,8 +51,12 @@ export async function createTelegramLinkCode(): Promise<LinkCodeResult> {
   }
   if (!inserted) return { ok: false, error: "code_generation" };
 
+  // QR encodes the tg:// deep link so a phone scan opens the Telegram app
+  // directly and auto-sends /start. The https link is kept as a clickable
+  // fallback for cases where tg:// isn't handled (e.g. desktop web).
+  const tgLink = `tg://resolve?domain=${username}&start=${code}`;
   const deepLink = `https://t.me/${username}?start=${code}`;
-  const qrDataUrl = await QRCode.toDataURL(deepLink, { width: 240, margin: 1 });
+  const qrDataUrl = await QRCode.toDataURL(tgLink, { width: 320, margin: 1 });
 
   return { ok: true, code, deepLink, qrDataUrl };
 }

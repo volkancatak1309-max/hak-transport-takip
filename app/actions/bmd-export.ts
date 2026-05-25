@@ -47,14 +47,20 @@ export async function generateBMD(
   const workerIds = [...new Set(rows.map((r) => r.worker_id))];
   const { data: workers } = await supabaseAdmin
     .from("workers")
-    .select("id, name")
+    .select("id, name, employee_number")
     .in("id", workerIds);
-  const nameById = new Map((workers ?? []).map((w) => [w.id, w.name as string]));
+  const byId = new Map(
+    (workers ?? []).map((w) => [
+      w.id as string,
+      w as { name: string; employee_number: string | null },
+    ])
+  );
 
   const header = 'PersNr;Datum;Beginn;Ende;Pause;"Stunden";Bemerkung';
 
   const lines = rows.map((r) => {
-    const persNr = r.worker_id.slice(0, 8);
+    const w = byId.get(r.worker_id);
+    const persNr = w?.employee_number ?? r.worker_id.slice(0, 8);
     const datum = formatDate(r.started_at, "de");
     const beginn = formatTime(r.started_at, "de");
     const ende = formatTime(r.ended_at, "de");
@@ -70,7 +76,7 @@ export async function generateBMD(
     )
       .toFixed(2)
       .replace(".", ",");
-    const name = nameById.get(r.worker_id) ?? "—";
+    const name = w?.name ?? "—";
     const bemerkung = `${name}${r.plate ? " - " + r.plate : ""}`;
     // Quote every field — comma decimals + Bemerkung can both contain separators.
     return [

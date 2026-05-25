@@ -5,8 +5,15 @@ import { getTranslations } from "next-intl/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireWorker, requireAdmin } from "@/lib/session";
 import { createAssignmentSchema } from "@/lib/validation";
-import { sendTelegramMessage } from "@/lib/telegram";
+import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
 import { formatDate, formatTime } from "@/lib/format";
+
+const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL || "https://hak-transport-takip.vercel.app";
+
+function mapsUrl(address: string): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
+}
 import type {
   Assignment,
   AssignmentWithWorker,
@@ -21,6 +28,13 @@ function stopLabel(t: Translator, i: number, total: number): string {
   if (i === 0) return t("tg_stop_start");
   if (i === total - 1) return t("tg_stop_end");
   return t("tg_stop_middle", { n: i });
+}
+
+/** Localized "directions" button label for a stop. */
+function stopBtnLabel(t: Translator, i: number, total: number): string {
+  if (i === 0) return t("tg_btn_start_directions");
+  if (i === total - 1) return t("tg_btn_end_directions");
+  return t("tg_btn_middle_directions", { n: i });
 }
 
 /**
@@ -59,9 +73,15 @@ async function notifyAssignment(id: string): Promise<void> {
     ),
   ];
   if (a.notes) lines.push(`📝 ${t("tg_note")}: ${a.notes}`);
-  lines.push("", `${t("tg_open_panel")} →`);
 
-  await sendTelegramMessage(w.telegram_chat_id as string, lines.join("\n"), null);
+  const keyboard: InlineButton[][] = [
+    ...a.stops.map((s, i) => [
+      { text: stopBtnLabel(t, i, a.stops.length), url: mapsUrl(s.address) },
+    ]),
+    [{ text: t("tg_btn_open_panel"), url: `${APP_URL}/panel` }],
+  ];
+
+  await sendTelegramMessage(w.telegram_chat_id as string, lines.join("\n"), null, keyboard);
 }
 
 export type AssignmentInput = {

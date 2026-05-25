@@ -19,10 +19,13 @@ export function isTelegramConfigured(): boolean {
  * - If the chat is gone (403 = bot blocked, 400 = chat not found), the worker's
  *   link is cleared so we stop trying to reach a dead chat.
  */
+export type InlineButton = { text: string; url: string };
+
 export async function sendTelegramMessage(
   chatId: string,
   text: string,
-  parseMode: "HTML" | "MarkdownV2" | null = "HTML"
+  parseMode: "HTML" | "MarkdownV2" | null = "HTML",
+  inlineKeyboard?: InlineButton[][]
 ): Promise<boolean> {
   const token = botToken();
   if (!token || !chatId) return false;
@@ -37,6 +40,7 @@ export async function sendTelegramMessage(
         // `null` → omit parse_mode (plain text), so free-form addresses with
         // & or < don't break HTML parsing.
         ...(parseMode ? { parse_mode: parseMode } : {}),
+        ...(inlineKeyboard ? { reply_markup: { inline_keyboard: inlineKeyboard } } : {}),
         disable_web_page_preview: true,
       }),
     });

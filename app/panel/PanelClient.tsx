@@ -54,6 +54,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { LocationTracker } from "@/components/LocationTracker";
+import { LenkzeitWarning } from "@/components/LenkzeitWarning";
 import { tryServerAction } from "@/lib/offline-aware";
 
 type Totals = {
@@ -315,6 +316,14 @@ export function PanelClient({ active, past, defaultPlate, totals }: Props) {
                   </Button>
                 </div>
                 <LocationTracker shiftId={active.id} />
+                <LenkzeitWarning
+                  startedAt={active.started_at}
+                  isOnBreak={onBreak}
+                  breakMinutes={totalBreakSoFar}
+                  onStartBreak={() => {
+                    if (!onBreak) toggleBreak();
+                  }}
+                />
               </>
             ) : (
               <div className="py-6 text-center space-y-3">

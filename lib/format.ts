@@ -93,6 +93,12 @@ export function kmDiff(entry: {
   return entry.end_km - entry.start_km;
 }
 
+/** Vienna calendar day key (YYYY-MM-DD) for an ISO timestamp — timezone-safe. */
+export function viennaDayKey(iso: string | Date): string {
+  const d = typeof iso === "string" ? new Date(iso) : iso;
+  return d.toLocaleDateString("en-CA", { timeZone: "Europe/Vienna" });
+}
+
 export function startOfTodayVienna(): Date {
   const now = new Date();
   const tz = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Vienna" }));

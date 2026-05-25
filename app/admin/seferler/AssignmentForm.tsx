@@ -39,11 +39,14 @@ function pad(n: number) {
   return String(n).padStart(2, "0");
 }
 
-function toLocalInput(iso: string): string {
+function toLocalDate(iso: string): string {
   const d = new Date(iso);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours()
-  )}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function toLocalTime(iso: string): string {
+  const d = new Date(iso);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export function AssignmentForm({ workers, initial, busy, onSubmit, onCancel }: Props) {
@@ -62,8 +65,11 @@ export function AssignmentForm({ workers, initial, busy, onSubmit, onCancel }: P
         ];
 
   const [workerId, setWorkerId] = useState(initial?.worker_id ?? "");
-  const [datetime, setDatetime] = useState(
-    initial?.scheduled_at ? toLocalInput(initial.scheduled_at) : ""
+  const [date, setDate] = useState(
+    initial?.scheduled_at ? toLocalDate(initial.scheduled_at) : ""
+  );
+  const [time, setTime] = useState(
+    initial?.scheduled_at ? toLocalTime(initial.scheduled_at) : ""
   );
   const [category, setCategory] = useState<AssignmentCategory>(
     initial?.category ?? "lieferung"
@@ -76,7 +82,7 @@ export function AssignmentForm({ workers, initial, busy, onSubmit, onCancel }: P
   );
   const [notes, setNotes] = useState(initial?.notes ?? "");
 
-  const nowLocal = toLocalInput(new Date().toISOString());
+  const nowDate = toLocalDate(new Date().toISOString());
 
   function setStop(i: number, key: keyof AssignmentStop, value: string) {
     setStops((prev) => prev.map((s, idx) => (idx === i ? { ...s, [key]: value } : s)));
@@ -92,8 +98,9 @@ export function AssignmentForm({ workers, initial, busy, onSubmit, onCancel }: P
 
   function submit() {
     if (!workerId) return toast.error(t("driver"));
-    if (!datetime) return toast.error(t("datetime"));
-    if (new Date(datetime).getTime() < Date.now() - 60_000)
+    if (!date || !time) return toast.error(t("datetime"));
+    const iso = new Date(`${date}T${time}`).toISOString();
+    if (new Date(iso).getTime() < Date.now() - 60_000)
       return toast.error(t("datetime"));
     const cleaned = stops.map((s) => ({
       label: s.label.trim(),
@@ -104,7 +111,7 @@ export function AssignmentForm({ workers, initial, busy, onSubmit, onCancel }: P
 
     onSubmit({
       worker_id: workerId,
-      scheduled_at: new Date(datetime).toISOString(),
+      scheduled_at: iso,
       category,
       stops: cleaned,
       package_count: packages ? Math.max(0, parseInt(packages, 10) || 0) : 0,
@@ -131,15 +138,34 @@ export function AssignmentForm({ workers, initial, busy, onSubmit, onCancel }: P
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="scheduled_at">{t("datetime")}</Label>
-        <Input
-          id="scheduled_at"
-          type="datetime-local"
-          value={datetime}
-          min={nowLocal}
-          onChange={(e) => setDatetime(e.target.value)}
-          className="h-11"
-        />
+        <Label htmlFor="sched_date">{t("datetime")}</Label>
+        <div className="flex gap-2">
+          <Input
+            id="sched_date"
+            type="date"
+            value={date}
+            min={nowDate}
+            onChange={(e) => {
+              setDate(e.target.value);
+              // Move on to the time field once a date is picked.
+              if (e.target.value) {
+                (document.getElementById("sched_time") as HTMLInputElement | null)?.focus();
+              }
+            }}
+            className="h-11 flex-1"
+          />
+          <Input
+            id="sched_time"
+            type="time"
+            value={time}
+            onChange={(e) => {
+              setTime(e.target.value);
+              // Close the picker once a time is chosen.
+              if (e.target.value) e.target.blur();
+            }}
+            className="h-11 w-32"
+          />
+        </div>
       </div>
 
       <div className="space-y-1.5">

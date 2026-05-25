@@ -59,6 +59,36 @@ export type ActiveDriver = {
   route: [number, number][];
 };
 
+export type AssignmentStop = { label: string; address: string };
+export type AssignmentCategory = "lieferung" | "abholung" | "kurier" | "verteilung";
+export type AssignmentStatus = "assigned" | "started" | "completed" | "cancelled";
+
+export type Assignment = {
+  id: string;
+  worker_id: string;
+  scheduled_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  stops: AssignmentStop[];
+  start_km: number | null;
+  end_km: number | null;
+  category: AssignmentCategory;
+  package_count: number | null;
+  notes: string | null;
+  status: AssignmentStatus;
+  cancel_reason: string | null;
+  assignment_notified_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AssignmentWithWorker = Assignment & {
+  worker_name: string;
+  worker_plate: string | null;
+};
+
 export type SessionData = {
   worker_id?: string;
   name?: string;

@@ -170,6 +170,15 @@ Telegram bildirim sistemi için Supabase SQL Editor'da `db/migrations/005_telegr
 
 > `005` çalıştırılmadan Telegram bağlama ve bildirimler çalışmaz (eşleştirme kodu yazılamaz).
 
+### Faz 4 migration — ⚠️ DEPLOY ÖNCESİ ÇALIŞTIR
+
+Sefer atama sistemi için Supabase SQL Editor'da `db/migrations/006_assignments.sql` içeriğini çalıştır. Eklenenler:
+
+- `assignments` tablosu (şoför, zamanlama, çoklu durak `stops` jsonb, KM, kategori, durum, `assignment_notified_at` yarış-güvenli bildirim flag'i, audit)
+- İndexler (worker+tarih, aktif durum+tarih, bekleyen bildirim) + `updated_at` otomatik güncelleme trigger'ı
+
+> `006` çalıştırılmadan `/admin/seferler`, `/panel` sefer kartı ve `/panel/seferler` takvimi 500 verir. Migration tamamen additive; mevcut tablolara dokunmaz.
+
 ## Telegram Bot Kurulumu (tek seferlik — Volkan)
 
 1. **Vercel → Settings → Environment Variables** (Production + Preview):

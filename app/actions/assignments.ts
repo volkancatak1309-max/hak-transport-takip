@@ -14,6 +14,15 @@ import type {
   AssignmentStop,
 } from "@/lib/types";
 
+type Translator = Awaited<ReturnType<typeof getTranslations>>;
+
+/** Localized stop label: first = start, last = end, middle = "Durak {n}". */
+function stopLabel(t: Translator, i: number, total: number): string {
+  if (i === 0) return t("tg_stop_start");
+  if (i === total - 1) return t("tg_stop_end");
+  return t("tg_stop_middle", { n: i });
+}
+
 /**
  * Race-safe new-assignment notification: only the call that flips
  * assignment_notified_at NULL -> now sends the Telegram message.
@@ -45,11 +54,11 @@ async function notifyAssignment(id: string): Promise<void> {
     `🕐 ${dateTime}`,
     `🏷 ${t(`category.${a.category}`)}`,
     `📦 ${a.package_count ?? 0} ${pkgWord}`,
-    `📍 ${t("tg_route")}:`,
-    "",
-    ...a.stops.map((s) => s.address),
+    ...a.stops.map(
+      (s, i) => `📍 ${stopLabel(t, i, a.stops.length)}: ${s.address}`
+    ),
   ];
-  if (a.notes) lines.push("", `📝 ${t("tg_note")}: ${a.notes}`);
+  if (a.notes) lines.push(`📝 ${t("tg_note")}: ${a.notes}`);
   lines.push("", `${t("tg_open_panel")} →`);
 
   await sendTelegramMessage(w.telegram_chat_id as string, lines.join("\n"), null);

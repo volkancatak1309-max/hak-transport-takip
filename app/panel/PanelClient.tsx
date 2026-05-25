@@ -319,6 +319,7 @@ export function PanelClient({ active, past, defaultPlate, telegram, totals }: Pr
                 </div>
                 <LocationTracker shiftId={active.id} />
                 <LenkzeitWarning
+                  timeEntryId={active.id}
                   startedAt={active.started_at}
                   isOnBreak={onBreak}
                   breakMinutes={totalBreakSoFar}

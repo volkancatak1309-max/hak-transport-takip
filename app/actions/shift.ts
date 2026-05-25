@@ -8,6 +8,9 @@ import {
   endShiftSchema,
   editEntrySchema,
 } from "@/lib/validation";
+import { workedMs, formatDurationShort } from "@/lib/format";
+import { sendTelegramMessage } from "@/lib/telegram";
+import { shiftSummaryMessage } from "@/lib/telegram-messages";
 
 export type ShiftResult = { ok: boolean; error?: string };
 
@@ -67,7 +70,7 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
 
   const { data: active, error: findErr } = await supabaseAdmin
     .from("time_entries")
-    .select("id, start_km")
+    .select("id, start_km, started_at, break_minutes")
     .eq("worker_id", session.worker_id!)
     .is("ended_at", null)
     .order("started_at", { ascending: false })
@@ -84,10 +87,14 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
     };
   }
 
+  const endedIso = new Date().toISOString();
+  const finalBreak =
+    parsed.data.break_minutes ?? active.break_minutes ?? 0;
   const updateData: Record<string, unknown> = {
-    ended_at: new Date().toISOString(),
+    ended_at: endedIso,
     end_km: parsed.data.end_km,
     notes: parsed.data.notes,
+    summary_notified_at: endedIso,
   };
   if (parsed.data.plate) updateData.plate = parsed.data.plate;
   if (parsed.data.break_minutes !== null && parsed.data.break_minutes !== undefined) {
@@ -104,6 +111,30 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
     .eq("worker_id", session.worker_id!);
 
   if (error) return { ok: false, error: error.message };
+
+  // Telegram end-of-shift summary to the driver (best-effort, never blocks).
+  const { data: me } = await supabaseAdmin
+    .from("workers")
+    .select("telegram_chat_id, telegram_locale")
+    .eq("id", session.worker_id!)
+    .maybeSingle();
+  if (me?.telegram_chat_id) {
+    const loc = (me.telegram_locale as string) ?? "tr";
+    const ms = workedMs({
+      started_at: active.started_at,
+      ended_at: endedIso,
+      break_minutes: finalBreak,
+    });
+    await sendTelegramMessage(
+      me.telegram_chat_id as string,
+      shiftSummaryMessage(loc, {
+        hours: formatDurationShort(ms, loc),
+        km: String(parsed.data.end_km - active.start_km),
+        cargo: String(parsed.data.cargo_count ?? 0),
+        breakMin: String(finalBreak),
+      })
+    );
+  }
 
   revalidatePath("/panel");
   revalidatePath("/admin");

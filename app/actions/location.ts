@@ -2,10 +2,69 @@
 
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireWorker } from "@/lib/session";
+import { workedMs } from "@/lib/format";
+import { sendTelegramMessage } from "@/lib/telegram";
+import { nineHourMessage } from "@/lib/telegram-messages";
 
 export type LocationResult = { ok: boolean; error?: string; skipped?: boolean };
 
 const MIN_INTERVAL_MS = 30_000;
+const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
+
+type ActiveShift = {
+  id: string;
+  started_at: string;
+  break_minutes: number | null;
+  plate: string | null;
+  nine_hour_notified_at: string | null;
+};
+
+/**
+ * If the active shift has crossed 9 worked hours, alert all admins on Telegram
+ * exactly once (guarded by nine_hour_notified_at). Piggybacks on location pings
+ * since there is no background cron.
+ */
+async function maybeNotifyNineHours(
+  shift: ActiveShift,
+  workerName: string,
+  sessionPlate: string | null
+): Promise<void> {
+  if (shift.nine_hour_notified_at) return;
+  const ms = workedMs({
+    started_at: shift.started_at,
+    ended_at: null,
+    break_minutes: shift.break_minutes ?? 0,
+  });
+  if (ms <= NINE_HOURS_MS) return;
+
+  // Atomic claim: only the call that flips NULL -> now proceeds to notify.
+  const { data: claimed } = await supabaseAdmin
+    .from("time_entries")
+    .update({ nine_hour_notified_at: new Date().toISOString() })
+    .eq("id", shift.id)
+    .is("nine_hour_notified_at", null)
+    .select("id");
+  if (!claimed || claimed.length === 0) return;
+
+  const { data: admins } = await supabaseAdmin
+    .from("workers")
+    .select("telegram_chat_id, telegram_locale")
+    .eq("is_admin", true)
+    .not("telegram_chat_id", "is", null);
+
+  const hours = (ms / 3_600_000).toFixed(1).replace(".", ",");
+  const plate = shift.plate ?? sessionPlate ?? "—";
+  for (const a of admins ?? []) {
+    await sendTelegramMessage(
+      a.telegram_chat_id as string,
+      nineHourMessage((a.telegram_locale as string) ?? null, {
+        name: workerName,
+        plate,
+        hours,
+      })
+    );
+  }
+}
 
 export async function recordLocation(input: {
   lat: number;
@@ -47,12 +106,20 @@ export async function recordLocation(input: {
   // Link to the active shift if there is one
   const { data: activeShift } = await supabaseAdmin
     .from("time_entries")
-    .select("id")
+    .select("id, started_at, break_minutes, plate, nine_hour_notified_at")
     .eq("worker_id", workerId)
     .is("ended_at", null)
     .order("started_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (activeShift) {
+    await maybeNotifyNineHours(
+      activeShift as ActiveShift,
+      session.name ?? "—",
+      session.plate ?? null
+    );
+  }
 
   const accuracy =
     input.accuracy != null && Number.isFinite(Number(input.accuracy))

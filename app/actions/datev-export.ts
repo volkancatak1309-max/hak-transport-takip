@@ -20,8 +20,10 @@ function csvField(v: string): string {
   return `"${v.replace(/"/g, '""')}"`;
 }
 
+// DATEV spec: decimals in amount fields are separated by a comma; a dot is
+// ignored. Always emit "5,18", never "5.18".
 function hoursDecimal(ms: number): string {
-  return (ms / 3_600_000).toFixed(2);
+  return (ms / 3_600_000).toFixed(2).replace(".", ",");
 }
 
 function monthTag(startIso: string): string {

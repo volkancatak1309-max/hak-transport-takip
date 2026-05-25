@@ -3,10 +3,14 @@
 import QRCode from "qrcode";
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requireWorker } from "@/lib/session";
+import { requireWorker, requireAdmin } from "@/lib/session";
 import { getLocale } from "@/i18n/request";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { lenkzeitMessage } from "@/lib/telegram-messages";
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 export type LinkCodeResult =
   | { ok: true; code: string; deepLink: string; qrDataUrl: string }
@@ -101,6 +105,28 @@ export async function notifyLenkzeit(timeEntryId: string): Promise<{ ok: boolean
     );
   }
   return { ok: true };
+}
+
+/** Admin sends a free-text test message to a connected worker. */
+export async function sendTestMessage(
+  workerId: string,
+  text: string
+): Promise<{ ok: boolean; error?: string }> {
+  await requireAdmin();
+  const body = text.trim();
+  if (!body) return { ok: false, error: "empty" };
+
+  const { data: w } = await supabaseAdmin
+    .from("workers")
+    .select("telegram_chat_id")
+    .eq("id", workerId)
+    .maybeSingle();
+  if (!w?.telegram_chat_id) return { ok: false, error: "not_linked" };
+
+  // Escape so arbitrary admin text can't break HTML parse_mode.
+  const html = `🔔 <b>HAK Transport — Test</b>\n\n${escapeHtml(body)}`;
+  const ok = await sendTelegramMessage(w.telegram_chat_id as string, html);
+  return ok ? { ok: true } : { ok: false, error: "send_failed" };
 }
 
 export async function getMyTelegramStatus(): Promise<{

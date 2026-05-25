@@ -73,6 +73,7 @@ export function Header({ user }: Props) {
           { href: "/admin", label: t("admin") },
           { href: "/admin/harita", label: t("map") },
           { href: "/admin/workers", label: t("workers") },
+          { href: "/admin/telegram", label: t("telegram") },
         ]
       : [{ href: "/panel", label: t("panel") }]
     : [];

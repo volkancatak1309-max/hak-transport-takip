@@ -260,6 +260,7 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     });
   }
 
+  // Weekly total work time — § 9 Abs. 1 AZG (ISO week, Monday start).
   for (const acc of weekly.values()) {
     if (acc.hours > 48) {
       violations.push({
@@ -271,6 +272,17 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         description: `Wochenarbeitszeit ${fmtH(acc.hours)} Std. (Max: 48 Std.)`,
         legalRef: "§ 9 Abs. 1 AZG (max. 48 Stunden wöchentlich)",
         severity: "violation",
+      });
+    } else if (acc.hours > 40) {
+      violations.push({
+        date: formatDate(acc.iso, "de"),
+        worker: acc.worker,
+        end: "—",
+        workedHours: fmtH(acc.hours),
+        type: "Wöchentliche Normalarbeitszeit überschritten",
+        description: `Wochenarbeitszeit ${fmtH(acc.hours)} Std. (Normal: 40 Std.)`,
+        legalRef: "§ 9 Abs. 1 AZG (Normalarbeitszeit 40 Stunden wöchentlich)",
+        severity: "warning",
       });
     }
   }

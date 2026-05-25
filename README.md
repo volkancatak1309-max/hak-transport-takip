@@ -160,6 +160,33 @@ create unique index if not exists idx_workers_employee_number
 
 > Mevcut çalışanlara otomatik `0001, 0002, …` atanır. `004` çalıştırılmadan DATEV/BMD export'larında PersNr boş gelir; yeni çalışan eklerken numara boş bırakılırsa bir sonraki numara otomatik üretilir.
 
+### Faz 3 migration — ⚠️ DEPLOY ÖNCESİ ÇALIŞTIR
+
+Telegram bildirim sistemi için Supabase SQL Editor'da `db/migrations/005_telegram.sql` içeriğini çalıştır. Eklenenler:
+
+- `workers`: `telegram_chat_id`, `telegram_username`, `telegram_linked_at`, `telegram_locale`
+- `telegram_link_codes` tablosu (15 dk geçerli tek kullanımlık eşleştirme kodları)
+- `time_entries`: `nine_hour_notified_at`, `lenkzeit_notified_at`, `summary_notified_at` (bildirim tekrarını engeller)
+
+> `005` çalıştırılmadan Telegram bağlama ve bildirimler çalışmaz (eşleştirme kodu yazılamaz).
+
+## Telegram Bot Kurulumu (tek seferlik — Volkan)
+
+1. **Vercel → Settings → Environment Variables** (Production + Preview):
+   - `TELEGRAM_BOT_TOKEN` = BotFather token'ı (biçim: `123456789:AAH-xxxxxxxxxxxxxxxxxxxxxxxxxxxx`) — repoya koyma, sadece Vercel'e gir
+   - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` = `hak_transport_bildirim_bot`
+   - `TELEGRAM_WEBHOOK_SECRET` = rastgele uzun bir string (örn. `openssl rand -hex 24`)
+2. **005 migration**'ı Supabase'de çalıştır.
+3. Deploy sonrası **webhook'u kaydet** (bir kez, terminalden):
+
+```bash
+curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://hak-transport-takip.vercel.app/api/telegram/webhook?secret=<TELEGRAM_WEBHOOK_SECRET>"
+```
+
+4. Şoför/admin panelde **"Telegram Bildirimleri Bağla"** → QR/link ile bota `/start` → bildirimler aktif.
+
+> Token **asla** repoya commit edilmez (`.env*` gitignore'da). `TELEGRAM_BOT_TOKEN` tanımlı değilse uygulama çalışır, sadece mesaj göndermez (sessiz no-op).
+
 ## Test Hesapları (seed)
 
 | Rol | Telefon | PIN |
@@ -176,6 +203,7 @@ create unique index if not exists idx_workers_employee_number
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `SESSION_PASSWORD`
+   - `TELEGRAM_BOT_TOKEN`, `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET` (bkz. Telegram Bot Kurulumu)
 5. Deploy.
 
 Tüm sayfalar dinamik (`force-dynamic`); build'de DB'ye bağlanmaz.

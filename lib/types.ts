@@ -5,6 +5,10 @@ export type Worker = {
   pin_hash: string;
   plate: string | null;
   employee_number: string | null;
+  telegram_chat_id: string | null;
+  telegram_username: string | null;
+  telegram_linked_at: string | null;
+  telegram_locale: string | null;
   is_admin: boolean;
   is_active: boolean;
   created_at: string;
@@ -23,6 +27,9 @@ export type TimeEntry = {
   cargo_count: number | null;
   updated_at: string | null;
   updated_by: string | null;
+  nine_hour_notified_at: string | null;
+  lenkzeit_notified_at: string | null;
+  summary_notified_at: string | null;
   created_at: string;
 };
 

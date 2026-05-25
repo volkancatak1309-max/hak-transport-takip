@@ -9,6 +9,7 @@ import { uploadReceipt, signedReceiptUrl } from "@/lib/storage";
 import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
 import { formatDate } from "@/lib/format";
 import { CO2_FACTORS, type CO2ReportData, type CO2Vehicle } from "@/lib/co2";
+import { triggerMaintenanceReminder } from "@/app/actions/maintenance";
 import type { FuelEntry, FuelEntryWithWorker, FuelType } from "@/lib/types";
 
 const BUCKET = "fuel-receipts";
@@ -125,6 +126,10 @@ export async function createFuelEntry(formData: FormData): Promise<FuelResult> {
     liters: parsed.data.liters,
     cost: parsed.data.total_cost,
   });
+  await triggerMaintenanceReminder(
+    parsed.data.vehicle_plate.toUpperCase(),
+    parsed.data.odometer_km
+  );
 
   revalidateFuel();
   return { ok: true, id: inserted.id as string };

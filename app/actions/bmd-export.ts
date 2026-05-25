@@ -51,7 +51,7 @@ export async function generateBMD(
     .in("id", workerIds);
   const nameById = new Map((workers ?? []).map((w) => [w.id, w.name as string]));
 
-  const header = "PersNr;Datum;Beginn;Ende;Pause;Stunden;Bemerkung";
+  const header = 'PersNr;Datum;Beginn;Ende;Pause;"Stunden";Bemerkung';
 
   const lines = rows.map((r) => {
     const persNr = r.worker_id.slice(0, 8);
@@ -59,22 +59,27 @@ export async function generateBMD(
     const beginn = formatTime(r.started_at, "de");
     const ende = formatTime(r.ended_at, "de");
     const pause = String(r.break_minutes ?? 0);
+    // Austrian (German) locale: comma decimal separator. The value must stay
+    // quoted so the semicolon parser doesn't read the comma as a delimiter.
     const stunden = (
       workedMs({
         started_at: r.started_at,
         ended_at: r.ended_at,
         break_minutes: r.break_minutes ?? 0,
       }) / 3_600_000
-    ).toFixed(2);
+    )
+      .toFixed(2)
+      .replace(".", ",");
     const name = nameById.get(r.worker_id) ?? "—";
     const bemerkung = `${name}${r.plate ? " - " + r.plate : ""}`;
+    // Quote every field — comma decimals + Bemerkung can both contain separators.
     return [
-      persNr,
-      datum,
-      beginn,
-      ende,
-      pause,
-      stunden,
+      csvField(persNr),
+      csvField(datum),
+      csvField(beginn),
+      csvField(ende),
+      csvField(pause),
+      csvField(stunden),
       csvField(bemerkung),
     ].join(";");
   });

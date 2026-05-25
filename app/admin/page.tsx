@@ -178,6 +178,8 @@ export default async function AdminPage({
           statusFilter={statusFilter}
           summary={{ totalMs, totalKm, activeCount, overLimit }}
           weekly={weekly}
+          rangeStart={start.toISOString()}
+          rangeEnd={end.toISOString()}
         />
       </div>
     </AppShell>

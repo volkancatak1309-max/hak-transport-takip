@@ -43,9 +43,10 @@ import {
   AlertTriangle,
   Pencil,
   Trash2,
-  Download,
+  FileSpreadsheet,
   FileText,
-  Plus,
+  Shield,
+  UserPlus,
   Loader2,
 } from "lucide-react";
 import { WeeklyChart, type WeeklyDatum } from "@/components/WeeklyChart";
@@ -79,6 +80,8 @@ type Props = {
   statusFilter: string;
   summary: { totalMs: number; totalKm: number; activeCount: number; overLimit: number };
   weekly: WeeklyDatum[];
+  rangeStart: string;
+  rangeEnd: string;
 };
 
 export function AdminClient({
@@ -91,18 +94,113 @@ export function AdminClient({
   statusFilter,
   summary,
   weekly,
+  rangeStart,
+  rangeEnd,
 }: Props) {
   const t = useTranslations("admin");
   const tc = useTranslations("common");
   const tpdf = useTranslations("pdf");
+  const tExport = useTranslations("export");
+  const tAzg = useTranslations("azg");
   const locale = useLocale();
   const router = useRouter();
   const params = useSearchParams();
 
   const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState<TimeEntryWithWorker | null>(null);
+  const [azgOpen, setAzgOpen] = useState(false);
+  const [azgMonth, setAzgMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [azgBusy, setAzgBusy] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
   const [pending, startTransition] = useTransition();
   const [now, setNow] = useState(Date.now());
+
+  const monthOptions = (() => {
+    const opts: { value: string; label: string }[] = [];
+    const base = new Date();
+    base.setDate(1);
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(base.getFullYear(), base.getMonth() - i, 1);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString(locale === "de" ? "de-AT" : "tr-TR", {
+        month: "long",
+        year: "numeric",
+      });
+      opts.push({ value, label });
+    }
+    return opts;
+  })();
+
+  function downloadCsv(csv: string, filename: string) {
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleDatev() {
+    setExportBusy(true);
+    try {
+      const { generateDATEV } = await import("../actions/datev-export");
+      const res = await generateDATEV(rangeStart, rangeEnd);
+      if (res.ok) {
+        downloadCsv(res.csv, res.filename);
+        toast.success(tExport("datev_success"));
+      } else {
+        toast.error(res.error === "no_data" ? tExport("no_data") : tExport("error"));
+      }
+    } catch {
+      toast.error(tExport("error"));
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  async function handleBmd() {
+    setExportBusy(true);
+    try {
+      const { generateBMD } = await import("../actions/bmd-export");
+      const res = await generateBMD(rangeStart, rangeEnd);
+      if (res.ok) {
+        downloadCsv(res.csv, res.filename);
+        toast.success(tExport("bmd_success"));
+      } else {
+        toast.error(res.error === "no_data" ? tExport("no_data") : tExport("error"));
+      }
+    } catch {
+      toast.error(tExport("error"));
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  async function handleAzg() {
+    setAzgBusy(true);
+    try {
+      const { getAZGReportData } = await import("../actions/azg-report");
+      const res = await getAZGReportData(azgMonth);
+      if (!res.ok) {
+        toast.error(tAzg("error"));
+        return;
+      }
+      const { downloadAZGReport } = await import("@/components/pdf/AZGReport");
+      await downloadAZGReport(res.data, tAzg("report_title"));
+      toast.success(tAzg("success"));
+      setAzgOpen(false);
+    } catch {
+      toast.error(tAzg("error"));
+    } finally {
+      setAzgBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (summary.activeCount === 0) return;
@@ -387,18 +485,60 @@ export function AdminClient({
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex gap-2 ml-auto items-end">
-              <Button variant="outline" size="sm" onClick={exportCsv} disabled={!entries.length}>
-                <Download className="size-4" />
-                {t("exportExcel")}
+            <div className="flex flex-wrap gap-1.5 ml-auto items-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportCsv}
+                disabled={!entries.length}
+                title={t("exportExcel")}
+              >
+                <FileSpreadsheet className="size-4" />
+                <span className="hidden xl:inline">Excel</span>
               </Button>
-              <Button variant="outline" size="sm" onClick={exportPdf} disabled={!entries.length}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDatev}
+                disabled={exportBusy}
+                title={tExport("datev_tooltip")}
+              >
                 <FileText className="size-4" />
-                {t("exportPdf")}
+                <span className="hidden xl:inline">DATEV</span>
               </Button>
-              <Button size="sm" onClick={() => setAddOpen(true)}>
-                <Plus className="size-4" />
-                {t("addWorker")}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBmd}
+                disabled={exportBusy}
+                title={tExport("bmd_tooltip")}
+              >
+                <FileText className="size-4" />
+                <span className="hidden xl:inline">BMD</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportPdf}
+                disabled={!entries.length}
+                title={t("exportPdf")}
+              >
+                <FileText className="size-4" />
+                <span className="hidden xl:inline">PDF</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAzgOpen(true)}
+                title={tAzg("report_title")}
+                className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Shield className="size-4" />
+                <span className="hidden xl:inline">AZG</span>
+              </Button>
+              <Button size="sm" onClick={() => setAddOpen(true)} title={t("addWorker")}>
+                <UserPlus className="size-4" />
+                <span className="hidden xl:inline">{t("addWorker")}</span>
               </Button>
             </div>
           </div>
@@ -668,6 +808,49 @@ export function AdminClient({
               </DialogFooter>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* AZG audit report */}
+      <Dialog open={azgOpen} onOpenChange={setAzgOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="size-5 text-destructive" />
+              {tAzg("report_title")}
+            </DialogTitle>
+            <DialogDescription>{tAzg("report_modal_desc")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>{tAzg("select_month")}</Label>
+              <Select value={azgMonth} onValueChange={(v) => v && setAzgMonth(v)}>
+                <SelectTrigger className="h-10 w-full">
+                  <SelectValue>
+                    {((v: unknown) =>
+                      monthOptions.find((o) => o.value === String(v))?.label ??
+                      String(v)) as never}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {monthOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setAzgOpen(false)}>
+              {tc("cancel")}
+            </Button>
+            <Button onClick={handleAzg} disabled={azgBusy}>
+              {azgBusy && <Loader2 className="size-4 animate-spin" />}
+              {azgBusy ? tAzg("generating") : tAzg("generate")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -16,6 +16,12 @@ HAK Transport GmbH için iki dilli (TR/DE) çalışan vardiya, mola ve kilometre
 | `/admin/workers` | Çalışan listesi (son vardiya, bu ay saat) |
 | `/admin/workers/[id]` | Çalışan detayı: bu ay özet, bugünkü güzergah, tam geçmiş, kişiye özel PDF |
 
+## Yeni Özellikler (Faz 2 — Yasal Kalkan & Muhasebe)
+
+- **Lenkzeit mola uyarısı (EU 561/2006)** — aktif vardiyada sürüş süresi sayacı; 4 saatte ön uyarı toast, 4.5 saatte Browser Notification + zorunlu mola modalı + ses (snooze 5 dk). Mola bitince sayaç sıfırlanır. Panelde renkli sürüş kronometresi (yeşil→sarı→kırmızı/pulse). DB değişikliği yok.
+- **AZG otomatik denetim raporu** — admin `/admin`'de "AZG Denetim" → ay seçimi → çok sayfalı PDF (kapak + sürücü özeti + detaylı ihlal tablosu + § referansları + yasal not). § 9/§ 11/§ 26 AZG.
+- **DATEV / BMD muhasebe export** — mevcut Excel'in yanına DATEV (Almanya) ve BMD (Avusturya) CSV export butonları; seçili tarih aralığı için, UTF-8 BOM + noktalı virgül, Steuerberater'a hazır.
+
 ## Yeni Özellikler (Faz 1 — Görsel Şov)
 
 - **Canlı araç konumu haritası** — şoför aktif vardiyada her 60 sn konum gönderir (izin opsiyonel); admin `/admin/harita`'da Leaflet/OSM haritada canlı marker görür (30 sn polling). Sürücü detayında "Bugünkü Güzergah" polyline (yeşil başlangıç / turuncu son).

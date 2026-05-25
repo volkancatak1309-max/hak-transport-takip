@@ -1,5 +1,6 @@
 "use server";
 
+import { getTranslations } from "next-intl/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { workedMs, formatDate, formatTime } from "@/lib/format";
@@ -134,6 +135,10 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     .in("id", workerIds);
   const nameById = new Map((workersData ?? []).map((w) => [w.id, w.name as string]));
 
+  // Violation type/description localised to the admin's locale (TR/DE). Legal
+  // citations (§ …, Ruhezeit, AZG) stay German — see legalRef literals below.
+  const t = await getTranslations("azg");
+
   const violations: AZGViolation[] = [];
   const weekly = new Map<string, { hours: number; worker: string; iso: string }>();
   // Daily totals include EVERY shift (even micro ones): legally every worked
@@ -171,8 +176,8 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         worker,
         end: endStr,
         workedHours: fmtH(hours),
-        type: "Einzelschicht über 10 Stunden",
-        description: `Einzelschicht ${fmtH(hours)} Std. (Max: 10 Std.)`,
+        type: t("v.shift10_type"),
+        description: t("v.shift10_desc", { hours: fmtH(hours) }),
         legalRef: "§ 9 Abs. 1 AZG — Überschreitung (Geldstrafe 72–1.815 €)",
         severity: "serious_violation",
       });
@@ -182,8 +187,8 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         worker,
         end: endStr,
         workedHours: fmtH(hours),
-        type: "Einzelschicht über 9 Stunden",
-        description: `Einzelschicht ${fmtH(hours)} Std. (über 9 Std.)`,
+        type: t("v.shift9_type"),
+        description: t("v.shift9_desc", { hours: fmtH(hours) }),
         legalRef: "§ 9 Abs. 1 AZG (max. 10 Stunden täglich)",
         severity: "warning",
       });
@@ -196,8 +201,8 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         worker,
         end: endStr,
         workedHours: fmtH(hours),
-        type: "Unzureichende Ruhepause",
-        description: `Ruhepause ${breakMin} Min bei ${fmtH(hours)} Std. Arbeit (mind. 30 Min)`,
+        type: t("v.break_type"),
+        description: t("v.break_desc", { min: breakMin, hours: fmtH(hours) }),
         legalRef: "§ 11 Abs. 1 AZG (mind. 30 Min nach 6 Std)",
         severity: "violation",
       });
@@ -253,8 +258,8 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
           worker,
           end: "—",
           workedHours: "—",
-          type: "Verletzung der Ruhezeit (mind. 11 Std.)",
-          description: `Ruhezeit zwischen Schichten nur ${fmtH(gapH)} Std. (mind. 11 Std.)`,
+          type: t("v.rest_type"),
+          description: t("v.rest_desc", { hours: fmtH(gapH) }),
           legalRef: "§ 12 Abs. 1 AZG (ununterbrochene Ruhezeit mind. 11 Std.)",
           severity: "violation",
         });
@@ -268,23 +273,23 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
   for (const d of daily.values()) {
     const h = d.ms / 3_600_000;
     let severity: AZGSeverity | null = null;
-    let limitLabel = "";
+    let typeKey = "";
+    let descKey = "";
     let legalRef = "";
-    let type = "";
     if (h > 12) {
       severity = "serious_violation";
-      limitLabel = "Absolut: 12 Std.";
-      type = "Absolute Tageshöchstgrenze überschritten";
+      typeKey = "v.dailyAbs_type";
+      descKey = "v.dailyAbs_desc";
       legalRef = "§ 9 Abs. 1 AZG — absolute Höchstgrenze (Geldstrafe 72–1.815 €)";
     } else if (h > 10) {
       severity = "violation";
-      limitLabel = "Max: 10 Std.";
-      type = "Tägliche Höchstarbeitszeit überschritten";
+      typeKey = "v.dailyMax_type";
+      descKey = "v.dailyMax_desc";
       legalRef = "§ 9 Abs. 1 AZG (max. 10 Std. täglich)";
     } else if (h > 8) {
       severity = "warning";
-      limitLabel = "Normal: 8 Std.";
-      type = "Tägliche Normalarbeitszeit überschritten";
+      typeKey = "v.dailyNormal_type";
+      descKey = "v.dailyNormal_desc";
       legalRef = "§ 9 Abs. 1 AZG (Normalarbeitszeit 8 Std. täglich)";
     }
     if (!severity) continue;
@@ -293,8 +298,8 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
       worker: d.worker,
       end: "—",
       workedHours: fmtH(h),
-      type,
-      description: `Tägliche Arbeitszeit ${fmtH(h)} Std. (${limitLabel})`,
+      type: t(typeKey),
+      description: t(descKey, { hours: fmtH(h) }),
       legalRef,
       severity,
     });
@@ -308,8 +313,8 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         worker: acc.worker,
         end: "—",
         workedHours: fmtH(acc.hours),
-        type: "Wöchentliche Höchstarbeitszeit überschritten",
-        description: `Wochenarbeitszeit ${fmtH(acc.hours)} Std. (Max: 48 Std.)`,
+        type: t("v.weeklyMax_type"),
+        description: t("v.weeklyMax_desc", { hours: fmtH(acc.hours) }),
         legalRef: "§ 9 Abs. 1 AZG (max. 48 Stunden wöchentlich)",
         severity: "violation",
       });
@@ -319,8 +324,8 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         worker: acc.worker,
         end: "—",
         workedHours: fmtH(acc.hours),
-        type: "Wöchentliche Normalarbeitszeit überschritten",
-        description: `Wochenarbeitszeit ${fmtH(acc.hours)} Std. (Normal: 40 Std.)`,
+        type: t("v.weeklyNormal_type"),
+        description: t("v.weeklyNormal_desc", { hours: fmtH(acc.hours) }),
         legalRef: "§ 9 Abs. 1 AZG (Normalarbeitszeit 40 Stunden wöchentlich)",
         severity: "warning",
       });

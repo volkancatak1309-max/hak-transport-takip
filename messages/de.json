@@ -69,7 +69,27 @@
     "generating": "Bericht wird erstellt...",
     "success": "AZG-Bericht heruntergeladen",
     "error": "Bericht konnte nicht erstellt werden, bitte erneut versuchen",
-    "no_data": "Keine Daten für den gewählten Monat"
+    "no_data": "Keine Daten für den gewählten Monat",
+    "v": {
+      "shift10_type": "Einzelschicht über 10 Stunden",
+      "shift10_desc": "Einzelschicht {hours} Std. (Max: 10 Std.)",
+      "shift9_type": "Einzelschicht über 9 Stunden",
+      "shift9_desc": "Einzelschicht {hours} Std. (über 9 Std.)",
+      "break_type": "Unzureichende Ruhepause",
+      "break_desc": "Ruhepause {min} Min bei {hours} Std. Arbeit (mind. 30 Min)",
+      "rest_type": "Verletzung der Ruhezeit (mind. 11 Std.)",
+      "rest_desc": "Ruhezeit zwischen Schichten nur {hours} Std. (mind. 11 Std.)",
+      "dailyAbs_type": "Absolute Tageshöchstgrenze überschritten",
+      "dailyAbs_desc": "Tägliche Arbeitszeit {hours} Std. (Absolut: 12 Std.)",
+      "dailyMax_type": "Tägliche Höchstarbeitszeit überschritten",
+      "dailyMax_desc": "Tägliche Arbeitszeit {hours} Std. (Max: 10 Std.)",
+      "dailyNormal_type": "Tägliche Normalarbeitszeit überschritten",
+      "dailyNormal_desc": "Tägliche Arbeitszeit {hours} Std. (Normal: 8 Std.)",
+      "weeklyMax_type": "Wöchentliche Höchstarbeitszeit überschritten",
+      "weeklyMax_desc": "Wochenarbeitszeit {hours} Std. (Max: 48 Std.)",
+      "weeklyNormal_type": "Wöchentliche Normalarbeitszeit überschritten",
+      "weeklyNormal_desc": "Wochenarbeitszeit {hours} Std. (Normal: 40 Std.)"
+    }
   },
   "export": {
     "datev": "DATEV-Export",

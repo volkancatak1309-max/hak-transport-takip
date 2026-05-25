@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/table";
 import { LocationTracker } from "@/components/LocationTracker";
 import { LenkzeitWarning } from "@/components/LenkzeitWarning";
+import { TelegramLink } from "@/components/TelegramLink";
 import { tryServerAction } from "@/lib/offline-aware";
 
 type Totals = {
@@ -72,10 +73,11 @@ type Props = {
   active: TimeEntry | null;
   past: TimeEntry[];
   defaultPlate: string;
+  telegram: { linked: boolean; username: string | null };
   totals: Totals;
 };
 
-export function PanelClient({ active, past, defaultPlate, totals }: Props) {
+export function PanelClient({ active, past, defaultPlate, telegram, totals }: Props) {
   const t = useTranslations("panel");
   const tc = useTranslations("common");
   const tOffline = useTranslations("offline");
@@ -450,6 +452,8 @@ export function PanelClient({ active, past, defaultPlate, totals }: Props) {
           )}
         </CardContent>
       </Card>
+
+      <TelegramLink linked={telegram.linked} username={telegram.username} />
 
       <Dialog open={startOpen} onOpenChange={setStartOpen}>
         <DialogContent>

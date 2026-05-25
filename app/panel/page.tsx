@@ -27,6 +27,16 @@ export default async function PanelPage() {
   const active = all.find((e) => e.ended_at === null) ?? null;
   const past = all.filter((e) => e.ended_at !== null);
 
+  const { data: me } = await supabaseAdmin
+    .from("workers")
+    .select("telegram_chat_id, telegram_username")
+    .eq("id", session.worker_id!)
+    .maybeSingle();
+  const telegram = {
+    linked: !!me?.telegram_chat_id,
+    username: (me?.telegram_username as string) ?? null,
+  };
+
   const todayStart = startOfTodayVienna();
   const weekStart = startOfWeekVienna();
 
@@ -86,6 +96,7 @@ export default async function PanelPage() {
           active={active}
           past={past.slice(0, 5)}
           defaultPlate={session.plate ?? ""}
+          telegram={telegram}
           totals={{
             todayMs,
             todayKm,

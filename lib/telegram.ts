@@ -22,7 +22,7 @@ export function isTelegramConfigured(): boolean {
 export async function sendTelegramMessage(
   chatId: string,
   text: string,
-  parseMode: "HTML" | "MarkdownV2" = "HTML"
+  parseMode: "HTML" | "MarkdownV2" | null = "HTML"
 ): Promise<boolean> {
   const token = botToken();
   if (!token || !chatId) return false;
@@ -34,7 +34,9 @@ export async function sendTelegramMessage(
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        parse_mode: parseMode,
+        // `null` → omit parse_mode (plain text), so free-form addresses with
+        // & or < don't break HTML parsing.
+        ...(parseMode ? { parse_mode: parseMode } : {}),
         disable_web_page_preview: true,
       }),
     });

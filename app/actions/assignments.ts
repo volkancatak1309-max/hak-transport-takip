@@ -1,15 +1,59 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getTranslations } from "next-intl/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireWorker, requireAdmin } from "@/lib/session";
 import { createAssignmentSchema } from "@/lib/validation";
+import { sendTelegramMessage } from "@/lib/telegram";
+import { formatDate, formatTime } from "@/lib/format";
 import type {
   Assignment,
   AssignmentWithWorker,
   AssignmentCategory,
   AssignmentStop,
 } from "@/lib/types";
+
+/**
+ * Race-safe new-assignment notification: only the call that flips
+ * assignment_notified_at NULL -> now sends the Telegram message.
+ */
+async function notifyAssignment(id: string): Promise<void> {
+  const { data: claimed } = await supabaseAdmin
+    .from("assignments")
+    .update({ assignment_notified_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("assignment_notified_at", null)
+    .select("*");
+  const a = claimed?.[0] as Assignment | undefined;
+  if (!a) return;
+
+  const { data: w } = await supabaseAdmin
+    .from("workers")
+    .select("telegram_chat_id, telegram_locale")
+    .eq("id", a.worker_id)
+    .maybeSingle();
+  if (!w?.telegram_chat_id) return;
+
+  const locale = (w.telegram_locale as string) === "de" ? "de" : "tr";
+  const t = await getTranslations({ locale, namespace: "assignments" });
+  const dateTime = `${formatDate(a.scheduled_at, locale)} ${formatTime(a.scheduled_at, locale)}`;
+  const pkgWord = locale === "de" ? "Pakete" : "paket";
+
+  const lines = [
+    `📦 ${t("tg_new_assignment")}`,
+    `🕐 ${dateTime}`,
+    `🏷 ${t(`category.${a.category}`)}`,
+    `📦 ${a.package_count ?? 0} ${pkgWord}`,
+    `📍 ${t("tg_route")}:`,
+    "",
+    ...a.stops.map((s) => s.address),
+  ];
+  if (a.notes) lines.push("", `📝 ${t("tg_note")}: ${a.notes}`);
+  lines.push("", `${t("tg_open_panel")} →`);
+
+  await sendTelegramMessage(w.telegram_chat_id as string, lines.join("\n"), null);
+}
 
 export type AssignmentInput = {
   worker_id: string;
@@ -63,6 +107,8 @@ export async function createAssignment(
 
   if (error || !inserted) return { ok: false, error: error?.message ?? "insert" };
 
+  await notifyAssignment(inserted.id as string);
+
   revalidateAll();
   return { ok: true, id: inserted.id as string };
 }
@@ -103,6 +149,12 @@ export async function cancelAssignment(
 ): Promise<AssignmentActionResult> {
   await requireAdmin();
 
+  const { data: existing } = await supabaseAdmin
+    .from("assignments")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
   const { error } = await supabaseAdmin
     .from("assignments")
     .update({
@@ -113,6 +165,30 @@ export async function cancelAssignment(
     .eq("id", id);
 
   if (error) return { ok: false, error: error.message };
+
+  if (existing) {
+    const a = existing as Assignment;
+    const { data: w } = await supabaseAdmin
+      .from("workers")
+      .select("telegram_chat_id, telegram_locale")
+      .eq("id", a.worker_id)
+      .maybeSingle();
+    if (w?.telegram_chat_id) {
+      const locale = (w.telegram_locale as string) === "de" ? "de" : "tr";
+      const t = await getTranslations({ locale, namespace: "assignments" });
+      const dateTime = `${formatDate(a.scheduled_at, locale)} ${formatTime(a.scheduled_at, locale)}`;
+      const first = a.stops[0]?.address ?? "";
+      const last = a.stops[a.stops.length - 1]?.address ?? "";
+      const lines = [
+        `❌ ${t("tg_cancelled")}`,
+        `🕐 ${dateTime}`,
+        `📍 ${first} → ${last}`,
+      ];
+      if (reason.trim()) lines.push(`${t("tg_reason")}: ${reason.trim()}`);
+      await sendTelegramMessage(w.telegram_chat_id as string, lines.join("\n"), null);
+    }
+  }
+
   revalidateAll();
   return { ok: true, id };
 }

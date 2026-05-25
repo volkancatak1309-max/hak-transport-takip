@@ -82,7 +82,14 @@
     "tg_note": "Not",
     "tg_cancelled": "Sefer İptal Edildi",
     "tg_reason": "Sebep",
-    "tg_open_panel": "Panele bakın"
+    "tg_open_panel": "Panele bakın",
+    "tg_stop_start": "Çıkış",
+    "tg_stop_end": "Varış",
+    "tg_stop_middle": "Durak {n}",
+    "tg_btn_start_directions": "🗺 Çıkış Yol Tarifi",
+    "tg_btn_middle_directions": "🗺 Durak {n} Yol Tarifi",
+    "tg_btn_end_directions": "🗺 Varış Yol Tarifi",
+    "tg_btn_open_panel": "📱 Panele Git"
   },
   "telegram": {
     "title": "Telegram Bildirimleri",

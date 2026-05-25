@@ -82,7 +82,14 @@
     "tg_note": "Hinweis",
     "tg_cancelled": "Auftrag storniert",
     "tg_reason": "Grund",
-    "tg_open_panel": "Panel öffnen"
+    "tg_open_panel": "Panel öffnen",
+    "tg_stop_start": "Start",
+    "tg_stop_end": "Ziel",
+    "tg_stop_middle": "Station {n}",
+    "tg_btn_start_directions": "🗺 Route zum Start",
+    "tg_btn_middle_directions": "🗺 Route zur Station {n}",
+    "tg_btn_end_directions": "🗺 Route zum Ziel",
+    "tg_btn_open_panel": "📱 Panel öffnen"
   },
   "telegram": {
     "title": "Telegram-Benachrichtigungen",

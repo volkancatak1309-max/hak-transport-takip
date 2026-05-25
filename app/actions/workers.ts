@@ -16,6 +16,19 @@ function randomPin(): string {
   return String(Math.floor(1000 + Math.random() * 9000));
 }
 
+/** Next free 4-digit Personalnummer (0001, 0002, …) based on the current max. */
+async function nextEmployeeNumber(): Promise<string> {
+  const { data } = await supabaseAdmin
+    .from("workers")
+    .select("employee_number")
+    .not("employee_number", "is", null);
+  const max = (data ?? []).reduce((m, w) => {
+    const n = parseInt((w.employee_number as string) ?? "", 10);
+    return Number.isFinite(n) && n > m ? n : m;
+  }, 0);
+  return String(max + 1).padStart(4, "0");
+}
+
 export async function createWorkerAction(formData: FormData): Promise<WorkerResult> {
   await requireAdmin();
 
@@ -24,6 +37,7 @@ export async function createWorkerAction(formData: FormData): Promise<WorkerResu
     phone: formData.get("phone"),
     pin: formData.get("pin"),
     plate: formData.get("plate") || null,
+    employee_number: formData.get("employee_number") || null,
     is_admin: formData.get("is_admin") === "on",
   });
   if (!parsed.success) {
@@ -41,11 +55,17 @@ export async function createWorkerAction(formData: FormData): Promise<WorkerResu
 
   const pin_hash = await bcrypt.hash(parsed.data.pin, 10);
 
+  const employee_number =
+    parsed.data.employee_number && parsed.data.employee_number.length > 0
+      ? parsed.data.employee_number
+      : await nextEmployeeNumber();
+
   const { error } = await supabaseAdmin.from("workers").insert({
     name: parsed.data.name,
     phone,
     pin_hash,
     plate: parsed.data.plate ?? null,
+    employee_number,
     is_admin: parsed.data.is_admin ?? false,
     is_active: true,
   });

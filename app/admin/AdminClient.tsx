@@ -682,6 +682,16 @@ export function AdminClient({
               <Label htmlFor="plate">{t("plate")}</Label>
               <Input id="plate" name="plate" className="h-11 nums uppercase" />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="employee_number">{t("employeeNumber")}</Label>
+              <Input
+                id="employee_number"
+                name="employee_number"
+                inputMode="numeric"
+                placeholder={t("employeeNumberHint")}
+                className="h-11 nums"
+              />
+            </div>
             <label className="flex items-center gap-2 text-sm">
               <Checkbox name="is_admin" id="is_admin" />
               {t("isAdmin")}

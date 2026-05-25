@@ -201,6 +201,8 @@
     "phone": "Telefon",
     "plate": "Plaka (opsiyonel)",
     "pin": "PIN (4 hane)",
+    "employeeNumber": "Personel No (opsiyonel)",
+    "employeeNumberHint": "Boş bırak = otomatik",
     "isAdmin": "Yönetici yetkisi ver",
     "workerAdded": "Çalışan eklendi"
   },

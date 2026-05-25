@@ -44,6 +44,7 @@ export const createWorkerSchema = z.object({
   phone: phoneSchema,
   pin: pinSchema,
   plate: z.string().trim().max(20).optional().nullable(),
+  employee_number: z.string().trim().max(20).optional().nullable(),
   is_admin: z.coerce.boolean().optional(),
 });
 

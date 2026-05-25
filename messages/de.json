@@ -201,6 +201,8 @@
     "phone": "Telefon",
     "plate": "Kennzeichen (optional)",
     "pin": "PIN (4-stellig)",
+    "employeeNumber": "Personalnummer (optional)",
+    "employeeNumberHint": "Leer = automatisch",
     "isAdmin": "Verwaltungsrechte vergeben",
     "workerAdded": "Mitarbeiter hinzugefügt"
   },

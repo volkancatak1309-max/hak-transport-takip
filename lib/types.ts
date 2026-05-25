@@ -4,6 +4,7 @@ export type Worker = {
   phone: string;
   pin_hash: string;
   plate: string | null;
+  employee_number: string | null;
   is_admin: boolean;
   is_active: boolean;
   created_at: string;

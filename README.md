@@ -139,6 +139,27 @@ create index if not exists idx_driver_locations_time_entry
 
 > `003` çalıştırılmadan `/admin/harita` ve panel konum gönderimi 500 verir. `nav.map` ("Harita" sekmesi) yalnızca admin'e görünür.
 
+### Faz 2 migration — ⚠️ DEPLOY ÖNCESİ ÇALIŞTIR
+
+Personel numarası (Personalnummer) için Supabase SQL Editor'da `db/migrations/004_employee_number.sql` içeriğini çalıştır:
+
+```sql
+alter table public.workers
+  add column if not exists employee_number text;
+
+with numbered as (
+  select id, lpad((row_number() over (order by created_at, id))::text, 4, '0') as num
+  from public.workers where employee_number is null
+)
+update public.workers w set employee_number = n.num
+from numbered n where w.id = n.id;
+
+create unique index if not exists idx_workers_employee_number
+  on public.workers(employee_number) where employee_number is not null;
+```
+
+> Mevcut çalışanlara otomatik `0001, 0002, …` atanır. `004` çalıştırılmadan DATEV/BMD export'larında PersNr boş gelir; yeni çalışan eklerken numara boş bırakılırsa bir sonraki numara otomatik üretilir.
+
 ## Test Hesapları (seed)
 
 | Rol | Telefon | PIN |

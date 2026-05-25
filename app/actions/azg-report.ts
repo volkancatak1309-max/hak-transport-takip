@@ -117,6 +117,13 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
   // Daily totals include EVERY shift (even micro ones): legally every worked
   // minute counts toward the daily cap. Grouped by the shift's start date.
   const daily = new Map<string, { ms: number; worker: string; iso: string }>();
+  // Rest-period analysis ignores micro shifts (< 5 min): a test blip is not a
+  // real work period to demand 11 h rest around.
+  const MICRO_MS = 5 * 60_000;
+  const restByWorker = new Map<
+    string,
+    { startTs: number; endTs: number; iso: string }[]
+  >();
 
   for (const e of entries) {
     const worker = nameById.get(e.worker_id) ?? "—";
@@ -179,6 +186,40 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     dacc.ms += ms;
     if (new Date(e.started_at) < new Date(dacc.iso)) dacc.iso = e.started_at;
     daily.set(dk, dacc);
+
+    if (ms >= MICRO_MS) {
+      const arr = restByWorker.get(e.worker_id) ?? [];
+      arr.push({
+        startTs: new Date(e.started_at).getTime(),
+        endTs: new Date(e.ended_at as string).getTime(),
+        iso: e.started_at,
+      });
+      restByWorker.set(e.worker_id, arr);
+    }
+  }
+
+  // Inter-shift rest period — § 12 Abs. 1 AZG: at least 11 uninterrupted hours
+  // between the end of one shift and the start of the next.
+  const REST_MS = 11 * 3_600_000;
+  for (const [workerId, arr] of restByWorker.entries()) {
+    const worker = nameById.get(workerId) ?? "—";
+    arr.sort((a, b) => a.startTs - b.startTs);
+    for (let i = 1; i < arr.length; i++) {
+      const gap = arr[i].startTs - arr[i - 1].endTs;
+      if (gap < REST_MS) {
+        const gapH = Math.max(0, gap) / 3_600_000;
+        violations.push({
+          date: formatDate(arr[i - 1].iso, "de"),
+          worker,
+          end: "—",
+          workedHours: "—",
+          type: "Verletzung der Ruhezeit (mind. 11 Std.)",
+          description: `Ruhezeit zwischen Schichten nur ${fmtH(gapH)} Std. (mind. 11 Std.)`,
+          legalRef: "§ 12 Abs. 1 AZG (ununterbrochene Ruhezeit mind. 11 Std.)",
+          severity: "violation",
+        });
+      }
+    }
   }
 
   // Daily total work time — § 9 Abs. 1 AZG. This is the check the old report

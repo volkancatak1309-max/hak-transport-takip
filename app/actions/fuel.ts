@@ -8,7 +8,8 @@ import { createFuelSchema } from "@/lib/validation";
 import { uploadReceipt, signedReceiptUrl } from "@/lib/storage";
 import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
 import { formatDate } from "@/lib/format";
-import type { FuelEntry, FuelEntryWithWorker } from "@/lib/types";
+import { CO2_FACTORS, type CO2ReportData, type CO2Vehicle } from "@/lib/co2";
+import type { FuelEntry, FuelEntryWithWorker, FuelType } from "@/lib/types";
 
 const BUCKET = "fuel-receipts";
 const APP_URL =
@@ -231,4 +232,76 @@ export async function getFuelEntries(opts?: {
   return withWorker.sort(
     (a, b) => new Date(b.fueled_at).getTime() - new Date(a.fueled_at).getTime()
   );
+}
+
+export type CO2Result = { ok: true; data: CO2ReportData } | { ok: false };
+
+/** Build a monthly CO₂ report from approved fuel entries (admin only). */
+export async function generateCO2Report(month: string): Promise<CO2Result> {
+  await requireAdmin();
+  const m = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!m) return { ok: false };
+  const year = Number(m[1]);
+  const mon = Number(m[2]);
+  const start = new Date(Date.UTC(year, mon - 1, 1));
+  const end = new Date(Date.UTC(year, mon, 1));
+
+  const { data } = await supabaseAdmin
+    .from("fuel_entries")
+    .select("vehicle_plate, liters, odometer_km, fuel_type")
+    .eq("status", "approved")
+    .gte("fueled_at", start.toISOString())
+    .lt("fueled_at", end.toISOString());
+
+  type Row = { vehicle_plate: string; liters: number; odometer_km: number; fuel_type: FuelType };
+  const rows = (data ?? []) as Row[];
+
+  const byPlate = new Map<
+    string,
+    { liters: number; co2: number; minKm: number; maxKm: number }
+  >();
+  for (const r of rows) {
+    const v = byPlate.get(r.vehicle_plate) ?? {
+      liters: 0,
+      co2: 0,
+      minKm: r.odometer_km,
+      maxKm: r.odometer_km,
+    };
+    v.liters += Number(r.liters);
+    v.co2 += Number(r.liters) * (CO2_FACTORS[r.fuel_type] ?? CO2_FACTORS.diesel);
+    v.minKm = Math.min(v.minKm, r.odometer_km);
+    v.maxKm = Math.max(v.maxKm, r.odometer_km);
+    byPlate.set(r.vehicle_plate, v);
+  }
+
+  const vehicles: CO2Vehicle[] = [...byPlate.entries()]
+    .map(([plate, v]) => {
+      const km = Math.max(0, v.maxKm - v.minKm);
+      return {
+        plate,
+        liters: v.liters,
+        km,
+        lPer100: km > 0 ? (v.liters / km) * 100 : null,
+        co2Kg: v.co2,
+        gPerKm: km > 0 ? (v.co2 * 1000) / km : null,
+      };
+    })
+    .sort((a, b) => b.co2Kg - a.co2Kg);
+
+  const totalLiters = vehicles.reduce((s, v) => s + v.liters, 0);
+  const totalCo2 = vehicles.reduce((s, v) => s + v.co2Kg, 0);
+  const totalKm = vehicles.reduce((s, v) => s + v.km, 0);
+
+  return {
+    ok: true,
+    data: {
+      monthLabel: month,
+      generatedAt: new Date().toISOString(),
+      totalLiters,
+      totalCo2,
+      totalKm,
+      avgGPerKm: totalKm > 0 ? (totalCo2 * 1000) / totalKm : null,
+      vehicles,
+    },
+  };
 }

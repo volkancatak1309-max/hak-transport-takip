@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, X, Loader2, Fuel, Clock, Truck, TrendingUp } from "lucide-react";
+import { Check, X, Loader2, Fuel, Clock, Truck, TrendingUp, BarChart3 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,10 +25,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { formatDate, viennaDayKey } from "@/lib/format";
 import { APPROVAL_BADGE } from "@/lib/status-ui";
 import type { FuelEntryWithWorker, ApprovalStatus } from "@/lib/types";
-import { approveFuelEntry, rejectFuelEntry } from "@/app/actions/fuel";
+import { approveFuelEntry, rejectFuelEntry, generateCO2Report } from "@/app/actions/fuel";
+import { downloadCO2Report } from "@/components/pdf/CO2Report";
 
 type Props = { entries: FuelEntryWithWorker[] };
 
@@ -37,6 +46,7 @@ const eur = (n: number) => n.toFixed(2).replace(".", ",");
 export function FuelAdminClient({ entries }: Props) {
   const t = useTranslations("fuel");
   const ta = useTranslations("approval");
+  const tco2 = useTranslations("co2");
   const locale = useLocale();
   const router = useRouter();
 
@@ -44,6 +54,40 @@ export function FuelAdminClient({ entries }: Props) {
   const [rejecting, setRejecting] = useState<FuelEntryWithWorker | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const monthOptions = useMemo(() => {
+    const tag = locale === "de" ? "de-AT" : "tr-TR";
+    const out: { value: string; label: string }[] = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      out.push({
+        value,
+        label: new Intl.DateTimeFormat(tag, { month: "long", year: "numeric" }).format(d),
+      });
+    }
+    return out;
+  }, [locale]);
+
+  const [co2Open, setCo2Open] = useState(false);
+  const [co2Month, setCo2Month] = useState(monthOptions[0]?.value ?? "");
+  const [co2Busy, setCo2Busy] = useState(false);
+
+  async function makeCo2() {
+    setCo2Busy(true);
+    try {
+      const res = await generateCO2Report(co2Month);
+      if (!res.ok) {
+        toast.error(t("save_error"));
+        return;
+      }
+      await downloadCO2Report(res.data, tco2("report_title"));
+      setCo2Open(false);
+    } finally {
+      setCo2Busy(false);
+    }
+  }
 
   const month = viennaDayKey(new Date()).slice(0, 7);
   const stats = useMemo(() => {
@@ -119,7 +163,12 @@ export function FuelAdminClient({ entries }: Props) {
 
   return (
     <>
-      <h1 className="text-xl font-bold">{t("admin_title")}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-bold">{t("admin_title")}</h1>
+        <Button variant="outline" onClick={() => setCo2Open(true)}>
+          <BarChart3 className="size-4" /> {tco2("button")}
+        </Button>
+      </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Card>
@@ -272,6 +321,38 @@ export function FuelAdminClient({ entries }: Props) {
             <Button variant="destructive" onClick={doReject} disabled={busy}>
               {busy && <Loader2 className="size-4 animate-spin" />}
               {t("reject")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={co2Open} onOpenChange={setCo2Open}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{tco2("report_title")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>{tco2("select_month")}</Label>
+            <Select value={co2Month} onValueChange={(v) => v && setCo2Month(v)}>
+              <SelectTrigger className="h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCo2Open(false)}>
+              {t("cancel")}
+            </Button>
+            <Button onClick={makeCo2} disabled={co2Busy}>
+              {co2Busy && <Loader2 className="size-4 animate-spin" />}
+              {tco2("generate")}
             </Button>
           </DialogFooter>
         </DialogContent>

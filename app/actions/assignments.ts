@@ -214,7 +214,15 @@ export async function cancelAssignment(
         `📍 ${first} → ${last}`,
       ];
       if (reason.trim()) lines.push(`${t("tg_reason")}: ${reason.trim()}`);
-      await sendTelegramMessage(w.telegram_chat_id as string, lines.join("\n"), null);
+      const keyboard: InlineButton[][] = [
+        [{ text: t("tg_btn_open_panel"), url: `${APP_URL}/panel` }],
+      ];
+      await sendTelegramMessage(
+        w.telegram_chat_id as string,
+        lines.join("\n"),
+        null,
+        keyboard
+      );
     }
   }
 

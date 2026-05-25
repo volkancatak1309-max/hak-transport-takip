@@ -83,6 +83,7 @@ export function PanelClient({ active, past, defaultPlate, telegram, todayAssignm
   const t = useTranslations("panel");
   const tc = useTranslations("common");
   const tOffline = useTranslations("offline");
+  const tAssign = useTranslations("assignments");
   const locale = useLocale();
   const router = useRouter();
   const [startOpen, setStartOpen] = useState(false);
@@ -373,6 +374,15 @@ export function PanelClient({ active, past, defaultPlate, telegram, todayAssignm
       </div>
 
       <TodayAssignments assignments={todayAssignments} />
+
+      <div className="flex justify-center">
+        <Link
+          href="/panel/seferler"
+          className="text-sm font-medium text-primary hover:underline flex items-center gap-1"
+        >
+          {tAssign("see_all")} <ArrowRight className="size-3" />
+        </Link>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="md:col-span-3">

@@ -89,6 +89,86 @@ export type AssignmentWithWorker = Assignment & {
   worker_plate: string | null;
 };
 
+export type ApprovalStatus = "pending" | "approved" | "rejected";
+export type FuelType = "diesel" | "benzin" | "lpg" | "elektro";
+export type ExpenseCategory = "maut" | "verpflegung" | "parking" | "diesel" | "sonstige";
+export type MaintenanceType =
+  | "oil_change"
+  | "inspection"
+  | "tire_change"
+  | "brake_check"
+  | "general_service"
+  | "repair"
+  | "other";
+
+export type FuelEntry = {
+  id: string;
+  worker_id: string | null;
+  vehicle_plate: string;
+  fueled_at: string;
+  liters: number;
+  total_cost: number;
+  cost_per_liter: number;
+  odometer_km: number;
+  fuel_type: FuelType;
+  station_name: string | null;
+  receipt_path: string;
+  receipt_url: string | null;
+  status: ApprovalStatus;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejection_reason: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FuelEntryWithWorker = FuelEntry & {
+  worker_name: string;
+  consumption?: number | null; // L/100km vs the previous fill for this vehicle
+};
+
+export type ExpenseEntry = {
+  id: string;
+  worker_id: string | null;
+  spent_at: string;
+  category: ExpenseCategory;
+  amount: number;
+  description: string | null;
+  vehicle_plate: string | null;
+  receipt_path: string;
+  receipt_url: string | null;
+  status: ApprovalStatus;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejection_reason: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExpenseEntryWithWorker = ExpenseEntry & {
+  worker_name: string;
+};
+
+export type VehicleMaintenance = {
+  id: string;
+  vehicle_plate: string;
+  serviced_at: string;
+  service_type: MaintenanceType;
+  odometer_km: number;
+  cost: number | null;
+  description: string | null;
+  next_service_km: number | null;
+  next_service_date: string | null;
+  receipt_path: string | null;
+  receipt_url: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type SessionData = {
   worker_id?: string;
   name?: string;

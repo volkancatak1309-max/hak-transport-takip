@@ -73,3 +73,59 @@ export const createAssignmentSchema = z.object({
   package_count: z.coerce.number().int().min(0).max(100000).optional().nullable(),
   notes: z.string().trim().max(500).optional().nullable(),
 });
+
+// European decimals: accept "89,50" as well as "89.50".
+const euroNumber = z.preprocess((v) => {
+  if (typeof v === "string") {
+    const n = Number(v.replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : v;
+  }
+  return v;
+}, z.number().positive("errAmount"));
+
+const euroNumberOptional = z.preprocess((v) => {
+  if (v === "" || v === null || v === undefined) return undefined;
+  if (typeof v === "string") {
+    const n = Number(v.replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : v;
+  }
+  return v;
+}, z.number().nonnegative().optional());
+
+export const createFuelSchema = z.object({
+  vehicle_plate: z.string().trim().min(1, "errPlate").max(20),
+  fueled_at: z.string().min(1),
+  liters: euroNumber,
+  total_cost: euroNumber,
+  odometer_km: z.coerce.number().int().positive("errKm"),
+  fuel_type: z.enum(["diesel", "benzin", "lpg", "elektro"]),
+  station_name: z.string().trim().max(120).optional().nullable(),
+  notes: z.string().trim().max(500).optional().nullable(),
+});
+
+export const createExpenseSchema = z.object({
+  spent_at: z.string().min(1),
+  category: z.enum(["maut", "verpflegung", "parking", "diesel", "sonstige"]),
+  amount: euroNumber,
+  description: z.string().trim().max(300).optional().nullable(),
+  vehicle_plate: z.string().trim().max(20).optional().nullable(),
+});
+
+export const createMaintenanceSchema = z.object({
+  vehicle_plate: z.string().trim().min(1, "errPlate").max(20),
+  serviced_at: z.string().min(1),
+  service_type: z.enum([
+    "oil_change",
+    "inspection",
+    "tire_change",
+    "brake_check",
+    "general_service",
+    "repair",
+    "other",
+  ]),
+  odometer_km: z.coerce.number().int().positive("errKm"),
+  cost: euroNumberOptional,
+  description: z.string().trim().max(500).optional().nullable(),
+  next_service_km: z.coerce.number().int().positive().optional().nullable(),
+  next_service_date: z.string().optional().nullable(),
+});

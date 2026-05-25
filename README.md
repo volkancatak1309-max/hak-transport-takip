@@ -179,6 +179,19 @@ Sefer atama sistemi için Supabase SQL Editor'da `db/migrations/006_assignments.
 
 > `006` çalıştırılmadan `/admin/seferler`, `/panel` sefer kartı ve `/panel/seferler` takvimi 500 verir. Migration tamamen additive; mevcut tablolara dokunmaz.
 
+### Faz 4+ migration (yakıt / masraf / bakım) — ⚠️ DEPLOY ÖNCESİ ÇALIŞTIR
+
+Yakıt, masraf, bakım ve CO₂ modülleri için Supabase SQL Editor'da `db/migrations/007_fuel_expenses.sql` içeriğini çalıştır. Eklenenler:
+
+- `fuel_entries`, `expense_entries`, `vehicle_maintenance` tabloları (onay akışı: `pending → approved/rejected`, fiş foto path'i, audit)
+- İndexler + `updated_at` trigger'ları
+- **Supabase Storage bucket'ları** (private, 5 MB, yalnızca resim): `fuel-receipts`, `expense-receipts`, `maintenance-receipts`
+
+> Migration storage bucket'larını da oluşturur. İstersen Supabase Dashboard → Storage'dan manuel de açabilirsin (private, 5 MB, `image/jpeg,png,webp,heic`). Fiş yükleme/okuma sunucu tarafında **service-role** ile yapılır (RLS bypass), bu yüzden ek object policy gerekmez.
+> `007` çalıştırılmadan `/panel/yakit`, `/panel/masraflar`, `/admin/yakit`, `/admin/masraflar` 500 verir. Tamamen additive.
+
+> İsteğe bağlı env: `NEXT_PUBLIC_APP_URL` (Telegram "Panele Git" butonları için; tanımsızsa vercel.app varsayılanı).
+
 ## Telegram Bot Kurulumu (tek seferlik — Volkan)
 
 1. **Vercel → Settings → Environment Variables** (Production + Preview):

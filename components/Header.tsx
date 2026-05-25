@@ -72,11 +72,17 @@ export function Header({ user }: Props) {
       ? [
           { href: "/admin", label: t("admin") },
           { href: "/admin/seferler", label: t("assignments") },
+          { href: "/admin/yakit", label: t("fuel") },
+          { href: "/admin/masraflar", label: t("expenses") },
           { href: "/admin/harita", label: t("map") },
           { href: "/admin/workers", label: t("workers") },
           { href: "/admin/telegram", label: t("telegram") },
         ]
-      : [{ href: "/panel", label: t("panel") }]
+      : [
+          { href: "/panel", label: t("panel") },
+          { href: "/panel/yakit", label: t("fuel") },
+          { href: "/panel/masraflar", label: t("expenses") },
+        ]
     : [];
 
   return (

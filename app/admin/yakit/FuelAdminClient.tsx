@@ -33,10 +33,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { ReceiptLightbox } from "@/components/ReceiptLightbox";
 import { formatDate, viennaDayKey } from "@/lib/format";
 import { APPROVAL_BADGE } from "@/lib/status-ui";
 import type { FuelEntryWithWorker, ApprovalStatus } from "@/lib/types";
-import { approveFuelEntry, rejectFuelEntry, generateCO2Report } from "@/app/actions/fuel";
+import {
+  approveFuelEntry,
+  rejectFuelEntry,
+  generateCO2Report,
+  getFuelReceiptUrl,
+} from "@/app/actions/fuel";
 import { downloadCO2Report } from "@/components/pdf/CO2Report";
 
 type Props = { entries: FuelEntryWithWorker[] };
@@ -224,13 +230,14 @@ export function FuelAdminClient({ entries }: Props) {
                 <TableHead className="text-right">{t("total_cost")}</TableHead>
                 <TableHead className="text-right">€/L</TableHead>
                 <TableHead className="text-right">L/100</TableHead>
+                <TableHead>{t("receipt")}</TableHead>
                 {tab === "pending" && <TableHead className="text-right">{t("action")}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-6 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={tab === "pending" ? 9 : 8} className="py-6 text-center text-sm text-muted-foreground">
                     {t("no_entries")}
                   </TableCell>
                 </TableRow>
@@ -245,6 +252,24 @@ export function FuelAdminClient({ entries }: Props) {
                     <TableCell className="text-right nums">{Number(e.cost_per_liter).toFixed(3).replace(".", ",")}</TableCell>
                     <TableCell className="text-right nums">
                       {e.consumption != null ? eur(e.consumption) : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <ReceiptLightbox
+                        getUrl={() => getFuelReceiptUrl(e.id)}
+                        title={`${formatDate(e.fueled_at, locale)} · ${e.vehicle_plate}`}
+                        className="whitespace-nowrap text-xs font-medium text-primary hover:underline"
+                        info={
+                          <>
+                            <p>{e.worker_name} · {e.vehicle_plate}</p>
+                            <p className="nums">
+                              {eur(Number(e.liters))} L · {eur(Number(e.total_cost))} € ·{" "}
+                              {Number(e.cost_per_liter).toFixed(3).replace(".", ",")} €/L
+                            </p>
+                          </>
+                        }
+                      >
+                        📎 {t("receipt")}
+                      </ReceiptLightbox>
                     </TableCell>
                     {tab === "pending" && (
                       <TableCell className="text-right">

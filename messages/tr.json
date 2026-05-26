@@ -129,6 +129,8 @@
     "add": "Bakım Ekle",
     "none": "Bakım kaydı yok",
     "due": "Yaklaşıyor",
+    "receipt": "Fiş",
+    "photo_optional": "Fiş Fotoğrafı (opsiyonel)",
     "plate": "Plaka",
     "date": "Tarih",
     "odometer": "Kilometre",

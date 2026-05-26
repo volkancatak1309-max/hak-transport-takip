@@ -5,8 +5,11 @@ import { getTranslations } from "next-intl/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { createMaintenanceSchema } from "@/lib/validation";
+import { uploadReceipt, signedReceiptUrl } from "@/lib/storage";
 import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
 import type { VehicleMaintenance, MaintenanceType } from "@/lib/types";
+
+const BUCKET = "maintenance-receipts";
 
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL || "https://hak-transport-takip.vercel.app";
@@ -25,12 +28,30 @@ export type MaintenanceInput = {
 export type MaintenanceResult = { ok: boolean; error?: string; id?: string };
 
 export async function createMaintenance(
-  data: MaintenanceInput
+  formData: FormData
 ): Promise<MaintenanceResult> {
   const session = await requireAdmin();
-  const parsed = createMaintenanceSchema.safeParse(data);
+  const parsed = createMaintenanceSchema.safeParse({
+    vehicle_plate: formData.get("vehicle_plate"),
+    serviced_at: formData.get("serviced_at"),
+    service_type: formData.get("service_type"),
+    odometer_km: formData.get("odometer_km"),
+    cost: formData.get("cost") || null,
+    description: formData.get("description") || null,
+    next_service_km: formData.get("next_service_km") || null,
+    next_service_date: formData.get("next_service_date") || null,
+  });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
+  }
+
+  // Receipt is optional for maintenance.
+  let receipt_path: string | null = null;
+  const file = formData.get("receipt") as File | null;
+  if (file && file.size > 0) {
+    const up = await uploadReceipt(BUCKET, session.worker_id!, file);
+    if (!up.ok) return { ok: false, error: up.error };
+    receipt_path = up.path;
   }
 
   const { data: inserted, error } = await supabaseAdmin
@@ -46,6 +67,7 @@ export async function createMaintenance(
       next_service_date: parsed.data.next_service_date
         ? new Date(parsed.data.next_service_date).toISOString()
         : null,
+      receipt_path,
       created_by: session.worker_id,
     })
     .select("id")
@@ -54,6 +76,18 @@ export async function createMaintenance(
   if (error || !inserted) return { ok: false, error: error?.message ?? "insert" };
   revalidatePath("/admin/yakit");
   return { ok: true, id: inserted.id as string };
+}
+
+/** Signed URL for a maintenance receipt (admin only). */
+export async function getMaintenanceReceiptUrl(id: string): Promise<string | null> {
+  await requireAdmin();
+  const { data } = await supabaseAdmin
+    .from("vehicle_maintenance")
+    .select("receipt_path")
+    .eq("id", id)
+    .maybeSingle();
+  if (!data?.receipt_path) return null;
+  return signedReceiptUrl(BUCKET, data.receipt_path as string);
 }
 
 export async function getMaintenance(): Promise<VehicleMaintenance[]> {

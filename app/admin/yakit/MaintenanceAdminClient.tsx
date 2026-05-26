@@ -23,9 +23,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PhotoUpload } from "@/components/PhotoUpload";
+import { ReceiptLightbox } from "@/components/ReceiptLightbox";
 import { formatDate } from "@/lib/format";
 import type { VehicleMaintenance, MaintenanceType } from "@/lib/types";
-import { createMaintenance, type MaintenanceInput } from "@/app/actions/maintenance";
+import { createMaintenance, getMaintenanceReceiptUrl } from "@/app/actions/maintenance";
 
 const TYPES: MaintenanceType[] = [
   "oil_change",
@@ -53,37 +55,32 @@ export function MaintenanceAdminClient({ items, dueIds, plates }: Props) {
   const [open, setOpen] = useState(false);
   const [plate, setPlate] = useState(plates[0] ?? "");
   const [serviceType, setServiceType] = useState<MaintenanceType>("oil_change");
+  const [receipt, setReceipt] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
     const fd = new FormData(form);
-    const get = (k: string) => (fd.get(k) as string) || "";
-    const payload: MaintenanceInput = {
-      vehicle_plate: plate || get("vehicle_plate"),
-      serviced_at: get("serviced_at"),
-      service_type: serviceType,
-      odometer_km: Number(get("odometer_km")),
-      cost: get("cost") || null,
-      description: get("description") || null,
-      next_service_km: get("next_service_km") ? Number(get("next_service_km")) : null,
-      next_service_date: get("next_service_date") || null,
-    } as MaintenanceInput;
+    const plateVal = plates.length > 0 ? plate : (fd.get("vehicle_plate") as string) || "";
+    fd.set("vehicle_plate", plateVal);
+    fd.set("service_type", serviceType);
+    if (receipt) fd.set("receipt", receipt);
 
-    if (!payload.vehicle_plate || !payload.serviced_at || !payload.odometer_km) {
+    if (!plateVal || !fd.get("serviced_at") || !fd.get("odometer_km")) {
       toast.error(t("required"));
       return;
     }
     setBusy(true);
     try {
-      const res = await createMaintenance(payload);
+      const res = await createMaintenance(fd);
       if (!res.ok) {
         toast.error(t("save_error"));
         return;
       }
       toast.success(t("saved"));
       setOpen(false);
+      setReceipt(null);
       router.refresh();
     } finally {
       setBusy(false);
@@ -116,7 +113,24 @@ export function MaintenanceAdminClient({ items, dueIds, plates }: Props) {
                   {m.next_service_km ? ` · → ${m.next_service_km.toLocaleString(locale === "de" ? "de-AT" : "tr-TR")} km` : ""}
                 </p>
               </div>
-              {dueIds.includes(m.id) && <Badge variant="destructive">{t("due")}</Badge>}
+              <div className="flex items-center gap-2">
+                {m.receipt_path && (
+                  <ReceiptLightbox
+                    getUrl={() => getMaintenanceReceiptUrl(m.id)}
+                    title={`${m.vehicle_plate} · ${t(`type.${m.service_type}`)}`}
+                    className="whitespace-nowrap text-xs font-medium text-primary hover:underline"
+                    info={
+                      <p className="nums">
+                        {formatDate(m.serviced_at, locale)} ·{" "}
+                        {m.odometer_km.toLocaleString(locale === "de" ? "de-AT" : "tr-TR")} km
+                      </p>
+                    }
+                  >
+                    📎 {t("receipt")}
+                  </ReceiptLightbox>
+                )}
+                {dueIds.includes(m.id) && <Badge variant="destructive">{t("due")}</Badge>}
+              </div>
             </div>
           ))
         )}
@@ -185,6 +199,10 @@ export function MaintenanceAdminClient({ items, dueIds, plates }: Props) {
                 <Label htmlFor="next_service_date">{t("next_date")}</Label>
                 <Input id="next_service_date" name="next_service_date" type="date" className="h-11" />
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("photo_optional")}</Label>
+              <PhotoUpload onFile={setReceipt} />
             </div>
             <Button type="submit" className="w-full h-11" disabled={busy}>
               {busy && <Loader2 className="size-4 animate-spin" />}

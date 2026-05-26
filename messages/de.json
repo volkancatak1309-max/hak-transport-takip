@@ -129,6 +129,8 @@
     "add": "Wartung hinzufügen",
     "none": "Keine Wartungseinträge",
     "due": "Fällig",
+    "receipt": "Beleg",
+    "photo_optional": "Beleg-Foto (optional)",
     "plate": "Kennzeichen",
     "date": "Datum",
     "odometer": "Kilometerstand",

@@ -18,13 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { PhotoUpload } from "@/components/PhotoUpload";
+import { ReceiptLightbox } from "@/components/ReceiptLightbox";
 import { formatDate } from "@/lib/format";
 import { APPROVAL_BADGE } from "@/lib/status-ui";
 import type { ExpenseCategory, ExpenseEntryWithWorker } from "@/lib/types";
@@ -57,9 +52,6 @@ export function ExpenseDriverClient({ entries }: Props) {
   const [category, setCategory] = useState<ExpenseCategory>("maut");
   const [receipt, setReceipt] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-  const [detail, setDetail] = useState<ExpenseEntryWithWorker | null>(null);
-  const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
-
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!receipt) {
@@ -84,12 +76,6 @@ export function ExpenseDriverClient({ entries }: Props) {
     } finally {
       setBusy(false);
     }
-  }
-
-  async function openDetail(entry: ExpenseEntryWithWorker) {
-    setDetail(entry);
-    setReceiptUrl(null);
-    setReceiptUrl(await getExpenseReceiptUrl(entry.id));
   }
 
   return (
@@ -156,11 +142,25 @@ export function ExpenseDriverClient({ entries }: Props) {
             <p className="py-4 text-center text-sm text-muted-foreground">{t("no_entries")}</p>
           ) : (
             entries.map((e) => (
-              <button
+              <ReceiptLightbox
                 key={e.id}
-                type="button"
-                onClick={() => openDetail(e)}
+                getUrl={() => getExpenseReceiptUrl(e.id)}
+                title={`${CATEGORY_ICON[e.category]} ${t(`category.${e.category}`)}`}
                 className="flex w-full items-center justify-between gap-2 rounded-md border p-3 text-left"
+                info={
+                  <>
+                    <p className="nums">
+                      {formatDate(e.spent_at, locale)} ·{" "}
+                      {Number(e.amount).toFixed(2).replace(".", ",")} €
+                    </p>
+                    {e.description && <p className="text-muted-foreground">{e.description}</p>}
+                    {e.status === "rejected" && e.rejection_reason && (
+                      <p className="border-l-2 border-destructive/40 pl-3 text-destructive">
+                        {e.rejection_reason}
+                      </p>
+                    )}
+                  </>
+                }
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium">
@@ -171,39 +171,11 @@ export function ExpenseDriverClient({ entries }: Props) {
                   </p>
                 </div>
                 <Badge variant={APPROVAL_BADGE[e.status]}>{ta(e.status)}</Badge>
-              </button>
+              </ReceiptLightbox>
             ))
           )}
         </CardContent>
       </Card>
-
-      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {detail && `${CATEGORY_ICON[detail.category]} ${t(`category.${detail.category}`)}`}
-            </DialogTitle>
-          </DialogHeader>
-          {detail && (
-            <div className="space-y-3 text-sm">
-              <p className="nums">
-                {formatDate(detail.spent_at, locale)} · {Number(detail.amount).toFixed(2).replace(".", ",")} €
-              </p>
-              {detail.description && <p className="text-muted-foreground">{detail.description}</p>}
-              <Badge variant={APPROVAL_BADGE[detail.status]}>{ta(detail.status)}</Badge>
-              {detail.status === "rejected" && detail.rejection_reason && (
-                <p className="border-l-2 border-destructive/40 pl-3 text-destructive">{detail.rejection_reason}</p>
-              )}
-              {receiptUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={receiptUrl} alt="receipt" className="w-full rounded-md border" />
-              ) : (
-                <p className="text-xs text-muted-foreground">…</p>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

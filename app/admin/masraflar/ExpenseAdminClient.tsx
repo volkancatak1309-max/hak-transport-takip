@@ -32,6 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ReceiptLightbox } from "@/components/ReceiptLightbox";
 import { formatDate, viennaDayKey } from "@/lib/format";
 import { APPROVAL_BADGE } from "@/lib/status-ui";
 import type { ExpenseEntryWithWorker, ApprovalStatus } from "@/lib/types";
@@ -39,6 +40,7 @@ import {
   approveExpenseEntry,
   rejectExpenseEntry,
   generatePayrollExpenseCSV,
+  getExpenseReceiptUrl,
 } from "@/app/actions/expenses";
 import { CATEGORY_ICON } from "@/app/panel/masraflar/ExpenseDriverClient";
 
@@ -200,13 +202,14 @@ export function ExpenseAdminClient({ entries }: Props) {
                 <TableHead>{t("category.label")}</TableHead>
                 <TableHead>{t("description")}</TableHead>
                 <TableHead className="text-right">{t("amount")}</TableHead>
+                <TableHead>{t("receipt")}</TableHead>
                 {tab === "pending" && <TableHead className="text-right">{t("action")}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={tab === "pending" ? 7 : 6} className="py-6 text-center text-sm text-muted-foreground">
                     {t("no_entries")}
                   </TableCell>
                 </TableRow>
@@ -222,6 +225,22 @@ export function ExpenseAdminClient({ entries }: Props) {
                       {e.description ?? "—"}
                     </TableCell>
                     <TableCell className="text-right nums">{eur(Number(e.amount))} €</TableCell>
+                    <TableCell>
+                      <ReceiptLightbox
+                        getUrl={() => getExpenseReceiptUrl(e.id)}
+                        title={`${CATEGORY_ICON[e.category]} ${t(`category.${e.category}`)}`}
+                        className="whitespace-nowrap text-xs font-medium text-primary hover:underline"
+                        info={
+                          <>
+                            <p>{e.worker_name} · {formatDate(e.spent_at, locale)}</p>
+                            <p className="nums">{eur(Number(e.amount))} €</p>
+                            {e.description && <p className="text-muted-foreground">{e.description}</p>}
+                          </>
+                        }
+                      >
+                        📎 {t("receipt")}
+                      </ReceiptLightbox>
+                    </TableCell>
                     {tab === "pending" && (
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">

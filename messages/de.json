@@ -255,6 +255,7 @@
     "location_permission_needed": "Standortberechtigung für Karte erforderlich",
     "location_sharing": "Standort wird geteilt",
     "location_off": "Standort aus",
+    "location_paused": "Pause — Standortverfolgung gestoppt",
     "today_route": "Heutige Route",
     "no_route_data": "Keine Standortdaten für diese Schicht",
     "view_detail": "Details anzeigen",

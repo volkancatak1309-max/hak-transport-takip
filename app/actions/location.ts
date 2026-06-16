@@ -103,7 +103,12 @@ export async function recordLocation(input: {
     }
   }
 
-  // Link to the active shift if there is one
+  // LEGAL BACKSTOP: location may be persisted ONLY while a shift is active
+  // (ended_at IS NULL). If the worker has no open shift, we refuse to write any
+  // point — no matter how this was called (stray client interval, residual
+  // background tab, or an unload beacon firing after "End shift"). This is the
+  // server-side guarantee behind the signed worker consent: no tracking outside
+  // an active shift.
   const { data: activeShift } = await supabaseAdmin
     .from("time_entries")
     .select("id, started_at, break_minutes, plate, nine_hour_notified_at")
@@ -113,13 +118,15 @@ export async function recordLocation(input: {
     .limit(1)
     .maybeSingle();
 
-  if (activeShift) {
-    await maybeNotifyNineHours(
-      activeShift as ActiveShift,
-      session.name ?? "—",
-      session.plate ?? null
-    );
+  if (!activeShift) {
+    return { ok: true, skipped: true };
   }
+
+  await maybeNotifyNineHours(
+    activeShift as ActiveShift,
+    session.name ?? "—",
+    session.plate ?? null
+  );
 
   const accuracy =
     input.accuracy != null && Number.isFinite(Number(input.accuracy))
@@ -128,7 +135,7 @@ export async function recordLocation(input: {
 
   const { error } = await supabaseAdmin.from("driver_locations").insert({
     worker_id: workerId,
-    time_entry_id: activeShift?.id ?? null,
+    time_entry_id: activeShift.id,
     latitude: lat,
     longitude: lng,
     accuracy,

@@ -320,7 +320,7 @@ export function PanelClient({ active, past, defaultPlate, telegram, todayAssignm
                     {t("endShift")}
                   </Button>
                 </div>
-                <LocationTracker shiftId={active.id} />
+                <LocationTracker shiftId={active.id} paused={onBreak} />
                 <LenkzeitWarning
                   timeEntryId={active.id}
                   startedAt={active.started_at}

@@ -33,7 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ReceiptLightbox } from "@/components/ReceiptLightbox";
+import { ReceiptThumb } from "@/components/ReceiptThumb";
 import { formatDate, viennaDayKey } from "@/lib/format";
 import { APPROVAL_BADGE } from "@/lib/status-ui";
 import type { FuelEntryWithWorker, ApprovalStatus } from "@/lib/types";
@@ -41,7 +41,6 @@ import {
   approveFuelEntry,
   rejectFuelEntry,
   generateCO2Report,
-  getFuelReceiptUrl,
 } from "@/app/actions/fuel";
 import { downloadCO2Report } from "@/components/pdf/CO2Report";
 
@@ -254,10 +253,10 @@ export function FuelAdminClient({ entries }: Props) {
                       {e.consumption != null ? eur(e.consumption) : "—"}
                     </TableCell>
                     <TableCell>
-                      <ReceiptLightbox
-                        getUrl={() => getFuelReceiptUrl(e.id)}
+                      <ReceiptThumb
+                        url={e.receipt_url}
                         title={`${formatDate(e.fueled_at, locale)} · ${e.vehicle_plate}`}
-                        className="whitespace-nowrap text-xs font-medium text-primary hover:underline"
+                        emptyLabel={t("no_receipt")}
                         info={
                           <>
                             <p>{e.worker_name} · {e.vehicle_plate}</p>
@@ -267,9 +266,7 @@ export function FuelAdminClient({ entries }: Props) {
                             </p>
                           </>
                         }
-                      >
-                        📎 {t("receipt")}
-                      </ReceiptLightbox>
+                      />
                     </TableCell>
                     {tab === "pending" && (
                       <TableCell className="text-right">

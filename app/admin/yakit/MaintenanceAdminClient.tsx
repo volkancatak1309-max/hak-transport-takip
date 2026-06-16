@@ -24,10 +24,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PhotoUpload } from "@/components/PhotoUpload";
-import { ReceiptLightbox } from "@/components/ReceiptLightbox";
+import { ReceiptThumb } from "@/components/ReceiptThumb";
 import { formatDate } from "@/lib/format";
 import type { VehicleMaintenance, MaintenanceType } from "@/lib/types";
-import { createMaintenance, getMaintenanceReceiptUrl } from "@/app/actions/maintenance";
+import { createMaintenance } from "@/app/actions/maintenance";
 
 const TYPES: MaintenanceType[] = [
   "oil_change",
@@ -114,21 +114,17 @@ export function MaintenanceAdminClient({ items, dueIds, plates }: Props) {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                {m.receipt_path && (
-                  <ReceiptLightbox
-                    getUrl={() => getMaintenanceReceiptUrl(m.id)}
-                    title={`${m.vehicle_plate} · ${t(`type.${m.service_type}`)}`}
-                    className="whitespace-nowrap text-xs font-medium text-primary hover:underline"
-                    info={
-                      <p className="nums">
-                        {formatDate(m.serviced_at, locale)} ·{" "}
-                        {m.odometer_km.toLocaleString(locale === "de" ? "de-AT" : "tr-TR")} km
-                      </p>
-                    }
-                  >
-                    📎 {t("receipt")}
-                  </ReceiptLightbox>
-                )}
+                <ReceiptThumb
+                  url={m.receipt_url}
+                  title={`${m.vehicle_plate} · ${t(`type.${m.service_type}`)}`}
+                  emptyLabel={t("no_receipt")}
+                  info={
+                    <p className="nums">
+                      {formatDate(m.serviced_at, locale)} ·{" "}
+                      {m.odometer_km.toLocaleString(locale === "de" ? "de-AT" : "tr-TR")} km
+                    </p>
+                  }
+                />
                 {dueIds.includes(m.id) && <Badge variant="destructive">{t("due")}</Badge>}
               </div>
             </div>

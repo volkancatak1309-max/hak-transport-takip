@@ -5,7 +5,7 @@ import { getTranslations } from "next-intl/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { createMaintenanceSchema } from "@/lib/validation";
-import { uploadReceipt, signedReceiptUrl } from "@/lib/storage";
+import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storage";
 import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
 import type { VehicleMaintenance, MaintenanceType } from "@/lib/types";
 
@@ -97,7 +97,19 @@ export async function getMaintenance(): Promise<VehicleMaintenance[]> {
     .select("*")
     .order("serviced_at", { ascending: false })
     .limit(100);
-  return (data ?? []) as VehicleMaintenance[];
+  const rows = (data ?? []) as VehicleMaintenance[];
+  if (rows.length === 0) return [];
+
+  // Batch-sign receipt URLs once so the list can render thumbnails directly.
+  const urlMap = await signedReceiptUrls(
+    BUCKET,
+    rows.map((r) => r.receipt_path).filter(Boolean) as string[]
+  );
+
+  return rows.map((r) => ({
+    ...r,
+    receipt_url: r.receipt_path ? urlMap.get(r.receipt_path) ?? null : null,
+  }));
 }
 
 /** Services whose planned date is within 14 days or already past. */

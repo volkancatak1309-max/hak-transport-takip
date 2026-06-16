@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminFuelPage() {
   const session = await requireAdmin();
   const [entries, maint, due] = await Promise.all([
-    getFuelEntries(),
+    getFuelEntries({ withUrls: true }),
     getMaintenance(),
     getDueMaintenance(),
   ]);

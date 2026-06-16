@@ -53,3 +53,28 @@ export async function signedReceiptUrl(
     .createSignedUrl(path, expiresIn);
   return data?.signedUrl ?? null;
 }
+
+/**
+ * Batch-sign many receipt paths in a single request. Returns a Map keyed by the
+ * original path so callers can attach a signed URL to each row. Used to render
+ * receipt thumbnails for a whole list (e.g. the admin approvals table) without
+ * one round-trip per row. Paths that fail to sign are simply absent from the map.
+ */
+export async function signedReceiptUrls(
+  bucket: string,
+  paths: string[],
+  expiresIn = 3600
+): Promise<Map<string, string>> {
+  const unique = [...new Set(paths.filter(Boolean))];
+  const out = new Map<string, string>();
+  if (unique.length === 0) return out;
+
+  const { data } = await supabaseAdmin.storage
+    .from(bucket)
+    .createSignedUrls(unique, expiresIn);
+
+  for (const item of data ?? []) {
+    if (item.path && item.signedUrl) out.set(item.path, item.signedUrl);
+  }
+  return out;
+}

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminExpensesPage() {
   const session = await requireAdmin();
-  const entries = await getExpenseEntries();
+  const entries = await getExpenseEntries({ withUrls: true });
 
   return (
     <AppShell

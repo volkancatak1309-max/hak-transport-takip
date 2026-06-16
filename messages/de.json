@@ -117,6 +117,7 @@
     "stat_pending": "Ausstehend",
     "stat_top": "Höchste Spesen",
     "receipt": "Beleg",
+    "no_receipt": "Kein Beleg",
     "tg_new": "Neue Spesen (wartet auf Genehmigung)",
     "tg_btn_approvals": "📱 Spesen-Genehmigungen",
     "tg_approved": "Ihre Spesen wurden genehmigt",

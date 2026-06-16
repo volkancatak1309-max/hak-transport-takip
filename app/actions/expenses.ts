@@ -5,7 +5,7 @@ import { getTranslations } from "next-intl/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireWorker, requireAdmin } from "@/lib/session";
 import { createExpenseSchema } from "@/lib/validation";
-import { uploadReceipt, signedReceiptUrl } from "@/lib/storage";
+import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storage";
 import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
 import { formatDate } from "@/lib/format";
 import type { ExpenseEntry, ExpenseEntryWithWorker } from "@/lib/types";
@@ -177,6 +177,8 @@ export async function getExpenseReceiptUrl(id: string): Promise<string | null> {
 
 export async function getExpenseEntries(opts?: {
   mine?: boolean;
+  /** Attach a short-lived signed receipt URL to each row (for thumbnails). */
+  withUrls?: boolean;
 }): Promise<ExpenseEntryWithWorker[]> {
   const session = await requireWorker();
   const seeAll = !!session.is_admin && !opts?.mine;
@@ -197,9 +199,18 @@ export async function getExpenseEntries(opts?: {
     : { data: [] };
   const wmap = new Map((ws ?? []).map((w) => [w.id as string, w.name as string]));
 
+  // Batch-sign receipt URLs once so the list can render thumbnails directly.
+  const urlMap = opts?.withUrls
+    ? await signedReceiptUrls(
+        BUCKET,
+        rows.map((r) => r.receipt_path).filter(Boolean) as string[]
+      )
+    : null;
+
   return rows.map((r) => ({
     ...r,
     worker_name: r.worker_id ? wmap.get(r.worker_id) ?? "—" : "—",
+    receipt_url: urlMap ? urlMap.get(r.receipt_path) ?? null : r.receipt_url,
   }));
 }
 

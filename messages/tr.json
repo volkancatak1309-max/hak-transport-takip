@@ -117,6 +117,7 @@
     "stat_pending": "Onay bekleyen",
     "stat_top": "En çok masraf",
     "receipt": "Fiş",
+    "no_receipt": "Fiş yok",
     "tg_new": "Yeni Masraf (Onay Bekliyor)",
     "tg_btn_approvals": "📱 Masraf Onayları",
     "tg_approved": "Masrafınız Onaylandı",

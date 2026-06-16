@@ -1,12 +1,15 @@
+import { redirect } from "next/navigation";
 import { requireWorker } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { AppShell } from "@/components/AppShell";
 import { getFuelEntries } from "@/app/actions/fuel";
 import { FuelDriverClient } from "./FuelDriverClient";
+import { FUEL_ENABLED } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
 export default async function FuelPage() {
+  if (!FUEL_ENABLED) redirect("/panel");
   const session = await requireWorker();
   const entries = await getFuelEntries({ mine: true });
 

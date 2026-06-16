@@ -1,11 +1,14 @@
+import { redirect } from "next/navigation";
 import { requireWorker } from "@/lib/session";
 import { AppShell } from "@/components/AppShell";
 import { getExpenseEntries } from "@/app/actions/expenses";
 import { ExpenseDriverClient } from "./ExpenseDriverClient";
+import { EXPENSE_ENABLED } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
 export default async function ExpensesPage() {
+  if (!EXPENSE_ENABLED) redirect("/panel");
   const session = await requireWorker();
   const entries = await getExpenseEntries({ mine: true });
 

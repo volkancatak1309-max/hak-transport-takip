@@ -1,11 +1,14 @@
+import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/session";
 import { AppShell } from "@/components/AppShell";
 import { getExpenseEntries } from "@/app/actions/expenses";
 import { ExpenseAdminClient } from "./ExpenseAdminClient";
+import { EXPENSE_ENABLED } from "@/lib/features";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminExpensesPage() {
+  if (!EXPENSE_ENABLED) redirect("/admin");
   const session = await requireAdmin();
   const entries = await getExpenseEntries({ withUrls: true });
 

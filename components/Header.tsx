@@ -96,7 +96,7 @@ export function Header({ user }: Props) {
           >
             <Image
               src="/logo.png"
-              alt="HAK Transport"
+              alt="HAK61"
               width={120}
               height={34}
               priority

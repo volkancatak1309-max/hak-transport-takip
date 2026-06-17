@@ -1,6 +1,6 @@
 {
-  "name": "HAK Transport — Schicht & KM",
-  "short_name": "HAK Transport",
+  "name": "HAK61 — Schicht & KM",
+  "short_name": "HAK61",
   "description": "Çalışan vardiya ve kilometre takip sistemi",
   "start_url": "/",
   "display": "standalone",

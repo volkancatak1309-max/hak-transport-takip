@@ -150,7 +150,7 @@ export function DashboardShell({
           <Link href={user.isAdmin ? "/admin" : "/panel"} className="flex items-center gap-2">
             <Image
               src="/logo.png"
-              alt="HAK Transport"
+              alt="HAK61"
               width={120}
               height={32}
               priority
@@ -187,7 +187,7 @@ export function DashboardShell({
             <div className="flex h-16 items-center justify-between px-5">
               <Image
                 src="/logo.png"
-                alt="HAK Transport"
+                alt="HAK61"
                 width={120}
                 height={32}
                 className="h-7 w-auto dark:brightness-110"

@@ -1,6 +1,6 @@
-# HAK Transport — Schicht & KM
+# HAK61 — Schicht & KM
 
-HAK Transport GmbH için iki dilli (TR/DE) çalışan vardiya, mola ve kilometre takip web uygulaması.
+HAK61 GmbH için iki dilli (TR/DE) çalışan vardiya, mola ve kilometre takip web uygulaması.
 
 **Stack:** Next.js 16 (App Router) · TypeScript · Tailwind v4 · shadcn/ui (base-nova / Base UI) · Supabase · iron-session · next-intl · next-themes · Recharts · @react-pdf/renderer · Leaflet / react-leaflet
 

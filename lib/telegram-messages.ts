@@ -20,14 +20,14 @@ export function nineHourMessage(
   const plate = esc(p.plate);
   if (L(locale) === "de") {
     return (
-      "🚨 HAK Transport\n\n" +
+      "🚨 HAK61\n\n" +
       `<b>${name}</b> (${plate}) <b>${p.hours}</b> Stunden aktiv.\n\n` +
       "AZG § 9: maximal 10 Stunden täglich.\n" +
       "Bitte mit dem Fahrer Kontakt aufnehmen."
     );
   }
   return (
-    "🚨 HAK Transport\n\n" +
+    "🚨 HAK61\n\n" +
     `<b>${name}</b> (${plate}) <b>${p.hours}</b> saattir aktif.\n\n` +
     "AZG § 9: maksimum 10 saat günlük.\n" +
     "Lütfen şoförle iletişime geçin."
@@ -43,13 +43,13 @@ export function shiftStartedMessage(
   const plate = esc(p.plate);
   if (L(locale) === "de") {
     return (
-      "🟢 HAK Transport\n\n" +
+      "🟢 HAK61\n\n" +
       `<b>${name}</b> (${plate}) hat die Schicht begonnen.\n` +
       `🕐 Uhrzeit: <b>${p.time}</b>`
     );
   }
   return (
-    "🟢 HAK Transport\n\n" +
+    "🟢 HAK61\n\n" +
     `<b>${name}</b> (${plate}) vardiyayı başlattı.\n` +
     `🕐 Saat: <b>${p.time}</b>`
   );
@@ -67,7 +67,7 @@ export function shiftSummaryMessage(
       `🚚 Kilometer: <b>${p.km}</b> km\n` +
       `📦 Fracht: <b>${p.cargo}</b>\n` +
       `☕ Pause: <b>${p.breakMin}</b> Min\n\n` +
-      "Gute Arbeit 👋\n<i>HAK Transport</i>"
+      "Gute Arbeit 👋\n<i>HAK61</i>"
     );
   }
   return (
@@ -76,7 +76,7 @@ export function shiftSummaryMessage(
     `🚚 Kilometre: <b>${p.km}</b> km\n` +
     `📦 Kargo: <b>${p.cargo}</b>\n` +
     `☕ Mola: <b>${p.breakMin}</b> dk\n\n` +
-    "İyi çalışmalar 👋\n<i>HAK Transport</i>"
+    "İyi çalışmalar 👋\n<i>HAK61</i>"
   );
 }
 
@@ -86,12 +86,12 @@ export function lenkzeitMessage(locale: string | null): string {
     return (
       "⚠️ <b>Lenkzeit-Warnung</b>\n\n" +
       "4,5 Stunden Fahrt absolviert. <b>45 Min Pause</b> erforderlich.\n\n" +
-      "VO (EG) 561/2006\n<i>HAK Transport</i>"
+      "VO (EG) 561/2006\n<i>HAK61</i>"
     );
   }
   return (
     "⚠️ <b>Lenkzeit Uyarısı</b>\n\n" +
     "4.5 saat sürüş tamamlandı. <b>45 dk mola</b> yapma zamanı.\n\n" +
-    "EU 561/2006\n<i>HAK Transport</i>"
+    "EU 561/2006\n<i>HAK61</i>"
   );
 }

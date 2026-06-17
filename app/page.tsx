@@ -15,7 +15,7 @@ function LoginShell() {
       <div className="mb-8 flex flex-col items-center text-center">
         <Image
           src="/logo.png"
-          alt="HAK Transport"
+          alt="HAK61"
           width={180}
           height={50}
           priority
@@ -30,7 +30,7 @@ function LoginShell() {
       </div>
 
       <p className="mt-6 text-center text-xs text-text-tertiary">
-        HAK Transport · Wien
+        HAK61 · Wien
       </p>
     </div>
   );

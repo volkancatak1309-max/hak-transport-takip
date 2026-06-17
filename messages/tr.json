@@ -1,6 +1,6 @@
 {
   "common": {
-    "appName": "HAK Transport",
+    "appName": "HAK61",
     "tagline": "Saat & KM Takip",
     "logout": "Çıkış",
     "save": "Kaydet",
@@ -236,7 +236,7 @@
     "error": "İşlem başarısız, tekrar deneyin",
     "test_send": "Test Mesajı Gönder",
     "test_sent": "Test mesajı gönderildi",
-    "test_default": "Test mesajı ✅ HAK Transport bildirimleri çalışıyor.",
+    "test_default": "Test mesajı ✅ HAK61 bildirimleri çalışıyor.",
     "connected_users": "Bağlı Kullanıcılar",
     "no_users": "Henüz bağlı kullanıcı yok",
     "select_worker": "Çalışan seçin",
@@ -489,7 +489,7 @@
   },
   "pdf": {
     "title": "Vardiya Raporu",
-    "company": "HAK Transport GmbH",
+    "company": "HAK61 GmbH",
     "address": "Manstraße 21/1/5, 2333 Leopoldsdorf, Avusturya",
     "period": "Dönem",
     "generatedAt": "Üretim Zamanı",

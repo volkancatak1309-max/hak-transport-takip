@@ -10,10 +10,10 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "HAK Transport — Schicht & KM",
+  title: "HAK61 — Schicht & KM",
   description: "Çalışan vardiya ve kilometre takip sistemi",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "HAK Transport" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "HAK61" },
   icons: { apple: "/apple-touch-icon.png" },
 };
 

@@ -79,7 +79,7 @@ export function LenkzeitWarning({
     if (typeof Notification === "undefined") return;
     const fire = () => {
       try {
-        new Notification("HAK Transport", {
+        new Notification("HAK61", {
           body: t("violation_body"),
           icon: "/logo.png",
         });

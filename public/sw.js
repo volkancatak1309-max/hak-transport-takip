@@ -1,4 +1,4 @@
-// HAK Transport service worker.
+// HAK61 service worker.
 // Installable PWA + best-effort Background Sync trigger for the offline queue.
 // The actual replay happens in the client (IndexedDB queue flushed on the
 // `online` event or when this SW posts a `hak-flush` message), which keeps

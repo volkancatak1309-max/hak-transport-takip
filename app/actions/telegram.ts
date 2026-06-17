@@ -128,7 +128,7 @@ export async function sendTestMessage(
   if (!w?.telegram_chat_id) return { ok: false, error: "not_linked" };
 
   // Escape so arbitrary admin text can't break HTML parse_mode.
-  const html = `🔔 <b>HAK Transport — Test</b>\n\n${escapeHtml(body)}`;
+  const html = `🔔 <b>HAK61 — Test</b>\n\n${escapeHtml(body)}`;
   const ok = await sendTelegramMessage(w.telegram_chat_id as string, html);
   return ok ? { ok: true } : { ok: false, error: "send_failed" };
 }

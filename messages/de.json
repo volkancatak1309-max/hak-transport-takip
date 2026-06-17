@@ -1,6 +1,6 @@
 {
   "common": {
-    "appName": "HAK Transport",
+    "appName": "HAK61",
     "tagline": "Schicht & KM-Erfassung",
     "logout": "Abmelden",
     "save": "Speichern",
@@ -236,7 +236,7 @@
     "error": "Aktion fehlgeschlagen, bitte erneut versuchen",
     "test_send": "Testnachricht senden",
     "test_sent": "Testnachricht gesendet",
-    "test_default": "Testnachricht ✅ HAK Transport-Benachrichtigungen funktionieren.",
+    "test_default": "Testnachricht ✅ HAK61-Benachrichtigungen funktionieren.",
     "connected_users": "Verbundene Benutzer",
     "no_users": "Noch keine verbundenen Benutzer",
     "select_worker": "Mitarbeiter wählen",
@@ -489,7 +489,7 @@
   },
   "pdf": {
     "title": "Arbeitszeit-Bericht",
-    "company": "HAK Transport GmbH",
+    "company": "HAK61 GmbH",
     "address": "Manstraße 21/1/5, 2333 Leopoldsdorf, Österreich",
     "period": "Zeitraum",
     "generatedAt": "Erstellt am",

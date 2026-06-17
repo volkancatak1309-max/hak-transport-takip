@@ -58,7 +58,7 @@ function Doc({ data, title }: { data: CO2ReportData; title: string }) {
         <View style={styles.brandBox}>
           <Text style={styles.brandText}>HAK</Text>
         </View>
-        <Text style={styles.company}>HAK Transport GmbH</Text>
+        <Text style={styles.company}>HAK61 GmbH</Text>
         <Text style={styles.address}>Manstraße 21/1/5, 2333 Leopoldsdorf, Österreich</Text>
         <Text style={styles.coverTitle}>{title}</Text>
         <Text style={styles.coverMonth}>{data.monthLabel}</Text>

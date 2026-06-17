@@ -12,16 +12,16 @@ export const dynamic = "force-dynamic";
 const MSG = {
   linkedSuccess: (locale: string) =>
     locale === "de"
-      ? "✅ HAK Transport-Benachrichtigungen aktiviert!"
-      : "✅ HAK Transport bildirimleriniz aktif!",
+      ? "✅ HAK61-Benachrichtigungen aktiviert!"
+      : "✅ HAK61 bildirimleriniz aktif!",
   invalidCode:
     "⚠️ Kod geçersiz veya süresi dolmuş. Lütfen panelden yeni bir kod alın.\n" +
     "⚠️ Code ungültig oder abgelaufen. Bitte holen Sie einen neuen Code im Panel.",
   needCode:
-    "Lütfen HAK Transport panelinden eşleştirme kodunuzu alın.\n" +
-    "Bitte holen Sie Ihren Verknüpfungscode aus dem HAK Transport-Panel.",
+    "Lütfen HAK61 panelinden eşleştirme kodunuzu alın.\n" +
+    "Bitte holen Sie Ihren Verknüpfungscode aus dem HAK61-Panel.",
   help:
-    "<b>HAK Transport</b>\n\n" +
+    "<b>HAK61</b>\n\n" +
     "Bu bot vardiya ve Lenkzeit bildirimleri gönderir.\n" +
     "Bağlamak için panelden kodunuzu alıp <code>/start &lt;kod&gt;</code> yazın.\n\n" +
     "Dieser Bot sendet Schicht- und Lenkzeit-Benachrichtigungen.\n" +

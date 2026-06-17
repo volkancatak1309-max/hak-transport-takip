@@ -32,6 +32,7 @@ import {
   formatDuration,
 } from "@/lib/format";
 import { toggleActiveAction, resetPinAction } from "../../../actions/workers";
+import { KmEditButton } from "@/components/KmEditButton";
 import type { Worker, TimeEntry } from "@/lib/types";
 
 const RouteMap = dynamic(
@@ -245,6 +246,7 @@ export function WorkerDetailClient({
                     <TableHead>{ta("tblCargo")}</TableHead>
                     <TableHead>{ta("tblPlate")}</TableHead>
                     <TableHead>{ta("tblNote")}</TableHead>
+                    <TableHead className="text-right">{ta("tblActions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -266,6 +268,9 @@ export function WorkerDetailClient({
                         <TableCell className="nums">{e.plate ?? "—"}</TableCell>
                         <TableCell className="max-w-[200px] truncate" title={e.notes ?? ""}>
                           {e.notes ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <KmEditButton entryId={e.id} startKm={e.start_km} endKm={e.end_km} />
                         </TableCell>
                       </TableRow>
                     );

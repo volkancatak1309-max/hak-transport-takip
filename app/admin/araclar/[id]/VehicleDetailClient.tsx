@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/UserAvatar";
+import { KmEditButton } from "@/components/KmEditButton";
 import { STATUS_STYLE } from "@/lib/vehicle-ui";
 import { formatDate, formatTime } from "@/lib/format";
 import type { VehicleDetail } from "@/lib/vehicles";
@@ -175,6 +176,7 @@ export function VehicleDetailClient({ detail }: { detail: VehicleDetail }) {
                 <div className="nums shrink-0 text-right text-sm">
                   {r.km !== null ? `${km(r.km)} km` : "—"}
                 </div>
+                <KmEditButton entryId={r.id} startKm={r.start_km} endKm={r.end_km} />
               </li>
             ))}
           </ul>

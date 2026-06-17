@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { getLocale } from "@/i18n/request";
 import { Providers } from "@/components/providers";
 import { Toaster } from "@/components/ui/sonner";
+import { Splash } from "@/components/Splash";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -41,6 +42,7 @@ export default async function RootLayout({
       <body className="min-h-screen bg-background text-foreground">
         <Providers>
           <NextIntlClientProvider locale={locale} messages={messages} timeZone="Europe/Vienna">
+            <Splash />
             {children}
             <Toaster position="bottom-right" richColors closeButton duration={3000} />
           </NextIntlClientProvider>

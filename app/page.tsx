@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { useTranslations } from "next-intl";
-import Image from "next/image";
 import { getSession } from "@/lib/session";
 import { LoginForm } from "./LoginForm";
+import { BrandLogo } from "@/components/BrandLogo";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -13,14 +13,7 @@ function LoginShell() {
   return (
     <div className="w-full max-w-[400px] page-enter">
       <div className="mb-8 flex flex-col items-center text-center">
-        <Image
-          src="/logo.png"
-          alt="HAK61"
-          width={180}
-          height={50}
-          priority
-          className="mb-6 h-10 w-auto dark:brightness-110"
-        />
+        <BrandLogo height={40} className="mb-6" />
         <h1 className="text-xl font-semibold tracking-[-0.01em]">{t("title")}</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>

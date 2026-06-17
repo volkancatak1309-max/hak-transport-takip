@@ -43,8 +43,8 @@ export function Splash() {
         <Image
           src="/splash.webp"
           alt="HAK61 GmbH"
-          width={400}
-          height={313}
+          width={920}
+          height={717}
           priority
           className="h-auto w-[80vw] max-w-[460px]"
         />

@@ -263,7 +263,12 @@
     "no_route_data": "Keine Standortdaten für diese Schicht",
     "view_detail": "Details anzeigen",
     "start_point": "Start",
-    "end_point": "Letzte Position"
+    "end_point": "Letzte Position",
+    "live_title": "Live-Tracking",
+    "drivers_title": "Aktive Fahrer",
+    "kpi_active": "Aktive Schichten",
+    "kpi_on_map": "Auf Karte",
+    "kpi_longest": "Längste aktiv"
   },
   "offline": {
     "online": "Online",

@@ -1,7 +1,8 @@
+import { getTranslations } from "next-intl/server";
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
-import { AppShell } from "@/components/AppShell";
-import { HaritaClient } from "./HaritaClient";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
+import { LiveTrackingClient } from "./LiveTrackingClient";
 import type { ActiveDriver } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -101,18 +102,38 @@ export default async function HaritaPage() {
       (routeErr ? ` routeErr=${routeErr.message}` : "")
   );
 
+  // Lightweight KPIs from the same data — no extra logic, demo-ready summary.
+  const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  let longestMs = 0;
+  let overLimit = 0;
+  for (const s of shifts) {
+    const ms = nowMs - new Date(s.started_at).getTime();
+    if (ms > longestMs) longestMs = ms;
+    if (ms > NINE_HOURS_MS) overLimit++;
+  }
+
+  const t = await getTranslations("map");
+
   return (
-    <AppShell
+    <DashboardShell
       user={{
         id: session.worker_id!,
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
       }}
+      title={t("live_title")}
     >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
-        <HaritaClient drivers={drivers} />
-      </div>
-    </AppShell>
+      <LiveTrackingClient
+        drivers={drivers}
+        summary={{
+          activeShifts: shifts.length,
+          onMap: drivers.length,
+          longestMs,
+          overLimit,
+        }}
+      />
+    </DashboardShell>
   );
 }

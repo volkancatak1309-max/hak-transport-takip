@@ -263,7 +263,12 @@
     "no_route_data": "Bu vardiya için konum verisi yok",
     "view_detail": "Detayını gör",
     "start_point": "Başlangıç",
-    "end_point": "Son konum"
+    "end_point": "Son konum",
+    "live_title": "Canlı Takip",
+    "drivers_title": "Aktif Şoförler",
+    "kpi_active": "Aktif Vardiya",
+    "kpi_on_map": "Haritada",
+    "kpi_longest": "En Uzun Aktif"
   },
   "offline": {
     "online": "Çevrimiçi",

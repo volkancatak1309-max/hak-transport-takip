@@ -6,10 +6,15 @@
 @theme {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --color-brand: oklch(0.68 0.18 45);
-  --color-brand-hover: oklch(0.73 0.18 45);
+  /* Brand accent = claret. Kept as a Tailwind color so existing utilities and
+     the Leaflet fleet markers (var(--color-brand)) keep working. */
+  --color-brand: var(--accent-claret);
+  --color-brand-hover: var(--accent-claret-hover);
   --color-brand-fg: oklch(1 0 0);
-  --color-brand-soft: oklch(0.96 0.04 60);
+  --color-brand-soft: var(--accent-claret-soft);
+  /* Sky accent — live/status indicators, links. */
+  --color-sky: var(--accent-sky);
+  --color-surface-2: var(--surface-2);
 }
 
 html,
@@ -20,6 +25,11 @@ body {
 
 @theme inline {
   --font-heading: var(--font-sans);
+  --color-accent-claret: var(--accent-claret);
+  --color-accent-sky: var(--accent-sky);
+  --color-surface: var(--card);
+  --color-text-secondary: var(--muted-foreground);
+  --color-text-tertiary: var(--text-tertiary);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -58,73 +68,105 @@ body {
   --radius-2xl: calc(var(--radius) * 1.8);
 }
 
+/* ============================================================================
+   HAK61 design tokens — single source of truth.
+   Neutral gray/dark base + minimal claret (#a01a33) & sky (#33b1e1) accents.
+   Every value is defined for BOTH themes; components never hardcode color.
+   ============================================================================ */
+
 :root {
-  --background: oklch(0.99 0.005 80);
-  --foreground: oklch(0.22 0.04 250);
+  /* Light theme (neutral, slightly cool) */
+  --background: oklch(0.985 0.002 256);
+  --foreground: oklch(0.235 0.02 262);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.04 250);
+  --card-foreground: oklch(0.235 0.02 262);
+  --surface-2: oklch(0.975 0.003 256);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.04 250);
-  --primary: oklch(0.68 0.18 45);
+  --popover-foreground: oklch(0.235 0.02 262);
+
+  /* Accents */
+  --accent-claret: oklch(0.52 0.19 16);
+  --accent-claret-hover: oklch(0.47 0.19 16);
+  --accent-claret-soft: oklch(0.52 0.19 16 / 12%);
+  --accent-sky: oklch(0.62 0.13 233);
+  --accent-sky-soft: oklch(0.62 0.13 233 / 12%);
+
+  --primary: var(--accent-claret);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.96 0.005 250);
-  --secondary-foreground: oklch(0.22 0.04 250);
-  --muted: oklch(0.96 0.005 250);
-  --muted-foreground: oklch(0.5 0.02 250);
-  --accent: oklch(0.96 0.04 60);
-  --accent-foreground: oklch(0.22 0.04 250);
-  --destructive: oklch(0.58 0.22 27);
-  --border: oklch(0.92 0.005 250);
-  --input: oklch(0.92 0.005 250);
-  --ring: oklch(0.68 0.18 45);
-  --chart-1: oklch(0.68 0.18 45);
-  --chart-2: oklch(0.5 0.12 250);
-  --chart-3: oklch(0.6 0.15 145);
-  --chart-4: oklch(0.55 0.14 280);
-  --chart-5: oklch(0.65 0.16 0);
-  --radius: 0.5rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.22 0.04 250);
-  --sidebar-primary: oklch(0.68 0.18 45);
+  --secondary: oklch(0.965 0.003 256);
+  --secondary-foreground: oklch(0.235 0.02 262);
+  --muted: oklch(0.965 0.003 256);
+  --muted-foreground: oklch(0.5 0.016 262);
+  --text-tertiary: oklch(0.62 0.012 262);
+  --accent: oklch(0.965 0.003 256);
+  --accent-foreground: oklch(0.235 0.02 262);
+  --destructive: oklch(0.55 0.21 25);
+  --border: oklch(0.915 0.004 256);
+  --input: oklch(0.915 0.004 256);
+  --ring: var(--accent-claret);
+
+  --chart-1: var(--accent-claret);
+  --chart-2: var(--accent-sky);
+  --chart-3: oklch(0.6 0.13 160);
+  --chart-4: oklch(0.6 0.14 280);
+  --chart-5: oklch(0.65 0.15 50);
+
+  --radius: 0.875rem;
+
+  --sidebar: oklch(0.985 0.002 256);
+  --sidebar-foreground: oklch(0.235 0.02 262);
+  --sidebar-primary: var(--accent-claret);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.96 0.04 60);
-  --sidebar-accent-foreground: oklch(0.22 0.04 250);
-  --sidebar-border: oklch(0.92 0.005 250);
-  --sidebar-ring: oklch(0.68 0.18 45);
+  --sidebar-accent: var(--accent-claret-soft);
+  --sidebar-accent-foreground: var(--accent-claret);
+  --sidebar-border: oklch(0.915 0.004 256);
+  --sidebar-ring: var(--accent-claret);
 }
 
 .dark {
-  --background: oklch(0.16 0.02 250);
-  --foreground: oklch(0.96 0.005 250);
-  --card: oklch(0.21 0.025 250);
-  --card-foreground: oklch(0.96 0.005 250);
-  --popover: oklch(0.21 0.025 250);
-  --popover-foreground: oklch(0.96 0.005 250);
-  --primary: oklch(0.73 0.18 45);
-  --primary-foreground: oklch(0.16 0.02 250);
-  --secondary: oklch(0.27 0.025 250);
-  --secondary-foreground: oklch(0.96 0.005 250);
-  --muted: oklch(0.27 0.025 250);
-  --muted-foreground: oklch(0.68 0.02 250);
-  --accent: oklch(0.3 0.04 45);
-  --accent-foreground: oklch(0.96 0.005 250);
-  --destructive: oklch(0.65 0.2 27);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.73 0.18 45);
-  --chart-1: oklch(0.73 0.18 45);
-  --chart-2: oklch(0.7 0.12 250);
-  --chart-3: oklch(0.7 0.15 145);
-  --chart-4: oklch(0.65 0.14 280);
-  --chart-5: oklch(0.7 0.16 0);
-  --sidebar: oklch(0.21 0.025 250);
-  --sidebar-foreground: oklch(0.96 0.005 250);
-  --sidebar-primary: oklch(0.73 0.18 45);
-  --sidebar-primary-foreground: oklch(0.16 0.02 250);
-  --sidebar-accent: oklch(0.3 0.04 45);
-  --sidebar-accent-foreground: oklch(0.96 0.005 250);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.73 0.18 45);
+  /* Dark theme — DEFAULT. Near-black neutral, layered surfaces. */
+  --background: oklch(0.165 0.006 256);
+  --foreground: oklch(0.975 0.003 256);
+  --card: oklch(0.205 0.007 256);
+  --card-foreground: oklch(0.975 0.003 256);
+  --surface-2: oklch(0.245 0.008 256);
+  --popover: oklch(0.205 0.007 256);
+  --popover-foreground: oklch(0.975 0.003 256);
+
+  --accent-claret: oklch(0.58 0.2 16);
+  --accent-claret-hover: oklch(0.64 0.2 16);
+  --accent-claret-soft: oklch(0.58 0.2 16 / 16%);
+  --accent-sky: oklch(0.74 0.13 233);
+  --accent-sky-soft: oklch(0.74 0.13 233 / 16%);
+
+  --primary: var(--accent-claret);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.245 0.008 256);
+  --secondary-foreground: oklch(0.975 0.003 256);
+  --muted: oklch(0.245 0.008 256);
+  --muted-foreground: oklch(0.72 0.012 256);
+  --text-tertiary: oklch(0.55 0.012 256);
+  --accent: oklch(0.245 0.008 256);
+  --accent-foreground: oklch(0.975 0.003 256);
+  --destructive: oklch(0.62 0.2 25);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: var(--accent-claret);
+
+  --chart-1: var(--accent-claret);
+  --chart-2: var(--accent-sky);
+  --chart-3: oklch(0.68 0.13 160);
+  --chart-4: oklch(0.66 0.14 280);
+  --chart-5: oklch(0.72 0.15 50);
+
+  --sidebar: oklch(0.185 0.006 256);
+  --sidebar-foreground: oklch(0.975 0.003 256);
+  --sidebar-primary: var(--accent-claret);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: var(--accent-claret-soft);
+  --sidebar-accent-foreground: oklch(0.78 0.15 16);
+  --sidebar-border: oklch(1 0 0 / 9%);
+  --sidebar-ring: var(--accent-claret);
 }
 
 @layer base {
@@ -174,6 +216,34 @@ body {
     font-variant-numeric: tabular-nums;
     font-family: var(--font-mono), ui-monospace, monospace;
   }
+  /* Live status dot — sky accent, soft (non-jarring) pulse. */
+  .live-dot {
+    position: relative;
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background: var(--accent-sky);
+  }
+  .live-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: var(--accent-sky);
+    animation: live-ping 2200ms cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
+  }
+  /* Premium layered elevation for floating surfaces (dialog/popover/dropdown). */
+  .elevate {
+    box-shadow:
+      0 1px 2px oklch(0 0 0 / 0.18),
+      0 8px 24px oklch(0 0 0 / 0.16);
+  }
+}
+
+@keyframes live-ping {
+  0% { transform: scale(1); opacity: 0.5; }
+  70%, 100% { transform: scale(2.4); opacity: 0; }
 }
 
 /* Leaflet custom fleet marker */
@@ -186,7 +256,7 @@ body {
   height: 36px;
   border-radius: 9999px;
   background: var(--color-brand);
-  border: 3px solid oklch(0.22 0.04 250);
+  border: 3px solid var(--card);
   color: #fff;
   display: flex;
   align-items: center;

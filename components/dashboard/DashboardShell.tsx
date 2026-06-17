@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   MapPinned,
   Route,
+  Truck,
   Users,
   Send,
   Fuel,
@@ -82,6 +83,7 @@ export function DashboardShell({
     ? [
         { href: "/admin", label: t("admin"), icon: LayoutDashboard },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
+        { href: "/admin/araclar", label: t("vehicles"), icon: Truck },
         { href: "/admin/seferler", label: t("assignments"), icon: Route },
         ...(FUEL_ENABLED ? [{ href: "/admin/yakit", label: t("fuel"), icon: Fuel }] : []),
         ...(EXPENSE_ENABLED

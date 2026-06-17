@@ -19,6 +19,7 @@ import {
   startShiftAction,
   endShiftAction,
   addBreakMinutesAction,
+  startBreakAction,
 } from "../actions/shift";
 import {
   formatDuration,
@@ -46,6 +47,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -70,24 +78,34 @@ type Totals = {
   shiftCount: number;
 };
 
+type VehicleOption = { id: string; plate: string; make: string | null; model: string | null };
+
 type Props = {
   active: TimeEntry | null;
   past: TimeEntry[];
   defaultPlate: string;
+  vehicles: VehicleOption[];
   telegram: { linked: boolean; username: string | null };
   todayAssignments: AssignmentWithWorker[];
   totals: Totals;
 };
 
-export function PanelClient({ active, past, defaultPlate, telegram, todayAssignments, totals }: Props) {
+export function PanelClient({ active, past, defaultPlate, vehicles, telegram, todayAssignments, totals }: Props) {
   const t = useTranslations("panel");
   const tc = useTranslations("common");
   const tOffline = useTranslations("offline");
   const tAssign = useTranslations("assignments");
+  const tMap = useTranslations("map");
   const locale = useLocale();
   const router = useRouter();
   const [startOpen, setStartOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
+  const [vehicleId, setVehicleId] = useState<string>(
+    () =>
+      vehicles.find((v) => v.plate.toUpperCase() === defaultPlate.toUpperCase())?.id ??
+      vehicles[0]?.id ??
+      ""
+  );
   const [pending, startTransition] = useTransition();
   const [now, setNow] = useState(() => Date.now());
 
@@ -127,6 +145,8 @@ export function PanelClient({ active, past, defaultPlate, telegram, todayAssignm
       // start break
       setBreakStartLocal(Date.now());
       toast.info(t("breakStarted"));
+      // mark break server-side so vehicle/admin views show "molada" live (best-effort)
+      void startBreakAction().catch(() => {});
     } else {
       // end break — flush minutes to DB
       const elapsedMin = Math.max(0, Math.floor((Date.now() - breakStartLocal) / 60_000));
@@ -164,6 +184,7 @@ export function PanelClient({ active, past, defaultPlate, telegram, todayAssignm
       start_km: formData.get("start_km"),
       plate: formData.get("plate") || null,
       expected_cargo: formData.get("expected_cargo") || null,
+      vehicle_id: formData.get("vehicle_id") || null,
     };
     startTransition(async () => {
       const r = await tryServerAction(
@@ -491,13 +512,45 @@ export function PanelClient({ active, past, defaultPlate, telegram, todayAssignm
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="plate">{t("plate")}</Label>
-              <Input
-                id="plate"
-                name="plate"
-                defaultValue={defaultPlate}
-                className="h-12 nums uppercase"
-              />
+              <Label htmlFor="vehicle">{tMap("vehicle_select")}</Label>
+              {vehicles.length > 0 ? (
+                <>
+                  <input type="hidden" name="vehicle_id" value={vehicleId} />
+                  <Select value={vehicleId} onValueChange={(v) => v && setVehicleId(v)}>
+                    <SelectTrigger id="vehicle" className="h-12 w-full">
+                      <SelectValue>
+                        {((val: unknown) => {
+                          const v = vehicles.find((x) => x.id === String(val));
+                          return v
+                            ? `${v.plate}${v.make || v.model ? ` — ${[v.make, v.model].filter(Boolean).join(" ")}` : ""}`
+                            : tMap("vehicle_select_hint");
+                        }) as never}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vehicles.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          <span className="nums font-medium uppercase">{v.plate}</span>
+                          {(v.make || v.model) && (
+                            <span className="text-muted-foreground">
+                              {" "}
+                              {[v.make, v.model].filter(Boolean).join(" ")}
+                            </span>
+                          )}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              ) : (
+                <Input
+                  id="plate"
+                  name="plate"
+                  defaultValue={defaultPlate}
+                  className="h-12 nums uppercase"
+                  placeholder={t("plate")}
+                />
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="expected_cargo">{t("expectedCargo")}</Label>

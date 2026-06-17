@@ -8,6 +8,7 @@ import {
   viennaDayKey,
 } from "@/lib/format";
 import { getAssignments } from "@/app/actions/assignments";
+import { listVehiclesForSelect } from "@/lib/vehicles";
 import type { TimeEntry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +40,7 @@ export default async function PanelPage() {
     username: (me?.telegram_username as string) ?? null,
   };
 
+  const vehicles = await listVehiclesForSelect();
   const myAssignments = await getAssignments({ mine: true });
   const todayKey = viennaDayKey(new Date());
   const todayAssignments = myAssignments.filter(
@@ -104,6 +106,7 @@ export default async function PanelPage() {
           active={active}
           past={past.slice(0, 5)}
           defaultPlate={session.plate ?? ""}
+          vehicles={vehicles}
           telegram={telegram}
           todayAssignments={todayAssignments}
           totals={{

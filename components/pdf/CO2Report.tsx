@@ -1,13 +1,16 @@
 "use client";
 
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
+import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
 import type { CO2ReportData } from "@/lib/co2";
+
+registerPdfFont();
 
 const f = (n: number, d = 2) => n.toFixed(d).replace(".", ",");
 
 const styles = StyleSheet.create({
-  page: { padding: 36, fontSize: 9, fontFamily: "Helvetica", color: "#0f172a" },
-  cover: { padding: 48, fontFamily: "Helvetica", color: "#0f172a" },
+  page: { padding: 36, fontSize: 9, fontFamily: PDF_FONT, color: "#0f172a" },
+  cover: { padding: 48, fontFamily: PDF_FONT, color: "#0f172a" },
   brandBox: {
     width: 130,
     height: 36,

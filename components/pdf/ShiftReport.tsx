@@ -9,6 +9,9 @@ import {
   pdf,
   Image,
 } from "@react-pdf/renderer";
+import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
+
+registerPdfFont();
 
 export type PdfHeaders = {
   worker: string;
@@ -51,7 +54,7 @@ const styles = StyleSheet.create({
   page: {
     padding: 32,
     fontSize: 9,
-    fontFamily: "Helvetica",
+    fontFamily: PDF_FONT,
     color: "#0f172a",
   },
   header: {

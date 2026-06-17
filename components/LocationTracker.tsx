@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { MapPin, MapPinOff, PauseCircle } from "lucide-react";
+import { MapPin, MapPinOff } from "lucide-react";
 import { recordLocation } from "@/app/actions/location";
 
 type PermState = "pending" | "granted" | "denied";
@@ -10,22 +10,17 @@ type PermState = "pending" | "granted" | "denied";
 const INTERVAL_MS = 60_000;
 
 /**
- * Collects GPS only while a shift is ACTIVE and NOT paused (break).
+ * Collects GPS while a shift is ACTIVE — breaks included.
  *
- * Legal guarantee (signed worker consent): location is gathered solely while
- * the shift clock is running. The parent unmounts this component when no shift
- * is active and passes `paused` during breaks. Either condition tears down the
- * watch/interval/listener immediately so nothing is sent afterwards. The
- * `recordLocation` server action additionally refuses to persist any point when
- * there is no active shift — a hard backstop against stray timers or beacons.
+ * Legal guarantee (signed worker consent): location is gathered for the entire
+ * duration of the shift clock, which keeps running through breaks (the driver is
+ * still on duty). The parent unmounts this component the moment no shift is
+ * active, which tears down the watch/interval/listener immediately so nothing is
+ * sent afterwards. The `recordLocation` server action additionally refuses to
+ * persist any point when there is no active shift (ended_at set) — a hard
+ * backstop against stray timers or beacons after the shift ends.
  */
-export function LocationTracker({
-  shiftId,
-  paused = false,
-}: {
-  shiftId: string;
-  paused?: boolean;
-}) {
+export function LocationTracker({ shiftId }: { shiftId: string }) {
   const t = useTranslations("map");
   const [perm, setPerm] = useState<PermState>("pending");
   const lastSentRef = useRef<{ lat: number; lng: number; accuracy: number | null } | null>(
@@ -33,11 +28,6 @@ export function LocationTracker({
   );
 
   useEffect(() => {
-    // While paused (on break) we run NO setup. The cleanup of the previous
-    // (unpaused) effect run has already cleared the interval and removed the
-    // unload listener, so tracking is fully stopped until the break ends.
-    if (paused) return;
-
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setPerm("denied");
       return;
@@ -75,9 +65,9 @@ export function LocationTracker({
     capture();
     intervalId = setInterval(capture, INTERVAL_MS);
 
-    // Best-effort final ping on unload (uses last known position). Only armed
-    // while actively tracking; removed on cleanup so a break or shift end never
-    // leaves a beacon behind. The server still rejects it if the shift is over.
+    // Best-effort final ping on unload (uses last known position). Removed on
+    // cleanup so a shift end never leaves a beacon behind. The server still
+    // rejects it if the shift is over.
     function onUnload() {
       if (cancelled) return;
       const last = lastSentRef.current;
@@ -92,23 +82,14 @@ export function LocationTracker({
     window.addEventListener("beforeunload", onUnload);
 
     return () => {
-      // Runs on: shift end (unmount), break start (paused -> true), or shiftId
-      // change. Stops every timer and listener so NO further point is captured.
+      // Runs on: shift end (unmount) or shiftId change. Stops every timer and
+      // listener so NO further point is captured once the shift is over.
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
       window.removeEventListener("beforeunload", onUnload);
     };
-    // paused/shiftId in deps: toggling either restarts or tears down tracking.
-  }, [shiftId, paused]);
-
-  if (paused) {
-    return (
-      <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-        <PauseCircle className="size-3.5" />
-        {t("location_paused")}
-      </p>
-    );
-  }
+    // shiftId in deps: a new shift restarts tracking; unmount tears it down.
+  }, [shiftId]);
 
   return (
     <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">

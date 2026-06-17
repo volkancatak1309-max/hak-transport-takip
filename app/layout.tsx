@@ -15,7 +15,16 @@ export const metadata: Metadata = {
   description: "Çalışan vardiya ve kilometre takip sistemi",
   manifest: "/manifest.json",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "HAK61" },
-  icons: { apple: "/apple-touch-icon.png" },
+  // ?v=2 busts the old orange "HAK Transport" icon cached on devices/home screens.
+  icons: {
+    icon: [
+      { url: "/favicon.ico?v=2", sizes: "any" },
+      { url: "/favicon-32x32.png?v=2", type: "image/png", sizes: "32x32" },
+      { url: "/icon-192.png?v=2", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png?v=2", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png?v=2", sizes: "180x180" }],
+  },
 };
 
 export const viewport: Viewport = {

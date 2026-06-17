@@ -4,10 +4,13 @@ import { useEffect, useMemo } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, Polyline, Marker, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import type { RoutePoint } from "@/lib/route-history";
+import type { LatLng } from "@/lib/route-history";
 
-const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
-type LL = [number, number];
+const AUSTRIA_CENTER: LatLng = [47.5162, 14.5501];
+
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 function endpointIcon(kind: "start" | "end"): L.DivIcon {
   return L.divIcon({
@@ -19,14 +22,21 @@ function endpointIcon(kind: "start" | "end"): L.DivIcon {
 }
 const START_ICON = endpointIcon("start");
 const END_ICON = endpointIcon("end");
-const MOVE_ICON = L.divIcon({
-  className: "hak-marker-wrap",
-  html: `<div class="hak-replay-pin"></div>`,
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
-});
 
-function FitOnce({ points }: { points: LL[] }) {
+/** Moving vehicle marker with the driver's name label above it. */
+function moveIcon(name: string | null): L.DivIcon {
+  const label = name
+    ? `<div class="hak-replay-label">${esc(name)}</div>`
+    : "";
+  return L.divIcon({
+    className: "hak-marker-wrap",
+    html: `<div class="hak-replay-wrap">${label}<div class="hak-replay-pin"></div></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+}
+
+function FitOnce({ points }: { points: LatLng[] }) {
   const map = useMap();
   useEffect(() => {
     if (points.length === 0) return;
@@ -39,8 +49,8 @@ function FitOnce({ points }: { points: LL[] }) {
   return null;
 }
 
-/** Linear interpolate the marker position for smooth motion between samples. */
-function positionAt(latlngs: LL[], progress: number): LL {
+/** Linear interpolate along the polyline for smooth motion between vertices. */
+function positionAt(latlngs: LatLng[], progress: number): LatLng {
   if (latlngs.length === 0) return AUSTRIA_CENTER;
   if (latlngs.length === 1) return latlngs[0];
   const f = Math.max(0, Math.min(1, progress)) * (latlngs.length - 1);
@@ -53,17 +63,20 @@ function positionAt(latlngs: LL[], progress: number): LL {
 }
 
 export function RouteReplayMap({
-  points,
+  geometry,
   progress,
+  driverName,
 }: {
-  points: RoutePoint[];
+  geometry: LatLng[];
   progress: number;
+  driverName: string | null;
 }) {
-  const latlngs = useMemo<LL[]>(() => points.map((p) => [p.lat, p.lng]), [points]);
+  const latlngs = geometry;
+  const icon = useMemo(() => moveIcon(driverName), [driverName]);
 
   const cur = positionAt(latlngs, progress);
   const idx = Math.floor(Math.max(0, Math.min(1, progress)) * (latlngs.length - 1));
-  const traveled = useMemo<LL[]>(() => {
+  const traveled = useMemo<LatLng[]>(() => {
     if (latlngs.length === 0) return [];
     return [...latlngs.slice(0, idx + 1), cur];
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -103,7 +116,7 @@ export function RouteReplayMap({
 
       {start && <Marker position={start} icon={START_ICON} />}
       {end && latlngs.length > 1 && <Marker position={end} icon={END_ICON} />}
-      {latlngs.length > 0 && <Marker position={cur} icon={MOVE_ICON} zIndexOffset={1000} />}
+      {latlngs.length > 0 && <Marker position={cur} icon={icon} zIndexOffset={1000} />}
     </MapContainer>
   );
 }

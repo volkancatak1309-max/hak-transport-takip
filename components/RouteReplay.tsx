@@ -35,6 +35,7 @@ export function RouteReplay({
   const params = useSearchParams();
 
   const points = route.points;
+  const geometry = route.geometry.length > 1 ? route.geometry : points.map((p) => [p.lat, p.lng] as [number, number]);
   const hasRoute = points.length > 1;
 
   const [progress, setProgress] = useState(0);
@@ -146,7 +147,7 @@ export function RouteReplay({
       {/* Map */}
       <div className="relative overflow-hidden rounded-[var(--radius)] border border-border bg-card">
         <div className="h-[60vh] min-h-[420px] w-full">
-          <RouteReplayMap points={points} progress={progress} />
+          <RouteReplayMap geometry={geometry} progress={progress} driverName={route.driverName} />
         </div>
         {!hasRoute && (
           <div className="pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center">

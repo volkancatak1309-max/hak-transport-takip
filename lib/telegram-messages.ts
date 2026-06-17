@@ -34,6 +34,27 @@ export function nineHourMessage(
   );
 }
 
+/** Shift-started alert → admins. */
+export function shiftStartedMessage(
+  locale: string | null,
+  p: { name: string; plate: string; time: string }
+): string {
+  const name = esc(p.name);
+  const plate = esc(p.plate);
+  if (L(locale) === "de") {
+    return (
+      "🟢 HAK Transport\n\n" +
+      `<b>${name}</b> (${plate}) hat die Schicht begonnen.\n` +
+      `🕐 Uhrzeit: <b>${p.time}</b>`
+    );
+  }
+  return (
+    "🟢 HAK Transport\n\n" +
+    `<b>${name}</b> (${plate}) vardiyayı başlattı.\n` +
+    `🕐 Saat: <b>${p.time}</b>`
+  );
+}
+
 /** End-of-shift summary → driver. */
 export function shiftSummaryMessage(
   locale: string | null,

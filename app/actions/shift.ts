@@ -8,11 +8,42 @@ import {
   endShiftSchema,
   editEntrySchema,
 } from "@/lib/validation";
-import { workedMs, formatDurationShort } from "@/lib/format";
+import { workedMs, formatDurationShort, formatTime } from "@/lib/format";
 import { sendTelegramMessage } from "@/lib/telegram";
-import { shiftSummaryMessage } from "@/lib/telegram-messages";
+import {
+  shiftSummaryMessage,
+  shiftStartedMessage,
+} from "@/lib/telegram-messages";
 
 export type ShiftResult = { ok: boolean; error?: string };
+
+/**
+ * Notify every linked admin that a driver just started a shift. Best-effort:
+ * runs after the shift row is committed and never blocks or fails the action.
+ */
+async function notifyAdminsShiftStarted(
+  workerName: string,
+  plate: string,
+  startedIso: string
+): Promise<void> {
+  const { data: admins } = await supabaseAdmin
+    .from("workers")
+    .select("telegram_chat_id, telegram_locale")
+    .eq("is_admin", true)
+    .not("telegram_chat_id", "is", null);
+
+  for (const a of admins ?? []) {
+    const loc = (a.telegram_locale as string) ?? "tr";
+    await sendTelegramMessage(
+      a.telegram_chat_id as string,
+      shiftStartedMessage(loc, {
+        name: workerName,
+        plate,
+        time: formatTime(startedIso, loc),
+      })
+    );
+  }
+}
 
 export async function startShiftAction(formData: FormData): Promise<ShiftResult> {
   const session = await requireWorker();
@@ -35,11 +66,13 @@ export async function startShiftAction(formData: FormData): Promise<ShiftResult>
 
   if (active) return { ok: false, error: "active" };
 
+  const startedIso = new Date().toISOString();
+  const shiftPlate = parsed.data.plate ?? session.plate ?? null;
   const insert: Record<string, unknown> = {
     worker_id: session.worker_id!,
-    started_at: new Date().toISOString(),
+    started_at: startedIso,
     start_km: parsed.data.start_km,
-    plate: parsed.data.plate ?? session.plate ?? null,
+    plate: shiftPlate,
     break_minutes: 0,
   };
   if (parsed.data.expected_cargo !== null && parsed.data.expected_cargo !== undefined) {
@@ -48,6 +81,14 @@ export async function startShiftAction(formData: FormData): Promise<ShiftResult>
 
   const { error } = await supabaseAdmin.from("time_entries").insert(insert);
   if (error) return { ok: false, error: error.message };
+
+  // Telegram: alert linked admins that this driver started a shift
+  // (best-effort, never blocks the action).
+  await notifyAdminsShiftStarted(
+    session.name ?? "—",
+    shiftPlate ?? "—",
+    startedIso
+  );
 
   revalidatePath("/panel");
   revalidatePath("/admin");

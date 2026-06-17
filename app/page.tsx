@@ -13,7 +13,7 @@ function LoginShell() {
   return (
     <div className="w-full max-w-[400px] page-enter">
       <div className="mb-8 flex flex-col items-center text-center">
-        <BrandLogo height={40} className="mb-6" />
+        <BrandLogo height={68} className="mb-7" />
         <h1 className="text-xl font-semibold tracking-[-0.01em]">{t("title")}</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>

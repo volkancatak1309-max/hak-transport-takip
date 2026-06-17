@@ -155,7 +155,7 @@ export function DashboardShell({
       <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col border-r border-border bg-sidebar lg:flex">
         <div className="flex h-16 items-center px-5">
           <Link href={user.isAdmin ? "/admin" : "/panel"} className="flex items-center">
-            <BrandLogo height={26} />
+            <BrandLogo height={38} />
           </Link>
         </div>
         <div className="flex-1 overflow-y-auto py-3">
@@ -185,7 +185,7 @@ export function DashboardShell({
           />
           <div className="absolute left-0 top-0 flex h-full w-[260px] flex-col bg-sidebar elevate page-enter">
             <div className="flex h-16 items-center justify-between px-5">
-              <BrandLogo height={26} />
+              <BrandLogo height={38} />
               <Button variant="ghost" size="icon-sm" onClick={() => setMobileOpen(false)}>
                 <X className="size-5" />
               </Button>

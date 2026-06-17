@@ -52,6 +52,7 @@ export async function startShiftAction(formData: FormData): Promise<ShiftResult>
     start_km: formData.get("start_km"),
     plate: formData.get("plate") || null,
     expected_cargo: formData.get("expected_cargo") || null,
+    vehicle_id: formData.get("vehicle_id") || null,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
@@ -66,17 +67,31 @@ export async function startShiftAction(formData: FormData): Promise<ShiftResult>
 
   if (active) return { ok: false, error: "active" };
 
+  // If a vehicle was picked, that's the canonical link. Denormalize its plate
+  // into time_entries.plate so existing reports/exports keep working unchanged.
+  let vehiclePlate: string | null = null;
+  if (parsed.data.vehicle_id) {
+    const { data: v } = await supabaseAdmin
+      .from("vehicles")
+      .select("plate")
+      .eq("id", parsed.data.vehicle_id)
+      .maybeSingle();
+    vehiclePlate = (v?.plate as string) ?? null;
+  }
+
   const startedIso = new Date().toISOString();
-  const shiftPlate = parsed.data.plate ?? session.plate ?? null;
+  const shiftPlate = vehiclePlate ?? parsed.data.plate ?? session.plate ?? null;
   const insert: Record<string, unknown> = {
     worker_id: session.worker_id!,
     started_at: startedIso,
     start_km: parsed.data.start_km,
     plate: shiftPlate,
+    vehicle_id: parsed.data.vehicle_id ?? null,
     break_minutes: 0,
   };
   if (parsed.data.expected_cargo !== null && parsed.data.expected_cargo !== undefined) {
     insert.cargo_count = parsed.data.expected_cargo;
+    insert.start_package_count = parsed.data.expected_cargo;
   }
 
   const { error } = await supabaseAdmin.from("time_entries").insert(insert);
@@ -183,8 +198,27 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
 }
 
 /**
+ * Marks the active shift as "on break" server-side (so the vehicle/admin views
+ * can show the molada status live). Best-effort; the panel keeps its own local
+ * break timer for the worked-time math.
+ */
+export async function startBreakAction(): Promise<ShiftResult> {
+  const session = await requireWorker();
+  const { error } = await supabaseAdmin
+    .from("time_entries")
+    .update({ break_started_at: new Date().toISOString() })
+    .eq("worker_id", session.worker_id!)
+    .is("ended_at", null)
+    .is("break_started_at", null);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/panel");
+  return { ok: true };
+}
+
+/**
  * Logs accumulated break minutes to the active shift.
  * Called from the panel when user toggles break OFF — we add elapsed minutes to break_minutes.
+ * Also clears the server-side break flag (break_started_at).
  */
 export async function addBreakMinutesAction(minutes: number): Promise<ShiftResult> {
   const session = await requireWorker();
@@ -202,7 +236,7 @@ export async function addBreakMinutesAction(minutes: number): Promise<ShiftResul
   const newBreak = (active.break_minutes ?? 0) + add;
   const { error } = await supabaseAdmin
     .from("time_entries")
-    .update({ break_minutes: newBreak })
+    .update({ break_minutes: newBreak, break_started_at: null })
     .eq("id", active.id)
     .eq("worker_id", session.worker_id!);
 

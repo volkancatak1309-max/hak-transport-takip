@@ -42,15 +42,30 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
       .maybeSingle();
     if (active) return { ok: true }; // already started; treat as done
 
+    const vehicleId = (item.payload.vehicle_id as string) || null;
+    let vehiclePlate: string | null = null;
+    if (vehicleId) {
+      const { data: v } = await supabaseAdmin
+        .from("vehicles")
+        .select("plate")
+        .eq("id", vehicleId)
+        .maybeSingle();
+      vehiclePlate = (v?.plate as string) ?? null;
+    }
+
     const insert: Record<string, unknown> = {
       worker_id: workerId,
       started_at: whenIso,
       start_km: startKm,
-      plate: (item.payload.plate as string) || session.plate || null,
+      plate: vehiclePlate || (item.payload.plate as string) || session.plate || null,
+      vehicle_id: vehicleId,
       break_minutes: 0,
     };
     const cargo = num(item.payload.expected_cargo);
-    if (cargo !== null) insert.cargo_count = cargo;
+    if (cargo !== null) {
+      insert.cargo_count = cargo;
+      insert.start_package_count = cargo;
+    }
 
     const { error } = await supabaseAdmin.from("time_entries").insert(insert);
     if (error) return { ok: false, error: error.message };

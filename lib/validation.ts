@@ -17,6 +17,7 @@ export const startShiftSchema = z.object({
   start_km: z.coerce.number().int().nonnegative("errKmNeg"),
   plate: z.string().trim().max(20).optional().nullable(),
   expected_cargo: z.coerce.number().int().nonnegative().optional().nullable(),
+  vehicle_id: z.string().uuid().optional().nullable(),
 });
 
 export const endShiftSchema = z.object({

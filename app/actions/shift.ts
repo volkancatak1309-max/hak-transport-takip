@@ -48,6 +48,15 @@ async function notifyAdminsShiftStarted(
 export async function startShiftAction(formData: FormData): Promise<ShiftResult> {
   const session = await requireWorker();
 
+  // Required: a vehicle (or plate fallback) AND a start odometer. Empty strings
+  // coerce to 0, so guard the raw values before validation. Enforced here on the
+  // server too — hiding the fields in the UI is not enough.
+  const rawVehicle = String(formData.get("vehicle_id") ?? "").trim();
+  const rawPlate = String(formData.get("plate") ?? "").trim();
+  const rawStartKm = String(formData.get("start_km") ?? "").trim();
+  if (!rawVehicle && !rawPlate) return { ok: false, error: "vehicle_required" };
+  if (rawStartKm === "") return { ok: false, error: "start_km_required" };
+
   const parsed = startShiftSchema.safeParse({
     start_km: formData.get("start_km"),
     plate: formData.get("plate") || null,
@@ -262,6 +271,105 @@ export async function addBreakMinutesAction(minutes: number): Promise<ShiftResul
       () => {}
     );
 
+  revalidatePath("/panel");
+  return { ok: true };
+}
+
+/**
+ * Driver edits the start odometer of their OWN, still-OPEN shift. The server
+ * enforces both (worker_id match + ended_at IS NULL): a closed shift or someone
+ * else's shift is refused regardless of the UI.
+ */
+export async function updateStartKmAction(km: number): Promise<ShiftResult> {
+  const session = await requireWorker();
+  const v = Math.floor(Number(km));
+  if (!Number.isFinite(v) || v < 0) return { ok: false, error: "errKmNeg" };
+
+  const { data, error } = await supabaseAdmin
+    .from("time_entries")
+    .update({
+      start_km: v,
+      updated_at: new Date().toISOString(),
+      updated_by: session.worker_id,
+    })
+    .eq("worker_id", session.worker_id!)
+    .is("ended_at", null)
+    .select("id");
+
+  if (error) return { ok: false, error: error.message };
+  if (!data || data.length === 0) return { ok: false, error: "no_active" };
+
+  revalidatePath("/panel");
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+/**
+ * Driver sets/updates the start-of-day package count on their OWN, OPEN shift
+ * (often known only hours after loading). Empty clears it. Open-shift only.
+ */
+export async function updatePackageCountAction(
+  count: number | null
+): Promise<ShiftResult> {
+  const session = await requireWorker();
+  let v: number | null = null;
+  if (count !== null && count !== undefined && String(count) !== "") {
+    v = Math.floor(Number(count));
+    if (!Number.isFinite(v) || v < 0) return { ok: false, error: "invalid" };
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("time_entries")
+    .update({
+      start_package_count: v,
+      updated_at: new Date().toISOString(),
+      updated_by: session.worker_id,
+    })
+    .eq("worker_id", session.worker_id!)
+    .is("ended_at", null)
+    .select("id");
+
+  if (error) return { ok: false, error: error.message };
+  if (!data || data.length === 0) return { ok: false, error: "no_active" };
+
+  revalidatePath("/panel");
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+/**
+ * Admin corrects the start/end odometer of ANY shift (open or closed). Validates
+ * non-negative and end ≥ start; stamps the audit columns (updated_at/updated_by).
+ */
+export async function adminUpdateKmAction(
+  entryId: string,
+  startKm: number,
+  endKm: number | null
+): Promise<ShiftResult> {
+  const session = await requireAdmin();
+  const s = Math.floor(Number(startKm));
+  if (!Number.isFinite(s) || s < 0) return { ok: false, error: "errKmNeg" };
+
+  let e: number | null = null;
+  if (endKm !== null && endKm !== undefined && String(endKm) !== "") {
+    e = Math.floor(Number(endKm));
+    if (!Number.isFinite(e) || e < 0) return { ok: false, error: "errKmNeg" };
+    if (e < s) return { ok: false, error: `km_low:${e}:${s}` };
+  }
+
+  const { error } = await supabaseAdmin
+    .from("time_entries")
+    .update({
+      start_km: s,
+      end_km: e,
+      updated_at: new Date().toISOString(),
+      updated_by: session.worker_id,
+    })
+    .eq("id", entryId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin");
   revalidatePath("/panel");
   return { ok: true };
 }

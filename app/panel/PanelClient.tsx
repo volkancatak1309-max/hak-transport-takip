@@ -14,12 +14,16 @@ import {
   Clock,
   Calendar,
   ArrowRight,
+  Pencil,
+  Package,
 } from "lucide-react";
 import {
   startShiftAction,
   endShiftAction,
   addBreakMinutesAction,
   startBreakAction,
+  updateStartKmAction,
+  updatePackageCountAction,
 } from "../actions/shift";
 import {
   formatDuration,
@@ -106,6 +110,10 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
       vehicles[0]?.id ??
       ""
   );
+  const [kmEditOpen, setKmEditOpen] = useState(false);
+  const [pkgEditOpen, setPkgEditOpen] = useState(false);
+  const [kmVal, setKmVal] = useState("");
+  const [pkgVal, setPkgVal] = useState("");
   const [pending, startTransition] = useTransition();
   const [now, setNow] = useState(() => Date.now());
 
@@ -180,6 +188,18 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
   }
 
   function handleStart(formData: FormData) {
+    // Required: vehicle (or plate fallback) + start km. Server re-validates.
+    const vid = String(formData.get("vehicle_id") ?? "").trim();
+    const plate = String(formData.get("plate") ?? "").trim();
+    const skm = String(formData.get("start_km") ?? "").trim();
+    if (!vid && !plate) {
+      toast.error(t("selectVehicleErr"));
+      return;
+    }
+    if (skm === "") {
+      toast.error(t("startKmErr"));
+      return;
+    }
     const payload = {
       start_km: formData.get("start_km"),
       plate: formData.get("plate") || null,
@@ -249,11 +269,54 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
     if (!e) return "Error";
     if (e === "active") return t("errActive");
     if (e === "no_active") return t("errNoActive");
+    if (e === "vehicle_required") return t("selectVehicleErr");
+    if (e === "start_km_required" || e === "errKmNeg") return t("startKmErr");
     if (e.startsWith("km_low:")) {
       const [, end, start] = e.split(":");
       return t("errKmLow", { end, start });
     }
     return e;
+  }
+
+  function openKmEdit() {
+    setKmVal(active ? String(active.start_km) : "");
+    setKmEditOpen(true);
+  }
+  function saveKm() {
+    const v = Number(kmVal);
+    if (!Number.isFinite(v) || v < 0) {
+      toast.error(t("startKmErr"));
+      return;
+    }
+    startTransition(async () => {
+      const r = await updateStartKmAction(v);
+      if (r.ok) {
+        toast.success(t("startKmSaved"));
+        setKmEditOpen(false);
+        router.refresh();
+      } else toast.error(mapErr(r.error));
+    });
+  }
+
+  function openPkgEdit() {
+    setPkgVal(active?.start_package_count != null ? String(active.start_package_count) : "");
+    setPkgEditOpen(true);
+  }
+  function savePkg() {
+    const raw = pkgVal.trim();
+    const v = raw === "" ? null : Number(raw);
+    if (v !== null && (!Number.isFinite(v) || v < 0)) {
+      toast.error(t("packages"));
+      return;
+    }
+    startTransition(async () => {
+      const r = await updatePackageCountAction(v);
+      if (r.ok) {
+        toast.success(t("packagesSaved"));
+        setPkgEditOpen(false);
+        router.refresh();
+      } else toast.error(mapErr(r.error));
+    });
   }
 
   const onBreak = breakStartLocal !== null;
@@ -310,6 +373,34 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
                     </div>
                   </div>
                 </div>
+
+                {/* Driver self-edit: start km (open shift only) + package count */}
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={openKmEdit}
+                    disabled={pending}
+                    className="gap-1.5"
+                  >
+                    <Pencil className="size-3.5" />
+                    {t("editStartKm")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={openPkgEdit}
+                    disabled={pending}
+                    className="gap-1.5"
+                  >
+                    <Package className="size-3.5" />
+                    {t("packages")}:{" "}
+                    <span className="nums font-medium">
+                      {active.start_package_count ?? "—"}
+                    </span>
+                  </Button>
+                </div>
+
                 <div className="flex flex-col sm:flex-row gap-2">
                   <Button
                     onClick={toggleBreak}
@@ -657,6 +748,69 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Driver: correct start km of the OPEN shift */}
+      <Dialog open={kmEditOpen} onOpenChange={setKmEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("editStartKm")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit_start_km">{t("startKm")}</Label>
+            <Input
+              id="edit_start_km"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={kmVal}
+              onChange={(e) => setKmVal(e.target.value)}
+              className="h-12 nums"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setKmEditOpen(false)}>
+              {tc("cancel")}
+            </Button>
+            <Button onClick={saveKm} disabled={pending}>
+              {pending && <Loader2 className="size-4 animate-spin" />}
+              {tc("save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Driver: enter/update start-of-day package count on the OPEN shift */}
+      <Dialog open={pkgEditOpen} onOpenChange={setPkgEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("editPackages")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit_pkg">{t("packages")}</Label>
+            <Input
+              id="edit_pkg"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={pkgVal}
+              onChange={(e) => setPkgVal(e.target.value)}
+              placeholder={t("packagesHint")}
+              className="h-12 nums"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPkgEditOpen(false)}>
+              {tc("cancel")}
+            </Button>
+            <Button onClick={savePkg} disabled={pending}>
+              {pending && <Loader2 className="size-4 animate-spin" />}
+              {tc("save")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

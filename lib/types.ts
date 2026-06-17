@@ -31,6 +31,40 @@ export type TimeEntry = {
   lenkzeit_notified_at: string | null;
   summary_notified_at: string | null;
   created_at: string;
+  // Vehicle layer (migration 009) — all nullable / additive.
+  vehicle_id: string | null;
+  break_started_at: string | null;
+  start_package_count: number | null;
+};
+
+// --- Vehicle layer ---
+
+export type VehicleBaseStatus = "active" | "maintenance" | "inactive";
+
+export type Vehicle = {
+  id: string;
+  plate: string;
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  status: VehicleBaseStatus;
+  assigned_worker_id: string | null;
+  inspection_due: string | null;
+  insurance_due: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+/** Live operational status — derived, never stored. NO green/red. */
+export type VehicleLiveStatus = "sevkiyatta" | "molada" | "bosta" | "bakimda";
+
+export type VehicleWithStatus = Vehicle & {
+  live_status: VehicleLiveStatus;
+  /** Current driver (active shift) or, if idle, the assigned/primary driver. */
+  driver_name: string | null;
+  driver_id: string | null;
+  /** Whether driver_name is the live (active-shift) driver vs. just assigned. */
+  driver_is_live: boolean;
 };
 
 export type TimeEntryWithWorker = TimeEntry & {

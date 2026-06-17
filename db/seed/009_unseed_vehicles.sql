@@ -5,6 +5,10 @@
 
 begin;
 
+-- GPS tracks of demo drivers (route-history demo, 010 seed)
+delete from public.driver_locations
+  where worker_id in (select id from public.workers where phone like '+43677%');
+
 -- Shifts of demo drivers (covers active + history; FK on vehicle is ON DELETE SET NULL anyway)
 delete from public.time_entries
   where worker_id in (select id from public.workers where phone like '+43677%');

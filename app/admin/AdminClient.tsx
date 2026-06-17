@@ -49,7 +49,6 @@ import {
   UserPlus,
   Loader2,
 } from "lucide-react";
-import { WeeklyChart, type WeeklyDatum } from "@/components/WeeklyChart";
 import {
   formatDate,
   formatTime,
@@ -59,6 +58,11 @@ import {
   kmDiff,
 } from "@/lib/format";
 import { UserAvatar } from "@/components/UserAvatar";
+import { OpsSummary } from "@/components/admin/OpsSummary";
+import { FleetStatus } from "@/components/admin/FleetStatus";
+import { DriverPerformance } from "@/components/admin/DriverPerformance";
+import { AttentionList } from "@/components/admin/AttentionList";
+import type { DashboardData } from "@/lib/admin-dashboard";
 import {
   createWorkerAction,
 } from "../actions/workers";
@@ -79,7 +83,7 @@ type Props = {
   workerFilter: string;
   statusFilter: string;
   summary: { totalMs: number; totalKm: number; activeCount: number; overLimit: number };
-  weekly: WeeklyDatum[];
+  dashboard: DashboardData;
   rangeStart: string;
   rangeEnd: string;
 };
@@ -93,7 +97,7 @@ export function AdminClient({
   workerFilter,
   statusFilter,
   summary,
-  weekly,
+  dashboard,
   rangeStart,
   rangeEnd,
 }: Props) {
@@ -370,33 +374,38 @@ export function AdminClient({
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryCard label={t("totalHours")} value={formatDuration(summary.totalMs)} nums />
-        <SummaryCard label={t("totalKm")} value={summary.totalKm.toLocaleString(nf)} nums />
-        <SummaryCard
-          label={t("activeShifts")}
-          value={String(summary.activeCount)}
-          highlight={summary.activeCount > 0 ? "sky" : undefined}
-          live={summary.activeCount > 0}
-        />
-        <SummaryCard
-          label={t("overLimit")}
-          value={String(summary.overLimit)}
-          highlight={summary.overLimit > 0 ? "gold" : undefined}
-          pulse={summary.overLimit > 0}
-        />
+      {/* 1 — Today's live operations snapshot */}
+      <OpsSummary ops={dashboard.todayOps} />
+
+      {/* 2 + 4 — Fleet status distribution & action items */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <FleetStatus fleet={dashboard.fleet} />
+        <AttentionList items={dashboard.attention} />
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            {t("weeklyChart")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <WeeklyChart data={weekly} />
-        </CardContent>
-      </Card>
+      {/* 3 — Driver performance ranking (selected range) */}
+      <DriverPerformance performance={dashboard.performance} range={range} />
+
+      {/* Shift records — range totals, filters, export & table */}
+      <section className="space-y-4 border-t border-border pt-6">
+        <h2 className="text-sm font-semibold tracking-tight">{t("dash.shifts_title")}</h2>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <SummaryCard label={t("totalHours")} value={formatDuration(summary.totalMs)} nums />
+          <SummaryCard label={t("totalKm")} value={summary.totalKm.toLocaleString(nf)} nums />
+          <SummaryCard
+            label={t("activeShifts")}
+            value={String(summary.activeCount)}
+            highlight={summary.activeCount > 0 ? "sky" : undefined}
+            live={summary.activeCount > 0}
+          />
+          <SummaryCard
+            label={t("overLimit")}
+            value={String(summary.overLimit)}
+            highlight={summary.overLimit > 0 ? "gold" : undefined}
+            pulse={summary.overLimit > 0}
+          />
+        </div>
 
       <Card>
         <CardContent className="p-4">
@@ -554,25 +563,31 @@ export function AdminClient({
         </CardContent>
       </Card>
 
-      <Card className="overflow-hidden">
+      <Card className="gap-0 overflow-hidden py-0">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <h3 className="text-sm font-semibold tracking-tight">{t("dash.shifts_table")}</h3>
+          <span className="nums rounded-full bg-surface-2 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+            {entries.length}
+          </span>
+        </div>
         {entries.length === 0 ? (
           <div className="p-10 text-center text-sm text-muted-foreground">
             {t("noEntries")}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="max-h-[640px] overflow-auto">
             <Table>
-              <TableHeader>
-                <TableRow>
+              <TableHeader className="sticky top-0 z-10 bg-card [&_tr]:border-b [&_th]:text-[11px] [&_th]:uppercase [&_th]:tracking-[0.04em] [&_th]:text-muted-foreground">
+                <TableRow className="hover:bg-transparent">
                   <TableHead>{t("tblWorker")}</TableHead>
                   <TableHead>{t("tblDate")}</TableHead>
                   <TableHead>{t("tblStart")}</TableHead>
                   <TableHead>{t("tblEnd")}</TableHead>
                   <TableHead>{t("tblWorked")}</TableHead>
-                  <TableHead>{t("tblBreak")}</TableHead>
-                  <TableHead>{t("tblKm")}</TableHead>
-                  <TableHead>{t("tblCargo")}</TableHead>
-                  <TableHead>{t("tblUndelivered")}</TableHead>
+                  <TableHead className="text-right">{t("tblBreak")}</TableHead>
+                  <TableHead className="text-right">{t("tblKm")}</TableHead>
+                  <TableHead className="text-right">{t("tblCargo")}</TableHead>
+                  <TableHead className="text-right">{t("tblUndelivered")}</TableHead>
                   <TableHead>{t("tblPlate")}</TableHead>
                   <TableHead className="max-w-[200px]">{t("tblNote")}</TableHead>
                   <TableHead className="text-right">{t("tblActions")}</TableHead>
@@ -585,10 +600,10 @@ export function AdminClient({
                   const over = w > NINE_HOURS;
                   const km = kmDiff(e);
                   const borderClass = isActive
-                    ? "border-l-4 border-l-accent-sky"
+                    ? "border-l-2 border-l-accent-sky"
                     : over
-                    ? "border-l-4 border-l-accent-gold"
-                    : "";
+                    ? "border-l-2 border-l-accent-gold"
+                    : "border-l-2 border-l-transparent";
                   return (
                     <TableRow key={e.id} className={borderClass}>
                       <TableCell className="font-medium">
@@ -597,7 +612,9 @@ export function AdminClient({
                           <span>{e.workers?.name ?? "—"}</span>
                         </div>
                       </TableCell>
-                      <TableCell>{formatDate(e.started_at, locale)}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatDate(e.started_at, locale)}
+                      </TableCell>
                       <TableCell className="nums">{formatTime(e.started_at, locale)}</TableCell>
                       <TableCell className="nums">
                         {isActive ? (
@@ -621,14 +638,24 @@ export function AdminClient({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="nums">{e.break_minutes ?? 0}</TableCell>
-                      <TableCell className="nums">
+                      <TableCell className="nums text-right text-muted-foreground">
+                        {e.break_minutes ?? 0}
+                      </TableCell>
+                      <TableCell className="nums text-right">
                         {km !== null ? km.toLocaleString(nf) : "—"}
                       </TableCell>
-                      <TableCell className="nums">{e.cargo_count ?? "—"}</TableCell>
-                      <TableCell className="nums">{e.undelivered_count ?? "—"}</TableCell>
-                      <TableCell className="nums">{e.plate ?? "—"}</TableCell>
-                      <TableCell className="max-w-[200px] truncate" title={e.notes ?? ""}>
+                      <TableCell className="nums text-right">{e.cargo_count ?? "—"}</TableCell>
+                      <TableCell className="nums text-right">
+                        {e.undelivered_count != null && e.undelivered_count > 0 ? (
+                          <span className="font-medium text-accent-gold">{e.undelivered_count}</span>
+                        ) : (
+                          e.undelivered_count ?? "—"
+                        )}
+                      </TableCell>
+                      <TableCell className="nums uppercase text-muted-foreground">
+                        {e.plate ?? "—"}
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate text-muted-foreground" title={e.notes ?? ""}>
                         {e.notes ?? "—"}
                       </TableCell>
                       <TableCell className="text-right">
@@ -661,6 +688,7 @@ export function AdminClient({
           </div>
         )}
       </Card>
+      </section>
 
       {/* Add Worker */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>

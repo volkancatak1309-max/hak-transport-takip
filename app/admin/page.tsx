@@ -1,9 +1,9 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getLocale } from "@/i18n/request";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AdminClient } from "./AdminClient";
 import { workedMs, kmDiff } from "@/lib/format";
+import { getDashboardData } from "@/lib/admin-dashboard";
 import type { TimeEntry, TimeEntryWithWorker, Worker } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -49,65 +49,6 @@ function computeRange(
   return { start, end };
 }
 
-async function getWeeklyData(
-  locale: string
-): Promise<{ date: string; label: string; hours: number; workers: number }[]> {
-  const weekdayTag = locale === "de" ? "de-AT" : "tr-TR";
-  const end = new Date();
-  const tzEnd = new Date(end.toLocaleString("en-US", { timeZone: "Europe/Vienna" }));
-  tzEnd.setHours(23, 59, 59, 999);
-  const start = new Date(tzEnd);
-  start.setDate(start.getDate() - 6);
-  start.setHours(0, 0, 0, 0);
-
-  const { data } = await supabaseAdmin
-    .from("time_entries")
-    .select("started_at, ended_at, break_minutes, worker_id")
-    .gte("started_at", start.toISOString())
-    .lte("started_at", tzEnd.toISOString())
-    .not("ended_at", "is", null);
-
-  const bucket: Record<string, { hours: number; workers: Set<string> }> = {};
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    const key = d.toLocaleDateString("en-CA", { timeZone: "Europe/Vienna" });
-    bucket[key] = { hours: 0, workers: new Set() };
-  }
-
-  for (const e of data ?? []) {
-    const key = new Date(e.started_at).toLocaleDateString("en-CA", {
-      timeZone: "Europe/Vienna",
-    });
-    if (!bucket[key]) continue;
-    const ms = workedMs(
-      {
-        started_at: e.started_at,
-        ended_at: e.ended_at,
-        break_minutes: e.break_minutes ?? 0,
-      },
-      Date.now()
-    );
-    bucket[key].hours += ms / 3600000;
-    if (e.worker_id) bucket[key].workers.add(e.worker_id as string);
-  }
-
-  return Object.entries(bucket).map(([date, v]) => {
-    const d = new Date(date + "T12:00:00");
-    // Localized short weekday: tr-TR → Pzt/Sal/Çar… · de-AT → Mo/Di/Mi…
-    const label = d.toLocaleDateString(weekdayTag, {
-      weekday: "short",
-      timeZone: "Europe/Vienna",
-    });
-    return {
-      date,
-      label,
-      hours: Math.round(v.hours * 100) / 100,
-      workers: v.workers.size,
-    };
-  });
-}
-
 export default async function AdminPage({
   searchParams,
 }: {
@@ -125,7 +66,6 @@ export default async function AdminPage({
   const workerFilter = sp.worker ?? "all";
   const statusFilter = sp.status ?? "all";
   const { start, end } = computeRange(range, sp.from, sp.to);
-  const locale = await getLocale();
 
   // NOTE: we deliberately do NOT use a `workers!inner(...)` embed here. That
   // embed was returning no rows (fragile relationship resolution), which zeroed
@@ -142,10 +82,10 @@ export default async function AdminPage({
   if (statusFilter === "active") query = query.is("ended_at", null);
   else if (statusFilter === "completed") query = query.not("ended_at", "is", null);
 
-  const [entriesResult, workersResult, weekly] = await Promise.all([
+  const [entriesResult, workersResult, dashboard] = await Promise.all([
     query,
     supabaseAdmin.from("workers").select("*").order("name"),
-    getWeeklyData(locale),
+    getDashboardData(start.toISOString(), end.toISOString()),
   ]);
 
   const workersData = (workersResult.data ?? []) as Worker[];
@@ -162,8 +102,8 @@ export default async function AdminPage({
     entriesData = entriesData.filter((e) => workedMs(e) > 9 * 60 * 60 * 1000);
   }
 
-  // Totals reflect the SELECTED range. Hours/KM come from COMPLETED shifts only
-  // (consistent with the weekly chart); active shifts feed the active count.
+  // Totals reflect the SELECTED range. Hours/KM come from COMPLETED shifts only;
+  // active shifts feed the active count.
   let totalMs = 0;
   let totalKm = 0;
   let activeCount = 0;
@@ -198,7 +138,7 @@ export default async function AdminPage({
           workerFilter={workerFilter}
           statusFilter={statusFilter}
           summary={{ totalMs, totalKm, activeCount, overLimit }}
-          weekly={weekly}
+          dashboard={dashboard}
           rangeStart={start.toISOString()}
           rangeEnd={end.toISOString()}
         />

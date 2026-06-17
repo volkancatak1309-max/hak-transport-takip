@@ -273,6 +273,16 @@
     "kpi_on_map": "Haritada",
     "kpi_longest": "En Uzun Aktif"
   },
+  "route": {
+    "title": "Rota Geçmişi",
+    "no_route": "Bu gün için kayıtlı rota yok",
+    "play": "Oynat / Duraklat",
+    "restart": "Baştan",
+    "progress": "İlerleme",
+    "points": "{n} nokta",
+    "sampled": "örneklendi",
+    "back": "Geri"
+  },
   "vehicles": {
     "title": "Araçlar",
     "subtitle": "Filo — plaka, şoför ve durum",

@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { toast } from "sonner";
 import {
   ArrowLeft,
   UserRound,
@@ -139,13 +138,13 @@ export function VehicleDetailClient({ detail }: { detail: VehicleDetail }) {
         </Section>
       </div>
 
-      {/* Route history placeholder */}
-      <div className="flex items-center justify-between rounded-[var(--radius)] border border-dashed border-border bg-card/50 px-4 py-3.5">
+      {/* Route history / replay */}
+      <div className="flex items-center justify-between rounded-[var(--radius)] border border-border bg-card px-4 py-3.5">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <MapPinned className="size-4 text-text-tertiary" />
+          <MapPinned className="size-4 text-accent-sky" />
           {td("route_history")}
         </div>
-        <Button variant="outline" size="sm" onClick={() => toast.info(td("route_history_soon"))}>
+        <Button variant="outline" size="sm" render={<Link href={`/admin/araclar/${v.id}/rota`} />}>
           <History className="size-4" />
           {td("route_history")}
         </Button>

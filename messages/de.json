@@ -273,6 +273,16 @@
     "kpi_on_map": "Auf Karte",
     "kpi_longest": "Längste aktiv"
   },
+  "route": {
+    "title": "Routenverlauf",
+    "no_route": "Keine Route für diesen Tag",
+    "play": "Abspielen / Pause",
+    "restart": "Von vorne",
+    "progress": "Fortschritt",
+    "points": "{n} Punkte",
+    "sampled": "abgetastet",
+    "back": "Zurück"
+  },
   "vehicles": {
     "title": "Fahrzeuge",
     "subtitle": "Flotte — Kennzeichen, Fahrer und Status",

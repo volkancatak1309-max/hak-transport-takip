@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Route as RouteIcon } from "lucide-react";
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -29,6 +29,7 @@ export default async function WorkerDetailPage({
   const { id } = await params;
   const t = await getTranslations("workers");
   const tc = await getTranslations("common");
+  const tRoute = await getTranslations("route");
 
   const { data: worker } = await supabaseAdmin
     .from("workers")
@@ -94,6 +95,12 @@ export default async function WorkerDetailPage({
             <Button variant="ghost" size="sm" className="gap-1.5">
               <ArrowLeft className="size-4" />
               {t("title")}
+            </Button>
+          </Link>
+          <Link href={`/admin/rota?worker=${w.id}`} className="ml-auto">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <RouteIcon className="size-4" />
+              {tRoute("title")}
             </Button>
           </Link>
         </div>

@@ -94,7 +94,15 @@ export async function startShiftAction(formData: FormData): Promise<ShiftResult>
     insert.start_package_count = parsed.data.expected_cargo;
   }
 
-  const { error } = await supabaseAdmin.from("time_entries").insert(insert);
+  let { error } = await supabaseAdmin.from("time_entries").insert(insert);
+  if (error && /vehicle_id|start_package_count|column/i.test(error.message)) {
+    // Pre-migration fallback: vehicle columns not applied yet → insert legacy shape
+    // so shift-start never breaks before migration 009 is run.
+    const legacy = { ...insert };
+    delete legacy.vehicle_id;
+    delete legacy.start_package_count;
+    ({ error } = await supabaseAdmin.from("time_entries").insert(legacy));
+  }
   if (error) return { ok: false, error: error.message };
 
   // Telegram: alert linked admins that this driver started a shift
@@ -234,13 +242,25 @@ export async function addBreakMinutesAction(minutes: number): Promise<ShiftResul
   if (!active) return { ok: false, error: "no_active" };
 
   const newBreak = (active.break_minutes ?? 0) + add;
+  // Keep break-minute logging independent of the new column so this never
+  // regresses if migration 009 hasn't been applied yet.
   const { error } = await supabaseAdmin
     .from("time_entries")
-    .update({ break_minutes: newBreak, break_started_at: null })
+    .update({ break_minutes: newBreak })
     .eq("id", active.id)
     .eq("worker_id", session.worker_id!);
 
   if (error) return { ok: false, error: error.message };
+
+  // Best-effort: clear the server-side break flag (no-op pre-migration).
+  await supabaseAdmin
+    .from("time_entries")
+    .update({ break_started_at: null })
+    .eq("id", active.id)
+    .then(
+      () => {},
+      () => {}
+    );
 
   revalidatePath("/panel");
   return { ok: true };

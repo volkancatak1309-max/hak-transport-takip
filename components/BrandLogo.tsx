@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * HAK61 wordmark — transparent PNG, sits directly on the surface (no box/chip,
- * no halo). Reads cleanly on both light and dark themes. Aspect (≈3.015:1) is
+ * no halo). Reads cleanly on both light and dark themes. Aspect (≈3.06:1) is
  * preserved; only `height` drives the size.
  */
 export function BrandLogo({
@@ -13,7 +13,7 @@ export function BrandLogo({
   className?: string;
   height?: number;
 }) {
-  const width = Math.round(height * (603 / 200));
+  const width = Math.round(height * (477 / 156));
   return (
     <Image
       src="/logo.png"

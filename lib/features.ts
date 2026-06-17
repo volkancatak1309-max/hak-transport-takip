@@ -9,6 +9,6 @@
  * Currently disabled to keep the app focused on the core need:
  * vehicle/driver tracking, who-is-where (live GPS), and working time.
  */
-export const FUEL_ENABLED = false;
-export const EXPENSE_ENABLED = false;
-export const MAINTENANCE_ENABLED = false;
+export const FUEL_ENABLED = true;
+export const EXPENSE_ENABLED = true;
+export const MAINTENANCE_ENABLED = true;

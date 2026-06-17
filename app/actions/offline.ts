@@ -93,13 +93,24 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
     if (br !== null) update.break_minutes = br;
     const cargo = num(item.payload.cargo_count);
     if (cargo !== null) update.cargo_count = cargo;
+    const undel = num(item.payload.undelivered_count);
+    if (undel !== null) update.undelivered_count = undel;
     if (item.payload.plate) update.plate = item.payload.plate;
 
-    const { error } = await supabaseAdmin
+    let { error } = await supabaseAdmin
       .from("time_entries")
       .update(update)
       .eq("id", active.id)
       .eq("worker_id", workerId);
+    if (error && /undelivered_count|column/i.test(error.message)) {
+      const legacy = { ...update };
+      delete legacy.undelivered_count;
+      ({ error } = await supabaseAdmin
+        .from("time_entries")
+        .update(legacy)
+        .eq("id", active.id)
+        .eq("worker_id", workerId));
+    }
     if (error) return { ok: false, error: error.message };
   } else if (item.type === "break") {
     const add = num(item.payload.minutes) ?? 0;

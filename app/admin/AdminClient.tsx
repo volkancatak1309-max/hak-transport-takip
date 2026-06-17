@@ -285,6 +285,7 @@ export function AdminClient({
       t("tblBreak"),
       t("tblKm"),
       t("tblCargo"),
+      t("tblUndelivered"),
       t("tblPlate"),
       t("tblNote"),
     ];
@@ -300,6 +301,7 @@ export function AdminClient({
         String(e.break_minutes ?? 0),
         km !== null ? String(km) : "",
         e.cargo_count !== null ? String(e.cargo_count) : "",
+        e.undelivered_count !== null ? String(e.undelivered_count) : "",
         e.plate ?? "",
         (e.notes ?? "").replace(/[\r\n]+/g, " "),
       ];
@@ -335,8 +337,11 @@ export function AdminClient({
         end: t("tblEnd"),
         worked: t("tblWorked"),
         breakMin: t("tblBreak"),
+        startKm: t("tblStartKm"),
+        endKm: t("tblEndKm"),
         km: t("tblKm"),
         cargo: t("tblCargo"),
+        undelivered: t("tblUndelivered"),
         plate: t("tblPlate"),
       },
       rows: entries.map((e) => {
@@ -349,8 +354,11 @@ export function AdminClient({
           end: e.ended_at ? formatTime(e.ended_at, locale) : "—",
           worked: formatDurationShort(w, locale),
           breakMin: String(e.break_minutes ?? 0),
+          startKm: e.start_km != null ? String(e.start_km) : "—",
+          endKm: e.end_km != null ? String(e.end_km) : "—",
           km: km !== null ? String(km) : "—",
           cargo: e.cargo_count !== null ? String(e.cargo_count) : "—",
+          undelivered: e.undelivered_count !== null ? String(e.undelivered_count) : "—",
           plate: e.plate ?? "—",
         };
       }),
@@ -564,6 +572,7 @@ export function AdminClient({
                   <TableHead>{t("tblBreak")}</TableHead>
                   <TableHead>{t("tblKm")}</TableHead>
                   <TableHead>{t("tblCargo")}</TableHead>
+                  <TableHead>{t("tblUndelivered")}</TableHead>
                   <TableHead>{t("tblPlate")}</TableHead>
                   <TableHead className="max-w-[200px]">{t("tblNote")}</TableHead>
                   <TableHead className="text-right">{t("tblActions")}</TableHead>
@@ -617,6 +626,7 @@ export function AdminClient({
                         {km !== null ? km.toLocaleString(nf) : "—"}
                       </TableCell>
                       <TableCell className="nums">{e.cargo_count ?? "—"}</TableCell>
+                      <TableCell className="nums">{e.undelivered_count ?? "—"}</TableCell>
                       <TableCell className="nums">{e.plate ?? "—"}</TableCell>
                       <TableCell className="max-w-[200px] truncate" title={e.notes ?? ""}>
                         {e.notes ?? "—"}

@@ -242,6 +242,7 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
       notes: formData.get("notes") || null,
       break_minutes: formData.get("break_minutes") || null,
       cargo_count: formData.get("cargo_count") || null,
+      undelivered_count: formData.get("undelivered_count") || null,
     };
     startTransition(async () => {
       const r = await tryServerAction(
@@ -694,17 +695,31 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
                 </p>
               )}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cargo_count">{t("cargoDelivered")}</Label>
-              <Input
-                id="cargo_count"
-                name="cargo_count"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                defaultValue={active?.cargo_count ?? ""}
-                className="h-12"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="cargo_count">{t("cargoDelivered")}</Label>
+                <Input
+                  id="cargo_count"
+                  name="cargo_count"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  defaultValue={active?.cargo_count ?? ""}
+                  className="h-12"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="undelivered_count">{t("cargoUndelivered")}</Label>
+                <Input
+                  id="undelivered_count"
+                  name="undelivered_count"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  defaultValue={active?.undelivered_count ?? ""}
+                  className="h-12"
+                />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="break_minutes">{t("breakMinutes")}</Label>

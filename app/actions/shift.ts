@@ -136,6 +136,7 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
     notes: formData.get("notes") || null,
     break_minutes: formData.get("break_minutes") || null,
     cargo_count: formData.get("cargo_count") || null,
+    undelivered_count: formData.get("undelivered_count") || null,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
@@ -176,12 +177,25 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
   if (parsed.data.cargo_count !== null && parsed.data.cargo_count !== undefined) {
     updateData.cargo_count = parsed.data.cargo_count;
   }
+  if (parsed.data.undelivered_count !== null && parsed.data.undelivered_count !== undefined) {
+    updateData.undelivered_count = parsed.data.undelivered_count;
+  }
 
-  const { error } = await supabaseAdmin
+  let { error } = await supabaseAdmin
     .from("time_entries")
     .update(updateData)
     .eq("id", active.id)
     .eq("worker_id", session.worker_id!);
+  if (error && /undelivered_count|column/i.test(error.message)) {
+    // Pre-migration fallback: column not applied yet → end the shift anyway.
+    const legacy = { ...updateData };
+    delete legacy.undelivered_count;
+    ({ error } = await supabaseAdmin
+      .from("time_entries")
+      .update(legacy)
+      .eq("id", active.id)
+      .eq("worker_id", session.worker_id!));
+  }
 
   if (error) return { ok: false, error: error.message };
 

@@ -26,6 +26,7 @@ export const endShiftSchema = z.object({
   notes: z.string().trim().max(500).optional().nullable(),
   break_minutes: z.coerce.number().int().min(0).max(1440).optional().nullable(),
   cargo_count: z.coerce.number().int().min(0).max(100000).optional().nullable(),
+  undelivered_count: z.coerce.number().int().min(0).max(100000).optional().nullable(),
 });
 
 export const editEntrySchema = z.object({

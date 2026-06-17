@@ -25,6 +25,7 @@ export type TimeEntry = {
   notes: string | null;
   break_minutes: number | null;
   cargo_count: number | null;
+  undelivered_count: number | null;
   updated_at: string | null;
   updated_by: string | null;
   nine_hour_notified_at: string | null;

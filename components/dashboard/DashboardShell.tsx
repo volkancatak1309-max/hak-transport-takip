@@ -256,6 +256,13 @@ export function DashboardShell({
         </header>
 
         <main className="flex-1 page-enter">{children}</main>
+
+        <footer className="border-t border-border px-4 py-3 sm:px-6">
+          <div className="flex flex-col items-center justify-between gap-1 text-xs text-text-tertiary sm:flex-row">
+            <span>© {new Date().getFullYear()} HAK61 GmbH</span>
+            <span className="nums">v2.0.0</span>
+          </div>
+        </footer>
       </div>
 
       <form ref={logoutRef} action={logoutAction} className="hidden" />

@@ -116,8 +116,11 @@ export function WorkerDetailClient({
         end: ta("tblEnd"),
         worked: ta("tblWorked"),
         breakMin: ta("tblBreak"),
+        startKm: ta("tblStartKm"),
+        endKm: ta("tblEndKm"),
         km: ta("tblKm"),
         cargo: ta("tblCargo"),
+        undelivered: ta("tblUndelivered"),
         plate: ta("tblPlate"),
       },
       rows: entries.map((e) => {
@@ -130,8 +133,11 @@ export function WorkerDetailClient({
           end: e.ended_at ? formatTime(e.ended_at, locale) : "—",
           worked: formatDurationShort(w, locale),
           breakMin: String(e.break_minutes ?? 0),
+          startKm: e.start_km != null ? String(e.start_km) : "—",
+          endKm: e.end_km != null ? String(e.end_km) : "—",
           km: km !== null ? String(km) : "—",
           cargo: e.cargo_count !== null ? String(e.cargo_count) : "—",
+          undelivered: e.undelivered_count !== null ? String(e.undelivered_count) : "—",
           plate: e.plate ?? "—",
         };
       }),

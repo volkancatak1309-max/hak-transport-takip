@@ -20,8 +20,11 @@ export type PdfHeaders = {
   end: string;
   worked: string;
   breakMin: string;
+  startKm: string;
+  endKm: string;
   km: string;
   cargo: string;
+  undelivered: string;
   plate: string;
 };
 
@@ -32,8 +35,11 @@ export type PdfRow = {
   end: string;
   worked: string;
   breakMin: string;
+  startKm: string;
+  endKm: string;
   km: string;
   cargo: string;
+  undelivered: string;
   plate: string;
 };
 
@@ -112,15 +118,18 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: "#1e293b",
   },
-  colWorker: { width: "16%" },
-  colDate: { width: "10%" },
-  colStart: { width: "8%" },
-  colEnd: { width: "8%" },
-  colWorked: { width: "12%" },
-  colBreak: { width: "8%" },
-  colKm: { width: "10%" },
-  colCargo: { width: "8%" },
-  colPlate: { width: "10%" },
+  colWorker: { width: "14%" },
+  colDate: { width: "8%" },
+  colStart: { width: "6%" },
+  colEnd: { width: "6%" },
+  colWorked: { width: "9%" },
+  colBreak: { width: "6%" },
+  colStartKm: { width: "9%" },
+  colEndKm: { width: "9%" },
+  colKm: { width: "7%" },
+  colCargo: { width: "7%" },
+  colUndelivered: { width: "10%" },
+  colPlate: { width: "9%" },
   footer: {
     position: "absolute",
     bottom: 20,
@@ -139,7 +148,7 @@ const styles = StyleSheet.create({
 function ReportDoc(opts: PdfOptions) {
   return (
     <Document>
-      <Page size="A4" style={styles.page} wrap>
+      <Page size="A4" orientation="landscape" style={styles.page} wrap>
         <View style={styles.header} fixed>
           <View style={styles.headerLeft}>
             {opts.logoDataUrl ? (
@@ -167,8 +176,11 @@ function ReportDoc(opts: PdfOptions) {
             <Text style={[styles.th, styles.colEnd]}>{opts.headers.end}</Text>
             <Text style={[styles.th, styles.colWorked]}>{opts.headers.worked}</Text>
             <Text style={[styles.th, styles.colBreak]}>{opts.headers.breakMin}</Text>
+            <Text style={[styles.th, styles.colStartKm]}>{opts.headers.startKm}</Text>
+            <Text style={[styles.th, styles.colEndKm]}>{opts.headers.endKm}</Text>
             <Text style={[styles.th, styles.colKm]}>{opts.headers.km}</Text>
             <Text style={[styles.th, styles.colCargo]}>{opts.headers.cargo}</Text>
+            <Text style={[styles.th, styles.colUndelivered]}>{opts.headers.undelivered}</Text>
             <Text style={[styles.th, styles.colPlate]}>{opts.headers.plate}</Text>
           </View>
           {opts.rows.map((r, i) => (
@@ -179,8 +191,11 @@ function ReportDoc(opts: PdfOptions) {
               <Text style={[styles.td, styles.colEnd]}>{r.end}</Text>
               <Text style={[styles.td, styles.colWorked]}>{r.worked}</Text>
               <Text style={[styles.td, styles.colBreak]}>{r.breakMin}</Text>
+              <Text style={[styles.td, styles.colStartKm]}>{r.startKm}</Text>
+              <Text style={[styles.td, styles.colEndKm]}>{r.endKm}</Text>
               <Text style={[styles.td, styles.colKm]}>{r.km}</Text>
               <Text style={[styles.td, styles.colCargo]}>{r.cargo}</Text>
+              <Text style={[styles.td, styles.colUndelivered]}>{r.undelivered}</Text>
               <Text style={[styles.td, styles.colPlate]}>{r.plate}</Text>
             </View>
           ))}

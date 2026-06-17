@@ -1,9 +1,10 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getLocale } from "@/i18n/request";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AdminClient } from "./AdminClient";
 import { workedMs, kmDiff } from "@/lib/format";
-import type { TimeEntryWithWorker, Worker } from "@/lib/types";
+import type { TimeEntry, TimeEntryWithWorker, Worker } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -48,9 +49,10 @@ function computeRange(
   return { start, end };
 }
 
-async function getWeeklyData(): Promise<
-  { date: string; label: string; hours: number; workers: number }[]
-> {
+async function getWeeklyData(
+  locale: string
+): Promise<{ date: string; label: string; hours: number; workers: number }[]> {
+  const weekdayTag = locale === "de" ? "de-AT" : "tr-TR";
   const end = new Date();
   const tzEnd = new Date(end.toLocaleString("en-US", { timeZone: "Europe/Vienna" }));
   tzEnd.setHours(23, 59, 59, 999);
@@ -92,7 +94,8 @@ async function getWeeklyData(): Promise<
 
   return Object.entries(bucket).map(([date, v]) => {
     const d = new Date(date + "T12:00:00");
-    const label = d.toLocaleDateString("en-US", {
+    // Localized short weekday: tr-TR → Pzt/Sal/Çar… · de-AT → Mo/Di/Mi…
+    const label = d.toLocaleDateString(weekdayTag, {
       weekday: "short",
       timeZone: "Europe/Vienna",
     });
@@ -122,10 +125,15 @@ export default async function AdminPage({
   const workerFilter = sp.worker ?? "all";
   const statusFilter = sp.status ?? "all";
   const { start, end } = computeRange(range, sp.from, sp.to);
+  const locale = await getLocale();
 
+  // NOTE: we deliberately do NOT use a `workers!inner(...)` embed here. That
+  // embed was returning no rows (fragile relationship resolution), which zeroed
+  // every KPI for every range while the embed-free weekly chart stayed correct.
+  // We fetch entries plainly and attach the worker from a separate query.
   let query = supabaseAdmin
     .from("time_entries")
-    .select("*, workers!inner(id, name, plate)")
+    .select("*")
     .gte("started_at", start.toISOString())
     .lte("started_at", end.toISOString())
     .order("started_at", { ascending: false });
@@ -137,24 +145,37 @@ export default async function AdminPage({
   const [entriesResult, workersResult, weekly] = await Promise.all([
     query,
     supabaseAdmin.from("workers").select("*").order("name"),
-    getWeeklyData(),
+    getWeeklyData(locale),
   ]);
 
-  let entriesData = (entriesResult.data ?? []) as TimeEntryWithWorker[];
+  const workersData = (workersResult.data ?? []) as Worker[];
+  const workerMap = new Map(workersData.map((w) => [w.id, w]));
+
+  let entriesData = ((entriesResult.data ?? []) as TimeEntry[]).map((e) => {
+    const w = workerMap.get(e.worker_id);
+    return {
+      ...e,
+      workers: w ? { id: w.id, name: w.name, plate: w.plate } : null,
+    } as TimeEntryWithWorker;
+  });
   if (statusFilter === "over") {
     entriesData = entriesData.filter((e) => workedMs(e) > 9 * 60 * 60 * 1000);
   }
-  const workersData = (workersResult.data ?? []) as Worker[];
 
+  // Totals reflect the SELECTED range. Hours/KM come from COMPLETED shifts only
+  // (consistent with the weekly chart); active shifts feed the active count.
   let totalMs = 0;
   let totalKm = 0;
   let activeCount = 0;
   let overLimit = 0;
   for (const e of entriesData) {
-    totalMs += workedMs(e);
-    const km = kmDiff(e);
-    if (km !== null) totalKm += km;
-    if (e.ended_at === null) activeCount++;
+    if (e.ended_at === null) {
+      activeCount++;
+    } else {
+      totalMs += workedMs(e);
+      const km = kmDiff(e);
+      if (km !== null) totalKm += km;
+    }
     if (workedMs(e) > 9 * 60 * 60 * 1000) overLimit++;
   }
 

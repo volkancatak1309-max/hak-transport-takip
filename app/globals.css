@@ -14,6 +14,7 @@
   --color-brand-soft: var(--accent-claret-soft);
   /* Sky accent — live/status indicators, links. */
   --color-sky: var(--accent-sky);
+  --color-gold: var(--accent-gold);
   --color-surface-2: var(--surface-2);
 }
 
@@ -27,6 +28,10 @@ body {
   --font-heading: var(--font-sans);
   --color-accent-claret: var(--accent-claret);
   --color-accent-sky: var(--accent-sky);
+  --color-accent-gold: var(--accent-gold);
+  --color-status-active: var(--status-active);
+  --color-status-break: var(--status-break);
+  --color-status-idle: var(--status-idle);
   --color-surface: var(--card);
   --color-text-secondary: var(--muted-foreground);
   --color-text-tertiary: var(--text-tertiary);
@@ -84,12 +89,20 @@ body {
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.235 0.02 262);
 
-  /* Accents */
-  --accent-claret: oklch(0.52 0.19 16);
-  --accent-claret-hover: oklch(0.47 0.19 16);
-  --accent-claret-soft: oklch(0.52 0.19 16 / 12%);
-  --accent-sky: oklch(0.62 0.13 233);
-  --accent-sky-soft: oklch(0.62 0.13 233 / 12%);
+  /* Brand accents — HAK61 GmbH.
+     claret #750d02 · sky #699ec3 · gold #ce9f51 (computed OKLCH, tuned per theme). */
+  --accent-claret: oklch(0.4 0.142 31);
+  --accent-claret-hover: oklch(0.34 0.14 31);
+  --accent-claret-soft: oklch(0.4 0.142 31 / 12%);
+  --accent-sky: oklch(0.58 0.085 240);
+  --accent-sky-soft: oklch(0.58 0.085 240 / 14%);
+  --accent-gold: oklch(0.68 0.1 78);
+  --accent-gold-soft: oklch(0.68 0.1 78 / 16%);
+
+  /* Operational status — NO green/red. active=sky, break=claret, idle=gold. */
+  --status-active: var(--accent-sky);
+  --status-break: var(--accent-claret);
+  --status-idle: var(--accent-gold);
 
   --primary: var(--accent-claret);
   --primary-foreground: oklch(1 0 0);
@@ -133,11 +146,18 @@ body {
   --popover: oklch(0.205 0.007 256);
   --popover-foreground: oklch(0.975 0.003 256);
 
-  --accent-claret: oklch(0.58 0.2 16);
-  --accent-claret-hover: oklch(0.64 0.2 16);
-  --accent-claret-soft: oklch(0.58 0.2 16 / 16%);
-  --accent-sky: oklch(0.74 0.13 233);
-  --accent-sky-soft: oklch(0.74 0.13 233 / 16%);
+  /* Brand accents lightened for visibility on the dark base; hue locked to brand. */
+  --accent-claret: oklch(0.52 0.155 31);
+  --accent-claret-hover: oklch(0.57 0.16 31);
+  --accent-claret-soft: oklch(0.52 0.155 31 / 18%);
+  --accent-sky: oklch(0.72 0.085 240);
+  --accent-sky-soft: oklch(0.72 0.085 240 / 16%);
+  --accent-gold: oklch(0.76 0.105 78);
+  --accent-gold-soft: oklch(0.76 0.105 78 / 18%);
+
+  --status-active: var(--accent-sky);
+  --status-break: var(--accent-claret);
+  --status-idle: var(--accent-gold);
 
   --primary: var(--accent-claret);
   --primary-foreground: oklch(0.99 0 0);
@@ -255,7 +275,8 @@ body {
   width: 36px;
   height: 36px;
   border-radius: 9999px;
-  background: var(--color-brand);
+  /* Active driver on map = sky (operational status colour). */
+  background: var(--accent-sky);
   border: 3px solid var(--card);
   color: #fff;
   display: flex;
@@ -266,6 +287,13 @@ body {
   line-height: 1;
   box-shadow: 0 1px 6px rgb(0 0 0 / 0.35);
   transition: transform 240ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+/* 9h+ active → gold warning. On break → claret. Never green/red for status. */
+.hak-pin.is-warn {
+  background: var(--accent-gold);
+}
+.hak-pin.is-break {
+  background: var(--accent-claret);
 }
 .hak-pin:hover {
   transform: scale(1.1);

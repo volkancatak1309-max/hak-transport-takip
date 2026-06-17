@@ -9,8 +9,9 @@ export const APPROVAL_BADGE: Record<
   rejected: "destructive",
 };
 
+// Operational/approval stripes — no green/red. waiting=gold, ok=sky, declined=claret.
 export const APPROVAL_STRIPE: Record<ApprovalStatus, string> = {
-  pending: "border-l-muted-foreground/40",
-  approved: "border-l-emerald-500",
-  rejected: "border-l-destructive",
+  pending: "border-l-accent-gold",
+  approved: "border-l-accent-sky",
+  rejected: "border-l-accent-claret",
 };

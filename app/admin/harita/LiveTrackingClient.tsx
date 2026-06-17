@@ -65,7 +65,7 @@ export function LiveTrackingClient({
         <Kpi
           label={tAdmin("overLimit")}
           value={String(summary.overLimit)}
-          accent={summary.overLimit > 0 ? "destructive" : undefined}
+          accent={summary.overLimit > 0 ? "gold" : undefined}
         />
       </div>
 
@@ -124,7 +124,7 @@ export function LiveTrackingClient({
                           <span className="nums text-xs text-text-tertiary">{d.plate ?? "—"}</span>
                         </div>
                         <div className="mt-0.5 flex items-center gap-2 text-xs">
-                          <span className={over ? "nums text-destructive" : "nums text-muted-foreground"}>
+                          <span className={over ? "nums text-accent-gold" : "nums text-muted-foreground"}>
                             {formatDurationShort(activeMs, locale)}
                           </span>
                           <span className="text-text-tertiary">·</span>
@@ -154,14 +154,14 @@ function Kpi({
 }: {
   label: string;
   value: string;
-  accent?: "sky" | "destructive";
+  accent?: "sky" | "gold";
   live?: boolean;
 }) {
   const valueColor =
     accent === "sky"
       ? "text-accent-sky"
-      : accent === "destructive"
-      ? "text-destructive"
+      : accent === "gold"
+      ? "text-accent-gold"
       : "text-foreground";
   return (
     <div className="rounded-[var(--radius)] border border-border bg-card px-4 py-3.5">

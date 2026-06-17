@@ -1,11 +1,13 @@
 import type { AssignmentStatus, AssignmentStop } from "@/lib/types";
 
 // Left status stripe (3px border) — admin cards, panel cards, calendar.
+// No green/red: assigned=gold(waiting), started=sky(active), completed=neutral,
+// cancelled=claret.
 export const STATUS_STRIPE: Record<AssignmentStatus, string> = {
-  assigned: "border-l-muted-foreground/40",
-  started: "border-l-primary",
-  completed: "border-l-emerald-500",
-  cancelled: "border-l-destructive",
+  assigned: "border-l-accent-gold",
+  started: "border-l-accent-sky",
+  completed: "border-l-muted-foreground/40",
+  cancelled: "border-l-accent-claret",
 };
 
 export const STATUS_BADGE: Record<
@@ -15,7 +17,7 @@ export const STATUS_BADGE: Record<
   assigned: "secondary",
   started: "default",
   completed: "outline",
-  cancelled: "destructive",
+  cancelled: "outline",
 };
 
 /** "Feldkirch Lager → Salzburg → Linz", truncated to `max` chars. */

@@ -368,12 +368,13 @@ export function AdminClient({
         <SummaryCard
           label={t("activeShifts")}
           value={String(summary.activeCount)}
-          highlight={summary.activeCount > 0 ? "primary" : undefined}
+          highlight={summary.activeCount > 0 ? "sky" : undefined}
+          live={summary.activeCount > 0}
         />
         <SummaryCard
           label={t("overLimit")}
           value={String(summary.overLimit)}
-          highlight={summary.overLimit > 0 ? "destructive" : undefined}
+          highlight={summary.overLimit > 0 ? "gold" : undefined}
           pulse={summary.overLimit > 0}
         />
       </div>
@@ -575,9 +576,9 @@ export function AdminClient({
                   const over = w > NINE_HOURS;
                   const km = kmDiff(e);
                   const borderClass = isActive
-                    ? "border-l-4 border-l-primary"
+                    ? "border-l-4 border-l-accent-sky"
                     : over
-                    ? "border-l-4 border-l-destructive"
+                    ? "border-l-4 border-l-accent-gold"
                     : "";
                   return (
                     <TableRow key={e.id} className={borderClass}>
@@ -591,9 +592,10 @@ export function AdminClient({
                       <TableCell className="nums">{formatTime(e.started_at, locale)}</TableCell>
                       <TableCell className="nums">
                         {isActive ? (
-                          <Badge variant="default" className="text-[10px]">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-sky/15 px-2 py-0.5 text-[10px] font-medium text-accent-sky">
+                            <span className="live-dot" />
                             {t("active")}
-                          </Badge>
+                          </span>
                         ) : (
                           formatTime(e.ended_at, locale)
                         )}
@@ -601,14 +603,13 @@ export function AdminClient({
                       <TableCell className="nums">
                         {isActive ? formatDuration(w) : formatDurationShort(w, locale)}
                         {over && (
-                          <Badge
-                            variant="destructive"
-                            className="ml-2 text-[10px] gap-1"
+                          <span
+                            className="ml-2 inline-flex items-center gap-1 rounded-full bg-accent-gold/15 px-2 py-0.5 text-[10px] font-medium text-accent-gold"
                             title={t("overWarn")}
                           >
                             <AlertTriangle className="size-3" />
                             9h+
-                          </Badge>
+                          </span>
                         )}
                       </TableCell>
                       <TableCell className="nums">{e.break_minutes ?? 0}</TableCell>
@@ -873,25 +874,32 @@ function SummaryCard({
   nums,
   highlight,
   pulse,
+  live,
 }: {
   label: string;
   value: string;
   nums?: boolean;
-  highlight?: "primary" | "destructive";
+  highlight?: "sky" | "gold";
   pulse?: boolean;
+  live?: boolean;
 }) {
   const color =
-    highlight === "primary"
-      ? "text-primary"
-      : highlight === "destructive"
-      ? "text-destructive"
+    highlight === "sky"
+      ? "text-accent-sky"
+      : highlight === "gold"
+      ? "text-accent-gold"
       : "text-foreground";
   return (
     <Card>
       <CardContent className="p-4">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+        <div className="flex items-center gap-1.5">
+          {live && <span className="live-dot" />}
+          <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
+            {label}
+          </span>
+        </div>
         <div
-          className={`text-2xl font-bold mt-1 ${color} ${nums ? "nums" : ""} ${
+          className={`text-2xl font-semibold mt-1.5 ${color} ${nums ? "nums" : ""} ${
             pulse ? "pulse-soft" : ""
           }`}
         >

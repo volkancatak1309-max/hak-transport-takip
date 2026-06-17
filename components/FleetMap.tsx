@@ -19,10 +19,13 @@ function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function makeIcon(name: string): L.DivIcon {
+const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
+
+function makeIcon(name: string, variant: "active" | "warn"): L.DivIcon {
+  const mod = variant === "warn" ? " is-warn" : "";
   return L.divIcon({
     className: "hak-marker-wrap",
-    html: `<div class="hak-pin"><span>${initials(name)}</span></div>`,
+    html: `<div class="hak-pin${mod}"><span>${initials(name)}</span></div>`,
     iconSize: [36, 36],
     iconAnchor: [18, 18],
     popupAnchor: [0, -18],
@@ -71,20 +74,19 @@ export function FleetMap({ drivers }: { drivers: ActiveDriver[] }) {
             <Polyline
               key={`route-${d.worker_id}`}
               positions={d.route}
-              pathOptions={{ color: "var(--color-brand)", weight: 3, opacity: 0.6 }}
+              pathOptions={{ color: "var(--accent-sky)", weight: 3, opacity: 0.55 }}
             />
           )
       )}
       {drivers.map((d) => {
-        const minutesActive = Math.max(
-          0,
-          Math.floor((now - new Date(d.shift_started_at).getTime()) / 60000)
-        );
+        const activeMs = now - new Date(d.shift_started_at).getTime();
+        const minutesActive = Math.max(0, Math.floor(activeMs / 60000));
+        const variant = activeMs > NINE_HOURS_MS ? "warn" : "active";
         return (
           <Marker
             key={d.worker_id}
             position={[d.latitude, d.longitude]}
-            icon={makeIcon(d.name)}
+            icon={makeIcon(d.name, variant)}
           >
             <Popup>
               <div className="min-w-[180px] space-y-2">

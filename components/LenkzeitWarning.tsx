@@ -153,12 +153,13 @@ export function LenkzeitWarning({
   );
   const min = elapsedMs / 60_000;
 
+  // No green for the "ok" state — brand sky. Amber as the approaching-limit step.
   const colorClass =
     min >= WARN_MIN
       ? "text-destructive"
       : min >= 180
-      ? "text-amber-500"
-      : "text-emerald-600";
+      ? "text-accent-gold"
+      : "text-accent-sky";
   const pulse = min >= WARN_MIN && !isOnBreak;
 
   function handleSnooze() {

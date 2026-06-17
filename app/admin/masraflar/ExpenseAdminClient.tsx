@@ -242,7 +242,7 @@ export function ExpenseAdminClient({ entries }: Props) {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           <Button size="icon" variant="ghost" disabled={busy} onClick={() => approve(e.id)} aria-label="approve">
-                            <Check className="size-4 text-emerald-600" />
+                            <Check className="size-4 text-accent-sky" />
                           </Button>
                           <Button
                             size="icon"

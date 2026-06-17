@@ -313,6 +313,31 @@ body {
   border: 3px solid #fff;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
 }
+
+/* Route replay — start/end endpoints + moving vehicle dot. */
+.hak-route-endpoint {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.4);
+}
+.hak-route-start {
+  background: var(--accent-sky);
+}
+.hak-route-end {
+  background: var(--accent-claret);
+}
+.hak-replay-pin {
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: var(--accent-sky);
+  border: 3px solid #fff;
+  box-shadow:
+    0 0 0 4px color-mix(in oklch, var(--accent-sky) 35%, transparent),
+    0 2px 6px rgb(0 0 0 / 0.4);
+}
 /* Leaflet popup theme alignment */
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip {

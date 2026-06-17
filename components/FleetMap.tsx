@@ -21,11 +21,19 @@ function initials(name: string): string {
 
 const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
 
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function makeIcon(name: string, variant: "active" | "warn"): L.DivIcon {
   const mod = variant === "warn" ? " is-warn" : "";
   return L.divIcon({
     className: "hak-marker-wrap",
-    html: `<div class="hak-pin${mod}"><span>${initials(name)}</span></div>`,
+    html:
+      `<div class="hak-pin-wrap">` +
+      `<div class="hak-pin-label">${esc(name)}</div>` +
+      `<div class="hak-pin${mod}"><span>${initials(name)}</span></div>` +
+      `</div>`,
     iconSize: [36, 36],
     iconAnchor: [18, 18],
     popupAnchor: [0, -18],

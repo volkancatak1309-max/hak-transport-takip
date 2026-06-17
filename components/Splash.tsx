@@ -21,8 +21,8 @@ export function Splash() {
       /* sessionStorage blocked → just show once */
     }
     setShow(true);
-    const leave = setTimeout(() => setLeaving(true), 1100);
-    const done = setTimeout(() => setShow(false), 1450);
+    const leave = setTimeout(() => setLeaving(true), 3000);
+    const done = setTimeout(() => setShow(false), 3350);
     return () => {
       clearTimeout(leave);
       clearTimeout(done);

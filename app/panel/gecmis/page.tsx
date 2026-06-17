@@ -3,7 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { ArrowLeft } from "lucide-react";
 import { requireWorker } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
-import { AppShell } from "@/components/AppShell";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { HistoryClient } from "./HistoryClient";
 import type { TimeEntry } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,7 @@ export default async function HistoryPage({
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
   return (
-    <AppShell
+    <DashboardShell
       user={{
         id: session.worker_id!,
         name: session.name!,
@@ -71,6 +71,6 @@ export default async function HistoryPage({
           to={sp.to ?? ""}
         />
       </div>
-    </AppShell>
+    </DashboardShell>
   );
 }

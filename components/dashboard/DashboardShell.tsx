@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState, useTransition, useEffect } from "react";
@@ -23,6 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BrandLogo } from "@/components/BrandLogo";
 import { UserAvatar } from "@/components/UserAvatar";
 import { OfflineBadge } from "@/components/OfflineBadge";
 import { Button } from "@/components/ui/button";
@@ -102,6 +102,13 @@ export function DashboardShell({
     return pathname === href || pathname.startsWith(href + "/");
   }
 
+  // Title defaults to the deepest-matching nav item's label (longest href wins,
+  // so /admin/harita beats /admin). An explicit `title` prop always overrides.
+  const activeLabel = [...navItems]
+    .filter((i) => isActive(i.href))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.label;
+  const pageTitle = title ?? activeLabel ?? "";
+
   const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
     <nav className="flex flex-col gap-0.5 px-3">
       {navItems.map((item) => {
@@ -147,15 +154,8 @@ export function DashboardShell({
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col border-r border-border bg-sidebar lg:flex">
         <div className="flex h-16 items-center px-5">
-          <Link href={user.isAdmin ? "/admin" : "/panel"} className="flex items-center gap-2">
-            <Image
-              src="/logo.png"
-              alt="HAK61"
-              width={120}
-              height={32}
-              priority
-              className="h-7 w-auto dark:brightness-110"
-            />
+          <Link href={user.isAdmin ? "/admin" : "/panel"} className="flex items-center">
+            <BrandLogo height={26} />
           </Link>
         </div>
         <div className="flex-1 overflow-y-auto py-3">
@@ -185,13 +185,7 @@ export function DashboardShell({
           />
           <div className="absolute left-0 top-0 flex h-full w-[260px] flex-col bg-sidebar elevate page-enter">
             <div className="flex h-16 items-center justify-between px-5">
-              <Image
-                src="/logo.png"
-                alt="HAK61"
-                width={120}
-                height={32}
-                className="h-7 w-auto dark:brightness-110"
-              />
+              <BrandLogo height={26} />
               <Button variant="ghost" size="icon-sm" onClick={() => setMobileOpen(false)}>
                 <X className="size-5" />
               </Button>
@@ -227,7 +221,7 @@ export function DashboardShell({
             <Menu className="size-5" />
           </Button>
           <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em]">
-            {title ?? ""}
+            {pageTitle}
           </h1>
           <div className="ml-auto flex items-center gap-1.5">
             <Clock />

@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
-import { AppShell } from "@/components/AppShell";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { WorkersClient } from "./WorkersClient";
 import { startOfMonthVienna, workedMs } from "@/lib/format";
 import type { Worker, TimeEntry } from "@/lib/types";
@@ -54,7 +54,7 @@ export default async function WorkersPage() {
   }));
 
   return (
-    <AppShell
+    <DashboardShell
       user={{
         id: session.worker_id!,
         name: session.name!,
@@ -65,6 +65,6 @@ export default async function WorkersPage() {
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6">
         <WorkersClient workers={enriched} />
       </div>
-    </AppShell>
+    </DashboardShell>
   );
 }

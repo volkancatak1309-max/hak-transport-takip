@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/session";
-import { AppShell } from "@/components/AppShell";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getFuelEntries } from "@/app/actions/fuel";
 import { getMaintenance, getDueMaintenance } from "@/app/actions/maintenance";
 import { FuelAdminClient } from "./FuelAdminClient";
@@ -26,7 +26,7 @@ export default async function AdminFuelPage() {
   ];
 
   return (
-    <AppShell
+    <DashboardShell
       user={{
         id: session.worker_id!,
         name: session.name!,
@@ -40,6 +40,6 @@ export default async function AdminFuelPage() {
           <MaintenanceAdminClient items={maint} dueIds={dueIds} plates={plates} />
         )}
       </div>
-    </AppShell>
+    </DashboardShell>
   );
 }

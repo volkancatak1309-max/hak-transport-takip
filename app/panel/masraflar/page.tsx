@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireWorker } from "@/lib/session";
-import { AppShell } from "@/components/AppShell";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getExpenseEntries } from "@/app/actions/expenses";
 import { ExpenseDriverClient } from "./ExpenseDriverClient";
 import { EXPENSE_ENABLED } from "@/lib/features";
@@ -13,7 +13,7 @@ export default async function ExpensesPage() {
   const entries = await getExpenseEntries({ mine: true });
 
   return (
-    <AppShell
+    <DashboardShell
       user={{
         id: session.worker_id!,
         name: session.name!,
@@ -24,6 +24,6 @@ export default async function ExpensesPage() {
       <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
         <ExpenseDriverClient entries={entries} />
       </div>
-    </AppShell>
+    </DashboardShell>
   );
 }

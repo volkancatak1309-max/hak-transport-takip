@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
-import { AppShell } from "@/components/AppShell";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AdminClient } from "./AdminClient";
 import { workedMs, kmDiff } from "@/lib/format";
 import type { TimeEntryWithWorker, Worker } from "@/lib/types";
@@ -159,7 +159,7 @@ export default async function AdminPage({
   }
 
   return (
-    <AppShell
+    <DashboardShell
       user={{
         id: session.worker_id!,
         name: session.name!,
@@ -182,6 +182,6 @@ export default async function AdminPage({
           rangeEnd={end.toISOString()}
         />
       </div>
-    </AppShell>
+    </DashboardShell>
   );
 }

@@ -1,5 +1,5 @@
 import { requireWorker } from "@/lib/session";
-import { AppShell } from "@/components/AppShell";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getAssignments } from "@/app/actions/assignments";
 import { CalendarClient } from "./CalendarClient";
 
@@ -10,7 +10,7 @@ export default async function MyAssignmentsCalendarPage() {
   const assignments = await getAssignments({ mine: true });
 
   return (
-    <AppShell
+    <DashboardShell
       user={{
         id: session.worker_id!,
         name: session.name!,
@@ -21,6 +21,6 @@ export default async function MyAssignmentsCalendarPage() {
       <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6">
         <CalendarClient assignments={assignments} />
       </div>
-    </AppShell>
+    </DashboardShell>
   );
 }

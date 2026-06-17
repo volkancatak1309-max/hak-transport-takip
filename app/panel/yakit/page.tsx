@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireWorker } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
-import { AppShell } from "@/components/AppShell";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getFuelEntries } from "@/app/actions/fuel";
 import { FuelDriverClient } from "./FuelDriverClient";
 import { FUEL_ENABLED } from "@/lib/features";
@@ -26,7 +26,7 @@ export default async function FuelPage() {
   ];
 
   return (
-    <AppShell
+    <DashboardShell
       user={{
         id: session.worker_id!,
         name: session.name!,
@@ -37,6 +37,6 @@ export default async function FuelPage() {
       <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6">
         <FuelDriverClient plates={plates} entries={entries} />
       </div>
-    </AppShell>
+    </DashboardShell>
   );
 }

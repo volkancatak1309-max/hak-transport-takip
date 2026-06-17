@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
-import { AppShell } from "@/components/AppShell";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import {
   Card,
   CardContent,
@@ -80,7 +80,7 @@ export default async function WorkerDetailPage({
   }
 
   return (
-    <AppShell
+    <DashboardShell
       user={{
         id: session.worker_id!,
         name: session.name!,
@@ -135,6 +135,6 @@ export default async function WorkerDetailPage({
           }}
         />
       </div>
-    </AppShell>
+    </DashboardShell>
   );
 }

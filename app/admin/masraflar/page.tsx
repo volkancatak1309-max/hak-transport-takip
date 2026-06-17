@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/session";
-import { AppShell } from "@/components/AppShell";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getExpenseEntries } from "@/app/actions/expenses";
 import { ExpenseAdminClient } from "./ExpenseAdminClient";
 import { EXPENSE_ENABLED } from "@/lib/features";
@@ -13,7 +13,7 @@ export default async function AdminExpensesPage() {
   const entries = await getExpenseEntries({ withUrls: true });
 
   return (
-    <AppShell
+    <DashboardShell
       user={{
         id: session.worker_id!,
         name: session.name!,
@@ -24,6 +24,6 @@ export default async function AdminExpensesPage() {
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 space-y-4">
         <ExpenseAdminClient entries={entries} />
       </div>
-    </AppShell>
+    </DashboardShell>
   );
 }

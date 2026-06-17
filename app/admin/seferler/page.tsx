@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
-import { AppShell } from "@/components/AppShell";
+import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getAssignments } from "@/app/actions/assignments";
 import { AdminAssignmentsClient } from "./AdminAssignmentsClient";
 
@@ -22,7 +22,7 @@ export default async function AssignmentsPage() {
   }));
 
   return (
-    <AppShell
+    <DashboardShell
       user={{
         id: session.worker_id!,
         name: session.name!,
@@ -33,6 +33,6 @@ export default async function AssignmentsPage() {
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 space-y-4">
         <AdminAssignmentsClient assignments={assignments} workers={workerOpts} />
       </div>
-    </AppShell>
+    </DashboardShell>
   );
 }

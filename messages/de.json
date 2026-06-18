@@ -489,6 +489,7 @@
     "exportExcel": "Als Excel exportieren",
     "exportPdf": "PDF-Bericht",
     "addWorker": "+ Mitarbeiter hinzufügen",
+    "tblPersNr": "PersNr",
     "tblWorker": "Mitarbeiter",
     "tblDate": "Datum",
     "tblStart": "Start",

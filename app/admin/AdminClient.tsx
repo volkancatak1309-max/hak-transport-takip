@@ -232,7 +232,18 @@ export function AdminClient({
   }
 
   function exportCsv() {
+    // Personnel number per worker: the real Personalnummer if set, otherwise a
+    // stable sequential number from name order. The DB id (uuid) is NEVER shown.
+    const sortedWorkers = [...workers].sort((a, b) =>
+      (a.name ?? "").localeCompare(b.name ?? "", locale === "de" ? "de" : "tr")
+    );
+    const persNr = new Map<string, string>();
+    sortedWorkers.forEach((w, i) =>
+      persNr.set(w.id, (w.employee_number ?? "").trim() || String(i + 1))
+    );
+
     const header = [
+      t("tblPersNr"),
       t("tblWorker"),
       t("tblDate"),
       t("tblStart"),
@@ -250,29 +261,44 @@ export function AdminClient({
       const w = workedMs(e);
       const km = kmDiff(e);
       return [
+        persNr.get(e.worker_id) ?? "—",
         e.workers?.name ?? "",
         formatDate(e.started_at, locale),
         formatTime(e.started_at, locale),
-        e.ended_at ? formatTime(e.ended_at, locale) : "ACTIVE",
+        e.ended_at ? formatTime(e.ended_at, locale) : t("statusActive"),
         formatDurationShort(w, locale),
         String(e.break_minutes ?? 0),
         km !== null ? String(km) : "",
         e.start_package_count !== null ? String(e.start_package_count) : "",
+        // Delivered only counts once the shift has ended.
         e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "",
         e.undelivered_count !== null ? String(e.undelivered_count) : "",
         e.plate ?? "",
-        (e.notes ?? "").replace(/[\r\n]+/g, " "),
+        e.notes ?? "",
       ];
     });
-    const csv = [header, ...rows]
-      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";"))
+
+    // TAB-separated + UTF-16LE with BOM. This is the format Excel decodes
+    // correctly for Turkish/German characters on every locale/version (the
+    // "Unicode Text" path), avoiding the mojibake seen with plain UTF-8 CSV.
+    const text = [header, ...rows]
+      .map((r) => r.map((c) => String(c ?? "").replace(/[\t\r\n]+/g, " ")).join("\t"))
       .join("\r\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    const buf = new ArrayBuffer(2 + text.length * 2);
+    const view = new DataView(buf);
+    view.setUint8(0, 0xff); // UTF-16LE BOM
+    view.setUint8(1, 0xfe);
+    for (let i = 0; i < text.length; i++) {
+      view.setUint16(2 + i * 2, text.charCodeAt(i), true);
+    }
+    const blob = new Blob([buf], { type: "text/csv;charset=utf-16le" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `hak-${range}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 

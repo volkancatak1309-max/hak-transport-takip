@@ -68,6 +68,7 @@ import {
 import { LocationTracker } from "@/components/LocationTracker";
 import { LenkzeitWarning } from "@/components/LenkzeitWarning";
 import { TelegramLink } from "@/components/TelegramLink";
+import { HelpTip } from "@/components/help/HelpTip";
 import { TodayAssignments } from "@/components/TodayAssignments";
 import { tryServerAction } from "@/lib/offline-aware";
 
@@ -400,38 +401,45 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
                       {active.start_package_count ?? "—"}
                     </span>
                   </Button>
+                  <HelpTip tkey="drv_packages" />
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <Button
-                    onClick={toggleBreak}
-                    variant={onBreak ? "default" : "outline"}
-                    size="lg"
-                    className="flex-1 h-12"
-                    disabled={pending}
-                  >
-                    {onBreak ? (
-                      <>
-                        <PlayCircle className="size-4" />
-                        {t("endBreak")}
-                      </>
-                    ) : (
-                      <>
-                        <Pause className="size-4" />
-                        {t("startBreak")}
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    onClick={() => setEndOpen(true)}
-                    variant="destructive"
-                    size="lg"
-                    className="flex-1 h-12"
-                    disabled={pending}
-                  >
-                    <Square className="size-4" />
-                    {t("endShift")}
-                  </Button>
+                  <div className="flex flex-1 items-center gap-1.5">
+                    <Button
+                      onClick={toggleBreak}
+                      variant={onBreak ? "default" : "outline"}
+                      size="lg"
+                      className="flex-1 h-12"
+                      disabled={pending}
+                    >
+                      {onBreak ? (
+                        <>
+                          <PlayCircle className="size-4" />
+                          {t("endBreak")}
+                        </>
+                      ) : (
+                        <>
+                          <Pause className="size-4" />
+                          {t("startBreak")}
+                        </>
+                      )}
+                    </Button>
+                    <HelpTip tkey="drv_break" />
+                  </div>
+                  <div className="flex flex-1 items-center gap-1.5">
+                    <Button
+                      onClick={() => setEndOpen(true)}
+                      variant="destructive"
+                      size="lg"
+                      className="flex-1 h-12"
+                      disabled={pending}
+                    >
+                      <Square className="size-4" />
+                      {t("endShift")}
+                    </Button>
+                    <HelpTip tkey="drv_end" />
+                  </div>
                 </div>
                 <LocationTracker shiftId={active.id} />
                 <LenkzeitWarning
@@ -447,15 +455,18 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
             ) : (
               <div className="py-6 text-center space-y-3">
                 <p className="text-sm text-muted-foreground">{t("noActive")}</p>
-                <Button
-                  onClick={() => setStartOpen(true)}
-                  size="lg"
-                  className="w-full h-14 text-base"
-                  disabled={pending}
-                >
-                  <Play className="size-5" />
-                  {t("startShift")}
-                </Button>
+                <div className="flex items-center justify-center gap-1.5">
+                  <Button
+                    onClick={() => setStartOpen(true)}
+                    size="lg"
+                    className="w-full h-14 text-base"
+                    disabled={pending}
+                  >
+                    <Play className="size-5" />
+                    {t("startShift")}
+                  </Button>
+                  <HelpTip tkey="drv_start" />
+                </div>
               </div>
             )}
           </CardContent>
@@ -591,7 +602,10 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
           </DialogHeader>
           <form action={handleStart} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="start_km">{t("startKm")}</Label>
+              <Label htmlFor="start_km" className="inline-flex items-center gap-1">
+                {t("startKm")}
+                <HelpTip tkey="drv_vehicle_km" />
+              </Label>
               <Input
                 id="start_km"
                 name="start_km"

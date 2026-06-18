@@ -8,6 +8,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { MapPinned, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/UserAvatar";
+import { HelpTip } from "@/components/help/HelpTip";
 import { formatTime, formatDurationShort } from "@/lib/format";
 import type { ActiveDriver } from "@/lib/types";
 
@@ -76,6 +77,7 @@ export function LiveTrackingClient({
             <div className="flex items-center gap-2">
               <MapPinned className="size-[18px] text-accent-claret" />
               <span className="text-sm font-medium">{t("title")}</span>
+              <HelpTip tkey="map" />
             </div>
             <span className="nums text-xs text-text-tertiary">
               {drivers.length}

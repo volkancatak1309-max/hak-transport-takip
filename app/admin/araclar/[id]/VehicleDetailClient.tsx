@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/UserAvatar";
+import { HelpTip } from "@/components/help/HelpTip";
 import { KmEditButton } from "@/components/KmEditButton";
 import { STATUS_STYLE } from "@/lib/vehicle-ui";
 import { formatDate, formatTime } from "@/lib/format";
@@ -59,6 +60,7 @@ export function VehicleDetailClient({ detail }: { detail: VehicleDetail }) {
           {st.live ? <span className="live-dot" /> : <span className={cn("size-1.5 rounded-full", st.dot)} />}
           {t(`status.${st.labelKey}`)}
         </span>
+        <HelpTip tkey="veh_status" className="ml-1" />
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -123,7 +125,7 @@ export function VehicleDetailClient({ detail }: { detail: VehicleDetail }) {
         </Section>
 
         {/* Documents & inspection (placeholders) */}
-        <Section title={td("documents")} icon={FileText}>
+        <Section title={td("documents")} icon={FileText} help="veh_inspection">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
             <Field
               label={td("inspection_due")}
@@ -144,6 +146,7 @@ export function VehicleDetailClient({ detail }: { detail: VehicleDetail }) {
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <MapPinned className="size-4 text-accent-sky" />
           {td("route_history")}
+          <HelpTip tkey="veh_route" />
         </div>
         <Button variant="outline" size="sm" render={<Link href={`/admin/araclar/${v.id}/rota`} />}>
           <History className="size-4" />
@@ -189,10 +192,12 @@ export function VehicleDetailClient({ detail }: { detail: VehicleDetail }) {
 function Section({
   title,
   icon: Icon,
+  help,
   children,
 }: {
   title: string;
   icon: typeof Truck;
+  help?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -200,6 +205,7 @@ function Section({
       <h3 className="mb-3 flex items-center gap-2 text-sm font-medium">
         <Icon className="size-[18px] text-text-tertiary" />
         {title}
+        {help && <HelpTip tkey={help} />}
       </h3>
       {children}
     </section>

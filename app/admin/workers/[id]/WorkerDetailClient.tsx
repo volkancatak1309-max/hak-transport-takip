@@ -61,6 +61,7 @@ export function WorkerDetailClient({
   const tc = useTranslations("common");
   const tpdf = useTranslations("pdf");
   const tmap = useTranslations("map");
+  const tExport = useTranslations("export");
   const locale = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -98,8 +99,9 @@ export function WorkerDetailClient({
   }
 
   async function exportPdf() {
-    const { downloadPdf } = await import("@/components/pdf/ShiftReport");
-    await downloadPdf({
+    try {
+      const { downloadPdf } = await import("@/components/pdf/ShiftReport");
+      await downloadPdf({
       title: `${tpdf("title")} — ${worker.name}`,
       company: tpdf("company"),
       address: tpdf("address"),
@@ -142,7 +144,10 @@ export function WorkerDetailClient({
         };
       }),
       filename: `hak-${worker.name.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`,
-    });
+      });
+    } catch {
+      toast.error(tExport("error"));
+    }
   }
 
   const nf = locale === "de" ? "de-AT" : "tr-TR";

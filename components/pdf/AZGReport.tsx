@@ -268,13 +268,19 @@ function ReportDoc({ data, title }: { data: AZGData; title: string }) {
 }
 
 export async function downloadAZGReport(data: AZGData, title: string) {
-  const blob = await pdf(<ReportDoc data={data} title={title} />).toBlob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `HAK_AZG_${data.monthLabel}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  let url: string | null = null;
+  try {
+    const blob = await pdf(<ReportDoc data={data} title={title} />).toBlob();
+    url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `HAK_AZG_${data.monthLabel}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } finally {
+    // Always release the object URL, even if generation/click threw. The error
+    // (if any) propagates so the caller can surface it to the user.
+    if (url) URL.revokeObjectURL(url);
+  }
 }

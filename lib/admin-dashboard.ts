@@ -17,7 +17,8 @@ export type TodayOps = {
   vehiclesDelivering: number; // vehicles whose live status is "sevkiyatta"
   onBreak: number; // active shifts currently on break
   totalKmToday: number | null; // sum of km on shifts started today (null = no data)
-  delivered: number | null; // sum of cargo_count today
+  loaded: number | null; // sum of start_package_count today (packages LOADED at start)
+  delivered: number | null; // sum of cargo_count on ENDED shifts today (actually delivered)
   undelivered: number | null; // sum of undelivered_count today
   overNine: number; // shifts today already past 9h
   shiftsToday: number; // total shifts started today (for "no data" states)
@@ -71,12 +72,13 @@ type LiteEntry = Pick<
   | "end_km"
   | "break_minutes"
   | "break_started_at"
+  | "start_package_count"
   | "cargo_count"
   | "undelivered_count"
 >;
 
 const ENTRY_COLS =
-  "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, break_started_at, cargo_count, undelivered_count";
+  "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, break_started_at, start_package_count, cargo_count, undelivered_count";
 
 /**
  * Everything the redesigned admin command panel needs, derived purely from the
@@ -131,6 +133,8 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
   let overNine = 0;
   let km = 0;
   let hasKm = false;
+  let loaded = 0;
+  let hasLoaded = false;
   let delivered = 0;
   let hasDelivered = false;
   let undelivered = 0;
@@ -147,7 +151,15 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
       km += d;
       hasKm = true;
     }
-    if (e.cargo_count !== null) {
+    // Yüklenen (loaded at start of day) — always the start_package_count.
+    if (e.start_package_count !== null) {
+      loaded += e.start_package_count;
+      hasLoaded = true;
+    }
+    // Teslim edilen (actually delivered) — cargo_count is only the real
+    // delivered figure once the shift has ENDED. On an active shift cargo_count
+    // still holds the start-of-day placeholder, so it must NOT be counted here.
+    if (e.ended_at !== null && e.cargo_count !== null) {
       delivered += e.cargo_count;
       hasDelivered = true;
     }
@@ -162,6 +174,7 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
     vehiclesDelivering: 0, // filled from fleet snapshot by caller-free merge below
     onBreak,
     totalKmToday: hasKm ? km : null,
+    loaded: hasLoaded ? loaded : null,
     delivered: hasDelivered ? delivered : null,
     undelivered: hasUndelivered ? undelivered : null,
     overNine,

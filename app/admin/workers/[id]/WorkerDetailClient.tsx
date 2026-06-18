@@ -121,6 +121,7 @@ export function WorkerDetailClient({
         startKm: ta("tblStartKm"),
         endKm: ta("tblEndKm"),
         km: ta("tblKm"),
+        loaded: ta("tblLoaded"),
         cargo: ta("tblCargo"),
         undelivered: ta("tblUndelivered"),
         plate: ta("tblPlate"),
@@ -138,7 +139,9 @@ export function WorkerDetailClient({
           startKm: e.start_km != null ? String(e.start_km) : "—",
           endKm: e.end_km != null ? String(e.end_km) : "—",
           km: km !== null ? String(km) : "—",
-          cargo: e.cargo_count !== null ? String(e.cargo_count) : "—",
+          loaded: e.start_package_count != null ? String(e.start_package_count) : "—",
+          // Delivered only counts once the shift has ended.
+          cargo: e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "—",
           undelivered: e.undelivered_count !== null ? String(e.undelivered_count) : "—",
           plate: e.plate ?? "—",
         };
@@ -254,6 +257,7 @@ export function WorkerDetailClient({
                     <TableHead>{ta("tblWorked")}</TableHead>
                     <TableHead>{ta("tblBreak")}</TableHead>
                     <TableHead>{ta("tblKm")}</TableHead>
+                    <TableHead>{ta("tblLoaded")}</TableHead>
                     <TableHead>{ta("tblCargo")}</TableHead>
                     <TableHead>{ta("tblPlate")}</TableHead>
                     <TableHead>{ta("tblNote")}</TableHead>
@@ -275,7 +279,8 @@ export function WorkerDetailClient({
                         <TableCell className="nums">
                           {km !== null ? km.toLocaleString(nf) : "—"}
                         </TableCell>
-                        <TableCell className="nums">{e.cargo_count ?? "—"}</TableCell>
+                        <TableCell className="nums">{e.start_package_count ?? "—"}</TableCell>
+                        <TableCell className="nums">{isActive ? "—" : e.cargo_count ?? "—"}</TableCell>
                         <TableCell className="nums">{e.plate ?? "—"}</TableCell>
                         <TableCell className="max-w-[200px] truncate" title={e.notes ?? ""}>
                           {e.notes ?? "—"}

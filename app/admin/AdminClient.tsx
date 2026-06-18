@@ -282,6 +282,7 @@ export function AdminClient({
       t("tblWorked"),
       t("tblBreak"),
       t("tblKm"),
+      t("tblLoaded"),
       t("tblCargo"),
       t("tblUndelivered"),
       t("tblPlate"),
@@ -298,7 +299,9 @@ export function AdminClient({
         formatDurationShort(w, locale),
         String(e.break_minutes ?? 0),
         km !== null ? String(km) : "",
-        e.cargo_count !== null ? String(e.cargo_count) : "",
+        e.start_package_count !== null ? String(e.start_package_count) : "",
+        // Delivered only counts once the shift has ended.
+        e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "",
         e.undelivered_count !== null ? String(e.undelivered_count) : "",
         e.plate ?? "",
         (e.notes ?? "").replace(/[\r\n]+/g, " "),
@@ -339,6 +342,7 @@ export function AdminClient({
         startKm: t("tblStartKm"),
         endKm: t("tblEndKm"),
         km: t("tblKm"),
+        loaded: t("tblLoaded"),
         cargo: t("tblCargo"),
         undelivered: t("tblUndelivered"),
         plate: t("tblPlate"),
@@ -356,7 +360,9 @@ export function AdminClient({
           startKm: e.start_km != null ? String(e.start_km) : "—",
           endKm: e.end_km != null ? String(e.end_km) : "—",
           km: km !== null ? String(km) : "—",
-          cargo: e.cargo_count !== null ? String(e.cargo_count) : "—",
+          loaded: e.start_package_count != null ? String(e.start_package_count) : "—",
+          // Delivered only counts once the shift has ended.
+          cargo: e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "—",
           undelivered: e.undelivered_count !== null ? String(e.undelivered_count) : "—",
           plate: e.plate ?? "—",
         };
@@ -584,6 +590,7 @@ export function AdminClient({
                   <TableHead>{t("tblWorked")}</TableHead>
                   <TableHead className="text-right">{t("tblBreak")}</TableHead>
                   <TableHead className="text-right">{t("tblKm")}</TableHead>
+                  <TableHead className="text-right">{t("tblLoaded")}</TableHead>
                   <TableHead className="text-right">{t("tblCargo")}</TableHead>
                   <TableHead className="text-right">{t("tblUndelivered")}</TableHead>
                   <TableHead>{t("tblPlate")}</TableHead>
@@ -642,7 +649,11 @@ export function AdminClient({
                       <TableCell className="nums text-right">
                         {km !== null ? km.toLocaleString(nf) : "—"}
                       </TableCell>
-                      <TableCell className="nums text-right">{e.cargo_count ?? "—"}</TableCell>
+                      <TableCell className="nums text-right">{e.start_package_count ?? "—"}</TableCell>
+                      <TableCell className="nums text-right">
+                        {/* Delivered is only meaningful once the shift has ended. */}
+                        {isActive ? "—" : e.cargo_count ?? "—"}
+                      </TableCell>
                       <TableCell className="nums text-right">
                         {e.undelivered_count != null && e.undelivered_count > 0 ? (
                           <span className="font-medium text-accent-gold">{e.undelivered_count}</span>

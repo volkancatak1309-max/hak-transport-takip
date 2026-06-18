@@ -143,7 +143,10 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
   const weekly = new Map<string, { hours: number; worker: string; iso: string }>();
   // Daily totals include EVERY shift (even micro ones): legally every worked
   // minute counts toward the daily cap. Grouped by the shift's start date.
-  const daily = new Map<string, { ms: number; worker: string; iso: string }>();
+  const daily = new Map<
+    string,
+    { ms: number; worker: string; iso: string; shifts: number }
+  >();
   // Rest-period analysis ignores micro shifts (< 5 min): a test blip is not a
   // real work period to demand 11 h rest around.
   const MICRO_MS = 5 * 60_000;
@@ -214,8 +217,9 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     weekly.set(wk, acc);
 
     const dk = `${e.worker_id}:${viennaDateKey(e.started_at)}`;
-    const dacc = daily.get(dk) ?? { ms: 0, worker, iso: e.started_at };
+    const dacc = daily.get(dk) ?? { ms: 0, worker, iso: e.started_at, shifts: 0 };
     dacc.ms += ms;
+    dacc.shifts += 1;
     if (new Date(e.started_at) < new Date(dacc.iso)) dacc.iso = e.started_at;
     daily.set(dk, dacc);
 
@@ -271,6 +275,12 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
   // was missing: individual shifts can each stay under 10 h while the day's
   // total blows past it (e.g. 0,01 + 5,18 + 4,57 + 1,84 = 11,60 h).
   for (const d of daily.values()) {
+    // Single-shift days are already fully evaluated by the per-shift checks
+    // above (hours > 9 / > 10). The daily-total check exists to catch what
+    // those miss: MULTI-shift days whose sum exceeds a limit while each shift
+    // stays under it. Running it on one-shift days too would report the same
+    // hours twice and inflate totalViolations / the per-worker tally.
+    if (d.shifts <= 1) continue;
     const h = d.ms / 3_600_000;
     let severity: AZGSeverity | null = null;
     let typeKey = "";

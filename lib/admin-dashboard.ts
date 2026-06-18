@@ -17,7 +17,8 @@ export type TodayOps = {
   vehiclesDelivering: number; // vehicles whose live status is "sevkiyatta"
   onBreak: number; // active shifts currently on break
   totalKmToday: number | null; // sum of km on shifts started today (null = no data)
-  delivered: number | null; // sum of cargo_count today
+  loaded: number | null; // sum of start_package_count today (packages LOADED at start)
+  delivered: number | null; // sum of cargo_count on ENDED shifts today (actually delivered)
   undelivered: number | null; // sum of undelivered_count today
   overNine: number; // shifts today already past 9h
   shiftsToday: number; // total shifts started today (for "no data" states)
@@ -71,12 +72,13 @@ type LiteEntry = Pick<
   | "end_km"
   | "break_minutes"
   | "break_started_at"
+  | "start_package_count"
   | "cargo_count"
   | "undelivered_count"
 >;
 
 const ENTRY_COLS =
-  "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, break_started_at, cargo_count, undelivered_count";
+  "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, break_started_at, start_package_count, cargo_count, undelivered_count";
 
 /**
  * Everything the redesigned admin command panel needs, derived purely from the
@@ -92,7 +94,7 @@ export async function getDashboardData(
 ): Promise<DashboardData> {
   const todayStart = startOfTodayVienna();
 
-  const [todayRes, rangeRes, vehicles, workersRes] = await Promise.all([
+  const [todayRes, rangeRes, activeRes, vehicles, workersRes] = await Promise.all([
     supabaseAdmin
       .from("time_entries")
       .select(ENTRY_COLS)
@@ -102,18 +104,37 @@ export async function getDashboardData(
       .select(ENTRY_COLS)
       .gte("started_at", rangeStart)
       .lte("started_at", rangeEnd),
+    // Single source of truth for live status: EVERY open shift (ended_at IS
+    // NULL), independent of the today/range window. The top summary, the
+    // active-shift card and the table all derive their "active / on break /
+    // in field" numbers from this one set so they can never disagree.
+    supabaseAdmin
+      .from("time_entries")
+      .select("id, break_started_at")
+      .is("ended_at", null),
     listVehiclesWithStatus(),
     supabaseAdmin.from("workers").select("id, name"),
   ]);
 
   const todayEntries = (todayRes.data ?? []) as LiteEntry[];
   const rangeEntries = (rangeRes.data ?? []) as LiteEntry[];
+  const activeShifts = (activeRes.data ?? []) as {
+    id: string;
+    break_started_at: string | null;
+  }[];
   const names = new Map(
     ((workersRes.data ?? []) as Pick<Worker, "id" | "name">[]).map((w) => [w.id, w.name])
   );
 
   const fleet = buildFleet(vehicles);
   const todayOps = buildTodayOps(todayEntries);
+  // Live status counts come from the global active-shift set, NOT today's
+  // window: a shift left open overnight is still "in field" right now.
+  //   "Sahadaki şoför" = every open shift (drivers on break are still in field)
+  //   "Molada"         = open shifts whose break_started_at is set
+  // (so driversInField >= onBreak always holds).
+  todayOps.driversInField = activeShifts.length;
+  todayOps.onBreak = activeShifts.filter((s) => s.break_started_at).length;
   // "Vehicles delivering" is the live fleet count, not derived from shifts.
   todayOps.vehiclesDelivering = fleet.counts.sevkiyatta;
 
@@ -126,28 +147,32 @@ export async function getDashboardData(
 }
 
 function buildTodayOps(entries: LiteEntry[]): TodayOps {
-  let driversInField = 0;
-  let onBreak = 0;
   let overNine = 0;
   let km = 0;
   let hasKm = false;
+  let loaded = 0;
+  let hasLoaded = false;
   let delivered = 0;
   let hasDelivered = false;
   let undelivered = 0;
   let hasUndelivered = false;
 
   for (const e of entries) {
-    if (e.ended_at === null) {
-      driversInField++;
-      if (e.break_started_at) onBreak++;
-    }
     if (workedMs(e) > NINE_HOURS_MS) overNine++;
     const d = kmDiff(e);
     if (d !== null) {
       km += d;
       hasKm = true;
     }
-    if (e.cargo_count !== null) {
+    // Yüklenen (loaded at start of day) — always the start_package_count.
+    if (e.start_package_count !== null) {
+      loaded += e.start_package_count;
+      hasLoaded = true;
+    }
+    // Teslim edilen (actually delivered) — cargo_count is only the real
+    // delivered figure once the shift has ENDED. On an active shift cargo_count
+    // still holds the start-of-day placeholder, so it must NOT be counted here.
+    if (e.ended_at !== null && e.cargo_count !== null) {
       delivered += e.cargo_count;
       hasDelivered = true;
     }
@@ -158,10 +183,13 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
   }
 
   return {
-    driversInField,
-    vehiclesDelivering: 0, // filled from fleet snapshot by caller-free merge below
-    onBreak,
+    // driversInField / onBreak / vehiclesDelivering are the live status counts
+    // and are filled in by getDashboardData from the global active-shift set.
+    driversInField: 0,
+    vehiclesDelivering: 0,
+    onBreak: 0,
     totalKmToday: hasKm ? km : null,
+    loaded: hasLoaded ? loaded : null,
     delivered: hasDelivered ? delivered : null,
     undelivered: hasUndelivered ? undelivered : null,
     overNine,

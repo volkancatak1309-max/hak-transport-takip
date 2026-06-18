@@ -171,6 +171,21 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     const dateStr = formatDate(e.started_at, "de");
     const endStr = formatTime(e.ended_at, "de");
 
+    // Micro / test shifts (< 5 min) are excluded from ALL violation and
+    // statistics math and only surfaced in the "suspicious" section. A 0.04 h
+    // blip is not a real work period — it must not produce violations, nor feed
+    // the daily/weekly totals or the rest-period analysis.
+    if (ms < MICRO_MS) {
+      suspicious.push({
+        date: dateStr,
+        worker,
+        start: formatTime(e.started_at, "de"),
+        end: endStr,
+        duration: `${fmtH(hours)} Std.`,
+      });
+      continue;
+    }
+
     // Single-shift checks (kept as an extra layer on top of the daily total —
     // one shift alone exceeding the limit is still its own violation).
     if (hours > 10) {
@@ -223,28 +238,20 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     if (new Date(e.started_at) < new Date(dacc.iso)) dacc.iso = e.started_at;
     daily.set(dk, dacc);
 
-    if (ms < MICRO_MS) {
-      suspicious.push({
-        date: dateStr,
-        worker,
-        start: formatTime(e.started_at, "de"),
-        end: endStr,
-        duration: `${fmtH(hours)} Std.`,
-      });
-    } else {
-      const arr = restByWorker.get(e.worker_id) ?? [];
-      arr.push({
-        startTs: new Date(e.started_at).getTime(),
-        endTs: new Date(e.ended_at as string).getTime(),
-        iso: e.started_at,
-      });
-      restByWorker.set(e.worker_id, arr);
+    // Meaningful shift (>= 5 min): feeds rest-period analysis and the per-worker
+    // stats. (Micro shifts already returned above.)
+    const arr = restByWorker.get(e.worker_id) ?? [];
+    arr.push({
+      startTs: new Date(e.started_at).getTime(),
+      endTs: new Date(e.ended_at as string).getTime(),
+      iso: e.started_at,
+    });
+    restByWorker.set(e.worker_id, arr);
 
-      const s = statByWorker.get(worker) ?? { shifts: 0, ms: 0 };
-      s.shifts += 1;
-      s.ms += ms;
-      statByWorker.set(worker, s);
-    }
+    const s = statByWorker.get(worker) ?? { shifts: 0, ms: 0 };
+    s.shifts += 1;
+    s.ms += ms;
+    statByWorker.set(worker, s);
   }
 
   // Inter-shift rest period — § 12 Abs. 1 AZG: at least 11 uninterrupted hours
@@ -255,8 +262,12 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     arr.sort((a, b) => a.startTs - b.startTs);
     for (let i = 1; i < arr.length; i++) {
       const gap = arr[i].startTs - arr[i - 1].endTs;
-      if (gap < REST_MS) {
-        const gapH = Math.max(0, gap) / 3_600_000;
+      // Ignore artifact gaps: two shift records that overlap (negative gap) or
+      // start within a few minutes of each other are a mis-entry / back-to-back
+      // test pair, not a real "0,01 h rest" violation. Only a meaningful gap
+      // that is still under the 11 h legal rest counts.
+      if (gap >= MICRO_MS && gap < REST_MS) {
+        const gapH = gap / 3_600_000;
         violations.push({
           date: formatDate(arr[i - 1].iso, "de"),
           worker,
@@ -341,6 +352,18 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
       });
     }
   }
+
+  // Drop exact-duplicate violation rows (same severity + type + date + worker +
+  // hours + description). Without this, repeated/back-to-back test shifts could
+  // list the very same violation more than once and inflate the totals.
+  const seenViolation = new Set<string>();
+  const dedupedViolations = violations.filter((v) => {
+    const key = [v.severity, v.type, v.date, v.worker, v.workedHours, v.end, v.description].join("|");
+    if (seenViolation.has(key)) return false;
+    seenViolation.add(key);
+    return true;
+  });
+  violations.splice(0, violations.length, ...dedupedViolations);
 
   violations.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]);
 

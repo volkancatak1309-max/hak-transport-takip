@@ -23,6 +23,7 @@ export type PdfHeaders = {
   startKm: string;
   endKm: string;
   km: string;
+  loaded: string;
   cargo: string;
   undelivered: string;
   plate: string;
@@ -38,6 +39,7 @@ export type PdfRow = {
   startKm: string;
   endKm: string;
   km: string;
+  loaded: string;
   cargo: string;
   undelivered: string;
   plate: string;
@@ -118,17 +120,18 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: "#1e293b",
   },
-  colWorker: { width: "14%" },
+  colWorker: { width: "11%" },
   colDate: { width: "8%" },
   colStart: { width: "6%" },
   colEnd: { width: "6%" },
   colWorked: { width: "9%" },
   colBreak: { width: "6%" },
-  colStartKm: { width: "9%" },
-  colEndKm: { width: "9%" },
+  colStartKm: { width: "8%" },
+  colEndKm: { width: "8%" },
   colKm: { width: "7%" },
+  colLoaded: { width: "7%" },
   colCargo: { width: "7%" },
-  colUndelivered: { width: "10%" },
+  colUndelivered: { width: "8%" },
   colPlate: { width: "9%" },
   footer: {
     position: "absolute",
@@ -179,6 +182,7 @@ function ReportDoc(opts: PdfOptions) {
             <Text style={[styles.th, styles.colStartKm]}>{opts.headers.startKm}</Text>
             <Text style={[styles.th, styles.colEndKm]}>{opts.headers.endKm}</Text>
             <Text style={[styles.th, styles.colKm]}>{opts.headers.km}</Text>
+            <Text style={[styles.th, styles.colLoaded]}>{opts.headers.loaded}</Text>
             <Text style={[styles.th, styles.colCargo]}>{opts.headers.cargo}</Text>
             <Text style={[styles.th, styles.colUndelivered]}>{opts.headers.undelivered}</Text>
             <Text style={[styles.th, styles.colPlate]}>{opts.headers.plate}</Text>
@@ -194,6 +198,7 @@ function ReportDoc(opts: PdfOptions) {
               <Text style={[styles.td, styles.colStartKm]}>{r.startKm}</Text>
               <Text style={[styles.td, styles.colEndKm]}>{r.endKm}</Text>
               <Text style={[styles.td, styles.colKm]}>{r.km}</Text>
+              <Text style={[styles.td, styles.colLoaded]}>{r.loaded}</Text>
               <Text style={[styles.td, styles.colCargo]}>{r.cargo}</Text>
               <Text style={[styles.td, styles.colUndelivered]}>{r.undelivered}</Text>
               <Text style={[styles.td, styles.colPlate]}>{r.plate}</Text>

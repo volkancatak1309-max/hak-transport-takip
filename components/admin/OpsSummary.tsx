@@ -6,6 +6,7 @@ import {
   Truck,
   Coffee,
   Gauge,
+  Package,
   PackageCheck,
   PackageX,
   AlertTriangle,
@@ -84,6 +85,13 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
       tone: "neutral",
     },
     {
+      key: "loaded",
+      label: t("dash.ops_loaded"),
+      value: num(ops.loaded),
+      icon: Package,
+      tone: "neutral",
+    },
+    {
       key: "delivered",
       label: t("dash.ops_delivered"),
       value: num(ops.delivered),
@@ -116,7 +124,7 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
             {t("dash.live")}
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
           {tiles.map((tile) => {
             const tone = TONE[tile.tone];
             const Icon = tile.icon;

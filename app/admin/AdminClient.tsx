@@ -200,11 +200,21 @@ export function AdminClient({
     }
   }
 
+  // 1s tick: keeps the live duration of active shifts ticking up on screen.
   useEffect(() => {
     if (summary.activeCount === 0) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [summary.activeCount]);
+
+  // Soft auto-refresh of the server data (ops summary, fleet status, active
+  // shifts, shift table) so a shift start / break / end shows up without a
+  // manual F5 — same approach as the live tracking map. Runs unconditionally:
+  // a shift can start while the panel currently shows zero active shifts.
+  useEffect(() => {
+    const id = setInterval(() => router.refresh(), 20_000);
+    return () => clearInterval(id);
+  }, [router]);
 
   function setParam(key: string, value: string) {
     const u = new URLSearchParams(params.toString());
@@ -282,6 +292,7 @@ export function AdminClient({
       t("tblWorked"),
       t("tblBreak"),
       t("tblKm"),
+      t("tblLoaded"),
       t("tblCargo"),
       t("tblUndelivered"),
       t("tblPlate"),
@@ -298,7 +309,9 @@ export function AdminClient({
         formatDurationShort(w, locale),
         String(e.break_minutes ?? 0),
         km !== null ? String(km) : "",
-        e.cargo_count !== null ? String(e.cargo_count) : "",
+        e.start_package_count !== null ? String(e.start_package_count) : "",
+        // Delivered only counts once the shift has ended.
+        e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "",
         e.undelivered_count !== null ? String(e.undelivered_count) : "",
         e.plate ?? "",
         (e.notes ?? "").replace(/[\r\n]+/g, " "),
@@ -339,6 +352,7 @@ export function AdminClient({
         startKm: t("tblStartKm"),
         endKm: t("tblEndKm"),
         km: t("tblKm"),
+        loaded: t("tblLoaded"),
         cargo: t("tblCargo"),
         undelivered: t("tblUndelivered"),
         plate: t("tblPlate"),
@@ -356,7 +370,9 @@ export function AdminClient({
           startKm: e.start_km != null ? String(e.start_km) : "—",
           endKm: e.end_km != null ? String(e.end_km) : "—",
           km: km !== null ? String(km) : "—",
-          cargo: e.cargo_count !== null ? String(e.cargo_count) : "—",
+          loaded: e.start_package_count != null ? String(e.start_package_count) : "—",
+          // Delivered only counts once the shift has ended.
+          cargo: e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "—",
           undelivered: e.undelivered_count !== null ? String(e.undelivered_count) : "—",
           plate: e.plate ?? "—",
         };
@@ -584,6 +600,7 @@ export function AdminClient({
                   <TableHead>{t("tblWorked")}</TableHead>
                   <TableHead className="text-right">{t("tblBreak")}</TableHead>
                   <TableHead className="text-right">{t("tblKm")}</TableHead>
+                  <TableHead className="text-right">{t("tblLoaded")}</TableHead>
                   <TableHead className="text-right">{t("tblCargo")}</TableHead>
                   <TableHead className="text-right">{t("tblUndelivered")}</TableHead>
                   <TableHead>{t("tblPlate")}</TableHead>
@@ -594,10 +611,16 @@ export function AdminClient({
               <TableBody>
                 {entries.map((e) => {
                   const isActive = e.ended_at === null;
+                  // Same break definition as the live summary: an active shift
+                  // with break_started_at set is "molada", so this row shows the
+                  // SAME status the ops summary counts.
+                  const onBreak = isActive && !!e.break_started_at;
                   const w = isActive ? workedMs(e, now) : workedMs(e);
                   const over = w > NINE_HOURS;
                   const km = kmDiff(e);
-                  const borderClass = isActive
+                  const borderClass = onBreak
+                    ? "border-l-2 border-l-accent-claret"
+                    : isActive
                     ? "border-l-2 border-l-accent-sky"
                     : over
                     ? "border-l-2 border-l-accent-gold"
@@ -615,7 +638,12 @@ export function AdminClient({
                       </TableCell>
                       <TableCell className="nums">{formatTime(e.started_at, locale)}</TableCell>
                       <TableCell className="nums">
-                        {isActive ? (
+                        {onBreak ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-claret/15 px-2 py-0.5 text-[10px] font-medium text-accent-claret">
+                            <span className="live-dot" />
+                            {t("dash.ops_on_break")}
+                          </span>
+                        ) : isActive ? (
                           <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-sky/15 px-2 py-0.5 text-[10px] font-medium text-accent-sky">
                             <span className="live-dot" />
                             {t("active")}
@@ -642,7 +670,11 @@ export function AdminClient({
                       <TableCell className="nums text-right">
                         {km !== null ? km.toLocaleString(nf) : "—"}
                       </TableCell>
-                      <TableCell className="nums text-right">{e.cargo_count ?? "—"}</TableCell>
+                      <TableCell className="nums text-right">{e.start_package_count ?? "—"}</TableCell>
+                      <TableCell className="nums text-right">
+                        {/* Delivered is only meaningful once the shift has ended. */}
+                        {isActive ? "—" : e.cargo_count ?? "—"}
+                      </TableCell>
                       <TableCell className="nums text-right">
                         {e.undelivered_count != null && e.undelivered_count > 0 ? (
                           <span className="font-medium text-accent-gold">{e.undelivered_count}</span>

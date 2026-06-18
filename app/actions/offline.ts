@@ -18,6 +18,24 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// Offline events carry the client's own timestamp so a shift synced later still
+// reflects when it actually happened. But an *unvalidated* client time lets a
+// driver back/forward-date shifts and skew the AZG report and DATEV/BMD payroll
+// exports. We trust the client time only inside a sane window; anything outside
+// it (future, or older than 48 h) falls back to the server clock instead of
+// being silently accepted.
+const MAX_FUTURE_SKEW_MS = 5 * 60_000; // tolerate up to 5 min of clock skew
+const MAX_BACKDATE_MS = 48 * 60 * 60_000; // offline events older than 48 h
+
+function resolveEventTime(clientTime: string): string {
+  const now = Date.now();
+  const t = new Date(clientTime).getTime();
+  if (Number.isNaN(t)) return new Date(now).toISOString();
+  if (t > now + MAX_FUTURE_SKEW_MS) return new Date(now).toISOString(); // future
+  if (t < now - MAX_BACKDATE_MS) return new Date(now).toISOString(); // too old
+  return new Date(t).toISOString();
+}
+
 /**
  * Replays a shift event that was queued offline, preserving the original
  * client timestamp so the recorded times reflect when it actually happened.
@@ -25,10 +43,7 @@ function num(v: unknown): number | null {
 export async function processQueuedShift(item: Item): Promise<QueueProcessResult> {
   const session = await requireWorker();
   const workerId = session.worker_id!;
-  const when = new Date(item.clientTime);
-  const whenIso = Number.isNaN(when.getTime())
-    ? new Date().toISOString()
-    : when.toISOString();
+  const whenIso = resolveEventTime(item.clientTime);
 
   if (item.type === "start") {
     const startKm = num(item.payload.start_km);

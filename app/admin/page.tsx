@@ -2,7 +2,18 @@ import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AdminClient } from "./AdminClient";
-import { workedMs, kmDiff } from "@/lib/format";
+import {
+  workedMs,
+  kmDiff,
+  startOfTodayVienna,
+  endOfTodayVienna,
+  startOfWeekVienna,
+  endOfWeekVienna,
+  startOfMonthVienna,
+  endOfMonthVienna,
+  startOfDayViennaFromYmd,
+  endOfDayViennaFromYmd,
+} from "@/lib/format";
 import { getDashboardData } from "@/lib/admin-dashboard";
 import type { TimeEntry, TimeEntryWithWorker, Worker } from "@/lib/types";
 
@@ -10,43 +21,27 @@ export const dynamic = "force-dynamic";
 
 type Range = "today" | "week" | "month" | "custom";
 
+// All boundaries are resolved against the Europe/Vienna calendar (see
+// lib/format helpers), so "today / week / month" stay correct regardless of the
+// server's own timezone (Vercel runs on UTC).
 function computeRange(
   range: Range,
   from?: string,
   to?: string
 ): { start: Date; end: Date } {
-  const now = new Date();
-  const tzNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Vienna" }));
-  const start = new Date(tzNow);
-  const end = new Date(tzNow);
-
-  if (range === "today") {
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
-  } else if (range === "week") {
-    const day = (tzNow.getDay() + 6) % 7;
-    start.setDate(tzNow.getDate() - day);
-    start.setHours(0, 0, 0, 0);
-    end.setDate(start.getDate() + 6);
-    end.setHours(23, 59, 59, 999);
-  } else if (range === "month") {
-    start.setDate(1);
-    start.setHours(0, 0, 0, 0);
-    end.setMonth(start.getMonth() + 1, 0);
-    end.setHours(23, 59, 59, 999);
-  } else if (range === "custom") {
-    if (from) {
-      const f = new Date(from);
-      f.setHours(0, 0, 0, 0);
-      start.setTime(f.getTime());
-    } else start.setHours(0, 0, 0, 0);
-    if (to) {
-      const t = new Date(to);
-      t.setHours(23, 59, 59, 999);
-      end.setTime(t.getTime());
-    } else end.setHours(23, 59, 59, 999);
+  if (range === "week") {
+    return { start: startOfWeekVienna(), end: endOfWeekVienna() };
   }
-  return { start, end };
+  if (range === "month") {
+    return { start: startOfMonthVienna(), end: endOfMonthVienna() };
+  }
+  if (range === "custom") {
+    const start = (from && startOfDayViennaFromYmd(from)) || startOfTodayVienna();
+    const end = (to && endOfDayViennaFromYmd(to)) || endOfTodayVienna();
+    return { start, end };
+  }
+  // "today" (default)
+  return { start: startOfTodayVienna(), end: endOfTodayVienna() };
 }
 
 export default async function AdminPage({

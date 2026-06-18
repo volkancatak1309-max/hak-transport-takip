@@ -549,7 +549,7 @@
       "perf_km": "KM",
       "perf_hours": "Saat",
       "perf_delivered": "Teslim",
-      "perf_shifts": "Vardiya",
+      "perf_shifts": "Tamamlanan",
       "perf_empty": "Bu aralıkta veri yok",
       "attn_title": "Dikkat / Aksiyon",
       "attn_empty": "Şu an dikkat gerektiren bir şey yok",

@@ -89,6 +89,8 @@ export function FuelAdminClient({ entries }: Props) {
       }
       await downloadCO2Report(res.data, tco2("report_title"));
       setCo2Open(false);
+    } catch {
+      toast.error(t("save_error"));
     } finally {
       setCo2Busy(false);
     }

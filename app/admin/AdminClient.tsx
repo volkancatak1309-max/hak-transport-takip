@@ -317,8 +317,9 @@ export function AdminClient({
   }
 
   async function exportPdf() {
-    const { downloadPdf } = await import("@/components/pdf/ShiftReport");
-    await downloadPdf({
+    try {
+      const { downloadPdf } = await import("@/components/pdf/ShiftReport");
+      await downloadPdf({
       title: tpdf("title"),
       company: tpdf("company"),
       address: tpdf("address"),
@@ -361,7 +362,10 @@ export function AdminClient({
         };
       }),
       filename: `hak-report-${range}-${new Date().toISOString().slice(0, 10)}.pdf`,
-    });
+      });
+    } catch {
+      toast.error(tExport("error"));
+    }
   }
 
   const nf = locale === "de" ? "de-AT" : "tr-TR";

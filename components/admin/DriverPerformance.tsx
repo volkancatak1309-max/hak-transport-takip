@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { TrendingUp, ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpTip } from "@/components/help/HelpTip";
 import { UserAvatar } from "@/components/UserAvatar";
 import { formatDurationShort } from "@/lib/format";
 import type { DriverPerf } from "@/lib/admin-dashboard";
@@ -54,6 +55,7 @@ export function DriverPerformance({
           <CardTitle className="flex items-center gap-2 text-sm font-semibold">
             <TrendingUp className="size-4 text-muted-foreground" />
             {t("dash.perf_title")}
+            <HelpTip tkey="performance" />
           </CardTitle>
           <span className="rounded-full bg-surface-2 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
             {rangeLabel}

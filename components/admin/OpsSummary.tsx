@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { HelpTip } from "@/components/help/HelpTip";
 import type { TodayOps } from "@/lib/admin-dashboard";
 
 type Tone = "sky" | "claret" | "gold" | "neutral";
@@ -50,6 +51,7 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
   const tiles: {
     key: string;
     label: string;
+    help: string;
     value: string;
     icon: LucideIcon;
     tone: Tone;
@@ -58,6 +60,7 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
     {
       key: "drivers",
       label: t("dash.ops_drivers_field"),
+      help: "ops_drivers",
       value: num(ops.driversInField),
       icon: Users,
       tone: "sky",
@@ -66,6 +69,7 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
     {
       key: "vehicles",
       label: t("dash.ops_vehicles_delivering"),
+      help: "ops_vehicles",
       value: num(ops.vehiclesDelivering),
       icon: Truck,
       tone: "sky",
@@ -73,6 +77,7 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
     {
       key: "break",
       label: t("dash.ops_on_break"),
+      help: "ops_break",
       value: num(ops.onBreak),
       icon: Coffee,
       tone: "claret",
@@ -80,6 +85,7 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
     {
       key: "km",
       label: t("dash.ops_km_today"),
+      help: "ops_km",
       value: num(ops.totalKmToday),
       icon: Gauge,
       tone: "neutral",
@@ -87,6 +93,7 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
     {
       key: "loaded",
       label: t("dash.ops_loaded"),
+      help: "ops_loaded",
       value: num(ops.loaded),
       icon: Package,
       tone: "neutral",
@@ -94,6 +101,7 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
     {
       key: "delivered",
       label: t("dash.ops_delivered"),
+      help: "ops_delivered",
       value: num(ops.delivered),
       icon: PackageCheck,
       tone: "neutral",
@@ -101,6 +109,7 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
     {
       key: "undelivered",
       label: t("dash.ops_undelivered"),
+      help: "ops_undelivered",
       value: num(ops.undelivered),
       icon: PackageX,
       tone: ops.undelivered && ops.undelivered > 0 ? "gold" : "neutral",
@@ -108,6 +117,7 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
     {
       key: "over9",
       label: t("dash.ops_over_nine"),
+      help: "ops_over9",
       value: num(ops.overNine),
       icon: AlertTriangle,
       tone: ops.overNine > 0 ? "gold" : "neutral",
@@ -118,7 +128,10 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
     <Card className="overflow-hidden">
       <CardContent className="p-4 sm:p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold tracking-tight">{t("dash.ops_title")}</h2>
+          <h2 className="flex items-center gap-1 text-sm font-semibold tracking-tight">
+            {t("dash.ops_title")}
+            <HelpTip tkey="ops_title" />
+          </h2>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-sky/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-accent-sky">
             <span className="live-dot" />
             {t("dash.live")}
@@ -145,8 +158,9 @@ export function OpsSummary({ ops }: { ops: TodayOps }) {
                   <div className={`nums text-xl font-semibold leading-none ${tone.text}`}>
                     {tile.value}
                   </div>
-                  <div className="mt-1 text-[10px] font-medium uppercase leading-tight tracking-[0.04em] text-muted-foreground">
-                    {tile.label}
+                  <div className="mt-1 flex items-center gap-0.5 text-[10px] font-medium uppercase leading-tight tracking-[0.04em] text-muted-foreground">
+                    <span>{tile.label}</span>
+                    <HelpTip tkey={tile.help} />
                   </div>
                 </div>
               </div>

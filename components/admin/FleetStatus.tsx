@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { Truck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpTip } from "@/components/help/HelpTip";
 import type { FleetStatus as FleetStatusData } from "@/lib/admin-dashboard";
 import type { VehicleLiveStatus } from "@/lib/types";
 
@@ -36,6 +37,7 @@ export function FleetStatus({ fleet }: { fleet: FleetStatusData }) {
         <CardTitle className="flex items-center gap-2 text-sm font-semibold">
           <Truck className="size-4 text-muted-foreground" />
           {t("dash.fleet_title")}
+          <HelpTip tkey="fleet" />
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col">

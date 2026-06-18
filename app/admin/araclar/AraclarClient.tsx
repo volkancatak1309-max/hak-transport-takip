@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Truck, Search, ChevronRight, UserRound } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { HelpTip } from "@/components/help/HelpTip";
 import { STATUS_STYLE } from "@/lib/vehicle-ui";
 import type { VehicleWithStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -41,14 +42,17 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
       </div>
 
       {/* Search */}
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t("search")}
-          className="h-11 pl-9"
-        />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={t("search")}
+            className="h-11 pl-9"
+          />
+        </div>
+        <HelpTip tkey="veh_list" />
       </div>
 
       {/* List */}

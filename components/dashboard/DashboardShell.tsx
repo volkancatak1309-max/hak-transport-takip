@@ -26,6 +26,8 @@ import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
 import { UserAvatar } from "@/components/UserAvatar";
 import { OfflineBadge } from "@/components/OfflineBadge";
+import { HelpProvider } from "@/components/help/HelpProvider";
+import { HelpToggle } from "@/components/help/HelpToggle";
 import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/app/actions/auth";
 import { setLocaleAction } from "@/app/actions/preferences";
@@ -152,6 +154,7 @@ export function DashboardShell({
   }
 
   return (
+    <HelpProvider>
     <div className="flex min-h-screen bg-background text-foreground">
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col border-r border-border bg-sidebar lg:flex">
@@ -228,6 +231,7 @@ export function DashboardShell({
           <div className="ml-auto flex items-center gap-1.5">
             <Clock />
             <OfflineBadge />
+            <HelpToggle />
             <Button
               variant="ghost"
               size="icon-sm"
@@ -269,5 +273,6 @@ export function DashboardShell({
 
       <form ref={logoutRef} action={logoutAction} className="hidden" />
     </div>
+    </HelpProvider>
   );
 }

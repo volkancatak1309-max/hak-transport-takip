@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HelpTip } from "@/components/help/HelpTip";
 import { formatDate, formatDurationShort } from "@/lib/format";
 import type { AttentionItem } from "@/lib/admin-dashboard";
 
@@ -65,6 +66,7 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
           <span className="flex items-center gap-2">
             <AlertTriangle className="size-4 text-muted-foreground" />
             {t("dash.attn_title")}
+            <HelpTip tkey="attention" />
           </span>
           {items.length > 0 && (
             <span className="nums rounded-full bg-accent-gold/15 px-2 py-0.5 text-[11px] font-semibold text-accent-gold">

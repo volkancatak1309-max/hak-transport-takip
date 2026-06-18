@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Send, Check, Loader2, Link2Off, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { HelpTip } from "@/components/help/HelpTip";
 import {
   Dialog,
   DialogContent,
@@ -95,6 +96,7 @@ export function TelegramLink({ linked, username }: Props) {
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
           <Send className="size-4" /> Telegram
+          <HelpTip tkey="drv_telegram" />
         </CardTitle>
       </CardHeader>
       <CardContent>

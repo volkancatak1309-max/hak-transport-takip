@@ -52,6 +52,7 @@ import {
   kmDiff,
 } from "@/lib/format";
 import { UserAvatar } from "@/components/UserAvatar";
+import { HelpTip } from "@/components/help/HelpTip";
 import { OpsSummary } from "@/components/admin/OpsSummary";
 import { FleetStatus } from "@/components/admin/FleetStatus";
 import { DriverPerformance } from "@/components/admin/DriverPerformance";
@@ -405,19 +406,21 @@ export function AdminClient({
         <h2 className="text-sm font-semibold tracking-tight">{t("dash.shifts_title")}</h2>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <SummaryCard label={t("totalHours")} value={formatDuration(summary.totalMs)} nums />
-          <SummaryCard label={t("totalKm")} value={summary.totalKm.toLocaleString(nf)} nums />
+          <SummaryCard label={t("totalHours")} value={formatDuration(summary.totalMs)} nums help="shifts_hours" />
+          <SummaryCard label={t("totalKm")} value={summary.totalKm.toLocaleString(nf)} nums help="shifts_km" />
           <SummaryCard
             label={t("activeShifts")}
             value={String(summary.activeCount)}
             highlight={summary.activeCount > 0 ? "sky" : undefined}
             live={summary.activeCount > 0}
+            help="shifts_active"
           />
           <SummaryCard
             label={t("overLimit")}
             value={String(summary.overLimit)}
             highlight={summary.overLimit > 0 ? "gold" : undefined}
             pulse={summary.overLimit > 0}
+            help="shifts_over9"
           />
         </div>
 
@@ -425,7 +428,7 @@ export function AdminClient({
         <CardContent className="p-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
-              <Label>{t("dateRange")}</Label>
+              <Label className="inline-flex items-center gap-1">{t("dateRange")}<HelpTip tkey="filter_range" /></Label>
               <Select value={range} onValueChange={(v) => setParam("range", v ?? "today")}>
                 <SelectTrigger className="h-10 w-[160px]">
                   <SelectValue>
@@ -471,7 +474,7 @@ export function AdminClient({
               </>
             )}
             <div className="space-y-1.5">
-              <Label>{t("worker")}</Label>
+              <Label className="inline-flex items-center gap-1">{t("worker")}<HelpTip tkey="filter_worker" /></Label>
               <Select value={workerFilter} onValueChange={(v) => setParam("worker", v ?? "all")}>
                 <SelectTrigger className="h-10 w-[200px]">
                   <SelectValue>
@@ -494,7 +497,7 @@ export function AdminClient({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>{t("status")}</Label>
+              <Label className="inline-flex items-center gap-1">{t("status")}<HelpTip tkey="filter_status" /></Label>
               <Select value={statusFilter} onValueChange={(v) => setParam("status", v ?? "all")}>
                 <SelectTrigger className="h-10 w-[180px]">
                   <SelectValue>
@@ -528,6 +531,7 @@ export function AdminClient({
                 <FileSpreadsheet className="size-4" />
                 <span className="hidden xl:inline">Excel</span>
               </Button>
+              <HelpTip tkey="report_excel" />
               <Button
                 variant="outline"
                 size="sm"
@@ -538,6 +542,7 @@ export function AdminClient({
                 <FileText className="size-4" />
                 <span className="hidden xl:inline">DATEV</span>
               </Button>
+              <HelpTip tkey="report_datev" />
               <Button
                 variant="outline"
                 size="sm"
@@ -548,6 +553,7 @@ export function AdminClient({
                 <FileText className="size-4" />
                 <span className="hidden xl:inline">BMD</span>
               </Button>
+              <HelpTip tkey="report_bmd" />
               <Button
                 variant="outline"
                 size="sm"
@@ -558,6 +564,7 @@ export function AdminClient({
                 <FileText className="size-4" />
                 <span className="hidden xl:inline">PDF</span>
               </Button>
+              <HelpTip tkey="report_pdf" />
               <Button
                 variant="outline"
                 size="sm"
@@ -568,6 +575,7 @@ export function AdminClient({
                 <Shield className="size-4" />
                 <span className="hidden xl:inline">AZG</span>
               </Button>
+              <HelpTip tkey="report_azg" />
               <Button size="sm" onClick={() => setAddOpen(true)} title={t("addWorker")}>
                 <UserPlus className="size-4" />
                 <span className="hidden xl:inline">{t("addWorker")}</span>
@@ -595,14 +603,14 @@ export function AdminClient({
                 <TableRow className="hover:bg-transparent">
                   <TableHead>{t("tblWorker")}</TableHead>
                   <TableHead>{t("tblDate")}</TableHead>
-                  <TableHead>{t("tblStart")}</TableHead>
-                  <TableHead>{t("tblEnd")}</TableHead>
-                  <TableHead>{t("tblWorked")}</TableHead>
-                  <TableHead className="text-right">{t("tblBreak")}</TableHead>
-                  <TableHead className="text-right">{t("tblKm")}</TableHead>
-                  <TableHead className="text-right">{t("tblLoaded")}</TableHead>
-                  <TableHead className="text-right">{t("tblCargo")}</TableHead>
-                  <TableHead className="text-right">{t("tblUndelivered")}</TableHead>
+                  <TableHead><span className="inline-flex items-center gap-1">{t("tblStart")}<HelpTip tkey="col_start" /></span></TableHead>
+                  <TableHead><span className="inline-flex items-center gap-1">{t("tblEnd")}<HelpTip tkey="col_end" /></span></TableHead>
+                  <TableHead><span className="inline-flex items-center gap-1">{t("tblWorked")}<HelpTip tkey="col_worked" /></span></TableHead>
+                  <TableHead className="text-right"><span className="inline-flex items-center gap-1">{t("tblBreak")}<HelpTip tkey="col_break" /></span></TableHead>
+                  <TableHead className="text-right"><span className="inline-flex items-center gap-1">{t("tblKm")}<HelpTip tkey="col_km" /></span></TableHead>
+                  <TableHead className="text-right"><span className="inline-flex items-center gap-1">{t("tblLoaded")}<HelpTip tkey="col_loaded" /></span></TableHead>
+                  <TableHead className="text-right"><span className="inline-flex items-center gap-1">{t("tblCargo")}<HelpTip tkey="col_delivered" /></span></TableHead>
+                  <TableHead className="text-right"><span className="inline-flex items-center gap-1">{t("tblUndelivered")}<HelpTip tkey="col_undelivered" /></span></TableHead>
                   <TableHead>{t("tblPlate")}</TableHead>
                   <TableHead className="max-w-[200px]">{t("tblNote")}</TableHead>
                   <TableHead className="text-right">{t("tblActions")}</TableHead>
@@ -943,6 +951,7 @@ function SummaryCard({
   highlight,
   pulse,
   live,
+  help,
 }: {
   label: string;
   value: string;
@@ -950,6 +959,7 @@ function SummaryCard({
   highlight?: "sky" | "gold";
   pulse?: boolean;
   live?: boolean;
+  help?: string;
 }) {
   const color =
     highlight === "sky"
@@ -965,6 +975,7 @@ function SummaryCard({
           <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
             {label}
           </span>
+          {help && <HelpTip tkey={help} />}
         </div>
         <div
           className={`text-2xl font-semibold mt-1.5 ${color} ${nums ? "nums" : ""} ${

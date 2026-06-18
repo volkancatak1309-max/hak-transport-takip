@@ -6,11 +6,18 @@ export const phoneSchema = z
   .min(6, "errPhone")
   .max(20, "errPhone");
 
-export const pinSchema = z.string().regex(/^\d{4}$/, "errPin");
+// New PINs (create worker / reset) must be 6 digits — 4 digits (10k keyspace)
+// is brute-forceable. Used by createWorkerSchema and the reset generator.
+export const pinSchema = z.string().regex(/^\d{6}$/, "errPin");
+
+// Login is more lenient DURING the transition so workers whose PIN is still the
+// old 4-digit one are not locked out before an admin resets them to 6 digits.
+// Once everyone is migrated this can be tightened to /^\d{6}$/.
+export const loginPinSchema = z.string().regex(/^\d{4,6}$/, "errPin");
 
 export const loginSchema = z.object({
   phone: phoneSchema,
-  pin: pinSchema,
+  pin: loginPinSchema,
 });
 
 export const startShiftSchema = z.object({

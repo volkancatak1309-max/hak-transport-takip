@@ -699,8 +699,8 @@ export function AdminClient({
                 id="pin"
                 name="pin"
                 inputMode="numeric"
-                pattern="\d{4}"
-                maxLength={4}
+                pattern="\d{6}"
+                maxLength={6}
                 required
                 className="h-11 tracking-widest"
               />

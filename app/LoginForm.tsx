@@ -48,10 +48,10 @@ export function LoginForm() {
           type="password"
           autoComplete="current-password"
           inputMode="numeric"
-          pattern="\d{4}"
-          maxLength={4}
+          pattern="\d{4,6}"
+          maxLength={6}
           required
-          placeholder="••••"
+          placeholder="••••••"
           className="h-12 text-base tracking-widest"
         />
       </div>

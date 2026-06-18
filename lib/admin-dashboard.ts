@@ -121,7 +121,7 @@ export async function getDashboardData(
     todayOps,
     fleet,
     performance: buildPerformance(rangeEntries, names),
-    attention: buildAttention(rangeEntries, vehicles, names, todayStart),
+    attention: buildAttention(rangeEntries, todayEntries, vehicles, names, todayStart),
   };
 }
 
@@ -211,6 +211,7 @@ function buildPerformance(
 
 function buildAttention(
   rangeEntries: LiteEntry[],
+  todayEntries: LiteEntry[],
   vehicles: {
     id: string;
     plate: string;
@@ -222,20 +223,31 @@ function buildAttention(
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
 
-  // 1) Shifts past the 9h AZG threshold.
+  // 1) Shifts past the 9h AZG threshold — only the ones that are *actionable
+  //    right now*: shifts that started today, plus any still-open (active)
+  //    shift regardless of when it started (e.g. left running overnight). We do
+  //    NOT scan the whole selected range, otherwise picking "month" floods the
+  //    action list with every historical overrun. Deduped by entry id.
+  const over9h = new Map<string, LiteEntry>();
+  for (const e of todayEntries) {
+    if (workedMs(e) > NINE_HOURS_MS) over9h.set(e.id, e);
+  }
   for (const e of rangeEntries) {
-    const ms = workedMs(e);
-    if (ms > NINE_HOURS_MS) {
-      items.push({
-        kind: "over9h",
-        id: e.id,
-        worker_name: e.worker_id ? names.get(e.worker_id) ?? "—" : "—",
-        ms,
-      });
-    }
+    if (e.ended_at === null && workedMs(e) > NINE_HOURS_MS) over9h.set(e.id, e);
+  }
+  for (const e of over9h.values()) {
+    items.push({
+      kind: "over9h",
+      id: e.id,
+      worker_name: e.worker_id ? names.get(e.worker_id) ?? "—" : "—",
+      ms: workedMs(e),
+    });
   }
 
   // 2) Vehicle documents due soon or overdue (§57a inspection + insurance).
+  //    Window is bounded on BOTH sides: a document that expired more than
+  //    DOC_DUE_WINDOW_DAYS ago drops off the list instead of sitting at the top
+  //    forever (otherwise an old, unmaintained record keeps the panel red).
   const dayMs = 24 * 60 * 60 * 1000;
   const today = todayStart.getTime();
   for (const v of vehicles) {
@@ -243,7 +255,7 @@ function buildAttention(
       const due = kind === "inspection" ? v.inspection_due : v.insurance_due;
       if (!due) continue;
       const days = Math.round((new Date(due).getTime() - today) / dayMs);
-      if (days <= DOC_DUE_WINDOW_DAYS) {
+      if (days >= -DOC_DUE_WINDOW_DAYS && days <= DOC_DUE_WINDOW_DAYS) {
         items.push({ kind, id: `${v.id}-${kind}`, plate: v.plate, due, days });
       }
     }

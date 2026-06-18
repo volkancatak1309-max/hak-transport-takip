@@ -187,6 +187,12 @@ function buildPerformance(
   const byWorker = new Map<string, DriverPerf>();
   for (const e of entries) {
     if (!e.worker_id) continue;
+    // Performance is measured on COMPLETED shifts only, so all four columns
+    // (shifts / hours / km / delivered) describe the exact same set of shifts.
+    // Previously `shifts` counted active shifts too while hours/km did not,
+    // making "5 shifts / 2h" rows that didn't add up. Active shifts have no
+    // final km or delivered count yet, so they are excluded entirely here.
+    if (e.ended_at === null) continue;
     let row = byWorker.get(e.worker_id);
     if (!row) {
       row = {
@@ -200,7 +206,7 @@ function buildPerformance(
       byWorker.set(e.worker_id, row);
     }
     row.shifts++;
-    if (e.ended_at !== null) row.ms += workedMs(e);
+    row.ms += workedMs(e);
     const d = kmDiff(e);
     if (d !== null) row.km += d;
     if (e.cargo_count !== null) row.delivered += e.cargo_count;

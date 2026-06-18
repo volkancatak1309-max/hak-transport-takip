@@ -19,7 +19,9 @@ export function isTelegramConfigured(): boolean {
  * - If the chat is gone (403 = bot blocked, 400 = chat not found), the worker's
  *   link is cleared so we stop trying to reach a dead chat.
  */
-export type InlineButton = { text: string; url: string };
+export type InlineButton =
+  | { text: string; url: string }
+  | { text: string; callback_data: string };
 
 export async function sendTelegramMessage(
   chatId: string,
@@ -60,6 +62,31 @@ export async function sendTelegramMessage(
     return false;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Acknowledge an inline-button (callback_query) tap so Telegram stops showing
+ * the button's loading spinner. Best-effort; never throws. `text` shows a brief
+ * toast in the user's chat.
+ */
+export async function answerCallbackQuery(
+  callbackQueryId: string,
+  text?: string
+): Promise<void> {
+  const token = botToken();
+  if (!token) return;
+  try {
+    await fetch(`${API}/bot${token}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        ...(text ? { text } : {}),
+      }),
+    });
+  } catch {
+    // ignore — acknowledgement is non-critical
   }
 }
 

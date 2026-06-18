@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { sendTelegramMessage } from "@/lib/telegram";
+import { sendTelegramMessage, answerCallbackQuery } from "@/lib/telegram";
+import {
+  stillActiveConfirmedMessage,
+  shiftClosedByWatchdogMessage,
+} from "@/lib/telegram-messages";
 
 // Telegram needs the webhook to live on the Node runtime (it uses the service
 // role Supabase client). Never edge.
@@ -34,7 +38,96 @@ type TgUpdate = {
     from?: { username?: string };
     text?: string;
   };
+  callback_query?: {
+    id?: string;
+    data?: string;
+    message?: { chat?: { id?: number | string } };
+  };
 };
+
+/**
+ * Handle a tap on the "Is your shift still active?" inline buttons sent by the
+ * watchdog. callback_data is `shift_yes:<id>` or `shift_no:<id>`. We only ever
+ * act on a shift that belongs to THIS chat's worker and is still open, so one
+ * driver can never close another's shift.
+ */
+async function handleShiftCallback(cb: NonNullable<TgUpdate["callback_query"]>) {
+  const cbId = cb.id;
+  const data = cb.data ?? "";
+  const chatId = cb.message?.chat?.id;
+  if (!cbId || !chatId) return;
+  const chatIdStr = String(chatId);
+
+  const m = /^shift_(yes|no):(.+)$/.exec(data);
+  if (!m) {
+    await answerCallbackQuery(cbId);
+    return;
+  }
+  const action = m[1];
+  const shiftId = m[2];
+
+  // Resolve the worker behind this chat — and their locale for replies.
+  const { data: worker } = await supabaseAdmin
+    .from("workers")
+    .select("id, telegram_locale")
+    .eq("telegram_chat_id", chatIdStr)
+    .maybeSingle();
+  if (!worker) {
+    await answerCallbackQuery(cbId);
+    return;
+  }
+  const loc = (worker.telegram_locale as string) ?? null;
+
+  // The shift must belong to this worker AND still be open.
+  const { data: shift } = await supabaseAdmin
+    .from("time_entries")
+    .select("id, started_at")
+    .eq("id", shiftId)
+    .eq("worker_id", worker.id)
+    .is("ended_at", null)
+    .maybeSingle();
+  if (!shift) {
+    // Already closed elsewhere, or not theirs — acknowledge and stop.
+    await answerCallbackQuery(cbId);
+    return;
+  }
+
+  if (action === "yes") {
+    // Keep it open; reset the 1h timer so the next prompt is an hour from now.
+    await supabaseAdmin
+      .from("time_entries")
+      .update({ still_active_asked_at: new Date().toISOString() })
+      .eq("id", shift.id);
+    await answerCallbackQuery(cbId);
+    await sendTelegramMessage(chatIdStr, stillActiveConfirmedMessage(loc));
+    return;
+  }
+
+  // action === "no" → close the shift now. Prefer the last recorded location
+  // time (more truthful than "now"), falling back to now if there is none.
+  const { data: lastLoc } = await supabaseAdmin
+    .from("driver_locations")
+    .select("recorded_at")
+    .eq("time_entry_id", shift.id)
+    .order("recorded_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const endedAt = lastLoc?.recorded_at ?? new Date().toISOString();
+
+  await supabaseAdmin
+    .from("time_entries")
+    .update({
+      ended_at: endedAt,
+      summary_notified_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", shift.id)
+    .eq("worker_id", worker.id)
+    .is("ended_at", null);
+
+  await answerCallbackQuery(cbId);
+  await sendTelegramMessage(chatIdStr, shiftClosedByWatchdogMessage(loc));
+}
 
 export async function POST(req: NextRequest) {
   // Reject anything that doesn't carry our shared secret in the URL.
@@ -48,6 +141,17 @@ export async function POST(req: NextRequest) {
   try {
     update = (await req.json()) as TgUpdate;
   } catch {
+    return NextResponse.json({ ok: true });
+  }
+
+  // Inline-button taps (watchdog "still active?" prompt) arrive as callback
+  // queries, not messages. Handle them first.
+  if (update.callback_query) {
+    try {
+      await handleShiftCallback(update.callback_query);
+    } catch {
+      // swallow — always 200 so Telegram doesn't retry-storm
+    }
     return NextResponse.json({ ok: true });
   }
 

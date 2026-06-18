@@ -380,14 +380,7 @@
     }
   },
   "export": {
-    "datev": "DATEV'e Aktar",
-    "bmd": "BMD'ye Aktar",
-    "datev_tooltip": "Almanya muhasebe yazılımı için CSV formatı",
-    "bmd_tooltip": "Avusturya muhasebe yazılımı için CSV formatı",
-    "datev_success": "DATEV dosyası indirildi. Muhasebenize gönderebilirsiniz.",
-    "bmd_success": "BMD dosyası indirildi. Muhasebenize gönderebilirsiniz.",
-    "error": "Export hatası, tekrar deneyin",
-    "no_data": "Bu aralıkta tamamlanmış vardiya yok"
+    "error": "Export hatası, tekrar deneyin"
   },
   "login": {
     "title": "Giriş Yap",
@@ -631,9 +624,7 @@
     "filter_range": "Verileri tarihe göre süzer: bugün, bu hafta, bu ay veya özel aralık.",
     "filter_worker": "Tabloyu tek bir şoföre göre süzer.",
     "filter_status": "Vardiyaları duruma göre süzer: aktif, tamamlanmış veya 9 saati aşan.",
-    "report_excel": "Tablodaki vardiyaları Excel (CSV) dosyası olarak indirir.",
-    "report_datev": "Muhasebe için DATEV uyumlu çalışma/bordro dosyası oluşturur.",
-    "report_bmd": "Muhasebe için BMD uyumlu dosya oluşturur.",
+    "report_excel": "Tablodaki vardiyaları Excel'de açılabilen dosya olarak indirir.",
     "report_pdf": "Seçili aralıktaki vardiyaları yazdırılabilir PDF rapor olarak verir.",
     "report_azg": "Avusturya çalışma süresi yasasına (AZG) göre olası ihlalleri listeleyen denetim raporu.",
     "col_start": "Vardiyanın başladığı saat.",

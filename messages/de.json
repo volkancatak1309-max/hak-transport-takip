@@ -380,14 +380,7 @@
     }
   },
   "export": {
-    "datev": "DATEV-Export",
-    "bmd": "BMD-Export",
-    "datev_tooltip": "CSV-Format für deutsche Lohnabrechnungssoftware",
-    "bmd_tooltip": "CSV-Format für österreichische Lohnabrechnungssoftware",
-    "datev_success": "DATEV-Datei heruntergeladen. Sie können sie Ihrem Steuerberater senden.",
-    "bmd_success": "BMD-Datei heruntergeladen. Sie können sie Ihrem Steuerberater senden.",
-    "error": "Export-Fehler, bitte erneut versuchen",
-    "no_data": "Keine abgeschlossenen Schichten in diesem Zeitraum"
+    "error": "Export-Fehler, bitte erneut versuchen"
   },
   "login": {
     "title": "Anmelden",
@@ -631,9 +624,7 @@
     "filter_range": "Filtert die Daten nach Datum: heute, Woche, Monat oder eigener Zeitraum.",
     "filter_worker": "Filtert die Tabelle nach einem einzelnen Fahrer.",
     "filter_status": "Filtert Schichten nach Status: aktiv, abgeschlossen oder über 9 Stunden.",
-    "report_excel": "Lädt die Schichten der Tabelle als Excel-Datei (CSV) herunter.",
-    "report_datev": "Erstellt eine DATEV-kompatible Datei für die Lohnbuchhaltung.",
-    "report_bmd": "Erstellt eine BMD-kompatible Datei für die Buchhaltung.",
+    "report_excel": "Lädt die Schichten der Tabelle als in Excel öffnbare Datei herunter.",
     "report_pdf": "Gibt die Schichten des Zeitraums als druckbaren PDF-Bericht aus.",
     "report_azg": "Prüfbericht möglicher Verstöße nach dem österreichischen Arbeitszeitgesetz (AZG).",
     "col_start": "Uhrzeit des Schichtbeginns.",

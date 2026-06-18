@@ -79,8 +79,6 @@ type Props = {
   statusFilter: string;
   summary: { totalMs: number; totalKm: number; activeCount: number; overLimit: number };
   dashboard: DashboardData;
-  rangeStart: string;
-  rangeEnd: string;
 };
 
 export function AdminClient({
@@ -93,8 +91,6 @@ export function AdminClient({
   statusFilter,
   summary,
   dashboard,
-  rangeStart,
-  rangeEnd,
 }: Props) {
   const t = useTranslations("admin");
   const tc = useTranslations("common");
@@ -113,7 +109,6 @@ export function AdminClient({
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
   const [azgBusy, setAzgBusy] = useState(false);
-  const [exportBusy, setExportBusy] = useState(false);
   const [pending, startTransition] = useTransition();
   const [now, setNow] = useState(Date.now());
 
@@ -132,54 +127,6 @@ export function AdminClient({
     }
     return opts;
   })();
-
-  function downloadCsv(csv: string, filename: string) {
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  async function handleDatev() {
-    setExportBusy(true);
-    try {
-      const { generateDATEV } = await import("../actions/datev-export");
-      const res = await generateDATEV(rangeStart, rangeEnd);
-      if (res.ok) {
-        downloadCsv(res.csv, res.filename);
-        toast.success(tExport("datev_success"));
-      } else {
-        toast.error(res.error === "no_data" ? tExport("no_data") : tExport("error"));
-      }
-    } catch {
-      toast.error(tExport("error"));
-    } finally {
-      setExportBusy(false);
-    }
-  }
-
-  async function handleBmd() {
-    setExportBusy(true);
-    try {
-      const { generateBMD } = await import("../actions/bmd-export");
-      const res = await generateBMD(rangeStart, rangeEnd);
-      if (res.ok) {
-        downloadCsv(res.csv, res.filename);
-        toast.success(tExport("bmd_success"));
-      } else {
-        toast.error(res.error === "no_data" ? tExport("no_data") : tExport("error"));
-      }
-    } catch {
-      toast.error(tExport("error"));
-    } finally {
-      setExportBusy(false);
-    }
-  }
 
   async function handleAzg() {
     setAzgBusy(true);
@@ -311,7 +258,6 @@ export function AdminClient({
         String(e.break_minutes ?? 0),
         km !== null ? String(km) : "",
         e.start_package_count !== null ? String(e.start_package_count) : "",
-        // Delivered only counts once the shift has ended.
         e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "",
         e.undelivered_count !== null ? String(e.undelivered_count) : "",
         e.plate ?? "",
@@ -532,28 +478,6 @@ export function AdminClient({
                 <span className="hidden xl:inline">Excel</span>
               </Button>
               <HelpTip tkey="report_excel" />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDatev}
-                disabled={exportBusy}
-                title={tExport("datev_tooltip")}
-              >
-                <FileText className="size-4" />
-                <span className="hidden xl:inline">DATEV</span>
-              </Button>
-              <HelpTip tkey="report_datev" />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBmd}
-                disabled={exportBusy}
-                title={tExport("bmd_tooltip")}
-              >
-                <FileText className="size-4" />
-                <span className="hidden xl:inline">BMD</span>
-              </Button>
-              <HelpTip tkey="report_bmd" />
               <Button
                 variant="outline"
                 size="sm"

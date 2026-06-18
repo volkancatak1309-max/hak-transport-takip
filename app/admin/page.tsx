@@ -134,8 +134,6 @@ export default async function AdminPage({
           statusFilter={statusFilter}
           summary={{ totalMs, totalKm, activeCount, overLimit }}
           dashboard={dashboard}
-          rangeStart={start.toISOString()}
-          rangeEnd={end.toISOString()}
         />
       </div>
     </DashboardShell>

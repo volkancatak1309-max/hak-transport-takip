@@ -200,11 +200,21 @@ export function AdminClient({
     }
   }
 
+  // 1s tick: keeps the live duration of active shifts ticking up on screen.
   useEffect(() => {
     if (summary.activeCount === 0) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [summary.activeCount]);
+
+  // Soft auto-refresh of the server data (ops summary, fleet status, active
+  // shifts, shift table) so a shift start / break / end shows up without a
+  // manual F5 — same approach as the live tracking map. Runs unconditionally:
+  // a shift can start while the panel currently shows zero active shifts.
+  useEffect(() => {
+    const id = setInterval(() => router.refresh(), 20_000);
+    return () => clearInterval(id);
+  }, [router]);
 
   function setParam(key: string, value: string) {
     const u = new URLSearchParams(params.toString());

@@ -39,6 +39,7 @@ export type AZGSuspicious = {
 };
 
 export type AZGData = {
+  reportTitle: string;
   monthLabel: string;
   generatedAt: string;
   totalShifts: number;
@@ -92,6 +93,12 @@ function isoWeekKey(iso: string): string {
 export async function getAZGReportData(month: string): Promise<AZGResult> {
   await requireAdmin();
 
+  // The AZG report is an official § 26 AZG document for the Austrian
+  // Arbeitsinspektorat — it MUST be German regardless of the admin's UI
+  // language. So every translated string here is forced to the "de" locale.
+  const t = await getTranslations({ locale: "de", namespace: "azg" });
+  const reportTitle = t("report_title");
+
   const m = /^(\d{4})-(\d{2})$/.exec(month);
   if (!m) return { ok: false, error: "bad_month" };
   const year = Number(m[1]);
@@ -113,6 +120,7 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     return {
       ok: true,
       data: {
+        reportTitle,
         monthLabel: month,
         generatedAt: new Date().toISOString(),
         totalShifts: 0,
@@ -134,10 +142,6 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     .select("id, name")
     .in("id", workerIds);
   const nameById = new Map((workersData ?? []).map((w) => [w.id, w.name as string]));
-
-  // Violation type/description localised to the admin's locale (TR/DE). Legal
-  // citations (§ …, Ruhezeit, AZG) stay German — see legalRef literals below.
-  const t = await getTranslations("azg");
 
   const violations: AZGViolation[] = [];
   const weekly = new Map<string, { hours: number; worker: string; iso: string }>();
@@ -415,6 +419,7 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
   return {
     ok: true,
     data: {
+      reportTitle,
       monthLabel: month,
       generatedAt: new Date().toISOString(),
       totalShifts: meaningfulShifts,

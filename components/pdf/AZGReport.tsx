@@ -103,7 +103,8 @@ function StatBox({ num, label, color }: { num: number; label: string; color?: st
   );
 }
 
-function ReportDoc({ data, title }: { data: AZGData; title: string }) {
+function ReportDoc({ data }: { data: AZGData }) {
+  const title = data.reportTitle;
   const genStr = new Date(data.generatedAt).toLocaleString("de-AT", {
     timeZone: "Europe/Vienna",
   });
@@ -267,10 +268,10 @@ function ReportDoc({ data, title }: { data: AZGData; title: string }) {
   );
 }
 
-export async function downloadAZGReport(data: AZGData, title: string) {
+export async function downloadAZGReport(data: AZGData) {
   let url: string | null = null;
   try {
-    const blob = await pdf(<ReportDoc data={data} title={title} />).toBlob();
+    const blob = await pdf(<ReportDoc data={data} />).toBlob();
     url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

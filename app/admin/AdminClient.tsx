@@ -138,7 +138,7 @@ export function AdminClient({
         return;
       }
       const { downloadAZGReport } = await import("@/components/pdf/AZGReport");
-      await downloadAZGReport(res.data, tAzg("report_title"));
+      await downloadAZGReport(res.data);
       toast.success(tAzg("success"));
       setAzgOpen(false);
     } catch {

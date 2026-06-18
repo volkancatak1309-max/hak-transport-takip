@@ -79,8 +79,6 @@ type Props = {
   statusFilter: string;
   summary: { totalMs: number; totalKm: number; activeCount: number; overLimit: number };
   dashboard: DashboardData;
-  rangeStart: string;
-  rangeEnd: string;
 };
 
 export function AdminClient({
@@ -93,8 +91,6 @@ export function AdminClient({
   statusFilter,
   summary,
   dashboard,
-  rangeStart,
-  rangeEnd,
 }: Props) {
   const t = useTranslations("admin");
   const tc = useTranslations("common");
@@ -113,7 +109,6 @@ export function AdminClient({
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   });
   const [azgBusy, setAzgBusy] = useState(false);
-  const [exportBusy, setExportBusy] = useState(false);
   const [pending, startTransition] = useTransition();
   const [now, setNow] = useState(Date.now());
 
@@ -132,54 +127,6 @@ export function AdminClient({
     }
     return opts;
   })();
-
-  function downloadCsv(csv: string, filename: string) {
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  async function handleDatev() {
-    setExportBusy(true);
-    try {
-      const { generateDATEV } = await import("../actions/datev-export");
-      const res = await generateDATEV(rangeStart, rangeEnd);
-      if (res.ok) {
-        downloadCsv(res.csv, res.filename);
-        toast.success(tExport("datev_success"));
-      } else {
-        toast.error(res.error === "no_data" ? tExport("no_data") : tExport("error"));
-      }
-    } catch {
-      toast.error(tExport("error"));
-    } finally {
-      setExportBusy(false);
-    }
-  }
-
-  async function handleBmd() {
-    setExportBusy(true);
-    try {
-      const { generateBMD } = await import("../actions/bmd-export");
-      const res = await generateBMD(rangeStart, rangeEnd);
-      if (res.ok) {
-        downloadCsv(res.csv, res.filename);
-        toast.success(tExport("bmd_success"));
-      } else {
-        toast.error(res.error === "no_data" ? tExport("no_data") : tExport("error"));
-      }
-    } catch {
-      toast.error(tExport("error"));
-    } finally {
-      setExportBusy(false);
-    }
-  }
 
   async function handleAzg() {
     setAzgBusy(true);
@@ -285,7 +232,18 @@ export function AdminClient({
   }
 
   function exportCsv() {
+    // Personnel number per worker: the real Personalnummer if set, otherwise a
+    // stable sequential number from name order. The DB id (uuid) is NEVER shown.
+    const sortedWorkers = [...workers].sort((a, b) =>
+      (a.name ?? "").localeCompare(b.name ?? "", locale === "de" ? "de" : "tr")
+    );
+    const persNr = new Map<string, string>();
+    sortedWorkers.forEach((w, i) =>
+      persNr.set(w.id, (w.employee_number ?? "").trim() || String(i + 1))
+    );
+
     const header = [
+      t("tblPersNr"),
       t("tblWorker"),
       t("tblDate"),
       t("tblStart"),
@@ -303,10 +261,11 @@ export function AdminClient({
       const w = workedMs(e);
       const km = kmDiff(e);
       return [
+        persNr.get(e.worker_id) ?? "—",
         e.workers?.name ?? "",
         formatDate(e.started_at, locale),
         formatTime(e.started_at, locale),
-        e.ended_at ? formatTime(e.ended_at, locale) : "ACTIVE",
+        e.ended_at ? formatTime(e.ended_at, locale) : t("statusActive"),
         formatDurationShort(w, locale),
         String(e.break_minutes ?? 0),
         km !== null ? String(km) : "",
@@ -315,18 +274,31 @@ export function AdminClient({
         e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "",
         e.undelivered_count !== null ? String(e.undelivered_count) : "",
         e.plate ?? "",
-        (e.notes ?? "").replace(/[\r\n]+/g, " "),
+        e.notes ?? "",
       ];
     });
-    const csv = [header, ...rows]
-      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";"))
+
+    // TAB-separated + UTF-16LE with BOM. This is the format Excel decodes
+    // correctly for Turkish/German characters on every locale/version (the
+    // "Unicode Text" path), avoiding the mojibake seen with plain UTF-8 CSV.
+    const text = [header, ...rows]
+      .map((r) => r.map((c) => String(c ?? "").replace(/[\t\r\n]+/g, " ")).join("\t"))
       .join("\r\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    const buf = new ArrayBuffer(2 + text.length * 2);
+    const view = new DataView(buf);
+    view.setUint8(0, 0xff); // UTF-16LE BOM
+    view.setUint8(1, 0xfe);
+    for (let i = 0; i < text.length; i++) {
+      view.setUint16(2 + i * 2, text.charCodeAt(i), true);
+    }
+    const blob = new Blob([buf], { type: "text/csv;charset=utf-16le" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `hak-${range}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
 
@@ -532,28 +504,6 @@ export function AdminClient({
                 <span className="hidden xl:inline">Excel</span>
               </Button>
               <HelpTip tkey="report_excel" />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDatev}
-                disabled={exportBusy}
-                title={tExport("datev_tooltip")}
-              >
-                <FileText className="size-4" />
-                <span className="hidden xl:inline">DATEV</span>
-              </Button>
-              <HelpTip tkey="report_datev" />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBmd}
-                disabled={exportBusy}
-                title={tExport("bmd_tooltip")}
-              >
-                <FileText className="size-4" />
-                <span className="hidden xl:inline">BMD</span>
-              </Button>
-              <HelpTip tkey="report_bmd" />
               <Button
                 variant="outline"
                 size="sm"

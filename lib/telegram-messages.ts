@@ -80,6 +80,80 @@ export function shiftSummaryMessage(
   );
 }
 
+/**
+ * "Is your shift still active?" prompt → driver, for a shift that has been open
+ * unusually long. Paired with inline [Yes]/[No] buttons (see stillActiveLabels).
+ */
+export function stillActiveMessage(
+  locale: string | null,
+  p: { hours: string }
+): string {
+  if (L(locale) === "de") {
+    return (
+      "⏳ <b>HAK61</b>\n\n" +
+      `Deine Schicht ist seit <b>${p.hours}</b> Stunden offen.\n` +
+      "Ist deine Schicht noch aktiv?"
+    );
+  }
+  return (
+    "⏳ <b>HAK61</b>\n\n" +
+    `Vardiyan <b>${p.hours}</b> saattir açık.\n` +
+    "Vardiyan hâlâ devam ediyor mu?"
+  );
+}
+
+/** Inline button labels for the "still active?" prompt. */
+export function stillActiveLabels(locale: string | null): { yes: string; no: string } {
+  return L(locale) === "de"
+    ? { yes: "✅ Ja, läuft", no: "🔴 Nein, beendet" }
+    : { yes: "✅ Evet, devam", no: "🔴 Hayır, bitti" };
+}
+
+/** Driver tapped "Yes, still going" → acknowledge, we'll re-ask in 1 hour. */
+export function stillActiveConfirmedMessage(locale: string | null): string {
+  if (L(locale) === "de") {
+    return "👍 Danke! Schicht läuft weiter. Ich frage in 1 Stunde erneut.";
+  }
+  return "👍 Teşekkürler! Vardiya devam ediyor. 1 saat sonra tekrar soracağım.";
+}
+
+/** Driver tapped "No, finished" → the shift was closed for them. */
+export function shiftClosedByWatchdogMessage(locale: string | null): string {
+  if (L(locale) === "de") {
+    return (
+      "✅ <b>Schicht beendet</b>\n\n" +
+      "Deine offene Schicht wurde geschlossen. Bitte Kilometer/Fracht bei Bedarf im Panel nachtragen.\n<i>HAK61</i>"
+    );
+  }
+  return (
+    "✅ <b>Vardiya kapatıldı</b>\n\n" +
+    "Açık kalan vardiyan kapatıldı. Gerekirse km/kargo bilgisini panelden tamamlayabilirsin.\n<i>HAK61</i>"
+  );
+}
+
+/** Long-open shift whose driver isn't reachable on Telegram → admins. */
+export function longShiftUnreachableMessage(
+  locale: string | null,
+  p: { name: string; plate: string; hours: string }
+): string {
+  const name = esc(p.name);
+  const plate = esc(p.plate);
+  if (L(locale) === "de") {
+    return (
+      "⚠️ HAK61\n\n" +
+      `<b>${name}</b> (${plate}) hat eine seit <b>${p.hours}</b> Std offene Schicht ` +
+      "und ist nicht per Telegram erreichbar.\n" +
+      "Bitte prüfen / Schicht im Panel schließen."
+    );
+  }
+  return (
+    "⚠️ HAK61\n\n" +
+    `<b>${name}</b> (${plate}) <b>${p.hours}</b> saattir açık bir vardiyaya sahip ` +
+    "ve Telegram'dan ulaşılamıyor.\n" +
+    "Lütfen kontrol edin / vardiyayı panelden kapatın."
+  );
+}
+
 /** Lenkzeit 4.5h warning → driver. */
 export function lenkzeitMessage(locale: string | null): string {
   if (L(locale) === "de") {

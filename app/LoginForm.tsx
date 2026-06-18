@@ -15,7 +15,9 @@ export function LoginForm() {
   const [state, formAction, pending] = useActionState(loginAction, initial);
 
   const errMsg =
-    state.error === "invalid" || state.error === "validation"
+    state.error === "locked"
+      ? t("errLocked", { seconds: state.retryAfter ?? 0 })
+      : state.error === "invalid" || state.error === "validation"
       ? t("errInvalid")
       : state.error === "inactive"
       ? t("errInactive")

@@ -392,7 +392,8 @@
     "pending": "Giriş yapılıyor…",
     "errInvalid": "Telefon veya PIN hatalı",
     "errInactive": "Hesap pasif. Yönetici ile görüşün.",
-    "errDb": "Veritabanı hatası"
+    "errDb": "Veritabanı hatası",
+    "errLocked": "Çok fazla başarısız deneme. Lütfen {seconds} saniye sonra tekrar deneyin."
   },
   "panel": {
     "myPanel": "Panelim",

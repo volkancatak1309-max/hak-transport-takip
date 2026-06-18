@@ -392,7 +392,8 @@
     "pending": "Anmeldung läuft…",
     "errInvalid": "Telefon oder PIN falsch",
     "errInactive": "Konto inaktiv. Bitte Verwaltung kontaktieren.",
-    "errDb": "Datenbankfehler"
+    "errDb": "Datenbankfehler",
+    "errLocked": "Zu viele Fehlversuche. Bitte in {seconds} Sekunden erneut versuchen."
   },
   "panel": {
     "myPanel": "Mein Panel",

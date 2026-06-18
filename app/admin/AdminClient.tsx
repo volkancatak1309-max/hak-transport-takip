@@ -611,10 +611,16 @@ export function AdminClient({
               <TableBody>
                 {entries.map((e) => {
                   const isActive = e.ended_at === null;
+                  // Same break definition as the live summary: an active shift
+                  // with break_started_at set is "molada", so this row shows the
+                  // SAME status the ops summary counts.
+                  const onBreak = isActive && !!e.break_started_at;
                   const w = isActive ? workedMs(e, now) : workedMs(e);
                   const over = w > NINE_HOURS;
                   const km = kmDiff(e);
-                  const borderClass = isActive
+                  const borderClass = onBreak
+                    ? "border-l-2 border-l-accent-claret"
+                    : isActive
                     ? "border-l-2 border-l-accent-sky"
                     : over
                     ? "border-l-2 border-l-accent-gold"
@@ -632,7 +638,12 @@ export function AdminClient({
                       </TableCell>
                       <TableCell className="nums">{formatTime(e.started_at, locale)}</TableCell>
                       <TableCell className="nums">
-                        {isActive ? (
+                        {onBreak ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-claret/15 px-2 py-0.5 text-[10px] font-medium text-accent-claret">
+                            <span className="live-dot" />
+                            {t("dash.ops_on_break")}
+                          </span>
+                        ) : isActive ? (
                           <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-sky/15 px-2 py-0.5 text-[10px] font-medium text-accent-sky">
                             <span className="live-dot" />
                             {t("active")}

@@ -94,7 +94,7 @@ export async function getDashboardData(
 ): Promise<DashboardData> {
   const todayStart = startOfTodayVienna();
 
-  const [todayRes, rangeRes, vehicles, workersRes] = await Promise.all([
+  const [todayRes, rangeRes, activeRes, vehicles, workersRes] = await Promise.all([
     supabaseAdmin
       .from("time_entries")
       .select(ENTRY_COLS)
@@ -104,18 +104,37 @@ export async function getDashboardData(
       .select(ENTRY_COLS)
       .gte("started_at", rangeStart)
       .lte("started_at", rangeEnd),
+    // Single source of truth for live status: EVERY open shift (ended_at IS
+    // NULL), independent of the today/range window. The top summary, the
+    // active-shift card and the table all derive their "active / on break /
+    // in field" numbers from this one set so they can never disagree.
+    supabaseAdmin
+      .from("time_entries")
+      .select("id, break_started_at")
+      .is("ended_at", null),
     listVehiclesWithStatus(),
     supabaseAdmin.from("workers").select("id, name"),
   ]);
 
   const todayEntries = (todayRes.data ?? []) as LiteEntry[];
   const rangeEntries = (rangeRes.data ?? []) as LiteEntry[];
+  const activeShifts = (activeRes.data ?? []) as {
+    id: string;
+    break_started_at: string | null;
+  }[];
   const names = new Map(
     ((workersRes.data ?? []) as Pick<Worker, "id" | "name">[]).map((w) => [w.id, w.name])
   );
 
   const fleet = buildFleet(vehicles);
   const todayOps = buildTodayOps(todayEntries);
+  // Live status counts come from the global active-shift set, NOT today's
+  // window: a shift left open overnight is still "in field" right now.
+  //   "Sahadaki şoför" = every open shift (drivers on break are still in field)
+  //   "Molada"         = open shifts whose break_started_at is set
+  // (so driversInField >= onBreak always holds).
+  todayOps.driversInField = activeShifts.length;
+  todayOps.onBreak = activeShifts.filter((s) => s.break_started_at).length;
   // "Vehicles delivering" is the live fleet count, not derived from shifts.
   todayOps.vehiclesDelivering = fleet.counts.sevkiyatta;
 
@@ -128,8 +147,6 @@ export async function getDashboardData(
 }
 
 function buildTodayOps(entries: LiteEntry[]): TodayOps {
-  let driversInField = 0;
-  let onBreak = 0;
   let overNine = 0;
   let km = 0;
   let hasKm = false;
@@ -141,10 +158,6 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
   let hasUndelivered = false;
 
   for (const e of entries) {
-    if (e.ended_at === null) {
-      driversInField++;
-      if (e.break_started_at) onBreak++;
-    }
     if (workedMs(e) > NINE_HOURS_MS) overNine++;
     const d = kmDiff(e);
     if (d !== null) {
@@ -170,9 +183,11 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
   }
 
   return {
-    driversInField,
-    vehiclesDelivering: 0, // filled from fleet snapshot by caller-free merge below
-    onBreak,
+    // driversInField / onBreak / vehiclesDelivering are the live status counts
+    // and are filled in by getDashboardData from the global active-shift set.
+    driversInField: 0,
+    vehiclesDelivering: 0,
+    onBreak: 0,
     totalKmToday: hasKm ? km : null,
     loaded: hasLoaded ? loaded : null,
     delivered: hasDelivered ? delivered : null,

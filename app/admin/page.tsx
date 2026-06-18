@@ -97,22 +97,22 @@ export default async function AdminPage({
     entriesData = entriesData.filter((e) => workedMs(e) > 9 * 60 * 60 * 1000);
   }
 
-  // Totals reflect the SELECTED range. Hours/KM come from COMPLETED shifts only;
-  // active shifts feed the active count.
+  // Totals reflect the SELECTED range. Hours/KM come from COMPLETED shifts only.
+  // The "active shifts" count is NOT range-derived: it must match the live
+  // "drivers in field" number at the top, so it comes from the single source of
+  // truth in getDashboardData (every open shift, regardless of window).
   let totalMs = 0;
   let totalKm = 0;
-  let activeCount = 0;
   let overLimit = 0;
   for (const e of entriesData) {
-    if (e.ended_at === null) {
-      activeCount++;
-    } else {
+    if (e.ended_at !== null) {
       totalMs += workedMs(e);
       const km = kmDiff(e);
       if (km !== null) totalKm += km;
     }
     if (workedMs(e) > 9 * 60 * 60 * 1000) overLimit++;
   }
+  const activeCount = dashboard.todayOps.driversInField;
 
   return (
     <DashboardShell

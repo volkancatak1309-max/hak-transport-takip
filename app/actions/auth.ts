@@ -22,6 +22,13 @@ export type LoginState = {
 const MAX_FAILURES = 5;
 const ATTEMPT_WINDOW_MS = 30 * 60 * 1000; // forget stale failures after 30 min
 
+// A fixed valid bcrypt hash compared against when the phone is unknown or the
+// account is inactive, so a failed login takes ~the same time regardless of
+// which case it is. Closes timing-based account enumeration. Its plaintext is
+// irrelevant — the compare is only there to burn equivalent CPU.
+const DUMMY_PIN_HASH =
+  "$2b$10$Qvy2kwozHmqx5Uv2kbISjuV0Dy00KwKR0mbfKIM7G/qiOqdcOFMgC";
+
 /** Escalating lock once failures reach the threshold: 30s, 1m, 5m, 15m, 1h. */
 function lockMs(failures: number): number {
   const steps = [30_000, 60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
@@ -104,14 +111,18 @@ export async function loginAction(
     .maybeSingle();
 
   if (error) return { error: "db" };
-  if (!worker) {
-    await registerFailure(identifier);
-    return { error: "invalid" };
-  }
-  if (!worker.is_active) return { error: "inactive" };
 
-  const ok = await bcrypt.compare(parsed.data.pin, worker.pin_hash);
-  if (!ok) {
+  // Always run exactly one bcrypt compare — against the real hash, or a dummy
+  // when the phone is unknown — so timing doesn't reveal whether the phone
+  // exists. Unknown phone, inactive account and wrong PIN ALL return the same
+  // generic "invalid": no account enumeration.
+  const pinOk = await bcrypt.compare(
+    parsed.data.pin,
+    worker?.pin_hash ?? DUMMY_PIN_HASH
+  );
+  const authed = !!worker && worker.is_active && pinOk;
+
+  if (!authed || !worker) {
     await registerFailure(identifier);
     return { error: "invalid" };
   }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { safeEqual } from "@/lib/secure-compare";
 import { sendTelegramMessage } from "@/lib/telegram";
 import {
   stillActiveMessage,
@@ -34,10 +35,14 @@ const REASK_MS = 60 * 60 * 1000; // 1 h
 function authorized(req: NextRequest): boolean {
   const expected = process.env.CRON_SECRET;
   if (!expected) return false;
+  // Both forms stay supported (no change needed at the scheduler): the existing
+  // `?secret=` query and `Authorization: Bearer <secret>`. Comparison is
+  // timing-safe.
   const qs = req.nextUrl.searchParams.get("secret");
-  if (qs && qs === expected) return true;
+  if (safeEqual(qs, expected)) return true;
   const auth = req.headers.get("authorization");
-  return auth === `Bearer ${expected}`;
+  if (auth?.startsWith("Bearer ")) return safeEqual(auth.slice(7), expected);
+  return false;
 }
 
 async function runWatchdog() {

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireWorker } from "@/lib/session";
+import { MAX_ODOMETER, MAX_PER_SHIFT_KM, MAX_COUNT } from "@/lib/validation";
 
 export type QueueProcessResult = { ok: boolean; error?: string };
 
@@ -47,7 +48,8 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
 
   if (item.type === "start") {
     const startKm = num(item.payload.start_km);
-    if (startKm === null || startKm < 0) return { ok: false, error: "invalid" };
+    if (startKm === null || startKm < 0 || startKm > MAX_ODOMETER)
+      return { ok: false, error: "invalid" };
 
     const { data: active } = await supabaseAdmin
       .from("time_entries")
@@ -77,7 +79,7 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
       break_minutes: 0,
     };
     const cargo = num(item.payload.expected_cargo);
-    if (cargo !== null) {
+    if (cargo !== null && cargo >= 0 && cargo <= MAX_COUNT) {
       insert.cargo_count = cargo;
       insert.start_package_count = cargo;
     }
@@ -86,7 +88,8 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
     if (error) return { ok: false, error: error.message };
   } else if (item.type === "end") {
     const endKm = num(item.payload.end_km);
-    if (endKm === null || endKm < 0) return { ok: false, error: "invalid" };
+    if (endKm === null || endKm < 0 || endKm > MAX_ODOMETER)
+      return { ok: false, error: "invalid" };
 
     const { data: active } = await supabaseAdmin
       .from("time_entries")
@@ -98,6 +101,8 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
       .maybeSingle();
     if (!active) return { ok: true }; // nothing to close
     if (endKm < active.start_km) return { ok: false, error: "km_low" };
+    if (endKm - active.start_km > MAX_PER_SHIFT_KM)
+      return { ok: false, error: "invalid" };
 
     const update: Record<string, unknown> = {
       ended_at: whenIso,
@@ -105,11 +110,11 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
       notes: (item.payload.notes as string) || null,
     };
     const br = num(item.payload.break_minutes);
-    if (br !== null) update.break_minutes = br;
+    if (br !== null && br >= 0 && br <= 1440) update.break_minutes = br;
     const cargo = num(item.payload.cargo_count);
-    if (cargo !== null) update.cargo_count = cargo;
+    if (cargo !== null && cargo >= 0 && cargo <= MAX_COUNT) update.cargo_count = cargo;
     const undel = num(item.payload.undelivered_count);
-    if (undel !== null) update.undelivered_count = undel;
+    if (undel !== null && undel >= 0 && undel <= MAX_COUNT) update.undelivered_count = undel;
     if (item.payload.plate) update.plate = item.payload.plate;
 
     let { error } = await supabaseAdmin

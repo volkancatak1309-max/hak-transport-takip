@@ -7,6 +7,9 @@ import {
   startShiftSchema,
   endShiftSchema,
   editEntrySchema,
+  MAX_ODOMETER,
+  MAX_PER_SHIFT_KM,
+  MAX_COUNT,
 } from "@/lib/validation";
 import { workedMs, formatDurationShort, formatTime } from "@/lib/format";
 import { sendTelegramMessage } from "@/lib/telegram";
@@ -160,6 +163,10 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
       error: `km_low:${parsed.data.end_km}:${active.start_km}`,
     };
   }
+  const kmDiffShift = parsed.data.end_km - active.start_km;
+  if (kmDiffShift > MAX_PER_SHIFT_KM) {
+    return { ok: false, error: `km_high:${kmDiffShift}:${MAX_PER_SHIFT_KM}` };
+  }
 
   const endedIso = new Date().toISOString();
   const finalBreak =
@@ -298,6 +305,7 @@ export async function updateStartKmAction(km: number): Promise<ShiftResult> {
   const session = await requireWorker();
   const v = Math.floor(Number(km));
   if (!Number.isFinite(v) || v < 0) return { ok: false, error: "errKmNeg" };
+  if (v > MAX_ODOMETER) return { ok: false, error: "errKmRange" };
 
   const { data, error } = await supabaseAdmin
     .from("time_entries")
@@ -329,7 +337,7 @@ export async function updatePackageCountAction(
   let v: number | null = null;
   if (count !== null && count !== undefined && String(count) !== "") {
     v = Math.floor(Number(count));
-    if (!Number.isFinite(v) || v < 0) return { ok: false, error: "invalid" };
+    if (!Number.isFinite(v) || v < 0 || v > MAX_COUNT) return { ok: false, error: "invalid" };
   }
 
   const { data, error } = await supabaseAdmin
@@ -363,12 +371,15 @@ export async function adminUpdateKmAction(
   const session = await requireAdmin();
   const s = Math.floor(Number(startKm));
   if (!Number.isFinite(s) || s < 0) return { ok: false, error: "errKmNeg" };
+  if (s > MAX_ODOMETER) return { ok: false, error: "errKmRange" };
 
   let e: number | null = null;
   if (endKm !== null && endKm !== undefined && String(endKm) !== "") {
     e = Math.floor(Number(endKm));
     if (!Number.isFinite(e) || e < 0) return { ok: false, error: "errKmNeg" };
+    if (e > MAX_ODOMETER) return { ok: false, error: "errKmRange" };
     if (e < s) return { ok: false, error: `km_low:${e}:${s}` };
+    if (e - s > MAX_PER_SHIFT_KM) return { ok: false, error: `km_high:${e - s}:${MAX_PER_SHIFT_KM}` };
   }
 
   const { error } = await supabaseAdmin

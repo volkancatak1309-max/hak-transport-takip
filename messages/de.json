@@ -440,6 +440,8 @@
     "noHistory": "Noch keine abgeschlossenen Schichten",
     "errActive": "Sie haben bereits eine aktive Schicht",
     "errKmLow": "End-KM ({end}) darf nicht kleiner als Start-KM ({start}) sein",
+    "errKmHigh": "Die in einer Schicht gefahrene Strecke ist zu hoch ({diff} km). Maximal {max} km.",
+    "errKmRange": "Der eingegebene Kilometerstand liegt außerhalb des gültigen Bereichs.",
     "errKmNegative": "KM darf nicht negativ sein",
     "errStart": "Schicht konnte nicht gestartet werden",
     "errEnd": "Schicht konnte nicht beendet werden",

@@ -20,33 +20,46 @@ export const loginSchema = z.object({
   pin: loginPinSchema,
 });
 
+// Sanity caps for server-side numeric inputs. Negative values and end<start are
+// guarded separately; these block absurd/injected magnitudes (e.g. 2-billion-km
+// odometer) that would corrupt reports/AZG. Enforced on the SERVER regardless
+// of any client-side input limits.
+export const MAX_ODOMETER = 2_000_000; // plausible lifetime vehicle km
+export const MAX_PER_SHIFT_KM = 5_000; // one shift cannot realistically exceed this
+export const MAX_COUNT = 100_000; // package / cargo counts
+
 export const startShiftSchema = z.object({
-  start_km: z.coerce.number().int().nonnegative("errKmNeg"),
+  start_km: z.coerce.number().int().nonnegative("errKmNeg").max(MAX_ODOMETER, "errKmRange"),
   plate: z.string().trim().max(20).optional().nullable(),
-  expected_cargo: z.coerce.number().int().nonnegative().optional().nullable(),
+  expected_cargo: z.coerce.number().int().nonnegative().max(MAX_COUNT).optional().nullable(),
   vehicle_id: z.string().uuid().optional().nullable(),
 });
 
 export const endShiftSchema = z.object({
-  end_km: z.coerce.number().int().nonnegative("errKmNeg"),
+  end_km: z.coerce.number().int().nonnegative("errKmNeg").max(MAX_ODOMETER, "errKmRange"),
   plate: z.string().trim().max(20).optional().nullable(),
   notes: z.string().trim().max(500).optional().nullable(),
   break_minutes: z.coerce.number().int().min(0).max(1440).optional().nullable(),
-  cargo_count: z.coerce.number().int().min(0).max(100000).optional().nullable(),
-  undelivered_count: z.coerce.number().int().min(0).max(100000).optional().nullable(),
+  cargo_count: z.coerce.number().int().min(0).max(MAX_COUNT).optional().nullable(),
+  undelivered_count: z.coerce.number().int().min(0).max(MAX_COUNT).optional().nullable(),
 });
 
-export const editEntrySchema = z.object({
-  id: z.string().uuid(),
-  started_at: z.string().min(1),
-  ended_at: z.string().optional().nullable(),
-  start_km: z.coerce.number().int().nonnegative("errKmNeg"),
-  end_km: z.coerce.number().int().min(0).optional().nullable(),
-  plate: z.string().trim().max(20).optional().nullable(),
-  notes: z.string().trim().max(500).optional().nullable(),
-  break_minutes: z.coerce.number().int().min(0).max(1440).optional().nullable(),
-  cargo_count: z.coerce.number().int().min(0).max(100000).optional().nullable(),
-});
+export const editEntrySchema = z
+  .object({
+    id: z.string().uuid(),
+    started_at: z.string().min(1),
+    ended_at: z.string().optional().nullable(),
+    start_km: z.coerce.number().int().nonnegative("errKmNeg").max(MAX_ODOMETER, "errKmRange"),
+    end_km: z.coerce.number().int().min(0).max(MAX_ODOMETER, "errKmRange").optional().nullable(),
+    plate: z.string().trim().max(20).optional().nullable(),
+    notes: z.string().trim().max(500).optional().nullable(),
+    break_minutes: z.coerce.number().int().min(0).max(1440).optional().nullable(),
+    cargo_count: z.coerce.number().int().min(0).max(MAX_COUNT).optional().nullable(),
+  })
+  .refine(
+    (d) => d.end_km == null || d.end_km - d.start_km <= MAX_PER_SHIFT_KM,
+    { message: "errKmRange", path: ["end_km"] }
+  );
 
 export const createWorkerSchema = z.object({
   name: z.string().trim().min(2, "errName").max(100),
@@ -106,7 +119,7 @@ export const createFuelSchema = z.object({
   fueled_at: z.string().min(1),
   liters: euroNumber,
   total_cost: euroNumber,
-  odometer_km: z.coerce.number().int().positive("errKm"),
+  odometer_km: z.coerce.number().int().positive("errKm").max(MAX_ODOMETER, "errKm"),
   fuel_type: z.enum(["diesel", "benzin", "lpg", "elektro"]),
   station_name: z.string().trim().max(120).optional().nullable(),
   notes: z.string().trim().max(500).optional().nullable(),
@@ -132,9 +145,9 @@ export const createMaintenanceSchema = z.object({
     "repair",
     "other",
   ]),
-  odometer_km: z.coerce.number().int().positive("errKm"),
+  odometer_km: z.coerce.number().int().positive("errKm").max(MAX_ODOMETER, "errKm"),
   cost: euroNumberOptional,
   description: z.string().trim().max(500).optional().nullable(),
-  next_service_km: z.coerce.number().int().positive().optional().nullable(),
+  next_service_km: z.coerce.number().int().positive().max(MAX_ODOMETER).optional().nullable(),
   next_service_date: z.string().optional().nullable(),
 });

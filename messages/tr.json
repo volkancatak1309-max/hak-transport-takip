@@ -440,6 +440,8 @@
     "noHistory": "Henüz tamamlanmış vardiya yok",
     "errActive": "Zaten aktif bir vardiyanız var",
     "errKmLow": "Bitiş km ({end}) başlangıç km'sinden ({start}) küçük olamaz",
+    "errKmHigh": "Bir vardiyada kat edilen km çok yüksek ({diff} km). En fazla {max} km olabilir.",
+    "errKmRange": "Girilen kilometre geçerli aralıkta değil.",
     "errKmNegative": "KM negatif olamaz",
     "errStart": "Vardiya başlatılamadı",
     "errEnd": "Vardiya kapatılamadı",

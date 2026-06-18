@@ -3,11 +3,12 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { WorkersClient } from "./WorkersClient";
 import { startOfMonthVienna, workedMs } from "@/lib/format";
-import type { Worker, TimeEntry } from "@/lib/types";
+import type { WorkerPublic, TimeEntry } from "@/lib/types";
+import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export type WorkerWithStats = Worker & {
+export type WorkerWithStats = WorkerPublic & {
   lastShiftAt: string | null;
   monthHoursMs: number;
 };
@@ -18,14 +19,14 @@ export default async function WorkersPage() {
   const monthStart = startOfMonthVienna();
 
   const [workersResult, entriesResult] = await Promise.all([
-    supabaseAdmin.from("workers").select("*").order("name"),
+    supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
     supabaseAdmin
       .from("time_entries")
       .select("worker_id, started_at, ended_at, break_minutes")
       .gte("started_at", monthStart.toISOString()),
   ]);
 
-  const workers = (workersResult.data ?? []) as Worker[];
+  const workers = (workersResult.data ?? []) as WorkerPublic[];
   const entries = (entriesResult.data ?? []) as Pick<
     TimeEntry,
     "worker_id" | "started_at" | "ended_at" | "break_minutes"

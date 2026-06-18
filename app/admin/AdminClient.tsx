@@ -65,13 +65,13 @@ import {
   editEntryAction,
   deleteEntryAction,
 } from "../actions/shift";
-import type { TimeEntryWithWorker, Worker } from "@/lib/types";
+import type { TimeEntryWithWorker, WorkerPublic } from "@/lib/types";
 
 const NINE_HOURS = 9 * 60 * 60 * 1000;
 
 type Props = {
   entries: TimeEntryWithWorker[];
-  workers: Worker[];
+  workers: WorkerPublic[];
   range: string;
   from: string;
   to: string;

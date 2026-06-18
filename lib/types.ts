@@ -14,6 +14,19 @@ export type Worker = {
   created_at: string;
 };
 
+/** Worker fields safe to send to the client — everything EXCEPT pin_hash. */
+export type WorkerPublic = Omit<Worker, "pin_hash">;
+
+/**
+ * Explicit column list for any `workers` query whose result reaches the client
+ * (page props, server-action return values). NEVER add pin_hash here: a bcrypt
+ * hash of a short numeric PIN is trivially brute-forced offline, so it must
+ * never leave the server. Use this instead of `select("*")` for client-bound
+ * worker data. Server-only flows that need the hash (login) select it explicitly.
+ */
+export const WORKER_PUBLIC_COLUMNS =
+  "id, name, phone, plate, employee_number, telegram_chat_id, telegram_username, telegram_linked_at, telegram_locale, is_admin, is_active, created_at";
+
 export type TimeEntry = {
   id: string;
   worker_id: string;

@@ -33,7 +33,7 @@ import {
 } from "@/lib/format";
 import { toggleActiveAction, resetPinAction } from "../../../actions/workers";
 import { KmEditButton } from "@/components/KmEditButton";
-import type { Worker, TimeEntry } from "@/lib/types";
+import type { WorkerPublic, TimeEntry } from "@/lib/types";
 
 const RouteMap = dynamic(
   () => import("@/components/RouteMap").then((m) => m.RouteMap),
@@ -44,7 +44,7 @@ const RouteMap = dynamic(
 );
 
 type Props = {
-  worker: Worker;
+  worker: WorkerPublic;
   entries: TimeEntry[];
   routePoints: RoutePoint[];
   monthSummary: { shifts: number; ms: number; km: number; cargo: number };

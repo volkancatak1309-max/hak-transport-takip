@@ -15,7 +15,8 @@ import {
   endOfDayViennaFromYmd,
 } from "@/lib/format";
 import { getDashboardData } from "@/lib/admin-dashboard";
-import type { TimeEntry, TimeEntryWithWorker, Worker } from "@/lib/types";
+import type { TimeEntry, TimeEntryWithWorker, WorkerPublic } from "@/lib/types";
+import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -79,11 +80,11 @@ export default async function AdminPage({
 
   const [entriesResult, workersResult, dashboard] = await Promise.all([
     query,
-    supabaseAdmin.from("workers").select("*").order("name"),
+    supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
     getDashboardData(start.toISOString(), end.toISOString()),
   ]);
 
-  const workersData = (workersResult.data ?? []) as Worker[];
+  const workersData = (workersResult.data ?? []) as WorkerPublic[];
   const workerMap = new Map(workersData.map((w) => [w.id, w]));
 
   let entriesData = ((entriesResult.data ?? []) as TimeEntry[]).map((e) => {

@@ -28,6 +28,16 @@ export const MAX_ODOMETER = 2_000_000; // plausible lifetime vehicle km
 export const MAX_PER_SHIFT_KM = 5_000; // one shift cannot realistically exceed this
 export const MAX_COUNT = 100_000; // package / cargo counts
 
+// A date/time string that must parse to a real date. Without this guard a
+// crafted value like "çöp" passes `z.string().min(1)` and then blows up at
+// `new Date(value).toISOString()` inside the actions (RangeError → 500). Here it
+// is rejected as ordinary invalid input instead.
+const isoDate = z
+  .string()
+  .min(1)
+  .refine((s) => !Number.isNaN(Date.parse(s)), { message: "errDate" });
+const isoDateOptional = isoDate.optional().nullable();
+
 export const startShiftSchema = z.object({
   start_km: z.coerce.number().int().nonnegative("errKmNeg").max(MAX_ODOMETER, "errKmRange"),
   plate: z.string().trim().max(20).optional().nullable(),
@@ -47,8 +57,8 @@ export const endShiftSchema = z.object({
 export const editEntrySchema = z
   .object({
     id: z.string().uuid(),
-    started_at: z.string().min(1),
-    ended_at: z.string().optional().nullable(),
+    started_at: isoDate,
+    ended_at: isoDateOptional,
     start_km: z.coerce.number().int().nonnegative("errKmNeg").max(MAX_ODOMETER, "errKmRange"),
     end_km: z.coerce.number().int().min(0).max(MAX_ODOMETER, "errKmRange").optional().nullable(),
     plate: z.string().trim().max(20).optional().nullable(),
@@ -89,7 +99,7 @@ export const assignmentCategorySchema = z.enum([
 
 export const createAssignmentSchema = z.object({
   worker_id: z.string().uuid(),
-  scheduled_at: z.string().min(1),
+  scheduled_at: isoDate,
   category: assignmentCategorySchema,
   stops: z.array(assignmentStopSchema).min(2, "errStops").max(10),
   package_count: z.coerce.number().int().min(0).max(100000).optional().nullable(),
@@ -116,7 +126,7 @@ const euroNumberOptional = z.preprocess((v) => {
 
 export const createFuelSchema = z.object({
   vehicle_plate: z.string().trim().min(1, "errPlate").max(20),
-  fueled_at: z.string().min(1),
+  fueled_at: isoDate,
   liters: euroNumber,
   total_cost: euroNumber,
   odometer_km: z.coerce.number().int().positive("errKm").max(MAX_ODOMETER, "errKm"),
@@ -126,7 +136,7 @@ export const createFuelSchema = z.object({
 });
 
 export const createExpenseSchema = z.object({
-  spent_at: z.string().min(1),
+  spent_at: isoDate,
   category: z.enum(["maut", "verpflegung", "parking", "diesel", "sonstige"]),
   amount: euroNumber,
   description: z.string().trim().max(300).optional().nullable(),
@@ -135,7 +145,7 @@ export const createExpenseSchema = z.object({
 
 export const createMaintenanceSchema = z.object({
   vehicle_plate: z.string().trim().min(1, "errPlate").max(20),
-  serviced_at: z.string().min(1),
+  serviced_at: isoDate,
   service_type: z.enum([
     "oil_change",
     "inspection",
@@ -149,5 +159,5 @@ export const createMaintenanceSchema = z.object({
   cost: euroNumberOptional,
   description: z.string().trim().max(500).optional().nullable(),
   next_service_km: z.coerce.number().int().positive().max(MAX_ODOMETER).optional().nullable(),
-  next_service_date: z.string().optional().nullable(),
+  next_service_date: isoDateOptional,
 });

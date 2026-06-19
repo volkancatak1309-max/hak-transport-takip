@@ -81,6 +81,19 @@ export type VehicleWithStatus = Vehicle & {
   driver_is_live: boolean;
 };
 
+/** A traffic/parking penalty (Strafe) booked against a vehicle (migration 014). */
+export type VehiclePenalty = {
+  id: string;
+  vehicle_id: string;
+  penalty_date: string;
+  amount: number | null;
+  description: string | null;
+  paid: boolean;
+  paid_at: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
 export type TimeEntryWithWorker = TimeEntry & {
   workers: Pick<Worker, "id" | "name" | "plate"> | null;
 };

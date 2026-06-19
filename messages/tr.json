@@ -329,7 +329,25 @@
       "driver": "Şoför",
       "date": "Tarih",
       "km": "KM",
-      "active_now": "Aktif"
+      "active_now": "Aktif",
+      "penalties_title": "Cezalar",
+      "penalties_add": "Ceza Ekle",
+      "penalties_none": "Ceza kaydı yok",
+      "penalty_date": "Tarih",
+      "penalty_amount": "Tutar (€)",
+      "penalty_amount_optional": "Tutar (€, opsiyonel)",
+      "penalty_desc": "Açıklama",
+      "penalty_desc_ph": "ör. hız aşımı, park cezası",
+      "penalty_paid": "Ödendi",
+      "penalty_unpaid": "Ödenmedi",
+      "penalty_mark_paid": "Ödendi işaretle",
+      "penalty_mark_unpaid": "Ödenmedi işaretle",
+      "penalty_delete": "Sil",
+      "penalty_delete_confirm": "Bu ceza kaydı silinsin mi?",
+      "penalty_added": "Ceza eklendi",
+      "penalty_saved": "Güncellendi",
+      "penalty_deleted": "Ceza silindi",
+      "penalty_error": "İşlem başarısız"
     }
   },
   "offline": {
@@ -558,6 +576,7 @@
       "attn_undelivered": "{name} — {count} paket teslim edilemedi",
       "attn_overdue_days": "{days} gün geçti",
       "attn_in_days": "{days} gün kaldı",
+      "attn_penalty": "{plate} — {count} ödenmemiş ceza",
       "shifts_title": "Vardiya Kayıtları",
       "shifts_table": "Vardiyalar"
     }
@@ -648,6 +667,7 @@
     "veh_list": "Filodaki tüm araçlar ve anlık durumları.",
     "veh_status": "Aracın anlık durumu: sevkiyatta, molada, boşta veya bakımda.",
     "veh_inspection": "Aracın muayene (§57a) ve sigorta bitiş tarihleri; tarih yaklaşınca dikkat listesinde uyarılır.",
-    "veh_route": "Aracın geçmiş rotalarını harita üzerinde adım adım izleme."
+    "veh_route": "Aracın geçmiş rotalarını harita üzerinde adım adım izleme.",
+    "veh_penalties": "Araca kesilen trafik/park cezaları. Ödenmemiş cezalar yönetici panelindeki Dikkat/Aksiyon listesinde görünür."
   }
 }

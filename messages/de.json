@@ -329,7 +329,25 @@
       "driver": "Fahrer",
       "date": "Datum",
       "km": "KM",
-      "active_now": "Aktiv"
+      "active_now": "Aktiv",
+      "penalties_title": "Strafen",
+      "penalties_add": "Strafe hinzufügen",
+      "penalties_none": "Keine Strafen",
+      "penalty_date": "Datum",
+      "penalty_amount": "Betrag (€)",
+      "penalty_amount_optional": "Betrag (€, optional)",
+      "penalty_desc": "Beschreibung",
+      "penalty_desc_ph": "z. B. Tempoüberschreitung, Parkstrafe",
+      "penalty_paid": "Bezahlt",
+      "penalty_unpaid": "Offen",
+      "penalty_mark_paid": "Als bezahlt markieren",
+      "penalty_mark_unpaid": "Als offen markieren",
+      "penalty_delete": "Löschen",
+      "penalty_delete_confirm": "Diese Strafe löschen?",
+      "penalty_added": "Strafe hinzugefügt",
+      "penalty_saved": "Aktualisiert",
+      "penalty_deleted": "Strafe gelöscht",
+      "penalty_error": "Vorgang fehlgeschlagen"
     }
   },
   "offline": {
@@ -558,6 +576,7 @@
       "attn_undelivered": "{name} — {count} Pakete nicht zugestellt",
       "attn_overdue_days": "{days} Tage überfällig",
       "attn_in_days": "in {days} Tagen",
+      "attn_penalty": "{plate} — {count} offene Strafe(n)",
       "shifts_title": "Schichtprotokolle",
       "shifts_table": "Schichten"
     }
@@ -648,6 +667,7 @@
     "veh_list": "Alle Fahrzeuge der Flotte und ihr aktueller Status.",
     "veh_status": "Aktueller Status des Fahrzeugs: unterwegs, Pause, frei oder Wartung.",
     "veh_inspection": "§57a-Begutachtungs- und Versicherungsfristen; nahe Termine erscheinen in der Achtungsliste.",
-    "veh_route": "Vergangene Routen des Fahrzeugs Schritt für Schritt auf der Karte ansehen."
+    "veh_route": "Vergangene Routen des Fahrzeugs Schritt für Schritt auf der Karte ansehen.",
+    "veh_penalties": "Verkehrs-/Parkstrafen des Fahrzeugs. Offene Strafen erscheinen in der Achtungsliste im Admin-Dashboard."
   }
 }

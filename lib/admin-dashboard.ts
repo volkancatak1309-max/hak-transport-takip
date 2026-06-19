@@ -53,6 +53,13 @@ export type AttentionItem =
       worker_name: string;
       count: number;
       date: string;
+    }
+  | {
+      kind: "penalty"; // unpaid vehicle penalties, aggregated per vehicle
+      id: string;
+      plate: string;
+      count: number;
+      amount: number | null; // total amount of the unpaid penalties (null if none priced)
     };
 
 export type DashboardData = {
@@ -94,7 +101,8 @@ export async function getDashboardData(
 ): Promise<DashboardData> {
   const todayStart = startOfTodayVienna();
 
-  const [todayRes, rangeRes, activeRes, vehicles, workersRes] = await Promise.all([
+  const [todayRes, rangeRes, activeRes, vehicles, workersRes, penaltyRes] =
+    await Promise.all([
     supabaseAdmin
       .from("time_entries")
       .select(ENTRY_COLS)
@@ -114,6 +122,11 @@ export async function getDashboardData(
       .is("ended_at", null),
     listVehiclesWithStatus(),
     supabaseAdmin.from("workers").select("id, name"),
+    // Unpaid vehicle penalties (Strafe) → surfaced as action items.
+    supabaseAdmin
+      .from("vehicle_penalties")
+      .select("vehicle_id, amount")
+      .eq("paid", false),
   ]);
 
   const todayEntries = (todayRes.data ?? []) as LiteEntry[];
@@ -125,6 +138,10 @@ export async function getDashboardData(
   const names = new Map(
     ((workersRes.data ?? []) as Pick<Worker, "id" | "name">[]).map((w) => [w.id, w.name])
   );
+  const unpaidPenalties = (penaltyRes.data ?? []) as {
+    vehicle_id: string;
+    amount: number | null;
+  }[];
 
   const fleet = buildFleet(vehicles);
   const todayOps = buildTodayOps(todayEntries);
@@ -142,7 +159,14 @@ export async function getDashboardData(
     todayOps,
     fleet,
     performance: buildPerformance(rangeEntries, names),
-    attention: buildAttention(rangeEntries, todayEntries, vehicles, names, todayStart),
+    attention: buildAttention(
+      rangeEntries,
+      todayEntries,
+      vehicles,
+      names,
+      todayStart,
+      unpaidPenalties
+    ),
   };
 }
 
@@ -253,7 +277,8 @@ function buildAttention(
     insurance_due: string | null;
   }[],
   names: Map<string, string>,
-  todayStart: Date
+  todayStart: Date,
+  unpaidPenalties: { vehicle_id: string; amount: number | null }[]
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
 
@@ -308,12 +333,36 @@ function buildAttention(
     }
   }
 
+  // 4) Unpaid vehicle penalties (Strafe), aggregated per vehicle.
+  const plateById = new Map(vehicles.map((v) => [v.id, v.plate]));
+  const penByVehicle = new Map<string, { count: number; amount: number; hasAmount: boolean }>();
+  for (const p of unpaidPenalties) {
+    const acc = penByVehicle.get(p.vehicle_id) ?? { count: 0, amount: 0, hasAmount: false };
+    acc.count += 1;
+    if (p.amount !== null) {
+      acc.amount += p.amount;
+      acc.hasAmount = true;
+    }
+    penByVehicle.set(p.vehicle_id, acc);
+  }
+  for (const [vehicleId, acc] of penByVehicle) {
+    items.push({
+      kind: "penalty",
+      id: `${vehicleId}-penalty`,
+      plate: plateById.get(vehicleId) ?? "—",
+      count: acc.count,
+      amount: acc.hasAmount ? acc.amount : null,
+    });
+  }
+
   // Most urgent first: overdue/soonest docs, then biggest overruns/backlogs.
   const weight = (i: AttentionItem): number => {
     switch (i.kind) {
       case "inspection":
       case "insurance":
         return i.days; // overdue (negative) and soonest first
+      case "penalty":
+        return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "over9h":
         return 1000 - i.ms / 3_600_000; // longest overrun first
       case "undelivered":

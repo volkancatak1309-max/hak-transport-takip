@@ -36,6 +36,10 @@ export type DriverPerf = {
   ms: number; // worked time (break-excluded)
   delivered: number; // cargo_count sum
   shifts: number;
+  undelivered: number; // undelivered_count sum (for delivery success rate)
+  azgWarn: number; // per-shift §9 warnings (worked > 9h, <= 10h)
+  azgViol: number; // per-shift §9/§11 violations (> 10h, or break < 30min after 6h)
+  score: number; // 0..100 — see buildPerformance for the exact, real-data formula
 };
 
 export type AttentionItem =
@@ -178,7 +182,7 @@ export async function getDashboardData(
     todayOps,
     opsDetail: buildOpsDetail(todayEntries, activeShifts, vehicles, names),
     fleet,
-    performance: buildPerformance(rangeEntries, names),
+    performance: buildPerformance(rangeEntries, names, rangeStart, rangeEnd),
     attention: buildAttention(
       rangeEntries,
       todayEntries,
@@ -324,18 +328,21 @@ function buildFleet(vehicles: { live_status: VehicleLiveStatus }[]): FleetStatus
   return { total: vehicles.length, counts };
 }
 
+const TEN_HOURS_MS = 10 * 60 * 60 * 1000;
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
 function buildPerformance(
   entries: LiteEntry[],
-  names: Map<string, string>
+  names: Map<string, string>,
+  rangeStart: string,
+  rangeEnd: string
 ): DriverPerf[] {
   const byWorker = new Map<string, DriverPerf>();
   for (const e of entries) {
     if (!e.worker_id) continue;
-    // Performance is measured on COMPLETED shifts only, so all four columns
-    // (shifts / hours / km / delivered) describe the exact same set of shifts.
-    // Previously `shifts` counted active shifts too while hours/km did not,
-    // making "5 shifts / 2h" rows that didn't add up. Active shifts have no
-    // final km or delivered count yet, so they are excluded entirely here.
+    // Performance is measured on COMPLETED shifts only, so all columns describe
+    // the exact same set of shifts. Active shifts have no final km / delivered
+    // count yet, so they are excluded entirely here.
     if (e.ended_at === null) continue;
     let row = byWorker.get(e.worker_id);
     if (!row) {
@@ -346,17 +353,53 @@ function buildPerformance(
         ms: 0,
         delivered: 0,
         shifts: 0,
+        undelivered: 0,
+        azgWarn: 0,
+        azgViol: 0,
+        score: 0,
       };
       byWorker.set(e.worker_id, row);
     }
     row.shifts++;
-    row.ms += workedMs(e);
+    const worked = workedMs(e);
+    row.ms += worked;
     const d = kmDiff(e);
     if (d !== null) row.km += d;
     if (e.cargo_count !== null) row.delivered += e.cargo_count;
+    if (e.undelivered_count !== null) row.undelivered += e.undelivered_count;
+    // Per-shift AZG checks — the SAME § 9 / § 11 per-shift rules the AZG audit
+    // report uses (worked time is break-excluded). Cross-shift checks (daily
+    // total, weekly, rest period) are NOT included here; the score's AZG part is
+    // the per-shift compliance only (explained to the admin in the (i) tooltip).
+    const breakMin = e.break_minutes ?? 0;
+    const isViolation = worked > TEN_HOURS_MS || (worked > SIX_HOURS_MS && breakMin < 30);
+    if (isViolation) row.azgViol++;
+    else if (worked > NINE_HOURS_MS) row.azgWarn++;
   }
-  // Default sort: most km first (caller can re-sort client-side).
-  return [...byWorker.values()].sort((a, b) => b.km - a.km);
+
+  // Activity target scales with the selected range length (~5 shifts / week),
+  // so "activity" is judged against the period, not against other drivers.
+  const days = Math.max(
+    1,
+    Math.round((new Date(rangeEnd).getTime() - new Date(rangeStart).getTime()) / 86_400_000)
+  );
+  const activityTarget = Math.max(1, Math.round((days * 5) / 7));
+
+  for (const row of byWorker.values()) {
+    // Delivery success rate: delivered / (delivered + undelivered). No package
+    // data at all → treated as 1.0 (no failed deliveries to penalise).
+    const handled = row.delivered + row.undelivered;
+    const deliveryRate = handled > 0 ? row.delivered / handled : 1;
+    // AZG compliance: 1.0 with no issues; each violation costs more than a warning.
+    const azgCompliance = Math.max(0, 1 - (0.34 * row.azgViol + 0.1 * row.azgWarn));
+    // Activity: completed shifts vs the range's target (capped at 1.0).
+    const activity = Math.min(1, row.shifts / activityTarget);
+    // Weights: delivery 50, AZG compliance 35, activity 15 → 0..100.
+    row.score = Math.round(50 * deliveryRate + 35 * azgCompliance + 15 * activity);
+  }
+
+  // Default sort: highest score first (caller can re-sort client-side).
+  return [...byWorker.values()].sort((a, b) => b.score - a.score);
 }
 
 function buildAttention(

@@ -67,31 +67,36 @@ async function handleShiftCallback(cb: NonNullable<TgUpdate["callback_query"]>) 
   const action = m[1];
   const shiftId = m[2];
 
-  // Resolve the worker behind this chat — and their locale for replies.
-  const { data: worker } = await supabaseAdmin
-    .from("workers")
-    .select("id, telegram_locale")
-    .eq("telegram_chat_id", chatIdStr)
-    .maybeSingle();
-  if (!worker) {
-    await answerCallbackQuery(cbId);
-    return;
-  }
-  const loc = (worker.telegram_locale as string) ?? null;
-
-  // The shift must belong to this worker AND still be open.
+  // Resolve the shift by its id FIRST. id is the primary key, so this returns at
+  // most one row — a telegram_chat_id that is (wrongly) linked to several workers
+  // can never break this lookup. The shift must still be open.
   const { data: shift } = await supabaseAdmin
     .from("time_entries")
-    .select("id, started_at")
+    .select("id, worker_id, started_at")
     .eq("id", shiftId)
-    .eq("worker_id", worker.id)
     .is("ended_at", null)
     .maybeSingle();
-  if (!shift) {
-    // Already closed elsewhere, or not theirs — acknowledge and stop.
+  if (!shift || !shift.worker_id) {
+    // Already closed, unknown id, or no owner — acknowledge and stop.
     await answerCallbackQuery(cbId);
     return;
   }
+
+  // The shift's OWNER must be whoever's Telegram chat sent this tap, so a driver
+  // can only ever close their own shift. We look the owner up by id (primary key)
+  // and compare the linked chat — deliberately NOT a chat_id → worker lookup,
+  // which is ambiguous when one chat is (mistakenly) linked to several workers.
+  const { data: owner } = await supabaseAdmin
+    .from("workers")
+    .select("telegram_chat_id, telegram_locale")
+    .eq("id", shift.worker_id)
+    .maybeSingle();
+  if (!owner || owner.telegram_chat_id !== chatIdStr) {
+    // Not this chat's shift, or owner not linked — never touch it.
+    await answerCallbackQuery(cbId);
+    return;
+  }
+  const loc = (owner.telegram_locale as string) ?? null;
 
   if (action === "yes") {
     // Keep it open; reset the 1h timer so the next prompt is an hour from now.
@@ -123,7 +128,7 @@ async function handleShiftCallback(cb: NonNullable<TgUpdate["callback_query"]>) 
       updated_at: new Date().toISOString(),
     })
     .eq("id", shift.id)
-    .eq("worker_id", worker.id)
+    .eq("worker_id", shift.worker_id)
     .is("ended_at", null);
 
   await answerCallbackQuery(cbId);
@@ -196,6 +201,21 @@ export async function POST(req: NextRequest) {
       }
 
       const locale = link.locale === "de" ? "de" : "tr";
+
+      // One Telegram chat = one worker. If this chat was linked to other workers
+      // before (e.g. a shared phone in testing), unlink them first — otherwise
+      // the unique index on telegram_chat_id rejects the update below, and the
+      // stale links would keep receiving another worker's notifications.
+      await supabaseAdmin
+        .from("workers")
+        .update({
+          telegram_chat_id: null,
+          telegram_username: null,
+          telegram_linked_at: null,
+          telegram_locale: null,
+        })
+        .eq("telegram_chat_id", chatIdStr)
+        .neq("id", link.worker_id);
 
       await supabaseAdmin
         .from("workers")

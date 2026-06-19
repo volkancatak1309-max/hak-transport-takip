@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Loader2 } from "lucide-react";
 import { loginAction, type LoginState } from "./actions/auth";
@@ -13,6 +13,10 @@ const initial: LoginState = {};
 export function LoginForm() {
   const t = useTranslations("login");
   const [state, formAction, pending] = useActionState(loginAction, initial);
+  // Controlled so the phone survives a failed submit (wrong PIN, lock, invalid).
+  // A server action resets uncontrolled fields on every non-redirect return; the
+  // user should only have to retype the PIN, never the phone.
+  const [phone, setPhone] = useState("");
 
   const errMsg =
     state.error === "locked"
@@ -36,6 +40,8 @@ export function LoginForm() {
           autoComplete="tel"
           inputMode="tel"
           required
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
           placeholder={t("phonePlaceholder")}
           className="h-12 text-base"
         />

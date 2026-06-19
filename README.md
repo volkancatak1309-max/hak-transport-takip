@@ -199,11 +199,36 @@ Yakıt, masraf, bakım ve CO₂ modülleri için Supabase SQL Editor'da `db/migr
    - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` = `hak_transport_bildirim_bot`
    - `TELEGRAM_WEBHOOK_SECRET` = rastgele uzun bir string (örn. `openssl rand -hex 24`)
 2. **005 migration**'ı Supabase'de çalıştır.
-3. Deploy sonrası **webhook'u kaydet** (bir kez, terminalden):
+3. Deploy sonrası **webhook'u kaydet** (bir kez, terminalden). Secret'ı URL'e
+   gömme — Telegram'ın `secret_token` özelliğini kullan: secret her istekte
+   `X-Telegram-Bot-Api-Secret-Token` header'ında gelir, URL'de/loglarda görünmez.
+   `secret_token`, Vercel'deki `TELEGRAM_WEBHOOK_SECRET` ile **birebir aynı**
+   olmalı (yalnızca `A-Z a-z 0-9 _ -`, 1-256 karakter; `openssl rand -hex 24`
+   uygundur). `allowed_updates`'e **`callback_query`** eklemeyi unutma — yoksa
+   inline buton (vardiya "Evet/Hayır") basışları Telegram tarafından hiç
+   gönderilmez ve watchdog butonları çalışmaz:
 
 ```bash
-curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://hak-transport-takip.vercel.app/api/telegram/webhook?secret=<TELEGRAM_WEBHOOK_SECRET>"
+curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://hak-transport-takip.vercel.app/api/telegram/webhook",
+    "secret_token": "<TELEGRAM_WEBHOOK_SECRET>",
+    "allowed_updates": ["message", "callback_query"]
+  }'
 ```
+
+   Doğrulama (kayıtlı URL, `allowed_updates` ve son hata için):
+
+```bash
+curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+```
+
+   > `last_error_message`'ta "401 Unauthorized" görüyorsan secret uyuşmuyor
+   > demektir (Telegram'ın gönderdiği ≠ uygulamanın beklediği); `allowed_updates`
+   > içinde `callback_query` yoksa buton basışları hiç gelmiyordur. İkisini de
+   > yukarıdaki `setWebhook` çağrısı düzeltir. Eski `?secret=...` query yöntemi
+   > kod tarafından geriye dönük kabul edilir ama önerilmez.
 
 4. Şoför/admin panelde **"Telegram Bildirimleri Bağla"** → QR/link ile bota `/start` → bildirimler aktif.
 

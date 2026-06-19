@@ -387,12 +387,13 @@
     "subtitle": "Bitte mit Telefon und PIN anmelden",
     "phone": "Telefonnummer",
     "phonePlaceholder": "+43 699 1234567",
-    "pin": "PIN (4-stellig)",
+    "pin": "PIN",
     "submit": "Anmelden",
     "pending": "Anmeldung läuft…",
     "errInvalid": "Telefon oder PIN falsch",
     "errInactive": "Konto inaktiv. Bitte Verwaltung kontaktieren.",
-    "errDb": "Datenbankfehler"
+    "errDb": "Datenbankfehler",
+    "errLocked": "Zu viele Fehlversuche. Bitte in {seconds} Sekunden erneut versuchen."
   },
   "panel": {
     "myPanel": "Mein Panel",
@@ -439,6 +440,8 @@
     "noHistory": "Noch keine abgeschlossenen Schichten",
     "errActive": "Sie haben bereits eine aktive Schicht",
     "errKmLow": "End-KM ({end}) darf nicht kleiner als Start-KM ({start}) sein",
+    "errKmHigh": "Die in einer Schicht gefahrene Strecke ist zu hoch ({diff} km). Maximal {max} km.",
+    "errKmRange": "Der eingegebene Kilometerstand liegt außerhalb des gültigen Bereichs.",
     "errKmNegative": "KM darf nicht negativ sein",
     "errStart": "Schicht konnte nicht gestartet werden",
     "errEnd": "Schicht konnte nicht beendet werden",
@@ -521,7 +524,7 @@
     "name": "Name",
     "phone": "Telefon",
     "plate": "Kennzeichen (optional)",
-    "pin": "PIN (4-stellig)",
+    "pin": "PIN (6-stellig)",
     "employeeNumber": "Personalnummer (optional)",
     "employeeNumberHint": "Leer = automatisch",
     "isAdmin": "Verwaltungsrechte vergeben",

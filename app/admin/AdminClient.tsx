@@ -65,13 +65,13 @@ import {
   editEntryAction,
   deleteEntryAction,
 } from "../actions/shift";
-import type { TimeEntryWithWorker, Worker } from "@/lib/types";
+import type { TimeEntryWithWorker, WorkerPublic } from "@/lib/types";
 
 const NINE_HOURS = 9 * 60 * 60 * 1000;
 
 type Props = {
   entries: TimeEntryWithWorker[];
-  workers: Worker[];
+  workers: WorkerPublic[];
   range: string;
   from: string;
   to: string;
@@ -228,6 +228,11 @@ export function AdminClient({
       const [, end, start] = e.split(":");
       return `KM ${end} < ${start}`;
     }
+    if (e.startsWith("km_high:")) {
+      const [, diff, max] = e.split(":");
+      return `KM +${diff} > ${max}`;
+    }
+    if (e === "errKmRange") return "KM aralık dışı";
     return e;
   }
 
@@ -699,8 +704,8 @@ export function AdminClient({
                 id="pin"
                 name="pin"
                 inputMode="numeric"
-                pattern="\d{4}"
-                maxLength={4}
+                pattern="\d{6}"
+                maxLength={6}
                 required
                 className="h-11 tracking-widest"
               />

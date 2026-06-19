@@ -277,6 +277,11 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
       const [, end, start] = e.split(":");
       return t("errKmLow", { end, start });
     }
+    if (e.startsWith("km_high:")) {
+      const [, diff, max] = e.split(":");
+      return t("errKmHigh", { diff, max });
+    }
+    if (e === "errKmRange") return t("errKmRange");
     return e;
   }
 

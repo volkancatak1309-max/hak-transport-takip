@@ -15,7 +15,9 @@ export function LoginForm() {
   const [state, formAction, pending] = useActionState(loginAction, initial);
 
   const errMsg =
-    state.error === "invalid" || state.error === "validation"
+    state.error === "locked"
+      ? t("errLocked", { seconds: state.retryAfter ?? 0 })
+      : state.error === "invalid" || state.error === "validation"
       ? t("errInvalid")
       : state.error === "inactive"
       ? t("errInactive")
@@ -46,10 +48,10 @@ export function LoginForm() {
           type="password"
           autoComplete="current-password"
           inputMode="numeric"
-          pattern="\d{4}"
-          maxLength={4}
+          pattern="\d{4,6}"
+          maxLength={6}
           required
-          placeholder="••••"
+          placeholder="••••••"
           className="h-12 text-base tracking-widest"
         />
       </div>

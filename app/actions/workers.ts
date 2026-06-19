@@ -1,5 +1,6 @@
 "use server";
 
+import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -12,8 +13,9 @@ function normalizePhone(raw: string): string {
   return raw.replace(/[\s\-()]/g, "");
 }
 
+/** Cryptographically secure 6-digit reset PIN (leading zeros allowed). */
 function randomPin(): string {
-  return String(Math.floor(1000 + Math.random() * 9000));
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 /** Next free 4-digit Personalnummer (0001, 0002, …) based on the current max. */

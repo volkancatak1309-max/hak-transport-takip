@@ -387,12 +387,13 @@
     "subtitle": "Telefon ve PIN'inizle giriş yapın",
     "phone": "Telefon Numarası",
     "phonePlaceholder": "+43 699 1234567",
-    "pin": "PIN (4 hane)",
+    "pin": "PIN",
     "submit": "Giriş Yap",
     "pending": "Giriş yapılıyor…",
     "errInvalid": "Telefon veya PIN hatalı",
     "errInactive": "Hesap pasif. Yönetici ile görüşün.",
-    "errDb": "Veritabanı hatası"
+    "errDb": "Veritabanı hatası",
+    "errLocked": "Çok fazla başarısız deneme. Lütfen {seconds} saniye sonra tekrar deneyin."
   },
   "panel": {
     "myPanel": "Panelim",
@@ -439,6 +440,8 @@
     "noHistory": "Henüz tamamlanmış vardiya yok",
     "errActive": "Zaten aktif bir vardiyanız var",
     "errKmLow": "Bitiş km ({end}) başlangıç km'sinden ({start}) küçük olamaz",
+    "errKmHigh": "Bir vardiyada kat edilen km çok yüksek ({diff} km). En fazla {max} km olabilir.",
+    "errKmRange": "Girilen kilometre geçerli aralıkta değil.",
     "errKmNegative": "KM negatif olamaz",
     "errStart": "Vardiya başlatılamadı",
     "errEnd": "Vardiya kapatılamadı",
@@ -521,7 +524,7 @@
     "name": "Ad Soyad",
     "phone": "Telefon",
     "plate": "Plaka (opsiyonel)",
-    "pin": "PIN (4 hane)",
+    "pin": "PIN (6 hane)",
     "employeeNumber": "Personel No (opsiyonel)",
     "employeeNumberHint": "Boş bırak = otomatik",
     "isAdmin": "Yönetici yetkisi ver",

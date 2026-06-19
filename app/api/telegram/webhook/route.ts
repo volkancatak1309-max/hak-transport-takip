@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { safeEqual } from "@/lib/secure-compare";
 import { sendTelegramMessage, answerCallbackQuery } from "@/lib/telegram";
 import {
   stillActiveConfirmedMessage,
@@ -130,10 +131,16 @@ async function handleShiftCallback(cb: NonNullable<TgUpdate["callback_query"]>) 
 }
 
 export async function POST(req: NextRequest) {
-  // Reject anything that doesn't carry our shared secret in the URL.
-  const secret = req.nextUrl.searchParams.get("secret");
+  // Reject anything that doesn't carry our shared secret. Preferred: Telegram's
+  // own X-Telegram-Bot-Api-Secret-Token header (set via setWebhook secret_token,
+  // so the secret never appears in the URL/logs). The legacy `?secret=` query is
+  // still accepted as a fallback so the existing webhook keeps working until it
+  // is re-registered. Comparison is timing-safe.
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (!expected || secret !== expected) {
+  const provided =
+    req.headers.get("x-telegram-bot-api-secret-token") ??
+    req.nextUrl.searchParams.get("secret");
+  if (!expected || !safeEqual(provided, expected)) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 

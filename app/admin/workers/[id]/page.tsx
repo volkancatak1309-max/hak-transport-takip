@@ -15,7 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/UserAvatar";
 import { WorkerDetailClient } from "./WorkerDetailClient";
 import { startOfMonthVienna, startOfTodayVienna, workedMs, kmDiff } from "@/lib/format";
-import type { Worker, TimeEntry, DriverLocation } from "@/lib/types";
+import type { WorkerPublic, TimeEntry, DriverLocation } from "@/lib/types";
+import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 import { getTranslations } from "next-intl/server";
 
 export const dynamic = "force-dynamic";
@@ -33,11 +34,11 @@ export default async function WorkerDetailPage({
 
   const { data: worker } = await supabaseAdmin
     .from("workers")
-    .select("*")
+    .select(WORKER_PUBLIC_COLUMNS)
     .eq("id", id)
     .maybeSingle();
   if (!worker) notFound();
-  const w = worker as Worker;
+  const w = worker as WorkerPublic;
 
   const monthStart = startOfMonthVienna();
   const todayStart = startOfTodayVienna();

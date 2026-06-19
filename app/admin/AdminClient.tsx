@@ -367,7 +367,7 @@ export function AdminClient({
   return (
     <div className="space-y-6">
       {/* 1 — Today's live operations snapshot */}
-      <OpsSummary ops={dashboard.todayOps} />
+      <OpsSummary ops={dashboard.todayOps} detail={dashboard.opsDetail} />
 
       {/* 2 + 4 — Fleet status distribution & action items */}
       <div className="grid gap-6 lg:grid-cols-2">

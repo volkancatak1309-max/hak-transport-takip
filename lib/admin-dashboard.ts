@@ -62,8 +62,24 @@ export type AttentionItem =
       amount: number | null; // total amount of the unpaid penalties (null if none priced)
     };
 
+/** Per-driver / per-vehicle breakdown behind each OpsSummary tile, for the
+ *  click-to-expand detail dialog. Read-only — derived from the same data as
+ *  TodayOps, never mutated. */
+export type OpsDetailRow = { name: string; value: number };
+export type OpsDetail = {
+  driversInField: { name: string; plate: string | null; since: string }[];
+  vehiclesDelivering: { plate: string; driver_name: string | null }[];
+  onBreak: { name: string; since: string | null }[];
+  km: OpsDetailRow[];
+  loaded: OpsDetailRow[];
+  delivered: OpsDetailRow[];
+  undelivered: OpsDetailRow[];
+  overNine: { name: string; ms: number }[];
+};
+
 export type DashboardData = {
   todayOps: TodayOps;
+  opsDetail: OpsDetail;
   fleet: FleetStatus;
   performance: DriverPerf[];
   attention: AttentionItem[];
@@ -118,7 +134,7 @@ export async function getDashboardData(
     // in field" numbers from this one set so they can never disagree.
     supabaseAdmin
       .from("time_entries")
-      .select("id, break_started_at")
+      .select("id, worker_id, vehicle_id, started_at, break_started_at")
       .is("ended_at", null),
     listVehiclesWithStatus(),
     supabaseAdmin.from("workers").select("id, name"),
@@ -133,6 +149,9 @@ export async function getDashboardData(
   const rangeEntries = (rangeRes.data ?? []) as LiteEntry[];
   const activeShifts = (activeRes.data ?? []) as {
     id: string;
+    worker_id: string | null;
+    vehicle_id: string | null;
+    started_at: string;
     break_started_at: string | null;
   }[];
   const names = new Map(
@@ -157,6 +176,7 @@ export async function getDashboardData(
 
   return {
     todayOps,
+    opsDetail: buildOpsDetail(todayEntries, activeShifts, vehicles, names),
     fleet,
     performance: buildPerformance(rangeEntries, names),
     attention: buildAttention(
@@ -218,6 +238,78 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
     undelivered: hasUndelivered ? undelivered : null,
     overNine,
     shiftsToday: entries.length,
+  };
+}
+
+/** Per-driver / per-vehicle breakdown for the click-to-expand tile dialogs.
+ *  Derived from the same data as buildTodayOps — purely read-only. */
+function buildOpsDetail(
+  todayEntries: LiteEntry[],
+  activeShifts: {
+    worker_id: string | null;
+    vehicle_id: string | null;
+    started_at: string;
+    break_started_at: string | null;
+  }[],
+  vehicles: {
+    id: string;
+    plate: string;
+    live_status: VehicleLiveStatus;
+    driver_name: string | null;
+  }[],
+  names: Map<string, string>
+): OpsDetail {
+  const plateById = new Map(vehicles.map((v) => [v.id, v.plate]));
+  const nameOf = (id: string | null) => (id ? names.get(id) ?? "—" : "—");
+
+  // Longest-running active shift first.
+  const driversInField = activeShifts
+    .map((s) => ({
+      name: nameOf(s.worker_id),
+      plate: s.vehicle_id ? plateById.get(s.vehicle_id) ?? null : null,
+      since: s.started_at,
+    }))
+    .sort((a, b) => new Date(a.since).getTime() - new Date(b.since).getTime());
+
+  const onBreak = activeShifts
+    .filter((s) => s.break_started_at)
+    .map((s) => ({ name: nameOf(s.worker_id), since: s.break_started_at }));
+
+  const vehiclesDelivering = vehicles
+    .filter((v) => v.live_status === "sevkiyatta")
+    .map((v) => ({ plate: v.plate, driver_name: v.driver_name }));
+
+  // Per-driver aggregates over today's shifts — identical rules to buildTodayOps.
+  const km = new Map<string, number>();
+  const loaded = new Map<string, number>();
+  const delivered = new Map<string, number>();
+  const undelivered = new Map<string, number>();
+  const overNine: { name: string; ms: number }[] = [];
+  for (const e of todayEntries) {
+    const name = nameOf(e.worker_id);
+    const d = kmDiff(e);
+    if (d !== null) km.set(name, (km.get(name) ?? 0) + d);
+    if (e.start_package_count !== null)
+      loaded.set(name, (loaded.get(name) ?? 0) + e.start_package_count);
+    if (e.ended_at !== null && e.cargo_count !== null)
+      delivered.set(name, (delivered.get(name) ?? 0) + e.cargo_count);
+    if ((e.undelivered_count ?? 0) > 0)
+      undelivered.set(name, (undelivered.get(name) ?? 0) + (e.undelivered_count ?? 0));
+    if (workedMs(e) > NINE_HOURS_MS) overNine.push({ name, ms: workedMs(e) });
+  }
+
+  const rows = (m: Map<string, number>): OpsDetailRow[] =>
+    [...m.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+
+  return {
+    driversInField,
+    vehiclesDelivering,
+    onBreak,
+    km: rows(km),
+    loaded: rows(loaded),
+    delivered: rows(delivered),
+    undelivered: rows(undelivered),
+    overNine: overNine.sort((a, b) => b.ms - a.ms),
   };
 }
 

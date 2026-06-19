@@ -577,6 +577,7 @@
       "attn_overdue_days": "{days} Tage überfällig",
       "attn_in_days": "in {days} Tagen",
       "attn_penalty": "{plate} — {count} offene Strafe(n)",
+      "detail_empty": "Keine Einträge",
       "shifts_title": "Schichtprotokolle",
       "shifts_table": "Schichten"
     }

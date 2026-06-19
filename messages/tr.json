@@ -577,6 +577,7 @@
       "attn_overdue_days": "{days} gün geçti",
       "attn_in_days": "{days} gün kaldı",
       "attn_penalty": "{plate} — {count} ödenmemiş ceza",
+      "detail_empty": "Kayıt yok",
       "shifts_title": "Vardiya Kayıtları",
       "shifts_table": "Vardiyalar"
     }

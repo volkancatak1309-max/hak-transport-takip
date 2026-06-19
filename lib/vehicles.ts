@@ -5,6 +5,7 @@ import { computeLiveStatus } from "@/lib/vehicle-ui";
 import type {
   Vehicle,
   VehicleWithStatus,
+  VehiclePenalty,
   TimeEntry,
   Worker,
 } from "@/lib/types";
@@ -91,6 +92,8 @@ export type VehicleDetail = {
     km: number | null;
     ended: boolean;
   }[];
+  /** Penalties (Strafe) booked against this vehicle, newest first. */
+  penalties: VehiclePenalty[];
 };
 
 /** Full detail for one vehicle: status, today's figures, recent shifts. */
@@ -183,6 +186,15 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
     ended: s.ended_at !== null,
   }));
 
+  // Penalties (Strafe) for this vehicle — unpaid first, then newest.
+  const { data: penData } = await supabaseAdmin
+    .from("vehicle_penalties")
+    .select("*")
+    .eq("vehicle_id", id)
+    .order("paid", { ascending: true })
+    .order("penalty_date", { ascending: false });
+  const penalties = (penData ?? []) as VehiclePenalty[];
+
   return {
     vehicle: vehicleWithStatus,
     today: {
@@ -195,6 +207,7 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
       endPackages,
     },
     recent,
+    penalties,
   };
 }
 

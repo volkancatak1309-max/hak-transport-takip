@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/UserAvatar";
 import { HelpTip } from "@/components/help/HelpTip";
 import { KmEditButton } from "@/components/KmEditButton";
+import { PenaltiesSection } from "./PenaltiesSection";
 import { STATUS_STYLE } from "@/lib/vehicle-ui";
 import { formatDate, formatTime } from "@/lib/format";
 import type { VehicleDetail } from "@/lib/vehicles";
@@ -140,6 +141,9 @@ export function VehicleDetailClient({ detail }: { detail: VehicleDetail }) {
           </dl>
         </Section>
       </div>
+
+      {/* Penalties (Strafe) */}
+      <PenaltiesSection vehicleId={v.id} penalties={detail.penalties} />
 
       {/* Route history / replay */}
       <div className="flex items-center justify-between rounded-[var(--radius)] border border-border bg-card px-4 py-3.5">

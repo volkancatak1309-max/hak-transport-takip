@@ -329,7 +329,25 @@
       "driver": "Fahrer",
       "date": "Datum",
       "km": "KM",
-      "active_now": "Aktiv"
+      "active_now": "Aktiv",
+      "penalties_title": "Strafen",
+      "penalties_add": "Strafe hinzufügen",
+      "penalties_none": "Keine Strafen",
+      "penalty_date": "Datum",
+      "penalty_amount": "Betrag (€)",
+      "penalty_amount_optional": "Betrag (€, optional)",
+      "penalty_desc": "Beschreibung",
+      "penalty_desc_ph": "z. B. Tempoüberschreitung, Parkstrafe",
+      "penalty_paid": "Bezahlt",
+      "penalty_unpaid": "Offen",
+      "penalty_mark_paid": "Als bezahlt markieren",
+      "penalty_mark_unpaid": "Als offen markieren",
+      "penalty_delete": "Löschen",
+      "penalty_delete_confirm": "Diese Strafe löschen?",
+      "penalty_added": "Strafe hinzugefügt",
+      "penalty_saved": "Aktualisiert",
+      "penalty_deleted": "Strafe gelöscht",
+      "penalty_error": "Vorgang fehlgeschlagen"
     }
   },
   "offline": {
@@ -549,6 +567,10 @@
       "perf_hours": "Stunden",
       "perf_delivered": "Zugestellt",
       "perf_shifts": "Beendet",
+      "perf_rate": "Erfolg %",
+      "perf_azg": "AZG",
+      "perf_azg_warn": "Warnung(en)",
+      "perf_score": "Score",
       "perf_empty": "Keine Daten in diesem Zeitraum",
       "attn_title": "Achtung / Maßnahmen",
       "attn_empty": "Derzeit nichts zu beachten",
@@ -558,6 +580,8 @@
       "attn_undelivered": "{name} — {count} Pakete nicht zugestellt",
       "attn_overdue_days": "{days} Tage überfällig",
       "attn_in_days": "in {days} Tagen",
+      "attn_penalty": "{plate} — {count} offene Strafe(n)",
+      "detail_empty": "Keine Einträge",
       "shifts_title": "Schichtprotokolle",
       "shifts_table": "Schichten"
     }
@@ -620,6 +644,7 @@
     "fleet": "Aktuelle Statusverteilung der Fahrzeuge: unterwegs, Pause, frei, Wartung.",
     "attention": "Was Aufmerksamkeit braucht: fällige §57a-Begutachtung/Versicherung, Schichten über 9 h, viele nicht zugestellte Pakete.",
     "performance": "Sortiert Fahrer im gewählten Zeitraum nach km, Stunden, Zustellungen und Schichten. Spalte antippen zum Umsortieren.",
+    "perf_score": "Leistungsscore von 100: 50% Zustellerfolg (zugestellt ÷ zugestellt + offen), 35% AZG-Konformität (9/10-Stunden- und 30-Min-Pausenregel je Schicht; jeder Verstoß senkt den Wert), 15% Aktivität (abgeschlossene Schichten im Zeitraum). Alles aus echten Daten — nichts erfunden.",
     "map": "Zeigt den Live-Standort aktiver Fahrer auf der Karte; aktualisiert sich ca. alle 30 Sekunden.",
     "shifts_hours": "Gesamtarbeitszeit abgeschlossener Schichten im gewählten Zeitraum (ohne Pausen).",
     "shifts_km": "Gesamtkilometer abgeschlossener Schichten im gewählten Zeitraum.",
@@ -648,6 +673,7 @@
     "veh_list": "Alle Fahrzeuge der Flotte und ihr aktueller Status.",
     "veh_status": "Aktueller Status des Fahrzeugs: unterwegs, Pause, frei oder Wartung.",
     "veh_inspection": "§57a-Begutachtungs- und Versicherungsfristen; nahe Termine erscheinen in der Achtungsliste.",
-    "veh_route": "Vergangene Routen des Fahrzeugs Schritt für Schritt auf der Karte ansehen."
+    "veh_route": "Vergangene Routen des Fahrzeugs Schritt für Schritt auf der Karte ansehen.",
+    "veh_penalties": "Verkehrs-/Parkstrafen des Fahrzeugs. Offene Strafen erscheinen in der Achtungsliste im Admin-Dashboard."
   }
 }

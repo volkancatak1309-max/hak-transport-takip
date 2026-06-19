@@ -36,6 +36,10 @@ export type DriverPerf = {
   ms: number; // worked time (break-excluded)
   delivered: number; // cargo_count sum
   shifts: number;
+  undelivered: number; // undelivered_count sum (for delivery success rate)
+  azgWarn: number; // per-shift §9 warnings (worked > 9h, <= 10h)
+  azgViol: number; // per-shift §9/§11 violations (> 10h, or break < 30min after 6h)
+  score: number; // 0..100 — see buildPerformance for the exact, real-data formula
 };
 
 export type AttentionItem =
@@ -53,10 +57,33 @@ export type AttentionItem =
       worker_name: string;
       count: number;
       date: string;
+    }
+  | {
+      kind: "penalty"; // unpaid vehicle penalties, aggregated per vehicle
+      id: string;
+      plate: string;
+      count: number;
+      amount: number | null; // total amount of the unpaid penalties (null if none priced)
     };
+
+/** Per-driver / per-vehicle breakdown behind each OpsSummary tile, for the
+ *  click-to-expand detail dialog. Read-only — derived from the same data as
+ *  TodayOps, never mutated. */
+export type OpsDetailRow = { name: string; value: number };
+export type OpsDetail = {
+  driversInField: { name: string; plate: string | null; since: string }[];
+  vehiclesDelivering: { plate: string; driver_name: string | null }[];
+  onBreak: { name: string; since: string | null }[];
+  km: OpsDetailRow[];
+  loaded: OpsDetailRow[];
+  delivered: OpsDetailRow[];
+  undelivered: OpsDetailRow[];
+  overNine: { name: string; ms: number }[];
+};
 
 export type DashboardData = {
   todayOps: TodayOps;
+  opsDetail: OpsDetail;
   fleet: FleetStatus;
   performance: DriverPerf[];
   attention: AttentionItem[];
@@ -94,7 +121,8 @@ export async function getDashboardData(
 ): Promise<DashboardData> {
   const todayStart = startOfTodayVienna();
 
-  const [todayRes, rangeRes, activeRes, vehicles, workersRes] = await Promise.all([
+  const [todayRes, rangeRes, activeRes, vehicles, workersRes, penaltyRes] =
+    await Promise.all([
     supabaseAdmin
       .from("time_entries")
       .select(ENTRY_COLS)
@@ -110,21 +138,33 @@ export async function getDashboardData(
     // in field" numbers from this one set so they can never disagree.
     supabaseAdmin
       .from("time_entries")
-      .select("id, break_started_at")
+      .select("id, worker_id, vehicle_id, started_at, break_started_at")
       .is("ended_at", null),
     listVehiclesWithStatus(),
     supabaseAdmin.from("workers").select("id, name"),
+    // Unpaid vehicle penalties (Strafe) → surfaced as action items.
+    supabaseAdmin
+      .from("vehicle_penalties")
+      .select("vehicle_id, amount")
+      .eq("paid", false),
   ]);
 
   const todayEntries = (todayRes.data ?? []) as LiteEntry[];
   const rangeEntries = (rangeRes.data ?? []) as LiteEntry[];
   const activeShifts = (activeRes.data ?? []) as {
     id: string;
+    worker_id: string | null;
+    vehicle_id: string | null;
+    started_at: string;
     break_started_at: string | null;
   }[];
   const names = new Map(
     ((workersRes.data ?? []) as Pick<Worker, "id" | "name">[]).map((w) => [w.id, w.name])
   );
+  const unpaidPenalties = (penaltyRes.data ?? []) as {
+    vehicle_id: string;
+    amount: number | null;
+  }[];
 
   const fleet = buildFleet(vehicles);
   const todayOps = buildTodayOps(todayEntries);
@@ -140,9 +180,17 @@ export async function getDashboardData(
 
   return {
     todayOps,
+    opsDetail: buildOpsDetail(todayEntries, activeShifts, vehicles, names),
     fleet,
-    performance: buildPerformance(rangeEntries, names),
-    attention: buildAttention(rangeEntries, todayEntries, vehicles, names, todayStart),
+    performance: buildPerformance(rangeEntries, names, rangeStart, rangeEnd),
+    attention: buildAttention(
+      rangeEntries,
+      todayEntries,
+      vehicles,
+      names,
+      todayStart,
+      unpaidPenalties
+    ),
   };
 }
 
@@ -197,6 +245,78 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
   };
 }
 
+/** Per-driver / per-vehicle breakdown for the click-to-expand tile dialogs.
+ *  Derived from the same data as buildTodayOps — purely read-only. */
+function buildOpsDetail(
+  todayEntries: LiteEntry[],
+  activeShifts: {
+    worker_id: string | null;
+    vehicle_id: string | null;
+    started_at: string;
+    break_started_at: string | null;
+  }[],
+  vehicles: {
+    id: string;
+    plate: string;
+    live_status: VehicleLiveStatus;
+    driver_name: string | null;
+  }[],
+  names: Map<string, string>
+): OpsDetail {
+  const plateById = new Map(vehicles.map((v) => [v.id, v.plate]));
+  const nameOf = (id: string | null) => (id ? names.get(id) ?? "—" : "—");
+
+  // Longest-running active shift first.
+  const driversInField = activeShifts
+    .map((s) => ({
+      name: nameOf(s.worker_id),
+      plate: s.vehicle_id ? plateById.get(s.vehicle_id) ?? null : null,
+      since: s.started_at,
+    }))
+    .sort((a, b) => new Date(a.since).getTime() - new Date(b.since).getTime());
+
+  const onBreak = activeShifts
+    .filter((s) => s.break_started_at)
+    .map((s) => ({ name: nameOf(s.worker_id), since: s.break_started_at }));
+
+  const vehiclesDelivering = vehicles
+    .filter((v) => v.live_status === "sevkiyatta")
+    .map((v) => ({ plate: v.plate, driver_name: v.driver_name }));
+
+  // Per-driver aggregates over today's shifts — identical rules to buildTodayOps.
+  const km = new Map<string, number>();
+  const loaded = new Map<string, number>();
+  const delivered = new Map<string, number>();
+  const undelivered = new Map<string, number>();
+  const overNine: { name: string; ms: number }[] = [];
+  for (const e of todayEntries) {
+    const name = nameOf(e.worker_id);
+    const d = kmDiff(e);
+    if (d !== null) km.set(name, (km.get(name) ?? 0) + d);
+    if (e.start_package_count !== null)
+      loaded.set(name, (loaded.get(name) ?? 0) + e.start_package_count);
+    if (e.ended_at !== null && e.cargo_count !== null)
+      delivered.set(name, (delivered.get(name) ?? 0) + e.cargo_count);
+    if ((e.undelivered_count ?? 0) > 0)
+      undelivered.set(name, (undelivered.get(name) ?? 0) + (e.undelivered_count ?? 0));
+    if (workedMs(e) > NINE_HOURS_MS) overNine.push({ name, ms: workedMs(e) });
+  }
+
+  const rows = (m: Map<string, number>): OpsDetailRow[] =>
+    [...m.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+
+  return {
+    driversInField,
+    vehiclesDelivering,
+    onBreak,
+    km: rows(km),
+    loaded: rows(loaded),
+    delivered: rows(delivered),
+    undelivered: rows(undelivered),
+    overNine: overNine.sort((a, b) => b.ms - a.ms),
+  };
+}
+
 function buildFleet(vehicles: { live_status: VehicleLiveStatus }[]): FleetStatus {
   const counts: Record<VehicleLiveStatus, number> = {
     sevkiyatta: 0,
@@ -208,18 +328,21 @@ function buildFleet(vehicles: { live_status: VehicleLiveStatus }[]): FleetStatus
   return { total: vehicles.length, counts };
 }
 
+const TEN_HOURS_MS = 10 * 60 * 60 * 1000;
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
 function buildPerformance(
   entries: LiteEntry[],
-  names: Map<string, string>
+  names: Map<string, string>,
+  rangeStart: string,
+  rangeEnd: string
 ): DriverPerf[] {
   const byWorker = new Map<string, DriverPerf>();
   for (const e of entries) {
     if (!e.worker_id) continue;
-    // Performance is measured on COMPLETED shifts only, so all four columns
-    // (shifts / hours / km / delivered) describe the exact same set of shifts.
-    // Previously `shifts` counted active shifts too while hours/km did not,
-    // making "5 shifts / 2h" rows that didn't add up. Active shifts have no
-    // final km or delivered count yet, so they are excluded entirely here.
+    // Performance is measured on COMPLETED shifts only, so all columns describe
+    // the exact same set of shifts. Active shifts have no final km / delivered
+    // count yet, so they are excluded entirely here.
     if (e.ended_at === null) continue;
     let row = byWorker.get(e.worker_id);
     if (!row) {
@@ -230,17 +353,53 @@ function buildPerformance(
         ms: 0,
         delivered: 0,
         shifts: 0,
+        undelivered: 0,
+        azgWarn: 0,
+        azgViol: 0,
+        score: 0,
       };
       byWorker.set(e.worker_id, row);
     }
     row.shifts++;
-    row.ms += workedMs(e);
+    const worked = workedMs(e);
+    row.ms += worked;
     const d = kmDiff(e);
     if (d !== null) row.km += d;
     if (e.cargo_count !== null) row.delivered += e.cargo_count;
+    if (e.undelivered_count !== null) row.undelivered += e.undelivered_count;
+    // Per-shift AZG checks — the SAME § 9 / § 11 per-shift rules the AZG audit
+    // report uses (worked time is break-excluded). Cross-shift checks (daily
+    // total, weekly, rest period) are NOT included here; the score's AZG part is
+    // the per-shift compliance only (explained to the admin in the (i) tooltip).
+    const breakMin = e.break_minutes ?? 0;
+    const isViolation = worked > TEN_HOURS_MS || (worked > SIX_HOURS_MS && breakMin < 30);
+    if (isViolation) row.azgViol++;
+    else if (worked > NINE_HOURS_MS) row.azgWarn++;
   }
-  // Default sort: most km first (caller can re-sort client-side).
-  return [...byWorker.values()].sort((a, b) => b.km - a.km);
+
+  // Activity target scales with the selected range length (~5 shifts / week),
+  // so "activity" is judged against the period, not against other drivers.
+  const days = Math.max(
+    1,
+    Math.round((new Date(rangeEnd).getTime() - new Date(rangeStart).getTime()) / 86_400_000)
+  );
+  const activityTarget = Math.max(1, Math.round((days * 5) / 7));
+
+  for (const row of byWorker.values()) {
+    // Delivery success rate: delivered / (delivered + undelivered). No package
+    // data at all → treated as 1.0 (no failed deliveries to penalise).
+    const handled = row.delivered + row.undelivered;
+    const deliveryRate = handled > 0 ? row.delivered / handled : 1;
+    // AZG compliance: 1.0 with no issues; each violation costs more than a warning.
+    const azgCompliance = Math.max(0, 1 - (0.34 * row.azgViol + 0.1 * row.azgWarn));
+    // Activity: completed shifts vs the range's target (capped at 1.0).
+    const activity = Math.min(1, row.shifts / activityTarget);
+    // Weights: delivery 50, AZG compliance 35, activity 15 → 0..100.
+    row.score = Math.round(50 * deliveryRate + 35 * azgCompliance + 15 * activity);
+  }
+
+  // Default sort: highest score first (caller can re-sort client-side).
+  return [...byWorker.values()].sort((a, b) => b.score - a.score);
 }
 
 function buildAttention(
@@ -253,7 +412,8 @@ function buildAttention(
     insurance_due: string | null;
   }[],
   names: Map<string, string>,
-  todayStart: Date
+  todayStart: Date,
+  unpaidPenalties: { vehicle_id: string; amount: number | null }[]
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
 
@@ -308,12 +468,36 @@ function buildAttention(
     }
   }
 
+  // 4) Unpaid vehicle penalties (Strafe), aggregated per vehicle.
+  const plateById = new Map(vehicles.map((v) => [v.id, v.plate]));
+  const penByVehicle = new Map<string, { count: number; amount: number; hasAmount: boolean }>();
+  for (const p of unpaidPenalties) {
+    const acc = penByVehicle.get(p.vehicle_id) ?? { count: 0, amount: 0, hasAmount: false };
+    acc.count += 1;
+    if (p.amount !== null) {
+      acc.amount += p.amount;
+      acc.hasAmount = true;
+    }
+    penByVehicle.set(p.vehicle_id, acc);
+  }
+  for (const [vehicleId, acc] of penByVehicle) {
+    items.push({
+      kind: "penalty",
+      id: `${vehicleId}-penalty`,
+      plate: plateById.get(vehicleId) ?? "—",
+      count: acc.count,
+      amount: acc.hasAmount ? acc.amount : null,
+    });
+  }
+
   // Most urgent first: overdue/soonest docs, then biggest overruns/backlogs.
   const weight = (i: AttentionItem): number => {
     switch (i.kind) {
       case "inspection":
       case "insurance":
         return i.days; // overdue (negative) and soonest first
+      case "penalty":
+        return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "over9h":
         return 1000 - i.ms / 3_600_000; // longest overrun first
       case "undelivered":

@@ -6,6 +6,7 @@ import {
   CalendarClock,
   ShieldAlert,
   PackageX,
+  Receipt,
   CheckCircle2,
   type LucideIcon,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import type { AttentionItem } from "@/lib/admin-dashboard";
 export function AttentionList({ items }: { items: AttentionItem[] }) {
   const t = useTranslations("admin");
   const locale = useLocale();
+  const nf = locale === "de" ? "de-AT" : "tr-TR";
 
   function render(item: AttentionItem): {
     icon: LucideIcon;
@@ -55,6 +57,19 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
           }),
           meta: formatDate(item.date, locale),
           overdue: false,
+        };
+      case "penalty":
+        return {
+          icon: Receipt,
+          text: t("dash.attn_penalty", { plate: item.plate, count: item.count }),
+          meta:
+            item.amount !== null
+              ? `${item.amount.toLocaleString(nf, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })} €`
+              : "",
+          overdue: true,
         };
     }
   }

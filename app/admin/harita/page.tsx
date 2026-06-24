@@ -3,11 +3,15 @@ import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { LiveTrackingClient } from "./LiveTrackingClient";
+import { listLatestVehiclePositions } from "@/lib/telemetry";
 import type { ActiveDriver } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 const RECENT_MS = 10 * 60 * 1000; // marker shown only if last ping < 10 min old
+// Hardware trackers ping less often when idle/parked, so the vehicle layer uses
+// a wider recency window than the phone-GPS driver layer.
+const VEHICLE_RECENT_MS = 60 * 60 * 1000; // 60 min
 
 type ShiftRow = { id: string; started_at: string; worker_id: string };
 type WorkerRow = { id: string; name: string; plate: string | null };
@@ -91,11 +95,14 @@ export default async function HaritaPage() {
     });
   }
 
+  // Vehicle layer (hardware GPS / flespi) — independent of the driver layer.
+  const vehicles = await listLatestVehiclePositions(VEHICLE_RECENT_MS);
+
   // Debug logging — kept in production to diagnose missing markers via Vercel logs
   console.log(
     `[harita] activeShifts=${shifts.length} workers=${workerMap.size} ` +
       `recentLocs(<10m)=${recentLocs.length} routeLocs=${routeLocs.length} ` +
-      `drivers=${drivers.length}` +
+      `drivers=${drivers.length} vehicles=${vehicles.length}` +
       (shiftsErr ? ` shiftsErr=${shiftsErr.message}` : "") +
       (workersErr ? ` workersErr=${workersErr.message}` : "") +
       (recentErr ? ` recentErr=${recentErr.message}` : "") +
@@ -127,6 +134,7 @@ export default async function HaritaPage() {
     >
       <LiveTrackingClient
         drivers={drivers}
+        vehicles={vehicles}
         summary={{
           activeShifts: shifts.length,
           onMap: drivers.length,

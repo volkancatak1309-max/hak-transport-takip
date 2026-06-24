@@ -270,7 +270,11 @@
     "drivers_title": "Aktive Fahrer",
     "kpi_active": "Aktive Schichten",
     "kpi_on_map": "Auf Karte",
-    "kpi_longest": "Längste aktiv"
+    "kpi_longest": "Längste aktiv",
+    "vehicle_speed": "Geschwindigkeit",
+    "ignition_on": "Zündung an",
+    "ignition_off": "Zündung aus",
+    "vehicles_layer": "Fahrzeuge (GPS-Gerät)"
   },
   "route": {
     "title": "Routenverlauf",

@@ -270,7 +270,11 @@
     "drivers_title": "Aktif Şoförler",
     "kpi_active": "Aktif Vardiya",
     "kpi_on_map": "Haritada",
-    "kpi_longest": "En Uzun Aktif"
+    "kpi_longest": "En Uzun Aktif",
+    "vehicle_speed": "Hız",
+    "ignition_on": "Kontak açık",
+    "ignition_off": "Kontak kapalı",
+    "vehicles_layer": "Araçlar (GPS cihazı)"
   },
   "route": {
     "title": "Rota Geçmişi",

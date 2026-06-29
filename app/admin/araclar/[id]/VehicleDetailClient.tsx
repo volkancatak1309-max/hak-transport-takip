@@ -17,6 +17,7 @@ import {
   Compass,
   Navigation,
   MapPin,
+  Timer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,17 +25,20 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { HelpTip } from "@/components/help/HelpTip";
 import { KmEditButton } from "@/components/KmEditButton";
 import { STATUS_STYLE } from "@/lib/vehicle-ui";
-import { formatDate, formatTime, formatRelative } from "@/lib/format";
+import { formatDate, formatTime, formatRelative, formatHoursMinutes } from "@/lib/format";
 import type { VehicleDetail } from "@/lib/vehicles";
 import type { TelemetryRow } from "@/lib/telemetry";
+import type { EngineHoursResult } from "@/lib/metrics-engine-hours";
 import { cn } from "@/lib/utils";
 
 export function VehicleDetailClient({
   detail,
   telemetry,
+  engineHours,
 }: {
   detail: VehicleDetail;
   telemetry: TelemetryRow | null;
+  engineHours: EngineHoursResult;
 }) {
   const t = useTranslations("vehicles");
   const td = useTranslations("vehicles.detail");
@@ -135,6 +139,31 @@ export function VehicleDetailClient({
                 {telemetry.latitude.toFixed(5)}, {telemetry.longitude.toFixed(5)}
               </TeleField>
             </dl>
+
+            {/* Today's engine operating hours — derived from raw ignition+time
+                (computeEngineHours), not flespi analytics. "Veri yok" when the
+                device sent nothing today; "~ tahmini" when a gap/clamp applied. */}
+            <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+              <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.03em] text-text-tertiary">
+                <Timer className="size-3.5" />
+                {tm("engine_hours_today")}
+              </span>
+              {engineHours.points === 0 ? (
+                <span className="text-sm text-text-tertiary">{tm("no_data")}</span>
+              ) : (
+                <span className="nums inline-flex items-center gap-1.5 text-base font-semibold">
+                  {formatHoursMinutes(engineHours.ms, locale)}
+                  {engineHours.uncertain && (
+                    <span
+                      title={tm("estimated_hint")}
+                      className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary"
+                    >
+                      ~ {tm("estimated")}
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
 
             <p className="flex items-center gap-1.5 text-xs text-text-tertiary">
               <Clock className="size-3.5 shrink-0" />

@@ -22,6 +22,17 @@ export function formatHoursDecimal(ms: number): string {
   return (ms / 3600000).toFixed(2);
 }
 
+/** "3 sa 45 dk" / "3 Std 45 Min" — hours+minutes, for durations like engine runtime. */
+export function formatHoursMinutes(ms: number, locale: string = "tr"): string {
+  if (ms < 0) ms = 0;
+  const totalMin = Math.floor(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  const hu = locale === "de" ? "Std" : "sa";
+  const mu = locale === "de" ? "Min" : "dk";
+  return `${h} ${hu} ${String(m).padStart(2, "0")} ${mu}`;
+}
+
 export function formatDateTime(iso: string | null | undefined, locale: string = "tr"): string {
   if (!iso) return "—";
   const d = new Date(iso);

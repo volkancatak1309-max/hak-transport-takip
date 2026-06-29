@@ -2,7 +2,9 @@ import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getVehicleDetail } from "@/lib/vehicles";
-import { latestVehicleTelemetry } from "@/lib/telemetry";
+import { latestVehicleTelemetry, listVehicleTrack } from "@/lib/telemetry";
+import { computeEngineHours } from "@/lib/metrics-engine-hours";
+import { startOfTodayVienna } from "@/lib/format";
 import { VehicleDetailClient } from "./VehicleDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -14,11 +16,16 @@ export default async function VehicleDetailPage({
 }) {
   const session = await requireAdmin();
   const { id } = await params;
-  const [detail, telemetry] = await Promise.all([
+  // Engine-hours window: Vienna local midnight → now (today's runtime).
+  const dayStart = startOfTodayVienna();
+  const now = new Date();
+  const [detail, telemetry, track] = await Promise.all([
     getVehicleDetail(id),
     latestVehicleTelemetry(id),
+    listVehicleTrack(id, dayStart, now),
   ]);
   if (!detail) notFound();
+  const engineHours = computeEngineHours(track);
 
   return (
     <DashboardShell
@@ -30,7 +37,11 @@ export default async function VehicleDetailPage({
       }}
       title={detail.vehicle.plate}
     >
-      <VehicleDetailClient detail={detail} telemetry={telemetry} />
+      <VehicleDetailClient
+        detail={detail}
+        telemetry={telemetry}
+        engineHours={engineHours}
+      />
     </DashboardShell>
   );
 }

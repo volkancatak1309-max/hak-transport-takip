@@ -6,6 +6,7 @@ import { latestVehicleTelemetry, listVehicleTrack } from "@/lib/telemetry";
 import { computeEngineHours } from "@/lib/metrics-engine-hours";
 import { computeDistanceKm } from "@/lib/metrics-distance";
 import { computeIdleTime } from "@/lib/metrics-idle";
+import { computeTripsAndStops } from "@/lib/metrics-trips";
 import { startOfTodayVienna } from "@/lib/format";
 import { VehicleDetailClient } from "./VehicleDetailClient";
 
@@ -31,6 +32,7 @@ export default async function VehicleDetailPage({
   const engineHours = computeEngineHours(track);
   const distance = computeDistanceKm(track);
   const idle = computeIdleTime(track);
+  const tripStops = computeTripsAndStops(track);
 
   return (
     <DashboardShell
@@ -48,6 +50,7 @@ export default async function VehicleDetailPage({
         engineHours={engineHours}
         distance={distance}
         idle={idle}
+        tripStops={tripStops}
       />
     </DashboardShell>
   );

@@ -20,6 +20,9 @@ import {
   Timer,
   Route,
   Hourglass,
+  Milestone,
+  ArrowRight,
+  CircleParking,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +36,7 @@ import type { TelemetryRow } from "@/lib/telemetry";
 import type { EngineHoursResult } from "@/lib/metrics-engine-hours";
 import type { DistanceResult } from "@/lib/metrics-distance";
 import type { IdleResult } from "@/lib/metrics-idle";
+import type { TripsResult } from "@/lib/metrics-trips";
 import { cn } from "@/lib/utils";
 
 export function VehicleDetailClient({
@@ -41,12 +45,14 @@ export function VehicleDetailClient({
   engineHours,
   distance,
   idle,
+  tripStops,
 }: {
   detail: VehicleDetail;
   telemetry: TelemetryRow | null;
   engineHours: EngineHoursResult;
   distance: DistanceResult;
   idle: IdleResult;
+  tripStops: TripsResult;
 }) {
   const t = useTranslations("vehicles");
   const td = useTranslations("vehicles.detail");
@@ -56,6 +62,26 @@ export function VehicleDetailClient({
   const st = STATUS_STYLE[v.live_status];
   const nf = locale === "de" ? "de-AT" : "tr-TR";
   const km = (n: number | null) => (n === null ? "—" : n.toLocaleString(nf));
+
+  // Merge GPS-detected trips + stops into one chronological timeline for display.
+  const timeline = [
+    ...tripStops.trips.map((tr) => ({
+      type: "trip" as const,
+      startTime: tr.startTime,
+      endTime: tr.endTime,
+      durationMs: tr.durationMs,
+      km: tr.km as number | null,
+    })),
+    ...tripStops.stops.map((s) => ({
+      type: "stop" as const,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      durationMs: s.durationMs,
+      km: null as number | null,
+    })),
+  ].sort(
+    (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+  );
 
   return (
     <div className="mx-auto max-w-[1000px] space-y-5 px-4 py-6 sm:px-6">
@@ -233,6 +259,79 @@ export function VehicleDetailClient({
           </div>
         ) : (
           <p className="text-sm text-text-tertiary">{tm("no_device_data")}</p>
+        )}
+      </Section>
+
+      {/* GPS-detected trips & stops — segmented from the raw track
+          (computeTripsAndStops). Distinct from admin-created assignments
+          ("seferler"), which are never read or shown here. */}
+      <Section title={tm("trips_stops_today")} icon={Milestone}>
+        {tripStops.points === 0 ? (
+          <p className="text-sm text-text-tertiary">{tm("no_data")}</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+              <span className="font-semibold">
+                {tm("trips_count", { count: tripStops.trips.length })}
+              </span>
+              <span className="text-text-tertiary">·</span>
+              <span className="font-semibold">
+                {tm("stops_count", { count: tripStops.stops.length })}
+              </span>
+              <span className="text-text-tertiary">·</span>
+              <span className="nums font-semibold">
+                {tripStops.totalTripKm.toLocaleString(nf, { maximumFractionDigits: 1 })} km
+              </span>
+              {tripStops.uncertain && (
+                <span
+                  title={tm("estimated_hint")}
+                  className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary"
+                >
+                  ~ {tm("estimated")}
+                </span>
+              )}
+            </div>
+
+            {timeline.length > 0 && (
+              <ul className="-mx-1 divide-y divide-border">
+                {timeline.map((e, i) => (
+                  <li
+                    key={`${e.type}-${i}`}
+                    className="flex items-center gap-2.5 px-1 py-2"
+                  >
+                    <span
+                      className={cn(
+                        "flex size-6 shrink-0 items-center justify-center rounded-full",
+                        e.type === "trip"
+                          ? "bg-accent-sky/15 text-accent-sky"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {e.type === "trip" ? (
+                        <ArrowRight className="size-3.5" />
+                      ) : (
+                        <CircleParking className="size-3.5" />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1 text-sm">
+                      <span className="font-medium">
+                        {e.type === "trip" ? tm("trip_label") : tm("stop_label")}
+                      </span>
+                      <span className="nums ml-1.5 text-text-tertiary">
+                        {formatTime(e.startTime, locale)}–{formatTime(e.endTime, locale)}
+                      </span>
+                    </span>
+                    <span className="nums shrink-0 text-right text-xs text-text-tertiary">
+                      {formatHoursMinutes(e.durationMs, locale)}
+                      {e.type === "trip" && e.km !== null
+                        ? ` · ${e.km.toLocaleString(nf, { maximumFractionDigits: 1 })} km`
+                        : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </Section>
 

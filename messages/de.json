@@ -282,6 +282,8 @@
     "no_device_data": "Für dieses Fahrzeug liegen noch keine Gerätedaten vor",
     "engine_hours_today": "Heutige Motorlaufzeit",
     "gps_distance_today": "Heutige GPS-km",
+    "idle_today": "Heutige Leerlaufzeit",
+    "idle_events": "{count}×",
     "no_data": "Keine Daten",
     "estimated": "geschätzt",
     "estimated_hint": "Datenlücke vorhanden — Wert ist geschätzt",

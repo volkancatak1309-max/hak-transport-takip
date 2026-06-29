@@ -19,6 +19,7 @@ import {
   MapPin,
   Timer,
   Route,
+  Hourglass,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,7 @@ import type { VehicleDetail } from "@/lib/vehicles";
 import type { TelemetryRow } from "@/lib/telemetry";
 import type { EngineHoursResult } from "@/lib/metrics-engine-hours";
 import type { DistanceResult } from "@/lib/metrics-distance";
+import type { IdleResult } from "@/lib/metrics-idle";
 import { cn } from "@/lib/utils";
 
 export function VehicleDetailClient({
@@ -38,11 +40,13 @@ export function VehicleDetailClient({
   telemetry,
   engineHours,
   distance,
+  idle,
 }: {
   detail: VehicleDetail;
   telemetry: TelemetryRow | null;
   engineHours: EngineHoursResult;
   distance: DistanceResult;
+  idle: IdleResult;
 }) {
   const t = useTranslations("vehicles");
   const td = useTranslations("vehicles.detail");
@@ -183,6 +187,33 @@ export function VehicleDetailClient({
                   <span className="nums inline-flex items-center gap-1.5 text-base font-semibold">
                     {distance.km.toLocaleString(nf, { maximumFractionDigits: 1 })} km
                     {distance.uncertain && (
+                      <span
+                        title={tm("estimated_hint")}
+                        className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary"
+                      >
+                        ~ {tm("estimated")}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.03em] text-text-tertiary">
+                  <Hourglass className="size-3.5" />
+                  {tm("idle_today")}
+                </span>
+                {idle.points === 0 ? (
+                  <span className="text-sm text-text-tertiary">{tm("no_data")}</span>
+                ) : (
+                  <span className="nums inline-flex items-center gap-1.5 text-base font-semibold">
+                    {formatHoursMinutes(idle.totalIdleMs, locale)}
+                    {idle.idleEvents > 0 && (
+                      <span className="text-xs font-normal text-text-tertiary">
+                        · {tm("idle_events", { count: idle.idleEvents })}
+                      </span>
+                    )}
+                    {idle.uncertain && (
                       <span
                         title={tm("estimated_hint")}
                         className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary"

@@ -282,6 +282,8 @@
     "no_device_data": "Bu araçta henüz cihaz verisi yok",
     "engine_hours_today": "Bugünkü motor çalışma süresi",
     "gps_distance_today": "Bugünkü GPS km",
+    "idle_today": "Bugünkü rölanti süresi",
+    "idle_events": "{count} kez",
     "no_data": "Veri yok",
     "estimated": "tahmini",
     "estimated_hint": "Veri boşluğu var — değer tahmini",

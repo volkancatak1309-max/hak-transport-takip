@@ -8,7 +8,7 @@ import { useLocale, useTranslations } from "next-intl";
 import "leaflet/dist/leaflet.css";
 import { UserAvatar } from "@/components/UserAvatar";
 import { formatTime } from "@/lib/format";
-import type { ActiveDriver } from "@/lib/types";
+import type { ActiveDriver, ActiveVehicle } from "@/lib/types";
 
 const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
 
@@ -40,6 +40,32 @@ function makeIcon(name: string, variant: "active" | "warn"): L.DivIcon {
   });
 }
 
+// Vehicle (hardware-tracker) marker — a plate pill, visually distinct from the
+// round driver pin. Color encodes ignition WITHOUT green/red (project rule):
+// sky when the engine is on, muted when off/unknown.
+function makeVehicleIcon(plate: string, ignitionOn: boolean | null): L.DivIcon {
+  const on = ignitionOn === true;
+  const bg = on ? "var(--accent-sky)" : "var(--muted)";
+  const fg = on ? "#fff" : "var(--muted-foreground)";
+  return L.divIcon({
+    className: "hak-veh-wrap",
+    html:
+      `<div style="display:flex;justify-content:center;align-items:center">` +
+      `<div style="display:inline-flex;align-items:center;gap:4px;background:${bg};` +
+      `color:${fg};border:2px solid var(--card,#fff);border-radius:6px;` +
+      `padding:1px 6px;font:600 11px/1.4 system-ui,sans-serif;white-space:nowrap;` +
+      `box-shadow:0 1px 4px rgba(0,0,0,.35)">` +
+      `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" ` +
+      `stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+      `<path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/>` +
+      `<circle cx="7.5" cy="17.5" r="1.5"/><circle cx="17.5" cy="17.5" r="1.5"/></svg>` +
+      `<span>${esc(plate)}</span></div></div>`,
+    iconSize: [120, 26],
+    iconAnchor: [60, 13],
+    popupAnchor: [0, -13],
+  });
+}
+
 function FitBounds({ points }: { points: [number, number][] }) {
   const map = useMap();
   useEffect(() => {
@@ -53,14 +79,24 @@ function FitBounds({ points }: { points: [number, number][] }) {
   return null;
 }
 
-export function FleetMap({ drivers }: { drivers: ActiveDriver[] }) {
+export function FleetMap({
+  drivers,
+  vehicles = [],
+}: {
+  drivers: ActiveDriver[];
+  vehicles?: ActiveVehicle[];
+}) {
   const t = useTranslations("map");
   const locale = useLocale();
   const now = Date.now();
 
+  // FitBounds spans both layers so vehicles are framed too, not just drivers.
   const points = useMemo(
-    () => drivers.map((d) => [d.latitude, d.longitude] as [number, number]),
-    [drivers]
+    () => [
+      ...drivers.map((d) => [d.latitude, d.longitude] as [number, number]),
+      ...vehicles.map((v) => [v.latitude, v.longitude] as [number, number]),
+    ],
+    [drivers, vehicles]
   );
 
   return (
@@ -122,6 +158,42 @@ export function FleetMap({ drivers }: { drivers: ActiveDriver[] }) {
           </Marker>
         );
       })}
+      {/* Vehicle layer (hardware GPS) — separate from the driver layer above. */}
+      {vehicles.map((v) => (
+        <Marker
+          key={`veh-${v.vehicle_id}`}
+          position={[v.latitude, v.longitude]}
+          icon={makeVehicleIcon(v.plate, v.ignition_on)}
+        >
+          <Popup>
+            <div className="min-w-[180px] space-y-2">
+              <div className="font-semibold text-sm leading-tight nums">{v.plate}</div>
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                <div>
+                  {t("vehicle_speed")}:{" "}
+                  <span className="nums">
+                    {v.speed_kmh != null ? `${Math.round(v.speed_kmh)} km/h` : "—"}
+                  </span>
+                </div>
+                <div>
+                  {v.ignition_on == null
+                    ? "—"
+                    : v.ignition_on
+                    ? t("ignition_on")
+                    : t("ignition_off")}
+                </div>
+                <div>{t("last_update", { time: formatTime(v.recorded_at, locale) })}</div>
+              </div>
+              <Link
+                href={`/admin/araclar/${v.vehicle_id}`}
+                className="inline-block text-xs font-medium text-primary hover:underline"
+              >
+                {t("view_detail")} →
+              </Link>
+            </div>
+          </Popup>
+        </Marker>
+      ))}
     </MapContainer>
   );
 }

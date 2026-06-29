@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/UserAvatar";
 import { HelpTip } from "@/components/help/HelpTip";
 import { formatTime, formatDurationShort } from "@/lib/format";
-import type { ActiveDriver } from "@/lib/types";
+import type { ActiveDriver, ActiveVehicle } from "@/lib/types";
 
 const FleetMap = dynamic(
   () => import("@/components/FleetMap").then((m) => m.FleetMap),
@@ -32,9 +32,11 @@ type Summary = {
 
 export function LiveTrackingClient({
   drivers,
+  vehicles,
   summary,
 }: {
   drivers: ActiveDriver[];
+  vehicles: ActiveVehicle[];
   summary: Summary;
 }) {
   const t = useTranslations("map");
@@ -80,12 +82,12 @@ export function LiveTrackingClient({
               <HelpTip tkey="map" />
             </div>
             <span className="nums text-xs text-text-tertiary">
-              {drivers.length}
+              {drivers.length + vehicles.length}
             </span>
           </div>
           <div className="relative h-[58vh] min-h-[420px] w-full">
-            <FleetMap drivers={drivers} />
-            {drivers.length === 0 && (
+            <FleetMap drivers={drivers} vehicles={vehicles} />
+            {drivers.length === 0 && vehicles.length === 0 && (
               <div className="pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center">
                 <span className="rounded-[10px] border border-border bg-background/90 px-4 py-2 text-sm text-muted-foreground elevate">
                   {t("no_active")}

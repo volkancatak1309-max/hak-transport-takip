@@ -14,6 +14,7 @@ import {
   Send,
   Fuel,
   Receipt,
+  Hexagon,
   LogOut,
   Menu,
   X,
@@ -86,6 +87,7 @@ export function DashboardShell({
         { href: "/admin", label: t("admin"), icon: LayoutDashboard },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
         { href: "/admin/araclar", label: t("vehicles"), icon: Truck },
+        { href: "/admin/bolgeler", label: t("zones"), icon: Hexagon },
         { href: "/admin/seferler", label: t("assignments"), icon: Route },
         ...(FUEL_ENABLED ? [{ href: "/admin/yakit", label: t("fuel"), icon: Fuel }] : []),
         ...(EXPENSE_ENABLED

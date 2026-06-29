@@ -22,6 +22,17 @@ export function formatHoursDecimal(ms: number): string {
   return (ms / 3600000).toFixed(2);
 }
 
+/** "3 sa 45 dk" / "3 Std 45 Min" — hours+minutes, for durations like engine runtime. */
+export function formatHoursMinutes(ms: number, locale: string = "tr"): string {
+  if (ms < 0) ms = 0;
+  const totalMin = Math.floor(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  const hu = locale === "de" ? "Std" : "sa";
+  const mu = locale === "de" ? "Min" : "dk";
+  return `${h} ${hu} ${String(m).padStart(2, "0")} ${mu}`;
+}
+
 export function formatDateTime(iso: string | null | undefined, locale: string = "tr"): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -45,6 +56,23 @@ export function formatTime(iso: string | null | undefined, locale: string = "tr"
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/**
+ * Localized relative time, e.g. "5 dakika önce" / "vor 5 Minuten". Picks the
+ * largest sensible unit (second → minute → hour → day). Uses Date.now(), so it
+ * must only be rendered client-side (or after mount) to avoid hydration drift.
+ */
+export function formatRelative(iso: string | null | undefined, locale: string = "tr"): string {
+  if (!iso) return "—";
+  const tag = locale === "de" ? "de-AT" : "tr-TR";
+  const diffMs = new Date(iso).getTime() - Date.now(); // negative = in the past
+  const rtf = new Intl.RelativeTimeFormat(tag, { numeric: "auto" });
+  const absSec = Math.abs(diffMs) / 1000;
+  if (absSec < 60) return rtf.format(Math.round(diffMs / 1000), "second");
+  if (absSec < 3600) return rtf.format(Math.round(diffMs / 60000), "minute");
+  if (absSec < 86400) return rtf.format(Math.round(diffMs / 3600000), "hour");
+  return rtf.format(Math.round(diffMs / 86400000), "day");
 }
 
 export function formatDate(iso: string | null | undefined, locale: string = "tr"): string {

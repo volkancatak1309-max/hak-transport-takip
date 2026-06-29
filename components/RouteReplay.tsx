@@ -23,10 +23,14 @@ export function RouteReplay({
   route,
   backHref,
   backLabel,
+  emptyLabel,
 }: {
   route: RouteDay;
   backHref: string;
   backLabel: string;
+  /** Message shown when the day has no track. Defaults to the generic route copy;
+   *  the device route passes a device-specific "no device data" string. */
+  emptyLabel?: string;
 }) {
   const t = useTranslations("route");
   const locale = useLocale();
@@ -110,6 +114,8 @@ export function RouteReplay({
 
   const idx = Math.floor(Math.max(0, Math.min(1, progress)) * Math.max(0, points.length - 1));
   const curTime = points[idx]?.t ?? null;
+  // Device heading at the current replay instant (only when the route is directional).
+  const curHeading = route.directional ? points[idx]?.heading ?? null : null;
   const timeLabel = curTime
     ? new Date(curTime).toLocaleTimeString(locale === "de" ? "de-AT" : "tr-TR", {
         timeZone: "Europe/Vienna",
@@ -147,13 +153,19 @@ export function RouteReplay({
       {/* Map */}
       <div className="relative overflow-hidden rounded-[var(--radius)] border border-border bg-card">
         <div className="h-[60vh] min-h-[420px] w-full">
-          <RouteReplayMap geometry={geometry} progress={progress} driverName={route.driverName} />
+          <RouteReplayMap
+            geometry={geometry}
+            progress={progress}
+            driverName={route.driverName}
+            directional={route.directional}
+            heading={curHeading}
+          />
         </div>
         {!hasRoute && (
           <div className="pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center">
             <span className="flex items-center gap-2 rounded-[10px] border border-border bg-background/90 px-4 py-2 text-sm text-muted-foreground elevate">
               <MapPin className="size-4 text-text-tertiary" />
-              {t("no_route")}
+              {emptyLabel ?? t("no_route")}
             </span>
           </div>
         )}

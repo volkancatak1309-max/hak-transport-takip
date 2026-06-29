@@ -3,7 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { RouteReplay } from "@/components/RouteReplay";
-import { getVehicleRoute } from "@/lib/route-history";
+import { getVehicleDeviceRoute } from "@/lib/route-history";
 import { viennaDayKey } from "@/lib/format";
 import { supabaseAdmin } from "@/lib/supabase";
 
@@ -29,7 +29,9 @@ export default async function VehicleRoutePage({
   if (!vehicle) notFound();
 
   const date = sp.date || viennaDayKey(new Date());
-  const route = await getVehicleRoute(id, date);
+  // Vehicle route from the FMC920 hardware tracker (device_telemetry), not the
+  // driver's phone GPS — /admin/rota & /admin/workers/[id] keep using phone GPS.
+  const route = await getVehicleDeviceRoute(id, date);
 
   return (
     <DashboardShell
@@ -45,6 +47,7 @@ export default async function VehicleRoutePage({
         route={route}
         backHref={`/admin/araclar/${id}`}
         backLabel={route.plate ?? t("back")}
+        emptyLabel={t("no_device_data")}
       />
     </DashboardShell>
   );

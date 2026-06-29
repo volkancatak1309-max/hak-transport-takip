@@ -67,6 +67,8 @@ export type Vehicle = {
   insurance_due: string | null;
   notes: string | null;
   created_at: string;
+  // flespi / Teltonika hardware tracker (migration 013) — additive, nullable.
+  flespi_device_id: number | null;
 };
 
 /** Live operational status — derived, never stored. NO green/red. */
@@ -108,6 +110,24 @@ export type DriverLocation = {
   recorded_at: string;
 };
 
+/**
+ * Vehicle-centric GPS telemetry from a flespi / Teltonika hardware tracker
+ * (migration 014). Separate from DriverLocation (phone GPS, shift-bound): a
+ * hardwired tracker reports 24/7, keyed by vehicle, not gated on a shift.
+ */
+export type DeviceTelemetry = {
+  id: string;
+  vehicle_id: string;
+  flespi_device_id: number;
+  latitude: number;
+  longitude: number;
+  speed_kmh: number | null;
+  heading: number | null;
+  ignition_on: boolean | null;
+  recorded_at: string;
+  ingested_at: string;
+};
+
 export type ActiveDriver = {
   worker_id: string;
   name: string;
@@ -118,6 +138,22 @@ export type ActiveDriver = {
   longitude: number;
   recorded_at: string;
   route: [number, number][];
+};
+
+/**
+ * A vehicle's latest hardware-tracker (flespi/Teltonika) position for the live
+ * map. Vehicle-centric and shift-independent — rendered as its own map layer
+ * next to (never merged with) the driver/phone layer.
+ */
+export type ActiveVehicle = {
+  vehicle_id: string;
+  plate: string;
+  latitude: number;
+  longitude: number;
+  speed_kmh: number | null;
+  heading: number | null;
+  ignition_on: boolean | null;
+  recorded_at: string;
 };
 
 export type AssignmentStop = { label: string; address: string };
@@ -236,4 +272,19 @@ export type SessionData = {
   phone?: string;
   is_admin?: boolean;
   plate?: string | null;
+};
+
+export type GeofenceRuleKind = "forbidden" | "allowed_only";
+
+/** A circular geofence zone (db/migrations/015_geofences.sql). */
+export type Geofence = {
+  id: string;
+  name: string;
+  type: "circle";
+  center_lat: number;
+  center_lng: number;
+  radius_m: number;
+  rule_kind: GeofenceRuleKind;
+  active: boolean;
+  created_at: string;
 };

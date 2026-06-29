@@ -161,3 +161,16 @@ export const createMaintenanceSchema = z.object({
   next_service_km: z.coerce.number().int().positive().max(MAX_ODOMETER).optional().nullable(),
   next_service_date: isoDateOptional,
 });
+
+// Geofence zone (circle). radius capped at 100 km — beyond that it is not a
+// meaningful local zone and is likely a typo. lat/lng bounded to valid ranges.
+export const geofenceSchema = z.object({
+  name: z.string().trim().min(1, "errRequired").max(80, "errRequired"),
+  center_lat: z.coerce.number().min(-90, "errCoord").max(90, "errCoord"),
+  center_lng: z.coerce.number().min(-180, "errCoord").max(180, "errCoord"),
+  // Minimum 50 m: the detector's hysteresis band is 25 m, so a zone smaller than
+  // 2× the band has an empty (or sub-GPS-accuracy) enter-region and could never
+  // realistically trigger — reject it instead of silently never firing.
+  radius_m: z.coerce.number().int().min(50, "errRadius").max(100_000, "errRadius"),
+  rule_kind: z.enum(["forbidden", "allowed_only"]),
+});

@@ -1,8 +1,16 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
+import { listVehicleTrack } from "@/lib/telemetry";
 import { viennaDayKey } from "@/lib/format";
 
-export type RoutePoint = { lat: number; lng: number; t: string };
+export type RoutePoint = {
+  lat: number;
+  lng: number;
+  t: string;
+  /** Device course 0..359, when the source carries it (device GPS). Phone-GPS
+   *  (driver_locations) routes leave it undefined. */
+  heading?: number | null;
+};
 export type LatLng = [number, number];
 
 export type RouteDay = {
@@ -16,6 +24,9 @@ export type RouteDay = {
   driverName: string | null;
   driverId: string | null;
   totalRaw: number; // point count before sampling (for the UI hint)
+  /** When true the replay marker is a heading arrow (the source has course
+   *  data, i.e. device GPS) instead of a plain pin. Driver routes leave unset. */
+  directional?: boolean;
 };
 
 const OSRM_MATCH = "https://router.project-osrm.org/match/v1/driving/";
@@ -231,5 +242,45 @@ export async function getVehicleRoute(vehicleId: string, date: string): Promise<
     plate,
     driverName,
     driverId,
+  };
+}
+
+/**
+ * Route of a vehicle on a given day from its OWN hardware tracker
+ * (device_telemetry) — the FMC920's 24/7 GPS, independent of any phone or open
+ * shift. Mirrors getVehicleRoute's RouteDay shape so RouteReplay renders it
+ * unchanged, but the line AND the marker heading come from the device, not from
+ * driver_locations. Built on listVehicleTrack, the shared telemetry-series base.
+ */
+export async function getVehicleDeviceRoute(
+  vehicleId: string,
+  date: string
+): Promise<RouteDay> {
+  const { gte, lt } = dayWindow(date);
+  const [{ data: vehicle }, track] = await Promise.all([
+    supabaseAdmin.from("vehicles").select("plate").eq("id", vehicleId).maybeSingle(),
+    listVehicleTrack(vehicleId, gte, lt),
+  ]);
+  const plate = (vehicle?.plate as string) ?? null;
+
+  const rawPts: RoutePoint[] = track
+    .filter((r) => viennaDayKey(r.recorded_at) === date)
+    .map((r) => ({ lat: r.latitude, lng: r.longitude, t: r.recorded_at, heading: r.heading }));
+
+  const points = sample(rawPts);
+  const { geometry, matched } = await buildMatchedGeometry(points);
+  // Show the heading arrow only if the device actually reported a course.
+  const directional = rawPts.some((p) => p.heading !== null && p.heading !== undefined);
+
+  return {
+    date,
+    points,
+    geometry,
+    matched,
+    totalRaw: rawPts.length,
+    plate,
+    driverName: null, // vehicle-centric track — no driver label
+    driverId: vehicleId, // replay reset key
+    directional,
   };
 }

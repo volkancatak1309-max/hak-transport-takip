@@ -294,6 +294,7 @@
   "route": {
     "title": "Routenverlauf",
     "no_route": "Keine Route für diesen Tag",
+    "no_device_data": "Für dieses Datum liegen keine Gerätedaten vor",
     "play": "Abspielen / Pause",
     "restart": "Von vorne",
     "progress": "Fortschritt",

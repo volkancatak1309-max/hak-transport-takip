@@ -294,6 +294,7 @@
   "route": {
     "title": "Rota Geçmişi",
     "no_route": "Bu gün için kayıtlı rota yok",
+    "no_device_data": "Bu tarihte cihaz verisi yok",
     "play": "Oynat / Duraklat",
     "restart": "Baştan",
     "progress": "İlerleme",

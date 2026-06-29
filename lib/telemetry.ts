@@ -150,3 +150,45 @@ export async function listLatestVehiclePositions(
   }
   return out;
 }
+
+const TRACK_PAGE = 1000; // PostgREST page size; we paginate to defeat any max-rows cap
+const TRACK_MAX_PAGES = 100; // hard backstop: ≤100k points per vehicle+range
+
+/**
+ * Every telemetry point for ONE vehicle within [from, to], oldest-first.
+ *
+ * The shared base for ALL device-GPS-derived features — route replay today, and
+ * engine-hours / distance / idle / trip-stop metrics later — so it returns the
+ * COMPLETE series, never a sampled or silently-capped subset. Results are
+ * paginated to defeat PostgREST's per-request row cap (a busy day easily exceeds
+ * 1000 fixes); the (vehicle_id, recorded_at) index serves the range scan
+ * cheaply. Callers that only need a drawable line should sample afterward.
+ */
+export async function listVehicleTrack(
+  vehicleId: string,
+  from: Date | string,
+  to: Date | string
+): Promise<TelemetryRow[]> {
+  const fromIso = typeof from === "string" ? from : from.toISOString();
+  const toIso = typeof to === "string" ? to : to.toISOString();
+
+  const rows: TelemetryRow[] = [];
+  for (let page = 0; page < TRACK_MAX_PAGES; page++) {
+    const offset = page * TRACK_PAGE;
+    const { data, error } = await supabaseAdmin
+      .from("device_telemetry")
+      .select(
+        "vehicle_id, latitude, longitude, speed_kmh, heading, ignition_on, recorded_at"
+      )
+      .eq("vehicle_id", vehicleId)
+      .gte("recorded_at", fromIso)
+      .lte("recorded_at", toIso)
+      .order("recorded_at", { ascending: true })
+      .range(offset, offset + TRACK_PAGE - 1);
+    if (error) throw new Error(error.message);
+    const batch = (data ?? []) as TelemetryRow[];
+    rows.push(...batch);
+    if (batch.length < TRACK_PAGE) break;
+  }
+  return rows;
+}

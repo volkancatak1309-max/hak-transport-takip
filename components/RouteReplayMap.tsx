@@ -36,6 +36,34 @@ function moveIcon(name: string | null): L.DivIcon {
   });
 }
 
+/** Compass bearing (deg, clockwise from north) from point a to point b. */
+function bearingBetween(a: LatLng, b: LatLng): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const φ1 = toRad(a[0]);
+  const φ2 = toRad(b[0]);
+  const Δλ = toRad(b[1] - a[1]);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x =
+    Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** Directional marker: an arrow rotated to `bearing`, optional name label above. */
+function arrowIcon(name: string | null, bearing: number): L.DivIcon {
+  const label = name ? `<div class="hak-replay-label">${esc(name)}</div>` : "";
+  const arrow =
+    `<div class="hak-replay-arrow" style="transform: rotate(${bearing}deg); transform-origin: center;">` +
+    `<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">` +
+    `<path d="M12 2 L19 21 L12 16 L5 21 Z" fill="var(--accent-sky)" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>` +
+    `</svg></div>`;
+  return L.divIcon({
+    className: "hak-marker-wrap",
+    html: `<div class="hak-replay-wrap">${label}${arrow}</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
 function FitOnce({ points }: { points: LatLng[] }) {
   const map = useMap();
   useEffect(() => {
@@ -66,16 +94,40 @@ export function RouteReplayMap({
   geometry,
   progress,
   driverName,
+  directional,
+  heading,
 }: {
   geometry: LatLng[];
   progress: number;
   driverName: string | null;
+  /** When true the marker is a rotated heading arrow instead of a plain pin. */
+  directional?: boolean;
+  /** Device course at the current instant; falls back to the path tangent. */
+  heading?: number | null;
 }) {
   const latlngs = geometry;
-  const icon = useMemo(() => moveIcon(driverName), [driverName]);
 
   const cur = positionAt(latlngs, progress);
   const idx = Math.floor(Math.max(0, Math.min(1, progress)) * (latlngs.length - 1));
+
+  // Direction the marker faces: device heading when present, otherwise the
+  // tangent of the path it is travelling (so the arrow always matches motion).
+  const tangent =
+    latlngs.length > 1
+      ? bearingBetween(
+          latlngs[Math.min(idx, latlngs.length - 2)],
+          latlngs[Math.min(idx + 1, latlngs.length - 1)]
+        )
+      : 0;
+  // Round to 3° so the divIcon only rebuilds on a visible turn, not every frame.
+  const roundedBearing = directional
+    ? Math.round((heading ?? tangent) / 3) * 3
+    : 0;
+  const icon = useMemo(
+    () =>
+      directional ? arrowIcon(driverName, roundedBearing) : moveIcon(driverName),
+    [directional, driverName, roundedBearing]
+  );
   const traveled = useMemo<LatLng[]>(() => {
     if (latlngs.length === 0) return [];
     return [...latlngs.slice(0, idx + 1), cur];

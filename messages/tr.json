@@ -274,7 +274,22 @@
     "vehicle_speed": "Hız",
     "ignition_on": "Kontak açık",
     "ignition_off": "Kontak kapalı",
-    "vehicles_layer": "Araçlar (GPS cihazı)"
+    "vehicles_layer": "Araçlar (GPS cihazı)",
+    "live_location": "Canlı Konum",
+    "ignition": "Kontak",
+    "heading": "Yön",
+    "coordinates": "Koordinat",
+    "no_device_data": "Bu araçta henüz cihaz verisi yok",
+    "compass": {
+      "n": "Kuzey",
+      "ne": "Kuzey-Doğu",
+      "e": "Doğu",
+      "se": "Güney-Doğu",
+      "s": "Güney",
+      "sw": "Güney-Batı",
+      "w": "Batı",
+      "nw": "Kuzey-Batı"
+    }
   },
   "route": {
     "title": "Rota Geçmişi",

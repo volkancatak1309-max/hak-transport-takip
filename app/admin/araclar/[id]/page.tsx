@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getVehicleDetail } from "@/lib/vehicles";
+import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { VehicleDetailClient } from "./VehicleDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +14,10 @@ export default async function VehicleDetailPage({
 }) {
   const session = await requireAdmin();
   const { id } = await params;
-  const detail = await getVehicleDetail(id);
+  const [detail, telemetry] = await Promise.all([
+    getVehicleDetail(id),
+    latestVehicleTelemetry(id),
+  ]);
   if (!detail) notFound();
 
   return (
@@ -26,7 +30,7 @@ export default async function VehicleDetailPage({
       }}
       title={detail.vehicle.plate}
     >
-      <VehicleDetailClient detail={detail} />
+      <VehicleDetailClient detail={detail} telemetry={telemetry} />
     </DashboardShell>
   );
 }

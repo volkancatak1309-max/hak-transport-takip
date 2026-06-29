@@ -47,6 +47,23 @@ export function formatTime(iso: string | null | undefined, locale: string = "tr"
   });
 }
 
+/**
+ * Localized relative time, e.g. "5 dakika önce" / "vor 5 Minuten". Picks the
+ * largest sensible unit (second → minute → hour → day). Uses Date.now(), so it
+ * must only be rendered client-side (or after mount) to avoid hydration drift.
+ */
+export function formatRelative(iso: string | null | undefined, locale: string = "tr"): string {
+  if (!iso) return "—";
+  const tag = locale === "de" ? "de-AT" : "tr-TR";
+  const diffMs = new Date(iso).getTime() - Date.now(); // negative = in the past
+  const rtf = new Intl.RelativeTimeFormat(tag, { numeric: "auto" });
+  const absSec = Math.abs(diffMs) / 1000;
+  if (absSec < 60) return rtf.format(Math.round(diffMs / 1000), "second");
+  if (absSec < 3600) return rtf.format(Math.round(diffMs / 60000), "minute");
+  if (absSec < 86400) return rtf.format(Math.round(diffMs / 3600000), "hour");
+  return rtf.format(Math.round(diffMs / 86400000), "day");
+}
+
 export function formatDate(iso: string | null | undefined, locale: string = "tr"): string {
   if (!iso) return "—";
   const d = new Date(iso);

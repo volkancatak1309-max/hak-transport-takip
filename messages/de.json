@@ -274,7 +274,22 @@
     "vehicle_speed": "Geschwindigkeit",
     "ignition_on": "Zündung an",
     "ignition_off": "Zündung aus",
-    "vehicles_layer": "Fahrzeuge (GPS-Gerät)"
+    "vehicles_layer": "Fahrzeuge (GPS-Gerät)",
+    "live_location": "Live-Standort",
+    "ignition": "Zündung",
+    "heading": "Richtung",
+    "coordinates": "Koordinaten",
+    "no_device_data": "Für dieses Fahrzeug liegen noch keine Gerätedaten vor",
+    "compass": {
+      "n": "Nord",
+      "ne": "Nordost",
+      "e": "Ost",
+      "se": "Südost",
+      "s": "Süd",
+      "sw": "Südwest",
+      "w": "West",
+      "nw": "Nordwest"
+    }
   },
   "route": {
     "title": "Routenverlauf",

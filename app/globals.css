@@ -29,6 +29,7 @@ body {
   --color-accent-claret: var(--accent-claret);
   --color-accent-sky: var(--accent-sky);
   --color-accent-gold: var(--accent-gold);
+  --color-accent-green: var(--accent-green);
   --color-status-active: var(--status-active);
   --color-status-break: var(--status-break);
   --color-status-idle: var(--status-idle);
@@ -98,6 +99,9 @@ body {
   --accent-sky-soft: oklch(0.58 0.085 240 / 14%);
   --accent-gold: oklch(0.68 0.1 78);
   --accent-gold-soft: oklch(0.68 0.1 78 / 16%);
+  /* Green — reserved for hardware-signal state (device ignition ON). Not used
+     for shift/operational status, which stays sky/claret/gold by design. */
+  --accent-green: oklch(0.6 0.13 155);
 
   /* Operational status — NO green/red. active=sky, break=claret, idle=gold. */
   --status-active: var(--accent-sky);
@@ -154,6 +158,8 @@ body {
   --accent-sky-soft: oklch(0.72 0.085 240 / 16%);
   --accent-gold: oklch(0.76 0.105 78);
   --accent-gold-soft: oklch(0.76 0.105 78 / 18%);
+  /* Lightened for the dark base, hue locked to the light-theme green. */
+  --accent-green: oklch(0.72 0.13 155);
 
   --status-active: var(--accent-sky);
   --status-break: var(--accent-claret);

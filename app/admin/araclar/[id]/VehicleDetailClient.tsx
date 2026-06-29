@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import {
   ArrowLeft,
@@ -12,19 +13,32 @@ import {
   FileText,
   History,
   MapPinned,
+  Radio,
+  Compass,
+  Navigation,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/UserAvatar";
 import { HelpTip } from "@/components/help/HelpTip";
 import { KmEditButton } from "@/components/KmEditButton";
 import { STATUS_STYLE } from "@/lib/vehicle-ui";
-import { formatDate, formatTime } from "@/lib/format";
+import { formatDate, formatTime, formatRelative } from "@/lib/format";
 import type { VehicleDetail } from "@/lib/vehicles";
+import type { TelemetryRow } from "@/lib/telemetry";
 import { cn } from "@/lib/utils";
 
-export function VehicleDetailClient({ detail }: { detail: VehicleDetail }) {
+export function VehicleDetailClient({
+  detail,
+  telemetry,
+}: {
+  detail: VehicleDetail;
+  telemetry: TelemetryRow | null;
+}) {
   const t = useTranslations("vehicles");
   const td = useTranslations("vehicles.detail");
+  const tm = useTranslations("map");
   const locale = useLocale();
   const { vehicle: v, today, recent } = detail;
   const st = STATUS_STYLE[v.live_status];
@@ -62,6 +76,75 @@ export function VehicleDetailClient({ detail }: { detail: VehicleDetail }) {
         </span>
         <HelpTip tkey="veh_status" className="ml-1" />
       </div>
+
+      {/* Live telemetry — device (FMC920) hardware GPS. Single most-recent fix;
+          the live-map vehicle popup deep-links here, so this surfaces what it
+          promises. No recency window: shows the last known fix with its age. */}
+      <Section title={tm("live_location")} icon={Radio}>
+        {telemetry ? (
+          <div className="space-y-4">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+              <TeleField label={tm("ignition")} icon={Gauge}>
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    telemetry.ignition_on === true
+                      ? "bg-accent-green/15 text-accent-green"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "size-1.5 rounded-full",
+                      telemetry.ignition_on === true
+                        ? "bg-accent-green"
+                        : "bg-muted-foreground"
+                    )}
+                  />
+                  {telemetry.ignition_on === true
+                    ? tm("ignition_on")
+                    : telemetry.ignition_on === false
+                      ? tm("ignition_off")
+                      : "—"}
+                </Badge>
+              </TeleField>
+
+              <TeleField label={tm("vehicle_speed")} icon={Gauge}>
+                {telemetry.speed_kmh !== null
+                  ? `${Math.round(telemetry.speed_kmh)} km/h`
+                  : "—"}
+              </TeleField>
+
+              <TeleField label={tm("heading")} icon={Compass}>
+                {telemetry.heading !== null ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Navigation
+                      className="size-3.5 shrink-0 text-accent-sky"
+                      style={{ transform: `rotate(${telemetry.heading}deg)` }}
+                      aria-hidden
+                    />
+                    {tm(`compass.${compassKey(telemetry.heading)}`)} ·{" "}
+                    {telemetry.heading}°
+                  </span>
+                ) : (
+                  "—"
+                )}
+              </TeleField>
+
+              <TeleField label={tm("coordinates")} icon={MapPin}>
+                {telemetry.latitude.toFixed(5)}, {telemetry.longitude.toFixed(5)}
+              </TeleField>
+            </dl>
+
+            <p className="flex items-center gap-1.5 text-xs text-text-tertiary">
+              <Clock className="size-3.5 shrink-0" />
+              <LastSeen iso={telemetry.recorded_at} locale={locale} />
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-text-tertiary">{tm("no_device_data")}</p>
+        )}
+      </Section>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* Current driver */}
@@ -242,4 +325,49 @@ function Field({
       </dd>
     </div>
   );
+}
+
+/** Like Field, but the value is arbitrary JSX (badge, icon, etc.). */
+function TeleField({
+  label,
+  icon: Icon,
+  children,
+}: {
+  label: string;
+  icon?: typeof Truck;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.03em] text-text-tertiary">
+        {Icon && <Icon className="size-3" />}
+        {label}
+      </dt>
+      <dd className="nums mt-1 truncate text-sm">{children}</dd>
+    </div>
+  );
+}
+
+const COMPASS_KEYS = ["n", "ne", "e", "se", "s", "sw", "w", "nw"] as const;
+/** Map a 0..359 heading to one of 8 compass points (i18n key suffix). */
+function compassKey(heading: number): (typeof COMPASS_KEYS)[number] {
+  const idx = Math.round((((heading % 360) + 360) % 360) / 45) % 8;
+  return COMPASS_KEYS[idx];
+}
+
+/**
+ * "Son güncelleme: 5 dakika önce". Renders the absolute time on the server and
+ * first paint (deterministic — no hydration drift), then upgrades to a relative,
+ * self-refreshing label after mount.
+ */
+function LastSeen({ iso, locale }: { iso: string; locale: string }) {
+  const tm = useTranslations("map");
+  const [time, setTime] = useState<string>(() => formatTime(iso, locale));
+  useEffect(() => {
+    const tick = () => setTime(formatRelative(iso, locale));
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, [iso, locale]);
+  return <>{tm("last_update", { time })}</>;
 }

@@ -63,7 +63,7 @@ export async function saveTelemetry(
   return data?.length ?? 0;
 }
 
-type TelemetryRow = {
+export type TelemetryRow = {
   vehicle_id: string;
   latitude: number;
   longitude: number;
@@ -72,6 +72,30 @@ type TelemetryRow = {
   ignition_on: boolean | null;
   recorded_at: string;
 };
+
+/**
+ * The single most-recent telemetry point for ONE vehicle, or null if the device
+ * has never reported (no row in device_telemetry). Unlike
+ * listLatestVehiclePositions, there is NO recency window: the vehicle-detail
+ * "live position" card shows the last known fix however old, and surfaces its
+ * age via recorded_at — so a parked/offline tracker still renders its last
+ * position instead of vanishing. Served cheaply by the
+ * (vehicle_id, recorded_at) index.
+ */
+export async function latestVehicleTelemetry(
+  vehicleId: string
+): Promise<TelemetryRow | null> {
+  const { data } = await supabaseAdmin
+    .from("device_telemetry")
+    .select(
+      "vehicle_id, latitude, longitude, speed_kmh, heading, ignition_on, recorded_at"
+    )
+    .eq("vehicle_id", vehicleId)
+    .order("recorded_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as TelemetryRow | null) ?? null;
+}
 
 /**
  * Latest position per vehicle within a recency window, joined with the plate —

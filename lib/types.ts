@@ -260,3 +260,18 @@ export type SessionData = {
   is_admin?: boolean;
   plate?: string | null;
 };
+
+export type GeofenceRuleKind = "forbidden" | "allowed_only";
+
+/** A circular geofence zone (db/migrations/015_geofences.sql). */
+export type Geofence = {
+  id: string;
+  name: string;
+  type: "circle";
+  center_lat: number;
+  center_lng: number;
+  radius_m: number;
+  rule_kind: GeofenceRuleKind;
+  active: boolean;
+  created_at: string;
+};

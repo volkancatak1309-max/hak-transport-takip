@@ -7,6 +7,8 @@ import { computeEngineHours } from "@/lib/metrics-engine-hours";
 import { computeDistanceKm } from "@/lib/metrics-distance";
 import { computeIdleTime } from "@/lib/metrics-idle";
 import { computeTripsAndStops } from "@/lib/metrics-trips";
+import { computeGeofenceEvents } from "@/lib/metrics-geofence";
+import { getActiveGeofences } from "@/app/actions/geofences";
 import { startOfTodayVienna } from "@/lib/format";
 import { VehicleDetailClient } from "./VehicleDetailClient";
 
@@ -22,10 +24,11 @@ export default async function VehicleDetailPage({
   // Engine-hours window: Vienna local midnight → now (today's runtime).
   const dayStart = startOfTodayVienna();
   const now = new Date();
-  const [detail, telemetry, track] = await Promise.all([
+  const [detail, telemetry, track, zones] = await Promise.all([
     getVehicleDetail(id),
     latestVehicleTelemetry(id),
     listVehicleTrack(id, dayStart, now),
+    getActiveGeofences(),
   ]);
   if (!detail) notFound();
   // Same track feeds all device-GPS metrics (one query, pure computations).
@@ -33,6 +36,7 @@ export default async function VehicleDetailPage({
   const distance = computeDistanceKm(track);
   const idle = computeIdleTime(track);
   const tripStops = computeTripsAndStops(track);
+  const geofence = computeGeofenceEvents(track, zones);
 
   return (
     <DashboardShell
@@ -51,6 +55,7 @@ export default async function VehicleDetailPage({
         distance={distance}
         idle={idle}
         tripStops={tripStops}
+        geofence={geofence}
       />
     </DashboardShell>
   );

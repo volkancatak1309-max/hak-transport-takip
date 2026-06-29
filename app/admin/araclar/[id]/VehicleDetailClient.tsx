@@ -23,6 +23,8 @@ import {
   Milestone,
   ArrowRight,
   CircleParking,
+  Hexagon,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +39,7 @@ import type { EngineHoursResult } from "@/lib/metrics-engine-hours";
 import type { DistanceResult } from "@/lib/metrics-distance";
 import type { IdleResult } from "@/lib/metrics-idle";
 import type { TripsResult } from "@/lib/metrics-trips";
+import type { GeofenceResult } from "@/lib/metrics-geofence";
 import { cn } from "@/lib/utils";
 
 export function VehicleDetailClient({
@@ -46,6 +49,7 @@ export function VehicleDetailClient({
   distance,
   idle,
   tripStops,
+  geofence,
 }: {
   detail: VehicleDetail;
   telemetry: TelemetryRow | null;
@@ -53,6 +57,7 @@ export function VehicleDetailClient({
   distance: DistanceResult;
   idle: IdleResult;
   tripStops: TripsResult;
+  geofence: GeofenceResult;
 }) {
   const t = useTranslations("vehicles");
   const td = useTranslations("vehicles.detail");
@@ -331,6 +336,88 @@ export function VehicleDetailClient({
                 ))}
               </ul>
             )}
+          </div>
+        )}
+      </Section>
+
+      {/* GPS geofence events — entry/exit against admin-defined zones
+          (computeGeofenceEvents). Violations are flagged red. Distinct messages
+          for "no active zones" vs "no telemetry today" vs "no events". */}
+      <Section title={tm("geofence_today")} icon={Hexagon}>
+        {geofence.zonesChecked === 0 ? (
+          <p className="text-sm text-text-tertiary">
+            {tm("no_zones")}{" "}
+            <Link href="/admin/bolgeler" className="text-accent-sky hover:underline">
+              {tm("manage_zones")}
+            </Link>
+          </p>
+        ) : geofence.points === 0 ? (
+          <p className="text-sm text-text-tertiary">{tm("no_data")}</p>
+        ) : geofence.events.length === 0 ? (
+          <p className="text-sm text-text-tertiary">{tm("no_geofence_events")}</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+              <span className="font-semibold">
+                {tm("geofence_events_count", { count: geofence.events.length })}
+              </span>
+              {geofence.violationCount > 0 && (
+                <>
+                  <span className="text-text-tertiary">·</span>
+                  <span className="inline-flex items-center gap-1 font-semibold text-destructive">
+                    <AlertTriangle className="size-3.5" />
+                    {tm("violations_count", { count: geofence.violationCount })}
+                  </span>
+                </>
+              )}
+              {geofence.uncertain && (
+                <span
+                  title={tm("estimated_hint")}
+                  className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary"
+                >
+                  ~ {tm("estimated")}
+                </span>
+              )}
+            </div>
+
+            <ul className="-mx-1 divide-y divide-border">
+              {geofence.events.map((e, i) => (
+                <li
+                  key={`${e.zoneId}-${i}`}
+                  className="flex items-center gap-2.5 px-1 py-2"
+                >
+                  <span
+                    className={cn(
+                      "flex size-6 shrink-0 items-center justify-center rounded-full",
+                      e.violation
+                        ? "bg-destructive/10 text-destructive"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {e.violation ? (
+                      <AlertTriangle className="size-3.5" />
+                    ) : (
+                      <Hexagon className="size-3.5" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1 text-sm">
+                    <span className="truncate font-medium">{e.zoneName}</span>
+                    {e.violation && (
+                      <span className="ml-1.5 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                        {tm("violation")}
+                      </span>
+                    )}
+                    <span className="nums ml-1.5 block text-xs text-text-tertiary sm:ml-1.5 sm:inline">
+                      {formatTime(e.entryTime, locale)}–
+                      {e.exitTime ? formatTime(e.exitTime, locale) : tm("ongoing")}
+                    </span>
+                  </span>
+                  <span className="nums shrink-0 text-right text-xs text-text-tertiary">
+                    {formatHoursMinutes(e.dwellMs, locale)}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </Section>

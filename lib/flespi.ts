@@ -81,7 +81,15 @@ function bool(v: unknown): boolean | null {
   return null;
 }
 
-function normalize(
+/**
+ * Convert one raw flespi message (flattened or nested dotted keys) into a
+ * FlespiPoint, or null if it lacks a usable position/timestamp or carries a
+ * bogus RTC clock. Shared by both ingest paths: the REST pull (fetchDeviceMessages)
+ * and the HTTP-stream push (/api/flespi/ingest). `deviceId` is stamped onto the
+ * point as flespi_device_id (the stream path passes the vehicle's device id, or
+ * the numeric IMEI when none is set).
+ */
+export function normalize(
   deviceId: number,
   msg: Record<string, unknown>
 ): FlespiPoint | null {

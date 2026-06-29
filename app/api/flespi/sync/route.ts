@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { safeEqual } from "@/lib/secure-compare";
+import { flespiAuthorized } from "@/lib/flespi-auth";
 import { fetchDeviceMessages } from "@/lib/flespi";
 import { lastRecordedAt, saveTelemetry } from "@/lib/telemetry";
 
@@ -22,17 +22,8 @@ const FIRST_WINDOW_MS = 60 * 60 * 1000; // 1 h
  *
  * Auth: requires FLESPI_SYNC_SECRET, accepted as `?secret=` (external cron) or
  * `Authorization: Bearer <secret>` (Vercel cron). Comparison is timing-safe.
+ * The auth check is shared with /api/flespi/ingest via lib/flespi-auth.
  */
-function authorized(req: NextRequest): boolean {
-  const expected = process.env.FLESPI_SYNC_SECRET;
-  if (!expected) return false;
-  const qs = req.nextUrl.searchParams.get("secret");
-  if (safeEqual(qs, expected)) return true;
-  const auth = req.headers.get("authorization");
-  if (auth?.startsWith("Bearer ")) return safeEqual(auth.slice(7), expected);
-  return false;
-}
-
 type VehRow = { id: string; plate: string; flespi_device_id: number };
 
 async function runSync() {
@@ -85,7 +76,7 @@ async function runSync() {
 }
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) {
+  if (!flespiAuthorized(req)) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
   try {

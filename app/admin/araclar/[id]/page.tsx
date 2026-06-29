@@ -4,6 +4,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getVehicleDetail } from "@/lib/vehicles";
 import { latestVehicleTelemetry, listVehicleTrack } from "@/lib/telemetry";
 import { computeEngineHours } from "@/lib/metrics-engine-hours";
+import { computeDistanceKm } from "@/lib/metrics-distance";
 import { startOfTodayVienna } from "@/lib/format";
 import { VehicleDetailClient } from "./VehicleDetailClient";
 
@@ -25,7 +26,9 @@ export default async function VehicleDetailPage({
     listVehicleTrack(id, dayStart, now),
   ]);
   if (!detail) notFound();
+  // Same track feeds both device-GPS metrics (one query, two pure computations).
   const engineHours = computeEngineHours(track);
+  const distance = computeDistanceKm(track);
 
   return (
     <DashboardShell
@@ -41,6 +44,7 @@ export default async function VehicleDetailPage({
         detail={detail}
         telemetry={telemetry}
         engineHours={engineHours}
+        distance={distance}
       />
     </DashboardShell>
   );

@@ -18,6 +18,7 @@ import {
   Navigation,
   MapPin,
   Timer,
+  Route,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,16 +30,19 @@ import { formatDate, formatTime, formatRelative, formatHoursMinutes } from "@/li
 import type { VehicleDetail } from "@/lib/vehicles";
 import type { TelemetryRow } from "@/lib/telemetry";
 import type { EngineHoursResult } from "@/lib/metrics-engine-hours";
+import type { DistanceResult } from "@/lib/metrics-distance";
 import { cn } from "@/lib/utils";
 
 export function VehicleDetailClient({
   detail,
   telemetry,
   engineHours,
+  distance,
 }: {
   detail: VehicleDetail;
   telemetry: TelemetryRow | null;
   engineHours: EngineHoursResult;
+  distance: DistanceResult;
 }) {
   const t = useTranslations("vehicles");
   const td = useTranslations("vehicles.detail");
@@ -140,29 +144,55 @@ export function VehicleDetailClient({
               </TeleField>
             </dl>
 
-            {/* Today's engine operating hours — derived from raw ignition+time
-                (computeEngineHours), not flespi analytics. "Veri yok" when the
-                device sent nothing today; "~ tahmini" when a gap/clamp applied. */}
-            <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
-              <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.03em] text-text-tertiary">
-                <Timer className="size-3.5" />
-                {tm("engine_hours_today")}
-              </span>
-              {engineHours.points === 0 ? (
-                <span className="text-sm text-text-tertiary">{tm("no_data")}</span>
-              ) : (
-                <span className="nums inline-flex items-center gap-1.5 text-base font-semibold">
-                  {formatHoursMinutes(engineHours.ms, locale)}
-                  {engineHours.uncertain && (
-                    <span
-                      title={tm("estimated_hint")}
-                      className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary"
-                    >
-                      ~ {tm("estimated")}
-                    </span>
-                  )}
+            {/* Today's device-GPS metrics — engine runtime (computeEngineHours)
+                and distance (computeDistanceKm), both from raw telemetry. These
+                are NOT flespi analytics and NOT the manual odometer km shown in
+                the "Bugün" card. "Veri yok" when the device sent nothing today;
+                "~ tahmini" when a gap/clamp made the figure approximate. */}
+            <div className="space-y-2.5 border-t border-border pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.03em] text-text-tertiary">
+                  <Timer className="size-3.5" />
+                  {tm("engine_hours_today")}
                 </span>
-              )}
+                {engineHours.points === 0 ? (
+                  <span className="text-sm text-text-tertiary">{tm("no_data")}</span>
+                ) : (
+                  <span className="nums inline-flex items-center gap-1.5 text-base font-semibold">
+                    {formatHoursMinutes(engineHours.ms, locale)}
+                    {engineHours.uncertain && (
+                      <span
+                        title={tm("estimated_hint")}
+                        className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary"
+                      >
+                        ~ {tm("estimated")}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.03em] text-text-tertiary">
+                  <Route className="size-3.5" />
+                  {tm("gps_distance_today")}
+                </span>
+                {distance.points === 0 ? (
+                  <span className="text-sm text-text-tertiary">{tm("no_data")}</span>
+                ) : (
+                  <span className="nums inline-flex items-center gap-1.5 text-base font-semibold">
+                    {distance.km.toLocaleString(nf, { maximumFractionDigits: 1 })} km
+                    {distance.uncertain && (
+                      <span
+                        title={tm("estimated_hint")}
+                        className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary"
+                      >
+                        ~ {tm("estimated")}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </div>
             </div>
 
             <p className="flex items-center gap-1.5 text-xs text-text-tertiary">

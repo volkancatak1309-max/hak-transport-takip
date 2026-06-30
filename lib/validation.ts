@@ -174,3 +174,23 @@ export const geofenceSchema = z.object({
   radius_m: z.coerce.number().int().min(50, "errRadius").max(100_000, "errRadius"),
   rule_kind: z.enum(["forbidden", "allowed_only"]),
 });
+
+// Vehicle create/edit. Only plate is truly required (DB: plate unique not null;
+// status has a default). flespi_device_id is the flespi NUMERIC device id (not
+// the IMEI); imei is the 15–16 digit device IMEI used by the stream ingest.
+// Empty optional fields are passed as null by the action before parsing.
+export const vehicleSchema = z.object({
+  plate: z.string().trim().min(1, "errPlateRequired").max(20, "errPlateRequired"),
+  make: z.string().trim().max(60).optional().nullable(),
+  model: z.string().trim().max(60).optional().nullable(),
+  year: z.coerce.number().int().min(1950, "errYear").max(2100, "errYear").optional().nullable(),
+  status: z.enum(["active", "maintenance", "inactive"]),
+  flespi_device_id: z.coerce
+    .number()
+    .int()
+    .positive("errDevice")
+    .max(999_999_999_999_999, "errDevice")
+    .optional()
+    .nullable(),
+  imei: z.string().trim().regex(/^\d{15,16}$/, "errImeiFormat").optional().nullable(),
+});

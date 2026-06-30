@@ -69,6 +69,8 @@ export type Vehicle = {
   created_at: string;
   // flespi / Teltonika hardware tracker (migration 013) — additive, nullable.
   flespi_device_id: number | null;
+  // Device IMEI for the flespi stream push ingest (migration 016) — nullable.
+  imei: string | null;
 };
 
 /** Live operational status — derived, never stored. NO green/red. */

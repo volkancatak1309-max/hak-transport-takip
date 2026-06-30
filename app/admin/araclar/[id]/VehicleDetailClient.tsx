@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import {
   ArrowLeft,
@@ -64,10 +65,23 @@ export function VehicleDetailClient({
   const td = useTranslations("vehicles.detail");
   const tm = useTranslations("map");
   const locale = useLocale();
+  const router = useRouter();
   const { vehicle: v, today, recent } = detail;
   const st = STATUS_STYLE[v.live_status];
   const nf = locale === "de" ? "de-AT" : "tr-TR";
   const km = (n: number | null) => (n === null ? "—" : n.toLocaleString(nf));
+
+  // Soft auto-refresh of the server-rendered data — same pattern as the live map
+  // (LiveTrackingClient). Only refreshes while the tab is visible so a
+  // backgrounded page doesn't poll needlessly. Independent of the LastSeen
+  // relative-time interval, which is left untouched.
+  useEffect(() => {
+    const REFRESH_MS = 30_000;
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, REFRESH_MS);
+    return () => clearInterval(id);
+  }, [router]);
 
   // Merge GPS-detected trips + stops into one chronological timeline for display.
   const timeline = [

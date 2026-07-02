@@ -18,6 +18,7 @@ import {
   Compass,
   Navigation,
   MapPin,
+  Fuel,
   Timer,
   Route,
   Hourglass,
@@ -191,6 +192,20 @@ export function VehicleDetailClient({
 
               <TeleField label={tm("coordinates")} icon={MapPin}>
                 {telemetry.latitude.toFixed(5)}, {telemetry.longitude.toFixed(5)}
+              </TeleField>
+
+              {/* FMC003 OBD/CAN — fuel level + vehicle odometer. FMC920 leaves
+                  these null, so "—" until an OBD-capable device reports them. */}
+              <TeleField label={tm("fuel_level")} icon={Fuel}>
+                {telemetry.fuel_level_pct !== null
+                  ? `%${Math.round(telemetry.fuel_level_pct)}`
+                  : "—"}
+              </TeleField>
+
+              <TeleField label={tm("vehicle_km")} icon={Milestone}>
+                {telemetry.odometer_km !== null
+                  ? `${Math.round(telemetry.odometer_km).toLocaleString(nf)} km`
+                  : "—"}
               </TeleField>
             </dl>
 

@@ -312,6 +312,8 @@
     "ignition": "Kontak",
     "heading": "Yön",
     "coordinates": "Koordinat",
+    "fuel_level": "Yakıt seviyesi",
+    "vehicle_km": "Araç km",
     "no_device_data": "Bu araçta henüz cihaz verisi yok",
     "engine_hours_today": "Bugünkü motor çalışma süresi",
     "gps_distance_today": "Bugünkü GPS km",

@@ -312,6 +312,8 @@
     "ignition": "Zündung",
     "heading": "Richtung",
     "coordinates": "Koordinaten",
+    "fuel_level": "Kraftstoffstand",
+    "vehicle_km": "Fahrzeug-km",
     "no_device_data": "Für dieses Fahrzeug liegen noch keine Gerätedaten vor",
     "engine_hours_today": "Heutige Motorlaufzeit",
     "gps_distance_today": "Heutige GPS-km",

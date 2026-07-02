@@ -47,6 +47,8 @@ export async function saveTelemetry(
       speed_kmh: p.speed_kmh,
       heading: p.heading,
       ignition_on: p.ignition_on,
+      fuel_level_pct: p.fuel_level_pct,
+      odometer_km: p.odometer_km,
       recorded_at: p.recorded_at,
     });
   }
@@ -70,6 +72,11 @@ export type TelemetryRow = {
   speed_kmh: number | null;
   heading: number | null;
   ignition_on: boolean | null;
+  // OBD/CAN fields (migration 017). Only latestVehicleTelemetry selects these;
+  // the map + track queries omit them (nobody reads fuel/odometer there), so on
+  // those rows they are absent — read them only off latestVehicleTelemetry.
+  fuel_level_pct: number | null;
+  odometer_km: number | null;
   recorded_at: string;
 };
 
@@ -88,7 +95,7 @@ export async function latestVehicleTelemetry(
   const { data } = await supabaseAdmin
     .from("device_telemetry")
     .select(
-      "vehicle_id, latitude, longitude, speed_kmh, heading, ignition_on, recorded_at"
+      "vehicle_id, latitude, longitude, speed_kmh, heading, ignition_on, fuel_level_pct, odometer_km, recorded_at"
     )
     .eq("vehicle_id", vehicleId)
     .order("recorded_at", { ascending: false })

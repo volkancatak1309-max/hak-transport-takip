@@ -33,6 +33,10 @@ export type FlespiPoint = {
   speed_kmh: number | null;
   heading: number | null;
   ignition_on: boolean | null;
+  /** OBD/CAN fuel level in percent (0..100), or null if the device omits it. */
+  fuel_level_pct: number | null;
+  /** OBD/CAN total vehicle odometer, or null if the device omits it. */
+  odometer_km: number | null;
   /** ISO string derived from the device RTC `timestamp`. */
   recorded_at: string;
   /** Raw epoch-seconds device timestamp (used for the polling cursor). */
@@ -114,6 +118,22 @@ export function normalize(
     bool(pick(msg, "engine.ignition.status")) ?? bool(pick(msg, "din.1"));
   const heading = num(pick(msg, "position.direction"));
 
+  // [VARSAYIM — gerçek FMC003 gelince flespi panelinden teyit edilecek]
+  // FMC003 OBD/CAN telemetrisi (yakıt seviyesi, aracın toplam km'si) flespi
+  // tarafında modele/plugin'e göre farklı adlarla gelebilir. Aday alan adlarını
+  // sırayla dene, ilk DOLU değeri al; hiçbiri yoksa null bırak (kaydı reddetme).
+  // odometer_km cihazın raporladığı değerdir — birimin km olduğu gerçek cihazda
+  // doğrulanmalı (bazı kurulumlar metre gönderir).
+  const fuelLevel =
+    num(pick(msg, "can.fuel.level")) ??
+    num(pick(msg, "obd.fuel.level")) ??
+    num(pick(msg, "fuel.level"));
+  const odometer =
+    num(pick(msg, "can.vehicle.mileage")) ??
+    num(pick(msg, "obd.mileage")) ??
+    num(pick(msg, "vehicle.mileage.total")) ??
+    num(pick(msg, "obd.distance.total"));
+
   return {
     flespi_device_id: deviceId,
     latitude: lat,
@@ -121,6 +141,8 @@ export function normalize(
     speed_kmh: num(pick(msg, "position.speed")),
     heading: heading === null ? null : Math.round(heading),
     ignition_on: ignition,
+    fuel_level_pct: fuelLevel,
+    odometer_km: odometer,
     recorded_at: new Date(ts * 1000).toISOString(),
     flespi_timestamp: ts,
   };

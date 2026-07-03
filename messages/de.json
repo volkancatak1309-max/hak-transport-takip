@@ -34,7 +34,32 @@
     "telegram": "Telegram",
     "assignments": "Aufträge",
     "fuel": "Kraftstoff",
-    "expenses": "Spesen"
+    "expenses": "Spesen",
+    "alarms": "Alarme"
+  },
+  "alarms": {
+    "title": "Alarme",
+    "subtitle": "Vom Gerät gemeldete Fahr- und Sicherheitsereignisse",
+    "empty": "Noch keine Ereignisse — sobald Ereignisse auftreten, erscheinen sie hier.",
+    "col_time": "Datum",
+    "col_vehicle": "Fahrzeug",
+    "col_type": "Ereignis",
+    "col_speed": "Tempo",
+    "col_map": "Karte",
+    "view_on_map": "Auf Karte ansehen",
+    "recent_events": "Letzte Ereignisse",
+    "no_recent_events": "Für dieses Fahrzeug liegen keine Ereignisse vor.",
+    "type": {
+      "harsh_braking": "Scharfes Bremsen",
+      "harsh_acceleration": "Starke Beschleunigung",
+      "harsh_cornering": "Scharfe Kurvenfahrt",
+      "overspeeding": "Geschwindigkeitsüberschreitung",
+      "crash": "Aufprall",
+      "towing": "Abschleppen",
+      "unplug": "Gerät entfernt",
+      "idling": "Langer Leerlauf",
+      "jamming": "Signalstörung"
+    }
   },
   "approval": {
     "pending": "Ausstehend",

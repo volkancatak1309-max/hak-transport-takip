@@ -27,6 +27,8 @@ import {
   CircleParking,
   Hexagon,
   AlertTriangle,
+  Siren,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +39,8 @@ import { PenaltiesSection } from "./PenaltiesSection";
 import { STATUS_STYLE } from "@/lib/vehicle-ui";
 import { formatDate, formatTime, formatRelative, formatHoursMinutes } from "@/lib/format";
 import type { VehicleDetail } from "@/lib/vehicles";
-import type { TelemetryRow } from "@/lib/telemetry";
+import type { TelemetryRow, VehicleEventRow } from "@/lib/telemetry";
+import { EVENT_ICON_STYLE, eventSeverity } from "@/lib/event-ui";
 import type { EngineHoursResult } from "@/lib/metrics-engine-hours";
 import type { DistanceResult } from "@/lib/metrics-distance";
 import type { IdleResult } from "@/lib/metrics-idle";
@@ -53,6 +56,7 @@ export function VehicleDetailClient({
   idle,
   tripStops,
   geofence,
+  events,
 }: {
   detail: VehicleDetail;
   telemetry: TelemetryRow | null;
@@ -61,10 +65,12 @@ export function VehicleDetailClient({
   idle: IdleResult;
   tripStops: TripsResult;
   geofence: GeofenceResult;
+  events: VehicleEventRow[];
 }) {
   const t = useTranslations("vehicles");
   const td = useTranslations("vehicles.detail");
   const tm = useTranslations("map");
+  const ta = useTranslations("alarms");
   const locale = useLocale();
   const router = useRouter();
   const { vehicle: v, today, recent } = detail;
@@ -449,6 +455,50 @@ export function VehicleDetailClient({
               ))}
             </ul>
           </div>
+        )}
+      </Section>
+
+      {/* Son olaylar (alarmlar) — cihazın bildirdiği sürüş/güvenlik olayları */}
+      <Section title={ta("recent_events")} icon={Siren}>
+        {events.length === 0 ? (
+          <p className="text-sm text-text-tertiary">{ta("no_recent_events")}</p>
+        ) : (
+          <ul className="-mx-1 divide-y divide-border">
+            {events.map((e) => (
+              <li key={e.id} className="flex items-center gap-2.5 px-1 py-2">
+                <span
+                  className={cn(
+                    "flex size-6 shrink-0 items-center justify-center rounded-full",
+                    EVENT_ICON_STYLE[eventSeverity(e.event_type)]
+                  )}
+                >
+                  <AlertTriangle className="size-3.5" />
+                </span>
+                <span className="min-w-0 flex-1 text-sm">
+                  <span className="font-medium">{ta(`type.${e.event_type}`)}</span>
+                  <span className="nums ml-1.5 block text-xs text-text-tertiary sm:ml-1.5 sm:inline">
+                    {formatDate(e.occurred_at, locale)} · {formatTime(e.occurred_at, locale)}
+                  </span>
+                </span>
+                {e.speed_kmh !== null && (
+                  <span className="nums shrink-0 text-right text-xs text-text-tertiary">
+                    {Math.round(e.speed_kmh)} km/h
+                  </span>
+                )}
+                {e.latitude !== null && e.longitude !== null && (
+                  <a
+                    href={`https://www.google.com/maps?q=${e.latitude},${e.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex shrink-0 items-center gap-1 text-xs text-accent-sky hover:underline"
+                  >
+                    {ta("view_on_map")}
+                    <ExternalLink className="size-3" />
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
       </Section>
 

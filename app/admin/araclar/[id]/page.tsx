@@ -2,7 +2,11 @@ import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getVehicleDetail } from "@/lib/vehicles";
-import { latestVehicleTelemetry, listVehicleTrack } from "@/lib/telemetry";
+import {
+  latestVehicleTelemetry,
+  listVehicleEvents,
+  listVehicleTrack,
+} from "@/lib/telemetry";
 import { computeEngineHours } from "@/lib/metrics-engine-hours";
 import { computeDistanceKm } from "@/lib/metrics-distance";
 import { computeIdleTime } from "@/lib/metrics-idle";
@@ -24,11 +28,12 @@ export default async function VehicleDetailPage({
   // Engine-hours window: Vienna local midnight → now (today's runtime).
   const dayStart = startOfTodayVienna();
   const now = new Date();
-  const [detail, telemetry, track, zones] = await Promise.all([
+  const [detail, telemetry, track, zones, events] = await Promise.all([
     getVehicleDetail(id),
     latestVehicleTelemetry(id),
     listVehicleTrack(id, dayStart, now),
     getActiveGeofences(),
+    listVehicleEvents(id, 10),
   ]);
   if (!detail) notFound();
   // Same track feeds all device-GPS metrics (one query, pure computations).
@@ -56,6 +61,7 @@ export default async function VehicleDetailPage({
         idle={idle}
         tripStops={tripStops}
         geofence={geofence}
+        events={events}
       />
     </DashboardShell>
   );

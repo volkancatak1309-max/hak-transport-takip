@@ -34,7 +34,32 @@
     "telegram": "Telegram",
     "assignments": "Seferler",
     "fuel": "Yakıt",
-    "expenses": "Masraflar"
+    "expenses": "Masraflar",
+    "alarms": "Alarmlar"
+  },
+  "alarms": {
+    "title": "Alarmlar",
+    "subtitle": "Cihazın bildirdiği sürüş ve güvenlik olayları",
+    "empty": "Henüz olay kaydı yok — olaylar gerçekleştiğinde burada görünür.",
+    "col_time": "Tarih",
+    "col_vehicle": "Araç",
+    "col_type": "Olay",
+    "col_speed": "Hız",
+    "col_map": "Harita",
+    "view_on_map": "Haritada gör",
+    "recent_events": "Son Olaylar",
+    "no_recent_events": "Bu araç için olay kaydı yok.",
+    "type": {
+      "harsh_braking": "Ani Fren",
+      "harsh_acceleration": "Ani Hızlanma",
+      "harsh_cornering": "Sert Viraj",
+      "overspeeding": "Aşırı Hız",
+      "crash": "Çarpma",
+      "towing": "Çekilme",
+      "unplug": "Cihaz Söküldü",
+      "idling": "Uzun Rölanti",
+      "jamming": "Sinyal Karıştırma"
+    }
   },
   "approval": {
     "pending": "Onay Bekliyor",

@@ -43,6 +43,21 @@ export type FlespiPoint = {
   flespi_timestamp: number;
 };
 
+/** Cihazın bildirdiği tek bir sürüş/güvenlik olayı (vehicle_events satırı). */
+export type FlespiEvent = {
+  /** Kanonik tür: harsh_braking | harsh_acceleration | harsh_cornering |
+   *  overspeeding | crash | towing | unplug | idling | jamming */
+  event_type: string;
+  /** Olaya eşlik eden ham detay (çarpma yönü, viraj açısı, hız), yoksa null. */
+  event_value: Record<string, unknown> | null;
+  /** Olay anındaki konum — mesajda konum yoksa null (olay yine de kaydedilir). */
+  latitude: number | null;
+  longitude: number | null;
+  speed_kmh: number | null;
+  /** ISO string derived from the device RTC `timestamp`. */
+  occurred_at: string;
+};
+
 function token(): string {
   const t = process.env.FLESPI_TOKEN;
   if (!t) {
@@ -149,14 +164,105 @@ export function normalize(
 }
 
 /**
+ * Cihaz mesajındaki olay parametrelerini FlespiEvent listesine çevirir.
+ * Konum zorunlu DEĞİL (çarpma/söküm konum fix'i olmadan da gelebilir);
+ * yalnızca timestamp geçerliliği aranır (normalize() ile aynı RTC korumaları).
+ * Mevcut GPS akışından tamamen bağımsızdır — normalize()'a dokunmaz.
+ *
+ * Parametre adları flespi dokümanından birebir alındı
+ * (https://flespi.com/protocols/teltonika + /devices/teltonika-fmc920):
+ *   crash.event (AVL 247) · crash.event.enum · crash.direction.enum (AVL 1430)
+ *   harsh.acceleration.event / harsh.braking.event / harsh.cornering.event (AVL 253)
+ *   harsh.cornering.angle (AVL 254) · overspeeding.status + overspeeding.speed
+ *   geofence.overspeeding.status (AVL 157/248) · idle.status (AVL 177/243/251)
+ *   gsm.jamming.alarm.status (AVL 249)
+ * [VARSAYIM] towing ve unplug için flespi dokümanında parametre adı BULUNAMADI;
+ * aşağıdaki aday adlar gerçek cihaz mesajıyla teyit edilene kadar tahminidir.
+ */
+export function extractEvents(msg: Record<string, unknown>): FlespiEvent[] {
+  const ts = num(pick(msg, "timestamp"));
+  if (ts === null) return [];
+  const tsMs = ts * 1000;
+  if (tsMs > Date.now() + FUTURE_SKEW_MS) return [];
+  if (ts < YEAR_2000_TS) return [];
+
+  const lat = num(pick(msg, "position.latitude"));
+  const lng = num(pick(msg, "position.longitude"));
+  const posOk =
+    lat !== null && lng !== null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+  const base = {
+    latitude: posOk ? lat : null,
+    longitude: posOk ? lng : null,
+    speed_kmh: num(pick(msg, "position.speed")),
+    occurred_at: new Date(tsMs).toISOString(),
+  };
+
+  // truthy bayrak: true / 1 / "1" / "true" → olay var say.
+  const flag = (dotted: string) => bool(pick(msg, dotted)) === true;
+
+  const events: FlespiEvent[] = [];
+
+  if (flag("crash.event")) {
+    const value: Record<string, unknown> = {};
+    const reason = pick(msg, "crash.event.enum");
+    const direction = pick(msg, "crash.direction.enum");
+    if (reason !== undefined && reason !== null) value.reason = reason;
+    if (direction !== undefined && direction !== null) value.direction = direction;
+    events.push({
+      event_type: "crash",
+      event_value: Object.keys(value).length > 0 ? value : null,
+      ...base,
+    });
+  }
+  if (flag("harsh.acceleration.event")) {
+    events.push({ event_type: "harsh_acceleration", event_value: null, ...base });
+  }
+  if (flag("harsh.braking.event")) {
+    events.push({ event_type: "harsh_braking", event_value: null, ...base });
+  }
+  if (flag("harsh.cornering.event")) {
+    const angle = num(pick(msg, "harsh.cornering.angle"));
+    events.push({
+      event_type: "harsh_cornering",
+      event_value: angle === null ? null : { angle },
+      ...base,
+    });
+  }
+  if (flag("overspeeding.status") || flag("geofence.overspeeding.status")) {
+    const speed = num(pick(msg, "overspeeding.speed"));
+    events.push({
+      event_type: "overspeeding",
+      event_value: speed === null ? null : { speed },
+      ...base,
+    });
+  }
+  if (flag("idle.status")) {
+    events.push({ event_type: "idling", event_value: null, ...base });
+  }
+  if (flag("gsm.jamming.alarm.status")) {
+    events.push({ event_type: "jamming", event_value: null, ...base });
+  }
+  // [VARSAYIM] Dokümanda bulunamayan aday adlar — gerçek cihazla teyit edilecek.
+  if (flag("towing.event") || flag("towing.status") || flag("towing.detection.status")) {
+    events.push({ event_type: "towing", event_value: null, ...base });
+  }
+  if (flag("unplug.event") || flag("unplug.status") || flag("battery.unplug.status")) {
+    events.push({ event_type: "unplug", event_value: null, ...base });
+  }
+
+  return events;
+}
+
+/**
  * Fetch and normalize messages for one device. When `sinceTs` (epoch seconds)
  * is given, only messages at/after it are requested (`data.from`), keeping each
- * poll small. Returns chronological, position-bearing points.
+ * poll small. Returns chronological, position-bearing points plus any device
+ * events found in the same messages (events may exist without a position fix).
  */
 export async function fetchDeviceMessages(
   deviceId: number,
   sinceTs?: number
-): Promise<FlespiPoint[]> {
+): Promise<{ points: FlespiPoint[]; events: FlespiEvent[] }> {
   // reverse:false → oldest-first, so the cursor advances forward and a capped
   // poll drains a backlog over successive ticks. [VARSAYIM] confirm ordering +
   // that `count` caps the result on the real device.
@@ -183,9 +289,11 @@ export async function fetchDeviceMessages(
   const rows = json.result ?? [];
 
   const points: FlespiPoint[] = [];
+  const events: FlespiEvent[] = [];
   for (const m of rows) {
     const p = normalize(deviceId, m);
     if (p) points.push(p);
+    events.push(...extractEvents(m));
   }
 
   // Surface a field-name mismatch instead of a silent "0 saved": if flespi
@@ -200,5 +308,5 @@ export async function fetchDeviceMessages(
     );
   }
 
-  return points;
+  return { points, events };
 }

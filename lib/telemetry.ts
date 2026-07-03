@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
-import type { FlespiPoint } from "@/lib/flespi";
+import type { FlespiEvent, FlespiPoint } from "@/lib/flespi";
 import type { ActiveVehicle } from "@/lib/types";
 
 /**
@@ -63,6 +63,161 @@ export async function saveTelemetry(
 
   if (error) throw new Error(error.message);
   return data?.length ?? 0;
+}
+
+// ── Araç olayları (vehicle_events, migration 018) ───────────────────────────
+
+/**
+ * Durum-tipi olaylar: cihaz, durum sürdükçe bayrağı HER periyodik kayıtta
+ * tekrar gönderir (örn. 30 dk rölanti = her 30 sn'de bir idle.status=true).
+ * Tabloyu şişirmemek için aynı türün yeni satırı ancak COOLDOWN geçtiyse
+ * yazılır. Anlık olaylar (crash, harsh_*) her tetiklenişte ayrı satırdır.
+ */
+const STATE_EVENT_TYPES = new Set([
+  "overspeeding",
+  "idling",
+  "jamming",
+  "towing",
+  "unplug",
+]);
+const STATE_EVENT_COOLDOWN_MS = 5 * 60 * 1000;
+
+/**
+ * Idempotently write device events for one vehicle. The unique index
+ * (vehicle_id, event_type, occurred_at) + ON CONFLICT DO NOTHING makes the
+ * stream (ingest) and REST poll (sync) delivering the SAME event a no-op.
+ * Returns the number of rows written.
+ */
+export async function saveVehicleEvents(
+  vehicleId: string,
+  events: FlespiEvent[]
+): Promise<number> {
+  if (events.length === 0) return 0;
+
+  // Kronolojik işle: cooldown karşılaştırması sıraya bağlı.
+  const sorted = [...events].sort((a, b) =>
+    a.occurred_at.localeCompare(b.occurred_at)
+  );
+
+  // Durum-tipi türler için tür başına son yazılan an: önce DB'deki en yeni
+  // kayıt, sonra batch içinde ilerledikçe güncellenir.
+  const lastByType = new Map<string, number>();
+  const stateTypes = [
+    ...new Set(
+      sorted
+        .filter((e) => STATE_EVENT_TYPES.has(e.event_type))
+        .map((e) => e.event_type)
+    ),
+  ];
+  for (const type of stateTypes) {
+    const { data } = await supabaseAdmin
+      .from("vehicle_events")
+      .select("occurred_at")
+      .eq("vehicle_id", vehicleId)
+      .eq("event_type", type)
+      .order("occurred_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data?.occurred_at) {
+      lastByType.set(type, new Date(data.occurred_at).getTime());
+    }
+  }
+
+  const seen = new Set<string>(); // batch içi birebir (tür+an) tekrarları at
+  const rows = [];
+  for (const e of sorted) {
+    const key = `${e.event_type}|${e.occurred_at}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (STATE_EVENT_TYPES.has(e.event_type)) {
+      const t = new Date(e.occurred_at).getTime();
+      const last = lastByType.get(e.event_type);
+      if (last !== undefined && t - last < STATE_EVENT_COOLDOWN_MS) continue;
+      lastByType.set(e.event_type, t);
+    }
+    rows.push({
+      vehicle_id: vehicleId,
+      event_type: e.event_type,
+      event_value: e.event_value,
+      latitude: e.latitude,
+      longitude: e.longitude,
+      speed_kmh: e.speed_kmh,
+      occurred_at: e.occurred_at,
+    });
+  }
+  if (rows.length === 0) return 0;
+
+  const { data, error } = await supabaseAdmin
+    .from("vehicle_events")
+    .upsert(rows, {
+      onConflict: "vehicle_id,event_type,occurred_at",
+      ignoreDuplicates: true,
+    })
+    .select("id");
+
+  if (error) throw new Error(error.message);
+  return data?.length ?? 0;
+}
+
+export type VehicleEventRow = {
+  id: string;
+  vehicle_id: string;
+  event_type: string;
+  event_value: Record<string, unknown> | null;
+  latitude: number | null;
+  longitude: number | null;
+  speed_kmh: number | null;
+  occurred_at: string;
+};
+
+/**
+ * Son olaylar — tek araç (araç detay "Son Olaylar" bölümü). Migration 018
+ * çalıştırılmamışsa boş listeye düşer (sayfayı asla düşürmez).
+ */
+export async function listVehicleEvents(
+  vehicleId: string,
+  limit = 10
+): Promise<VehicleEventRow[]> {
+  const { data } = await supabaseAdmin
+    .from("vehicle_events")
+    .select(
+      "id, vehicle_id, event_type, event_value, latitude, longitude, speed_kmh, occurred_at"
+    )
+    .eq("vehicle_id", vehicleId)
+    .order("occurred_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as VehicleEventRow[];
+}
+
+export type VehicleEventWithPlate = VehicleEventRow & { plate: string };
+
+/**
+ * Son olaylar — tüm araçlar, plaka ile (admin /alarmlar listesi). Plaka,
+ * listLatestVehiclePositions ile aynı iki-adımlı desenle eklenir. Migration
+ * 018 yoksa boş listeye düşer.
+ */
+export async function listRecentEvents(
+  limit = 100
+): Promise<VehicleEventWithPlate[]> {
+  const { data } = await supabaseAdmin
+    .from("vehicle_events")
+    .select(
+      "id, vehicle_id, event_type, event_value, latitude, longitude, speed_kmh, occurred_at"
+    )
+    .order("occurred_at", { ascending: false })
+    .limit(limit);
+  const rows = (data ?? []) as VehicleEventRow[];
+  if (rows.length === 0) return [];
+
+  const ids = [...new Set(rows.map((r) => r.vehicle_id))];
+  const { data: vData } = await supabaseAdmin
+    .from("vehicles")
+    .select("id, plate")
+    .in("id", ids);
+  const plates = new Map(
+    ((vData ?? []) as { id: string; plate: string }[]).map((v) => [v.id, v.plate])
+  );
+  return rows.map((r) => ({ ...r, plate: plates.get(r.vehicle_id) ?? "—" }));
 }
 
 export type TelemetryRow = {

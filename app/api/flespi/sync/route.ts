@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { flespiAuthorized } from "@/lib/flespi-auth";
 import { fetchDeviceMessages } from "@/lib/flespi";
-import { lastRecordedAt, saveTelemetry } from "@/lib/telemetry";
+import { lastRecordedAt, saveTelemetry, saveVehicleEvents } from "@/lib/telemetry";
 
 // Service-role Supabase + outbound flespi fetch → must run on Node, never edge.
 export const runtime = "nodejs";
@@ -38,6 +38,7 @@ async function runSync() {
     device: number;
     fetched: number;
     saved: number;
+    events?: number;
     error?: string;
   }[] = [];
   let totalSaved = 0;
@@ -52,14 +53,31 @@ async function runSync() {
         ? new Date(last).getTime() / 1000
         : (Date.now() - FIRST_WINDOW_MS) / 1000;
 
-      const points = await fetchDeviceMessages(v.flespi_device_id, sinceTs);
+      const { points, events } = await fetchDeviceMessages(
+        v.flespi_device_id,
+        sinceTs
+      );
       const saved = await saveTelemetry(v.id, points);
       totalSaved += saved;
+      // Olay kaydı GPS akışını ASLA düşürmesin (örn. migration 018 henüz
+      // çalıştırılmadıysa): kendi try/catch'i var, hata sadece loglanır.
+      let savedEvents = 0;
+      if (events.length > 0) {
+        try {
+          savedEvents = await saveVehicleEvents(v.id, events);
+        } catch (err) {
+          console.error(
+            `[flespi/sync] ${v.plate}: vehicle_events yazılamadı:`,
+            err instanceof Error ? err.message : err
+          );
+        }
+      }
       perVehicle.push({
         plate: v.plate,
         device: v.flespi_device_id,
         fetched: points.length,
         saved,
+        events: savedEvents,
       });
     } catch (e) {
       perVehicle.push({

@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { flespiAuthorized } from "@/lib/flespi-auth";
-import { normalize, type FlespiPoint } from "@/lib/flespi";
-import { saveTelemetry } from "@/lib/telemetry";
+import {
+  extractEvents,
+  normalize,
+  type FlespiEvent,
+  type FlespiPoint,
+} from "@/lib/flespi";
+import { saveTelemetry, saveVehicleEvents } from "@/lib/telemetry";
 
 // Service-role Supabase + JSON body parsing → must run on Node, never edge.
 export const runtime = "nodejs";
@@ -90,11 +95,25 @@ export async function POST(req: NextRequest) {
           continue;
         }
         const points: FlespiPoint[] = [];
+        const events: FlespiEvent[] = [];
         for (const m of msgs) {
           const p = normalize(deviceId, m);
           if (p) points.push(p);
+          events.push(...extractEvents(m));
         }
         saved += await saveTelemetry(vehicle.id, points);
+        // Olay kaydı GPS akışını ASLA düşürmesin (örn. migration 018 henüz
+        // çalıştırılmadıysa): kendi try/catch'i var, hata sadece loglanır.
+        if (events.length > 0) {
+          try {
+            await saveVehicleEvents(vehicle.id, events);
+          } catch (err) {
+            console.error(
+              "[flespi/ingest] vehicle_events yazılamadı:",
+              err instanceof Error ? err.message : err
+            );
+          }
+        }
       }
     }
 

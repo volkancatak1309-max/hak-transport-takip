@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, Polyline, Marker, useMap } from "react-leaflet";
+import { mapTile } from "@/lib/map-tiles";
 import "leaflet/dist/leaflet.css";
 import type { LatLng } from "@/lib/route-history";
 
@@ -145,10 +146,7 @@ export function RouteReplayMap({
       className="h-full w-full"
       style={{ background: "var(--muted)" }}
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      <TileLayer attribution={mapTile.attribution} url={mapTile.url} />
       <FitOnce points={latlngs} />
 
       {/* Remaining route — faint */}

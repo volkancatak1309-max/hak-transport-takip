@@ -141,8 +141,11 @@ body {
 }
 
 .dark {
-  /* Dark theme — DEFAULT. Near-black neutral, layered surfaces. */
-  --background: oklch(0.165 0.006 256);
+  /* Aurora Glass — DARK-ONLY (theme is forced dark). The ground colour lives on
+     html (#0a0d16); --background is transparent so every bg-background container
+     lets the fixed aurora layer (body::before) show through. Surfaces keep their
+     own solid tokens for now (glassified per-surface in later phases). */
+  --background: transparent;
   --foreground: oklch(0.975 0.003 256);
   --card: oklch(0.205 0.007 256);
   --card-foreground: oklch(0.975 0.003 256);
@@ -150,12 +153,23 @@ body {
   --popover: oklch(0.205 0.007 256);
   --popover-foreground: oklch(0.975 0.003 256);
 
-  /* Brand accents lightened for visibility on the dark base; hue locked to brand. */
-  --accent-claret: oklch(0.52 0.155 31);
-  --accent-claret-hover: oklch(0.57 0.16 31);
-  --accent-claret-soft: oklch(0.52 0.155 31 / 18%);
-  --accent-sky: oklch(0.72 0.085 240);
-  --accent-sky-soft: oklch(0.72 0.085 240 / 16%);
+  /* Aurora accent tones (raw, for the ground wash) + glass surface tokens. */
+  --aurora-bordo: #8a1538;
+  --aurora-mavi: #3a6ea5;
+  --glass-bg: rgba(20, 24, 36, 0.55);
+  --glass-bg-solid: rgb(20, 24, 36);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.06);
+
+  /* Trabzonspor bordo + mavi accents. Bordo base = brand hex (white text on top);
+     mavi base uses the lighter tone so it stays legible on the dark ground.
+     --primary, --ring, and the chart/status tokens all inherit these below, so
+     this single remap propagates panel-wide. */
+  --accent-claret: #8a1538;
+  --accent-claret-hover: #b83a5c;
+  --accent-claret-soft: color-mix(in srgb, #8a1538 22%, transparent);
+  --accent-sky: #5b93cf;
+  --accent-sky-soft: color-mix(in srgb, #5b93cf 18%, transparent);
   --accent-gold: oklch(0.76 0.105 78);
   --accent-gold-soft: oklch(0.76 0.105 78 / 18%);
   /* Lightened for the dark base, hue locked to the light-theme green. */
@@ -177,7 +191,9 @@ body {
   --destructive: oklch(0.62 0.2 25);
   --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 13%);
-  --ring: var(--accent-claret);
+  /* Focus rings = mavi (accent-sky) for a high-contrast WCAG-AA focus cue on the
+     dark ground; propagates to buttons, inputs and select triggers. */
+  --ring: var(--accent-sky);
 
   --chart-1: var(--accent-claret);
   --chart-2: var(--accent-sky);
@@ -206,6 +222,22 @@ body {
   }
   html {
     @apply font-sans;
+    /* Ground colour for the whole app; the aurora layer tints over this and
+       every bg-background container is transparent above it. */
+    background-color: #0a0d16;
+  }
+  /* Fixed aurora wash — bordo top-left, mavi top-right, very subtle. Sits behind
+     all content (z-index:-1) and never scrolls, so there is no blur/repaint on
+     scroll. Rendered on every page (login / pin / splash / panel). */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(75% 60% at 0% 0%, color-mix(in srgb, var(--aurora-bordo) 20%, transparent), transparent 60%),
+      radial-gradient(75% 60% at 100% 0%, color-mix(in srgb, var(--aurora-mavi) 16%, transparent), transparent 62%);
   }
   button, a {
     transition: background-color 140ms cubic-bezier(0.25, 0.1, 0.25, 1),
@@ -265,6 +297,98 @@ body {
       0 1px 2px oklch(0 0 0 / 0.18),
       0 8px 24px oklch(0 0 0 / 0.16);
   }
+  /* Aurora glass surface — translucent panel over the aurora ground. blur(18px)
+     (not 24) + a solid @supports fallback so low-end driver phones don't jank.
+     Applied to cards/sidebar/topbar in later phases. */
+  .glass {
+    background-color: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    backdrop-filter: blur(18px) saturate(140%);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
+  }
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .glass,
+    .glass-field,
+    .glass-pop {
+      background-color: var(--glass-bg-solid);
+    }
+  }
+  /* KPI/stat tiles: a 2px bordo→mavi top line fades in on hover and the tile
+     lifts 3px. Subtle depth only — no glow. Easing is the app-wide Apple curve;
+     reduced-motion collapses both to instant. */
+  .card-kpi {
+    position: relative;
+    transition: transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+  .card-kpi::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent-claret-hover), var(--accent-sky));
+    opacity: 0;
+    transition: opacity 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+  .card-kpi:hover {
+    transform: translateY(-3px);
+  }
+  .card-kpi:hover::after {
+    opacity: 1;
+  }
+  /* Active sidebar item: bordo→mavi translucent wash (pairs with the left bordo
+     accent bar + mavi icon). Subtle — contrast comes from the bar + light text,
+     not a loud fill. */
+  .nav-active {
+    background-image: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--accent-claret) 24%, transparent),
+      color-mix(in srgb, var(--accent-sky) 16%, transparent)
+    );
+  }
+  /* Primary button fill — bordo diagonal gradient. Hover lift + subtle bordo
+     shadow and active scale live on the button variant (Tailwind utilities) so
+     focus rings and transitions stay intact. */
+  .btn-primary {
+    background-image: linear-gradient(135deg, var(--accent-claret), var(--accent-claret-hover));
+  }
+  /* Glass for form fields (input / select trigger): translucent + blur, but NO
+     box-shadow so the mavi focus ring is never suppressed. */
+  .glass-field {
+    background-color: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    backdrop-filter: blur(18px) saturate(140%);
+  }
+  /* Glass for floating popups (dialog / select menu): denser fill for legible
+     lists + a soft drop shadow for elevation + inset highlight. */
+  .glass-pop {
+    background-color: color-mix(in srgb, var(--glass-bg-solid) 86%, transparent);
+    border: 1px solid var(--glass-border);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    backdrop-filter: blur(18px) saturate(140%);
+    box-shadow:
+      0 1px 2px oklch(0 0 0 / 0.2),
+      0 8px 28px oklch(0 0 0 / 0.28),
+      inset 0 1px 0 var(--glass-highlight);
+  }
+}
+
+/* Accessibility: honour reduced-motion — kill every animation/transition,
+   including the marker pulses and page-enter. The aurora layer is static, so
+   nothing moves regardless. Easing everywhere is cubic-bezier(.25,.1,.25,1);
+   no bounce/spring/neon/glow (design rule 13). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @keyframes live-ping {
@@ -286,10 +410,11 @@ body {
   border: none;
 }
 .hak-pin {
+  position: relative;
   width: 36px;
   height: 36px;
   border-radius: 9999px;
-  /* Active driver on map = sky (operational status colour). */
+  /* Active driver on map = mavi (accent-sky). */
   background: var(--accent-sky);
   border: 3px solid var(--card);
   color: #fff;
@@ -311,6 +436,22 @@ body {
 }
 .hak-pin:hover {
   transform: scale(1.1);
+}
+/* Slow "live" pulse ring on active driver pins (2.6s). The global
+   prefers-reduced-motion rule collapses this animation. */
+.hak-pin::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  border: 2px solid var(--accent-sky);
+  opacity: 0;
+  pointer-events: none;
+  animation: hak-pin-pulse 2600ms cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
+}
+@keyframes hak-pin-pulse {
+  0% { transform: scale(0.9); opacity: 0.55; }
+  70%, 100% { transform: scale(1.6); opacity: 0; }
 }
 .hak-route-pin {
   width: 18px;

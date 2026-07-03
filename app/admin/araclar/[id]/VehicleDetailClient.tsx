@@ -120,7 +120,7 @@ export function VehicleDetailClient({
       </Link>
 
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-border bg-card p-5">
+      <div className="glass flex flex-wrap items-center gap-3 rounded-[16px] p-5">
         <span className="flex size-12 shrink-0 items-center justify-center rounded-[12px] bg-surface-2 text-muted-foreground">
           <Truck className="size-6" />
         </span>
@@ -584,7 +584,7 @@ export function VehicleDetailClient({
       <PenaltiesSection vehicleId={v.id} penalties={detail.penalties} />
 
       {/* Route history / replay */}
-      <div className="flex items-center justify-between rounded-[var(--radius)] border border-border bg-card px-4 py-3.5">
+      <div className="glass flex items-center justify-between rounded-[16px] px-4 py-3.5">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <MapPinned className="size-4 text-accent-sky" />
           {td("route_history")}
@@ -643,7 +643,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-[var(--radius)] border border-border bg-card p-5">
+    <section className="glass rounded-[16px] p-5">
       <h3 className="mb-3 flex items-center gap-2 text-sm font-medium">
         <Icon className="size-[18px] text-text-tertiary" />
         {title}

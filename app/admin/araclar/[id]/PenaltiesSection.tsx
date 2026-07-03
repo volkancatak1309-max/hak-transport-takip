@@ -107,7 +107,7 @@ export function PenaltiesSection({
     .reduce((s, p) => s + (p.amount ?? 0), 0);
 
   return (
-    <section className="rounded-[var(--radius)] border border-border bg-card p-5">
+    <section className="glass rounded-[16px] p-5">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-medium">
           <Receipt className="size-[18px] text-text-tertiary" />

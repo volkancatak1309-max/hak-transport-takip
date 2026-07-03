@@ -2,6 +2,7 @@
 
 import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Circle, useMapEvents } from "react-leaflet";
+import { mapTile } from "@/lib/map-tiles";
 import "leaflet/dist/leaflet.css";
 
 const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
@@ -45,10 +46,7 @@ export function GeofencePickerMap({
       className="h-full w-full"
       style={{ background: "var(--muted)" }}
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      <TileLayer attribution={mapTile.attribution} url={mapTile.url} />
       <ClickToPick onPick={onPick} />
       {center && <Marker position={center} icon={PIN} />}
       {center && radius > 0 && (

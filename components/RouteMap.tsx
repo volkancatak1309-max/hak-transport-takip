@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, Polyline, Marker, useMap } from "react-leaflet";
+import { mapTile } from "@/lib/map-tiles";
 import "leaflet/dist/leaflet.css";
 
 export type RoutePoint = { lat: number; lng: number; recorded_at: string };
@@ -47,10 +48,7 @@ export function RouteMap({ points }: { points: RoutePoint[] }) {
       className="h-full w-full"
       style={{ background: "var(--muted)" }}
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      <TileLayer attribution={mapTile.attribution} url={mapTile.url} />
       <FitRoute points={latlngs} />
       {latlngs.length > 1 && (
         <Polyline

@@ -74,7 +74,7 @@ export function LiveTrackingClient({
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_360px]">
         {/* Map */}
-        <section className="overflow-hidden rounded-[var(--radius)] border border-border bg-card">
+        <section className="glass overflow-hidden rounded-[16px]">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
               <MapPinned className="size-[18px] text-accent-claret" />
@@ -98,7 +98,7 @@ export function LiveTrackingClient({
         </section>
 
         {/* Driver list */}
-        <section className="flex flex-col overflow-hidden rounded-[var(--radius)] border border-border bg-card">
+        <section className="glass flex flex-col overflow-hidden rounded-[16px]">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <span className="text-sm font-medium">{t("drivers_title")}</span>
             <span className="nums text-xs text-text-tertiary">{drivers.length}</span>
@@ -168,7 +168,7 @@ function Kpi({
       ? "text-accent-gold"
       : "text-foreground";
   return (
-    <div className="rounded-[var(--radius)] border border-border bg-card px-4 py-3.5">
+    <div className="glass card-kpi rounded-[16px] px-4 py-3.5">
       <div className="flex items-center gap-1.5">
         {live && <span className="live-dot" />}
         <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">

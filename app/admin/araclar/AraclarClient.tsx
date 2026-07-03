@@ -193,7 +193,7 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
       </div>
 
       {/* List */}
-      <div className="overflow-hidden rounded-[var(--radius)] border border-border bg-card">
+      <div className="glass overflow-hidden rounded-[16px]">
         {filtered.length === 0 ? (
           <div className="p-10 text-center text-sm text-muted-foreground">{t("none")}</div>
         ) : (
@@ -415,7 +415,7 @@ function Kpi({
       ? "text-accent-gold"
       : "text-foreground";
   return (
-    <div className="rounded-[var(--radius)] border border-border bg-card px-4 py-3.5">
+    <div className="glass card-kpi rounded-[16px] px-4 py-3.5">
       <div className="flex items-center gap-1.5">
         {live && <span className="live-dot" />}
         <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">

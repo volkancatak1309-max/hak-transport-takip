@@ -155,7 +155,7 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
           {zones.map((z) => (
             <li
               key={z.id}
-              className="flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-border bg-card p-4"
+              className="glass flex flex-wrap items-center gap-3 rounded-[16px] p-4"
             >
               <span
                 className={cn(

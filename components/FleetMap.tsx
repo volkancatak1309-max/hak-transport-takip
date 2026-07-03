@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import Link from "next/link";
+import { mapTile } from "@/lib/map-tiles";
 import { useLocale, useTranslations } from "next-intl";
 import "leaflet/dist/leaflet.css";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -41,11 +42,12 @@ function makeIcon(name: string, variant: "active" | "warn"): L.DivIcon {
 }
 
 // Vehicle (hardware-tracker) marker — a plate pill, visually distinct from the
-// round driver pin. Color encodes ignition WITHOUT green/red (project rule):
-// sky when the engine is on, muted when off/unknown.
+// round driver pin (which is mavi). Color encodes ignition WITHOUT green/red
+// (project rule): bordo when the engine is on, muted when off/unknown. Bordo vs
+// the drivers' mavi keeps the two map layers instantly distinguishable.
 function makeVehicleIcon(plate: string, ignitionOn: boolean | null): L.DivIcon {
   const on = ignitionOn === true;
-  const bg = on ? "var(--accent-sky)" : "var(--muted)";
+  const bg = on ? "var(--accent-claret)" : "var(--muted)";
   const fg = on ? "#fff" : "var(--muted-foreground)";
   return L.divIcon({
     className: "hak-veh-wrap",
@@ -107,10 +109,7 @@ export function FleetMap({
       className="h-full w-full"
       style={{ background: "var(--muted)" }}
     >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      <TileLayer attribution={mapTile.attribution} url={mapTile.url} />
       <FitBounds points={points} />
       {drivers.map(
         (d) =>

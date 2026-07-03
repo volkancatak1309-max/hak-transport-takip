@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState, useTransition, useEffect } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
   MapPinned,
@@ -19,8 +18,6 @@ import {
   LogOut,
   Menu,
   X,
-  Sun,
-  Moon,
   Globe,
   type LucideIcon,
 } from "lucide-react";
@@ -74,14 +71,9 @@ export function DashboardShell({
   const tc = useTranslations("common");
   const pathname = usePathname();
   const locale = useLocale();
-  const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [localePending, startLocale] = useTransition();
   const logoutRef = useRef<HTMLFormElement>(null);
-
-  useEffect(() => setMounted(true), []);
-  const isDark = mounted && resolvedTheme === "dark";
 
   const navItems: NavItem[] = user.isAdmin
     ? [
@@ -132,14 +124,14 @@ export function DashboardShell({
               "group relative flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium",
               "transition-colors duration-150",
               active
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+                ? "nav-active text-foreground"
+                : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
             )}
           >
             {active && (
               <span className="absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-accent-claret" />
             )}
-            <Icon className="size-[18px] shrink-0" />
+            <Icon className={cn("size-[18px] shrink-0", active && "text-accent-sky")} />
             <span className="truncate">{item.label}</span>
           </Link>
         );
@@ -147,9 +139,6 @@ export function DashboardShell({
     </nav>
   );
 
-  function flipTheme() {
-    setTheme(isDark ? "light" : "dark");
-  }
   function flipLocale() {
     const next = locale === "tr" ? "de" : "tr";
     startLocale(async () => {
@@ -161,7 +150,7 @@ export function DashboardShell({
     <HelpProvider>
     <div className="flex min-h-screen bg-background text-foreground">
       {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col border-r border-border bg-sidebar lg:flex">
+      <aside className="glass sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col lg:flex">
         <div className="flex h-16 items-center px-5">
           <Link href={user.isAdmin ? "/admin" : "/panel"} className="flex items-center">
             <BrandLogo height={38} />
@@ -192,7 +181,7 @@ export function DashboardShell({
             className="absolute inset-0 bg-black/50"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="absolute left-0 top-0 flex h-full w-[260px] flex-col bg-sidebar elevate page-enter">
+          <div className="glass absolute left-0 top-0 flex h-full w-[260px] flex-col page-enter">
             <div className="flex h-16 items-center justify-between px-5">
               <BrandLogo height={38} />
               <Button variant="ghost" size="icon-sm" onClick={() => setMobileOpen(false)}>
@@ -219,7 +208,7 @@ export function DashboardShell({
 
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/65 sm:px-6">
+        <header className="glass sticky top-0 z-40 flex h-16 items-center gap-3 px-4 sm:px-6">
           <Button
             variant="ghost"
             size="icon-sm"
@@ -244,14 +233,6 @@ export function DashboardShell({
               disabled={localePending}
             >
               <Globe className="size-[18px]" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={tc("theme")}
-              onClick={flipTheme}
-            >
-              {isDark ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
             </Button>
             <Button
               variant="ghost"

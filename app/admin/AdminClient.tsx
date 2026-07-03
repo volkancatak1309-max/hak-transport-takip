@@ -850,7 +850,7 @@ function SummaryCard({
       ? "text-accent-gold"
       : "text-foreground";
   return (
-    <Card>
+    <Card className="card-kpi">
       <CardContent className="p-4">
         <div className="flex items-center gap-1.5">
           {live && <span className="live-dot" />}

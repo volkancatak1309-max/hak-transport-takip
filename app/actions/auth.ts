@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getSession } from "@/lib/session";
-import { loginSchema } from "@/lib/validation";
+import { loginSchema, changePinSchema } from "@/lib/validation";
 
 export type LoginState = {
   error?: "invalid" | "inactive" | "db" | "validation" | "locked";
@@ -106,7 +106,7 @@ export async function loginAction(
 
   const { data: worker, error } = await supabaseAdmin
     .from("workers")
-    .select("id, name, phone, pin_hash, plate, is_admin, is_active")
+    .select("id, name, phone, pin_hash, plate, is_admin, is_active, must_change_pin")
     .eq("phone", phone)
     .maybeSingle();
 
@@ -135,8 +135,12 @@ export async function loginAction(
   session.phone = worker.phone;
   session.is_admin = worker.is_admin;
   session.plate = worker.plate;
+  session.must_change_pin = !!worker.must_change_pin;
   await session.save();
 
+  // A temp PIN (admin create / reset) must be changed before anything else —
+  // requireWorker/requireAdmin enforce the same gate for every other route.
+  if (worker.must_change_pin) redirect("/pin");
   redirect(worker.is_admin ? "/admin" : "/panel");
 }
 
@@ -144,4 +148,54 @@ export async function logoutAction() {
   const session = await getSession();
   session.destroy();
   redirect("/");
+}
+
+export type ChangePinState = {
+  error?: "validation" | "weak" | "mismatch" | "same" | "db";
+};
+
+// Forced PIN change for a driver still on a temp PIN. Deliberately does NOT go
+// through requireWorker() (that redirects to /pin on must_change_pin → loop);
+// it validates the session itself. Clears the flag in the DB and the session
+// on success, then sends the driver to their home surface.
+export async function changePinAction(
+  _prev: ChangePinState,
+  formData: FormData
+): Promise<ChangePinState> {
+  const session = await getSession();
+  if (!session.worker_id) redirect("/");
+
+  const parsed = changePinSchema.safeParse({
+    pin: formData.get("pin"),
+    pin_confirm: formData.get("pin_confirm"),
+  });
+  if (!parsed.success) {
+    const msg = parsed.error.issues[0]?.message;
+    if (msg === "errPinWeak") return { error: "weak" };
+    if (msg === "errPinMismatch") return { error: "mismatch" };
+    return { error: "validation" };
+  }
+
+  const { data: worker, error: readErr } = await supabaseAdmin
+    .from("workers")
+    .select("pin_hash, is_admin")
+    .eq("id", session.worker_id)
+    .maybeSingle();
+  if (readErr || !worker) return { error: "db" };
+
+  // "Changing" to the same temp PIN would defeat the whole point — reject it.
+  const sameAsOld = await bcrypt.compare(parsed.data.pin, worker.pin_hash);
+  if (sameAsOld) return { error: "same" };
+
+  const pin_hash = await bcrypt.hash(parsed.data.pin, 10);
+  const { error: updErr } = await supabaseAdmin
+    .from("workers")
+    .update({ pin_hash, must_change_pin: false })
+    .eq("id", session.worker_id);
+  if (updErr) return { error: "db" };
+
+  session.must_change_pin = false;
+  await session.save();
+
+  redirect(worker.is_admin ? "/admin" : "/panel");
 }

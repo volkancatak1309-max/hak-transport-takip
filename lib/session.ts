@@ -29,12 +29,27 @@ export async function getSession() {
 export async function requireWorker() {
   const session = await getSession();
   if (!session.worker_id) redirect("/");
+  if (session.must_change_pin) redirect("/pin");
   return session;
 }
 
 export async function requireAdmin() {
   const session = await getSession();
   if (!session.worker_id) redirect("/");
+  if (session.must_change_pin) redirect("/pin");
   if (!session.is_admin) redirect("/panel");
+  return session;
+}
+
+/**
+ * Guard for the forced PIN-change screen (/pin) ONLY. Requires an authenticated
+ * session but deliberately does NOT redirect when must_change_pin is set — that
+ * would loop, since /pin is where the flag gets cleared. If the flag is already
+ * clear the user has no business here, so send them to their home surface.
+ */
+export async function requirePinChange() {
+  const session = await getSession();
+  if (!session.worker_id) redirect("/");
+  if (!session.must_change_pin) redirect(session.is_admin ? "/admin" : "/panel");
   return session;
 }

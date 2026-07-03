@@ -545,6 +545,20 @@
     "errDb": "Datenbankfehler",
     "errLocked": "Zu viele Fehlversuche. Bitte in {seconds} Sekunden erneut versuchen."
   },
+  "changePin": {
+    "title": "Neue PIN festlegen",
+    "subtitle": "Bitte ändern Sie Ihre temporäre PIN, bevor Sie fortfahren",
+    "newPin": "Neue PIN",
+    "confirmPin": "Neue PIN (Wiederholung)",
+    "hint": "Wählen Sie eine 6-stellige PIN ohne wiederholte oder aufeinanderfolgende Ziffern.",
+    "submit": "PIN speichern",
+    "pending": "Wird gespeichert…",
+    "errWeak": "Diese PIN ist zu einfach — keine wiederholten oder aufeinanderfolgenden Ziffern verwenden",
+    "errMismatch": "PINs stimmen nicht überein",
+    "errSame": "Die neue PIN darf nicht mit der temporären PIN übereinstimmen",
+    "errValidation": "PIN muss 6-stellig sein",
+    "errDb": "Datenbankfehler"
+  },
   "panel": {
     "myPanel": "Mein Panel",
     "plate": "Kennzeichen",
@@ -679,6 +693,10 @@
     "employeeNumberHint": "Leer = automatisch",
     "isAdmin": "Verwaltungsrechte vergeben",
     "workerAdded": "Mitarbeiter hinzugefügt",
+    "errName": "Name muss mindestens 2 Zeichen haben",
+    "errPhone": "Ungültige Telefonnummer",
+    "errPin": "PIN muss 6-stellig sein",
+    "errPinWeak": "Diese PIN ist zu einfach — keine wiederholten oder aufeinanderfolgenden Ziffern verwenden",
     "dash": {
       "live": "Live",
       "ops_title": "Heutiger Betriebsüberblick",

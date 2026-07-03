@@ -11,6 +11,9 @@ export type Worker = {
   telegram_locale: string | null;
   is_admin: boolean;
   is_active: boolean;
+  // Set true for temp PINs (admin create / reset); login forces a change at
+  // /pin and changePinAction clears it (migration 019).
+  must_change_pin: boolean;
   created_at: string;
 };
 
@@ -274,6 +277,9 @@ export type SessionData = {
   phone?: string;
   is_admin?: boolean;
   plate?: string | null;
+  // Mirrors workers.must_change_pin at login time; gates the panel until the
+  // driver sets a new PIN at /pin (migration 019).
+  must_change_pin?: boolean;
 };
 
 export type GeofenceRuleKind = "forbidden" | "allowed_only";

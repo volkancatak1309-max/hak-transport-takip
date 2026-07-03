@@ -183,7 +183,7 @@ export function AdminClient({
         setAddOpen(false);
         router.refresh();
       } else {
-        toast.error(res.error ?? "Error");
+        toast.error(mapCreateErr(res.error));
       }
     });
   }
@@ -234,6 +234,20 @@ export function AdminClient({
     }
     if (e === "errKmRange") return "KM aralık dışı";
     return e;
+  }
+
+  // createWorkerAction returns raw zod message keys on validation failure;
+  // translate the ones createWorkerSchema can emit (others — e.g. "Bu telefon
+  // zaten kayıtlı" — are already human-readable and pass through unchanged).
+  function mapCreateErr(e?: string): string {
+    if (!e) return "Error";
+    const known: Record<string, string> = {
+      errName: t("errName"),
+      errPhone: t("errPhone"),
+      errPin: t("errPin"),
+      errPinWeak: t("errPinWeak"),
+    };
+    return known[e] ?? e;
   }
 
   function exportCsv() {

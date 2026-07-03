@@ -545,6 +545,20 @@
     "errDb": "Veritabanı hatası",
     "errLocked": "Çok fazla başarısız deneme. Lütfen {seconds} saniye sonra tekrar deneyin."
   },
+  "changePin": {
+    "title": "Yeni PIN Belirleyin",
+    "subtitle": "Devam etmeden önce geçici PIN'inizi değiştirin",
+    "newPin": "Yeni PIN",
+    "confirmPin": "Yeni PIN (Tekrar)",
+    "hint": "6 haneli, tekrar eden veya ardışık olmayan bir PIN seçin.",
+    "submit": "PIN'i Kaydet",
+    "pending": "Kaydediliyor…",
+    "errWeak": "Bu PIN çok basit — tekrar eden veya ardışık rakamlar kullanma",
+    "errMismatch": "PIN'ler eşleşmiyor",
+    "errSame": "Yeni PIN geçici PIN ile aynı olamaz",
+    "errValidation": "PIN 6 haneli olmalı",
+    "errDb": "Veritabanı hatası"
+  },
   "panel": {
     "myPanel": "Panelim",
     "plate": "Plaka",
@@ -679,6 +693,10 @@
     "employeeNumberHint": "Boş bırak = otomatik",
     "isAdmin": "Yönetici yetkisi ver",
     "workerAdded": "Çalışan eklendi",
+    "errName": "Ad en az 2 karakter olmalı",
+    "errPhone": "Geçersiz telefon numarası",
+    "errPin": "PIN 6 haneli olmalı",
+    "errPinWeak": "Bu PIN çok basit — tekrar eden veya ardışık rakamlar kullanma",
     "dash": {
       "live": "Canlı",
       "ops_title": "Bugünün Operasyon Özeti",

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
-import { createWorkerSchema } from "@/lib/validation";
+import { createWorkerSchema, isWeakPin } from "@/lib/validation";
 
 export type WorkerResult = { ok: boolean; error?: string; newPin?: string };
 
@@ -13,9 +13,17 @@ function normalizePhone(raw: string): string {
   return raw.replace(/[\s\-()]/g, "");
 }
 
-/** Cryptographically secure 6-digit reset PIN (leading zeros allowed). */
+/**
+ * Cryptographically secure 6-digit reset PIN (leading zeros allowed). Re-rolls
+ * on the rare weak draw (000000, 123456, …) so a generated temp PIN is never
+ * one the strong pinSchema would itself reject.
+ */
 function randomPin(): string {
-  return String(randomInt(0, 1_000_000)).padStart(6, "0");
+  let pin: string;
+  do {
+    pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  } while (isWeakPin(pin));
+  return pin;
 }
 
 /** Next free 4-digit Personalnummer (0001, 0002, …) based on the current max. */
@@ -70,6 +78,8 @@ export async function createWorkerAction(formData: FormData): Promise<WorkerResu
     employee_number,
     is_admin: parsed.data.is_admin ?? false,
     is_active: true,
+    // Admin-set PIN is temporary — force the driver to set their own at /pin.
+    must_change_pin: true,
   });
 
   if (error) return { ok: false, error: "Kayıt başarısız: " + error.message };
@@ -108,7 +118,8 @@ export async function resetPinAction(workerId: string): Promise<WorkerResult> {
 
   const { error } = await supabaseAdmin
     .from("workers")
-    .update({ pin_hash })
+    // Reset PIN is temporary — force the driver to set their own at next login.
+    .update({ pin_hash, must_change_pin: true })
     .eq("id", workerId);
 
   if (error) return { ok: false, error: "PIN güncellenemedi" };

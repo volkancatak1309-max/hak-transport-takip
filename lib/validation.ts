@@ -6,9 +6,28 @@ export const phoneSchema = z
   .min(6, "errPhone")
   .max(20, "errPhone");
 
+// Trivially guessable 6-digit PINs, rejected at creation/change time only.
+// Covered: all-same-digit (000000…999999), ascending/descending runs
+// (123456, 234567, …, 654321, …) and obvious repeat patterns (123123 etc.).
+// NOT applied at login (loginPinSchema stays lenient) so an existing weak or
+// 4-digit PIN never locks a driver out before they set a new one.
+const WEAK_PIN_PATTERNS = new Set(["123123", "112233", "121212", "123321", "456456"]);
+
+export function isWeakPin(pin: string): boolean {
+  if (!/^\d{6}$/.test(pin)) return false; // format is enforced separately
+  if (/^(\d)\1{5}$/.test(pin)) return true; // 000000 … 999999
+  if ("0123456789".includes(pin) || "9876543210".includes(pin)) return true; // 123456 / 654321
+  return WEAK_PIN_PATTERNS.has(pin);
+}
+
 // New PINs (create worker / reset) must be 6 digits — 4 digits (10k keyspace)
-// is brute-forceable. Used by createWorkerSchema and the reset generator.
-export const pinSchema = z.string().regex(/^\d{6}$/, "errPin");
+// is brute-forceable — AND not trivially weak: a 6-digit keyspace only helps
+// if the value itself isn't guessable. Used by createWorkerSchema, the reset
+// generator and changePinSchema.
+export const pinSchema = z
+  .string()
+  .regex(/^\d{6}$/, "errPin")
+  .refine((p) => !isWeakPin(p), "errPinWeak");
 
 // Login is more lenient DURING the transition so workers whose PIN is still the
 // old 4-digit one are not locked out before an admin resets them to 6 digits.
@@ -19,6 +38,19 @@ export const loginSchema = z.object({
   phone: phoneSchema,
   pin: loginPinSchema,
 });
+
+// Forced PIN change (temp PIN → own PIN). New PIN goes through the strong
+// pinSchema (6 digits + not weak); pin_confirm must match. Messages are i18n
+// keys mapped to states by changePinAction.
+export const changePinSchema = z
+  .object({
+    pin: pinSchema,
+    pin_confirm: z.string(),
+  })
+  .refine((d) => d.pin === d.pin_confirm, {
+    message: "errPinMismatch",
+    path: ["pin_confirm"],
+  });
 
 // Sanity caps for server-side numeric inputs. Negative values and end<start are
 // guarded separately; these block absurd/injected magnitudes (e.g. 2-billion-km

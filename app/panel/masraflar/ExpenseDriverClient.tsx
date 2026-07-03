@@ -96,7 +96,9 @@ export function ExpenseDriverClient({ entries }: Props) {
               <Label>{t("category.label")}</Label>
               <Select value={category} onValueChange={(v) => v && setCategory(v as ExpenseCategory)}>
                 <SelectTrigger className="h-11">
-                  <SelectValue />
+                  <SelectValue>
+                    {((v: unknown) => t(`category.${String(v)}`)) as never}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {CATEGORIES.map((c) => (

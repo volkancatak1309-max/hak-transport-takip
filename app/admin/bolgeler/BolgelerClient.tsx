@@ -278,7 +278,9 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
                 <Label>{t("rule_label")}</Label>
                 <Select value={ruleKind} onValueChange={(v) => v && setRuleKind(v as GeofenceRuleKind)}>
                   <SelectTrigger className="h-11">
-                    <SelectValue />
+                    <SelectValue>
+                      {((v: unknown) => t(`rule.${String(v)}`)) as never}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {RULE_KINDS.map((rk) => (

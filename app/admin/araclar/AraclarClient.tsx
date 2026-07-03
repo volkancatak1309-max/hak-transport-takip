@@ -344,7 +344,9 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
                 <Label>{tm("status")}</Label>
                 <Select value={status} onValueChange={(v) => v && setStatus(v as VehicleBaseStatus)}>
                   <SelectTrigger className="h-11">
-                    <SelectValue />
+                    <SelectValue>
+                      {((v: unknown) => tm(`status_${String(v)}`)) as never}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {STATUSES.map((s) => (

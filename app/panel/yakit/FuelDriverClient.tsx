@@ -136,7 +136,9 @@ export function FuelDriverClient({ plates, entries }: Props) {
               <Label>{t("fuel_type")}</Label>
               <Select value={fuelType} onValueChange={(v) => v && setFuelType(v as FuelType)}>
                 <SelectTrigger className="h-11">
-                  <SelectValue />
+                  <SelectValue>
+                    {((v: unknown) => t(`type.${String(v)}`)) as never}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {FUEL_TYPES.map((ft) => (

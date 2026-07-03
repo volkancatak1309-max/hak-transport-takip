@@ -125,7 +125,10 @@ export function AssignmentForm({ workers, initial, busy, onSubmit, onCancel }: P
         <Label>{t("driver")}</Label>
         <Select value={workerId} onValueChange={(v) => v && setWorkerId(v)}>
           <SelectTrigger className="h-11">
-            <SelectValue placeholder={t("driver")} />
+            <SelectValue>
+              {((v: unknown) =>
+                workers.find((w) => w.id === String(v))?.name ?? t("driver")) as never}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {workers.map((w) => (
@@ -172,7 +175,9 @@ export function AssignmentForm({ workers, initial, busy, onSubmit, onCancel }: P
         <Label>{t("category.label")}</Label>
         <Select value={category} onValueChange={(v) => v && setCategory(v as AssignmentCategory)}>
           <SelectTrigger className="h-11">
-            <SelectValue />
+            <SelectValue>
+              {((v: unknown) => t(`category.${String(v)}`)) as never}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {CATEGORIES.map((c) => (

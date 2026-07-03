@@ -289,7 +289,10 @@ export function ExpenseAdminClient({ entries }: Props) {
             <Label>{t("select_month")}</Label>
             <Select value={csvMonth} onValueChange={(v) => v && setCsvMonth(v)}>
               <SelectTrigger className="h-11">
-                <SelectValue />
+                <SelectValue>
+                  {((v: unknown) =>
+                    monthOptions.find((m) => m.value === String(v))?.label ?? String(v)) as never}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {monthOptions.map((m) => (

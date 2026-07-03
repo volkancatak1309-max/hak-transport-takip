@@ -169,7 +169,9 @@ export function MaintenanceAdminClient({ items, dueIds, plates }: Props) {
               <Label>{t("service_type")}</Label>
               <Select value={serviceType} onValueChange={(v) => v && setServiceType(v as MaintenanceType)}>
                 <SelectTrigger className="h-11">
-                  <SelectValue />
+                  <SelectValue>
+                    {((v: unknown) => t(`type.${String(v)}`)) as never}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {TYPES.map((ty) => (

@@ -359,7 +359,10 @@ export function FuelAdminClient({ entries }: Props) {
             <Label>{tco2("select_month")}</Label>
             <Select value={co2Month} onValueChange={(v) => v && setCo2Month(v)}>
               <SelectTrigger className="h-11">
-                <SelectValue />
+                <SelectValue>
+                  {((v: unknown) =>
+                    monthOptions.find((m) => m.value === String(v))?.label ?? String(v)) as never}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {monthOptions.map((m) => (

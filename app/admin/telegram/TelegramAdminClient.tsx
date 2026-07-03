@@ -121,7 +121,12 @@ export function TelegramAdminClient({ connected, myStatus, webhook }: Props) {
             <>
               <Select value={target} onValueChange={(v) => v && setTarget(v)}>
                 <SelectTrigger className="h-10">
-                  <SelectValue placeholder={t("select_worker")} />
+                  <SelectValue>
+                    {((v: unknown) => {
+                      const u = connected.find((x) => x.id === String(v));
+                      return u ? `${u.name}${u.username ? ` (@${u.username})` : ""}` : t("select_worker");
+                    }) as never}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {connected.map((u) => (

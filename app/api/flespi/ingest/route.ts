@@ -26,8 +26,11 @@ export const dynamic = "force-dynamic";
  * to the REST pull), group by vehicle, and upsert via saveTelemetry.
  *
  * flespi expects HTTP 200 for every delivery: a 500 makes it RE-SEND the same
- * batch forever. So the data path ALWAYS returns 200 (errors are logged, never
- * thrown to a 500); only an unauthenticated caller is rejected up front (401).
+ * batch forever. So the data path returns 200 for PERMANENT/data errors (bad
+ * body, unmatched IMEI — logged, never thrown to a 500). The ONE exception is a
+ * transient DB error resolving idents → vehicles: that returns 500 on purpose so
+ * flespi re-delivers once the DB recovers, instead of losing the batch as a
+ * silent "all unmatched" 200. An unauthenticated caller is rejected up front (401).
  *
  * flespi delivers from the IP range 185.213.2.0/24 — an IP whitelist is OPTIONAL;
  * the shared FLESPI_SYNC_SECRET (?secret= or Authorization: Bearer) is enough.
@@ -73,10 +76,24 @@ export async function POST(req: NextRequest) {
     if (byIdent.size > 0) {
       // Resolve every ident → vehicle in one query.
       const idents = [...byIdent.keys()];
-      const { data: vData } = await supabaseAdmin
+      const { data: vData, error: vErr } = await supabaseAdmin
         .from("vehicles")
         .select("id, imei, flespi_device_id")
         .in("imei", idents);
+      if (vErr) {
+        // Transient DB error: without this guard every message would be counted
+        // "unmatched" and silently lost behind a 200. Return 500 so flespi
+        // RE-DELIVERS the batch once the DB recovers (the always-200 rule only
+        // guards against re-delivery loops on PERMANENT/data errors).
+        console.error(
+          "[flespi/ingest] vehicles sorgusu başarısız:",
+          vErr.message
+        );
+        return NextResponse.json(
+          { ok: false, received, saved, unmatched, error: "vehicles query failed" },
+          { status: 500 }
+        );
+      }
       const byImei = new Map(
         ((vData ?? []) as VehImei[]).map((v) => [v.imei, v])
       );
@@ -84,6 +101,9 @@ export async function POST(req: NextRequest) {
       for (const [ident, msgs] of byIdent) {
         const vehicle = byImei.get(ident);
         if (!vehicle) {
+          console.warn(
+            `[flespi/ingest] eşleşmeyen IMEI: ${ident} (${msgs.length} mesaj düşürüldü)`
+          );
           unmatched += msgs.length;
           continue;
         }
@@ -91,6 +111,9 @@ export async function POST(req: NextRequest) {
         // device id when set, else the numeric IMEI (both fit a bigint).
         const deviceId = vehicle.flespi_device_id ?? Number(ident);
         if (!Number.isFinite(deviceId)) {
+          console.warn(
+            `[flespi/ingest] geçersiz device id (IMEI ${ident}): ${msgs.length} mesaj düşürüldü`
+          );
           unmatched += msgs.length;
           continue;
         }

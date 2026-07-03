@@ -95,7 +95,7 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
     try {
       const res = await createAssignment(payload);
       if (!res.ok) {
-        toast.error(t("no_assignments"));
+        toast.error(t("save_error"));
         return;
       }
       toast.success(t("created_toast"));
@@ -112,7 +112,7 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
     try {
       const res = await updateAssignment(editing.id, payload);
       if (!res.ok) {
-        toast.error(t("no_assignments"));
+        toast.error(t("save_error"));
         return;
       }
       toast.success(t("created_toast"));
@@ -127,7 +127,11 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
     if (!cancelling) return;
     setBusy(true);
     try {
-      await cancelAssignment(cancelling.id, reason);
+      const res = await cancelAssignment(cancelling.id, reason);
+      if (!res.ok) {
+        toast.error(t("cancel_error"));
+        return;
+      }
       toast.success(t("cancelled_toast"));
       setCancelling(null);
       setReason("");

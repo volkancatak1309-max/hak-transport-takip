@@ -265,6 +265,8 @@
     "cancel_reason_prompt": "Stornierungsgrund",
     "created_toast": "Auftrag dem Fahrer zugewiesen",
     "cancelled_toast": "Auftrag storniert",
+    "save_error": "Speichern fehlgeschlagen, bitte erneut versuchen",
+    "cancel_error": "Stornierung fehlgeschlagen, bitte erneut versuchen",
     "today_assignments": "Heutige Aufträge",
     "see_all": "Alle meine Aufträge anzeigen",
     "no_today": "Heute keine Aufträge zugewiesen",

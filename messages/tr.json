@@ -265,6 +265,8 @@
     "cancel_reason_prompt": "İptal sebebi",
     "created_toast": "Sefer şoföre atandı",
     "cancelled_toast": "Sefer iptal edildi",
+    "save_error": "Kaydedilemedi, lütfen tekrar deneyin",
+    "cancel_error": "İptal edilemedi, lütfen tekrar deneyin",
     "today_assignments": "Bugünkü Seferler",
     "see_all": "Tüm seferlerimi gör",
     "no_today": "Bugün için sefer atanmamış",

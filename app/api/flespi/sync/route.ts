@@ -27,10 +27,16 @@ const FIRST_WINDOW_MS = 60 * 60 * 1000; // 1 h
 type VehRow = { id: string; plate: string; flespi_device_id: number };
 
 async function runSync() {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("vehicles")
     .select("id, plate, flespi_device_id")
     .not("flespi_device_id", "is", null);
+  if (error) {
+    // Don't swallow a vehicles-query failure as a silent { ok:true, vehicles:0 }:
+    // log it and throw so GET() returns 500 and the cron surfaces the failure.
+    console.error("[flespi/sync] vehicles sorgusu başarısız:", error.message);
+    throw new Error(`vehicles query failed: ${error.message}`);
+  }
   const vehicles = (data ?? []) as VehRow[];
 
   const perVehicle: {

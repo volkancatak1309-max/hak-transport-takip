@@ -1,5 +1,5 @@
 -- HAK61 — Migration 013
--- Bind each vehicle to its flespi gateway device (Teltonika FMC150).
+-- Bind each vehicle to its flespi gateway device (Teltonika FMC003).
 -- Fully ADDITIVE: a single nullable column on `vehicles`; no existing auth /
 -- shift / GPS / assignment flow changes. The phone-GPS pipeline (driver_locations,
 -- recordLocation) is untouched. Run in Supabase SQL Editor BEFORE deploying.

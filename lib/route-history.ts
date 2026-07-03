@@ -247,7 +247,7 @@ export async function getVehicleRoute(vehicleId: string, date: string): Promise<
 
 /**
  * Route of a vehicle on a given day from its OWN hardware tracker
- * (device_telemetry) — the FMC920's 24/7 GPS, independent of any phone or open
+ * (device_telemetry) — the FMC003's 24/7 GPS, independent of any phone or open
  * shift. Mirrors getVehicleRoute's RouteDay shape so RouteReplay renders it
  * unchanged, but the line AND the marker heading come from the device, not from
  * driver_locations. Built on listVehicleTrack, the shared telemetry-series base.

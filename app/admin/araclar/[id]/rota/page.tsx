@@ -29,7 +29,7 @@ export default async function VehicleRoutePage({
   if (!vehicle) notFound();
 
   const date = sp.date || viennaDayKey(new Date());
-  // Vehicle route from the FMC920 hardware tracker (device_telemetry), not the
+  // Vehicle route from the FMC003 hardware tracker (device_telemetry), not the
   // driver's phone GPS — /admin/rota & /admin/workers/[id] keep using phone GPS.
   const route = await getVehicleDeviceRoute(id, date);
 

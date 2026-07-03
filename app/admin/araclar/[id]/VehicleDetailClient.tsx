@@ -136,7 +136,7 @@ export function VehicleDetailClient({
         <HelpTip tkey="veh_status" className="ml-1" />
       </div>
 
-      {/* Live telemetry — device (FMC920) hardware GPS. Single most-recent fix;
+      {/* Live telemetry — device (FMC003) hardware GPS. Single most-recent fix;
           the live-map vehicle popup deep-links here, so this surfaces what it
           promises. No recency window: shows the last known fix with its age. */}
       <Section title={tm("live_location")} icon={Radio}>
@@ -194,8 +194,8 @@ export function VehicleDetailClient({
                 {telemetry.latitude.toFixed(5)}, {telemetry.longitude.toFixed(5)}
               </TeleField>
 
-              {/* FMC003 OBD/CAN — fuel level + vehicle odometer. FMC920 leaves
-                  these null, so "—" until an OBD-capable device reports them. */}
+              {/* FMC003 OBD/CAN — fuel level + vehicle odometer. Devices that
+                  don't report OBD/CAN leave these null, so "—" until reported. */}
               <TeleField label={tm("fuel_level")} icon={Fuel}>
                 {telemetry.fuel_level_pct !== null
                   ? `%${Math.round(telemetry.fuel_level_pct)}`

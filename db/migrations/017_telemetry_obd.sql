@@ -2,8 +2,8 @@
 -- FMC003 OBD/CAN telemetry: fuel level + vehicle odometer on device_telemetry.
 --
 -- Fully ADDITIVE + idempotent: two nullable columns, no existing column / index /
--- flow changes. Older FMC920 devices (or any device that doesn't report OBD/CAN)
--- simply leave these NULL — the whole GPS pipeline keeps working unchanged. The
+-- flow changes. Any device that doesn't report OBD/CAN simply leaves these
+-- NULL — the whole GPS pipeline keeps working unchanged. The
 -- flespi ingest (lib/flespi.ts normalize) fills them when the device sends the
 -- OBD/CAN fields. Run in Supabase SQL Editor BEFORE deploying.
 

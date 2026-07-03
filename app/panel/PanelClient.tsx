@@ -232,9 +232,7 @@ export function PanelClient({ active, past, defaultPlate, vehicles, telegram, to
   function handleEnd(formData: FormData) {
     // ensure any active break is closed and counted
     if (breakStartLocal !== null) {
-      const elapsedMin = Math.max(0, Math.floor((Date.now() - breakStartLocal) / 60_000));
-      const currentBreakField = Number(formData.get("break_minutes") ?? 0);
-      formData.set("break_minutes", String(currentBreakField + elapsedMin));
+      // Süren mola, alan varsayılanı totalBreakSoFar'a zaten dahil — tekrar ekleme.
       setBreakStartLocal(null);
     }
     const payload = {

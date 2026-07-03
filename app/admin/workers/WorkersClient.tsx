@@ -5,9 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Loader2, KeyRound } from "lucide-react";
+import { Loader2, KeyRound, UserPlus } from "lucide-react";
 import {
   Card,
+  CardAction,
   CardContent,
   CardHeader,
   CardTitle,
@@ -32,6 +33,7 @@ import {
 import { toggleActiveAction, resetPinAction } from "../../actions/workers";
 import { formatDate, formatDurationShort } from "@/lib/format";
 import { UserAvatar } from "@/components/UserAvatar";
+import { AddWorkerDialog } from "@/components/admin/AddWorkerDialog";
 import type { WorkerWithStats } from "./page";
 
 type Props = { workers: WorkerWithStats[] };
@@ -40,9 +42,18 @@ export function WorkersClient({ workers }: Props) {
   const router = useRouter();
   const t = useTranslations("workers");
   const tc = useTranslations("common");
+  const ta = useTranslations("admin");
   const locale = useLocale();
   const [pending, startTransition] = useTransition();
   const [shownPin, setShownPin] = useState<{ worker: string; pin: string } | null>(null);
+  // Client-side status filter. Default "active" so the passive roster doesn't
+  // clutter the list; passive workers are only hidden, never deleted — their
+  // shift history stays intact. The dataset is one company's staff (already
+  // fully fetched with stats), so filtering here beats a server round-trip.
+  const [status, setStatus] = useState<"active" | "passive" | "all">("active");
+  const visible = workers.filter((w) =>
+    status === "all" ? true : status === "active" ? w.is_active : !w.is_active
+  );
 
   function handleToggle(w: WorkerWithStats) {
     if (
@@ -83,6 +94,30 @@ export function WorkersClient({ workers }: Props) {
       <Card>
         <CardHeader>
           <CardTitle>{t("title")}</CardTitle>
+          <CardAction className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              {(["active", "passive", "all"] as const).map((key) => (
+                <Button
+                  key={key}
+                  variant={status === key ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setStatus(key)}
+                >
+                  {key === "active"
+                    ? tc("active")
+                    : key === "passive"
+                    ? tc("passive")
+                    : tc("all")}
+                </Button>
+              ))}
+            </div>
+            <AddWorkerDialog>
+              <Button size="sm" title={ta("addWorker")}>
+                <UserPlus className="size-4" />
+                <span className="hidden sm:inline ml-1">{ta("addWorker")}</span>
+              </Button>
+            </AddWorkerDialog>
+          </CardAction>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -99,14 +134,14 @@ export function WorkersClient({ workers }: Props) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {workers.length === 0 ? (
+                {visible.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       {t("noWorkers")}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  workers.map((w) => (
+                  visible.map((w) => (
                     <TableRow key={w.id} className={!w.is_active ? "opacity-60" : ""}>
                       <TableCell className="font-medium">
                         <Link

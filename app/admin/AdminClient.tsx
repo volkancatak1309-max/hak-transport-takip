@@ -32,7 +32,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertTriangle,
   Pencil,
@@ -58,9 +57,7 @@ import { FleetStatus } from "@/components/admin/FleetStatus";
 import { DriverPerformance } from "@/components/admin/DriverPerformance";
 import { AttentionList } from "@/components/admin/AttentionList";
 import type { DashboardData } from "@/lib/admin-dashboard";
-import {
-  createWorkerAction,
-} from "../actions/workers";
+import { AddWorkerDialog } from "@/components/admin/AddWorkerDialog";
 import {
   editEntryAction,
   deleteEntryAction,
@@ -101,7 +98,6 @@ export function AdminClient({
   const router = useRouter();
   const params = useSearchParams();
 
-  const [addOpen, setAddOpen] = useState(false);
   const [editOpen, setEditOpen] = useState<TimeEntryWithWorker | null>(null);
   const [azgOpen, setAzgOpen] = useState(false);
   const [azgMonth, setAzgMonth] = useState(() => {
@@ -175,19 +171,6 @@ export function AdminClient({
     router.push(`/admin?${u.toString()}`);
   }
 
-  function handleCreate(formData: FormData) {
-    startTransition(async () => {
-      const res = await createWorkerAction(formData);
-      if (res.ok) {
-        toast.success(t("workerAdded"));
-        setAddOpen(false);
-        router.refresh();
-      } else {
-        toast.error(mapCreateErr(res.error));
-      }
-    });
-  }
-
   function handleEdit(formData: FormData) {
     startTransition(async () => {
       const res = await editEntryAction(formData);
@@ -234,20 +217,6 @@ export function AdminClient({
     }
     if (e === "errKmRange") return "KM aralık dışı";
     return e;
-  }
-
-  // createWorkerAction returns raw zod message keys on validation failure;
-  // translate the ones createWorkerSchema can emit (others — e.g. "Bu telefon
-  // zaten kayıtlı" — are already human-readable and pass through unchanged).
-  function mapCreateErr(e?: string): string {
-    if (!e) return "Error";
-    const known: Record<string, string> = {
-      errName: t("errName"),
-      errPhone: t("errPhone"),
-      errPin: t("errPin"),
-      errPinWeak: t("errPinWeak"),
-    };
-    return known[e] ?? e;
   }
 
   function exportCsv() {
@@ -545,10 +514,12 @@ export function AdminClient({
                 <span className="hidden xl:inline">AZG</span>
               </Button>
               <HelpTip tkey="report_azg" />
-              <Button size="sm" onClick={() => setAddOpen(true)} title={t("addWorker")}>
-                <UserPlus className="size-4" />
-                <span className="hidden xl:inline">{t("addWorker")}</span>
-              </Button>
+              <AddWorkerDialog>
+                <Button size="sm" title={t("addWorker")}>
+                  <UserPlus className="size-4" />
+                  <span className="hidden xl:inline">{t("addWorker")}</span>
+                </Button>
+              </AddWorkerDialog>
             </div>
           </div>
         </CardContent>
@@ -696,64 +667,6 @@ export function AdminClient({
         )}
       </Card>
       </section>
-
-      {/* Add Worker */}
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("createWorker")}</DialogTitle>
-          </DialogHeader>
-          <form action={handleCreate} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="name">{t("name")}</Label>
-              <Input id="name" name="name" required className="h-11" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="phone">{t("phone")}</Label>
-              <Input id="phone" name="phone" type="tel" required placeholder="+43 699 1234567" className="h-11" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="pin">{t("pin")}</Label>
-              <Input
-                id="pin"
-                name="pin"
-                inputMode="numeric"
-                pattern="\d{6}"
-                maxLength={6}
-                required
-                className="h-11 tracking-widest"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="plate">{t("plate")}</Label>
-              <Input id="plate" name="plate" className="h-11 nums uppercase" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="employee_number">{t("employeeNumber")}</Label>
-              <Input
-                id="employee_number"
-                name="employee_number"
-                inputMode="numeric"
-                placeholder={t("employeeNumberHint")}
-                className="h-11 nums"
-              />
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox name="is_admin" id="is_admin" />
-              {t("isAdmin")}
-            </label>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>
-                {tc("cancel")}
-              </Button>
-              <Button type="submit" disabled={pending}>
-                {pending && <Loader2 className="size-4 animate-spin" />}
-                {pending ? tc("saving") : tc("save")}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       {/* Edit Entry */}
       <Dialog open={!!editOpen} onOpenChange={(o) => !o && setEditOpen(null)}>

@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo } from "react";
 import L from "leaflet";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
+import { MapContainer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import Link from "next/link";
-import { mapTile } from "@/lib/map-tiles";
+import { VectorBaseLayer } from "@/components/VectorBaseLayer";
 import { useLocale, useTranslations } from "next-intl";
 import "leaflet/dist/leaflet.css";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -109,7 +109,7 @@ export function FleetMap({
       className="h-full w-full"
       style={{ background: "var(--muted)" }}
     >
-      <TileLayer attribution={mapTile.attribution} url={mapTile.url} />
+      <VectorBaseLayer />
       <FitBounds points={points} />
       {drivers.map(
         (d) =>

@@ -8,7 +8,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { MAP_ATTRIBUTION, MAP_STYLE_URL } from "@/lib/map-tiles";
 
 // Vector base layer shared by all maps — replaces the old raster <TileLayer>.
-// MapLibre GL draws the OpenFreeMap dark style onto a canvas that the
+// MapLibre GL draws the OpenFreeMap style onto a canvas that the
 // maplibre-gl-leaflet bridge keeps in Leaflet's tile pane, so markers, popups
 // and polylines stay plain Leaflet and render above it untouched.
 export function VectorBaseLayer() {

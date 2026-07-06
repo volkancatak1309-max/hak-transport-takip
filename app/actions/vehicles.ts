@@ -113,6 +113,8 @@ function parseVehicle(formData: FormData) {
     status: formData.get("status"),
     flespi_device_id: formData.get("flespi_device_id") || null,
     imei: formData.get("imei") || null,
+    inspection_due: formData.get("inspection_due") || null,
+    insurance_due: formData.get("insurance_due") || null,
   });
 }
 
@@ -178,6 +180,8 @@ export async function createVehicle(
       status: d.status,
       flespi_device_id: d.flespi_device_id ?? null,
       imei: d.imei ?? null,
+      inspection_due: d.inspection_due ?? null,
+      insurance_due: d.insurance_due ?? null,
     })
     .select("id")
     .maybeSingle();
@@ -217,6 +221,8 @@ export async function updateVehicle(
       status: d.status,
       flespi_device_id: d.flespi_device_id ?? null,
       imei: d.imei ?? null,
+      inspection_due: d.inspection_due ?? null,
+      insurance_due: d.insurance_due ?? null,
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };

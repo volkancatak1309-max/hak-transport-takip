@@ -24,6 +24,13 @@
     "themeDark": "Karanlık",
     "themeSystem": "Sistem"
   },
+  "errors": {
+    "error_title": "Bir şeyler ters gitti",
+    "error_desc": "Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin ya da panele dönün.",
+    "notfound_title": "Sayfa bulunamadı",
+    "notfound_desc": "Aradığınız sayfa taşınmış ya da hiç var olmamış olabilir.",
+    "back_to_panel": "Panele dön"
+  },
   "nav": {
     "panel": "Panelim",
     "admin": "Yönetici",

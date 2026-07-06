@@ -68,19 +68,26 @@ export async function saveTelemetry(
 // ── Araç olayları (vehicle_events, migration 018) ───────────────────────────
 
 /**
- * Durum-tipi olaylar: cihaz, durum sürdükçe bayrağı HER periyodik kayıtta
- * tekrar gönderir (örn. 30 dk rölanti = her 30 sn'de bir idle.status=true).
- * Tabloyu şişirmemek için aynı türün yeni satırı ancak COOLDOWN geçtiyse
- * yazılır. Anlık olaylar (crash, harsh_*) her tetiklenişte ayrı satırdır.
+ * Tür başına cooldown: aynı araç + aynı türün yeni satırı ancak son YAZILAN
+ * kayıttan bu süre geçtiyse yazılır.
+ * - Durum-tipi olaylar: cihaz, durum sürdükçe bayrağı HER periyodik kayıtta
+ *   tekrar gönderir (örn. 30 dk rölanti = her 30 sn'de bir idle.status=true) → 5 dk.
+ * - Anlık olaylar (crash, harsh_*): tek fiziksel olay sensörü art arda
+ *   tetikleyip saniyeler arayla onlarca satır üretebiliyor → 60 sn.
  */
-const STATE_EVENT_TYPES = new Set([
-  "overspeeding",
-  "idling",
-  "jamming",
-  "towing",
-  "unplug",
-]);
 const STATE_EVENT_COOLDOWN_MS = 5 * 60 * 1000;
+const INSTANT_EVENT_COOLDOWN_MS = 60 * 1000;
+const EVENT_COOLDOWN_MS = new Map<string, number>([
+  ["overspeeding", STATE_EVENT_COOLDOWN_MS],
+  ["idling", STATE_EVENT_COOLDOWN_MS],
+  ["jamming", STATE_EVENT_COOLDOWN_MS],
+  ["towing", STATE_EVENT_COOLDOWN_MS],
+  ["unplug", STATE_EVENT_COOLDOWN_MS],
+  ["crash", INSTANT_EVENT_COOLDOWN_MS],
+  ["harsh_braking", INSTANT_EVENT_COOLDOWN_MS],
+  ["harsh_acceleration", INSTANT_EVENT_COOLDOWN_MS],
+  ["harsh_cornering", INSTANT_EVENT_COOLDOWN_MS],
+]);
 
 /**
  * Idempotently write device events for one vehicle. The unique index
@@ -99,17 +106,17 @@ export async function saveVehicleEvents(
     a.occurred_at.localeCompare(b.occurred_at)
   );
 
-  // Durum-tipi türler için tür başına son yazılan an: önce DB'deki en yeni
+  // Cooldown'lu türler için tür başına son yazılan an: önce DB'deki en yeni
   // kayıt, sonra batch içinde ilerledikçe güncellenir.
   const lastByType = new Map<string, number>();
-  const stateTypes = [
+  const cooldownTypes = [
     ...new Set(
       sorted
-        .filter((e) => STATE_EVENT_TYPES.has(e.event_type))
+        .filter((e) => EVENT_COOLDOWN_MS.has(e.event_type))
         .map((e) => e.event_type)
     ),
   ];
-  for (const type of stateTypes) {
+  for (const type of cooldownTypes) {
     const { data } = await supabaseAdmin
       .from("vehicle_events")
       .select("occurred_at")
@@ -129,10 +136,11 @@ export async function saveVehicleEvents(
     const key = `${e.event_type}|${e.occurred_at}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    if (STATE_EVENT_TYPES.has(e.event_type)) {
+    const cooldownMs = EVENT_COOLDOWN_MS.get(e.event_type);
+    if (cooldownMs !== undefined) {
       const t = new Date(e.occurred_at).getTime();
       const last = lastByType.get(e.event_type);
-      if (last !== undefined && t - last < STATE_EVENT_COOLDOWN_MS) continue;
+      if (last !== undefined && t - last < cooldownMs) continue;
       lastByType.set(e.event_type, t);
     }
     rows.push({

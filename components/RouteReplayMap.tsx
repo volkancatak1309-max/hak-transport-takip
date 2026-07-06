@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo } from "react";
 import L from "leaflet";
-import { MapContainer, TileLayer, Polyline, Marker, useMap } from "react-leaflet";
-import { mapTile } from "@/lib/map-tiles";
+import { MapContainer, Polyline, Marker, useMap } from "react-leaflet";
+import { VectorBaseLayer } from "@/components/VectorBaseLayer";
 import "leaflet/dist/leaflet.css";
 import type { LatLng } from "@/lib/route-history";
 
@@ -146,7 +146,7 @@ export function RouteReplayMap({
       className="h-full w-full"
       style={{ background: "var(--muted)" }}
     >
-      <TileLayer attribution={mapTile.attribution} url={mapTile.url} />
+      <VectorBaseLayer />
       <FitOnce points={latlngs} />
 
       {/* Remaining route — faint */}

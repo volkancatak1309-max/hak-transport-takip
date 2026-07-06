@@ -1,8 +1,8 @@
 "use client";
 
 import L from "leaflet";
-import { MapContainer, TileLayer, Marker, Circle, useMapEvents } from "react-leaflet";
-import { mapTile } from "@/lib/map-tiles";
+import { MapContainer, Marker, Circle, useMapEvents } from "react-leaflet";
+import { VectorBaseLayer } from "@/components/VectorBaseLayer";
 import "leaflet/dist/leaflet.css";
 
 const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
@@ -46,7 +46,7 @@ export function GeofencePickerMap({
       className="h-full w-full"
       style={{ background: "var(--muted)" }}
     >
-      <TileLayer attribution={mapTile.attribution} url={mapTile.url} />
+      <VectorBaseLayer />
       <ClickToPick onPick={onPick} />
       {center && <Marker position={center} icon={PIN} />}
       {center && radius > 0 && (

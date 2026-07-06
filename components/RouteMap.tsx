@@ -2,8 +2,8 @@
 
 import { useEffect } from "react";
 import L from "leaflet";
-import { MapContainer, TileLayer, Polyline, Marker, useMap } from "react-leaflet";
-import { mapTile } from "@/lib/map-tiles";
+import { MapContainer, Polyline, Marker, useMap } from "react-leaflet";
+import { VectorBaseLayer } from "@/components/VectorBaseLayer";
 import "leaflet/dist/leaflet.css";
 
 export type RoutePoint = { lat: number; lng: number; recorded_at: string };
@@ -48,7 +48,7 @@ export function RouteMap({ points }: { points: RoutePoint[] }) {
       className="h-full w-full"
       style={{ background: "var(--muted)" }}
     >
-      <TileLayer attribution={mapTile.attribution} url={mapTile.url} />
+      <VectorBaseLayer />
       <FitRoute points={latlngs} />
       {latlngs.length > 1 && (
         <Polyline

@@ -225,4 +225,7 @@ export const vehicleSchema = z.object({
     .optional()
     .nullable(),
   imei: z.string().trim().regex(/^\d{15,16}$/, "errImeiFormat").optional().nullable(),
+  // §57a muayene (Pickerl) + sigorta bitiş tarihleri — input type=date "YYYY-MM-DD" verir.
+  inspection_due: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "errDate").optional().nullable(),
+  insurance_due: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "errDate").optional().nullable(),
 });

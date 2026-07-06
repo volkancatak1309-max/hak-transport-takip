@@ -60,6 +60,8 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
   const [status, setStatus] = useState<VehicleBaseStatus>("active");
   const [deviceId, setDeviceId] = useState("");
   const [imei, setImei] = useState("");
+  const [inspectionDue, setInspectionDue] = useState("");
+  const [insuranceDue, setInsuranceDue] = useState("");
   const [busy, setBusy] = useState(false);
 
   const counts = useMemo(() => {
@@ -88,6 +90,8 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
     setStatus("active");
     setDeviceId("");
     setImei("");
+    setInspectionDue("");
+    setInsuranceDue("");
     setOpen(true);
   }
   function openEdit(v: VehicleWithStatus) {
@@ -99,6 +103,8 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
     setStatus(v.status);
     setDeviceId(v.flespi_device_id != null ? String(v.flespi_device_id) : "");
     setImei(v.imei ?? "");
+    setInspectionDue(v.inspection_due ?? "");
+    setInsuranceDue(v.insurance_due ?? "");
     setOpen(true);
   }
 
@@ -138,6 +144,8 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
     fd.set("status", status);
     fd.set("flespi_device_id", deviceId.trim());
     fd.set("imei", imei.trim());
+    fd.set("inspection_due", inspectionDue);
+    fd.set("insurance_due", insuranceDue);
 
     setBusy(true);
     try {
@@ -382,6 +390,29 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
                 className="nums h-11"
               />
               <p className="text-xs text-text-tertiary">{tm("flespi_device_id_hint")}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="veh-inspection">{t("detail.inspection_due")}</Label>
+                <Input
+                  id="veh-inspection"
+                  type="date"
+                  value={inspectionDue}
+                  onChange={(e) => setInspectionDue(e.target.value)}
+                  className="h-11"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="veh-insurance">{t("detail.insurance_due")}</Label>
+                <Input
+                  id="veh-insurance"
+                  type="date"
+                  value={insuranceDue}
+                  onChange={(e) => setInsuranceDue(e.target.value)}
+                  className="h-11"
+                />
+              </div>
             </div>
 
             <Button type="submit" className="h-11 w-full" disabled={busy}>

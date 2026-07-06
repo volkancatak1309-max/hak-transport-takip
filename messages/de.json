@@ -24,6 +24,13 @@
     "themeDark": "Dunkel",
     "themeSystem": "System"
   },
+  "errors": {
+    "error_title": "Etwas ist schiefgelaufen",
+    "error_desc": "Ein unerwarteter Fehler ist aufgetreten. Bitte erneut versuchen oder zum Panel zurückkehren.",
+    "notfound_title": "Seite nicht gefunden",
+    "notfound_desc": "Die gesuchte Seite wurde möglicherweise verschoben oder existiert nicht.",
+    "back_to_panel": "Zurück zum Panel"
+  },
   "nav": {
     "panel": "Mein Panel",
     "admin": "Verwaltung",

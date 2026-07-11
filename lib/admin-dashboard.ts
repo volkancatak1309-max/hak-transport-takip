@@ -64,6 +64,13 @@ export type AttentionItem =
       plate: string;
       count: number;
       amount: number | null; // total amount of the unpaid penalties (null if none priced)
+    }
+  | {
+      kind: "unconfirmed"; // v2: auto-started shift not confirmed by the driver
+      id: string;
+      worker_name: string;
+      date: string; // shift start
+      autoEnded: boolean; // true → shift already closed unconfirmed (more urgent)
     };
 
 /** Per-driver / per-vehicle breakdown behind each OpsSummary tile, for the
@@ -121,7 +128,7 @@ export async function getDashboardData(
 ): Promise<DashboardData> {
   const todayStart = startOfTodayVienna();
 
-  const [todayRes, rangeRes, activeRes, vehicles, workersRes, penaltyRes] =
+  const [todayRes, rangeRes, activeRes, vehicles, workersRes, penaltyRes, unconfirmedRes] =
     await Promise.all([
     supabaseAdmin
       .from("time_entries")
@@ -147,6 +154,16 @@ export async function getDashboardData(
       .from("vehicle_penalties")
       .select("vehicle_id, amount")
       .eq("paid", false),
+    // v2 (migration 020): şoför onayı bekleyen / onaysız kapanan vardiyalar →
+    // dikkat listesinde "onaysız" rozeti. Migration 020 uygulanmadan önce
+    // confirmation_status kolonu yoktur → sorgu error döner, data null → boş
+    // liste (dashboard'ı asla bozmaz).
+    supabaseAdmin
+      .from("time_entries")
+      .select("id, worker_id, started_at, confirmation_status, auto_ended, auto_started")
+      .in("confirmation_status", ["pending", "unconfirmed"])
+      .order("started_at", { ascending: false })
+      .limit(50),
   ]);
 
   const todayEntries = (todayRes.data ?? []) as LiteEntry[];
@@ -164,6 +181,13 @@ export async function getDashboardData(
   const unpaidPenalties = (penaltyRes.data ?? []) as {
     vehicle_id: string;
     amount: number | null;
+  }[];
+  const unconfirmedShifts = (unconfirmedRes.data ?? []) as {
+    id: string;
+    worker_id: string | null;
+    started_at: string;
+    confirmation_status: string;
+    auto_ended: boolean | null;
   }[];
 
   const fleet = buildFleet(vehicles);
@@ -189,7 +213,8 @@ export async function getDashboardData(
       vehicles,
       names,
       todayStart,
-      unpaidPenalties
+      unpaidPenalties,
+      unconfirmedShifts
     ),
   };
 }
@@ -413,9 +438,29 @@ function buildAttention(
   }[],
   names: Map<string, string>,
   todayStart: Date,
-  unpaidPenalties: { vehicle_id: string; amount: number | null }[]
+  unpaidPenalties: { vehicle_id: string; amount: number | null }[],
+  unconfirmedShifts: {
+    id: string;
+    worker_id: string | null;
+    started_at: string;
+    confirmation_status: string;
+    auto_ended: boolean | null;
+  }[]
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
+
+  // 0) v2 — onaysız vardiyalar: otomatik başlayıp şoförün onaylamadığı (pending)
+  //    ya da onaylanmadan kapanan (unconfirmed) vardiyalar. Kapanmış olan daha
+  //    acildir (şoför artık ekranı görmüyor → yalnız admin düzeltebilir).
+  for (const u of unconfirmedShifts) {
+    items.push({
+      kind: "unconfirmed",
+      id: `${u.id}-unconfirmed`,
+      worker_name: u.worker_id ? names.get(u.worker_id) ?? "—" : "—",
+      date: u.started_at,
+      autoEnded: !!u.auto_ended,
+    });
+  }
 
   // 1) Shifts past the 9h AZG threshold — only the ones that are *actionable
   //    right now*: shifts that started today, plus any still-open (active)
@@ -496,6 +541,8 @@ function buildAttention(
       case "inspection":
       case "insurance":
         return i.days; // overdue (negative) and soonest first
+      case "unconfirmed":
+        return i.autoEnded ? 40 : 60; // after overdue docs; closed-unconfirmed first
       case "penalty":
         return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "over9h":

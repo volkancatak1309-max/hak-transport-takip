@@ -59,6 +59,11 @@ import { AttentionList } from "@/components/admin/AttentionList";
 import type { DashboardData } from "@/lib/admin-dashboard";
 import { AddWorkerDialog } from "@/components/admin/AddWorkerDialog";
 import {
+  DriverReportsCard,
+  type AdminDriverReport,
+} from "@/components/admin/DriverReportsCard";
+import { ShiftPhotosButton } from "@/components/admin/ShiftPhotosButton";
+import {
   editEntryAction,
   deleteEntryAction,
 } from "../actions/shift";
@@ -76,6 +81,8 @@ type Props = {
   statusFilter: string;
   summary: { totalMs: number; totalKm: number; activeCount: number; overLimit: number };
   dashboard: DashboardData;
+  reports: AdminDriverReport[];
+  photoEntryIds: string[];
 };
 
 export function AdminClient({
@@ -88,6 +95,8 @@ export function AdminClient({
   statusFilter,
   summary,
   dashboard,
+  reports,
+  photoEntryIds,
 }: Props) {
   const t = useTranslations("admin");
   const tc = useTranslations("common");
@@ -346,6 +355,7 @@ export function AdminClient({
   }
 
   const nf = locale === "de" ? "de-AT" : "tr-TR";
+  const photoIdSet = new Set(photoEntryIds);
 
   return (
     <div className="space-y-6">
@@ -357,6 +367,9 @@ export function AdminClient({
         <FleetStatus fleet={dashboard.fleet} />
         <AttentionList items={dashboard.attention} />
       </div>
+
+      {/* 4b — Driver problem reports (SORUN BİLDİR) — open + resolve (v2) */}
+      <DriverReportsCard reports={reports} />
 
       {/* 3 — Driver performance ranking (selected range) */}
       <DriverPerformance performance={dashboard.performance} range={range} />
@@ -579,6 +592,16 @@ export function AdminClient({
                         <div className="flex items-center gap-2">
                           <UserAvatar name={e.workers?.name ?? "?"} size="xs" />
                           <span>{e.workers?.name ?? "—"}</span>
+                          {(e.confirmation_status === "pending" ||
+                            e.confirmation_status === "unconfirmed") && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-accent-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-gold"
+                              title={t("unconfirmedTitle")}
+                            >
+                              <AlertTriangle className="size-3" />
+                              {t("unconfirmedBadge")}
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
@@ -638,6 +661,7 @@ export function AdminClient({
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-1 justify-end">
+                          {photoIdSet.has(e.id) && <ShiftPhotosButton entryId={e.id} />}
                           <Button
                             variant="ghost"
                             size="sm"

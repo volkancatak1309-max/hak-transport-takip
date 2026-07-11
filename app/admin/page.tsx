@@ -15,8 +15,14 @@ import {
   endOfDayViennaFromYmd,
 } from "@/lib/format";
 import { getDashboardData } from "@/lib/admin-dashboard";
-import type { TimeEntry, TimeEntryWithWorker, WorkerPublic } from "@/lib/types";
+import type {
+  TimeEntry,
+  TimeEntryWithWorker,
+  WorkerPublic,
+  DriverReportType,
+} from "@/lib/types";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
+import type { AdminDriverReport } from "@/components/admin/DriverReportsCard";
 
 export const dynamic = "force-dynamic";
 
@@ -115,6 +121,50 @@ export default async function AdminPage({
   }
   const activeCount = dashboard.todayOps.driversInField;
 
+  // v2 (migration 020) — admin görünürlüğü: açık şoför bildirimleri (SORUN
+  // BİLDİR) + hangi vardiyaların fotoğrafı var. Her iki sorgu da migration 020
+  // öncesi tabloların yokluğunda hata döner (data null → boş liste); admin
+  // panelini asla bozmaz.
+  const entryIds = entriesData.map((e) => e.id);
+  const [reportsRes, photosRes] = await Promise.all([
+    supabaseAdmin
+      .from("driver_reports")
+      .select("id, worker_id, report_type, created_at, latitude, longitude")
+      .is("resolved_at", null)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    supabaseAdmin
+      .from("shift_photos")
+      .select("time_entry_id")
+      .in("time_entry_id", entryIds),
+  ]);
+
+  const openReports: AdminDriverReport[] = (
+    (reportsRes.data ?? []) as {
+      id: string;
+      worker_id: string;
+      report_type: DriverReportType;
+      created_at: string;
+      latitude: number | null;
+      longitude: number | null;
+    }[]
+  ).map((r) => ({
+    id: r.id,
+    worker_name: workerMap.get(r.worker_id)?.name ?? "—",
+    report_type: r.report_type,
+    created_at: r.created_at,
+    latitude: r.latitude,
+    longitude: r.longitude,
+  }));
+
+  const photoEntryIds = [
+    ...new Set(
+      ((photosRes.data ?? []) as { time_entry_id: string }[]).map(
+        (p) => p.time_entry_id
+      )
+    ),
+  ];
+
   return (
     <DashboardShell
       user={{
@@ -135,6 +185,8 @@ export default async function AdminPage({
           statusFilter={statusFilter}
           summary={{ totalMs, totalKm, activeCount, overLimit }}
           dashboard={dashboard}
+          reports={openReports}
+          photoEntryIds={photoEntryIds}
         />
       </div>
     </DashboardShell>

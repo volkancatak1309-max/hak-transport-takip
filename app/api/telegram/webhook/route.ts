@@ -120,16 +120,41 @@ async function handleShiftCallback(cb: NonNullable<TgUpdate["callback_query"]>) 
     .maybeSingle();
   const endedAt = lastLoc?.recorded_at ?? new Date().toISOString();
 
-  await supabaseAdmin
+  let { error: closeErr } = await supabaseAdmin
     .from("time_entries")
     .update({
       ended_at: endedAt,
       summary_notified_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      end_reason: "watchdog",
     })
     .eq("id", shift.id)
     .eq("worker_id", shift.worker_id)
     .is("ended_at", null);
+  if (closeErr && /end_reason|column/i.test(closeErr.message)) {
+    // Pre-migration-020 fallback: kapanış asla yeni kolona takılmasın.
+    ({ error: closeErr } = await supabaseAdmin
+      .from("time_entries")
+      .update({
+        ended_at: endedAt,
+        summary_notified_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", shift.id)
+      .eq("worker_id", shift.worker_id)
+      .is("ended_at", null));
+  }
+
+  // Onaysız kapanan vardiya rozeti (İş 1) — best-effort, migration öncesi no-op.
+  await supabaseAdmin
+    .from("time_entries")
+    .update({ confirmation_status: "unconfirmed" })
+    .eq("id", shift.id)
+    .eq("confirmation_status", "pending")
+    .then(
+      () => {},
+      () => {}
+    );
 
   await answerCallbackQuery(cbId);
   await sendTelegramMessage(chatIdStr, shiftClosedByWatchdogMessage(loc));

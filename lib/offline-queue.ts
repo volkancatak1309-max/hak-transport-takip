@@ -4,7 +4,7 @@ const DB_NAME = "hak-offline";
 const STORE = "pending_actions";
 const VERSION = 1;
 
-export type QueuedActionType = "start" | "end" | "break";
+export type QueuedActionType = "start" | "end" | "break" | "package" | "report";
 
 export type QueuedAction = {
   id?: number;

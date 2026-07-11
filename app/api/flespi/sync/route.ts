@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { flespiAuthorized } from "@/lib/flespi-auth";
 import { fetchDeviceMessages } from "@/lib/flespi";
 import { lastRecordedAt, saveTelemetry, saveVehicleEvents } from "@/lib/telemetry";
+import { processAutoShifts, type AutoShiftSummary } from "@/lib/auto-shift";
 
 // Service-role Supabase + outbound flespi fetch → must run on Node, never edge.
 export const runtime = "nodejs";
@@ -96,7 +97,12 @@ async function runSync() {
     }
   }
 
-  return { ok: true, vehicles: vehicles.length, totalSaved, perVehicle };
+  // Otomatik vardiya (İş 1): telemetri yazıldıktan sonra kontak-temelli
+  // başlat/bitir değerlendirmesi. processAutoShifts asla throw etmez —
+  // GPS senkronunu hiçbir koşulda düşürmez.
+  const autoShifts: AutoShiftSummary = await processAutoShifts();
+
+  return { ok: true, vehicles: vehicles.length, totalSaved, perVehicle, autoShifts };
 }
 
 export async function GET(req: NextRequest) {

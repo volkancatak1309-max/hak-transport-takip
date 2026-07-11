@@ -55,6 +55,84 @@ export function shiftStartedMessage(
   );
 }
 
+/** Auto shift-start (ignition) alert → admins. */
+export function autoShiftStartedAdminMessage(
+  locale: string | null,
+  p: { name: string; plate: string; time: string }
+): string {
+  const name = esc(p.name);
+  const plate = esc(p.plate);
+  if (L(locale) === "de") {
+    return (
+      "🟢 HAK61\n\n" +
+      `Zündung an: Schicht von <b>${name}</b> (${plate}) wurde automatisch gestartet.\n` +
+      `🕐 Uhrzeit: <b>${p.time}</b>\n` +
+      "Bestätigung des Fahrers steht noch aus."
+    );
+  }
+  return (
+    "🟢 HAK61\n\n" +
+    `Kontak açıldı: <b>${name}</b> (${plate}) vardiyası otomatik başlatıldı.\n` +
+    `🕐 Saat: <b>${p.time}</b>\n` +
+    "Şoför onayı bekleniyor."
+  );
+}
+
+/** Auto shift-start → driver: please confirm in the panel. */
+export function autoShiftStartedDriverMessage(
+  locale: string | null,
+  p: { plate: string; time: string }
+): string {
+  const plate = esc(p.plate);
+  if (L(locale) === "de") {
+    return (
+      "🟢 <b>Schicht gestartet</b>\n\n" +
+      `Zündung an (${plate}) — deine Schicht läuft seit <b>${p.time}</b>.\n` +
+      "Bitte im Panel mit einem Tipp bestätigen.\n<i>HAK61</i>"
+    );
+  }
+  return (
+    "🟢 <b>Vardiyan başladı</b>\n\n" +
+    `Kontak açıldı (${plate}) — vardiyan <b>${p.time}</b> itibarıyla başladı.\n` +
+    "Lütfen panelden tek dokunuşla onayla.\n<i>HAK61</i>"
+  );
+}
+
+/** One-tap driver problem report → admins. */
+export function driverReportMessage(
+  locale: string | null,
+  p: { name: string; plate: string; type: string }
+): string {
+  const name = esc(p.name);
+  const plate = esc(p.plate);
+  const typesTr: Record<string, string> = {
+    vehicle_fault: "Araç Arızası",
+    address_issue: "Adres Sorunu",
+    damaged_package: "Hasarlı Paket",
+    other: "Diğer",
+  };
+  const typesDe: Record<string, string> = {
+    vehicle_fault: "Fahrzeugdefekt",
+    address_issue: "Adressproblem",
+    damaged_package: "Beschädigtes Paket",
+    other: "Sonstiges",
+  };
+  if (L(locale) === "de") {
+    const label = typesDe[p.type] ?? p.type;
+    return (
+      "⚠️ HAK61 — <b>Fahrermeldung</b>\n\n" +
+      `<b>${name}</b> (${plate}) meldet: <b>${esc(label)}</b>\n` +
+      "Details im Admin-Panel."
+    );
+  }
+  const label = typesTr[p.type] ?? p.type;
+  return (
+    "⚠️ HAK61 — <b>Şoför Bildirimi</b>\n\n" +
+    `<b>${name}</b> (${plate}) bildirdi: <b>${esc(label)}</b>\n` +
+    "Detaylar yönetici panelinde."
+  );
+}
+
 /** End-of-shift summary → driver. */
 export function shiftSummaryMessage(
   locale: string | null,

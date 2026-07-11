@@ -4,11 +4,14 @@ import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireWorker } from "@/lib/session";
 import { MAX_ODOMETER, MAX_PER_SHIFT_KM, MAX_COUNT } from "@/lib/validation";
+import { recountShiftPackages } from "@/lib/shift-packages";
+import { reportProblemAction } from "@/app/actions/driver-panel";
+import type { DriverReportType } from "@/lib/types";
 
 export type QueueProcessResult = { ok: boolean; error?: string };
 
 type Item = {
-  type: "start" | "end" | "break";
+  type: "start" | "end" | "break" | "package" | "report";
   payload: Record<string, unknown>;
   clientTime: string;
 };
@@ -147,6 +150,63 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
       .eq("id", active.id)
       .eq("worker_id", workerId);
     if (error) return { ok: false, error: error.message };
+  } else if (item.type === "package") {
+    // Çevrimdışı basılan "+1 PAKET": açık vardiya, yoksa olay anını kapsayan
+    // vardiya (otomatik kapanış flush'tan önce gelmiş olabilir). Hiçbiri yoksa
+    // sessizce düş — paket bir vardiyaya bağlanmak zorunda.
+    let entryId: string | null = null;
+    const { data: active } = await supabaseAdmin
+      .from("time_entries")
+      .select("id")
+      .eq("worker_id", workerId)
+      .is("ended_at", null)
+      .maybeSingle();
+    if (active) {
+      entryId = active.id as string;
+    } else {
+      const { data: covering } = await supabaseAdmin
+        .from("time_entries")
+        .select("id")
+        .eq("worker_id", workerId)
+        .lte("started_at", whenIso)
+        .gte("ended_at", whenIso)
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      entryId = (covering?.id as string) ?? null;
+    }
+    if (!entryId) return { ok: true };
+
+    const lat = num(item.payload.lat);
+    const lng = num(item.payload.lng);
+    const validCoords =
+      lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    const acc = num(item.payload.accuracy);
+    const { error } = await supabaseAdmin.from("shift_packages").insert({
+      time_entry_id: entryId,
+      worker_id: workerId,
+      latitude: validCoords ? lat : null,
+      longitude: validCoords ? lng : null,
+      accuracy: acc !== null && acc >= 0 ? acc : null,
+      recorded_at: whenIso,
+    });
+    if (error) return { ok: false, error: error.message };
+    try {
+      await recountShiftPackages(entryId);
+    } catch {
+      // sayaç senkronu sonraki olayda düzelir
+    }
+  } else if (item.type === "report") {
+    // Çevrimdışı "SORUN BİLDİR": aynı action'ı sunucu tarafında yeniden çağır
+    // (vardiya bağlama + Telegram bildirimi orada). Vardiyasız da kaydedilir.
+    const type = String(item.payload.report_type ?? "") as DriverReportType;
+    const r = await reportProblemAction({
+      type,
+      lat: num(item.payload.lat),
+      lng: num(item.payload.lng),
+      clientTime: item.clientTime,
+    });
+    if (!r.ok) return r;
   }
 
   revalidatePath("/panel");

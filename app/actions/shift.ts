@@ -176,6 +176,7 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
     end_km: parsed.data.end_km,
     notes: parsed.data.notes,
     summary_notified_at: endedIso,
+    end_reason: "manual",
   };
   if (parsed.data.plate) updateData.plate = parsed.data.plate;
   if (parsed.data.break_minutes !== null && parsed.data.break_minutes !== undefined) {
@@ -193,10 +194,11 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
     .update(updateData)
     .eq("id", active.id)
     .eq("worker_id", session.worker_id!);
-  if (error && /undelivered_count|column/i.test(error.message)) {
+  if (error && /undelivered_count|end_reason|column/i.test(error.message)) {
     // Pre-migration fallback: column not applied yet → end the shift anyway.
     const legacy = { ...updateData };
     delete legacy.undelivered_count;
+    delete legacy.end_reason;
     ({ error } = await supabaseAdmin
       .from("time_entries")
       .update(legacy)
@@ -205,6 +207,19 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
   }
 
   if (error) return { ok: false, error: error.message };
+
+  // Başlangıç onayı hiç verilmeden kapanan vardiya "onaysız" işaretlenir →
+  // yönetici panelinde uyarı rozeti (İş 1). Best-effort: migration 020
+  // uygulanmadıysa sessiz no-op (kapanışı asla geri döndürmez).
+  await supabaseAdmin
+    .from("time_entries")
+    .update({ confirmation_status: "unconfirmed" })
+    .eq("id", active.id)
+    .eq("confirmation_status", "pending")
+    .then(
+      () => {},
+      () => {}
+    );
 
   // Telegram end-of-shift summary to the driver (best-effort, never blocks).
   const { data: me } = await supabaseAdmin

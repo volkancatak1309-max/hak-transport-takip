@@ -8,6 +8,7 @@ import {
   type FlespiPoint,
 } from "@/lib/flespi";
 import { saveTelemetry, saveVehicleEvents } from "@/lib/telemetry";
+import { processAutoShifts } from "@/lib/auto-shift";
 
 // Service-role Supabase + JSON body parsing → must run on Node, never edge.
 export const runtime = "nodejs";
@@ -98,6 +99,7 @@ export async function POST(req: NextRequest) {
         ((vData ?? []) as VehImei[]).map((v) => [v.imei, v])
       );
 
+      const touchedVehicleIds: string[] = [];
       for (const [ident, msgs] of byIdent) {
         const vehicle = byImei.get(ident);
         if (!vehicle) {
@@ -125,6 +127,7 @@ export async function POST(req: NextRequest) {
           events.push(...extractEvents(m));
         }
         saved += await saveTelemetry(vehicle.id, points);
+        touchedVehicleIds.push(vehicle.id);
         // Olay kaydı GPS akışını ASLA düşürmesin (örn. migration 018 henüz
         // çalıştırılmadıysa): kendi try/catch'i var, hata sadece loglanır.
         if (events.length > 0) {
@@ -137,6 +140,13 @@ export async function POST(req: NextRequest) {
             );
           }
         }
+      }
+
+      // Otomatik vardiya (İş 1): yalnız bu batch'te veri gelen araçlar
+      // değerlendirilir; tam tarama /api/flespi/sync'te. processAutoShifts
+      // asla throw etmez — 200-kuralını bozamaz.
+      if (touchedVehicleIds.length > 0) {
+        await processAutoShifts(touchedVehicleIds);
       }
     }
 

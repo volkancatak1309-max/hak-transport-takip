@@ -8,10 +8,15 @@ import {
   viennaDayKey,
 } from "@/lib/format";
 import { getAssignments } from "@/app/actions/assignments";
-import { listVehiclesForSelect } from "@/lib/vehicles";
 import type { TimeEntry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * İmzasız özet bu kadar geriye kadar tekrar gösterilir; daha eskisi şoförü
+ * rahatsız etmez (admin tarafında "onaysız" görünür kalır).
+ */
+const SUMMARY_WINDOW_MS = 72 * 60 * 60 * 1000;
 
 export default async function PanelPage() {
   const session = await requireWorker();
@@ -30,6 +35,17 @@ export default async function PanelPage() {
   const active = all.find((e) => e.ended_at === null) ?? null;
   const past = all.filter((e) => e.ended_at !== null);
 
+  // İş 3 — imzasız vardiya özeti: son 72 saatte bitmiş, summary_confirmed_at
+  // boş olan en yeni vardiya. Şoför onaylamadan kapattıysa her girişte çıkar.
+  const nowMs = Date.now();
+  const pendingSummary =
+    past.find(
+      (e) =>
+        !e.summary_confirmed_at &&
+        e.ended_at !== null &&
+        nowMs - new Date(e.ended_at).getTime() <= SUMMARY_WINDOW_MS
+    ) ?? null;
+
   const { data: me } = await supabaseAdmin
     .from("workers")
     .select("telegram_chat_id, telegram_username")
@@ -40,12 +56,24 @@ export default async function PanelPage() {
     username: (me?.telegram_username as string) ?? null,
   };
 
-  const vehicles = await listVehiclesForSelect();
+  // İş 1 — bekleme ekranı: şoförün atandığı araç (kontak bu aracı izler).
+  const { data: veh } = await supabaseAdmin
+    .from("vehicles")
+    .select("id, plate, make, model")
+    .eq("assigned_worker_id", session.worker_id!)
+    .neq("status", "inactive")
+    .order("plate")
+    .limit(1)
+    .maybeSingle();
+  const assignedVehicle =
+    (veh as { id: string; plate: string; make: string | null; model: string | null } | null) ??
+    null;
+
   const myAssignments = await getAssignments({ mine: true });
   const todayKey = viennaDayKey(new Date());
-  const todayAssignments = myAssignments.filter(
+  const todayAssignmentCount = myAssignments.filter(
     (a) => viennaDayKey(a.scheduled_at) === todayKey && a.status !== "cancelled"
-  );
+  ).length;
 
   const todayStart = startOfTodayVienna();
   const weekStart = startOfWeekVienna();
@@ -79,19 +107,6 @@ export default async function PanelPage() {
     return total;
   }
 
-  const todayMs = sumWorkedMs(todayEntries);
-  const todayKm = sumKm(todayEntries);
-  const todayCargo = sumCargo(todayEntries);
-
-  const weekMs = sumWorkedMs(weekEntries);
-  const weekKm = sumKm(weekEntries);
-  const weekDays = new Set(
-    weekEntries.map((e) =>
-      new Date(e.started_at).toLocaleDateString("en-CA", { timeZone: "Europe/Vienna" })
-    )
-  ).size;
-  const avgDailyMs = weekDays > 0 ? weekMs / weekDays : 0;
-
   return (
     <DashboardShell
       user={{
@@ -104,21 +119,16 @@ export default async function PanelPage() {
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6">
         <PanelClient
           active={active}
-          past={past.slice(0, 5)}
-          defaultPlate={session.plate ?? ""}
-          vehicles={vehicles}
+          pendingSummary={pendingSummary}
           telegram={telegram}
-          todayAssignments={todayAssignments}
+          todayAssignmentCount={todayAssignmentCount}
           totals={{
-            todayMs,
-            todayKm,
-            todayCargo,
-            weekMs,
-            weekKm,
-            weekDays,
-            avgDailyMs,
-            shiftCount: past.length,
+            todayClosedPackages: sumCargo(todayEntries),
+            weekMs: sumWorkedMs(weekEntries),
+            weekKm: sumKm(weekEntries),
+            weekShifts: weekEntries.length,
           }}
+          assignedVehicle={assignedVehicle}
         />
       </div>
     </DashboardShell>

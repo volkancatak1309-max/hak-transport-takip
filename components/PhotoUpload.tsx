@@ -4,50 +4,11 @@ import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Camera, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { resizeImage } from "@/lib/image-resize";
 
 type Props = {
   onFile: (file: File | null) => void;
 };
-
-/** Resize to max 1600px, JPEG q0.85, client-side. HEIC falls back to original. */
-async function resizeImage(file: File): Promise<File> {
-  try {
-    const dataUrl = await new Promise<string>((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result as string);
-      r.onerror = rej;
-      r.readAsDataURL(file);
-    });
-    const img = await new Promise<HTMLImageElement>((res, rej) => {
-      const i = new Image();
-      i.onload = () => res(i);
-      i.onerror = rej;
-      i.src = dataUrl;
-    });
-    const max = 1600;
-    let { width, height } = img;
-    if (width > max || height > max) {
-      if (width >= height) {
-        height = Math.round((height * max) / width);
-        width = max;
-      } else {
-        width = Math.round((width * max) / height);
-        height = max;
-      }
-    }
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    canvas.getContext("2d")?.drawImage(img, 0, 0, width, height);
-    const blob = await new Promise<Blob | null>((res) =>
-      canvas.toBlob(res, "image/jpeg", 0.85)
-    );
-    if (!blob) return file;
-    return new File([blob], "receipt.jpg", { type: "image/jpeg" });
-  } catch {
-    return file; // e.g. HEIC the canvas can't decode — upload as-is
-  }
-}
 
 export function PhotoUpload({ onFile }: Props) {
   const t = useTranslations("fuel");
@@ -60,7 +21,7 @@ export function PhotoUpload({ onFile }: Props) {
     if (!f) return;
     setBusy(true);
     try {
-      const resized = await resizeImage(f);
+      const resized = await resizeImage(f, "receipt.jpg");
       if (preview) URL.revokeObjectURL(preview);
       setPreview(URL.createObjectURL(resized));
       onFile(resized);

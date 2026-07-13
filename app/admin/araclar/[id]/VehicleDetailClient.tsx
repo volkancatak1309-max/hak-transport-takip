@@ -23,8 +23,6 @@ import {
   Route,
   Hourglass,
   Milestone,
-  ArrowRight,
-  CircleParking,
   Hexagon,
   AlertTriangle,
   Siren,
@@ -43,7 +41,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/UserAvatar";
 import { HelpTip } from "@/components/help/HelpTip";
-import { KmEditButton } from "@/components/KmEditButton";
 import { PenaltiesSection } from "./PenaltiesSection";
 import { STATUS_STYLE } from "@/lib/vehicle-ui";
 import { formatDate, formatTime, formatRelative, formatHoursMinutes } from "@/lib/format";
@@ -54,7 +51,6 @@ import { EVENT_ICON_STYLE, eventSeverity } from "@/lib/event-ui";
 import type { EngineHoursResult } from "@/lib/metrics-engine-hours";
 import type { DistanceResult } from "@/lib/metrics-distance";
 import type { IdleResult } from "@/lib/metrics-idle";
-import type { TripsResult } from "@/lib/metrics-trips";
 import type { GeofenceResult } from "@/lib/metrics-geofence";
 import { cn } from "@/lib/utils";
 
@@ -64,7 +60,6 @@ export function VehicleDetailClient({
   engineHours,
   distance,
   idle,
-  tripStops,
   geofence,
   events,
   dtc,
@@ -74,7 +69,6 @@ export function VehicleDetailClient({
   engineHours: EngineHoursResult;
   distance: DistanceResult;
   idle: IdleResult;
-  tripStops: TripsResult;
   geofence: GeofenceResult;
   events: VehicleEventRow[];
   dtc: (VehicleDtcRow & { info: DtcText | null })[];
@@ -85,7 +79,7 @@ export function VehicleDetailClient({
   const ta = useTranslations("alarms");
   const locale = useLocale();
   const router = useRouter();
-  const { vehicle: v, today, recent } = detail;
+  const { vehicle: v, today } = detail;
   const st = STATUS_STYLE[v.live_status];
   const nf = locale === "de" ? "de-AT" : "tr-TR";
   const km = (n: number | null) => (n === null ? "—" : n.toLocaleString(nf));
@@ -103,26 +97,6 @@ export function VehicleDetailClient({
     }, REFRESH_MS);
     return () => clearInterval(id);
   }, [router]);
-
-  // Merge GPS-detected trips + stops into one chronological timeline for display.
-  const timeline = [
-    ...tripStops.trips.map((tr) => ({
-      type: "trip" as const,
-      startTime: tr.startTime,
-      endTime: tr.endTime,
-      durationMs: tr.durationMs,
-      km: tr.km as number | null,
-    })),
-    ...tripStops.stops.map((s) => ({
-      type: "stop" as const,
-      startTime: s.startTime,
-      endTime: s.endTime,
-      durationMs: s.durationMs,
-      km: null as number | null,
-    })),
-  ].sort(
-    (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-  );
 
   return (
     <div className="mx-auto max-w-[1000px] space-y-5 px-4 py-6 sm:px-6">
@@ -417,79 +391,6 @@ export function VehicleDetailClient({
         )}
       </section>
 
-      {/* GPS-detected trips & stops — segmented from the raw track
-          (computeTripsAndStops). Distinct from admin-created assignments
-          ("seferler"), which are never read or shown here. */}
-      <Section title={tm("trips_stops_today")} icon={Milestone}>
-        {tripStops.points === 0 ? (
-          <p className="text-sm text-text-tertiary">{tm("no_data")}</p>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-              <span className="font-semibold">
-                {tm("trips_count", { count: tripStops.trips.length })}
-              </span>
-              <span className="text-text-tertiary">·</span>
-              <span className="font-semibold">
-                {tm("stops_count", { count: tripStops.stops.length })}
-              </span>
-              <span className="text-text-tertiary">·</span>
-              <span className="nums font-semibold">
-                {tripStops.totalTripKm.toLocaleString(nf, { maximumFractionDigits: 1 })} km
-              </span>
-              {tripStops.uncertain && (
-                <span
-                  title={tm("estimated_hint")}
-                  className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary"
-                >
-                  ~ {tm("estimated")}
-                </span>
-              )}
-            </div>
-
-            {timeline.length > 0 && (
-              <ul className="-mx-1 divide-y divide-border">
-                {timeline.map((e, i) => (
-                  <li
-                    key={`${e.type}-${i}`}
-                    className="flex items-center gap-2.5 px-1 py-2"
-                  >
-                    <span
-                      className={cn(
-                        "flex size-6 shrink-0 items-center justify-center rounded-full",
-                        e.type === "trip"
-                          ? "bg-accent-sky/15 text-accent-sky"
-                          : "bg-muted text-muted-foreground"
-                      )}
-                    >
-                      {e.type === "trip" ? (
-                        <ArrowRight className="size-3.5" />
-                      ) : (
-                        <CircleParking className="size-3.5" />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1 text-sm">
-                      <span className="font-medium">
-                        {e.type === "trip" ? tm("trip_label") : tm("stop_label")}
-                      </span>
-                      <span className="nums ml-1.5 text-text-tertiary">
-                        {formatTime(e.startTime, locale)}–{formatTime(e.endTime, locale)}
-                      </span>
-                    </span>
-                    <span className="nums shrink-0 text-right text-xs text-text-tertiary">
-                      {formatHoursMinutes(e.durationMs, locale)}
-                      {e.type === "trip" && e.km !== null
-                        ? ` · ${e.km.toLocaleString(nf, { maximumFractionDigits: 1 })} km`
-                        : ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </Section>
-
       {/* GPS geofence events — entry/exit against admin-defined zones
           (computeGeofenceEvents). Violations are flagged red. Distinct messages
           for "no active zones" vs "no telemetry today" vs "no events". */}
@@ -710,37 +611,6 @@ export function VehicleDetailClient({
         </Button>
       </div>
 
-      {/* Recent movements */}
-      <Section title={td("recent")} icon={History}>
-        {recent.length === 0 ? (
-          <p className="text-sm text-text-tertiary">{td("no_recent")}</p>
-        ) : (
-          <ul className="-mx-1 divide-y divide-border">
-            {recent.map((r) => (
-              <li key={r.id} className="flex items-center gap-3 px-1 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="font-medium">{formatDate(r.date, locale)}</span>
-                    {!r.ended && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-accent-sky/15 px-2 py-0.5 text-[10px] font-medium text-accent-sky">
-                        <span className="live-dot" /> {td("active_now")}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-xs text-text-tertiary">
-                    <UserRound className="size-3.5" />
-                    <span className="truncate">{r.driver_name ?? "—"}</span>
-                  </div>
-                </div>
-                <div className="nums shrink-0 text-right text-sm">
-                  {r.km !== null ? `${km(r.km)} km` : "—"}
-                </div>
-                <KmEditButton entryId={r.id} startKm={r.start_km} endKm={r.end_km} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
     </div>
   );
 }

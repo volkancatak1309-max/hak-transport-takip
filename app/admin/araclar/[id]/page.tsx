@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
+import { getLocale } from "next-intl/server";
 import { requireAdmin } from "@/lib/session";
+import { lookupDtc } from "@/lib/dtc-codes";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getVehicleDetail } from "@/lib/vehicles";
 import {
@@ -45,6 +47,12 @@ export default async function VehicleDetailPage({
   const tripStops = computeTripsAndStops(track);
   const geofence = computeGeofenceEvents(track, zones);
 
+  // DTC zenginleştirme SUNUCUDA: sözlük (lib/dtc-codes) client bundle'a girmez;
+  // yalnız aktif kodların (~0-5 satır) yerelleştirilmiş 4 alanı prop'la iner.
+  // Sözlükte olmayan kod → info:null → UI "üretici-spesifik" fallback metni.
+  const locale = await getLocale();
+  const dtcEnriched = dtc.map((d) => ({ ...d, info: lookupDtc(d.code, locale) }));
+
   return (
     <DashboardShell
       user={{
@@ -64,7 +72,7 @@ export default async function VehicleDetailPage({
         tripStops={tripStops}
         geofence={geofence}
         events={events}
-        dtc={dtc}
+        dtc={dtcEnriched}
       />
     </DashboardShell>
   );

@@ -35,6 +35,9 @@ import {
   Signal,
   Activity,
   Barcode,
+  ChevronDown,
+  CheckCircle2,
+  Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +49,7 @@ import { STATUS_STYLE } from "@/lib/vehicle-ui";
 import { formatDate, formatTime, formatRelative, formatHoursMinutes } from "@/lib/format";
 import type { VehicleDetail } from "@/lib/vehicles";
 import type { TelemetryRow, VehicleEventRow, VehicleDtcRow } from "@/lib/telemetry";
+import type { DtcText } from "@/lib/dtc-codes";
 import { EVENT_ICON_STYLE, eventSeverity } from "@/lib/event-ui";
 import type { EngineHoursResult } from "@/lib/metrics-engine-hours";
 import type { DistanceResult } from "@/lib/metrics-distance";
@@ -73,7 +77,7 @@ export function VehicleDetailClient({
   tripStops: TripsResult;
   geofence: GeofenceResult;
   events: VehicleEventRow[];
-  dtc: VehicleDtcRow[];
+  dtc: (VehicleDtcRow & { info: DtcText | null })[];
 }) {
   const t = useTranslations("vehicles");
   const td = useTranslations("vehicles.detail");
@@ -85,6 +89,8 @@ export function VehicleDetailClient({
   const st = STATUS_STYLE[v.live_status];
   const nf = locale === "de" ? "de-AT" : "tr-TR";
   const km = (n: number | null) => (n === null ? "—" : n.toLocaleString(nf));
+  // Açık DTC detay paneli (accordion — aynı anda tek arıza açık).
+  const [openDtc, setOpenDtc] = useState<string | null>(null);
 
   // Soft auto-refresh of the server-rendered data — same pattern as the live map
   // (LiveTrackingClient). Only refreshes while the tab is visible so a
@@ -366,40 +372,50 @@ export function VehicleDetailClient({
         )}
       </Section>
 
-      {/* Diagnostic Trouble Codes (arıza kodları, migration 021). High-signal:
-          the card only appears when the device reports ACTIVE codes, so a red
-          panel here always means a real, uncleared fault. */}
-      {dtc.length > 0 && (
-        <section className="rounded-[16px] border border-destructive/40 bg-destructive/5 p-5">
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-destructive">
-            <AlertTriangle className="size-[18px]" />
-            {tm("dtc_title")}
-            <span className="ml-auto rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
+      {/* Mevcut Araç Hataları (vehicle_dtc, migrations 021+022). Sözlük eşleşmesi
+          SUNUCUDA yapıldı (page.tsx → lookupDtc); buraya yalnız aktif kodların
+          yerelleştirilmiş info'su iner. info === null → üretici-spesifik kod,
+          tek fallback metni gösterilir (tanım asla uydurulmaz). */}
+      <section className="glass rounded-[16px] p-5">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-medium">
+          <Wrench className="size-[18px] text-text-tertiary" />
+          {tm("dtc_title")}
+          {dtc.length > 0 && (
+            <span
+              className={cn(
+                "ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                dtc.length >= 3
+                  ? "bg-destructive/15 text-destructive"
+                  : "bg-accent-gold/15 text-accent-gold"
+              )}
+            >
+              <AlertTriangle className="size-3" aria-hidden />
               {tm("dtc_active", { count: dtc.length })}
             </span>
-          </h3>
-          <ul className="divide-y divide-destructive/15">
+          )}
+        </h3>
+
+        {dtc.length === 0 ? (
+          <p className="flex items-center gap-1.5 text-sm text-accent-green">
+            <CheckCircle2 className="size-4 shrink-0" aria-hidden />
+            {tm("dtc_none")}
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">
             {dtc.map((d) => (
-              <li
+              <DtcFaultRow
                 key={d.id}
-                className="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-2"
-              >
-                <span className="nums font-mono text-sm font-semibold text-destructive">
-                  {d.code}
-                </span>
-                {d.standard && (
-                  <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-                    {d.standard}
-                  </span>
-                )}
-                <span className="ml-auto text-xs text-text-tertiary">
-                  {tm("dtc_since")}: {formatDate(d.first_seen, locale)}
-                </span>
-              </li>
+                fault={d}
+                open={openDtc === d.id}
+                onToggle={() => setOpenDtc(openDtc === d.id ? null : d.id)}
+                currentOdometerKm={telemetry?.odometer_km ?? null}
+                locale={locale}
+                nf={nf}
+              />
             ))}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* GPS-detected trips & stops — segmented from the raw track
           (computeTripsAndStops). Distinct from admin-created assignments
@@ -801,6 +817,124 @@ function TeleField({
         {label}
       </dt>
       <dd className="nums mt-1 truncate text-sm">{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * Tek aktif arıza satırı: KOD + kısa başlık + "X gündür aktif · Y km" rozetleri;
+ * tıklanınca 4 alanlı detay paneli genişler (Tanım / Neresi arızalı /
+ * Belirtiler / İhmal edilirse). info === null → sözlük dışı (üretici-spesifik)
+ * kod: detayda tek fallback cümlesi, asla uydurma tanım yok.
+ */
+function DtcFaultRow({
+  fault,
+  open,
+  onToggle,
+  currentOdometerKm,
+  locale,
+  nf,
+}: {
+  fault: VehicleDtcRow & { info: DtcText | null };
+  open: boolean;
+  onToggle: () => void;
+  currentOdometerKm: number | null;
+  locale: string;
+  nf: string;
+}) {
+  const tm = useTranslations("map");
+
+  // "X gündür aktif" — gün granülaritesi; 0 gün → "bugün tespit edildi".
+  const days = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(fault.first_seen).getTime()) / 86_400_000)
+  );
+  // "o günden beri Y km" — güncel odometer − ilk görülme km'si; veri yoksa "—".
+  const kmSince =
+    currentOdometerKm !== null && fault.first_seen_odometer_km !== null
+      ? Math.max(0, Math.round(currentOdometerKm - fault.first_seen_odometer_km))
+      : null;
+
+  const detailId = `dtc-detail-${fault.id}`;
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={detailId}
+        className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 py-2.5 text-left transition-colors hover:bg-surface-2/40"
+      >
+        <span className="nums font-mono text-sm font-semibold text-accent-gold">
+          {fault.code}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm">
+          {fault.info ? fault.info.title : tm("dtc_unknown_title")}
+        </span>
+        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary">
+          {days === 0 ? tm("dtc_today") : tm("dtc_active_days", { days })}
+        </span>
+        <span className="nums rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary">
+          {kmSince !== null
+            ? tm("dtc_km_since", { km: kmSince.toLocaleString(nf) })
+            : "—"}
+        </span>
+        <ChevronDown
+          className={cn(
+            "size-4 shrink-0 text-text-tertiary transition-transform",
+            open && "rotate-180"
+          )}
+          aria-hidden
+        />
+      </button>
+
+      {open && (
+        <div id={detailId} className="space-y-2.5 pb-3 pl-1 pr-1">
+          {fault.info ? (
+            <>
+              <DtcDetailField label={tm("dtc_field_def")}>
+                {fault.code}: {fault.info.title}
+              </DtcDetailField>
+              <DtcDetailField label={tm("dtc_field_part")}>
+                {fault.info.part}
+              </DtcDetailField>
+              <DtcDetailField label={tm("dtc_field_symptoms")}>
+                {fault.info.symptoms}
+              </DtcDetailField>
+              <DtcDetailField label={tm("dtc_field_risk")}>
+                {fault.info.risk}
+              </DtcDetailField>
+            </>
+          ) : (
+            <p className="text-sm text-text-tertiary">{tm("dtc_unknown")}</p>
+          )}
+          <p className="flex items-center gap-1.5 text-xs text-text-tertiary">
+            {fault.standard && (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+                {fault.standard}
+              </span>
+            )}
+            {tm("dtc_since")}: {formatDate(fault.first_seen, locale)}
+          </p>
+        </div>
+      )}
+    </li>
+  );
+}
+
+function DtcDetailField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium uppercase tracking-[0.03em] text-text-tertiary">
+        {label}
+      </p>
+      <p className="mt-0.5 text-sm leading-relaxed">{children}</p>
     </div>
   );
 }

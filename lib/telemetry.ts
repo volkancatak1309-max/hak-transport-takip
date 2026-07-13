@@ -434,6 +434,9 @@ export type VehicleDtcRow = {
   standard: string | null;
   first_seen: string;
   last_seen: string;
+  /** Araç km'si arıza İLK görüldüğünde (migration 022) — cihaz o an km
+   *  raporlamadıysa null. UI "o günden beri Y km" rozetini bundan türetir. */
+  first_seen_odometer_km: number | null;
 };
 
 type ActiveDtc = { id: string; code: string; last_seen: string };
@@ -454,6 +457,28 @@ export async function saveDtc(
     .filter((s) => s.present)
     .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
   if (snaps.length === 0) return 0;
+
+  // Aracın güncel km'si (yeni arıza satırının first_seen_odometer_km değeri,
+  // migration 022). Yalnız gerçekten YENİ bir kod eklenirken, çağrı başına en
+  // fazla bir kez sorgulanır. saveTelemetry bu batch'in noktalarını saveDtc'den
+  // ÖNCE yazdığı için en güncel km zaten DB'de. Cihaz hiç km raporlamadıysa null.
+  let odoFetched = false;
+  let currentOdo: number | null = null;
+  const currentOdometerKm = async (): Promise<number | null> => {
+    if (!odoFetched) {
+      odoFetched = true;
+      const { data } = await supabaseAdmin
+        .from("device_telemetry")
+        .select("odometer_km")
+        .eq("vehicle_id", vehicleId)
+        .not("odometer_km", "is", null)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      currentOdo = (data?.odometer_km as number | null) ?? null;
+    }
+    return currentOdo;
+  };
 
   let written = 0;
   for (const snap of snaps) {
@@ -484,6 +509,7 @@ export async function saveDtc(
           standard: c.standard,
           first_seen: at,
           last_seen: at,
+          first_seen_odometer_km: await currentOdometerKm(),
         });
         // A concurrent insert of the same active code trips the partial-unique
         // index; that's fine (already recorded) — don't fail the whole batch.
@@ -514,7 +540,7 @@ export async function listActiveDtc(
 ): Promise<VehicleDtcRow[]> {
   const { data } = await supabaseAdmin
     .from("vehicle_dtc")
-    .select("id, code, standard, first_seen, last_seen")
+    .select("id, code, standard, first_seen, last_seen, first_seen_odometer_km")
     .eq("vehicle_id", vehicleId)
     .is("cleared_at", null)
     .order("last_seen", { ascending: false });

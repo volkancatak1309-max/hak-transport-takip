@@ -13,7 +13,6 @@ import {
 import { computeEngineHours } from "@/lib/metrics-engine-hours";
 import { computeDistanceKm } from "@/lib/metrics-distance";
 import { computeIdleTime } from "@/lib/metrics-idle";
-import { computeTripsAndStops } from "@/lib/metrics-trips";
 import { computeGeofenceEvents } from "@/lib/metrics-geofence";
 import { getActiveGeofences } from "@/app/actions/geofences";
 import { startOfTodayVienna } from "@/lib/format";
@@ -44,7 +43,6 @@ export default async function VehicleDetailPage({
   const engineHours = computeEngineHours(track);
   const distance = computeDistanceKm(track);
   const idle = computeIdleTime(track);
-  const tripStops = computeTripsAndStops(track);
   const geofence = computeGeofenceEvents(track, zones);
 
   // DTC zenginleştirme SUNUCUDA: sözlük (lib/dtc-codes) client bundle'a girmez;
@@ -69,7 +67,6 @@ export default async function VehicleDetailPage({
         engineHours={engineHours}
         distance={distance}
         idle={idle}
-        tripStops={tripStops}
         geofence={geofence}
         events={events}
         dtc={dtcEnriched}

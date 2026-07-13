@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
-import type { FlespiEvent, FlespiPoint } from "@/lib/flespi";
+import type { FlespiDtcSnapshot, FlespiEvent, FlespiPoint } from "@/lib/flespi";
 import type { ActiveVehicle } from "@/lib/types";
 
 /**
@@ -49,6 +49,17 @@ export async function saveTelemetry(
       ignition_on: p.ignition_on,
       fuel_level_pct: p.fuel_level_pct,
       odometer_km: p.odometer_km,
+      // Extended CAN/OBD (migration 021) — null on frames without engine data.
+      engine_rpm: p.engine_rpm,
+      engine_load_pct: p.engine_load_pct,
+      coolant_temp_c: p.coolant_temp_c,
+      fuel_consumption: p.fuel_consumption,
+      power_voltage: p.power_voltage,
+      battery_voltage: p.battery_voltage,
+      gsm_signal: p.gsm_signal,
+      altitude_m: p.altitude_m,
+      satellites: p.satellites,
+      dtc_number: p.dtc_number,
       recorded_at: p.recorded_at,
     });
   }
@@ -235,13 +246,44 @@ export type TelemetryRow = {
   speed_kmh: number | null;
   heading: number | null;
   ignition_on: boolean | null;
-  // OBD/CAN fields (migration 017). Only latestVehicleTelemetry selects these;
-  // the map + track queries omit them (nobody reads fuel/odometer there), so on
-  // those rows they are absent — read them only off latestVehicleTelemetry.
+  // OBD/CAN fields (migrations 017 + 021). Only latestVehicleTelemetry selects
+  // these; the map + track queries omit them (nobody reads fuel/odometer there),
+  // so on those rows they are absent — read them only off latestVehicleTelemetry.
   fuel_level_pct: number | null;
   odometer_km: number | null;
+  engine_rpm: number | null;
+  engine_load_pct: number | null;
+  coolant_temp_c: number | null;
+  fuel_consumption: number | null;
+  power_voltage: number | null;
+  battery_voltage: number | null;
+  gsm_signal: number | null;
+  altitude_m: number | null;
+  satellites: number | null;
+  dtc_number: number | null;
   recorded_at: string;
 };
+
+// CAN/OBD columns that arrive only on engine-ECU frames (~45% of messages), so
+// the single newest row is often null for them. latestVehicleTelemetry coalesces
+// each to its most-recent non-null value across a small recent window.
+const CAN_COALESCE_FIELDS = [
+  "speed_kmh",
+  "ignition_on",
+  "fuel_level_pct",
+  "odometer_km",
+  "engine_rpm",
+  "engine_load_pct",
+  "coolant_temp_c",
+  "fuel_consumption",
+  "power_voltage",
+  "battery_voltage",
+  "gsm_signal",
+  "altitude_m",
+  "satellites",
+  "dtc_number",
+] as const;
+const LATEST_COALESCE_WINDOW = 40; // rows scanned back to fill sparse CAN fields
 
 /**
  * The single most-recent telemetry point for ONE vehicle, or null if the device
@@ -255,16 +297,37 @@ export type TelemetryRow = {
 export async function latestVehicleTelemetry(
   vehicleId: string
 ): Promise<TelemetryRow | null> {
+  // Fetch the newest window (not just row 1): position/heading come from the very
+  // latest fix, but the sparse CAN/OBD fields (fuel, rpm, coolant, …) are
+  // back-filled from the most-recent row that actually reported each — otherwise
+  // the detail card shows "—" whenever the newest frame lacked engine data.
   const { data } = await supabaseAdmin
     .from("device_telemetry")
     .select(
-      "vehicle_id, latitude, longitude, speed_kmh, heading, ignition_on, fuel_level_pct, odometer_km, recorded_at"
+      "vehicle_id, latitude, longitude, speed_kmh, heading, ignition_on, fuel_level_pct, odometer_km, engine_rpm, engine_load_pct, coolant_temp_c, fuel_consumption, power_voltage, battery_voltage, gsm_signal, altitude_m, satellites, dtc_number, recorded_at"
     )
     .eq("vehicle_id", vehicleId)
     .order("recorded_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return (data as TelemetryRow | null) ?? null;
+    .limit(LATEST_COALESCE_WINDOW);
+
+  const rows = (data ?? []) as TelemetryRow[];
+  if (rows.length === 0) return null;
+
+  // Base = newest fix (position, heading, recorded_at come from here as-is).
+  const latest: TelemetryRow = { ...rows[0] };
+  // For each sparse field, walk forward to the first row that reported it.
+  const acc = latest as Record<string, unknown>;
+  for (const field of CAN_COALESCE_FIELDS) {
+    if (acc[field] !== null && acc[field] !== undefined) continue;
+    for (let i = 1; i < rows.length; i++) {
+      const v = (rows[i] as Record<string, unknown>)[field];
+      if (v !== null && v !== undefined) {
+        acc[field] = v;
+        break;
+      }
+    }
+  }
+  return latest;
 }
 
 /**
@@ -361,4 +424,115 @@ export async function listVehicleTrack(
     if (batch.length < TRACK_PAGE) break;
   }
   return rows;
+}
+
+// ── Arıza kodları (vehicle_dtc, migration 021) ──────────────────────────────
+
+export type VehicleDtcRow = {
+  id: string;
+  code: string;
+  standard: string | null;
+  first_seen: string;
+  last_seen: string;
+};
+
+type ActiveDtc = { id: string; code: string; last_seen: string };
+
+/**
+ * Reconcile a device's active DTC list against `vehicle_dtc` from the snapshots
+ * found in a poll/stream batch. Each snapshot (see extractDtc) is authoritative:
+ * codes it lists are upserted as active, active codes it omits are marked
+ * cleared. Snapshots are applied chronologically so the newest wins. Idempotent:
+ * re-applying the same snapshot only bumps last_seen. Throws on DB error — the
+ * caller MUST wrap this in its own try/catch so DTC never drops the GPS flow.
+ */
+export async function saveDtc(
+  vehicleId: string,
+  snapshots: FlespiDtcSnapshot[]
+): Promise<number> {
+  const snaps = snapshots
+    .filter((s) => s.present)
+    .sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
+  if (snaps.length === 0) return 0;
+
+  let written = 0;
+  for (const snap of snaps) {
+    const at = snap.occurred_at;
+    const { data } = await supabaseAdmin
+      .from("vehicle_dtc")
+      .select("id, code, last_seen")
+      .eq("vehicle_id", vehicleId)
+      .is("cleared_at", null);
+    const active = new Map(
+      ((data ?? []) as ActiveDtc[]).map((r) => [r.code, r])
+    );
+    const wanted = new Set(snap.codes.map((c) => c.code));
+
+    for (const c of snap.codes) {
+      const ex = active.get(c.code);
+      if (ex) {
+        if (new Date(at).getTime() > new Date(ex.last_seen).getTime()) {
+          await supabaseAdmin
+            .from("vehicle_dtc")
+            .update({ last_seen: at })
+            .eq("id", ex.id);
+        }
+      } else {
+        const { error } = await supabaseAdmin.from("vehicle_dtc").insert({
+          vehicle_id: vehicleId,
+          code: c.code,
+          standard: c.standard,
+          first_seen: at,
+          last_seen: at,
+        });
+        // A concurrent insert of the same active code trips the partial-unique
+        // index; that's fine (already recorded) — don't fail the whole batch.
+        if (!error) written++;
+      }
+    }
+
+    // Codes previously active but absent from this fresh snapshot → cleared.
+    for (const [code, ex] of active) {
+      if (!wanted.has(code)) {
+        await supabaseAdmin
+          .from("vehicle_dtc")
+          .update({ cleared_at: at })
+          .eq("id", ex.id);
+      }
+    }
+  }
+  return written;
+}
+
+/**
+ * Active (uncleared) DTCs for one vehicle, newest-first — the detail "arıza
+ * kodları" card. Degrades to an empty list if the table doesn't exist yet
+ * (migration 021 not run), so the page never breaks.
+ */
+export async function listActiveDtc(
+  vehicleId: string
+): Promise<VehicleDtcRow[]> {
+  const { data } = await supabaseAdmin
+    .from("vehicle_dtc")
+    .select("id, code, standard, first_seen, last_seen")
+    .eq("vehicle_id", vehicleId)
+    .is("cleared_at", null)
+    .order("last_seen", { ascending: false });
+  return (data ?? []) as VehicleDtcRow[];
+}
+
+/**
+ * One-time VIN backfill: set vehicles.vin from a device-reported VIN, but ONLY
+ * when it is currently NULL, so a manually-entered value is never overwritten.
+ * Throws on DB error — the caller MUST wrap this in its own try/catch.
+ */
+export async function maybeBackfillVin(
+  vehicleId: string,
+  vin: string
+): Promise<void> {
+  await supabaseAdmin
+    .from("vehicles")
+    .update({ vin })
+    .eq("id", vehicleId)
+    .is("vin", null);
 }

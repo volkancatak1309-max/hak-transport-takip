@@ -137,6 +137,8 @@ export type Vehicle = {
   flespi_device_id: number | null;
   // Device IMEI for the flespi stream push ingest (migration 016) — nullable.
   imei: string | null;
+  // Device-reported VIN (migration 021), backfilled from telemetry — nullable.
+  vin: string | null;
 };
 
 /** Live operational status — derived, never stored. NO green/red. */

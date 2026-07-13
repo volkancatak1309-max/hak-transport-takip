@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { flespiAuthorized } from "@/lib/flespi-auth";
 import { fetchDeviceMessages } from "@/lib/flespi";
-import { lastRecordedAt, saveTelemetry, saveVehicleEvents } from "@/lib/telemetry";
+import {
+  lastRecordedAt,
+  maybeBackfillVin,
+  saveDtc,
+  saveTelemetry,
+  saveVehicleEvents,
+} from "@/lib/telemetry";
 import { processAutoShifts, type AutoShiftSummary } from "@/lib/auto-shift";
 
 // Service-role Supabase + outbound flespi fetch → must run on Node, never edge.
@@ -60,7 +66,7 @@ async function runSync() {
         ? new Date(last).getTime() / 1000
         : (Date.now() - FIRST_WINDOW_MS) / 1000;
 
-      const { points, events } = await fetchDeviceMessages(
+      const { points, events, dtc } = await fetchDeviceMessages(
         v.flespi_device_id,
         sinceTs
       );
@@ -75,6 +81,30 @@ async function runSync() {
         } catch (err) {
           console.error(
             `[flespi/sync] ${v.plate}: vehicle_events yazılamadı:`,
+            err instanceof Error ? err.message : err
+          );
+        }
+      }
+      // Arıza kodları (migration 021) — kendi try/catch'inde; GPS akışını ASLA
+      // düşürmez (tablo yoksa / snapshot işlenemezse sadece loglanır).
+      if (dtc.length > 0) {
+        try {
+          await saveDtc(v.id, dtc);
+        } catch (err) {
+          console.error(
+            `[flespi/sync] ${v.plate}: vehicle_dtc yazılamadı:`,
+            err instanceof Error ? err.message : err
+          );
+        }
+      }
+      // VIN tek seferlik backfill — kendi try/catch'inde; GPS akışını düşürmez.
+      const vin = points.find((p) => p.vin)?.vin ?? null;
+      if (vin) {
+        try {
+          await maybeBackfillVin(v.id, vin);
+        } catch (err) {
+          console.error(
+            `[flespi/sync] ${v.plate}: VIN backfill başarısız:`,
             err instanceof Error ? err.message : err
           );
         }

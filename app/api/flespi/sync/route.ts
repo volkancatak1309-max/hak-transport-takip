@@ -5,6 +5,7 @@ import { fetchDeviceMessages } from "@/lib/flespi";
 import {
   lastRecordedAt,
   maybeBackfillVin,
+  reconcileDtc,
   saveDtc,
   saveTelemetry,
   saveVehicleEvents,
@@ -105,6 +106,27 @@ async function runSync() {
         } catch (err) {
           console.error(
             `[flespi/sync] ${v.plate}: VIN backfill başarısız:`,
+            err instanceof Error ? err.message : err
+          );
+        }
+      }
+      // DTC bekçisi (öz-iyileşme): bu batch'in EN YENİ dtc_number değeri aktif
+      // vehicle_dtc satır sayısıyla uyuşmuyorsa flespi telemetry'deki son
+      // bilinen liste normal snapshot gibi işlenir (bayat-liste koruması
+      // reconcileDtc içinde). Kendi try/catch'inde — GPS akışını ASLA düşürmez.
+      let dtcNumber: number | null = null;
+      for (let i = points.length - 1; i >= 0; i--) {
+        if (points[i].dtc_number !== null) {
+          dtcNumber = points[i].dtc_number;
+          break;
+        }
+      }
+      if (dtcNumber !== null) {
+        try {
+          await reconcileDtc(v.id, v.flespi_device_id, dtcNumber);
+        } catch (err) {
+          console.error(
+            `[flespi/sync] ${v.plate}: DTC bekçisi başarısız:`,
             err instanceof Error ? err.message : err
           );
         }

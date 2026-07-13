@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
+import { fetchLastKnownDtc } from "@/lib/flespi";
 import type { FlespiDtcSnapshot, FlespiEvent, FlespiPoint } from "@/lib/flespi";
 import type { ActiveVehicle } from "@/lib/types";
 
@@ -545,6 +546,64 @@ export async function listActiveDtc(
     .is("cleared_at", null)
     .order("last_seen", { ascending: false });
   return (data ?? []) as VehicleDtcRow[];
+}
+
+/**
+ * DTC bekçisi (öz-iyileşme). Sorunu çözdüğü sınıf: cihaz tam can.dtc listesini
+ * yalnız liste DEĞİŞİNCE gönderir; deploy penceresi / cron kesintisi / cihaz
+ * reboot'u o tek snapshot'ı kaçırırsa vehicle_dtc süresiz boş/eksik kalır
+ * (canlıda yaşandı: 2026-07-13, DO-992GO — snapshot 15:39'da, DTC kodu 17:10'da
+ * deploy oldu). can.dtc.number ise her CAN frame'inde akar; sayı ile aktif satır
+ * sayısı uyuşmuyorsa flespi'nin telemetry ucundaki son bilinen listeyi çekip
+ * normal snapshot gibi saveDtc'ye verir.
+ *
+ * Korumalar:
+ * - dtcNumber null/0 → hiç çalışmaz (0'ı zaten mesaj yolu explicit-zero
+ *   snapshot olarak işler).
+ * - Sayı zaten uyuşuyorsa → hiç çalışmaz (flespi'ye istek yok).
+ * - Telemetry snapshot'ı tablodaki EN YENİ last_seen'den yeni değilse →
+ *   uygulanmaz. Bu, "sayı değişti ama liste henüz gelmedi" (örn. 3. arıza
+ *   eklendi, liste hâlâ eski) durumunda bayat listeyi tekrar tekrar işleyip
+ *   taze kayıtları geriye çekmeyi engeller.
+ *
+ * Throws on DB/flespi error — the caller MUST wrap this in its own try/catch
+ * so the watchdog can never drop the GPS flow.
+ */
+export async function reconcileDtc(
+  vehicleId: string,
+  flespiDeviceId: number,
+  dtcNumber: number | null
+): Promise<number> {
+  if (dtcNumber === null || dtcNumber <= 0) return 0;
+
+  const { count } = await supabaseAdmin
+    .from("vehicle_dtc")
+    .select("id", { count: "exact", head: true })
+    .eq("vehicle_id", vehicleId)
+    .is("cleared_at", null);
+  if ((count ?? 0) === dtcNumber) return 0;
+
+  const snap = await fetchLastKnownDtc(flespiDeviceId);
+  if (!snap || snap.codes.length === 0) return 0;
+
+  // Bayat snapshot koruması: tablodaki en yeni last_seen'den (temizlenmiş
+  // satırlar dahil) yeni olmayan liste uygulanmaz.
+  const { data: newest } = await supabaseAdmin
+    .from("vehicle_dtc")
+    .select("last_seen")
+    .eq("vehicle_id", vehicleId)
+    .order("last_seen", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (
+    newest?.last_seen &&
+    new Date(snap.occurred_at).getTime() <=
+      new Date(newest.last_seen as string).getTime()
+  ) {
+    return 0;
+  }
+
+  return saveDtc(vehicleId, [snap]);
 }
 
 /**

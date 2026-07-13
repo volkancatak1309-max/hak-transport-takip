@@ -229,22 +229,8 @@ export function extractDtc(msg: Record<string, unknown>): FlespiDtcSnapshot | nu
   const occurred_at = new Date(tsMs).toISOString();
 
   const raw = pick(msg, "can.dtc");
-  if (Array.isArray(raw)) {
-    const codes: { code: string; standard: string | null }[] = [];
-    for (const item of raw) {
-      if (item && typeof item === "object") {
-        const rec = item as Record<string, unknown>;
-        const code = rec.code;
-        if (typeof code === "string" && code.trim()) {
-          codes.push({
-            code: code.trim(),
-            standard: typeof rec.standard === "string" ? rec.standard : null,
-          });
-        }
-      } else if (typeof item === "string" && item.trim()) {
-        codes.push({ code: item.trim(), standard: null });
-      }
-    }
+  const codes = parseDtcList(raw);
+  if (codes !== null) {
     return { present: true, codes, occurred_at };
   }
 
@@ -253,6 +239,76 @@ export function extractDtc(msg: Record<string, unknown>): FlespiDtcSnapshot | nu
     return { present: true, codes: [], occurred_at };
   }
   return null;
+}
+
+/**
+ * Ham can.dtc değerini kod listesine çevirir; değer dizi değilse null.
+ * Gerçek cihazda (DO-992GO) doğrulanan şekil: [{code:'P0100',standard:'OBDII'},…]
+ * — düz string dizisi de tolere edilir. extractDtc (mesaj yolu) ile
+ * fetchLastKnownDtc (telemetry ucu / bekçi yolu) tarafından paylaşılır.
+ */
+function parseDtcList(
+  raw: unknown
+): { code: string; standard: string | null }[] | null {
+  if (!Array.isArray(raw)) return null;
+  const codes: { code: string; standard: string | null }[] = [];
+  for (const item of raw) {
+    if (item && typeof item === "object") {
+      const rec = item as Record<string, unknown>;
+      const code = rec.code;
+      if (typeof code === "string" && code.trim()) {
+        codes.push({
+          code: code.trim(),
+          standard: typeof rec.standard === "string" ? rec.standard : null,
+        });
+      }
+    } else if (typeof item === "string" && item.trim()) {
+      codes.push({ code: item.trim(), standard: null });
+    }
+  }
+  return codes;
+}
+
+/**
+ * Cihazın flespi'de saklı SON BİLİNEN can.dtc listesi (telemetry ucu) —
+ * DTC bekçisinin (öz-iyileşme) veri kaynağı. Mesaj akışından farkı: cihaz tam
+ * listeyi yalnız liste DEĞİŞİNCE gönderir; deploy/kesinti penceresine denk
+ * gelen snapshot mesaj yolundan kaçar ama flespi telemetry'de son değer olarak
+ * durur. Bu fonksiyon o değeri normal FlespiDtcSnapshot şekline çevirir
+ * (extractDtc ile aynı RTC korumaları), yoksa/geçersizse null döner.
+ */
+export async function fetchLastKnownDtc(
+  deviceId: number
+): Promise<FlespiDtcSnapshot | null> {
+  const url = `${FLESPI_BASE}/gw/devices/${deviceId}/telemetry/can.dtc`;
+  const res = await fetch(url, {
+    headers: { Authorization: `FlespiToken ${token()}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `flespi device ${deviceId} telemetry HTTP ${res.status}: ${body.slice(0, 300)}`
+    );
+  }
+
+  const json = (await res.json()) as {
+    result?: { telemetry?: Record<string, { value?: unknown; ts?: unknown }> }[];
+  };
+  const entry = json.result?.[0]?.telemetry?.["can.dtc"];
+  const ts = num(entry?.ts);
+  if (!entry || ts === null) return null;
+  // extractDtc ile aynı RTC korumaları.
+  if (ts * 1000 > Date.now() + FUTURE_SKEW_MS) return null;
+  if (ts < YEAR_2000_TS) return null;
+
+  const codes = parseDtcList(entry.value);
+  if (codes === null) return null;
+  return {
+    present: true,
+    codes,
+    occurred_at: new Date(ts * 1000).toISOString(),
+  };
 }
 
 /**

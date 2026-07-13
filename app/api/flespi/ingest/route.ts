@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { flespiAuthorized } from "@/lib/flespi-auth";
 import {
+  extractDtc,
   extractEvents,
   normalize,
+  type FlespiDtcSnapshot,
   type FlespiEvent,
   type FlespiPoint,
 } from "@/lib/flespi";
-import { saveTelemetry, saveVehicleEvents } from "@/lib/telemetry";
+import {
+  maybeBackfillVin,
+  saveDtc,
+  saveTelemetry,
+  saveVehicleEvents,
+} from "@/lib/telemetry";
 import { processAutoShifts } from "@/lib/auto-shift";
 
 // Service-role Supabase + JSON body parsing → must run on Node, never edge.
@@ -121,10 +128,13 @@ export async function POST(req: NextRequest) {
         }
         const points: FlespiPoint[] = [];
         const events: FlespiEvent[] = [];
+        const dtc: FlespiDtcSnapshot[] = [];
         for (const m of msgs) {
           const p = normalize(deviceId, m);
           if (p) points.push(p);
           events.push(...extractEvents(m));
+          const d = extractDtc(m);
+          if (d) dtc.push(d);
         }
         saved += await saveTelemetry(vehicle.id, points);
         touchedVehicleIds.push(vehicle.id);
@@ -136,6 +146,30 @@ export async function POST(req: NextRequest) {
           } catch (err) {
             console.error(
               "[flespi/ingest] vehicle_events yazılamadı:",
+              err instanceof Error ? err.message : err
+            );
+          }
+        }
+        // Arıza kodları (migration 021) — kendi try/catch'inde; GPS akışını
+        // ASLA düşürmez ve 200-kuralını bozmaz.
+        if (dtc.length > 0) {
+          try {
+            await saveDtc(vehicle.id, dtc);
+          } catch (err) {
+            console.error(
+              "[flespi/ingest] vehicle_dtc yazılamadı:",
+              err instanceof Error ? err.message : err
+            );
+          }
+        }
+        // VIN tek seferlik backfill — kendi try/catch'inde.
+        const vin = points.find((p) => p.vin)?.vin ?? null;
+        if (vin) {
+          try {
+            await maybeBackfillVin(vehicle.id, vin);
+          } catch (err) {
+            console.error(
+              "[flespi/ingest] VIN backfill başarısız:",
               err instanceof Error ? err.message : err
             );
           }

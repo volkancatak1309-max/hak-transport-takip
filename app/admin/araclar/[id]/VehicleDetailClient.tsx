@@ -29,6 +29,12 @@ import {
   AlertTriangle,
   Siren,
   ExternalLink,
+  Thermometer,
+  Zap,
+  BatteryCharging,
+  Signal,
+  Activity,
+  Barcode,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +45,7 @@ import { PenaltiesSection } from "./PenaltiesSection";
 import { STATUS_STYLE } from "@/lib/vehicle-ui";
 import { formatDate, formatTime, formatRelative, formatHoursMinutes } from "@/lib/format";
 import type { VehicleDetail } from "@/lib/vehicles";
-import type { TelemetryRow, VehicleEventRow } from "@/lib/telemetry";
+import type { TelemetryRow, VehicleEventRow, VehicleDtcRow } from "@/lib/telemetry";
 import { EVENT_ICON_STYLE, eventSeverity } from "@/lib/event-ui";
 import type { EngineHoursResult } from "@/lib/metrics-engine-hours";
 import type { DistanceResult } from "@/lib/metrics-distance";
@@ -57,6 +63,7 @@ export function VehicleDetailClient({
   tripStops,
   geofence,
   events,
+  dtc,
 }: {
   detail: VehicleDetail;
   telemetry: TelemetryRow | null;
@@ -66,6 +73,7 @@ export function VehicleDetailClient({
   tripStops: TripsResult;
   geofence: GeofenceResult;
   events: VehicleEventRow[];
+  dtc: VehicleDtcRow[];
 }) {
   const t = useTranslations("vehicles");
   const td = useTranslations("vehicles.detail");
@@ -129,6 +137,14 @@ export function VehicleDetailClient({
           <p className="text-sm text-muted-foreground">
             {[v.make, v.model, v.year].filter(Boolean).join(" · ") || "—"}
           </p>
+          {v.vin && (
+            <p className="nums mt-0.5 flex items-center gap-1 text-xs text-text-tertiary">
+              <Barcode className="size-3 shrink-0" aria-hidden />
+              <span className="truncate">
+                {tm("vin")}: {v.vin}
+              </span>
+            </p>
+          )}
         </div>
         <span
           className={cn(
@@ -211,6 +227,53 @@ export function VehicleDetailClient({
               <TeleField label={tm("vehicle_km")} icon={Milestone}>
                 {telemetry.odometer_km !== null
                   ? `${Math.round(telemetry.odometer_km).toLocaleString(nf)} km`
+                  : "—"}
+              </TeleField>
+
+              {/* Extended CAN/OBD (migration 021). These ride only engine-ECU
+                  frames, so latestVehicleTelemetry back-fills each from the last
+                  frame that reported it; still "—" until the device ever sends it. */}
+              <TeleField label={tm("engine_rpm")} icon={Gauge}>
+                {telemetry.engine_rpm !== null
+                  ? telemetry.engine_rpm.toLocaleString(nf)
+                  : "—"}
+              </TeleField>
+
+              <TeleField label={tm("coolant_temp")} icon={Thermometer}>
+                {telemetry.coolant_temp_c !== null
+                  ? `${Math.round(telemetry.coolant_temp_c)} °C`
+                  : "—"}
+              </TeleField>
+
+              <TeleField label={tm("engine_load")} icon={Activity}>
+                {telemetry.engine_load_pct !== null
+                  ? `%${Math.round(telemetry.engine_load_pct)}`
+                  : "—"}
+              </TeleField>
+
+              <TeleField label={tm("fuel_consumption")} icon={Fuel}>
+                {telemetry.fuel_consumption !== null
+                  ? telemetry.fuel_consumption.toLocaleString(nf, {
+                      maximumFractionDigits: 1,
+                    })
+                  : "—"}
+              </TeleField>
+
+              <TeleField label={tm("power_voltage")} icon={Zap}>
+                {telemetry.power_voltage !== null
+                  ? `${telemetry.power_voltage.toFixed(1)} V`
+                  : "—"}
+              </TeleField>
+
+              <TeleField label={tm("battery_voltage")} icon={BatteryCharging}>
+                {telemetry.battery_voltage !== null
+                  ? `${telemetry.battery_voltage.toFixed(2)} V`
+                  : "—"}
+              </TeleField>
+
+              <TeleField label={tm("gsm_signal")} icon={Signal}>
+                {telemetry.gsm_signal !== null
+                  ? `%${Math.round(telemetry.gsm_signal)}`
                   : "—"}
               </TeleField>
             </dl>
@@ -302,6 +365,41 @@ export function VehicleDetailClient({
           <p className="text-sm text-text-tertiary">{tm("no_device_data")}</p>
         )}
       </Section>
+
+      {/* Diagnostic Trouble Codes (arıza kodları, migration 021). High-signal:
+          the card only appears when the device reports ACTIVE codes, so a red
+          panel here always means a real, uncleared fault. */}
+      {dtc.length > 0 && (
+        <section className="rounded-[16px] border border-destructive/40 bg-destructive/5 p-5">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-destructive">
+            <AlertTriangle className="size-[18px]" />
+            {tm("dtc_title")}
+            <span className="ml-auto rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
+              {tm("dtc_active", { count: dtc.length })}
+            </span>
+          </h3>
+          <ul className="divide-y divide-destructive/15">
+            {dtc.map((d) => (
+              <li
+                key={d.id}
+                className="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-2"
+              >
+                <span className="nums font-mono text-sm font-semibold text-destructive">
+                  {d.code}
+                </span>
+                {d.standard && (
+                  <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                    {d.standard}
+                  </span>
+                )}
+                <span className="ml-auto text-xs text-text-tertiary">
+                  {tm("dtc_since")}: {formatDate(d.first_seen, locale)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* GPS-detected trips & stops — segmented from the raw track
           (computeTripsAndStops). Distinct from admin-created assignments

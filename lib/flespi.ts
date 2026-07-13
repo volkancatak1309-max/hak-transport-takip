@@ -37,10 +37,39 @@ export type FlespiPoint = {
   fuel_level_pct: number | null;
   /** OBD/CAN total vehicle odometer, or null if the device omits it. */
   odometer_km: number | null;
+  // Extended CAN/OBD (migration 021). Present only while the engine ECU is on the
+  // CAN bus (~45% of DO-992GO messages), so ANY of these may be null on a fix.
+  engine_rpm: number | null;
+  engine_load_pct: number | null;
+  coolant_temp_c: number | null;
+  fuel_consumption: number | null;
+  power_voltage: number | null;
+  battery_voltage: number | null;
+  gsm_signal: number | null;
+  altitude_m: number | null;
+  satellites: number | null;
+  /** can.dtc.number — count of active fault codes on this frame, or null. */
+  dtc_number: number | null;
+  /** Device-reported VIN (vehicle.vin), or null. Backfilled onto the vehicle. */
+  vin: string | null;
   /** ISO string derived from the device RTC `timestamp`. */
   recorded_at: string;
   /** Raw epoch-seconds device timestamp (used for the polling cursor). */
   flespi_timestamp: number;
+};
+
+/** One authoritative snapshot of a device's active DTC list (arıza kodları). */
+export type FlespiDtcSnapshot = {
+  /**
+   * true only when the message carries an AUTHORITATIVE active-code snapshot:
+   * either the full `can.dtc` list, or an explicit `can.dtc.number === 0`
+   * ("no active faults"). Frames that merely omit can.dtc are NOT snapshots and
+   * must not clear existing codes — the device only resends the list on change.
+   */
+  present: boolean;
+  codes: { code: string; standard: string | null }[];
+  /** ISO string derived from the device RTC `timestamp`. */
+  occurred_at: string;
 };
 
 /** Cihazın bildirdiği tek bir sürüş/güvenlik olayı (vehicle_events satırı). */
@@ -149,6 +178,14 @@ export function normalize(
     num(pick(msg, "vehicle.mileage.total")) ??
     num(pick(msg, "obd.distance.total"));
 
+  // Extended CAN/OBD (migration 021) — real field names confirmed on DO-992GO.
+  // roundInt() keeps values destined for INT columns clean if a device ever
+  // sends a fractional reading; the rest stay double precision.
+  const roundInt = (n: number | null) => (n === null ? null : Math.round(n));
+  const vinRaw = pick(msg, "vehicle.vin");
+  const vin =
+    typeof vinRaw === "string" && vinRaw.trim() ? vinRaw.trim() : null;
+
   return {
     flespi_device_id: deviceId,
     latitude: lat,
@@ -158,9 +195,64 @@ export function normalize(
     ignition_on: ignition,
     fuel_level_pct: fuelLevel,
     odometer_km: odometer,
+    engine_rpm: roundInt(num(pick(msg, "can.engine.rpm"))),
+    engine_load_pct: num(pick(msg, "can.engine.load.level")),
+    coolant_temp_c: num(pick(msg, "can.engine.coolant.temperature")),
+    fuel_consumption: num(pick(msg, "can.fuel.consumption")),
+    power_voltage: num(pick(msg, "external.powersource.voltage")),
+    battery_voltage: num(pick(msg, "battery.voltage")),
+    gsm_signal: roundInt(num(pick(msg, "gsm.signal.level"))),
+    altitude_m: num(pick(msg, "position.altitude")),
+    satellites: roundInt(num(pick(msg, "position.satellites"))),
+    dtc_number: roundInt(num(pick(msg, "can.dtc.number"))),
+    vin,
     recorded_at: new Date(ts * 1000).toISOString(),
     flespi_timestamp: ts,
   };
+}
+
+/**
+ * Extract the device's active-DTC snapshot from one message, or null if the
+ * message carries no authoritative snapshot. The device sends the full list
+ * `can.dtc = [{code, standard}, ...]` only when the set CHANGES; `can.dtc.number`
+ * (the count) rides every CAN frame. So a snapshot exists when EITHER the list is
+ * present OR the count is explicitly 0. A frame that merely lacks can.dtc is NOT
+ * a snapshot (returns null) and must never clear standing codes. Uses the same
+ * RTC guards as normalize(). Independent of the GPS/point path.
+ */
+export function extractDtc(msg: Record<string, unknown>): FlespiDtcSnapshot | null {
+  const ts = num(pick(msg, "timestamp"));
+  if (ts === null) return null;
+  const tsMs = ts * 1000;
+  if (tsMs > Date.now() + FUTURE_SKEW_MS) return null;
+  if (ts < YEAR_2000_TS) return null;
+  const occurred_at = new Date(tsMs).toISOString();
+
+  const raw = pick(msg, "can.dtc");
+  if (Array.isArray(raw)) {
+    const codes: { code: string; standard: string | null }[] = [];
+    for (const item of raw) {
+      if (item && typeof item === "object") {
+        const rec = item as Record<string, unknown>;
+        const code = rec.code;
+        if (typeof code === "string" && code.trim()) {
+          codes.push({
+            code: code.trim(),
+            standard: typeof rec.standard === "string" ? rec.standard : null,
+          });
+        }
+      } else if (typeof item === "string" && item.trim()) {
+        codes.push({ code: item.trim(), standard: null });
+      }
+    }
+    return { present: true, codes, occurred_at };
+  }
+
+  // Explicit "no active faults" snapshot: count present and zero → clear all.
+  if (num(pick(msg, "can.dtc.number")) === 0) {
+    return { present: true, codes: [], occurred_at };
+  }
+  return null;
 }
 
 /**
@@ -262,7 +354,7 @@ export function extractEvents(msg: Record<string, unknown>): FlespiEvent[] {
 export async function fetchDeviceMessages(
   deviceId: number,
   sinceTs?: number
-): Promise<{ points: FlespiPoint[]; events: FlespiEvent[] }> {
+): Promise<{ points: FlespiPoint[]; events: FlespiEvent[]; dtc: FlespiDtcSnapshot[] }> {
   // reverse:false → oldest-first, so the cursor advances forward and a capped
   // poll drains a backlog over successive ticks. [VARSAYIM] confirm ordering +
   // that `count` caps the result on the real device.
@@ -290,10 +382,13 @@ export async function fetchDeviceMessages(
 
   const points: FlespiPoint[] = [];
   const events: FlespiEvent[] = [];
+  const dtc: FlespiDtcSnapshot[] = [];
   for (const m of rows) {
     const p = normalize(deviceId, m);
     if (p) points.push(p);
     events.push(...extractEvents(m));
+    const d = extractDtc(m);
+    if (d) dtc.push(d);
   }
 
   // Surface a field-name mismatch instead of a silent "0 saved": if flespi
@@ -308,5 +403,5 @@ export async function fetchDeviceMessages(
     );
   }
 
-  return { points, events };
+  return { points, events, dtc };
 }

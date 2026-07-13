@@ -8,6 +8,7 @@ import {
   PackageX,
   Receipt,
   CheckCircle2,
+  UserX,
   type LucideIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +34,15 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
           text: t("dash.attn_over9h", { name: item.worker_name }),
           meta: formatDurationShort(item.ms, locale),
           overdue: true,
+        };
+      case "unconfirmed":
+        return {
+          icon: UserX,
+          text: t("dash.attn_unconfirmed", { name: item.worker_name }),
+          meta: item.autoEnded
+            ? t("dash.attn_unconfirmed_ended")
+            : formatDate(item.date, locale),
+          overdue: item.autoEnded,
         };
       case "inspection":
       case "insurance": {

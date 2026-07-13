@@ -30,6 +30,16 @@ export type WorkerPublic = Omit<Worker, "pin_hash">;
 export const WORKER_PUBLIC_COLUMNS =
   "id, name, phone, plate, employee_number, telegram_chat_id, telegram_username, telegram_linked_at, telegram_locale, is_admin, is_active, created_at";
 
+/**
+ * Shift-start confirmation (migration 020): 'pending' = auto-started, waiting
+ * for the driver's one-tap confirm; 'confirmed' = driver confirmed (or legacy
+ * manual start); 'unconfirmed' = shift ended without a confirm → admin badge.
+ */
+export type ShiftConfirmationStatus = "pending" | "confirmed" | "unconfirmed";
+
+/** How a shift was closed (migration 020). Null on legacy rows. */
+export type ShiftEndReason = "manual" | "auto_idle" | "watchdog" | "admin";
+
 export type TimeEntry = {
   id: string;
   worker_id: string;
@@ -52,6 +62,59 @@ export type TimeEntry = {
   vehicle_id: string | null;
   break_started_at: string | null;
   start_package_count: number | null;
+  // Driver panel v2 (migration 020) — auto shift + confirmation + signature.
+  auto_started: boolean;
+  confirmation_status: ShiftConfirmationStatus;
+  confirmed_at: string | null;
+  auto_ended: boolean;
+  end_reason: ShiftEndReason | null;
+  summary_confirmed_at: string | null;
+  summary_confirmed_by: string | null;
+};
+
+/** One "+1 PAKET" tap with its GPS fix (migration 020, audit trail). */
+export type ShiftPackage = {
+  id: string;
+  time_entry_id: string;
+  worker_id: string;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
+  recorded_at: string;
+  created_at: string;
+};
+
+/** A shift photo (FOTO ÇEK) with location + time stamp (migration 020). */
+export type ShiftPhoto = {
+  id: string;
+  time_entry_id: string;
+  worker_id: string;
+  storage_path: string;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
+  taken_at: string;
+  created_at: string;
+};
+
+export type DriverReportType =
+  | "vehicle_fault"
+  | "address_issue"
+  | "damaged_package"
+  | "other";
+
+/** A one-tap driver problem report (SORUN BİLDİR, migration 020). */
+export type DriverReport = {
+  id: string;
+  worker_id: string;
+  time_entry_id: string | null;
+  vehicle_id: string | null;
+  report_type: DriverReportType;
+  latitude: number | null;
+  longitude: number | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  created_at: string;
 };
 
 // --- Vehicle layer ---

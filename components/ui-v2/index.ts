@@ -5,6 +5,7 @@ export { StatCard, type StatTone } from "./StatCard";
 export { StatusChip, type ChipTone } from "./StatusChip";
 export { EmptyState, type EmptyKind } from "./EmptyState";
 export { FilterBar, type FilterSelect } from "./FilterBar";
+export { SegmentedControl, type SegmentOption } from "./SegmentedControl";
 export {
   DataTable,
   RowMenuTrigger,

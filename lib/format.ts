@@ -194,7 +194,7 @@ function zonedWallTimeToUtc(
 }
 
 /** Add `n` calendar days to a Vienna day-start instant (DST-safe). */
-function addCalendarDaysVienna(dayStart: Date, n: number): Date {
+export function addCalendarDaysVienna(dayStart: Date, n: number): Date {
   const p = tzParts(dayStart, VIENNA_TZ);
   const shifted = new Date(Date.UTC(p.year, p.month - 1, p.day + n));
   return zonedWallTimeToUtc(

@@ -11,37 +11,39 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { useUrlFilters } from "./useUrlFilters";
 
 /**
- * Tek filtre çubuğu kaynağı (DESIGN-SYSTEM §7). Durum DAİMA URL'de
- * (useUrlFilters). 26-28 araçlık listede canlı filtreleme — "Uygula" yok.
- * Sonuç sayacı zorunlu; "Temizle" aktif filtre varken görünür.
+ * Tek filtre çubuğu kaynağı (DESIGN-SYSTEM §7) — KONTROLLÜ/presentational.
+ * Ebeveyn state'i tutar (anlık filtreleme; her tuşta RSC refetch YOK). Ebeveyn
+ * dilerse durumu URL'e mirror'lar (useUrlFilters ile) — 28 araçlık listede
+ * varsayılan olarak client-state daha doğru. Sonuç sayacı zorunlu; "Temizle"
+ * aktif filtre varken görünür.
  */
 export type FilterSelect = {
-  /** URL anahtarı (ör. "durum"). */
-  key: string;
-  /** Erişilebilir etiket. */
+  /** Erişilebilir etiket + trigger üzerinde görünen değer. */
   label: string;
+  value: string;
+  onChange: (value: string) => void;
   options: { value: string; label: string }[];
-  /** "Tümü" seçeneğinin etiketi (değeri boş string = URL'den silinir). */
+  /** "Tümü" seçeneğinin etiketi (değeri boş string). */
   allLabel?: string;
 };
 
+const ALL = "__all__";
+
 export function FilterBar({
-  searchKey = "q",
-  searchPlaceholder = "Ara…",
+  search,
   selects = [],
   resultCount,
   totalCount,
   countLabel = "kayıt",
   clearLabel = "Temizle",
+  onClear,
   children,
   className,
 }: {
-  /** Arama kutusunun URL anahtarı; null = arama yok. */
-  searchKey?: string | null;
-  searchPlaceholder?: string;
+  /** Arama kutusu; verilmezse yok. */
+  search?: { value: string; onChange: (v: string) => void; placeholder?: string };
   selects?: FilterSelect[];
   /** Filtre sonrası görünen kayıt sayısı (zorunlu sayaç). */
   resultCount: number;
@@ -49,15 +51,14 @@ export function FilterBar({
   totalCount?: number;
   countLabel?: string;
   clearLabel?: string;
-  /** Ek filtre öğeleri (tarih aralığı ön-ayarları vb.) — URL'e kendisi yazar. */
+  /** Tüm filtreleri sıfırlar; verilmezse "Temizle" gösterilmez. */
+  onClear?: () => void;
+  /** Ek öğeler (tarih aralığı ön-ayarları vb.). */
   children?: React.ReactNode;
   className?: string;
 }) {
-  const { get, set, clear } = useUrlFilters();
-
-  const q = searchKey ? get(searchKey) : "";
   const hasActive =
-    (searchKey && q !== "") || selects.some((s) => get(s.key) !== "");
+    (search && search.value !== "") || selects.some((s) => s.value !== "");
 
   return (
     <div
@@ -66,42 +67,45 @@ export function FilterBar({
         className
       )}
     >
-      {searchKey && (
+      {search && (
         <div className="relative min-w-40 flex-1">
           <Search
             aria-hidden
             className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
           />
           <Input
-            value={q}
-            onChange={(e) => set({ [searchKey]: e.target.value })}
-            placeholder={searchPlaceholder}
-            aria-label={searchPlaceholder}
+            value={search.value}
+            onChange={(e) => search.onChange(e.target.value)}
+            placeholder={search.placeholder ?? "Ara…"}
+            aria-label={search.placeholder ?? "Ara"}
             className="h-9 pl-8"
           />
         </div>
       )}
 
-      {selects.map((s) => {
-        const val = get(s.key);
+      {selects.map((s, i) => {
+        const display =
+          s.value === ""
+            ? s.allLabel ?? s.label
+            : s.options.find((o) => o.value === s.value)?.label ?? s.value;
         return (
-          <Select
-            key={s.key}
-            value={val === "" ? "__all__" : val}
-            onValueChange={(v) => set({ [s.key]: v === "__all__" ? null : v })}
-          >
-            <SelectTrigger className="h-9 w-auto min-w-32" aria-label={s.label}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">{s.allLabel ?? s.label}</SelectItem>
-              {s.options.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <Select
+          key={i}
+          value={s.value === "" ? ALL : s.value}
+          onValueChange={(v) => s.onChange(v == null || v === ALL ? "" : String(v))}
+        >
+          <SelectTrigger className="h-9 w-auto min-w-32" aria-label={s.label}>
+            <SelectValue>{display}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>{s.allLabel ?? s.label}</SelectItem>
+            {s.options.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         );
       })}
 
@@ -113,12 +117,12 @@ export function FilterBar({
             ? `${resultCount} / ${totalCount} ${countLabel}`
             : `${resultCount} ${countLabel}`}
         </span>
-        {hasActive && (
+        {hasActive && onClear && (
           <Button
             variant="ghost"
             size="sm"
             className="h-8 gap-1 px-2 text-xs"
-            onClick={() => clear()}
+            onClick={onClear}
           >
             <X aria-hidden className="size-3.5" />
             {clearLabel}

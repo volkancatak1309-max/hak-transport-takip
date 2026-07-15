@@ -1,5 +1,5 @@
 import "server-only";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { fetchLastKnownDtc } from "@/lib/flespi";
 import type { FlespiDtcSnapshot, FlespiEvent, FlespiPoint } from "@/lib/flespi";
 import type { ActiveVehicle } from "@/lib/types";
@@ -227,6 +227,41 @@ export async function listRecentEvents(
     .order("occurred_at", { ascending: false })
     .limit(limit);
   const rows = (data ?? []) as VehicleEventRow[];
+  if (rows.length === 0) return [];
+
+  const ids = [...new Set(rows.map((r) => r.vehicle_id))];
+  const { data: vData } = await supabaseAdmin
+    .from("vehicles")
+    .select("id, plate")
+    .in("id", ids);
+  const plates = new Map(
+    ((vData ?? []) as { id: string; plate: string }[]).map((v) => [v.id, v.plate])
+  );
+  return rows.map((r) => ({ ...r, plate: plates.get(r.vehicle_id) ?? "—" }));
+}
+
+/**
+ * Bir tarih aralığındaki TÜM olaylar, plaka ile (admin /alarmlar). 1000 satır
+ * tavanını aşmasın diye sonuna kadar sayfalanır (fetchAllRows). Migration 018
+ * yoksa boş listeye düşer.
+ */
+export async function listEventsInRange(
+  startISO: string,
+  endISO: string
+): Promise<VehicleEventWithPlate[]> {
+  const { data } = await fetchAllRows<VehicleEventRow>((from, to) =>
+    supabaseAdmin
+      .from("vehicle_events")
+      .select(
+        "id, vehicle_id, event_type, event_value, latitude, longitude, speed_kmh, occurred_at"
+      )
+      .gte("occurred_at", startISO)
+      .lte("occurred_at", endISO)
+      .order("occurred_at", { ascending: false })
+      .order("id")
+      .range(from, to)
+  );
+  const rows = data;
   if (rows.length === 0) return [];
 
   const ids = [...new Set(rows.map((r) => r.vehicle_id))];

@@ -464,11 +464,24 @@ export function AdminClient({
         <AttentionList items={dashboard.attention} />
       </div>
 
-      {/* 4b — Şoför bildirimleri */}
-      <DriverReportsCard reports={reports} />
+      {/* 4b — Şoför bildirimleri: boşken tam-genişlik kutu ekranın yarısını
+          yiyor (audit boş-durum ekonomisi) → yalnız açık bildirim varken göster. */}
+      {reports.length > 0 && <DriverReportsCard reports={reports} />}
 
-      {/* 3 — Şoför performans sıralaması */}
-      <DriverPerformance performance={dashboard.performance} range={range} />
+      {/* 3 — Şoför performans sıralaması: veri varken ranked-bar tablo, yoksa
+          tek satırlık kompakt durum (dev boş kutu yerine). */}
+      {dashboard.performance.length > 0 ? (
+        <DriverPerformance performance={dashboard.performance} range={range} />
+      ) : (
+        <Card>
+          <CardContent className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+            <span className="text-[11px] font-medium uppercase tracking-[0.04em]">
+              {t("dash.perf_title")}
+            </span>
+            <span>· {t("dash.perf_empty")}</span>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Vardiya kayıtları — özet · filtre · tablo */}
       <section className="space-y-4 border-t border-border pt-6">

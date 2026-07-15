@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { TrendingUp, ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { HelpTip } from "@/components/help/HelpTip";
 import { UserAvatar } from "@/components/UserAvatar";
 import { formatDurationShort } from "@/lib/format";
 import type { DriverPerf } from "@/lib/admin-dashboard";
@@ -62,14 +61,29 @@ export function DriverPerformance({
 
   const rows = [...performance].sort((a, b) => sortVal(b, sort) - sortVal(a, sort));
 
-  const cols: { key: SortKey; label: string; help?: boolean }[] = [
+  // Ranked-bar (Reveal Harsh Driving tile deseni — REVEAL-GAP §3.7): her satırın
+  // arkasında, o an sıralanan metriğe göre oransal dolgu. Düz tabloyu görsel
+  // karşılaştırmalı sıralamaya çevirir ("koyu temaya boyanmış tablo" itirazı).
+  const maxVal = Math.max(1, ...rows.map((r) => Math.abs(sortVal(r, sort))));
+  const barColor =
+    sort === "azg"
+      ? "var(--status-critical)"
+      : sort === "score"
+      ? "var(--accent-sky)"
+      : "var(--accent-sky)";
+  const rowBg = (r: DriverPerf): string => {
+    const pct = Math.round((Math.abs(sortVal(r, sort)) / maxVal) * 100);
+    return `linear-gradient(90deg, color-mix(in srgb, ${barColor} 14%, transparent) ${pct}%, transparent ${pct}%)`;
+  };
+
+  const cols: { key: SortKey; label: string }[] = [
     { key: "km", label: t("dash.perf_km") },
     { key: "ms", label: t("dash.perf_hours") },
     { key: "delivered", label: t("dash.perf_delivered") },
     { key: "rate", label: t("dash.perf_rate") },
     { key: "azg", label: t("dash.perf_azg") },
     { key: "shifts", label: t("dash.perf_shifts") },
-    { key: "score", label: t("dash.perf_score"), help: true },
+    { key: "score", label: t("dash.perf_score") },
   ];
 
   function renderCell(r: DriverPerf, key: SortKey) {
@@ -133,7 +147,6 @@ export function DriverPerformance({
           <CardTitle className="flex items-center gap-2 text-sm font-semibold">
             <TrendingUp className="size-4 text-muted-foreground" />
             {t("dash.perf_title")}
-            <HelpTip tkey="performance" />
           </CardTitle>
           <span className="rounded-full bg-surface-2 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
             {rangeLabel}
@@ -169,7 +182,6 @@ export function DriverPerformance({
                             }`}
                           />
                         </button>
-                        {c.help && <HelpTip tkey="perf_score" />}
                       </div>
                     </th>
                   ))}
@@ -180,6 +192,7 @@ export function DriverPerformance({
                   <tr
                     key={r.worker_id}
                     className="border-b border-border/50 transition-colors last:border-0 hover:bg-surface-2/50"
+                    style={{ backgroundImage: rowBg(r) }}
                   >
                     <td className="py-2 pr-2 text-left">
                       <span

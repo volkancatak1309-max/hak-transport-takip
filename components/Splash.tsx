@@ -35,7 +35,11 @@ export function Splash() {
     <div
       aria-hidden
       className={cn(
-        "fixed inset-0 z-[200] flex items-center justify-center bg-background transition-opacity duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]",
+        // Koyu temada --background TRANSPARENT (zemin html'de); bg-background
+        // kullanılırsa splash amblemi 3sn dashboard verisinin üzerinde yüzer
+        // (FAZ 0 kritik: "kaplan filigranı kartların üzerinde"). Opak zemin
+        // rengiyle splash bir marka ekranı olur, veri üstü filigran değil.
+        "fixed inset-0 z-[200] flex items-center justify-center bg-[#0a0d16] transition-opacity duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]",
         leaving ? "pointer-events-none opacity-0" : "opacity-100"
       )}
     >

@@ -22,7 +22,8 @@
     "theme": "Tema",
     "themeLight": "Aydınlık",
     "themeDark": "Karanlık",
-    "themeSystem": "Sistem"
+    "themeSystem": "Sistem",
+    "search": "Ara"
   },
   "errors": {
     "error_title": "Bir şeyler ters gitti",

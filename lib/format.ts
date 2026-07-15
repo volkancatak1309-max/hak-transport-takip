@@ -274,3 +274,31 @@ export function endOfDayViennaFromYmd(s: string): Date | null {
   if (!start) return null;
   return new Date(addCalendarDaysVienna(start, 1).getTime() - 1);
 }
+
+/* ── Para & sayı formatlayıcıları (DESIGN-SYSTEM Ek A) ──────────────────────
+   eur() kopyaları (masraf/yakıt client + action'ları) FAZ 4'te buraya taşınır;
+   yeni bileşenler yalnız bunları kullanır. */
+
+/** Yereldeki Intl etiketi: de → de-AT, aksi halde tr-TR. */
+export function localeTag(locale: string = "tr"): string {
+  return locale === "de" ? "de-AT" : "tr-TR";
+}
+
+/** "1.234,56 €" — Avusturya/TR biçiminde para. */
+export function formatEur(n: number, locale: string = "tr"): string {
+  return new Intl.NumberFormat(localeTag(locale), {
+    style: "currency",
+    currency: "EUR",
+  }).format(n);
+}
+
+/** Binlik ayraçlı tam/ondalık sayı ("46.019" / "12,4"). */
+export function formatNumber(
+  n: number,
+  locale: string = "tr",
+  maxFractionDigits: number = 0
+): string {
+  return new Intl.NumberFormat(localeTag(locale), {
+    maximumFractionDigits: maxFractionDigits,
+  }).format(n);
+}

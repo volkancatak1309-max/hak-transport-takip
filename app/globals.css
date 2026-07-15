@@ -27,12 +27,17 @@ body {
 @theme inline {
   --font-heading: var(--font-sans);
   --color-accent-claret: var(--accent-claret);
+  --color-accent-claret-text: var(--accent-claret-text);
   --color-accent-sky: var(--accent-sky);
   --color-accent-gold: var(--accent-gold);
   --color-accent-green: var(--accent-green);
   --color-status-active: var(--status-active);
   --color-status-break: var(--status-break);
   --color-status-idle: var(--status-idle);
+  --color-status-critical: var(--status-critical);
+  --color-status-critical-fill: var(--status-critical-fill);
+  --color-status-critical-soft: var(--status-critical-soft);
+  --color-surface-3: var(--surface-3);
   --color-surface: var(--card);
   --color-text-secondary: var(--muted-foreground);
   --color-text-tertiary: var(--text-tertiary);
@@ -95,6 +100,9 @@ body {
   --accent-claret: oklch(0.4 0.142 31);
   --accent-claret-hover: oklch(0.34 0.14 31);
   --accent-claret-soft: oklch(0.4 0.142 31 / 12%);
+  /* Açık temada bordo metin olarak yeterince koyu (AA); koyu temada .dark bloğu
+     açık pembe tona remap eder (DESIGN-SYSTEM §2.3 — bordo koyuda metin olamaz). */
+  --accent-claret-text: var(--accent-claret);
   --accent-sky: oklch(0.58 0.085 240);
   --accent-sky-soft: oklch(0.58 0.085 240 / 14%);
   --accent-gold: oklch(0.68 0.1 78);
@@ -107,6 +115,13 @@ body {
   --status-active: var(--accent-sky);
   --status-break: var(--accent-claret);
   --status-idle: var(--accent-gold);
+
+  /* Semantik olay şiddeti (DESIGN-SYSTEM §2.4) — kritik, bordodan ayrışır.
+     Açık tema değerleri; .dark bloğu koyu zemine göre remap eder. */
+  --status-critical: oklch(0.55 0.2 27);
+  --status-critical-fill: oklch(0.55 0.2 27);
+  --status-critical-soft: oklch(0.55 0.2 27 / 12%);
+  --surface-3: oklch(0.955 0.004 256);
 
   --primary: var(--accent-claret);
   --primary-foreground: oklch(1 0 0);
@@ -168,6 +183,9 @@ body {
   --accent-claret: #8a1538;
   --accent-claret-hover: #b83a5c;
   --accent-claret-soft: color-mix(in srgb, #8a1538 22%, transparent);
+  /* Bordo koyuda metin rengi OLAMAZ (kart üstünde 1.9:1). Chip/rozet metni bu
+     açık tonu kullanır — kart üstünde 8.6:1 (DESIGN-SYSTEM §2.3, ölçülmüş). */
+  --accent-claret-text: oklch(0.78 0.1 12);
   --accent-sky: #5b93cf;
   --accent-sky-soft: color-mix(in srgb, #5b93cf 18%, transparent);
   --accent-gold: oklch(0.76 0.105 78);
@@ -178,6 +196,14 @@ body {
   --status-active: var(--accent-sky);
   --status-break: var(--accent-claret);
   --status-idle: var(--accent-gold);
+
+  /* Semantik olay şiddeti (DESIGN-SYSTEM §2.4; kontrastlar ölçülmüş):
+     metin/ikon tonu kart üstünde 6.2:1, dolgu üstünde beyaz 5.4:1. */
+  --status-critical: oklch(0.7 0.18 28);
+  --status-critical-fill: oklch(0.55 0.2 27);
+  --status-critical-soft: oklch(0.7 0.18 28 / 15%);
+  /* Active/pressed katmanı — hover(--surface-2)'nin bir üstü (Geist modeli). */
+  --surface-3: oklch(0.285 0.009 256);
 
   --primary: var(--accent-claret);
   --primary-foreground: oklch(0.99 0 0);

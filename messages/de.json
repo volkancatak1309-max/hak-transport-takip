@@ -22,7 +22,8 @@
     "theme": "Design",
     "themeLight": "Hell",
     "themeDark": "Dunkel",
-    "themeSystem": "System"
+    "themeSystem": "System",
+    "search": "Suchen"
   },
   "errors": {
     "error_title": "Etwas ist schiefgelaufen",

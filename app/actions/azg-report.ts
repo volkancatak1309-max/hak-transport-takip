@@ -1,7 +1,7 @@
 "use server";
 
 import { getTranslations } from "next-intl/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { workedMs, formatDate, formatTime } from "@/lib/format";
 
@@ -106,13 +106,25 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
   const start = new Date(Date.UTC(year, mon - 1, 1));
   const end = new Date(Date.UTC(year, mon, 1));
 
-  const { data: entriesData, error } = await supabaseAdmin
-    .from("time_entries")
-    .select("id, worker_id, started_at, ended_at, break_minutes")
-    .gte("started_at", start.toISOString())
-    .lt("started_at", end.toISOString())
-    .not("ended_at", "is", null)
-    .order("started_at", { ascending: true });
+  // Resmî § 26 AZG raporu: aylık vardiyalar 1000 satır tavanını aşarsa rapor
+  // eksik basılır — sorgu sonuna kadar sayfalanır.
+  const { data: entriesData, error } = await fetchAllRows<{
+    id: string;
+    worker_id: string;
+    started_at: string;
+    ended_at: string | null;
+    break_minutes: number | null;
+  }>((from, to) =>
+    supabaseAdmin
+      .from("time_entries")
+      .select("id, worker_id, started_at, ended_at, break_minutes")
+      .gte("started_at", start.toISOString())
+      .lt("started_at", end.toISOString())
+      .not("ended_at", "is", null)
+      .order("started_at", { ascending: true })
+      .order("id")
+      .range(from, to)
+  );
 
   if (error) return { ok: false, error: error.message };
   const entries = entriesData ?? [];

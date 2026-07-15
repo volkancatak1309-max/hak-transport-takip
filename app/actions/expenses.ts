@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getTranslations } from "next-intl/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { requireWorker, requireAdmin } from "@/lib/session";
 import { createExpenseSchema } from "@/lib/validation";
 import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storage";
@@ -183,14 +183,18 @@ export async function getExpenseEntries(opts?: {
   const session = await requireWorker();
   const seeAll = !!session.is_admin && !opts?.mine;
 
-  let query = supabaseAdmin
-    .from("expense_entries")
-    .select("*")
-    .order("spent_at", { ascending: false });
-  if (!seeAll) query = query.eq("worker_id", session.worker_id!);
-
-  const { data } = await query;
-  const rows = (data ?? []) as ExpenseEntry[];
+  // Masraf arşivi 1000 satırı aşınca bordro (DATEV/BMD) CSV'si sessizce eksik
+  // basılır; sonuna kadar sayfalanır.
+  const { data } = await fetchAllRows<ExpenseEntry>((from, to) => {
+    let query = supabaseAdmin
+      .from("expense_entries")
+      .select("*")
+      .order("spent_at", { ascending: false })
+      .order("id");
+    if (!seeAll) query = query.eq("worker_id", session.worker_id!);
+    return query.range(from, to);
+  });
+  const rows = data;
   if (rows.length === 0) return [];
 
   const ids = [...new Set(rows.map((r) => r.worker_id).filter(Boolean))] as string[];
@@ -228,19 +232,27 @@ export async function generatePayrollExpenseCSV(month: string): Promise<PayrollC
   const start = new Date(Date.UTC(year, mon - 1, 1));
   const end = new Date(Date.UTC(year, mon, 1));
 
-  const { data } = await supabaseAdmin
-    .from("expense_entries")
-    .select("worker_id, spent_at, category, amount, description")
-    .eq("status", "approved")
-    .gte("spent_at", start.toISOString())
-    .lt("spent_at", end.toISOString())
-    .order("worker_id", { ascending: true })
-    .order("spent_at", { ascending: true });
+  // Bordro CSV'si resmi muhasebeye gider: 1000 satır tavanında sessiz kesinti
+  // olmaması için sonuna kadar sayfalanır.
+  const { data } = await fetchAllRows<
+    Pick<
+      ExpenseEntry,
+      "worker_id" | "spent_at" | "category" | "amount" | "description"
+    >
+  >((from, to) =>
+    supabaseAdmin
+      .from("expense_entries")
+      .select("worker_id, spent_at, category, amount, description")
+      .eq("status", "approved")
+      .gte("spent_at", start.toISOString())
+      .lt("spent_at", end.toISOString())
+      .order("worker_id", { ascending: true })
+      .order("spent_at", { ascending: true })
+      .order("id")
+      .range(from, to)
+  );
 
-  const rows = (data ?? []) as Pick<
-    ExpenseEntry,
-    "worker_id" | "spent_at" | "category" | "amount" | "description"
-  >[];
+  const rows = data;
   if (rows.length === 0) return { ok: false, error: "no_data" };
 
   const ids = [...new Set(rows.map((r) => r.worker_id).filter(Boolean))] as string[];

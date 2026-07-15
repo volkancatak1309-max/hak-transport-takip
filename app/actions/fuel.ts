@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getTranslations } from "next-intl/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { requireWorker, requireAdmin } from "@/lib/session";
 import { createFuelSchema } from "@/lib/validation";
 import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storage";
@@ -200,14 +200,18 @@ export async function getFuelEntries(opts?: {
   const session = await requireWorker();
   const seeAll = !!session.is_admin && !opts?.mine;
 
-  let query = supabaseAdmin
-    .from("fuel_entries")
-    .select("*")
-    .order("fueled_at", { ascending: true });
-  if (!seeAll) query = query.eq("worker_id", session.worker_id!);
-
-  const { data } = await query;
-  const rows = (data ?? []) as FuelEntry[];
+  // Yakıt arşivi 1000 satırı aşınca aylık istatistikler, L/100km zinciri ve
+  // CO₂ raporu sessizce eksik hesaplanır; sonuna kadar sayfalanır.
+  const { data } = await fetchAllRows<FuelEntry>((from, to) => {
+    let query = supabaseAdmin
+      .from("fuel_entries")
+      .select("*")
+      .order("fueled_at", { ascending: true })
+      .order("id");
+    if (!seeAll) query = query.eq("worker_id", session.worker_id!);
+    return query.range(from, to);
+  });
+  const rows = data;
   if (rows.length === 0) return [];
 
   const ids = [...new Set(rows.map((r) => r.worker_id).filter(Boolean))] as string[];
@@ -262,15 +266,20 @@ export async function generateCO2Report(month: string): Promise<CO2Result> {
   const start = new Date(Date.UTC(year, mon - 1, 1));
   const end = new Date(Date.UTC(year, mon, 1));
 
-  const { data } = await supabaseAdmin
-    .from("fuel_entries")
-    .select("vehicle_plate, liters, odometer_km, fuel_type")
-    .eq("status", "approved")
-    .gte("fueled_at", start.toISOString())
-    .lt("fueled_at", end.toISOString());
-
   type Row = { vehicle_plate: string; liters: number; odometer_km: number; fuel_type: FuelType };
-  const rows = (data ?? []) as Row[];
+  // CO₂ raporu müşteriye çıkar: 1000 satır tavanında sessiz kesinti olmaması
+  // için sonuna kadar sayfalanır.
+  const { data } = await fetchAllRows<Row>((from, to) =>
+    supabaseAdmin
+      .from("fuel_entries")
+      .select("vehicle_plate, liters, odometer_km, fuel_type")
+      .eq("status", "approved")
+      .gte("fueled_at", start.toISOString())
+      .lt("fueled_at", end.toISOString())
+      .order("id")
+      .range(from, to)
+  );
+  const rows = data;
 
   const byPlate = new Map<
     string,

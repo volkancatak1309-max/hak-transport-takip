@@ -1,5 +1,5 @@
 import { requireAdmin } from "@/lib/session";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { WorkersClient } from "./WorkersClient";
 import { startOfMonthVienna, workedMs } from "@/lib/format";
@@ -18,19 +18,26 @@ export default async function WorkersPage() {
 
   const monthStart = startOfMonthVienna();
 
+  type MonthEntry = Pick<
+    TimeEntry,
+    "worker_id" | "started_at" | "ended_at" | "break_minutes"
+  >;
+  // Aylık vardiyalar 26-28 araçta 1000 satır tavanına dayanır; "Bu Ay" saat
+  // toplamları ve "Son Vardiya" eksik hesaplanmasın diye sonuna kadar okunur.
   const [workersResult, entriesResult] = await Promise.all([
     supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
-    supabaseAdmin
-      .from("time_entries")
-      .select("worker_id, started_at, ended_at, break_minutes")
-      .gte("started_at", monthStart.toISOString()),
+    fetchAllRows<MonthEntry>((from, to) =>
+      supabaseAdmin
+        .from("time_entries")
+        .select("worker_id, started_at, ended_at, break_minutes")
+        .gte("started_at", monthStart.toISOString())
+        .order("id")
+        .range(from, to)
+    ),
   ]);
 
   const workers = (workersResult.data ?? []) as WorkerPublic[];
-  const entries = (entriesResult.data ?? []) as Pick<
-    TimeEntry,
-    "worker_id" | "started_at" | "ended_at" | "break_minutes"
-  >[];
+  const entries = entriesResult.data;
 
   const stats: Record<string, { lastShiftAt: string | null; ms: number }> = {};
   for (const w of workers) stats[w.id] = { lastShiftAt: null, ms: 0 };

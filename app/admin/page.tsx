@@ -1,5 +1,5 @@
 import { requireAdmin } from "@/lib/session";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchAllRows, chunkIds } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AdminClient } from "./AdminClient";
 import {
@@ -73,19 +73,26 @@ export default async function AdminPage({
   // embed was returning no rows (fragile relationship resolution), which zeroed
   // every KPI for every range while the embed-free weekly chart stayed correct.
   // We fetch entries plainly and attach the worker from a separate query.
-  let query = supabaseAdmin
-    .from("time_entries")
-    .select("*")
-    .gte("started_at", start.toISOString())
-    .lte("started_at", end.toISOString())
-    .order("started_at", { ascending: false });
+  // Uzun aralıklar (ay/özel) 1000 satır tavanını aşabilir; toplamlar ve
+  // Excel/PDF dışa aktarımlar eksik kalmasın diye sonuna kadar sayfalanır.
+  const entriesQuery = fetchAllRows<TimeEntry>((from, to) => {
+    let query = supabaseAdmin
+      .from("time_entries")
+      .select("*")
+      .gte("started_at", start.toISOString())
+      .lte("started_at", end.toISOString())
+      .order("started_at", { ascending: false })
+      .order("id");
 
-  if (workerFilter !== "all") query = query.eq("worker_id", workerFilter);
-  if (statusFilter === "active") query = query.is("ended_at", null);
-  else if (statusFilter === "completed") query = query.not("ended_at", "is", null);
+    if (workerFilter !== "all") query = query.eq("worker_id", workerFilter);
+    if (statusFilter === "active") query = query.is("ended_at", null);
+    else if (statusFilter === "completed")
+      query = query.not("ended_at", "is", null);
+    return query.range(from, to);
+  });
 
   const [entriesResult, workersResult, dashboard] = await Promise.all([
-    query,
+    entriesQuery,
     supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
     getDashboardData(start.toISOString(), end.toISOString()),
   ]);
@@ -125,19 +132,28 @@ export default async function AdminPage({
   // BİLDİR) + hangi vardiyaların fotoğrafı var. Her iki sorgu da migration 020
   // öncesi tabloların yokluğunda hata döner (data null → boş liste); admin
   // panelini asla bozmaz.
+  // shift_photos: yüzlerce UUID tek `.in()` ile URL sınırını aşar ve sorgu
+  // sessizce boş döner; id listesi parçalanarak sorgulanır.
   const entryIds = entriesData.map((e) => e.id);
-  const [reportsRes, photosRes] = await Promise.all([
+  const [reportsRes, ...photoChunks] = await Promise.all([
     supabaseAdmin
       .from("driver_reports")
       .select("id, worker_id, report_type, created_at, latitude, longitude")
       .is("resolved_at", null)
       .order("created_at", { ascending: false })
       .limit(50),
-    supabaseAdmin
-      .from("shift_photos")
-      .select("time_entry_id")
-      .in("time_entry_id", entryIds),
+    ...chunkIds(entryIds).map((ids) =>
+      supabaseAdmin
+        .from("shift_photos")
+        .select("time_entry_id")
+        .in("time_entry_id", ids)
+    ),
   ]);
+  const photosRes = {
+    data: photoChunks.flatMap(
+      (c) => (c.data ?? []) as { time_entry_id: string }[]
+    ),
+  };
 
   const openReports: AdminDriverReport[] = (
     (reportsRes.data ?? []) as {

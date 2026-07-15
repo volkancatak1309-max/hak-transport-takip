@@ -42,7 +42,12 @@ export default async function AlarmsPage({
       }}
     >
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6">
-        <AlarmsClient events={events} range={range} />
+        <AlarmsClient
+          events={events}
+          range={range}
+          startISO={start.toISOString()}
+          endISO={end.toISOString()}
+        />
       </div>
     </DashboardShell>
   );

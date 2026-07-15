@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getTranslations } from "next-intl/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { requireWorker, requireAdmin } from "@/lib/session";
 import { createAssignmentSchema } from "@/lib/validation";
 import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
@@ -306,14 +306,17 @@ export async function getAssignments(opts?: {
   const session = await requireWorker();
   const seeAll = !!session.is_admin && !opts?.mine;
 
-  let query = supabaseAdmin
-    .from("assignments")
-    .select("*")
-    .order("scheduled_at", { ascending: true });
-  if (!seeAll) query = query.eq("worker_id", session.worker_id!);
-
-  const { data } = await query;
-  const rows = (data ?? []) as Assignment[];
+  // Sefer arşivi büyüdükçe 1000 satır tavanı eski kayıtları sessizce düşürür.
+  const { data } = await fetchAllRows<Assignment>((from, to) => {
+    let query = supabaseAdmin
+      .from("assignments")
+      .select("*")
+      .order("scheduled_at", { ascending: true })
+      .order("id");
+    if (!seeAll) query = query.eq("worker_id", session.worker_id!);
+    return query.range(from, to);
+  });
+  const rows = data;
   if (rows.length === 0) return [];
 
   const ids = [...new Set(rows.map((r) => r.worker_id))];

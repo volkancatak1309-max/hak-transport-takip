@@ -1,5 +1,5 @@
 import "server-only";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { startOfTodayVienna, workedMs, kmDiff } from "@/lib/format";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import type { TimeEntry, Worker, VehicleLiveStatus } from "@/lib/types";
@@ -134,11 +134,17 @@ export async function getDashboardData(
       .from("time_entries")
       .select(ENTRY_COLS)
       .gte("started_at", todayStart.toISOString()),
-    supabaseAdmin
-      .from("time_entries")
-      .select(ENTRY_COLS)
-      .gte("started_at", rangeStart)
-      .lte("started_at", rangeEnd),
+    // Uzun aralıklar 1000 satır tavanını aşabilir → performans sıralaması ve
+    // aksiyon kalemleri eksik hesaplanmasın diye sonuna kadar sayfalanır.
+    fetchAllRows<LiteEntry>((from, to) =>
+      supabaseAdmin
+        .from("time_entries")
+        .select(ENTRY_COLS)
+        .gte("started_at", rangeStart)
+        .lte("started_at", rangeEnd)
+        .order("id")
+        .range(from, to)
+    ),
     // Single source of truth for live status: EVERY open shift (ended_at IS
     // NULL), independent of the today/range window. The top summary, the
     // active-shift card and the table all derive their "active / on break /

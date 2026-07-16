@@ -32,6 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { HelpTip } from "@/components/help/HelpTip";
+import { RevealFilterRow } from "@/components/ui-v2";
 import { STATUS_STYLE } from "@/lib/vehicle-ui";
 import type { VehicleWithStatus, VehicleBaseStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -44,11 +45,18 @@ import {
 
 const STATUSES: VehicleBaseStatus[] = ["active", "maintenance", "inactive"];
 
+/** Filtre bandı seçenekleri — Reveal'ın canlı-harita araç panelindeki tek satır
+ *  "Order by …" dropdown deseni (REVEAL-CLONE-SPEC E). */
+type LiveFilter = "all" | "sevkiyatta" | "molada" | "bosta" | "bakimda";
+type SortKey = "plate" | "driver" | "status";
+
 export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
   const t = useTranslations("vehicles");
   const tm = useTranslations("vehicles.manage");
   const router = useRouter();
   const [q, setQ] = useState("");
+  const [liveFilter, setLiveFilter] = useState<LiveFilter>("all");
+  const [sort, setSort] = useState<SortKey>("plate");
 
   // Create/edit dialog state.
   const [open, setOpen] = useState(false);
@@ -72,14 +80,40 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
 
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
-    if (!s) return vehicles;
-    return vehicles.filter(
-      (v) =>
-        v.plate.toLocaleLowerCase("tr").includes(s) ||
-        (v.driver_name ?? "").toLocaleLowerCase("tr").includes(s) ||
-        `${v.make ?? ""} ${v.model ?? ""}`.toLocaleLowerCase("tr").includes(s)
-    );
-  }, [vehicles, q]);
+    let out = vehicles;
+    if (liveFilter !== "all") out = out.filter((v) => v.live_status === liveFilter);
+    if (s) {
+      out = out.filter(
+        (v) =>
+          v.plate.toLocaleLowerCase("tr").includes(s) ||
+          (v.driver_name ?? "").toLocaleLowerCase("tr").includes(s) ||
+          `${v.make ?? ""} ${v.model ?? ""}`.toLocaleLowerCase("tr").includes(s)
+      );
+    }
+    // Sıralama listeyi kopyalayarak yapılır — prop dizisini yerinde bozmaz.
+    const coll = new Intl.Collator("tr");
+    return [...out].sort((a, b) => {
+      if (sort === "driver") {
+        // Şoförü olanlar önce; ikisi de boşsa plakaya düşer.
+        const an = a.driver_name ?? "";
+        const bn = b.driver_name ?? "";
+        if (an && !bn) return -1;
+        if (!an && bn) return 1;
+        const c = coll.compare(an, bn);
+        if (c !== 0) return c;
+      } else if (sort === "status") {
+        const order: Record<string, number> = {
+          sevkiyatta: 0,
+          molada: 1,
+          bosta: 2,
+          bakimda: 3,
+        };
+        const c = (order[a.live_status] ?? 9) - (order[b.live_status] ?? 9);
+        if (c !== 0) return c;
+      }
+      return coll.compare(a.plate, b.plate);
+    });
+  }, [vehicles, q, liveFilter, sort]);
 
   function openNew() {
     setEditing(null);
@@ -174,7 +208,16 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
   }
 
   return (
-    <div className="mx-auto max-w-[1100px] space-y-5 px-4 py-6 sm:px-6">
+    <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-6">
+      {/* Başlık bloğu — REVEAL-CLONE-SPEC A2 ölçüsü (H1 ~28px semibold + açıklama) */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[28px] font-semibold leading-tight">{t("title")}</h1>
+          <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
+        </div>
+        <HelpTip tkey="veh_list" />
+      </div>
+
       {/* KPI row */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label={t("kpi_total")} value={counts.total} />
@@ -183,22 +226,51 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
         <Kpi label={t("kpi_idle")} value={counts.bosta} accent="gold" />
       </div>
 
-      {/* Search + Add */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder={t("search")}
-            className="h-11 pl-9"
-          />
-        </div>
-        <Button onClick={openNew} className="h-11 shrink-0">
-          <Plus className="size-4" /> {tm("add")}
-        </Button>
-        <HelpTip tkey="veh_list" />
-      </div>
+      {/* Filtre bandı — Reveal araç panelinin tek satır düzeni (A3 dili):
+          etiketli dropdown'lar solda, arama + eylem sağda. Çip yok. */}
+      <RevealFilterRow
+        filters={[
+          {
+            label: t("filter_status"),
+            value: liveFilter,
+            onChange: (v) => setLiveFilter(v as LiveFilter),
+            options: [
+              { value: "all", label: t("filter_all") },
+              { value: "sevkiyatta", label: t("status.sevkiyatta") },
+              { value: "molada", label: t("status.molada") },
+              { value: "bosta", label: t("status.bosta") },
+              { value: "bakimda", label: t("status.bakimda") },
+            ],
+          },
+          {
+            label: t("filter_sort"),
+            value: sort,
+            onChange: (v) => setSort(v as SortKey),
+            options: [
+              { value: "plate", label: t("sort_plate") },
+              { value: "driver", label: t("sort_driver") },
+              { value: "status", label: t("sort_status") },
+            ],
+          },
+        ]}
+        right={
+          <>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder={t("search")}
+                aria-label={t("search")}
+                className="h-9 w-[220px] pl-9"
+              />
+            </div>
+            <Button onClick={openNew} className="h-9 shrink-0">
+              <Plus className="size-4" /> {tm("add")}
+            </Button>
+          </>
+        }
+      />
 
       {/* List */}
       <div className="glass overflow-hidden rounded-[16px]">

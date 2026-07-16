@@ -565,7 +565,13 @@
       "penalty_saved": "Güncellendi",
       "penalty_deleted": "Ceza silindi",
       "penalty_error": "İşlem başarısız"
-    }
+    },
+    "filter_status": "Durum",
+    "filter_all": "Tümü",
+    "filter_sort": "Sırala",
+    "sort_plate": "Plaka",
+    "sort_driver": "Şoför",
+    "sort_status": "Durum"
   },
   "offline": {
     "online": "Çevrimiçi",

@@ -88,6 +88,30 @@
 
 ---
 
+## E. ARAÇLAR ekranı (Reveal: Live Map araç paneli)
+
+**Referans:** `competitor-shots/fleet-status-location.png` — Reveal'ın canlı-harita sol paneli. Satır anatomisi: **ad/plaka bold** + sinyal ikonu + kebab; altında durum noktası + "Stopped"; "Last Movement 21/07 13:03"; adres; grup.
+
+### E1. Başlık bloğu
+- A2 ile aynı ölçü: H1 ~28px semibold + açıklama ~14px `--muted-foreground`.
+- Kabuğa `title` prop'u geçilmez (prop yokken kabuk nav'daki aktif etiketi kullanır — aynı sonuç).
+
+### E2. KPI şeridi
+- 4 kart (Toplam · Sevkiyatta · Molada · Boşta). Reveal panelinde KPI yok; bizim çekirdek işlev, **StatCard dili** korunur.
+
+### E3. Filtre bandı (A3 dili birebir)
+- Tek satır tint band: **"Durum"** (Tümü/Sevkiyatta/Molada/Boşta/Bakımda) + **"Sırala"** (Plaka/Şoför/Durum) dropdown'ları solda; **arama + "Araç Ekle"** sağda (`right` slot).
+- Reveal'ın "Order by Driver" tek dropdown'ı + arama ikonu deseninin karşılığı. Çip YOK.
+
+### E4. Liste satırı
+- Sol renk şeridi = canlı durum (`STATUS_STYLE.stripe`). İkon kutusu + **plaka** (mono `.nums`, bold, uppercase) + marka/model + GPS rozeti; altında şoför satırı.
+- Sağda: durum çipi (canlı nokta) + düzenle + sil + chevron → araç detayı.
+
+### E5. Bilinçli sapma — "Son hareket" YOK
+- Reveal satırında "Last Movement" + adres var; bizde **eklenmedi**. Gerekçe: `listLatestVehiclePositions` sayfalanmıyor (60 dk penceresinde filo geneli 1000 satır tavanını aşabilir → bazı araçların son sinyali sessizce düşer), araç başına sorgu ise 28 tur demek. Uydurma/eksik veri göstermektense hiç göstermiyoruz. Doğru çözüm ayrı bir iş: `vehicle_id`'ye göre `distinct on` view'ı veya sayfalı toplu okuma.
+
+---
+
 ## C. Ortak stil (her iki ekran)
 - Palet: koyu zemin (`#0a0d16` + aurora), yüzey `--card`, vurgu **bordo** `--accent-claret`/`#8a1538` (Reveal kırmızısının yerini alır), bilgi `--accent-sky`, kritik `--status-critical`.
 - Tipografi: Reveal ölçekleriyle eşleşir (H1 ~28px semibold, tile başlık ~15-16px bold, etiket ~11-12px, değer ~13-14px, sayısal `.nums`).

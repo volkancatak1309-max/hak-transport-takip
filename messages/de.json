@@ -565,7 +565,13 @@
       "penalty_saved": "Aktualisiert",
       "penalty_deleted": "Strafe gelöscht",
       "penalty_error": "Vorgang fehlgeschlagen"
-    }
+    },
+    "filter_status": "Status",
+    "filter_all": "Alle",
+    "filter_sort": "Sortieren",
+    "sort_plate": "Kennzeichen",
+    "sort_driver": "Fahrer",
+    "sort_status": "Status"
   },
   "offline": {
     "online": "Online",

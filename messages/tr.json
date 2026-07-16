@@ -158,7 +158,12 @@
     "confirm_delete": "{name} bölgesi silinsin mi?",
     "err_name": "Bölge adı gerekli",
     "err_center": "Haritadan merkez seçin",
-    "err_radius": "Yarıçap en az 50 m olmalı"
+    "err_radius": "Yarıçap en az 50 m olmalı",
+    "filter_rule": "Kural",
+    "filter_state": "Durum",
+    "filter_all": "Tümü",
+    "filter_active": "Aktif",
+    "no_match": "Bu filtreye uyan bölge yok"
   },
   "fuel": {
     "new_entry": "Yeni Yakıt Kaydı",
@@ -937,7 +942,9 @@
     "totalKm": "KM",
     "totalCargo": "Kargo",
     "fullHistory": "Tüm Vardiya Geçmişi",
-    "pdfForWorker": "PDF Rapor (bu çalışan)"
+    "pdfForWorker": "PDF Rapor (bu çalışan)",
+    "subtitle": "Şoför kadrosu — durum, son vardiya ve aylık saat",
+    "filter_status": "Durum"
   },
   "footer": {
     "poweredBy": "Powered by Galzura",

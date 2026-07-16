@@ -158,7 +158,12 @@
     "confirm_delete": "Zone {name} löschen?",
     "err_name": "Zonenname erforderlich",
     "err_center": "Mittelpunkt auf der Karte wählen",
-    "err_radius": "Radius muss mindestens 50 m betragen"
+    "err_radius": "Radius muss mindestens 50 m betragen",
+    "filter_rule": "Regel",
+    "filter_state": "Status",
+    "filter_all": "Alle",
+    "filter_active": "Aktiv",
+    "no_match": "Keine Zone entspricht diesem Filter"
   },
   "fuel": {
     "new_entry": "Neue Tankrechnung",
@@ -937,7 +942,9 @@
     "totalKm": "Kilometer",
     "totalCargo": "Pakete",
     "fullHistory": "Vollständiger Schichtverlauf",
-    "pdfForWorker": "PDF-Bericht (dieser Mitarbeiter)"
+    "pdfForWorker": "PDF-Bericht (dieser Mitarbeiter)",
+    "subtitle": "Fahrerteam — Status, letzte Schicht und Monatsstunden",
+    "filter_status": "Status"
   },
   "footer": {
     "poweredBy": "Powered by Galzura",

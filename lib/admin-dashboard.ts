@@ -1,10 +1,24 @@
 import "server-only";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
-import { startOfTodayVienna, workedMs, kmDiff } from "@/lib/format";
+import {
+  startOfTodayVienna,
+  endOfTodayVienna,
+  addCalendarDaysVienna,
+  workedMs,
+  kmDiff,
+} from "@/lib/format";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
+import { listFleetActiveDtc } from "@/lib/telemetry";
 import type { TimeEntry, Worker, VehicleLiveStatus } from "@/lib/types";
 
 const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
+/**
+ * Performans tile'ları vardiya tablosunun aralığından BAĞIMSIZ, sabit kayan bir
+ * pencere kullanır (Volkan onayı, 17.07.2026). Gerekçe: tile'lar aralığa bağlıyken
+ * "Bugün" seçilince hepsi boşalıyordu — Reveal de tile'larını sabit bir pencerede
+ * ("Previous week") tutar. Tablo aralığı değişse de tile'lar hep son 7 günü gösterir.
+ */
+const PERF_WINDOW_DAYS = 7;
 /** A shift with this many undelivered packages is surfaced as an action item. */
 const UNDELIVERED_THRESHOLD = 5;
 /** Inspection/insurance within this many days (or already overdue) is flagged. */
@@ -88,11 +102,25 @@ export type OpsDetail = {
   overNine: { name: string; ms: number }[];
 };
 
+/** Filo geneli arıza (DTC) özeti — plaka + aktif kod sayısı + en uzun süredir
+ *  açık kod. Şiddet alanı YOK: ne `vehicle_dtc`'de ne de kod sözlüğünde
+ *  karşılaştırılabilir bir severity verisi var (bkz. listFleetActiveDtc). */
+export type FleetDtcRow = {
+  vehicle_id: string;
+  plate: string;
+  count: number;
+  oldest_code: string | null;
+  oldest_since: string | null;
+};
+
 export type DashboardData = {
   todayOps: TodayOps;
   opsDetail: OpsDetail;
   fleet: FleetStatus;
   performance: DriverPerf[];
+  /** Performans tile'larının kapsadığı sabit pencere (tile altyazısı bunu yazar). */
+  performanceWindowDays: number;
+  dtc: FleetDtcRow[];
   attention: AttentionItem[];
 };
 
@@ -127,9 +155,22 @@ export async function getDashboardData(
   rangeEnd: string
 ): Promise<DashboardData> {
   const todayStart = startOfTodayVienna();
+  // Sabit kayan performans penceresi: bugün dahil son PERF_WINDOW_DAYS gün.
+  // Tablo aralığından (rangeStart/rangeEnd) bilinçli olarak bağımsız.
+  const perfStart = addCalendarDaysVienna(todayStart, -(PERF_WINDOW_DAYS - 1));
+  const perfEnd = endOfTodayVienna();
 
-  const [todayRes, rangeRes, activeRes, vehicles, workersRes, penaltyRes, unconfirmedRes] =
-    await Promise.all([
+  const [
+    todayRes,
+    rangeRes,
+    perfRes,
+    activeRes,
+    vehicles,
+    workersRes,
+    penaltyRes,
+    unconfirmedRes,
+    dtcRows,
+  ] = await Promise.all([
     supabaseAdmin
       .from("time_entries")
       .select(ENTRY_COLS)
@@ -142,6 +183,16 @@ export async function getDashboardData(
         .select(ENTRY_COLS)
         .gte("started_at", rangeStart)
         .lte("started_at", rangeEnd)
+        .order("id")
+        .range(from, to)
+    ),
+    // Performans penceresi — tablo aralığından ayrı, sabit son 7 gün.
+    fetchAllRows<LiteEntry>((from, to) =>
+      supabaseAdmin
+        .from("time_entries")
+        .select(ENTRY_COLS)
+        .gte("started_at", perfStart.toISOString())
+        .lte("started_at", perfEnd.toISOString())
         .order("id")
         .range(from, to)
     ),
@@ -170,10 +221,13 @@ export async function getDashboardData(
       .in("confirmation_status", ["pending", "unconfirmed"])
       .order("started_at", { ascending: false })
       .limit(50),
+    // Filo geneli aktif arıza kodları (migration 021 yoksa boş liste).
+    listFleetActiveDtc(),
   ]);
 
   const todayEntries = (todayRes.data ?? []) as LiteEntry[];
   const rangeEntries = (rangeRes.data ?? []) as LiteEntry[];
+  const perfEntries = (perfRes.data ?? []) as LiteEntry[];
   const activeShifts = (activeRes.data ?? []) as {
     id: string;
     worker_id: string | null;
@@ -208,11 +262,36 @@ export async function getDashboardData(
   // "Vehicles delivering" is the live fleet count, not derived from shifts.
   todayOps.vehiclesDelivering = fleet.counts.sevkiyatta;
 
+  // Arıza satırlarına plaka iliştirilir; plakası bulunamayan (silinmiş araç)
+  // satır düşürülür — "—" plakalı hayalet satır göstermeyiz.
+  const plateById = new Map(vehicles.map((v) => [v.id, v.plate]));
+  const dtc: FleetDtcRow[] = dtcRows.flatMap((d) => {
+    const plate = plateById.get(d.vehicle_id);
+    if (!plate) return [];
+    return [
+      {
+        vehicle_id: d.vehicle_id,
+        plate,
+        count: d.count,
+        oldest_code: d.oldest?.code ?? null,
+        oldest_since: d.oldest?.first_seen ?? null,
+      },
+    ];
+  });
+
   return {
     todayOps,
     opsDetail: buildOpsDetail(todayEntries, activeShifts, vehicles, names),
     fleet,
-    performance: buildPerformance(rangeEntries, names, rangeStart, rangeEnd),
+    // Tablo aralığı değil, sabit son-7-gün penceresi (PERF_WINDOW_DAYS).
+    performance: buildPerformance(
+      perfEntries,
+      names,
+      perfStart.toISOString(),
+      perfEnd.toISOString()
+    ),
+    performanceWindowDays: PERF_WINDOW_DAYS,
+    dtc,
     attention: buildAttention(
       rangeEntries,
       todayEntries,

@@ -48,6 +48,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { OpsSummary } from "@/components/admin/OpsSummary";
 import { AttentionList } from "@/components/admin/AttentionList";
 import { LiveWorked } from "@/components/admin/LiveWorked";
+import { FleetDtcCard } from "@/components/admin/FleetDtcCard";
 import type { DashboardData } from "@/lib/admin-dashboard";
 import { AddWorkerDialog } from "@/components/admin/AddWorkerDialog";
 import {
@@ -484,6 +485,11 @@ export function AdminClient({
       }));
   };
   const tileIcon = <BarChart3 className="size-4" />;
+  // Tile'lar tablo aralığını DEĞİL, sabit kayan pencereyi kapsar (lib/admin-dashboard
+  // PERF_WINDOW_DAYS) — altyazı bunu açıkça yazar ki tablodaki aralıkla karışmasın.
+  const perfScope = `${t("dash.perf_driver")} · ${t("dash.perf_window", {
+    days: dashboard.performanceWindowDays,
+  })}`;
 
   return (
     <div className="space-y-6">
@@ -494,13 +500,19 @@ export function AdminClient({
           tile'ı kendi içinde yazar. RankingTile rows=[] için ortalanmış
           emptyLabel render eder. */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <RankingTile title={t("dash.perf_hours")} icon={tileIcon} rows={rankRows("ms")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
-        <RankingTile title={t("dash.perf_km")} icon={tileIcon} rows={rankRows("km")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
-        <RankingTile title={t("dash.perf_score")} icon={tileIcon} rows={rankRows("score")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
-        <RankingTile title={t("dash.perf_delivered")} icon={tileIcon} rows={rankRows("delivered")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
-        <RankingTile title={t("dash.perf_azg")} icon={tileIcon} rows={rankRows("azg")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
-        <RankingTile title={t("dash.perf_shifts")} icon={tileIcon} rows={rankRows("shifts")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
+        <RankingTile title={t("dash.perf_hours")} icon={tileIcon} rows={rankRows("ms")} scope={perfScope} emptyLabel={t("dash.perf_empty")} />
+        <RankingTile title={t("dash.perf_km")} icon={tileIcon} rows={rankRows("km")} scope={perfScope} emptyLabel={t("dash.perf_empty")} />
+        <RankingTile title={t("dash.perf_score")} icon={tileIcon} rows={rankRows("score")} scope={perfScope} emptyLabel={t("dash.perf_empty")} />
+        <RankingTile title={t("dash.perf_delivered")} icon={tileIcon} rows={rankRows("delivered")} scope={perfScope} emptyLabel={t("dash.perf_empty")} />
+        <RankingTile title={t("dash.perf_azg")} icon={tileIcon} rows={rankRows("azg")} scope={perfScope} emptyLabel={t("dash.perf_empty")} />
+        <RankingTile title={t("dash.perf_shifts")} icon={tileIcon} rows={rankRows("shifts")} scope={perfScope} emptyLabel={t("dash.perf_empty")} />
       </div>
+
+      {/* Filo arıza özeti — yalnız aktif arızası olan araç varsa. Boş filoda
+          "arıza yok" kutusu göstermeye gerek yok (boş-durum ekonomisi); kart
+          kendi içindeki temiz boş-durumunu yalnız veri gelip sıfırlandığında
+          göstermez, hiç render edilmez. */}
+      {dashboard.dtc.length > 0 && <FleetDtcCard rows={dashboard.dtc} />}
 
       {/* Bugünün canlı operasyon özeti (analitik ızgaranın altında) */}
       <OpsSummary ops={dashboard.todayOps} detail={dashboard.opsDetail} />

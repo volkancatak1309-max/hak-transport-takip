@@ -350,7 +350,9 @@ export function VehicleDetailClient({
           SUNUCUDA yapıldı (page.tsx → lookupDtc); buraya yalnız aktif kodların
           yerelleştirilmiş info'su iner. info === null → üretici-spesifik kod,
           tek fallback metni gösterilir (tanım asla uydurulmaz). */}
-      <section className="glass rounded-[16px] p-5">
+      {/* id="dtc" + scroll-mt: Yönetici'deki filo arıza kartı buraya derin
+          link veriyor (/admin/araclar/{id}#dtc) — sticky başlığın altında kalmasın. */}
+      <section id="dtc" className="glass scroll-mt-24 rounded-[16px] p-5">
         <h3 className="mb-3 flex items-center gap-2 text-sm font-medium">
           <Wrench className="size-[18px] text-text-tertiary" />
           {tm("dtc_title")}

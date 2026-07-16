@@ -583,6 +583,60 @@ export async function listActiveDtc(
   return (data ?? []) as VehicleDtcRow[];
 }
 
+/** Filo geneli arıza özeti — araç başına aktif kod sayısı + en uzun süredir
+ *  açık kod. ŞİDDET YOK: `vehicle_dtc`'de severity kolonu, `dtc-codes.ts`
+ *  sözlüğünde de karşılaştırılabilir bir seviye alanı yok (yalnız düz metin
+ *  `risk` açıklaması). "En kritik kod" uydurmak yerine gerçek veriden türeyen
+ *  en güçlü aciliyet sinyalini veriyoruz: en eski `first_seen` = en uzun
+ *  ihmal edilmiş arıza. */
+export type FleetDtcVehicle = {
+  vehicle_id: string;
+  count: number;
+  oldest: { code: string; first_seen: string } | null;
+};
+
+/**
+ * Tüm filodaki aktif (temizlenmemiş) arızalar, araca göre gruplanmış. Tablo
+ * yoksa (migration 021 uygulanmadıysa) boş liste döner — dashboard bozulmaz.
+ */
+export async function listFleetActiveDtc(): Promise<FleetDtcVehicle[]> {
+  const { data } = await fetchAllRows<{
+    vehicle_id: string;
+    code: string;
+    first_seen: string;
+  }>((from, to) =>
+    supabaseAdmin
+      .from("vehicle_dtc")
+      .select("vehicle_id, code, first_seen")
+      .is("cleared_at", null)
+      .order("id")
+      .range(from, to)
+  );
+
+  const byVehicle = new Map<string, FleetDtcVehicle>();
+  for (const r of data) {
+    let row = byVehicle.get(r.vehicle_id);
+    if (!row) {
+      row = { vehicle_id: r.vehicle_id, count: 0, oldest: null };
+      byVehicle.set(r.vehicle_id, row);
+    }
+    row.count++;
+    if (
+      !row.oldest ||
+      new Date(r.first_seen).getTime() < new Date(row.oldest.first_seen).getTime()
+    ) {
+      row.oldest = { code: r.code, first_seen: r.first_seen };
+    }
+  }
+  // En çok arızası olan araç önce; eşitlikte en eski arıza öne.
+  return [...byVehicle.values()].sort(
+    (a, b) =>
+      b.count - a.count ||
+      new Date(a.oldest?.first_seen ?? 0).getTime() -
+        new Date(b.oldest?.first_seen ?? 0).getTime()
+  );
+}
+
 /**
  * DTC bekçisi (öz-iyileşme). Sorunu çözdüğü sınıf: cihaz tam can.dtc listesini
  * yalnız liste DEĞİŞİNCE gönderir; deploy penceresi / cron kesintisi / cihaz

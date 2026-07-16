@@ -860,7 +860,7 @@
       "perf_azg": "AZG",
       "perf_azg_warn": "uyarı",
       "perf_score": "Puan",
-      "perf_empty": "Bu aralıkta veri yok",
+      "perf_empty": "Veri yok",
       "attn_title": "Dikkat / Aksiyon",
       "attn_empty": "Şu an dikkat gerektiren bir şey yok",
       "attn_over9h": "{name} — 9 saati aştı",
@@ -874,7 +874,16 @@
       "attn_unconfirmed_ended": "onaysız kapandı",
       "detail_empty": "Kayıt yok",
       "shifts_title": "Vardiya Kayıtları",
-      "shifts_table": "Vardiyalar"
+      "shifts_table": "Vardiyalar",
+      "perf_window": "Son {days} gün",
+      "dtc_title": "Araç Arızaları (DTC)",
+      "dtc_none": "Filoda aktif arıza yok",
+      "dtc_scope": "Aktif arızası olan araçlar · canlı",
+      "dtc_count": "{count} aktif",
+      "dtc_oldest": "En eski",
+      "dtc_days": "{days} gündür açık",
+      "dtc_today": "bugün açıldı",
+      "dtc_unknown": "kod yok"
     }
   },
   "workers": {

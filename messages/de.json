@@ -860,7 +860,7 @@
       "perf_azg": "AZG",
       "perf_azg_warn": "Warnung(en)",
       "perf_score": "Score",
-      "perf_empty": "Keine Daten in diesem Zeitraum",
+      "perf_empty": "Keine Daten",
       "attn_title": "Achtung / Maßnahmen",
       "attn_empty": "Derzeit nichts zu beachten",
       "attn_over9h": "{name} — über 9 Stunden",
@@ -874,7 +874,16 @@
       "attn_unconfirmed_ended": "unbestätigt beendet",
       "detail_empty": "Keine Einträge",
       "shifts_title": "Schichtprotokolle",
-      "shifts_table": "Schichten"
+      "shifts_table": "Schichten",
+      "perf_window": "Letzte {days} Tage",
+      "dtc_title": "Fahrzeugfehler (DTC)",
+      "dtc_none": "Keine aktiven Fehler in der Flotte",
+      "dtc_scope": "Fahrzeuge mit aktiven Fehlern · live",
+      "dtc_count": "{count} aktiv",
+      "dtc_oldest": "Ältester",
+      "dtc_days": "seit {days} Tagen offen",
+      "dtc_today": "heute aufgetreten",
+      "dtc_unknown": "kein Code"
     }
   },
   "workers": {

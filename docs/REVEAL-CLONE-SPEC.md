@@ -71,6 +71,18 @@
   5. **Performans Puanı** (sürücüye göre) — yatay bar
   6. **Alarm Trendi** (zaman) — dikey bar trend (Reveal "Wasted Fuel" tile tipi)
 
+### B2b. Performans penceresi (Volkan onayı, 17.07.2026)
+- Tile'lar vardiya tablosunun aralığından **BAĞIMSIZ**: sabit kayan **son 7 gün** (`PERF_WINDOW_DAYS`). Reveal de tile'larını sabit pencerede tutar ("Previous week").
+- Tile footer'ı pencereyi açıkça yazar: **"Şoför · Son 7 gün"** — tablodaki aralıkla karışmasın.
+- Gerekçe: tile'lar aralığa bağlıyken "Bugün" seçilince hepsi boşalıyordu.
+
+### B4. Filo arıza özeti (DTC) — Reveal'da doğrudan karşılığı YOK
+- Reveal'ın Dashboard'unda arıza tile'ı yok; **tile dili** (sabit başlık + satırlar + `border-t` scope şeridi) aynen uygulanır, içerik bizim.
+- Yeri: tile ızgarasının ALTINDA, Operasyon Özeti'nin ÜSTÜNDE (filo sağlığı → günlük operasyon sırası).
+- Satır: **plaka** (mono `.nums`, 92px) · **aktif arıza sayısı rozeti** (3+ = `--destructive`, 1-2 = `--accent-gold`) · **en uzun süredir açık kod** + gün + tarih · chevron. Satır → `/admin/araclar/{id}#dtc`.
+- **ŞİDDET GÖSTERİLMEZ — veri yok:** `vehicle_dtc`'de severity kolonu yok; `lib/dtc-codes.ts` sözlüğü yalnız düz metin `title/part/symptoms/risk` tutuyor, karşılaştırılabilir seviye alanı yok. "En kritik kod" uydurulmadı; yerine veriden gerçekten türeyen aciliyet sinyali kullanıldı: **en eski `first_seen`** (= en uzun ihmal edilmiş arıza). Renk yalnız arıza SAYISINA bağlı (bu da veri).
+- Aktif arızası olan araç yoksa kart hiç render edilmez (boş-durum ekonomisi).
+
 ### B3. Dikkat/Aksiyon + Vardiya kayıtları
 - Reveal dashboard'da yok ama bizim çekirdek işlev. Tile ızgarasının ALTINDA: kompakt "Dikkat/Aksiyon" şeridi (varsa) + mevcut Vardiya KPI + filtre + DataTable (korunur).
 

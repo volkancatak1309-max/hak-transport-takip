@@ -112,6 +112,26 @@
 
 ---
 
+## F. SEFERLER ekranı (Reveal'da birebir karşılığı yok → klon dili uygulanır)
+
+- **F1.** A2 başlık bloğu (H1 28px semibold + açıklama).
+- **F2. Sekme şeridi KALDIRILDI → filtre bandı.** Eski `Tabs` (Bugün/Yarın/Bu hafta/Tümü) A3 dilinde **"Gösterilen"** dropdown'ına taşındı. Gerekçe: Reveal tarih kapsamını sekmeyle değil filtre bandındaki dropdown ile seçer (Alerts "Show alerts triggered" birebir). Sekme şeridi Reveal'da **görünüm** değiştirir (Overview vs Alert log), **kapsam** değil.
+- **F3.** İkinci dropdown **"Durum"** (Tümü/Atandı/Başladı/Tamamlandı/İptal) — Reveal Alert Log'un Priority filtresinin karşılığı. Sağda "Yeni Sefer".
+- **F4.** Sefer kartları korunur (sol renk şeridi = durum).
+
+## G. HARİTA ekranı (Reveal: Live Map — birebir referans)
+
+**Referans:** `competitor-shots/fleet-status-location.png`.
+
+- **G1.** A2 başlık bloğu.
+- **G2.** Harita + sağda 360px panel düzeni (Reveal: harita + sol panel; bizde sidebar zaten solda olduğu için panel sağda — kabuk kararı, kapsam dışı).
+- **G3. Panel sekme şeridi (Reveal birebir).** Reveal panelinde grup/araç ikon sekmeleri var → bizde **"Şoförler (n) · Araçlar (n)"** (SubTabs, A1 dili).
+  - **Kapatılan gerçek boşluk:** araçlar haritada görünüyordu ama panelde **listelenmiyordu**; Reveal paneli araçları listeler.
+- **G4. Araç satırı:** plaka (mono `.nums`, bold) + kontak durum noktası (açık=sky / kapalı=gri) + "Kontak açık/kapalı"; altında hız (km/h) + son sinyal saati. Satır → araç detayı. Tüm alanlar `ActiveVehicle`'dan gerçek veri (uydurma yok).
+- **G5.** Reveal satırındaki **adres** yok: ters-jeokodlama servisimiz yok, uydurulmaz.
+
+---
+
 ## C. Ortak stil (her iki ekran)
 - Palet: koyu zemin (`#0a0d16` + aurora), yüzey `--card`, vurgu **bordo** `--accent-claret`/`#8a1538` (Reveal kırmızısının yerini alır), bilgi `--accent-sky`, kritik `--status-critical`.
 - Tipografi: Reveal ölçekleriyle eşleşir (H1 ~28px semibold, tile başlık ~15-16px bold, etiket ~11-12px, değer ~13-14px, sayısal `.nums`).

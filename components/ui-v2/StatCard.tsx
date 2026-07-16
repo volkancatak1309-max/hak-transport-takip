@@ -44,10 +44,10 @@ export function StatCard({
   const body = (
     <>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+        <span className="text-[12px] sm:text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
           {label}
         </span>
-        <span className="text-[11px] text-muted-foreground/80">{scope}</span>
+        <span className="text-[12px] sm:text-[11px] text-muted-foreground/80">{scope}</span>
       </div>
       <div className="mt-1.5 flex items-baseline gap-2">
         <span className={cn("nums text-[28px] font-bold leading-none", VALUE_TONE[tone])}>

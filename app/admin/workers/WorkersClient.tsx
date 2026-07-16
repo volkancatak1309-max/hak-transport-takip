@@ -174,11 +174,15 @@ export function WorkersClient({ workers }: Props) {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-1 justify-end">
+                          {/* aria-label ŞART: metin `hidden md:inline` — dar
+                              ekranda gizlenince butonun erişilebilir adı hiç
+                              kalmıyordu (Lighthouse button-name, mobil). */}
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleReset(w)}
                             disabled={pending}
+                            aria-label={t("resetPin")}
                           >
                             <KeyRound className="size-4" />
                             <span className="hidden md:inline ml-1">{t("resetPin")}</span>

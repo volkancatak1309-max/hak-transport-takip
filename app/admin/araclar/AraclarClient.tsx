@@ -354,10 +354,12 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
                   >
                     <Trash2 className="size-4" />
                   </Button>
+                  {/* Dokunma hedefi 24x24 (WCAG 2.2 AA 2.5.8) — ikon 16px kalıyor,
+                      tıklanabilir alan büyüyor. */}
                   <Link
                     href={`/admin/araclar/${v.id}`}
                     aria-label={v.plate}
-                    className="shrink-0"
+                    className="flex size-6 shrink-0 items-center justify-center"
                   >
                     <ChevronRight className="size-4 text-text-tertiary transition-colors group-hover:text-foreground" />
                   </Link>
@@ -513,7 +515,7 @@ function Kpi({
     accent === "sky"
       ? "text-accent-sky"
       : accent === "claret"
-      ? "text-accent-claret"
+      ? "text-accent-claret-text"
       : accent === "gold"
       ? "text-accent-gold"
       : "text-foreground";
@@ -521,7 +523,7 @@ function Kpi({
     <div className="glass card-kpi rounded-[16px] px-4 py-3.5">
       <div className="flex items-center gap-1.5">
         {live && <span className="live-dot" />}
-        <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
+        <span className="text-[12px] sm:text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
           {label}
         </span>
       </div>

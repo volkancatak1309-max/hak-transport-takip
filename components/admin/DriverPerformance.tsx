@@ -96,7 +96,7 @@ export function DriverPerformance({
           ? "text-accent-sky"
           : r.score >= 50
           ? "text-accent-gold"
-          : "text-accent-claret";
+          : "text-accent-claret-text";
       return (
         <td key={key} className={`${base} font-semibold ${tone}`}>
           {r.score}
@@ -106,7 +106,7 @@ export function DriverPerformance({
     if (key === "azg") {
       const tone =
         r.azgViol > 0
-          ? "text-accent-claret"
+          ? "text-accent-claret-text"
           : r.azgWarn > 0
           ? "text-accent-gold"
           : "text-muted-foreground";

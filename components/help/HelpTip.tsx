@@ -204,7 +204,7 @@ export function HelpTip({
                     <X className="size-4" />
                   </button>
                   <span className="flex items-start gap-2">
-                    <Info className="mt-0.5 size-4 shrink-0 text-accent-claret" />
+                    <Info className="mt-0.5 size-4 shrink-0 text-accent-claret-text" />
                     <span className="text-[13px] font-normal normal-case leading-relaxed tracking-normal text-foreground">
                       {text}
                     </span>
@@ -233,7 +233,13 @@ export function HelpTip({
         onFocus={() => canHover && setHovering(true)}
         onBlur={() => canHover && setHovering(false)}
         className={cn(
-          "inline-flex size-[18px] items-center justify-center rounded-full",
+          // WCAG 2.2 AA 2.5.8: dokunma hedefi en az 24x24 CSS px.
+          // Önce ::before ile görünmez genişletme denendi ve tıklama testinde
+          // ÇALIŞTI — ama axe/Lighthouse hedefi elemanın KUTUSUNDAN ölçüyor ve
+          // 18x18 görüp haklı olarak uyarıyor. Denetim aracının göremediği
+          // uyum, uyum sayılmaz: buton gerçekten 24x24 yapıldı. İkon 13px
+          // kaldığı için görsel ağırlık aynı, yalnız hover dairesi büyüdü.
+          "inline-flex size-6 items-center justify-center rounded-full",
           "text-muted-foreground/60 transition-colors",
           "hover:bg-surface-2 hover:text-foreground",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-sky/40",

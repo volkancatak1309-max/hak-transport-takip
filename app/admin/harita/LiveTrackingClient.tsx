@@ -91,7 +91,7 @@ export function LiveTrackingClient({
         <section className="glass overflow-hidden rounded-[16px]">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
-              <MapPinned className="size-[18px] text-accent-claret" />
+              <MapPinned className="size-[18px] text-accent-claret-text" />
               <span className="text-sm font-medium">{t("title")}</span>
               <HelpTip tkey="map" />
             </div>
@@ -239,7 +239,7 @@ function Kpi({
     <div className="glass card-kpi rounded-[16px] px-4 py-3.5">
       <div className="flex items-center gap-1.5">
         {live && <span className="live-dot" />}
-        <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
+        <span className="text-[12px] sm:text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
           {label}
         </span>
       </div>

@@ -28,12 +28,13 @@ export function FleetDtcCard({ rows }: { rows: FleetDtcRow[] }) {
   return (
     <section className="glass rounded-[10px] p-3.5">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-[15px] font-semibold leading-none">
+        {/* h2 — kardeş bölümlerle (RankingTile, OpsSummary) aynı seviye */}
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold leading-none">
           <Wrench className="size-4 text-muted-foreground" aria-hidden />
           {t("dtc_title")}
-        </h3>
+        </h2>
         {rows.length > 0 && (
-          <span className="nums text-[11px] font-semibold text-muted-foreground tabular-nums">
+          <span className="nums text-[12px] sm:text-[11px] font-semibold text-muted-foreground tabular-nums">
             {rows.length}
           </span>
         )}
@@ -58,18 +59,23 @@ export function FleetDtcCard({ rows }: { rows: FleetDtcRow[] }) {
                     {r.plate}
                   </span>
 
+                  {/* Kritik rozet --status-critical ailesini kullanır, --destructive
+                      DEĞİL: (1) DESIGN-SYSTEM §2.3 yasa 3 — destructive yıkıcı EYLEM
+                      içindir, kritik durum için kritik token'lar kullanılır;
+                      (2) text-destructive rozet zemininde 4.42:1 ölçüldü — 11px
+                      metin için AA (4.5) FAIL. status-critical 6.06:1 ✓ */}
                   <span
                     className={cn(
-                      "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                      "shrink-0 rounded-full px-2 py-0.5 text-[12px] sm:text-[11px] font-semibold",
                       r.count >= 3
-                        ? "bg-destructive/15 text-destructive"
+                        ? "bg-status-critical-soft text-status-critical"
                         : "bg-accent-gold/15 text-accent-gold"
                     )}
                   >
                     {t("dtc_count", { count: r.count })}
                   </span>
 
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate text-[12px] sm:text-[11px] text-muted-foreground">
                     {r.oldest_code ? (
                       <>
                         <span className="nums font-medium text-foreground">
@@ -104,7 +110,7 @@ export function FleetDtcCard({ rows }: { rows: FleetDtcRow[] }) {
         </ul>
       )}
 
-      <div className="mt-2 border-t border-border/60 pt-1.5 text-[11px] text-muted-foreground">
+      <div className="mt-2 border-t border-border/60 pt-1.5 text-[12px] sm:text-[11px] text-muted-foreground">
         {t("dtc_scope")}
       </div>
     </section>

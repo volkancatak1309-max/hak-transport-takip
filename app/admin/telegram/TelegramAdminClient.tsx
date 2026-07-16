@@ -126,7 +126,7 @@ export function TelegramAdminClient({ connected, myStatus, webhook }: Props) {
           ) : (
             <>
               <Select value={target} onValueChange={(v) => v && setTarget(v)}>
-                <SelectTrigger className="h-10">
+                <SelectTrigger className="h-10" aria-label={t("select_worker")}>
                   <SelectValue>
                     {((v: unknown) => {
                       const u = connected.find((x) => x.id === String(v));
@@ -193,11 +193,14 @@ export function TelegramAdminClient({ connected, myStatus, webhook }: Props) {
                         {u.linkedAt ? formatDateTime(u.linkedAt, locale) : "—"}
                       </TableCell>
                       <TableCell className="text-right">
+                        {/* Yalnız ikon içeriyor -> erişilebilir adı yoktu
+                            (Lighthouse button-name). */}
                         <Button
                           variant="outline"
                           size="sm"
                           disabled={rowBusy === u.id}
                           onClick={() => send(u.id, t("test_default"), u.id)}
+                          aria-label={`${t("test_send")} — ${u.name}`}
                         >
                           {rowBusy === u.id ? (
                             <Loader2 className="size-4 animate-spin" />

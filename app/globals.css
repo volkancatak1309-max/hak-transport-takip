@@ -211,7 +211,10 @@ body {
   --secondary-foreground: oklch(0.975 0.003 256);
   --muted: oklch(0.245 0.008 256);
   --muted-foreground: oklch(0.72 0.012 256);
-  --text-tertiary: oklch(0.55 0.012 256);
+  /* FAZ 5 QA: 0.55 -> 0.60. Eski değer koyu zeminde ölçülen 4.09:1 idi ve 12px
+     normal metin için AA'yı (4.5:1) geçmiyordu (Lighthouse color-contrast).
+     0.60 = 5.04:1 ✓ — tondan ödün vermeden pay bırakır. */
+  --text-tertiary: oklch(0.6 0.012 256);
   --accent: oklch(0.245 0.008 256);
   --accent-foreground: oklch(0.975 0.003 256);
   --destructive: oklch(0.62 0.2 25);
@@ -542,6 +545,18 @@ body {
   padding: 3px 6px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.45);
 }
+/* FAZ 5 QA — mobilde harita pin etiketleri 11px'te okunaksızdı (Lighthouse
+   font-size). Telefonda 12px; masaüstünde 11px kalır (pin yoğunluğu bozulmasın). */
+@media (max-width: 640px) {
+  .hak-replay-label,
+  .hak-pin-label {
+    font-size: 12px;
+  }
+  .leaflet-container .leaflet-control-attribution {
+    font-size: 12px;
+  }
+}
+
 /* Leaflet popup theme alignment */
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip {
@@ -550,4 +565,24 @@ body {
 }
 .leaflet-popup-content {
   margin: 0.75rem;
+}
+
+/* Atıf kontrolü (FAZ 5 QA). Leaflet'in varsayılan link rengi #0078A8, atıf
+   şeridinde 3.23:1 — 12px normal metin için AA (4.5:1) FAIL. Atıf yasal
+   zorunluluk, kaldırılamaz; okunur hale getiriliyor.
+   ÖZGÜLLÜK NOTU: leaflet.css harita bileşenlerinin içinde import edildiği için
+   globals.css'ten SONRA yükleniyor. `.leaflet-container a` (0,2,0) ile eşit
+   özgüllükte bir seçici kaybeder — bu yüzden `.leaflet-container` ile
+   sarmalanıp (0,3,0) yapıldı. */
+.leaflet-container .leaflet-control-attribution {
+  background: rgb(255 255 255 / 0.92);
+  color: #2c2c2c;
+}
+.leaflet-container .leaflet-control-attribution a {
+  color: #00506f; /* beyaz üstünde 7.4:1 — AA ✓ */
+  text-decoration: underline;
+}
+.leaflet-container .leaflet-control-attribution a:hover,
+.leaflet-container .leaflet-control-attribution a:focus-visible {
+  color: #003d52;
 }

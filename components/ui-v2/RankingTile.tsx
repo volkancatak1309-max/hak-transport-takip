@@ -37,8 +37,11 @@ export function RankingTile({
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
     <div className={cn("glass flex h-[230px] flex-col rounded-[10px] p-3.5", className)}>
+      {/* h2: tile ızgarası sayfanın ilk içerik bölümü — h1'den sonra gelir.
+          h3 olduğunda başlık sırası h1'den h3'e atlıyordu (Lighthouse
+          heading-order). Kardeş bölümler (OpsSummary, FleetDtcCard) da h2. */}
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-[15px] font-semibold leading-none">{title}</h3>
+        <h2 className="text-[15px] font-semibold leading-none">{title}</h2>
         {icon && <span className="text-muted-foreground">{icon}</span>}
       </div>
 
@@ -53,7 +56,7 @@ export function RankingTile({
             const secPct = r.secondary ? Math.round((r.secondary / max) * 100) : 0;
             const basePct = Math.max(0, pct - secPct);
             return (
-              <li key={r.key} className="flex items-center gap-2 text-[11px]">
+              <li key={r.key} className="flex items-center gap-2 text-[12px] sm:text-[11px]">
                 <span className="w-[78px] shrink-0 truncate text-right text-muted-foreground">
                   {r.label}
                 </span>
@@ -83,7 +86,7 @@ export function RankingTile({
       )}
 
       {scope && (
-        <div className="mt-2 border-t border-border/60 pt-1.5 text-[11px] text-muted-foreground">
+        <div className="mt-2 border-t border-border/60 pt-1.5 text-[12px] sm:text-[11px] text-muted-foreground">
           {scope}
         </div>
       )}

@@ -583,7 +583,7 @@ export function AdminClient({
             <div className="space-y-1.5">
               <Label className="text-xs">{t("dateRange")}</Label>
               <Select value={range} onValueChange={(v) => setParam("range", v ?? "today")}>
-                <SelectTrigger className="h-9 w-[150px]">
+                <SelectTrigger className="h-9 w-[150px]" aria-label={t("dateRange")}>
                   <SelectValue>
                     {range === "week" ? t("rangeWeek") : range === "month" ? t("rangeMonth") : range === "custom" ? t("rangeCustom") : t("rangeToday")}
                   </SelectValue>
@@ -611,7 +611,7 @@ export function AdminClient({
             <div className="space-y-1.5">
               <Label className="text-xs">{t("worker")}</Label>
               <Select value={workerFilter} onValueChange={(v) => setParam("worker", v ?? "all")}>
-                <SelectTrigger className="h-9 w-[190px]">
+                <SelectTrigger className="h-9 w-[190px]" aria-label={t("worker")}>
                   <SelectValue>
                     {workerFilter === "all" ? t("statusAll") : workers.find((w) => w.id === workerFilter)?.name ?? t("statusAll")}
                   </SelectValue>
@@ -630,7 +630,7 @@ export function AdminClient({
             <div className="space-y-1.5">
               <Label className="text-xs">{t("status")}</Label>
               <Select value={statusFilter} onValueChange={(v) => setParam("status", v ?? "all")}>
-                <SelectTrigger className="h-9 w-[170px]">
+                <SelectTrigger className="h-9 w-[170px]" aria-label={t("status")}>
                   <SelectValue>
                     {statusFilter === "active" ? t("statusActive") : statusFilter === "completed" ? t("statusCompleted") : statusFilter === "over" ? t("statusOver") : t("statusAll")}
                   </SelectValue>

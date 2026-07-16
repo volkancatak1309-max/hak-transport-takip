@@ -344,7 +344,11 @@
     "tg_btn_start_directions": "🗺 Çıkış Yol Tarifi",
     "tg_btn_middle_directions": "🗺 Durak {n} Yol Tarifi",
     "tg_btn_end_directions": "🗺 Varış Yol Tarifi",
-    "tg_btn_open_panel": "📱 Panele Git"
+    "tg_btn_open_panel": "📱 Panele Git",
+    "subtitle": "Planlanan seferler ve durumları",
+    "filter_shown": "Gösterilen",
+    "filter_status": "Durum",
+    "filter_all": "Tümü"
   },
   "telegram": {
     "title": "Telegram Bildirimleri",
@@ -454,7 +458,11 @@
       "sw": "Güney-Batı",
       "w": "Batı",
       "nw": "Kuzey-Batı"
-    }
+    },
+    "subtitle": "Canlı konumlar — şoför telefonu ve araç GPS cihazı",
+    "tab_drivers": "Şoförler",
+    "tab_vehicles": "Araçlar",
+    "no_vehicles": "Şu an sinyal veren araç yok"
   },
   "route": {
     "title": "Rota Geçmişi",

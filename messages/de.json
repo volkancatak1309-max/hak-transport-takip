@@ -344,7 +344,11 @@
     "tg_btn_start_directions": "🗺 Route zum Start",
     "tg_btn_middle_directions": "🗺 Route zur Station {n}",
     "tg_btn_end_directions": "🗺 Route zum Ziel",
-    "tg_btn_open_panel": "📱 Panel öffnen"
+    "tg_btn_open_panel": "📱 Panel öffnen",
+    "subtitle": "Geplante Touren und ihr Status",
+    "filter_shown": "Angezeigt",
+    "filter_status": "Status",
+    "filter_all": "Alle"
   },
   "telegram": {
     "title": "Telegram-Benachrichtigungen",
@@ -454,7 +458,11 @@
       "sw": "Südwest",
       "w": "West",
       "nw": "Nordwest"
-    }
+    },
+    "subtitle": "Live-Standorte — Fahrer-Handy und Fahrzeug-GPS",
+    "tab_drivers": "Fahrer",
+    "tab_vehicles": "Fahrzeuge",
+    "no_vehicles": "Derzeit kein Fahrzeug mit Signal"
   },
   "route": {
     "title": "Routenverlauf",

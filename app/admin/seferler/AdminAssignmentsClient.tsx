@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Plus, MoreVertical, Package, Loader2, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RevealFilterRow } from "@/components/ui-v2";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -26,7 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatDateTime, viennaDayKey } from "@/lib/format";
 import { STATUS_STRIPE, STATUS_BADGE, routeSummary } from "@/lib/assignments-ui";
-import type { AssignmentWithWorker } from "@/lib/types";
+import type { AssignmentWithWorker, AssignmentStatus } from "@/lib/types";
 import {
   createAssignment,
   updateAssignment,
@@ -60,6 +60,7 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
   const router = useRouter();
 
   const [tab, setTab] = useState<Tab>("today");
+  const [statusFilter, setStatusFilter] = useState<"all" | AssignmentStatus>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<AssignmentWithWorker | null>(null);
   const [cancelling, setCancelling] = useState<AssignmentWithWorker | null>(null);
@@ -68,7 +69,11 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
   const [busy, setBusy] = useState(false);
 
   const filtered = useMemo(() => {
-    if (tab === "all") return assignments;
+    const byStatus =
+      statusFilter === "all"
+        ? assignments
+        : assignments.filter((a) => a.status === statusFilter);
+    if (tab === "all") return byStatus;
     const now = new Date();
     const todayKey = viennaDayKey(now);
     const tmr = new Date(now);
@@ -82,13 +87,13 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
     const weekStart = viennaDayKey(mon);
     const weekEnd = viennaDayKey(sun);
 
-    return assignments.filter((a) => {
+    return byStatus.filter((a) => {
       const k = viennaDayKey(a.scheduled_at);
       if (tab === "today") return k === todayKey;
       if (tab === "tomorrow") return k === tomorrowKey;
       return k >= weekStart && k <= weekEnd; // week
     });
-  }, [assignments, tab]);
+  }, [assignments, tab, statusFilter]);
 
   async function handleCreate(payload: AssignmentInput) {
     setBusy(true);
@@ -143,21 +148,47 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">{t("title")}</h1>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="size-4" /> {t("new")}
-        </Button>
+      {/* Başlık bloğu — klon A2 ölçüsü */}
+      <div>
+        <h1 className="text-[28px] font-semibold leading-tight">{t("title")}</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList>
-          <TabsTrigger value="today">{t("today")}</TabsTrigger>
-          <TabsTrigger value="tomorrow">{t("tomorrow")}</TabsTrigger>
-          <TabsTrigger value="week">{t("this_week")}</TabsTrigger>
-          <TabsTrigger value="all">{t("all")}</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* Filtre bandı — A3 dili. Eski sekme şeridi (Bugün/Yarın/Hafta/Tümü)
+          buraya "Gösterilen" dropdown'ı olarak taşındı: Reveal tarih kapsamını
+          sekmeyle değil filtre bandındaki dropdown ile seçer. */}
+      <RevealFilterRow
+        filters={[
+          {
+            label: t("filter_shown"),
+            value: tab,
+            onChange: (v) => setTab(v as Tab),
+            options: [
+              { value: "today", label: t("today") },
+              { value: "tomorrow", label: t("tomorrow") },
+              { value: "week", label: t("this_week") },
+              { value: "all", label: t("all") },
+            ],
+          },
+          {
+            label: t("filter_status"),
+            value: statusFilter,
+            onChange: (v) => setStatusFilter(v as "all" | AssignmentStatus),
+            options: [
+              { value: "all", label: t("filter_all") },
+              { value: "assigned", label: t("status.assigned") },
+              { value: "started", label: t("status.started") },
+              { value: "completed", label: t("status.completed") },
+              { value: "cancelled", label: t("status.cancelled") },
+            ],
+          },
+        ]}
+        right={
+          <Button className="h-9" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" /> {t("new")}
+          </Button>
+        }
+      />
 
       {filtered.length === 0 ? (
         <p className="py-10 text-center text-sm text-muted-foreground">

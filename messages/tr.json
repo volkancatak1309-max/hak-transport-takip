@@ -388,7 +388,8 @@
     "webhook_none": "Kayıtlı değil",
     "webhook_pending": "Bekleyen güncellemeler",
     "webhook_ok": "Hata yok",
-    "not_configured": "Webhook yapılandırılmamış (token veya secret eksik)"
+    "not_configured": "Webhook yapılandırılmamış (token veya secret eksik)",
+    "subtitle": "Bot bağlantısı, webhook durumu ve bildirim testi"
   },
   "map": {
     "title": "Filo Haritası",

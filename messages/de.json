@@ -388,7 +388,8 @@
     "webhook_none": "Nicht registriert",
     "webhook_pending": "Ausstehende Updates",
     "webhook_ok": "Keine Fehler",
-    "not_configured": "Webhook nicht konfiguriert (Token oder Secret fehlt)"
+    "not_configured": "Webhook nicht konfiguriert (Token oder Secret fehlt)",
+    "subtitle": "Bot-Verknüpfung, Webhook-Status und Benachrichtigungstest"
   },
   "map": {
     "title": "Flottenkarte",

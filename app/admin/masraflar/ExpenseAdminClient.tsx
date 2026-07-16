@@ -4,10 +4,10 @@ import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, X, Loader2, Wallet, Clock, User, FileSpreadsheet } from "lucide-react";
+import { Check, X, Loader2, FileSpreadsheet } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RevealFilterRow, StatCard } from "@/components/ui-v2";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
@@ -150,46 +150,49 @@ export function ExpenseAdminClient({ entries }: Props) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">{t("admin_title")}</h1>
-        <Button variant="outline" onClick={() => setCsvOpen(true)}>
-          <FileSpreadsheet className="size-4" /> {t("payroll_export")}
-        </Button>
+      {/* Başlık bloğu — klon A2 ölçüsü */}
+      <div>
+        <h1 className="text-[28px] font-semibold leading-tight">{t("admin_title")}</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
 
+      {/* KPI şeridi — tek kaynak StatCard (kapsam etiketi zorunlu) */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Card>
-          <CardContent className="py-4">
-            <Wallet className="size-4 text-muted-foreground" />
-            <p className="mt-1 text-lg font-bold nums">{eur(stats.approvedTotal)} €</p>
-            <p className="text-xs text-muted-foreground">{t("stat_approved_month")}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <Clock className="size-4 text-muted-foreground" />
-            <p className="mt-1 text-lg font-bold nums">
-              {stats.pendingCount} · {eur(stats.pendingTotal)} €
-            </p>
-            <p className="text-xs text-muted-foreground">{t("stat_pending")}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <User className="size-4 text-muted-foreground" />
-            <p className="mt-1 text-lg font-bold">{stats.top}</p>
-            <p className="text-xs text-muted-foreground">{t("stat_top")}</p>
-          </CardContent>
-        </Card>
+        <StatCard
+          label={t("stat_approved_month")}
+          value={`${eur(stats.approvedTotal)} €`}
+          scope={t("stat_month")}
+        />
+        <StatCard
+          label={t("stat_pending")}
+          value={stats.pendingCount}
+          scope={t("stat_all")}
+          tone={stats.pendingCount > 0 ? "warning" : "neutral"}
+          delta={`${eur(stats.pendingTotal)} €`}
+        />
+        <StatCard label={t("stat_top")} value={stats.top} scope={t("stat_month")} />
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as ApprovalStatus)}>
-        <TabsList>
-          <TabsTrigger value="pending">{ta("pending")}</TabsTrigger>
-          <TabsTrigger value="approved">{ta("approved")}</TabsTrigger>
-          <TabsTrigger value="rejected">{ta("rejected")}</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* Filtre bandı — A3 dili; sekme şeridi "Durum" dropdown'ına taşındı */}
+      <RevealFilterRow
+        filters={[
+          {
+            label: t("filter_status"),
+            value: tab,
+            onChange: (v) => setTab(v as ApprovalStatus),
+            options: [
+              { value: "pending", label: ta("pending") },
+              { value: "approved", label: ta("approved") },
+              { value: "rejected", label: ta("rejected") },
+            ],
+          },
+        ]}
+        right={
+          <Button variant="outline" className="h-9" onClick={() => setCsvOpen(true)}>
+            <FileSpreadsheet className="size-4" /> {t("payroll_export")}
+          </Button>
+        }
+      />
 
       <Card>
         <CardContent className="overflow-x-auto p-0">

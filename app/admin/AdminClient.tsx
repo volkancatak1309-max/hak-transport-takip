@@ -34,6 +34,7 @@ import {
   UserPlus,
   Loader2,
   MoreHorizontal,
+  BarChart3,
 } from "lucide-react";
 import {
   formatDate,
@@ -45,8 +46,6 @@ import {
 } from "@/lib/format";
 import { UserAvatar } from "@/components/UserAvatar";
 import { OpsSummary } from "@/components/admin/OpsSummary";
-import { FleetStatus } from "@/components/admin/FleetStatus";
-import { DriverPerformance } from "@/components/admin/DriverPerformance";
 import { AttentionList } from "@/components/admin/AttentionList";
 import { LiveWorked } from "@/components/admin/LiveWorked";
 import type { DashboardData } from "@/lib/admin-dashboard";
@@ -59,6 +58,8 @@ import { ShiftPhotosButton } from "@/components/admin/ShiftPhotosButton";
 import {
   PageHeader,
   StatCard,
+  RankingTile,
+  type RankRow,
   StatusChip,
   DataTable,
   DetailDrawer,
@@ -453,34 +454,64 @@ export function AdminClient({
 
   const shiftIndex = detail ? entries.findIndex((e) => e.id === detail.id) : -1;
 
+  // ── Reveal dashboard klonu — ranked-bar tile satırları (REVEAL-CLONE-SPEC B2)
+  const perf = dashboard.performance;
+  const scoreColor = (s: number) =>
+    s >= 80 ? "var(--accent-sky)" : s >= 50 ? "var(--accent-gold)" : "var(--accent-claret)";
+  const rankRows = (
+    metric: "ms" | "km" | "delivered" | "score" | "azg" | "shifts"
+  ): RankRow[] => {
+    const val = (r: (typeof perf)[number]) => (metric === "azg" ? r.azgViol : r[metric]);
+    return [...perf]
+      .sort((a, b) => val(b) - val(a))
+      .slice(0, 8)
+      .map((r) => ({
+        key: r.worker_id,
+        label: r.name,
+        value: Math.max(0, val(r)),
+        display:
+          metric === "ms"
+            ? formatDurationShort(r.ms, locale)
+            : metric === "km"
+            ? r.km.toLocaleString(nf)
+            : String(val(r)),
+        color:
+          metric === "azg"
+            ? "var(--status-critical)"
+            : metric === "score"
+            ? scoreColor(r.score)
+            : "var(--accent-sky)",
+      }));
+  };
+  const tileIcon = <BarChart3 className="size-4" />;
+
   return (
     <div className="space-y-6">
-      {/* 1 — Bugünün canlı operasyon özeti */}
-      <OpsSummary ops={dashboard.todayOps} detail={dashboard.opsDetail} />
-
-      {/* 2 + 4 — Filo durumu & dikkat kalemleri */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <FleetStatus fleet={dashboard.fleet} />
-        <AttentionList items={dashboard.attention} />
+      {/* Reveal dashboard klonu — ranked-bar tile ızgarası (REVEAL-CLONE-SPEC B2).
+          6 tile / 3 kolon; her tile yatay bar leaderboard. Reveal'ın FleetStatus
+          donut + DriverPerformance tablosunun yerini alır. */}
+      {/* Izgara aralık boşken de durur: Reveal tile'larını hiç gizlemez, boş
+          tile'ı kendi içinde yazar. RankingTile rows=[] için ortalanmış
+          emptyLabel render eder. */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <RankingTile title={t("dash.perf_hours")} icon={tileIcon} rows={rankRows("ms")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
+        <RankingTile title={t("dash.perf_km")} icon={tileIcon} rows={rankRows("km")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
+        <RankingTile title={t("dash.perf_score")} icon={tileIcon} rows={rankRows("score")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
+        <RankingTile title={t("dash.perf_delivered")} icon={tileIcon} rows={rankRows("delivered")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
+        <RankingTile title={t("dash.perf_azg")} icon={tileIcon} rows={rankRows("azg")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
+        <RankingTile title={t("dash.perf_shifts")} icon={tileIcon} rows={rankRows("shifts")} scope={`${t("dash.perf_driver")} · ${scopeLabel}`} emptyLabel={t("dash.perf_empty")} />
       </div>
 
-      {/* 4b — Şoför bildirimleri: boşken tam-genişlik kutu ekranın yarısını
-          yiyor (audit boş-durum ekonomisi) → yalnız açık bildirim varken göster. */}
-      {reports.length > 0 && <DriverReportsCard reports={reports} />}
+      {/* Bugünün canlı operasyon özeti (analitik ızgaranın altında) */}
+      <OpsSummary ops={dashboard.todayOps} detail={dashboard.opsDetail} />
 
-      {/* 3 — Şoför performans sıralaması: veri varken ranked-bar tablo, yoksa
-          tek satırlık kompakt durum (dev boş kutu yerine). */}
-      {dashboard.performance.length > 0 ? (
-        <DriverPerformance performance={dashboard.performance} range={range} />
-      ) : (
-        <Card>
-          <CardContent className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-            <span className="text-[11px] font-medium uppercase tracking-[0.04em]">
-              {t("dash.perf_title")}
-            </span>
-            <span>· {t("dash.perf_empty")}</span>
-          </CardContent>
-        </Card>
+      {/* Dikkat kalemleri + şoför bildirimleri — yalnız içerik varken (boş-durum
+          ekonomisi); boş dev kutu yok. */}
+      {(dashboard.attention.length > 0 || reports.length > 0) && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {dashboard.attention.length > 0 && <AttentionList items={dashboard.attention} />}
+          {reports.length > 0 && <DriverReportsCard reports={reports} />}
+        </div>
       )}
 
       {/* Vardiya kayıtları — özet · filtre · tablo */}

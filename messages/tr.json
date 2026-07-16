@@ -113,7 +113,15 @@
     "sort_severity": "Önce kritik",
     "sort_newest": "En yeni",
     "context_idle": "rölanti",
-    "drawer_address": "Yaklaşık konum"
+    "drawer_address": "Yaklaşık konum",
+    "tab_overview": "Genel Bakış",
+    "tab_log": "Alarm Kaydı",
+    "filter_shown": "Gösterilen",
+    "filter_sort": "Sırala",
+    "sort_most": "En çok tetiklenen",
+    "tile_last": "Son tetiklenme",
+    "tile_alerts": "Alarm",
+    "all": "Tümü"
   },
   "approval": {
     "pending": "Onay Bekliyor",

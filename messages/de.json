@@ -113,7 +113,15 @@
     "sort_severity": "Kritische zuerst",
     "sort_newest": "Neueste",
     "context_idle": "Leerlauf",
-    "drawer_address": "Ungefährer Standort"
+    "drawer_address": "Ungefährer Standort",
+    "tab_overview": "Übersicht",
+    "tab_log": "Alarmprotokoll",
+    "filter_shown": "Angezeigt",
+    "filter_sort": "Sortieren",
+    "sort_most": "Meist ausgelöst",
+    "tile_last": "Zuletzt ausgelöst",
+    "tile_alerts": "Alarme",
+    "all": "Alle"
   },
   "approval": {
     "pending": "Ausstehend",

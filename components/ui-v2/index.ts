@@ -9,6 +9,9 @@ export { FilterChips, type ActiveChip } from "./FilterChips";
 export { SegmentedControl, type SegmentOption } from "./SegmentedControl";
 export { BreakdownCard, type BreakdownRow, type BreakdownTab } from "./BreakdownCard";
 export { MiniTrend, type TrendBucket } from "./MiniTrend";
+export { SubTabs, type SubTab } from "./SubTabs";
+export { RankingTile, type RankRow } from "./RankingTile";
+export { RevealFilterRow, type RevealFilter } from "./RevealFilterRow";
 export {
   DataTable,
   RowMenuTrigger,

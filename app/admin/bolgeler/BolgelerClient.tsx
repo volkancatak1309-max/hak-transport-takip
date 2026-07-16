@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -9,6 +9,7 @@ import { Loader2, Plus, Hexagon, Pencil, Trash2, Ban, ShieldCheck } from "lucide
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { RevealFilterRow } from "@/components/ui-v2";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -40,9 +41,25 @@ const GeofencePickerMap = dynamic(
 
 const RULE_KINDS: GeofenceRuleKind[] = ["forbidden", "allowed_only"];
 
+/** Filtre bandı seçenekleri (REVEAL-CLONE-SPEC H). */
+type RuleFilter = "all" | GeofenceRuleKind;
+type StateFilter = "all" | "active" | "passive";
+
 export function BolgelerClient({ zones }: { zones: Geofence[] }) {
   const t = useTranslations("zones");
   const router = useRouter();
+
+  const [ruleFilter, setRuleFilter] = useState<RuleFilter>("all");
+  const [stateFilter, setStateFilter] = useState<StateFilter>("all");
+  const visibleZones = useMemo(
+    () =>
+      zones.filter(
+        (z) =>
+          (ruleFilter === "all" || z.rule_kind === ruleFilter) &&
+          (stateFilter === "all" || (stateFilter === "active" ? z.active : !z.active))
+      ),
+    [zones, ruleFilter, stateFilter]
+  );
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Geofence | null>(null);
@@ -138,21 +155,55 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
 
   return (
     <div className="mx-auto max-w-[900px] space-y-5 px-4 py-6 sm:px-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{t("intro")}</p>
-        <Button size="sm" onClick={openNew}>
-          <Plus className="size-4" /> {t("add")}
-        </Button>
+      {/* Başlık bloğu — klon A2 ölçüsü; eski serbest intro satırı açıklama oldu */}
+      <div>
+        <h1 className="text-[28px] font-semibold leading-tight">{t("title")}</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">{t("intro")}</p>
       </div>
 
-      {zones.length === 0 ? (
+      {/* Filtre bandı — A3 dili: Kural + Durum dropdown'ları, ekleme sağda */}
+      <RevealFilterRow
+        filters={[
+          {
+            label: t("filter_rule"),
+            value: ruleFilter,
+            onChange: (v) => setRuleFilter(v as RuleFilter),
+            options: [
+              { value: "all", label: t("filter_all") },
+              { value: "forbidden", label: t("rule.forbidden") },
+              { value: "allowed_only", label: t("rule.allowed_only") },
+            ],
+            widthClass: "w-[240px]",
+          },
+          {
+            label: t("filter_state"),
+            value: stateFilter,
+            onChange: (v) => setStateFilter(v as StateFilter),
+            options: [
+              { value: "all", label: t("filter_all") },
+              { value: "active", label: t("filter_active") },
+              { value: "passive", label: t("passive") },
+            ],
+          },
+        ]}
+        right={
+          <Button className="h-9" onClick={openNew}>
+            <Plus className="size-4" /> {t("add")}
+          </Button>
+        }
+      />
+
+      {visibleZones.length === 0 ? (
         <div className="rounded-[var(--radius)] border border-dashed border-border px-4 py-12 text-center">
           <Hexagon className="mx-auto size-7 text-text-tertiary" />
-          <p className="mt-2 text-sm text-text-tertiary">{t("none")}</p>
+          {/* Hiç bölge yok ≠ filtre eşleşmedi — ikisini karıştırmıyoruz. */}
+          <p className="mt-2 text-sm text-text-tertiary">
+            {zones.length === 0 ? t("none") : t("no_match")}
+          </p>
         </div>
       ) : (
         <ul className="space-y-2.5">
-          {zones.map((z) => (
+          {visibleZones.map((z) => (
             <li
               key={z.id}
               className="glass flex flex-wrap items-center gap-3 rounded-[16px] p-4"

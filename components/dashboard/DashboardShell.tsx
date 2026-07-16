@@ -19,9 +19,11 @@ import {
   Menu,
   X,
   Globe,
+  Search,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CommandPalette } from "@/components/ui-v2/CommandPalette";
 import { BrandLogo } from "@/components/BrandLogo";
 import { UserAvatar } from "@/components/UserAvatar";
 import { OfflineBadge } from "@/components/OfflineBadge";
@@ -31,7 +33,13 @@ import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/app/actions/auth";
 import { setLocaleAction } from "@/app/actions/preferences";
 import { FUEL_ENABLED, EXPENSE_ENABLED } from "@/lib/features";
-import type { HeaderUser } from "@/components/Header";
+
+export type HeaderUser = {
+  id: string;
+  name: string;
+  phone: string;
+  isAdmin: boolean;
+};
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
 
@@ -72,6 +80,7 @@ export function DashboardShell({
   const pathname = usePathname();
   const locale = useLocale();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [localePending, startLocale] = useTransition();
   const logoutRef = useRef<HTMLFormElement>(null);
 
@@ -99,6 +108,10 @@ export function DashboardShell({
       ];
 
   function isActive(href: string) {
+    // Kök rotalar (/admin, /panel) YALNIZ tam eşleşmede aktif — aksi halde her
+    // alt sayfada ("/admin/harita" …) startsWith("/admin/") true olur ve hem
+    // "Yönetici" hem aktif sayfa aynı anda seçili görünür (FAZ 0 çift-nav hatası).
+    if (href === "/admin" || href === "/panel") return pathname === href;
     return pathname === href || pathname.startsWith(href + "/");
   }
 
@@ -125,7 +138,7 @@ export function DashboardShell({
               "transition-colors duration-150",
               active
                 ? "nav-active text-foreground"
-                : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
             )}
           >
             {active && (
@@ -222,6 +235,20 @@ export function DashboardShell({
             {pageTitle}
           </h1>
           <div className="ml-auto flex items-center gap-1.5">
+            {user.isAdmin && (
+              <button
+                type="button"
+                onClick={() => setPaletteOpen(true)}
+                aria-label={tc("search")}
+                className="hidden items-center gap-2 rounded-[10px] border border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground sm:flex"
+              >
+                <Search className="size-4" />
+                <span className="hidden md:inline">{tc("search")}</span>
+                <kbd className="nums hidden rounded bg-surface-2 px-1.5 py-0.5 text-[10px] md:inline">
+                  ⌘K
+                </kbd>
+              </button>
+            )}
             <Clock />
             <OfflineBadge />
             <HelpToggle />
@@ -247,6 +274,14 @@ export function DashboardShell({
         </header>
 
         <main className="flex-1 page-enter">{children}</main>
+
+        {user.isAdmin && (
+          <CommandPalette
+            pages={navItems.map((i) => ({ label: i.label, href: i.href, icon: i.icon }))}
+            open={paletteOpen}
+            onOpenChange={setPaletteOpen}
+          />
+        )}
 
         <footer className="border-t border-border px-4 py-3 sm:px-6">
           <div className="flex flex-col items-center justify-between gap-1 text-xs text-text-tertiary sm:flex-row">

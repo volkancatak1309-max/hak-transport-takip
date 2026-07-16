@@ -28,7 +28,7 @@ export function HelpToggle() {
       <HelpCircle
         className={cn(
           "size-[18px] transition-colors",
-          on ? "text-accent-claret" : "text-muted-foreground"
+          on ? "text-accent-claret-text" : "text-muted-foreground"
         )}
       />
       <span className="hidden text-sm font-medium text-muted-foreground sm:inline">

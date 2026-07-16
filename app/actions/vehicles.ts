@@ -238,3 +238,18 @@ export async function deleteVehicle(id: string): Promise<VehicleActionResult> {
   revalidatePath("/admin/araclar");
   return { ok: true, id };
 }
+
+/**
+ * ⌘K komut paleti için hafif araç dizini (id + plaka). 26-28 satır; palet
+ * ilk açıldığında lazy çekilir, açılmadan sıfır maliyet (DESIGN-SYSTEM §7).
+ */
+export async function listVehiclePlates(): Promise<
+  { id: string; plate: string }[]
+> {
+  await requireAdmin();
+  const { data } = await supabaseAdmin
+    .from("vehicles")
+    .select("id, plate")
+    .order("plate");
+  return (data ?? []) as { id: string; plate: string }[];
+}

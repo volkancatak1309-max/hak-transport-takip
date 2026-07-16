@@ -22,7 +22,8 @@
     "theme": "Design",
     "themeLight": "Hell",
     "themeDark": "Dunkel",
-    "themeSystem": "System"
+    "themeSystem": "System",
+    "search": "Suchen"
   },
   "errors": {
     "error_title": "Etwas ist schiefgelaufen",
@@ -66,7 +67,61 @@
       "unplug": "Gerät entfernt",
       "idling": "Langer Leerlauf",
       "jamming": "Signalstörung"
-    }
+    },
+    "range_today": "Heute",
+    "range_7d": "7 Tage",
+    "range_30d": "30 Tage",
+    "stat_total": "Ereignisse gesamt",
+    "stat_critical": "Kritische",
+    "stat_top_vehicle": "Meiste Alarme",
+    "stat_top_type": "Häufigster Typ",
+    "sev_critical": "Kritisch",
+    "sev_warning": "Warnung",
+    "sev_neutral": "Routine",
+    "filter_severity": "Schwere",
+    "filter_type": "Ereignistyp",
+    "search_ph": "Kennzeichen…",
+    "count": "Ereignis",
+    "empty_filtered": "Keine Ereignisse in diesem Filter",
+    "empty_none": "Keine Ereignisse in diesem Zeitraum",
+    "empty_hint_filtered": "Filter zurücksetzen und erneut versuchen.",
+    "empty_hint_none": "Keine Geräteereignisse im gewählten Zeitraum.",
+    "drawer_speed": "Tempo",
+    "drawer_time": "Zeit",
+    "drawer_vehicle": "Fahrzeug",
+    "drawer_location": "Standort",
+    "open_maps": "In Google Maps öffnen",
+    "go_vehicle": "Zum Fahrzeug",
+    "no_location": "Keine Standortdaten",
+    "events_n": "Ereignisse",
+    "only_critical": "Nur kritisch",
+    "by_vehicle": "Nach Fahrzeug",
+    "by_type": "Nach Typ",
+    "breakdown_title": "Meiste Alarme",
+    "trend_title": "Alarm-Trend",
+    "trend_total": "Gesamt",
+    "trend_critical": "Kritisch",
+    "chip_vehicle": "Fahrzeug",
+    "chip_type": "Typ",
+    "chip_day": "Tag",
+    "chip_search": "Suche",
+    "chip_critical": "Nur kritisch",
+    "search_ph2": "Kennzeichen oder Ereignis…",
+    "stat_change": "Heute",
+    "stat_last_critical": "Letzte kritische",
+    "no_critical": "Keine kritischen",
+    "sort_severity": "Kritische zuerst",
+    "sort_newest": "Neueste",
+    "context_idle": "Leerlauf",
+    "drawer_address": "Ungefährer Standort",
+    "tab_overview": "Übersicht",
+    "tab_log": "Alarmprotokoll",
+    "filter_shown": "Angezeigt",
+    "filter_sort": "Sortieren",
+    "sort_most": "Meist ausgelöst",
+    "tile_last": "Zuletzt ausgelöst",
+    "tile_alerts": "Alarme",
+    "all": "Alle"
   },
   "approval": {
     "pending": "Ausstehend",
@@ -103,7 +158,12 @@
     "confirm_delete": "Zone {name} löschen?",
     "err_name": "Zonenname erforderlich",
     "err_center": "Mittelpunkt auf der Karte wählen",
-    "err_radius": "Radius muss mindestens 50 m betragen"
+    "err_radius": "Radius muss mindestens 50 m betragen",
+    "filter_rule": "Regel",
+    "filter_state": "Status",
+    "filter_all": "Alle",
+    "filter_active": "Aktiv",
+    "no_match": "Keine Zone entspricht diesem Filter"
   },
   "fuel": {
     "new_entry": "Neue Tankrechnung",
@@ -151,7 +211,11 @@
     "tg_approved": "Ihre Tankrechnung wurde genehmigt",
     "tg_rejected": "Ihre Tankrechnung wurde abgelehnt",
     "tg_reason": "Grund",
-    "tg_btn_panel": "📱 Panel öffnen"
+    "tg_btn_panel": "📱 Panel öffnen",
+    "subtitle": "Tankbelege der Fahrer — Freigabe und Verbrauch",
+    "stat_cost": "Kraftstoffkosten",
+    "stat_all": "Alle",
+    "filter_status": "Status"
   },
   "expense": {
     "new_entry": "Neue Spesen",
@@ -190,7 +254,11 @@
     "tg_approved": "Ihre Spesen wurden genehmigt",
     "tg_rejected": "Ihre Spesen wurden abgelehnt",
     "tg_reason": "Grund",
-    "tg_btn_panel": "📱 Panel öffnen"
+    "tg_btn_panel": "📱 Panel öffnen",
+    "subtitle": "Spesenbelege der Fahrer — Freigabe und Lohnexport",
+    "stat_month": "Diesen Monat",
+    "stat_all": "Alle",
+    "filter_status": "Status"
   },
   "maintenance": {
     "title": "Wartung",
@@ -289,7 +357,11 @@
     "tg_btn_start_directions": "🗺 Route zum Start",
     "tg_btn_middle_directions": "🗺 Route zur Station {n}",
     "tg_btn_end_directions": "🗺 Route zum Ziel",
-    "tg_btn_open_panel": "📱 Panel öffnen"
+    "tg_btn_open_panel": "📱 Panel öffnen",
+    "subtitle": "Geplante Touren und ihr Status",
+    "filter_shown": "Angezeigt",
+    "filter_status": "Status",
+    "filter_all": "Alle"
   },
   "telegram": {
     "title": "Telegram-Benachrichtigungen",
@@ -316,7 +388,8 @@
     "webhook_none": "Nicht registriert",
     "webhook_pending": "Ausstehende Updates",
     "webhook_ok": "Keine Fehler",
-    "not_configured": "Webhook nicht konfiguriert (Token oder Secret fehlt)"
+    "not_configured": "Webhook nicht konfiguriert (Token oder Secret fehlt)",
+    "subtitle": "Bot-Verknüpfung, Webhook-Status und Benachrichtigungstest"
   },
   "map": {
     "title": "Flottenkarte",
@@ -399,7 +472,11 @@
       "sw": "Südwest",
       "w": "West",
       "nw": "Nordwest"
-    }
+    },
+    "subtitle": "Live-Standorte — Fahrer-Handy und Fahrzeug-GPS",
+    "tab_drivers": "Fahrer",
+    "tab_vehicles": "Fahrzeuge",
+    "no_vehicles": "Derzeit kein Fahrzeug mit Signal"
   },
   "route": {
     "title": "Routenverlauf",
@@ -510,7 +587,13 @@
       "penalty_saved": "Aktualisiert",
       "penalty_deleted": "Strafe gelöscht",
       "penalty_error": "Vorgang fehlgeschlagen"
-    }
+    },
+    "filter_status": "Status",
+    "filter_all": "Alle",
+    "filter_sort": "Sortieren",
+    "sort_plate": "Kennzeichen",
+    "sort_driver": "Fahrer",
+    "sort_status": "Status"
   },
   "offline": {
     "online": "Online",
@@ -805,7 +888,7 @@
       "perf_azg": "AZG",
       "perf_azg_warn": "Warnung(en)",
       "perf_score": "Score",
-      "perf_empty": "Keine Daten in diesem Zeitraum",
+      "perf_empty": "Keine Daten",
       "attn_title": "Achtung / Maßnahmen",
       "attn_empty": "Derzeit nichts zu beachten",
       "attn_over9h": "{name} — über 9 Stunden",
@@ -819,7 +902,16 @@
       "attn_unconfirmed_ended": "unbestätigt beendet",
       "detail_empty": "Keine Einträge",
       "shifts_title": "Schichtprotokolle",
-      "shifts_table": "Schichten"
+      "shifts_table": "Schichten",
+      "perf_window": "Letzte {days} Tage",
+      "dtc_title": "Fahrzeugfehler (DTC)",
+      "dtc_none": "Keine aktiven Fehler in der Flotte",
+      "dtc_scope": "Fahrzeuge mit aktiven Fehlern · live",
+      "dtc_count": "{count} aktiv",
+      "dtc_oldest": "Ältester",
+      "dtc_days": "seit {days} Tagen offen",
+      "dtc_today": "heute aufgetreten",
+      "dtc_unknown": "kein Code"
     }
   },
   "workers": {
@@ -851,7 +943,9 @@
     "totalKm": "Kilometer",
     "totalCargo": "Pakete",
     "fullHistory": "Vollständiger Schichtverlauf",
-    "pdfForWorker": "PDF-Bericht (dieser Mitarbeiter)"
+    "pdfForWorker": "PDF-Bericht (dieser Mitarbeiter)",
+    "subtitle": "Fahrerteam — Status, letzte Schicht und Monatsstunden",
+    "filter_status": "Status"
   },
   "footer": {
     "poweredBy": "Powered by Galzura",

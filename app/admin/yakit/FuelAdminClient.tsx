@@ -4,11 +4,11 @@ import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, X, Loader2, Fuel, Clock, Truck, TrendingUp, BarChart3 } from "lucide-react";
+import { Check, X, Loader2, BarChart3 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RevealFilterRow, StatCard } from "@/components/ui-v2";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -170,54 +170,52 @@ export function FuelAdminClient({ entries }: Props) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">{t("admin_title")}</h1>
-        <Button variant="outline" onClick={() => setCo2Open(true)}>
-          <BarChart3 className="size-4" /> {tco2("button")}
-        </Button>
+      {/* Başlık bloğu — klon A2 ölçüsü */}
+      <div>
+        <h1 className="text-[28px] font-semibold leading-tight">{t("admin_title")}</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
 
+      {/* KPI şeridi — tek kaynak StatCard (kapsam etiketi zorunlu). Eski
+          serbest Card+ikon kopyaları kaldırıldı. */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Card>
-          <CardContent className="py-4">
-            <Fuel className="size-4 text-muted-foreground" />
-            <p className="mt-1 text-lg font-bold nums">{eur(stats.totalCost)} €</p>
-            <p className="text-xs text-muted-foreground nums">
-              {eur(stats.totalLiters)} L · {eur(stats.avgCons)} L/100
-            </p>
-            <p className="text-xs text-muted-foreground">{t("stat_month")}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <Clock className="size-4 text-muted-foreground" />
-            <p className="mt-1 text-lg font-bold nums">{stats.pending}</p>
-            <p className="text-xs text-muted-foreground">{t("stat_pending")}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <Truck className="size-4 text-muted-foreground" />
-            <p className="mt-1 text-lg font-bold nums">{stats.vehicles}</p>
-            <p className="text-xs text-muted-foreground">{t("stat_vehicles")}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <TrendingUp className="size-4 text-muted-foreground" />
-            <p className="mt-1 text-lg font-bold nums">{stats.topVehicle}</p>
-            <p className="text-xs text-muted-foreground">{t("stat_top")}</p>
-          </CardContent>
-        </Card>
+        <StatCard
+          label={t("stat_cost")}
+          value={`${eur(stats.totalCost)} €`}
+          scope={t("stat_month")}
+          delta={`${eur(stats.totalLiters)} L · ${eur(stats.avgCons)} L/100`}
+        />
+        <StatCard
+          label={t("stat_pending")}
+          value={stats.pending}
+          scope={t("stat_all")}
+          tone={stats.pending > 0 ? "warning" : "neutral"}
+        />
+        <StatCard label={t("stat_vehicles")} value={stats.vehicles} scope={t("stat_month")} />
+        <StatCard label={t("stat_top")} value={stats.topVehicle} scope={t("stat_month")} />
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as ApprovalStatus)}>
-        <TabsList>
-          <TabsTrigger value="pending">{ta("pending")}</TabsTrigger>
-          <TabsTrigger value="approved">{ta("approved")}</TabsTrigger>
-          <TabsTrigger value="rejected">{ta("rejected")}</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* Filtre bandı — A3 dili. Eski sekme şeridi (Bekleyen/Onaylı/Reddedilen)
+          "Durum" dropdown'ına taşındı; CO₂ raporu bandın sağında. */}
+      <RevealFilterRow
+        filters={[
+          {
+            label: t("filter_status"),
+            value: tab,
+            onChange: (v) => setTab(v as ApprovalStatus),
+            options: [
+              { value: "pending", label: ta("pending") },
+              { value: "approved", label: ta("approved") },
+              { value: "rejected", label: ta("rejected") },
+            ],
+          },
+        ]}
+        right={
+          <Button variant="outline" className="h-9" onClick={() => setCo2Open(true)}>
+            <BarChart3 className="size-4" /> {tco2("button")}
+          </Button>
+        }
+      />
 
       <Card>
         <CardContent className="overflow-x-auto p-0">

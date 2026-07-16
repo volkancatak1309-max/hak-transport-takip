@@ -22,7 +22,8 @@
     "theme": "Tema",
     "themeLight": "Aydınlık",
     "themeDark": "Karanlık",
-    "themeSystem": "Sistem"
+    "themeSystem": "Sistem",
+    "search": "Ara"
   },
   "errors": {
     "error_title": "Bir şeyler ters gitti",
@@ -66,7 +67,61 @@
       "unplug": "Cihaz Söküldü",
       "idling": "Uzun Rölanti",
       "jamming": "Sinyal Karıştırma"
-    }
+    },
+    "range_today": "Bugün",
+    "range_7d": "7 gün",
+    "range_30d": "30 gün",
+    "stat_total": "Toplam Olay",
+    "stat_critical": "Kritik Olay",
+    "stat_top_vehicle": "En Çok Alarm",
+    "stat_top_type": "En Sık Tip",
+    "sev_critical": "Kritik",
+    "sev_warning": "Uyarı",
+    "sev_neutral": "Rutin",
+    "filter_severity": "Şiddet",
+    "filter_type": "Olay tipi",
+    "search_ph": "Plaka ara…",
+    "count": "olay",
+    "empty_filtered": "Bu filtrede olay yok",
+    "empty_none": "Bu aralıkta olay yok",
+    "empty_hint_filtered": "Filtreleri temizleyip tekrar dene.",
+    "empty_hint_none": "Seçili tarih aralığında cihaz olayı kaydı yok.",
+    "drawer_speed": "Hız",
+    "drawer_time": "Zaman",
+    "drawer_vehicle": "Araç",
+    "drawer_location": "Konum",
+    "open_maps": "Google Maps'te aç",
+    "go_vehicle": "Araç detayına git",
+    "no_location": "Konum verisi yok",
+    "events_n": "olay",
+    "only_critical": "Sadece kritik",
+    "by_vehicle": "Araca göre",
+    "by_type": "Tipe göre",
+    "breakdown_title": "En çok alarm",
+    "trend_title": "Alarm trendi",
+    "trend_total": "Toplam",
+    "trend_critical": "Kritik",
+    "chip_vehicle": "Araç",
+    "chip_type": "Tip",
+    "chip_day": "Gün",
+    "chip_search": "Ara",
+    "chip_critical": "Sadece kritik",
+    "search_ph2": "Plaka veya olay ara…",
+    "stat_change": "Bugün",
+    "stat_last_critical": "Son kritik",
+    "no_critical": "Kritik yok",
+    "sort_severity": "Önce kritik",
+    "sort_newest": "En yeni",
+    "context_idle": "rölanti",
+    "drawer_address": "Yaklaşık konum",
+    "tab_overview": "Genel Bakış",
+    "tab_log": "Alarm Kaydı",
+    "filter_shown": "Gösterilen",
+    "filter_sort": "Sırala",
+    "sort_most": "En çok tetiklenen",
+    "tile_last": "Son tetiklenme",
+    "tile_alerts": "Alarm",
+    "all": "Tümü"
   },
   "approval": {
     "pending": "Onay Bekliyor",
@@ -103,7 +158,12 @@
     "confirm_delete": "{name} bölgesi silinsin mi?",
     "err_name": "Bölge adı gerekli",
     "err_center": "Haritadan merkez seçin",
-    "err_radius": "Yarıçap en az 50 m olmalı"
+    "err_radius": "Yarıçap en az 50 m olmalı",
+    "filter_rule": "Kural",
+    "filter_state": "Durum",
+    "filter_all": "Tümü",
+    "filter_active": "Aktif",
+    "no_match": "Bu filtreye uyan bölge yok"
   },
   "fuel": {
     "new_entry": "Yeni Yakıt Kaydı",
@@ -151,7 +211,11 @@
     "tg_approved": "Yakıt Kaydınız Onaylandı",
     "tg_rejected": "Yakıt Kaydınız Reddedildi",
     "tg_reason": "Sebep",
-    "tg_btn_panel": "📱 Panele Git"
+    "tg_btn_panel": "📱 Panele Git",
+    "subtitle": "Şoför yakıt fişleri — onay ve tüketim",
+    "stat_cost": "Yakıt gideri",
+    "stat_all": "Tümü",
+    "filter_status": "Durum"
   },
   "expense": {
     "new_entry": "Yeni Masraf",
@@ -190,7 +254,11 @@
     "tg_approved": "Masrafınız Onaylandı",
     "tg_rejected": "Masrafınız Reddedildi",
     "tg_reason": "Sebep",
-    "tg_btn_panel": "📱 Panele Git"
+    "tg_btn_panel": "📱 Panele Git",
+    "subtitle": "Şoför masraf fişleri — onay ve bordro aktarımı",
+    "stat_month": "Bu ay",
+    "stat_all": "Tümü",
+    "filter_status": "Durum"
   },
   "maintenance": {
     "title": "Bakım",
@@ -289,7 +357,11 @@
     "tg_btn_start_directions": "🗺 Çıkış Yol Tarifi",
     "tg_btn_middle_directions": "🗺 Durak {n} Yol Tarifi",
     "tg_btn_end_directions": "🗺 Varış Yol Tarifi",
-    "tg_btn_open_panel": "📱 Panele Git"
+    "tg_btn_open_panel": "📱 Panele Git",
+    "subtitle": "Planlanan seferler ve durumları",
+    "filter_shown": "Gösterilen",
+    "filter_status": "Durum",
+    "filter_all": "Tümü"
   },
   "telegram": {
     "title": "Telegram Bildirimleri",
@@ -316,7 +388,8 @@
     "webhook_none": "Kayıtlı değil",
     "webhook_pending": "Bekleyen güncellemeler",
     "webhook_ok": "Hata yok",
-    "not_configured": "Webhook yapılandırılmamış (token veya secret eksik)"
+    "not_configured": "Webhook yapılandırılmamış (token veya secret eksik)",
+    "subtitle": "Bot bağlantısı, webhook durumu ve bildirim testi"
   },
   "map": {
     "title": "Filo Haritası",
@@ -399,7 +472,11 @@
       "sw": "Güney-Batı",
       "w": "Batı",
       "nw": "Kuzey-Batı"
-    }
+    },
+    "subtitle": "Canlı konumlar — şoför telefonu ve araç GPS cihazı",
+    "tab_drivers": "Şoförler",
+    "tab_vehicles": "Araçlar",
+    "no_vehicles": "Şu an sinyal veren araç yok"
   },
   "route": {
     "title": "Rota Geçmişi",
@@ -510,7 +587,13 @@
       "penalty_saved": "Güncellendi",
       "penalty_deleted": "Ceza silindi",
       "penalty_error": "İşlem başarısız"
-    }
+    },
+    "filter_status": "Durum",
+    "filter_all": "Tümü",
+    "filter_sort": "Sırala",
+    "sort_plate": "Plaka",
+    "sort_driver": "Şoför",
+    "sort_status": "Durum"
   },
   "offline": {
     "online": "Çevrimiçi",
@@ -805,7 +888,7 @@
       "perf_azg": "AZG",
       "perf_azg_warn": "uyarı",
       "perf_score": "Puan",
-      "perf_empty": "Bu aralıkta veri yok",
+      "perf_empty": "Veri yok",
       "attn_title": "Dikkat / Aksiyon",
       "attn_empty": "Şu an dikkat gerektiren bir şey yok",
       "attn_over9h": "{name} — 9 saati aştı",
@@ -819,7 +902,16 @@
       "attn_unconfirmed_ended": "onaysız kapandı",
       "detail_empty": "Kayıt yok",
       "shifts_title": "Vardiya Kayıtları",
-      "shifts_table": "Vardiyalar"
+      "shifts_table": "Vardiyalar",
+      "perf_window": "Son {days} gün",
+      "dtc_title": "Araç Arızaları (DTC)",
+      "dtc_none": "Filoda aktif arıza yok",
+      "dtc_scope": "Aktif arızası olan araçlar · canlı",
+      "dtc_count": "{count} aktif",
+      "dtc_oldest": "En eski",
+      "dtc_days": "{days} gündür açık",
+      "dtc_today": "bugün açıldı",
+      "dtc_unknown": "kod yok"
     }
   },
   "workers": {
@@ -851,7 +943,9 @@
     "totalKm": "KM",
     "totalCargo": "Kargo",
     "fullHistory": "Tüm Vardiya Geçmişi",
-    "pdfForWorker": "PDF Rapor (bu çalışan)"
+    "pdfForWorker": "PDF Rapor (bu çalışan)",
+    "subtitle": "Şoför kadrosu — durum, son vardiya ve aylık saat",
+    "filter_status": "Durum"
   },
   "footer": {
     "poweredBy": "Powered by Galzura",

@@ -114,7 +114,7 @@ export function PenaltiesSection({
           {td("penalties_title")}
           <HelpTip tkey="veh_penalties" />
           {penalties.some((p) => !p.paid) && (
-            <span className="nums rounded-full bg-accent-claret/12 px-2 py-0.5 text-[11px] font-semibold text-accent-claret">
+            <span className="nums rounded-full bg-accent-claret/12 px-2 py-0.5 text-[11px] font-semibold text-accent-claret-text">
               {money(unpaidTotal)}
             </span>
           )}
@@ -139,7 +139,7 @@ export function PenaltiesSection({
                       "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
                       p.paid
                         ? "bg-accent-sky/12 text-accent-sky"
-                        : "bg-accent-claret/12 text-accent-claret"
+                        : "bg-accent-claret/12 text-accent-claret-text"
                     )}
                   >
                     {p.paid ? td("penalty_paid") : td("penalty_unpaid")}
@@ -174,7 +174,7 @@ export function PenaltiesSection({
                 aria-label={td("penalty_delete")}
                 title={td("penalty_delete")}
               >
-                <Trash2 className="size-4 text-accent-claret" />
+                <Trash2 className="size-4 text-accent-claret-text" />
               </Button>
             </li>
           ))}

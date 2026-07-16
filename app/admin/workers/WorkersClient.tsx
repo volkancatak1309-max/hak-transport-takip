@@ -6,13 +6,8 @@ import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Loader2, KeyRound, UserPlus } from "lucide-react";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { RevealFilterRow } from "@/components/ui-v2";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -91,34 +86,39 @@ export function WorkersClient({ workers }: Props) {
 
   return (
     <>
+      {/* Başlık bloğu — klon A2 ölçüsü */}
+      <div>
+        <h1 className="text-[28px] font-semibold leading-tight">{t("title")}</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
+      </div>
+
+      {/* Filtre bandı — A3 dili. Eski buton grubu (Aktif/Pasif/Tümü) tek
+          "Durum" dropdown'ına indi; çalışan ekleme bandın sağında. */}
+      <RevealFilterRow
+        className="mb-4"
+        filters={[
+          {
+            label: t("filter_status"),
+            value: status,
+            onChange: (v) => setStatus(v as "active" | "passive" | "all"),
+            options: [
+              { value: "active", label: tc("active") },
+              { value: "passive", label: tc("passive") },
+              { value: "all", label: tc("all") },
+            ],
+          },
+        ]}
+        right={
+          <AddWorkerDialog>
+            <Button className="h-9" title={ta("addWorker")}>
+              <UserPlus className="size-4" />
+              <span className="ml-1 hidden sm:inline">{ta("addWorker")}</span>
+            </Button>
+          </AddWorkerDialog>
+        }
+      />
+
       <Card>
-        <CardHeader>
-          <CardTitle>{t("title")}</CardTitle>
-          <CardAction className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
-              {(["active", "passive", "all"] as const).map((key) => (
-                <Button
-                  key={key}
-                  variant={status === key ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => setStatus(key)}
-                >
-                  {key === "active"
-                    ? tc("active")
-                    : key === "passive"
-                    ? tc("passive")
-                    : tc("all")}
-                </Button>
-              ))}
-            </div>
-            <AddWorkerDialog>
-              <Button size="sm" title={ta("addWorker")}>
-                <UserPlus className="size-4" />
-                <span className="hidden sm:inline ml-1">{ta("addWorker")}</span>
-              </Button>
-            </AddWorkerDialog>
-          </CardAction>
-        </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
@@ -174,11 +174,15 @@ export function WorkersClient({ workers }: Props) {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-1 justify-end">
+                          {/* aria-label ŞART: metin `hidden md:inline` — dar
+                              ekranda gizlenince butonun erişilebilir adı hiç
+                              kalmıyordu (Lighthouse button-name, mobil). */}
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleReset(w)}
                             disabled={pending}
+                            aria-label={t("resetPin")}
                           >
                             <KeyRound className="size-4" />
                             <span className="hidden md:inline ml-1">{t("resetPin")}</span>

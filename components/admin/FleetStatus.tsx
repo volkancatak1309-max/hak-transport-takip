@@ -47,46 +47,68 @@ export function FleetStatus({ fleet }: { fleet: FleetStatusData }) {
           </div>
         ) : (
           <div className="flex items-center gap-5">
-            <div className="relative size-32 shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={data}
-                    dataKey="value"
-                    nameKey="label"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius="64%"
-                    outerRadius="100%"
-                    paddingAngle={data.length > 1 ? 2 : 0}
-                    stroke="var(--card)"
-                    strokeWidth={2}
-                    isAnimationActive={false}
-                  >
-                    {data.map((d) => (
-                      <Cell key={d.status} fill={d.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <span className="nums text-2xl font-semibold leading-none">{fleet.total}</span>
-                <span className="mt-0.5 text-[10px] uppercase tracking-[0.04em] text-muted-foreground">
-                  {t("dash.fleet_total")}
+            {/* Tek statü (ör. hepsi boşta) → donut sıfır bilgi taşır (audit);
+                net özet gösterilir. Karışıksa donut. */}
+            {data.length <= 1 ? (
+              <div className="flex size-32 shrink-0 flex-col items-center justify-center rounded-full border border-border/60">
+                <span className="nums text-3xl font-semibold leading-none">{fleet.total}</span>
+                <span className="mt-1 text-[11px] font-medium" style={{ color: data[0]?.color }}>
+                  {data[0]?.label}
                 </span>
               </div>
-            </div>
-            <ul className="flex-1 space-y-2">
-              {rows.map((r) => (
-                <li key={r.status} className="flex items-center gap-2.5 text-sm">
-                  <span
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: r.color }}
-                  />
-                  <span className="flex-1 text-muted-foreground">{r.label}</span>
-                  <span className="nums font-semibold tabular-nums">{r.value}</span>
-                </li>
-              ))}
+            ) : (
+              <div className="relative size-32 shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={data}
+                      dataKey="value"
+                      nameKey="label"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="64%"
+                      outerRadius="100%"
+                      paddingAngle={2}
+                      stroke="var(--card)"
+                      strokeWidth={2}
+                      isAnimationActive={false}
+                    >
+                      {data.map((d) => (
+                        <Cell key={d.status} fill={d.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="nums text-2xl font-semibold leading-none">{fleet.total}</span>
+                  <span className="mt-0.5 text-[10px] uppercase tracking-[0.04em] text-muted-foreground">
+                    {t("dash.fleet_total")}
+                  </span>
+                </div>
+              </div>
+            )}
+            <ul className="flex-1 space-y-1.5">
+              {rows.map((r) => {
+                const pct = fleet.total > 0 ? Math.round((r.value / fleet.total) * 100) : 0;
+                return (
+                  <li
+                    key={r.status}
+                    className="relative flex items-center gap-2.5 overflow-hidden rounded-[8px] px-2 py-1 text-sm"
+                  >
+                    <span
+                      aria-hidden
+                      className="absolute inset-y-0 left-0 rounded-[8px] opacity-[0.16]"
+                      style={{ width: `${pct}%`, backgroundColor: r.color }}
+                    />
+                    <span
+                      className="relative z-10 size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: r.color }}
+                    />
+                    <span className="relative z-10 flex-1 text-muted-foreground">{r.label}</span>
+                    <span className="nums relative z-10 font-semibold tabular-nums">{r.value}</span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

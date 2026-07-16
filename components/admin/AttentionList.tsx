@@ -111,7 +111,7 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
             {items.map((item) => {
               const r = render(item);
               const Icon = r.icon;
-              const tone = r.overdue ? "text-accent-claret" : "text-accent-gold";
+              const tone = r.overdue ? "text-accent-claret-text" : "text-accent-gold";
               const bg = r.overdue ? "bg-accent-claret/12" : "bg-accent-gold/15";
               return (
                 <li

@@ -1,107 +1,341 @@
 "use client";
 
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { ExternalLink, Siren } from "lucide-react";
+import { ExternalLink, MapPin, Truck } from "lucide-react";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { EVENT_BADGE, eventSeverity } from "@/lib/event-ui";
+  SubTabs,
+  StatusChip,
+  RevealFilterRow,
+  DataTable,
+  DensityToggle,
+  DetailDrawer,
+  EmptyState,
+  type Column,
+  type RevealFilter,
+} from "@/components/ui-v2";
+import { eventTone, EVENT_STRIPE, EVENT_TONE_RANK } from "@/lib/event-ui";
 import { formatDateTime } from "@/lib/format";
 import type { VehicleEventWithPlate } from "@/lib/telemetry";
+import type { AlarmRange } from "./page";
 import { cn } from "@/lib/utils";
 
-export function AlarmsClient({ events }: { events: VehicleEventWithPlate[] }) {
+const EventMiniMap = dynamic(() => import("@/components/admin/EventMiniMap"), {
+  ssr: false,
+  loading: () => <div className="h-40 w-full animate-pulse rounded-[12px] bg-surface-2" />,
+});
+
+const STORM_WINDOW_MS = 10 * 60 * 1000;
+const SPEED_EVENTS = new Set(["overspeeding", "harsh_acceleration", "harsh_braking", "harsh_cornering", "crash"]);
+
+export function AlarmsClient({
+  events,
+  range,
+}: {
+  events: VehicleEventWithPlate[];
+  range: AlarmRange;
+}) {
   const t = useTranslations("alarms");
   const locale = useLocale();
-  const nf = locale === "de" ? "de-AT" : "tr-TR";
+  const router = useRouter();
+  const [, startNav] = useTransition();
+
+  const [tab, setTab] = useState<"overview" | "log">("overview");
+  const [sort, setSort] = useState<"most" | "newest">("most");
+  // Alarm Kaydı filtreleri (basit dropdown — Reveal Alert Log bandı)
+  const [fVehicle, setFVehicle] = useState("");
+  const [fType, setFType] = useState("");
+  const [fSev, setFSev] = useState("");
+  const [selected, setSelected] = useState<VehicleEventWithPlate | null>(null);
+
+  const toneCat = (ty: string) => {
+    const tone = eventTone(ty);
+    return tone === "critical" ? t("sev_critical") : tone === "warning" ? t("sev_warning") : t("sev_neutral");
+  };
+
+  // ── Genel Bakış: olay TİPİ tile'ları (Reveal Overview policy tile'ları) ───
+  const typeTiles = useMemo(() => {
+    const byType = new Map<string, { count: number; crit: number; last: string }>();
+    for (const e of events) {
+      const cur = byType.get(e.event_type) ?? { count: 0, crit: 0, last: e.occurred_at };
+      cur.count++;
+      if (eventTone(e.event_type) === "critical") cur.crit++;
+      if (e.occurred_at > cur.last) cur.last = e.occurred_at;
+      byType.set(e.event_type, cur);
+    }
+    const arr = [...byType.entries()].map(([ty, v]) => ({ type: ty, ...v }));
+    arr.sort((a, b) => (sort === "newest" ? b.last.localeCompare(a.last) : b.count - a.count));
+    return arr;
+  }, [events, sort]);
+
+  // ── Alarm Kaydı: filtreli + sıralı liste ─────────────────────────────────
+  const logRows = useMemo(() => {
+    let rows = events.filter((e) => {
+      if (fVehicle && e.plate !== fVehicle) return false;
+      if (fType && e.event_type !== fType) return false;
+      if (fSev && eventTone(e.event_type) !== fSev) return false;
+      return true;
+    });
+    rows = [...rows].sort((a, b) => {
+      if (sort === "newest") return b.occurred_at.localeCompare(a.occurred_at);
+      const d = EVENT_TONE_RANK[eventTone(b.event_type)] - EVENT_TONE_RANK[eventTone(a.event_type)];
+      return d !== 0 ? d : b.occurred_at.localeCompare(a.occurred_at);
+    });
+    return rows;
+  }, [events, fVehicle, fType, fSev, sort]);
+
+  const plateOptions = useMemo(
+    () => [...new Set(events.map((e) => e.plate))].sort().map((p) => ({ value: p, label: p })),
+    [events]
+  );
+  const typeOptions = useMemo(
+    () => [...new Set(events.map((e) => e.event_type))]
+      .map((ty) => ({ value: ty, label: t(`type.${ty}`) }))
+      .sort((a, b) => a.label.localeCompare(b.label, locale)),
+    [events, t, locale]
+  );
+
+  const overviewFilters: RevealFilter[] = [
+    {
+      label: t("filter_shown"),
+      value: range,
+      onChange: (v) => startNav(() => router.replace(`/admin/alarmlar?range=${v}`, { scroll: false })),
+      options: [
+        { value: "today", label: t("range_today") },
+        { value: "7d", label: t("range_7d") },
+        { value: "30d", label: t("range_30d") },
+      ],
+    },
+    {
+      label: t("filter_sort"),
+      value: sort,
+      onChange: (v) => setSort(v as "most" | "newest"),
+      options: [
+        { value: "most", label: t("sort_most") },
+        { value: "newest", label: t("sort_newest") },
+      ],
+    },
+  ];
+
+  const logFilters: RevealFilter[] = [
+    {
+      label: t("col_vehicle"),
+      value: fVehicle,
+      onChange: setFVehicle,
+      options: [{ value: "", label: t("all") }, ...plateOptions],
+    },
+    {
+      label: t("filter_type"),
+      value: fType,
+      onChange: setFType,
+      options: [{ value: "", label: t("all") }, ...typeOptions],
+    },
+    {
+      label: t("filter_severity"),
+      value: fSev,
+      onChange: setFSev,
+      options: [
+        { value: "", label: t("all") },
+        { value: "critical", label: t("sev_critical") },
+        { value: "warning", label: t("sev_warning") },
+        { value: "neutral", label: t("sev_neutral") },
+      ],
+    },
+  ];
+
+  const columns: Column<VehicleEventWithPlate>[] = [
+    {
+      key: "plate",
+      header: t("col_vehicle"),
+      cell: (e) => (
+        <Link href={`/admin/araclar/${e.vehicle_id}`} onClick={(ev) => ev.stopPropagation()}
+          className="nums font-medium uppercase tracking-wide hover:underline">{e.plate}</Link>
+      ),
+      nums: true, sortable: true, sortValue: (e) => e.plate,
+    },
+    {
+      key: "type",
+      header: t("col_type"),
+      cell: (e) => <StatusChip tone={eventTone(e.event_type)}>{t(`type.${e.event_type}`)}</StatusChip>,
+      sortable: true, sortValue: (e) => EVENT_TONE_RANK[eventTone(e.event_type)],
+    },
+    {
+      key: "time",
+      header: t("col_time"),
+      cell: (e) => formatDateTime(e.occurred_at, locale),
+      nums: true, sortable: true, sortValue: (e) => e.occurred_at,
+    },
+    {
+      key: "speed",
+      header: t("drawer_speed"),
+      cell: (e) => e.event_type === "idling"
+        ? <span className="text-muted-foreground">{t("context_idle")}</span>
+        : SPEED_EVENTS.has(e.event_type) && e.speed_kmh !== null ? `${Math.round(e.speed_kmh)} km/h` : "—",
+      align: "right", nums: true, hideBelow: "sm",
+    },
+  ];
+
+  const selIndex = selected ? logRows.findIndex((e) => e.id === selected.id) : -1;
+
+  function openType(ty: string) {
+    setFType(ty);
+    setTab("log");
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Siren className="size-[18px] text-text-tertiary" />
-          {t("title")}
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
-      </CardHeader>
-      <CardContent>
-        {events.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            {t("empty")}
-          </p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("col_time")}</TableHead>
-                <TableHead>{t("col_vehicle")}</TableHead>
-                <TableHead>{t("col_type")}</TableHead>
-                <TableHead className="text-right">{t("col_speed")}</TableHead>
-                <TableHead className="text-right">{t("col_map")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {events.map((e) => (
-                <TableRow key={e.id}>
-                  <TableCell className="nums whitespace-nowrap">
-                    {formatDateTime(e.occurred_at, locale)}
-                  </TableCell>
-                  <TableCell>
-                    <Link
-                      href={`/admin/araclar/${e.vehicle_id}`}
-                      className="nums font-medium uppercase hover:underline"
-                    >
-                      {e.plate}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={cn(
-                        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                        EVENT_BADGE[eventSeverity(e.event_type)]
+    <div className="space-y-5">
+      <SubTabs
+        tabs={[
+          { key: "overview", label: t("tab_overview") },
+          { key: "log", label: t("tab_log"), badge: undefined },
+        ]}
+        value={tab}
+        onChange={(k) => setTab(k as "overview" | "log")}
+      />
+
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+        <p className="mt-0.5 text-sm text-muted-foreground">{t("subtitle")}</p>
+      </div>
+
+      {tab === "overview" ? (
+        <>
+          <RevealFilterRow filters={overviewFilters} />
+          {typeTiles.length === 0 ? (
+            <EmptyState kind="none" title={t("empty_none")} hint={t("empty_hint_none")} />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {typeTiles.map((tile) => {
+                const tone = eventTone(tile.type);
+                return (
+                  <button
+                    key={tile.type}
+                    type="button"
+                    onClick={() => openType(tile.type)}
+                    className="glass group flex min-h-[120px] flex-col rounded-[8px] border border-border/70 p-[18px] text-left transition-colors hover:bg-surface-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="size-2.5 shrink-0 rounded-full"
+                            style={{ background: EVENT_STRIPE[tone] }}
+                          />
+                          <span className="truncate text-base font-semibold">{t(`type.${tile.type}`)}</span>
+                        </div>
+                        <span className="mt-0.5 block text-[13px] text-muted-foreground">{toneCat(tile.type)}</span>
+                      </div>
+                      {tile.crit > 0 && (
+                        <span className="nums grid size-[22px] shrink-0 place-items-center rounded-full bg-status-critical-fill text-[11px] font-medium text-white">
+                          {tile.crit}
+                        </span>
                       )}
-                    >
-                      {t(`type.${e.event_type}`)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="nums text-right">
-                    {e.speed_kmh !== null
-                      ? `${Math.round(e.speed_kmh).toLocaleString(nf)} km/h`
-                      : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {e.latitude !== null && e.longitude !== null ? (
-                      <a
-                        href={`https://www.google.com/maps?q=${e.latitude},${e.longitude}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-accent-sky hover:underline"
-                      >
-                        {t("view_on_map")}
-                        <ExternalLink className="size-3" />
-                      </a>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                    </div>
+                    <div className="mt-auto flex items-end justify-between gap-3 pt-4">
+                      <div>
+                        <div className="text-xs text-muted-foreground">{t("tile_last")}</div>
+                        <div className="nums mt-0.5 text-[13px]">{formatDateTime(tile.last, locale)}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-muted-foreground">{t("tile_alerts")}</div>
+                        <div className="nums mt-0.5 text-sm font-semibold">{tile.count.toLocaleString(locale)}</div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <RevealFilterRow
+            filters={logFilters}
+            right={
+              <div className="flex items-center gap-2">
+                <DensityToggle />
+                <span className="nums text-xs text-muted-foreground">
+                  {logRows.length !== events.length ? `${logRows.length} / ${events.length}` : logRows.length} {t("count")}
+                </span>
+              </div>
+            }
+          />
+          {logRows.length === 0 ? (
+            <EmptyState
+              kind={events.length === 0 ? "none" : "filtered"}
+              title={events.length === 0 ? t("empty_none") : t("empty_filtered")}
+              hint={events.length === 0 ? t("empty_hint_none") : t("empty_hint_filtered")}
+            />
+          ) : (
+            <DataTable
+              rows={logRows}
+              columns={columns}
+              rowKey={(e) => e.id}
+              onRowClick={(e) => setSelected(e)}
+              stripe={(e) => EVENT_STRIPE[eventTone(e.event_type)]}
+              grouping={{
+                getKey: (e) => `${e.vehicle_id}:${e.event_type}`,
+                getTime: (e) => new Date(e.occurred_at).getTime(),
+                windowMs: STORM_WINDOW_MS,
+                renderLabel: (rows) => (
+                  <span className="flex items-center gap-2 text-sm">
+                    <span className="nums font-medium uppercase tracking-wide">{rows[0].plate}</span>
+                    <StatusChip tone={eventTone(rows[0].event_type)}>
+                      {t(`type.${rows[0].event_type}`)} ×{rows.length}
+                    </StatusChip>
+                  </span>
+                ),
+              }}
+              totalLabel={t("count")}
+            />
+          )}
+        </>
+      )}
+
+      <DetailDrawer
+        open={selected !== null}
+        onOpenChange={(v) => !v && setSelected(null)}
+        title={selected?.plate ?? ""}
+        subtitle={selected ? formatDateTime(selected.occurred_at, locale) : undefined}
+        onPrev={selIndex > 0 ? () => setSelected(logRows[selIndex - 1]) : null}
+        onNext={selIndex >= 0 && selIndex < logRows.length - 1 ? () => setSelected(logRows[selIndex + 1]) : null}
+      >
+        {selected && (
+          <div className="space-y-4 text-sm">
+            <div><StatusChip tone={eventTone(selected.event_type)}>{t(`type.${selected.event_type}`)}</StatusChip></div>
+            <dl className="grid grid-cols-2 gap-3">
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">{t("drawer_speed")}</dt>
+                <dd className="nums mt-0.5">{SPEED_EVENTS.has(selected.event_type) && selected.speed_kmh !== null ? `${Math.round(selected.speed_kmh)} km/h` : "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">{t("drawer_location")}</dt>
+                <dd className="nums mt-0.5">{selected.latitude !== null && selected.longitude !== null ? `${selected.latitude.toFixed(4)}, ${selected.longitude.toFixed(4)}` : t("no_location")}</dd>
+              </div>
+            </dl>
+            {selected.latitude !== null && selected.longitude !== null && (
+              <div>
+                <p className="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">{t("drawer_address")}</p>
+                <EventMiniMap lat={selected.latitude} lng={selected.longitude} />
+              </div>
+            )}
+            <div className="flex flex-col gap-2 pt-1">
+              {selected.latitude !== null && selected.longitude !== null && (
+                <a href={`https://www.google.com/maps?q=${selected.latitude},${selected.longitude}`} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm text-accent-sky hover:underline">
+                  <MapPin className="size-4" />{t("open_maps")}<ExternalLink className="size-3" />
+                </a>
+              )}
+              <Link href={`/admin/araclar/${selected.vehicle_id}`} className="inline-flex items-center gap-2 text-sm text-accent-sky hover:underline">
+                <Truck className="size-4" />{t("go_vehicle")}
+              </Link>
+            </div>
+          </div>
         )}
-      </CardContent>
-    </Card>
+      </DetailDrawer>
+    </div>
   );
 }

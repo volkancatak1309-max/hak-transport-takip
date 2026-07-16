@@ -1,5 +1,5 @@
 import "server-only";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { fetchLastKnownDtc } from "@/lib/flespi";
 import type { FlespiDtcSnapshot, FlespiEvent, FlespiPoint } from "@/lib/flespi";
 import type { ActiveVehicle } from "@/lib/types";
@@ -227,6 +227,41 @@ export async function listRecentEvents(
     .order("occurred_at", { ascending: false })
     .limit(limit);
   const rows = (data ?? []) as VehicleEventRow[];
+  if (rows.length === 0) return [];
+
+  const ids = [...new Set(rows.map((r) => r.vehicle_id))];
+  const { data: vData } = await supabaseAdmin
+    .from("vehicles")
+    .select("id, plate")
+    .in("id", ids);
+  const plates = new Map(
+    ((vData ?? []) as { id: string; plate: string }[]).map((v) => [v.id, v.plate])
+  );
+  return rows.map((r) => ({ ...r, plate: plates.get(r.vehicle_id) ?? "—" }));
+}
+
+/**
+ * Bir tarih aralığındaki TÜM olaylar, plaka ile (admin /alarmlar). 1000 satır
+ * tavanını aşmasın diye sonuna kadar sayfalanır (fetchAllRows). Migration 018
+ * yoksa boş listeye düşer.
+ */
+export async function listEventsInRange(
+  startISO: string,
+  endISO: string
+): Promise<VehicleEventWithPlate[]> {
+  const { data } = await fetchAllRows<VehicleEventRow>((from, to) =>
+    supabaseAdmin
+      .from("vehicle_events")
+      .select(
+        "id, vehicle_id, event_type, event_value, latitude, longitude, speed_kmh, occurred_at"
+      )
+      .gte("occurred_at", startISO)
+      .lte("occurred_at", endISO)
+      .order("occurred_at", { ascending: false })
+      .order("id")
+      .range(from, to)
+  );
+  const rows = data;
   if (rows.length === 0) return [];
 
   const ids = [...new Set(rows.map((r) => r.vehicle_id))];
@@ -546,6 +581,60 @@ export async function listActiveDtc(
     .is("cleared_at", null)
     .order("last_seen", { ascending: false });
   return (data ?? []) as VehicleDtcRow[];
+}
+
+/** Filo geneli arıza özeti — araç başına aktif kod sayısı + en uzun süredir
+ *  açık kod. ŞİDDET YOK: `vehicle_dtc`'de severity kolonu, `dtc-codes.ts`
+ *  sözlüğünde de karşılaştırılabilir bir seviye alanı yok (yalnız düz metin
+ *  `risk` açıklaması). "En kritik kod" uydurmak yerine gerçek veriden türeyen
+ *  en güçlü aciliyet sinyalini veriyoruz: en eski `first_seen` = en uzun
+ *  ihmal edilmiş arıza. */
+export type FleetDtcVehicle = {
+  vehicle_id: string;
+  count: number;
+  oldest: { code: string; first_seen: string } | null;
+};
+
+/**
+ * Tüm filodaki aktif (temizlenmemiş) arızalar, araca göre gruplanmış. Tablo
+ * yoksa (migration 021 uygulanmadıysa) boş liste döner — dashboard bozulmaz.
+ */
+export async function listFleetActiveDtc(): Promise<FleetDtcVehicle[]> {
+  const { data } = await fetchAllRows<{
+    vehicle_id: string;
+    code: string;
+    first_seen: string;
+  }>((from, to) =>
+    supabaseAdmin
+      .from("vehicle_dtc")
+      .select("vehicle_id, code, first_seen")
+      .is("cleared_at", null)
+      .order("id")
+      .range(from, to)
+  );
+
+  const byVehicle = new Map<string, FleetDtcVehicle>();
+  for (const r of data) {
+    let row = byVehicle.get(r.vehicle_id);
+    if (!row) {
+      row = { vehicle_id: r.vehicle_id, count: 0, oldest: null };
+      byVehicle.set(r.vehicle_id, row);
+    }
+    row.count++;
+    if (
+      !row.oldest ||
+      new Date(r.first_seen).getTime() < new Date(row.oldest.first_seen).getTime()
+    ) {
+      row.oldest = { code: r.code, first_seen: r.first_seen };
+    }
+  }
+  // En çok arızası olan araç önce; eşitlikte en eski arıza öne.
+  return [...byVehicle.values()].sort(
+    (a, b) =>
+      b.count - a.count ||
+      new Date(a.oldest?.first_seen ?? 0).getTime() -
+        new Date(b.oldest?.first_seen ?? 0).getTime()
+  );
 }
 
 /**

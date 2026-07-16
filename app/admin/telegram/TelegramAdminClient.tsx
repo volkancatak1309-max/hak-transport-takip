@@ -65,7 +65,13 @@ export function TelegramAdminClient({ connected, myStatus, webhook }: Props) {
 
   return (
     <>
-      <h1 className="text-xl font-bold">{t("title")}</h1>
+      {/* Başlık bloğu — klon A2 ölçüsü. Bu sayfa bir ayar/durum ekranı:
+          filtrelenecek liste yok, bu yüzden A3 filtre bandı da YOK — boş bir
+          bant koymak Reveal'da da olmayan süs olurdu. */}
+      <div>
+        <h1 className="text-[28px] font-semibold leading-tight">{t("title")}</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
+      </div>
 
       {/* Admin's own link */}
       <TelegramLink linked={myStatus.linked} username={myStatus.username} />
@@ -120,7 +126,7 @@ export function TelegramAdminClient({ connected, myStatus, webhook }: Props) {
           ) : (
             <>
               <Select value={target} onValueChange={(v) => v && setTarget(v)}>
-                <SelectTrigger className="h-10">
+                <SelectTrigger className="h-10" aria-label={t("select_worker")}>
                   <SelectValue>
                     {((v: unknown) => {
                       const u = connected.find((x) => x.id === String(v));
@@ -187,11 +193,14 @@ export function TelegramAdminClient({ connected, myStatus, webhook }: Props) {
                         {u.linkedAt ? formatDateTime(u.linkedAt, locale) : "—"}
                       </TableCell>
                       <TableCell className="text-right">
+                        {/* Yalnız ikon içeriyor -> erişilebilir adı yoktu
+                            (Lighthouse button-name). */}
                         <Button
                           variant="outline"
                           size="sm"
                           disabled={rowBusy === u.id}
                           onClick={() => send(u.id, t("test_default"), u.id)}
+                          aria-label={`${t("test_send")} — ${u.name}`}
                         >
                           {rowBusy === u.id ? (
                             <Loader2 className="size-4 animate-spin" />

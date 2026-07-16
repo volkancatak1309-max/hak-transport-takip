@@ -33,8 +33,8 @@ const TONE: Record<Tone, { text: string; icon: string; ring: string }> = {
     ring: "ring-accent-sky/20",
   },
   claret: {
-    text: "text-accent-claret",
-    icon: "bg-accent-claret/12 text-accent-claret",
+    text: "text-accent-claret-text",
+    icon: "bg-accent-claret/12 text-accent-claret-text",
     ring: "ring-accent-claret/20",
   },
   gold: {
@@ -128,7 +128,7 @@ export function OpsSummary({ ops, detail }: { ops: TodayOps; detail: OpsDetail }
             {t("dash.ops_title")}
             <HelpTip tkey="ops_title" />
           </h2>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-sky/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-accent-sky">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-sky/12 px-2.5 py-1 text-[12px] sm:text-[10px] font-semibold uppercase tracking-[0.08em] text-accent-sky">
             <span className="live-dot" />
             {t("dash.live")}
           </span>
@@ -149,7 +149,12 @@ export function OpsSummary({ ops, detail }: { ops: TodayOps; detail: OpsDetail }
                     setOpenKey(tile.key);
                   }
                 }}
-                aria-label={tile.label}
+                /* Erişilebilir ad görünen metni İÇERMELİ (WCAG 2.5.3 Label in
+                   Name). Yalnız tile.label vermek, görünen "0 SAHADAKİ ŞOFÖR"
+                   ile uyuşmuyordu (Lighthouse label-content-name-mismatch).
+                   Değeri de ada katmak hem kuralı sağlıyor hem ekran okuyucuya
+                   sayıyı duyuruyor. */
+                aria-label={`${tile.value} ${tile.label}`}
                 className="flex cursor-pointer flex-col gap-2 rounded-xl bg-surface-2/60 p-3 ring-1 ring-inset ring-border/60 transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-sky/40"
               >
                 <div className="flex items-center justify-between">
@@ -162,7 +167,7 @@ export function OpsSummary({ ops, detail }: { ops: TodayOps; detail: OpsDetail }
                   <div className={`nums text-xl font-semibold leading-none ${tone.text}`}>
                     {tile.value}
                   </div>
-                  <div className="mt-1 flex items-center gap-0.5 text-[10px] font-medium uppercase leading-tight tracking-[0.04em] text-muted-foreground">
+                  <div className="mt-1 flex items-center gap-0.5 text-[12px] sm:text-[10px] font-medium uppercase leading-tight tracking-[0.04em] text-muted-foreground">
                     <span>{tile.label}</span>
                     {/* keep the (i) help working without triggering the tile */}
                     <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>

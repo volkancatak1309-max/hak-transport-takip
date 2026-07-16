@@ -130,6 +130,20 @@
 - **G4. Araç satırı:** plaka (mono `.nums`, bold) + kontak durum noktası (açık=sky / kapalı=gri) + "Kontak açık/kapalı"; altında hız (km/h) + son sinyal saati. Satır → araç detayı. Tüm alanlar `ActiveVehicle`'dan gerçek veri (uydurma yok).
 - **G5.** Reveal satırındaki **adres** yok: ters-jeokodlama servisimiz yok, uydurulmaz.
 
+## H. KALAN SAYFALAR (Reveal'da birebir karşılığı yok → klon dili uygulanır)
+
+Ortak kural: **A2 başlık bloğu** (H1 28px semibold + açıklama) + **A3 filtre bandı** (tek satır, etiketli dropdown, çip yok) + mevcut liste/tablo korunur. Sekme şeridi (SubTabs) yalnız **görünüm** değiştirdiği yerde kullanılır (Alarmlar, Harita paneli); **kapsam/durum** filtresi daima dropdown'a gider.
+
+| Sayfa | Filtre bandı | Not |
+|---|---|---|
+| Yakıt | Durum (Bekleyen/Onaylı/Reddedilen) | Sekme → dropdown. KPI'lar StatCard'a taşındı; CO₂ raporu bandın sağında |
+| Masraflar | Durum | Sekme → dropdown. KPI'lar StatCard'a; Bordro Excel sağda |
+| Bölgeler | Kural + Durum | Sayfada hiç H1 yoktu; intro açıklama oldu. Boş-durum ikiye ayrıldı (hiç yok ≠ filtre eşleşmedi) |
+| Çalışanlar | Durum | Buton grubu → dropdown |
+| Telegram | **YOK** | Ayar/durum ekranı; filtrelenecek liste yok → boş bant koymak süs olurdu |
+
+**KPI dili:** serbest `Card`+ikon kopyaları tek kaynak **StatCard**'a taşındı — kapsam etiketi zorunlu ("Bu ay" / "Tümü"), böylece "hangi aralık?" ikiliği tekrar doğmaz.
+
 ---
 
 ## C. Ortak stil (her iki ekran)

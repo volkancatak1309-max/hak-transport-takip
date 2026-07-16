@@ -206,7 +206,11 @@
     "tg_approved": "Ihre Tankrechnung wurde genehmigt",
     "tg_rejected": "Ihre Tankrechnung wurde abgelehnt",
     "tg_reason": "Grund",
-    "tg_btn_panel": "📱 Panel öffnen"
+    "tg_btn_panel": "📱 Panel öffnen",
+    "subtitle": "Tankbelege der Fahrer — Freigabe und Verbrauch",
+    "stat_cost": "Kraftstoffkosten",
+    "stat_all": "Alle",
+    "filter_status": "Status"
   },
   "expense": {
     "new_entry": "Neue Spesen",
@@ -245,7 +249,11 @@
     "tg_approved": "Ihre Spesen wurden genehmigt",
     "tg_rejected": "Ihre Spesen wurden abgelehnt",
     "tg_reason": "Grund",
-    "tg_btn_panel": "📱 Panel öffnen"
+    "tg_btn_panel": "📱 Panel öffnen",
+    "subtitle": "Spesenbelege der Fahrer — Freigabe und Lohnexport",
+    "stat_month": "Diesen Monat",
+    "stat_all": "Alle",
+    "filter_status": "Status"
   },
   "maintenance": {
     "title": "Wartung",

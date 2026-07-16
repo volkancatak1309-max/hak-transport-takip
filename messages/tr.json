@@ -206,7 +206,11 @@
     "tg_approved": "Yakıt Kaydınız Onaylandı",
     "tg_rejected": "Yakıt Kaydınız Reddedildi",
     "tg_reason": "Sebep",
-    "tg_btn_panel": "📱 Panele Git"
+    "tg_btn_panel": "📱 Panele Git",
+    "subtitle": "Şoför yakıt fişleri — onay ve tüketim",
+    "stat_cost": "Yakıt gideri",
+    "stat_all": "Tümü",
+    "filter_status": "Durum"
   },
   "expense": {
     "new_entry": "Yeni Masraf",
@@ -245,7 +249,11 @@
     "tg_approved": "Masrafınız Onaylandı",
     "tg_rejected": "Masrafınız Reddedildi",
     "tg_reason": "Sebep",
-    "tg_btn_panel": "📱 Panele Git"
+    "tg_btn_panel": "📱 Panele Git",
+    "subtitle": "Şoför masraf fişleri — onay ve bordro aktarımı",
+    "stat_month": "Bu ay",
+    "stat_all": "Tümü",
+    "filter_status": "Durum"
   },
   "maintenance": {
     "title": "Bakım",

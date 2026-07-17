@@ -109,6 +109,7 @@
 
 ### E5. Bilinçli sapma — "Son hareket" YOK
 - Reveal satırında "Last Movement" + adres var; bizde **eklenmedi**. Gerekçe: `listLatestVehiclePositions` sayfalanmıyor (60 dk penceresinde filo geneli 1000 satır tavanını aşabilir → bazı araçların son sinyali sessizce düşer), araç başına sorgu ise 28 tur demek. Uydurma/eksik veri göstermektense hiç göstermiyoruz. Doğru çözüm ayrı bir iş: `vehicle_id`'ye göre `distinct on` view'ı veya sayfalı toplu okuma.
+- **Güncelleme (17.07.2026):** Bu gerekçe artık geçerli değil — `listLatestVehiclePositions` penceresiz, araç başına tek `limit-1` sorguya geçti (1000 satır tavanı riski kalktı). Araçlar sayfasına "Son hareket" eklemek artık mümkün; istenirse ayrı iş olarak açılır.
 
 ---
 

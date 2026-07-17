@@ -2,14 +2,21 @@
 
 import { useEffect, useMemo } from "react";
 import L from "leaflet";
-import { MapContainer, Marker, Popup, Polyline, useMap } from "react-leaflet";
+import {
+  MapContainer,
+  Marker,
+  Popup,
+  Polyline,
+  Tooltip,
+  useMap,
+} from "react-leaflet";
 import Link from "next/link";
 import { VectorBaseLayer } from "@/components/VectorBaseLayer";
 import { useLocale, useTranslations } from "next-intl";
 import "leaflet/dist/leaflet.css";
 import { UserAvatar } from "@/components/UserAvatar";
-import { formatTime } from "@/lib/format";
-import type { ActiveDriver, ActiveVehicle } from "@/lib/types";
+import { formatRelative, formatTime } from "@/lib/format";
+import { VEHICLE_FRESH_MS, type ActiveDriver, type ActiveVehicle } from "@/lib/types";
 
 const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
 
@@ -21,6 +28,8 @@ function initials(name: string): string {
 }
 
 const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
+// Fixes older than this stay OFF the auto-fit frame (markers still render).
+const BOUNDS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -45,14 +54,21 @@ function makeIcon(name: string, variant: "active" | "warn"): L.DivIcon {
 // round driver pin (which is mavi). Color encodes ignition WITHOUT green/red
 // (project rule): bordo when the engine is on, muted when off/unknown. Bordo vs
 // the drivers' mavi keeps the two map layers instantly distinguishable.
-function makeVehicleIcon(plate: string, ignitionOn: boolean | null): L.DivIcon {
-  const on = ignitionOn === true;
+// Stale (no fix within VEHICLE_FRESH_MS) overrides ignition: the pill goes
+// faded gray — the vehicle stays on the map, its age readable at a glance.
+function makeVehicleIcon(
+  plate: string,
+  ignitionOn: boolean | null,
+  stale: boolean
+): L.DivIcon {
+  const on = ignitionOn === true && !stale;
   const bg = on ? "var(--accent-claret)" : "var(--muted)";
   const fg = on ? "#fff" : "var(--muted-foreground)";
+  const dim = stale ? "opacity:.55;filter:grayscale(1);" : "";
   return L.divIcon({
     className: "hak-veh-wrap",
     html:
-      `<div style="display:flex;justify-content:center;align-items:center">` +
+      `<div style="display:flex;justify-content:center;align-items:center;${dim}">` +
       `<div style="display:inline-flex;align-items:center;gap:4px;background:${bg};` +
       `color:${fg};border:2px solid var(--card,#fff);border-radius:6px;` +
       `padding:1px 6px;font:600 11px/1.4 system-ui,sans-serif;white-space:nowrap;` +
@@ -93,13 +109,19 @@ export function FleetMap({
   const now = Date.now();
 
   // FitBounds spans both layers so vehicles are framed too, not just drivers.
-  const points = useMemo(
-    () => [
+  // Age cap ONLY for the frame: weeks-dead trackers (sold vehicle, ripped-out
+  // device) must not zoom the whole fleet view out — their markers still render,
+  // just outside the initial frame. Without this, one far-away stale fix would
+  // reset the viewport to fleet+outlier on every 30 s refresh.
+  const points = useMemo(() => {
+    const boundsCutoff = Date.now() - BOUNDS_MAX_AGE_MS;
+    return [
       ...drivers.map((d) => [d.latitude, d.longitude] as [number, number]),
-      ...vehicles.map((v) => [v.latitude, v.longitude] as [number, number]),
-    ],
-    [drivers, vehicles]
-  );
+      ...vehicles
+        .filter((v) => new Date(v.recorded_at).getTime() >= boundsCutoff)
+        .map((v) => [v.latitude, v.longitude] as [number, number]),
+    ];
+  }, [drivers, vehicles]);
 
   return (
     <MapContainer
@@ -157,42 +179,58 @@ export function FleetMap({
           </Marker>
         );
       })}
-      {/* Vehicle layer (hardware GPS) — separate from the driver layer above. */}
-      {vehicles.map((v) => (
-        <Marker
-          key={`veh-${v.vehicle_id}`}
-          position={[v.latitude, v.longitude]}
-          icon={makeVehicleIcon(v.plate, v.ignition_on)}
-        >
-          <Popup>
-            <div className="min-w-[180px] space-y-2">
-              <div className="font-semibold text-sm leading-tight nums">{v.plate}</div>
-              <div className="text-xs text-muted-foreground space-y-0.5">
-                <div>
-                  {t("vehicle_speed")}:{" "}
-                  <span className="nums">
-                    {v.speed_kmh != null ? `${Math.round(v.speed_kmh)} km/h` : "—"}
-                  </span>
+      {/* Vehicle layer (hardware GPS) — separate from the driver layer above.
+          Every device vehicle is here (no recency window); stale ones render
+          faded gray with a "son görülme" tooltip instead of dropping off. */}
+      {vehicles.map((v) => {
+        const stale = now - new Date(v.recorded_at).getTime() >= VEHICLE_FRESH_MS;
+        return (
+          <Marker
+            key={`veh-${v.vehicle_id}`}
+            position={[v.latitude, v.longitude]}
+            icon={makeVehicleIcon(v.plate, v.ignition_on, stale)}
+          >
+            {stale && (
+              <Tooltip direction="top" offset={[0, -14]}>
+                {t("last_seen", { ago: formatRelative(v.recorded_at, locale) })}
+              </Tooltip>
+            )}
+            <Popup>
+              <div className="min-w-[180px] space-y-2">
+                <div className="font-semibold text-sm leading-tight nums">{v.plate}</div>
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  <div>
+                    {t("vehicle_speed")}:{" "}
+                    <span className="nums">
+                      {v.speed_kmh != null ? `${Math.round(v.speed_kmh)} km/h` : "—"}
+                    </span>
+                  </div>
+                  {/* Bayatken kontak durumu BİLİNMİYOR — son bilinen "açık"
+                      göstermek gri ikonla çelişir, uydurma olur: "—". */}
+                  <div>
+                    {stale || v.ignition_on == null
+                      ? "—"
+                      : v.ignition_on
+                      ? t("ignition_on")
+                      : t("ignition_off")}
+                  </div>
+                  <div>
+                    {stale
+                      ? t("last_seen", { ago: formatRelative(v.recorded_at, locale) })
+                      : t("last_update", { time: formatTime(v.recorded_at, locale) })}
+                  </div>
                 </div>
-                <div>
-                  {v.ignition_on == null
-                    ? "—"
-                    : v.ignition_on
-                    ? t("ignition_on")
-                    : t("ignition_off")}
-                </div>
-                <div>{t("last_update", { time: formatTime(v.recorded_at, locale) })}</div>
+                <Link
+                  href={`/admin/araclar/${v.vehicle_id}`}
+                  className="inline-block text-xs font-medium text-primary hover:underline"
+                >
+                  {t("view_detail")} →
+                </Link>
               </div>
-              <Link
-                href={`/admin/araclar/${v.vehicle_id}`}
-                className="inline-block text-xs font-medium text-primary hover:underline"
-              >
-                {t("view_detail")} →
-              </Link>
-            </div>
-          </Popup>
-        </Marker>
-      ))}
+            </Popup>
+          </Marker>
+        );
+      })}
     </MapContainer>
   );
 }

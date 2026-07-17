@@ -476,7 +476,9 @@
     "subtitle": "Live-Standorte — Fahrer-Handy und Fahrzeug-GPS",
     "tab_drivers": "Fahrer",
     "tab_vehicles": "Fahrzeuge",
-    "no_vehicles": "Derzeit kein Fahrzeug mit Signal"
+    "no_vehicles": "Noch kein Fahrzeug mit Positionsdaten",
+    "last_seen": "Zuletzt gesehen: {ago}",
+    "kpi_live_count": "{count} live"
   },
   "route": {
     "title": "Routenverlauf",

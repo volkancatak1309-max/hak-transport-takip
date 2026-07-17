@@ -226,6 +226,14 @@ export type ActiveVehicle = {
   recorded_at: string;
 };
 
+/**
+ * Freshness threshold for the vehicle map layer: fixes younger than this render
+ * in the normal fleet color, older ones faded/gray with a "son görülme" hint —
+ * the vehicle itself NEVER drops off the map. Wide because hardware trackers
+ * ping rarely (or not at all) while parked with the ignition off.
+ */
+export const VEHICLE_FRESH_MS = 60 * 60 * 1000; // 60 min
+
 export type AssignmentStop = { label: string; address: string };
 export type AssignmentCategory = "lieferung" | "abholung" | "kurier" | "verteilung";
 export type AssignmentStatus = "assigned" | "started" | "completed" | "cancelled";

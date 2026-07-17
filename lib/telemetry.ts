@@ -323,7 +323,7 @@ const LATEST_COALESCE_WINDOW = 40; // rows scanned back to fill sparse CAN field
 
 /**
  * The single most-recent telemetry point for ONE vehicle, or null if the device
- * has never reported (no row in device_telemetry). Unlike
+ * has never reported (no row in device_telemetry). Like
  * listLatestVehiclePositions, there is NO recency window: the vehicle-detail
  * "live position" card shows the last known fix however old, and surfaces its
  * age via recorded_at — so a parked/offline tracker still renders its last
@@ -367,57 +367,65 @@ export async function latestVehicleTelemetry(
 }
 
 /**
- * Latest position per vehicle within a recency window, joined with the plate —
- * the live-map vehicle layer. Stale/offline vehicles (no ping in the window)
- * drop off, mirroring how the driver layer hides old pings. Degrades to an empty
- * list if the telemetry table doesn't exist yet (migrations not run).
+ * Last known position for EVERY device-equipped vehicle, joined with the plate —
+ * the live-map vehicle layer. NO recency window (Reveal behavior): a parked or
+ * offline tracker keeps its last fix on the map however old, instead of
+ * vanishing when the ignition goes off; the UI derives freshness from
+ * recorded_at (normal color vs. faded + "son görülme"). One limit-1 query per
+ * vehicle, served by the (vehicle_id, recorded_at) index — never a whole time
+ * window of rows. Degrades to an empty list if the telemetry table doesn't
+ * exist yet (migrations not run).
  */
-export async function listLatestVehiclePositions(
-  windowMs: number
-): Promise<ActiveVehicle[]> {
-  const since = new Date(Date.now() - windowMs).toISOString();
-  const { data } = await supabaseAdmin
-    .from("device_telemetry")
-    .select(
-      "vehicle_id, latitude, longitude, speed_kmh, heading, ignition_on, recorded_at"
-    )
-    .gte("recorded_at", since)
-    .order("recorded_at", { ascending: false });
-
-  const rows = (data ?? []) as TelemetryRow[];
-  if (rows.length === 0) return [];
-
-  // Rows are newest-first, so the first seen per vehicle is its latest.
-  const latest = new Map<string, TelemetryRow>();
-  for (const r of rows) {
-    if (!latest.has(r.vehicle_id)) latest.set(r.vehicle_id, r);
-  }
-
-  const ids = [...latest.keys()];
+export async function listLatestVehiclePositions(): Promise<ActiveVehicle[]> {
+  // "Cihazlı araç" = flespi_device_id VEYA imei dolu — auto-shift ile aynı
+  // tanım. IMEI-only araçlar stream ingest üzerinden telemetri üretir
+  // (flespi_device_id NULL kalır), onları elemek haritadan düşürürdü.
   const { data: vData } = await supabaseAdmin
     .from("vehicles")
     .select("id, plate")
-    .in("id", ids);
-  const plates = new Map(
-    ((vData ?? []) as { id: string; plate: string }[]).map((v) => [v.id, v.plate])
-  );
+    .or("flespi_device_id.not.is.null,imei.not.is.null");
+  const vehicles = (vData ?? []) as { id: string; plate: string }[];
+  if (vehicles.length === 0) return [];
 
-  const out: ActiveVehicle[] = [];
-  for (const [id, r] of latest) {
-    const plate = plates.get(id);
-    if (!plate) continue; // vehicle row vanished — skip orphan telemetry
-    out.push({
-      vehicle_id: id,
-      plate,
-      latitude: r.latitude,
-      longitude: r.longitude,
-      speed_kmh: r.speed_kmh,
-      heading: r.heading,
-      ignition_on: r.ignition_on,
-      recorded_at: r.recorded_at,
-    });
-  }
-  return out;
+  const out = await Promise.all(
+    vehicles.map(async (v): Promise<ActiveVehicle | null> => {
+      const { data, error } = await supabaseAdmin
+        .from("device_telemetry")
+        .select(
+          "vehicle_id, latitude, longitude, speed_kmh, heading, ignition_on, recorded_at"
+        )
+        .eq("vehicle_id", v.id)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        // Geçici sorgu hatasında aracı bu turda atla ama SESSİZCE değil —
+        // yoksa "cihaz hiç veri göndermemiş"ten ayırt edilemez.
+        console.error(
+          `[telemetry] son-konum sorgusu başarısız vehicle=${v.id}: ${error.message}`
+        );
+        return null;
+      }
+      const r = data as TelemetryRow | null;
+      if (!r) return null; // device assigned but never reported yet
+      return {
+        vehicle_id: v.id,
+        plate: v.plate,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        speed_kmh: r.speed_kmh,
+        heading: r.heading,
+        ignition_on: r.ignition_on,
+        recorded_at: r.recorded_at,
+      };
+    })
+  );
+  return out
+    .filter((v): v is ActiveVehicle => v !== null)
+    .sort(
+      (a, b) =>
+        new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()
+    );
 }
 
 const TRACK_PAGE = 1000; // PostgREST page size; we paginate to defeat any max-rows cap

@@ -476,7 +476,9 @@
     "subtitle": "Canlı konumlar — şoför telefonu ve araç GPS cihazı",
     "tab_drivers": "Şoförler",
     "tab_vehicles": "Araçlar",
-    "no_vehicles": "Şu an sinyal veren araç yok"
+    "no_vehicles": "Henüz konum bildiren araç yok",
+    "last_seen": "Son görülme: {ago}",
+    "kpi_live_count": "{count} canlı"
   },
   "route": {
     "title": "Rota Geçmişi",

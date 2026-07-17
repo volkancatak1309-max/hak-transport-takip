@@ -9,9 +9,6 @@ import type { ActiveDriver } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 const RECENT_MS = 10 * 60 * 1000; // marker shown only if last ping < 10 min old
-// Hardware trackers ping less often when idle/parked, so the vehicle layer uses
-// a wider recency window than the phone-GPS driver layer.
-const VEHICLE_RECENT_MS = 60 * 60 * 1000; // 60 min
 
 type ShiftRow = { id: string; started_at: string; worker_id: string };
 type WorkerRow = { id: string; name: string; plate: string | null };
@@ -96,7 +93,9 @@ export default async function HaritaPage() {
   }
 
   // Vehicle layer (hardware GPS / flespi) — independent of the driver layer.
-  const vehicles = await listLatestVehiclePositions(VEHICLE_RECENT_MS);
+  // No recency window: every device vehicle shows its last known fix; the
+  // client derives freshness (normal vs. faded marker) from recorded_at.
+  const vehicles = await listLatestVehiclePositions();
 
   // Debug logging — kept in production to diagnose missing markers via Vercel logs
   console.log(
@@ -137,10 +136,10 @@ export default async function HaritaPage() {
         vehicles={vehicles}
         summary={{
           activeShifts: shifts.length,
-          onMap: drivers.length,
           longestMs,
           overLimit,
         }}
+        serverNow={nowMs}
       />
     </DashboardShell>
   );

@@ -414,6 +414,7 @@
     "vehicle_speed": "Geschwindigkeit",
     "ignition_on": "Zündung an",
     "ignition_off": "Zündung aus",
+    "legend_stale": "Blass: Signal älter als {min} Min.",
     "vehicles_layer": "Fahrzeuge (GPS-Gerät)",
     "live_location": "Live-Standort",
     "ignition": "Zündung",

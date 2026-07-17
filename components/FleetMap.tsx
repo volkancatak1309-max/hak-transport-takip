@@ -59,23 +59,21 @@ function makeIcon(name: string, variant: "active" | "warn"): L.DivIcon {
 // Vehicle (hardware-tracker) marker — a plate pill, visually distinct from the
 // round driver pin. Pill color = FLEET (migration 023): bordo filo = claret,
 // mavi filo = sky — working or idle, the fleet reads at a glance; ignition
-// lives in the popup. Freshness still wins: stale (no fix within
-// VEHICLE_FRESH_MS) renders faded gray — the vehicle stays on the map, its age
-// readable at a glance. The mavi pill uses dark text: white on sky is ~3.2:1,
-// under AA for 11px text (claret is dark enough for white).
+// lives in the popup. Freshness dims but NEVER hides the fleet: stale (no fix
+// within VEHICLE_FRESH_MS) keeps the fleet color at low saturation + opacity
+// (pale bordo / pale mavi, not gray) with the "son görülme" tooltip — the
+// vehicle stays on the map, age AND fleet both readable at a glance. The mavi
+// pill uses dark text: white on sky is ~3.2:1, under AA for 11px text (claret
+// is dark enough for white).
 function makeVehicleIcon(
   plate: string,
   fleet: VehicleFleet,
   stale: boolean
 ): L.DivIcon {
   const bordo = fleet === "bordo";
-  const bg = stale
-    ? "var(--muted)"
-    : bordo
-    ? "var(--accent-claret)"
-    : "var(--accent-sky)";
-  const fg = stale ? "var(--muted-foreground)" : bordo ? "#fff" : "#0c1626";
-  const dim = stale ? "opacity:.55;filter:grayscale(1);" : "";
+  const bg = bordo ? "var(--accent-claret)" : "var(--accent-sky)";
+  const fg = bordo ? "#fff" : "#0c1626";
+  const dim = stale ? "opacity:.55;filter:saturate(.4);" : "";
   return L.divIcon({
     className: "hak-veh-wrap",
     html:
@@ -266,6 +264,16 @@ export function FleetMap({
           className={`h-3 w-5 shrink-0 rounded-[4px] border border-white/45 ${FLEET_STYLE.mavi.dot}`}
         />
         {tf("mavi")}
+      </span>
+      {/* Bayat işaretçi soluk filo tonunda (gri DEĞİL) — örnek, pildeki
+          saturate filtresinin aynısıyla çizilir; opaklık kısılmaz ki koyu
+          glass zemininde örnek kaybolmasın (1.4.11 dersi). */}
+      <span className="flex items-center gap-2">
+        <span aria-hidden className="flex shrink-0 items-center gap-1" style={{ filter: "saturate(.4)" }}>
+          <span className={`h-3 w-5 rounded-[4px] border border-white/45 ${FLEET_STYLE.bordo.dot}`} />
+          <span className={`h-3 w-5 rounded-[4px] border border-white/45 ${FLEET_STYLE.mavi.dot}`} />
+        </span>
+        {t("legend_stale", { min: VEHICLE_FRESH_MS / 60000 })}
       </span>
     </div>
     </>

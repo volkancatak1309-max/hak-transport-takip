@@ -414,6 +414,7 @@
     "vehicle_speed": "Hız",
     "ignition_on": "Kontak açık",
     "ignition_off": "Kontak kapalı",
+    "legend_stale": "Soluk: sinyal {min} dk'dan eski",
     "vehicles_layer": "Araçlar (GPS cihazı)",
     "live_location": "Canlı Konum",
     "ignition": "Kontak",

@@ -72,6 +72,23 @@ export type FlespiDtcSnapshot = {
   occurred_at: string;
 };
 
+/**
+ * Tek mesajdan çıkarılan rölanti (idle) okuması — idle_episodes durum makinesinin
+ * girdisi (migration 024). `idle` = cihazın idle.status bayrağı (mesajda yoksa
+ * null); açık epizod ignition kapanması / hareket ile de kapatılabildiği için
+ * ignition_on ve speed_kmh da taşınır.
+ */
+export type IdleReading = {
+  /** Epoch saniye — araç başına kronolojik sıralama + cursor için. */
+  ts: number;
+  idle: boolean | null;
+  ignition_on: boolean | null;
+  speed_kmh: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  occurred_at: string;
+};
+
 /** Cihazın bildirdiği tek bir sürüş/güvenlik olayı (vehicle_events satırı). */
 export type FlespiEvent = {
   /** Kanonik tür: harsh_braking | harsh_acceleration | harsh_cornering |
@@ -384,9 +401,11 @@ export function extractEvents(msg: Record<string, unknown>): FlespiEvent[] {
       ...base,
     });
   }
-  if (flag("idle.status")) {
-    events.push({ event_type: "idling", event_value: null, ...base });
-  }
+  // NOT: idling ARTIK burada üretilmez. Cihazın idle.status bayrağı "şu an
+  // rölantide" durumudur ve rölanti sürdükçe her periyodik kayıtta tekrar gelir →
+  // eski model 25 dk'lık tek rölantiyi 5 ayrı ping-olayına bölüyordu, süre yoktu.
+  // Yeni model (migration 024): idle.status geçişleri extractIdle + saveIdleEpisodes
+  // ile bir EPİZODA (başlangıç→bitiş→süre) toplanır. Diğer olay tipleri değişmedi.
   if (flag("gsm.jamming.alarm.status")) {
     events.push({ event_type: "jamming", event_value: null, ...base });
   }
@@ -402,15 +421,65 @@ export function extractEvents(msg: Record<string, unknown>): FlespiEvent[] {
 }
 
 /**
+ * Tek mesajdan rölanti durum-makinesi okuması çıkarır (migration 024). Yalnızca
+ * DURUMU DEĞİŞTİREBİLECEK mesajları döndürür — geri kalan GPS frame'leri null:
+ *   - idle.status açıkça true/false → epizod aç/sürdür veya kapat
+ *   - idle.status yok ama ignition=false → açık epizodu 'ignition_off' ile kapat
+ *   - idle.status yok ama hız ≥ eşik → açık epizodu 'moving' ile kapat
+ *   - hiçbiri (rölanti bayrağı yok, motor açık, duruyor) → null (no-op frame)
+ * idle.status doğrudan cihazın kararı olduğu için (eşik cihazda), true iken
+ * hız/ignition çelişkisine BAKMAYIZ. normalize() ile aynı RTC korumaları.
+ */
+export function extractIdle(msg: Record<string, unknown>): IdleReading | null {
+  const ts = num(pick(msg, "timestamp"));
+  if (ts === null) return null;
+  const tsMs = ts * 1000;
+  if (tsMs > Date.now() + FUTURE_SKEW_MS) return null;
+  if (ts < YEAR_2000_TS) return null;
+
+  const idleRaw = pick(msg, "idle.status");
+  const idle = idleRaw === undefined ? null : bool(idleRaw);
+  const ignition =
+    bool(pick(msg, "engine.ignition.status")) ?? bool(pick(msg, "din.1"));
+  const speed = num(pick(msg, "position.speed"));
+
+  // Aksiyon üretmeyecek frame'i erken ele (hacmi düşür): rölanti bayrağı yok,
+  // motor kapalı DEĞİL ve hareket sinyali yok.
+  const canClose = ignition === false || (speed !== null && speed >= 3);
+  if (idle === null && !canClose) return null;
+
+  const lat = num(pick(msg, "position.latitude"));
+  const lng = num(pick(msg, "position.longitude"));
+  const posOk =
+    lat !== null && lng !== null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+
+  return {
+    ts,
+    idle,
+    ignition_on: ignition,
+    speed_kmh: speed,
+    latitude: posOk ? lat : null,
+    longitude: posOk ? lng : null,
+    occurred_at: new Date(tsMs).toISOString(),
+  };
+}
+
+/**
  * Fetch and normalize messages for one device. When `sinceTs` (epoch seconds)
  * is given, only messages at/after it are requested (`data.from`), keeping each
  * poll small. Returns chronological, position-bearing points plus any device
- * events found in the same messages (events may exist without a position fix).
+ * events + idle readings found in the same messages (both may exist without a
+ * position fix).
  */
 export async function fetchDeviceMessages(
   deviceId: number,
   sinceTs?: number
-): Promise<{ points: FlespiPoint[]; events: FlespiEvent[]; dtc: FlespiDtcSnapshot[] }> {
+): Promise<{
+  points: FlespiPoint[];
+  events: FlespiEvent[];
+  dtc: FlespiDtcSnapshot[];
+  idle: IdleReading[];
+}> {
   // reverse:false → oldest-first, so the cursor advances forward and a capped
   // poll drains a backlog over successive ticks. [VARSAYIM] confirm ordering +
   // that `count` caps the result on the real device.
@@ -439,12 +508,15 @@ export async function fetchDeviceMessages(
   const points: FlespiPoint[] = [];
   const events: FlespiEvent[] = [];
   const dtc: FlespiDtcSnapshot[] = [];
+  const idle: IdleReading[] = [];
   for (const m of rows) {
     const p = normalize(deviceId, m);
     if (p) points.push(p);
     events.push(...extractEvents(m));
     const d = extractDtc(m);
     if (d) dtc.push(d);
+    const ir = extractIdle(m);
+    if (ir) idle.push(ir);
   }
 
   // Surface a field-name mismatch instead of a silent "0 saved": if flespi
@@ -459,5 +531,5 @@ export async function fetchDeviceMessages(
     );
   }
 
-  return { points, events, dtc };
+  return { points, events, dtc, idle };
 }

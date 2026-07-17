@@ -4,14 +4,17 @@ import { flespiAuthorized } from "@/lib/flespi-auth";
 import {
   extractDtc,
   extractEvents,
+  extractIdle,
   normalize,
   type FlespiDtcSnapshot,
   type FlespiEvent,
   type FlespiPoint,
+  type IdleReading,
 } from "@/lib/flespi";
 import {
   maybeBackfillVin,
   saveDtc,
+  saveIdleEpisodes,
   saveTelemetry,
   saveVehicleEvents,
 } from "@/lib/telemetry";
@@ -129,15 +132,30 @@ export async function POST(req: NextRequest) {
         const points: FlespiPoint[] = [];
         const events: FlespiEvent[] = [];
         const dtc: FlespiDtcSnapshot[] = [];
+        const idle: IdleReading[] = [];
         for (const m of msgs) {
           const p = normalize(deviceId, m);
           if (p) points.push(p);
           events.push(...extractEvents(m));
           const d = extractDtc(m);
           if (d) dtc.push(d);
+          const ir = extractIdle(m);
+          if (ir) idle.push(ir);
         }
         saved += await saveTelemetry(vehicle.id, points);
         touchedVehicleIds.push(vehicle.id);
+        // Rölanti epizodu (migration 024) — kendi try/catch'inde; GPS akışını
+        // ASLA düşürmez, 200-kuralını bozmaz.
+        if (idle.length > 0) {
+          try {
+            await saveIdleEpisodes(vehicle.id, idle);
+          } catch (err) {
+            console.error(
+              "[flespi/ingest] idle_episodes yazılamadı:",
+              err instanceof Error ? err.message : err
+            );
+          }
+        }
         // Olay kaydı GPS akışını ASLA düşürmesin (örn. migration 018 henüz
         // çalıştırılmadıysa): kendi try/catch'i var, hata sadece loglanır.
         if (events.length > 0) {

@@ -17,6 +17,22 @@ export function formatDurationShort(ms: number, locale: string = "tr"): string {
   return `${h}${hSuffix} ${String(m).padStart(2, "0")}${mSuffix}`;
 }
 
+/**
+ * Rölanti süresi rozeti için: <1 sa → "25 dk", ≥1 sa → "1 sa 5 dk" (0 dakikayı
+ * atar: "2 sa"). formatDurationShort'tan farkı 0 saati göstermemesi ("0s 25dk"
+ * yerine "25 dk"). Yuvarlama Math.round — 24.6 dk → 25 dk.
+ */
+export function formatIdleShort(ms: number, locale: string = "tr"): string {
+  if (ms < 0) ms = 0;
+  const totalMin = Math.round(ms / 60000);
+  const mu = locale === "de" ? "Min" : "dk";
+  if (totalMin < 60) return `${totalMin} ${mu}`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  const hu = locale === "de" ? "Std" : "sa";
+  return m === 0 ? `${h} ${hu}` : `${h} ${hu} ${m} ${mu}`;
+}
+
 export function formatHoursDecimal(ms: number): string {
   if (ms < 0) ms = 0;
   return (ms / 3600000).toFixed(2);

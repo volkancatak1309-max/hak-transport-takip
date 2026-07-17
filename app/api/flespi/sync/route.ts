@@ -6,7 +6,9 @@ import {
   lastRecordedAt,
   maybeBackfillVin,
   reconcileDtc,
+  reconcileIdleEpisodes,
   saveDtc,
+  saveIdleEpisodes,
   saveTelemetry,
   saveVehicleEvents,
 } from "@/lib/telemetry";
@@ -67,12 +69,24 @@ async function runSync() {
         ? new Date(last).getTime() / 1000
         : (Date.now() - FIRST_WINDOW_MS) / 1000;
 
-      const { points, events, dtc } = await fetchDeviceMessages(
+      const { points, events, dtc, idle } = await fetchDeviceMessages(
         v.flespi_device_id,
         sinceTs
       );
       const saved = await saveTelemetry(v.id, points);
       totalSaved += saved;
+      // Rölanti epizodu (migration 024) — kendi try/catch'inde; GPS senkronunu
+      // ASLA düşürmez.
+      if (idle.length > 0) {
+        try {
+          await saveIdleEpisodes(v.id, idle);
+        } catch (err) {
+          console.error(
+            `[flespi/sync] ${v.plate}: idle_episodes yazılamadı:`,
+            err instanceof Error ? err.message : err
+          );
+        }
+      }
       // Olay kaydı GPS akışını ASLA düşürmesin (örn. migration 018 henüz
       // çalıştırılmadıysa): kendi try/catch'i var, hata sadece loglanır.
       let savedEvents = 0;
@@ -149,12 +163,31 @@ async function runSync() {
     }
   }
 
+  // Rölanti bekçisi (migration 024): sinyali kesilmiş açık epizodları
+  // last_seen_at ile kapat. throw etmez — GPS senkronunu düşürmez.
+  let idleClosed = 0;
+  try {
+    idleClosed = await reconcileIdleEpisodes();
+  } catch (err) {
+    console.error(
+      "[flespi/sync] idle bekçisi başarısız:",
+      err instanceof Error ? err.message : err
+    );
+  }
+
   // Otomatik vardiya (İş 1): telemetri yazıldıktan sonra kontak-temelli
   // başlat/bitir değerlendirmesi. processAutoShifts asla throw etmez —
   // GPS senkronunu hiçbir koşulda düşürmez.
   const autoShifts: AutoShiftSummary = await processAutoShifts();
 
-  return { ok: true, vehicles: vehicles.length, totalSaved, perVehicle, autoShifts };
+  return {
+    ok: true,
+    vehicles: vehicles.length,
+    totalSaved,
+    perVehicle,
+    idleClosed,
+    autoShifts,
+  };
 }
 
 export async function GET(req: NextRequest) {

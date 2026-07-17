@@ -1,8 +1,25 @@
 import "server-only";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { fetchLastKnownDtc } from "@/lib/flespi";
-import type { FlespiDtcSnapshot, FlespiEvent, FlespiPoint } from "@/lib/flespi";
+import type {
+  FlespiDtcSnapshot,
+  FlespiEvent,
+  FlespiPoint,
+  IdleReading,
+} from "@/lib/flespi";
+import { IDLE_SPEED_THRESHOLD_KMH, MAX_GAP_MS } from "@/lib/metrics-idle";
 import type { ActiveVehicle, VehicleFleet } from "@/lib/types";
+
+/**
+ * Rölanti "aşırı" tetik eşiği (Teltonika param 11205, saniye). Cihaz idle.status
+ * bayrağını ancak bu süre geçince kaldırır → epizodun started_at'i fiziksel
+ * duruştan bu kadar SONRADIR, yani ham span (ended−started) gerçek rölantiyi
+ * bu kadar EKSİK sayar. Ekranda süreye eklenir. flespi API'si 11205'i AÇMIYOR
+ * ([DOĞRULANDI]: /gw/devices settings yalnız SMS/GPRS/OBD-IO komut ayarları
+ * veriyor, senaryo parametreleri değil) → varsayım gömmüyoruz, offset 0 (ham
+ * span gösterilir). Filo geneli 11205 teyit edilirse (örn. 300) tek satır burada
+ * değişir; DB'ye asla yazılmaz (ham timestamp'ler saklanır). */
+export const IDLE_TRIGGER_S = 0;
 
 /**
  * Persistence helpers for vehicle-centric GPS telemetry (device_telemetry).
@@ -258,6 +275,199 @@ export async function listEventsInRange(
       .gte("occurred_at", startISO)
       .lte("occurred_at", endISO)
       .order("occurred_at", { ascending: false })
+      .order("id")
+      .range(from, to)
+  );
+  const rows = data;
+  if (rows.length === 0) return [];
+
+  const ids = [...new Set(rows.map((r) => r.vehicle_id))];
+  const { data: vData } = await supabaseAdmin
+    .from("vehicles")
+    .select("id, plate")
+    .in("id", ids);
+  const plates = new Map(
+    ((vData ?? []) as { id: string; plate: string }[]).map((v) => [v.id, v.plate])
+  );
+  return rows.map((r) => ({ ...r, plate: plates.get(r.vehicle_id) ?? "—" }));
+}
+
+// ── Rölanti epizodları (idle_episodes, migration 024) ───────────────────────
+//
+// Cihazın idle.status bayrağı "şu an aşırı rölantide" durumudur ve rölanti
+// sürdükçe her periyodik kayıtta tekrar gelir. Eski model (idling nokta-olayı)
+// bu yüzden 25 dk'lık TEK rölantiyi 5 ayrı ping-satırına bölüyor, süre
+// taşımıyordu. Yeni model bayrak GEÇİŞLERİNİ bir epizoda (başlangıç→bitiş→süre)
+// toplar: bir rölanti = TEK satır + gerçek süre. Durum DB'de tutulur (in-memory
+// değil) → sunucu/ingest restart'ına dayanır; `uq_idle_open_per_vehicle` (partial
+// unique, araç başına tek açık) iki ingest yolunun (stream+poll) yarışını da
+// engeller. Saf DB durumu → cooldown/DTC bekçisiyle aynı dayanıklı desen.
+
+type OpenEpisode = { id: string; started_at: string; last_seen_at: string };
+
+async function getOpenEpisode(vehicleId: string): Promise<OpenEpisode | null> {
+  const { data } = await supabaseAdmin
+    .from("idle_episodes")
+    .select("id, started_at, last_seen_at")
+    .eq("vehicle_id", vehicleId)
+    .is("ended_at", null)
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data ? (data as OpenEpisode) : null;
+}
+
+async function latestClosedEndMs(vehicleId: string): Promise<number | null> {
+  const { data } = await supabaseAdmin
+    .from("idle_episodes")
+    .select("ended_at")
+    .eq("vehicle_id", vehicleId)
+    .not("ended_at", "is", null)
+    .order("ended_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.ended_at ? new Date(data.ended_at as string).getTime() : null;
+}
+
+/**
+ * idle.status geçişlerini idle_episodes durum makinesine uygular. Araç başına
+ * KRONOLOJİK işlenir; en son epizod sınırından (açık epizodun last_seen'i veya
+ * son kapalının ended_at'i) ESKİ mesajlar yok sayılır — poll eski pencereyi
+ * yeniden çektiğinde kapalı epizod yeniden açılmasın. Throws on DB error — çağıran
+ * KENDİ try/catch'iyle sarmalı, rölanti asla GPS akışını düşürmesin.
+ * Dönen: bu batch'te AÇILAN epizod sayısı.
+ */
+export async function saveIdleEpisodes(
+  vehicleId: string,
+  readings: IdleReading[]
+): Promise<number> {
+  if (readings.length === 0) return 0;
+  const sorted = [...readings].sort((a, b) => a.ts - b.ts);
+
+  let open = await getOpenEpisode(vehicleId);
+  const closedMs = await latestClosedEndMs(vehicleId);
+  let cursorMs = Math.max(
+    open ? new Date(open.last_seen_at).getTime() : -Infinity,
+    closedMs ?? -Infinity
+  );
+
+  let opened = 0;
+  for (const r of sorted) {
+    const tMs = r.ts * 1000;
+    if (tMs <= cursorMs) continue; // yeniden teslim / zaten işlenmiş
+
+    if (r.idle === true) {
+      if (!open) {
+        const { data, error } = await supabaseAdmin
+          .from("idle_episodes")
+          .insert({
+            vehicle_id: vehicleId,
+            started_at: r.occurred_at,
+            last_seen_at: r.occurred_at,
+            latitude: r.latitude,
+            longitude: r.longitude,
+          })
+          .select("id, started_at, last_seen_at")
+          .maybeSingle();
+        if (error) {
+          // Araç başına tek-açık yarışı (23505): mevcut açığı al, sürdür.
+          if (error.code === "23505") open = await getOpenEpisode(vehicleId);
+          else throw new Error(error.message);
+        } else if (data) {
+          open = data as OpenEpisode;
+          opened++;
+        }
+      } else {
+        // last_seen yalnız ileri gider (out-of-order koruması).
+        await supabaseAdmin
+          .from("idle_episodes")
+          .update({ last_seen_at: r.occurred_at })
+          .eq("id", open.id)
+          .is("ended_at", null)
+          .lt("last_seen_at", r.occurred_at);
+        open.last_seen_at = r.occurred_at;
+      }
+      cursorMs = tMs;
+    } else {
+      // idle=false (idle_off) / ignition kapalı / hareket → açık epizodu kapat.
+      let reason: string | null = null;
+      if (r.idle === false) reason = "idle_off";
+      else if (r.ignition_on === false) reason = "ignition_off";
+      else if (r.speed_kmh !== null && r.speed_kmh >= IDLE_SPEED_THRESHOLD_KMH)
+        reason = "moving";
+      if (open && reason) {
+        await supabaseAdmin
+          .from("idle_episodes")
+          .update({ ended_at: r.occurred_at, end_reason: reason })
+          .eq("id", open.id)
+          .is("ended_at", null);
+        open = null;
+        cursorMs = tMs;
+      }
+      // açık epizod yoksa yok say
+    }
+  }
+  return opened;
+}
+
+/**
+ * Bekçi: last_seen_at üstünden MAX_GAP_MS geçmiş AÇIK epizodları kapatır
+ * (sinyal kesildi / cihaz kapandı, açık epizod hiç kapanmadı). ended_at =
+ * last_seen_at, end_reason='gap_timeout' — GÖZLEMLENMEMİŞ süre asla sayılmaz
+ * (computeIdleTime'ın gap mantığıyla birebir). Her sync turunda çağrılır.
+ * Dönen: kapatılan epizod sayısı.
+ */
+export async function reconcileIdleEpisodes(
+  nowMs: number = Date.now()
+): Promise<number> {
+  const cutoff = new Date(nowMs - MAX_GAP_MS).toISOString();
+  const { data } = await supabaseAdmin
+    .from("idle_episodes")
+    .select("id, last_seen_at")
+    .is("ended_at", null)
+    .lt("last_seen_at", cutoff);
+  const rows = (data ?? []) as { id: string; last_seen_at: string }[];
+  for (const e of rows) {
+    await supabaseAdmin
+      .from("idle_episodes")
+      .update({ ended_at: e.last_seen_at, end_reason: "gap_timeout" })
+      .eq("id", e.id)
+      .is("ended_at", null);
+  }
+  return rows.length;
+}
+
+export type IdleEpisodeWithPlate = {
+  id: string;
+  vehicle_id: string;
+  plate: string;
+  started_at: string;
+  ended_at: string | null;
+  last_seen_at: string;
+  end_reason: string | null;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+/**
+ * Bir tarih aralığında BAŞLAYAN rölanti epizodları, plaka ile (alarmlar listesi).
+ * 1000 satır tavanına karşı sayfalanır. Tablo yoksa (migration 024 uygulanmadıysa)
+ * boş listeye düşer — alarmlar sayfasını asla bozmaz.
+ */
+export async function listIdleEpisodesInRange(
+  startISO: string,
+  endISO: string
+): Promise<IdleEpisodeWithPlate[]> {
+  type Row = Omit<IdleEpisodeWithPlate, "plate">;
+  const { data } = await fetchAllRows<Row>((from, to) =>
+    supabaseAdmin
+      .from("idle_episodes")
+      .select(
+        "id, vehicle_id, started_at, ended_at, last_seen_at, end_reason, latitude, longitude"
+      )
+      .gte("started_at", startISO)
+      .lte("started_at", endISO)
+      .order("started_at", { ascending: false })
       .order("id")
       .range(from, to)
   );

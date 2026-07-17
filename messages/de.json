@@ -89,6 +89,8 @@
     "drawer_speed": "Tempo",
     "drawer_time": "Zeit",
     "drawer_vehicle": "Fahrzeug",
+    "drawer_duration": "Dauer",
+    "ongoing": "läuft noch",
     "drawer_location": "Standort",
     "open_maps": "In Google Maps öffnen",
     "go_vehicle": "Zum Fahrzeug",

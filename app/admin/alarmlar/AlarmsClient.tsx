@@ -18,10 +18,18 @@ import {
   type RevealFilter,
 } from "@/components/ui-v2";
 import { eventTone, EVENT_STRIPE, EVENT_TONE_RANK } from "@/lib/event-ui";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatIdleShort } from "@/lib/format";
 import type { VehicleEventWithPlate } from "@/lib/telemetry";
 import type { AlarmRange } from "./page";
-import { cn } from "@/lib/utils";
+
+/**
+ * Alarm satırı = nokta-olay (vehicle_events) VEYA rölanti epizodu (idle_episodes,
+ * migration 024). Epizod satırları süre taşır (duration_ms) ve açıksa ongoing.
+ */
+export type AlarmRow = VehicleEventWithPlate & {
+  duration_ms?: number | null;
+  ongoing?: boolean;
+};
 
 const EventMiniMap = dynamic(() => import("@/components/admin/EventMiniMap"), {
   ssr: false,
@@ -35,7 +43,7 @@ export function AlarmsClient({
   events,
   range,
 }: {
-  events: VehicleEventWithPlate[];
+  events: AlarmRow[];
   range: AlarmRange;
 }) {
   const t = useTranslations("alarms");
@@ -49,7 +57,16 @@ export function AlarmsClient({
   const [fVehicle, setFVehicle] = useState("");
   const [fType, setFType] = useState("");
   const [fSev, setFSev] = useState("");
-  const [selected, setSelected] = useState<VehicleEventWithPlate | null>(null);
+  const [selected, setSelected] = useState<AlarmRow | null>(null);
+
+  // Rölanti epizodu süresi rozeti (migration 024): "· 25 dk" / açıksa
+  // "· 12 dk (devam ediyor)". Süre epizoddan geliyor (ham gözlemlenen span);
+  // diğer olay tiplerinde gösterilmez.
+  const idleBadge = (e: AlarmRow): string | null => {
+    if (e.event_type !== "idling" || e.duration_ms == null) return null;
+    const d = formatIdleShort(e.duration_ms, locale);
+    return e.ongoing ? `· ${d} (${t("ongoing")})` : `· ${d}`;
+  };
 
   const toneCat = (ty: string) => {
     const tone = eventTone(ty);
@@ -146,7 +163,7 @@ export function AlarmsClient({
     },
   ];
 
-  const columns: Column<VehicleEventWithPlate>[] = [
+  const columns: Column<AlarmRow>[] = [
     {
       key: "plate",
       header: t("col_vehicle"),
@@ -159,7 +176,16 @@ export function AlarmsClient({
     {
       key: "type",
       header: t("col_type"),
-      cell: (e) => <StatusChip tone={eventTone(e.event_type)}>{t(`type.${e.event_type}`)}</StatusChip>,
+      // Rozetin YANINDA süre (migration 024) — chip'in içine gömülmez.
+      cell: (e) => {
+        const badge = idleBadge(e);
+        return (
+          <span className="flex items-center gap-1.5">
+            <StatusChip tone={eventTone(e.event_type)}>{t(`type.${e.event_type}`)}</StatusChip>
+            {badge && <span className="nums text-xs text-muted-foreground">{badge}</span>}
+          </span>
+        );
+      },
       sortable: true, sortValue: (e) => EVENT_TONE_RANK[eventTone(e.event_type)],
     },
     {
@@ -277,7 +303,14 @@ export function AlarmsClient({
               onRowClick={(e) => setSelected(e)}
               stripe={(e) => EVENT_STRIPE[eventTone(e.event_type)]}
               grouping={{
-                getKey: (e) => `${e.vehicle_id}:${e.event_type}`,
+                // idling ARTIK epizod (bir rölanti = tek satır + süre) → storm
+                // grouping'DEN HARİÇ: her idling satırına benzersiz anahtar ver,
+                // asla "×N" altında gruplanmasın. Diğer tipler burst'lerde aynen
+                // gruplanır (ani fren/aşırı hız vb. bozulmaz).
+                getKey: (e) =>
+                  e.event_type === "idling"
+                    ? `idle:${e.id}`
+                    : `${e.vehicle_id}:${e.event_type}`,
                 getTime: (e) => new Date(e.occurred_at).getTime(),
                 windowMs: STORM_WINDOW_MS,
                 renderLabel: (rows) => (
@@ -307,6 +340,15 @@ export function AlarmsClient({
           <div className="space-y-4 text-sm">
             <div><StatusChip tone={eventTone(selected.event_type)}>{t(`type.${selected.event_type}`)}</StatusChip></div>
             <dl className="grid grid-cols-2 gap-3">
+              {selected.event_type === "idling" && selected.duration_ms != null && (
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">{t("drawer_duration")}</dt>
+                  <dd className="nums mt-0.5">
+                    {formatIdleShort(selected.duration_ms, locale)}
+                    {selected.ongoing ? ` (${t("ongoing")})` : ""}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt className="text-xs uppercase tracking-wide text-muted-foreground">{t("drawer_speed")}</dt>
                 <dd className="nums mt-0.5">{SPEED_EVENTS.has(selected.event_type) && selected.speed_kmh !== null ? `${Math.round(selected.speed_kmh)} km/h` : "—"}</dd>

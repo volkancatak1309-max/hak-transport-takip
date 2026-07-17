@@ -14,10 +14,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/UserAvatar";
 import { WorkerDetailClient } from "./WorkerDetailClient";
-import { startOfMonthVienna, startOfTodayVienna, workedMs, kmDiff } from "@/lib/format";
+import {
+  formatDate,
+  startOfMonthVienna,
+  startOfTodayVienna,
+  workedMs,
+  kmDiff,
+} from "@/lib/format";
+import { licenseState, LICENSE_BADGE } from "@/lib/worker-ui";
 import type { WorkerPublic, TimeEntry, DriverLocation } from "@/lib/types";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +38,8 @@ export default async function WorkerDetailPage({
   const t = await getTranslations("workers");
   const tc = await getTranslations("common");
   const tRoute = await getTranslations("route");
+  const ta = await getTranslations("admin");
+  const locale = await getLocale();
 
   const { data: worker } = await supabaseAdmin
     .from("workers")
@@ -129,6 +138,114 @@ export default async function WorkerDetailPage({
               )}
             </div>
           </CardHeader>
+        </Card>
+
+        {/* Personel dosyası (migration 025) — kâğıt formdaki bilgiler artık
+            sistemde. Boş alan "girilmedi" (—): formlar eksik gelebiliyor. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t("profileTitle")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {(
+              [
+                {
+                  title: ta("secPersonal"),
+                  fields: [
+                    {
+                      label: ta("birthDate"),
+                      value: w.birth_date ? formatDate(w.birth_date, locale) : null,
+                    },
+                    { label: ta("ssn"), value: w.social_security_no, nums: true },
+                    { label: ta("email"), value: w.email },
+                    { label: ta("address"), value: w.address },
+                  ],
+                },
+                {
+                  title: ta("secEmployment"),
+                  fields: [
+                    {
+                      label: ta("employmentStart"),
+                      value: w.employment_start
+                        ? formatDate(w.employment_start, locale)
+                        : null,
+                    },
+                    {
+                      label: ta("employmentType"),
+                      value: w.employment_type
+                        ? ta(`employment_${w.employment_type}`)
+                        : null,
+                    },
+                  ],
+                },
+                {
+                  title: ta("secLicense"),
+                  fields: [
+                    { label: ta("licenseNo"), value: w.license_no, nums: true },
+                    {
+                      label: ta("licenseExpiry"),
+                      value: w.license_expiry
+                        ? formatDate(w.license_expiry, locale)
+                        : null,
+                      badge: licenseState(w.license_expiry),
+                    },
+                  ],
+                },
+                {
+                  title: ta("secEmergency"),
+                  fields: [
+                    { label: ta("emergencyName"), value: w.emergency_contact_name },
+                    {
+                      label: ta("emergencyRelation"),
+                      value: w.emergency_contact_relation,
+                    },
+                    {
+                      label: ta("emergencyPhone"),
+                      value: w.emergency_contact_phone,
+                      nums: true,
+                    },
+                  ],
+                },
+              ] as {
+                title: string;
+                fields: {
+                  label: string;
+                  value: string | null;
+                  nums?: boolean;
+                  badge?: ReturnType<typeof licenseState>;
+                }[];
+              }[]
+            ).map((sec) => (
+              <div key={sec.title}>
+                <p className="mb-2 text-[12px] sm:text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
+                  {sec.title}
+                </p>
+                <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+                  {sec.fields.map((f) => (
+                    <div key={f.label} className="flex items-baseline justify-between gap-3 sm:justify-start">
+                      <dt className="w-40 shrink-0 text-sm text-muted-foreground">
+                        {f.label}
+                      </dt>
+                      <dd
+                        className={`text-sm ${f.nums ? "nums " : ""}${f.value ? "" : "text-text-tertiary"}`}
+                      >
+                        {f.value ?? "—"}
+                        {f.badge && (
+                          <span
+                            className={`ml-2 rounded-full px-2 py-0.5 text-[12px] sm:text-[11px] font-semibold ${LICENSE_BADGE[f.badge.state]}`}
+                          >
+                            {f.badge.state === "expired"
+                              ? t("licenseExpired")
+                              : t("licenseExpiring", { days: f.badge.days })}
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            ))}
+          </CardContent>
         </Card>
 
         <WorkerDetailClient

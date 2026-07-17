@@ -49,6 +49,18 @@ export async function createWorkerAction(formData: FormData): Promise<WorkerResu
     plate: formData.get("plate") || null,
     employee_number: formData.get("employee_number") || null,
     is_admin: formData.get("is_admin") === "on",
+    // Personel dosyası (migration 025) — boş string null'a düşer (opsiyonel).
+    birth_date: formData.get("birth_date") || null,
+    email: formData.get("email") || null,
+    address: formData.get("address") || null,
+    social_security_no: formData.get("social_security_no") || null,
+    employment_start: formData.get("employment_start") || null,
+    employment_type: formData.get("employment_type") || null,
+    license_no: formData.get("license_no") || null,
+    license_expiry: formData.get("license_expiry") || null,
+    emergency_contact_name: formData.get("emergency_contact_name") || null,
+    emergency_contact_relation: formData.get("emergency_contact_relation") || null,
+    emergency_contact_phone: formData.get("emergency_contact_phone") || null,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Geçersiz veri" };
@@ -70,16 +82,29 @@ export async function createWorkerAction(formData: FormData): Promise<WorkerResu
       ? parsed.data.employee_number
       : await nextEmployeeNumber();
 
+  const d = parsed.data;
   const { error } = await supabaseAdmin.from("workers").insert({
-    name: parsed.data.name,
+    name: d.name,
     phone,
     pin_hash,
-    plate: parsed.data.plate ?? null,
+    plate: d.plate ?? null,
     employee_number,
-    is_admin: parsed.data.is_admin ?? false,
+    is_admin: d.is_admin ?? false,
     is_active: true,
     // Admin-set PIN is temporary — force the driver to set their own at /pin.
     must_change_pin: true,
+    // Personel dosyası (migration 025).
+    birth_date: d.birth_date ?? null,
+    email: d.email ?? null,
+    address: d.address ?? null,
+    social_security_no: d.social_security_no ?? null,
+    employment_start: d.employment_start ?? null,
+    employment_type: d.employment_type ?? null,
+    license_no: d.license_no ?? null,
+    license_expiry: d.license_expiry ?? null,
+    emergency_contact_name: d.emergency_contact_name ?? null,
+    emergency_contact_relation: d.emergency_contact_relation ?? null,
+    emergency_contact_phone: d.emergency_contact_phone ?? null,
   });
 
   if (error) return { ok: false, error: "Kayıt başarısız: " + error.message };

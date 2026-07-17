@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { toggleActiveAction, resetPinAction } from "../../actions/workers";
 import { formatDate, formatDurationShort } from "@/lib/format";
+import { licenseState, LICENSE_BADGE } from "@/lib/worker-ui";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AddWorkerDialog } from "@/components/admin/AddWorkerDialog";
 import type { WorkerWithStats } from "./page";
@@ -155,6 +156,21 @@ export function WorkersClient({ workers }: Props) {
                               {tc("admin")}
                             </Badge>
                           )}
+                          {/* Ehliyet uyarısı (migration 025): geçmiş = kritik,
+                              60 gün içinde = gold — FleetDtcCard rozet ailesi. */}
+                          {(() => {
+                            const ls = licenseState(w.license_expiry);
+                            if (!ls) return null;
+                            return (
+                              <span
+                                className={`shrink-0 rounded-full px-2 py-0.5 text-[12px] sm:text-[11px] font-semibold ${LICENSE_BADGE[ls.state]}`}
+                              >
+                                {ls.state === "expired"
+                                  ? t("licenseExpired")
+                                  : t("licenseExpiring", { days: ls.days })}
+                              </span>
+                            );
+                          })()}
                         </Link>
                       </TableCell>
                       <TableCell className="nums">{w.phone}</TableCell>

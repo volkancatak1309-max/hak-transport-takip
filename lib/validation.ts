@@ -103,6 +103,14 @@ export const editEntrySchema = z
     { message: "errKmRange", path: ["end_km"] }
   );
 
+// Opsiyonel "YYYY-MM-DD" — boş string null'a çözülür (input type=date boş kalabilir).
+const optionalDate = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "errDate")
+  .optional()
+  .nullable();
+
 export const createWorkerSchema = z.object({
   name: z.string().trim().min(2, "errName").max(100),
   phone: phoneSchema,
@@ -110,6 +118,19 @@ export const createWorkerSchema = z.object({
   plate: z.string().trim().max(20).optional().nullable(),
   employee_number: z.string().trim().max(20).optional().nullable(),
   is_admin: z.coerce.boolean().optional(),
+  // Personel dosyası (migration 025) — HEPSİ opsiyonel: kâğıt formlar eksik
+  // gelebiliyor; zorunlu alanlar yalnız yukarıdaki mevcut üçlü (ad/telefon/PIN).
+  birth_date: optionalDate,
+  email: z.string().trim().email("errEmail").max(120).optional().nullable(),
+  address: z.string().trim().max(200).optional().nullable(),
+  social_security_no: z.string().trim().max(20).optional().nullable(),
+  employment_start: optionalDate,
+  employment_type: z.enum(["full_time", "hourly"]).optional().nullable(),
+  license_no: z.string().trim().max(30).optional().nullable(),
+  license_expiry: optionalDate,
+  emergency_contact_name: z.string().trim().max(100).optional().nullable(),
+  emergency_contact_relation: z.string().trim().max(50).optional().nullable(),
+  emergency_contact_phone: z.string().trim().max(30).optional().nullable(),
 });
 
 export const breakToggleSchema = z.object({

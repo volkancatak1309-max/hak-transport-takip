@@ -14,12 +14,15 @@ import type { ActiveVehicle, VehicleFleet } from "@/lib/types";
  * Rölanti "aşırı" tetik eşiği (Teltonika param 11205, saniye). Cihaz idle.status
  * bayrağını ancak bu süre geçince kaldırır → epizodun started_at'i fiziksel
  * duruştan bu kadar SONRADIR, yani ham span (ended−started) gerçek rölantiyi
- * bu kadar EKSİK sayar. Ekranda süreye eklenir. flespi API'si 11205'i AÇMIYOR
- * ([DOĞRULANDI]: /gw/devices settings yalnız SMS/GPRS/OBD-IO komut ayarları
- * veriyor, senaryo parametreleri değil) → varsayım gömmüyoruz, offset 0 (ham
- * span gösterilir). Filo geneli 11205 teyit edilirse (örn. 300) tek satır burada
- * değişir; DB'ye asla yazılmaz (ham timestamp'ler saklanır). */
-export const IDLE_TRIGGER_S = 0;
+ * bu kadar EKSİK sayar. Ekranda süreye eklenir; DB'ye asla yazılmaz (ham
+ * timestamp'ler saklanır).
+ *
+ * 300 = filoya kendi kurulum komutumuzla basılan değer: 26 cihaza flespi
+ * commands-queue üzerinden "setparam 11200:1;11205:300" toplu uygulandı.
+ * flespi API'si 11205'i geri OKUTMUYOR (/gw/devices settings yalnız SMS/GPRS/
+ * OBD-IO komut ayarlarını veriyor) → tek doğruluk kaynağı bu kurulum komutu.
+ * Cihaz yapılandırması (11205) değişirse BU SABİT DE DEĞİŞMELİ. */
+export const IDLE_TRIGGER_S = 300;
 
 /**
  * Persistence helpers for vehicle-centric GPS telemetry (device_telemetry).

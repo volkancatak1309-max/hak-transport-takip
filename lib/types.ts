@@ -1,3 +1,6 @@
+/** İstihdam türü (migration 025) — personel formundaki "Tam zamanlı / Saatlik". */
+export type EmploymentType = "full_time" | "hourly";
+
 export type Worker = {
   id: string;
   name: string;
@@ -15,6 +18,19 @@ export type Worker = {
   // /pin and changePinAction clears it (migration 019).
   must_change_pin: boolean;
   created_at: string;
+  // Personel dosyası alanları (migration 025) — hepsi opsiyonel; kâğıt formlar
+  // eksik gelebiliyor, boş alan "girilmedi" demektir, hata değil.
+  birth_date: string | null;
+  email: string | null;
+  address: string | null;
+  social_security_no: string | null;
+  employment_start: string | null;
+  employment_type: EmploymentType | null;
+  license_no: string | null;
+  license_expiry: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_relation: string | null;
+  emergency_contact_phone: string | null;
 };
 
 /** Worker fields safe to send to the client — everything EXCEPT pin_hash. */
@@ -28,7 +44,7 @@ export type WorkerPublic = Omit<Worker, "pin_hash">;
  * worker data. Server-only flows that need the hash (login) select it explicitly.
  */
 export const WORKER_PUBLIC_COLUMNS =
-  "id, name, phone, plate, employee_number, telegram_chat_id, telegram_username, telegram_linked_at, telegram_locale, is_admin, is_active, created_at";
+  "id, name, phone, plate, employee_number, telegram_chat_id, telegram_username, telegram_linked_at, telegram_locale, is_admin, is_active, created_at, birth_date, email, address, social_security_no, employment_start, employment_type, license_no, license_expiry, emergency_contact_name, emergency_contact_relation, emergency_contact_phone";
 
 /**
  * Shift-start confirmation (migration 020): 'pending' = auto-started, waiting

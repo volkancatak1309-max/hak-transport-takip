@@ -537,13 +537,18 @@
       "err_imei_taken": "Bu IMEI zaten {plate} aracında kayıtlı",
       "err_device_taken": "Bu cihaz ID zaten {plate} aracında kayıtlı",
       "err_year": "Geçerli bir yıl girin",
-      "err_device": "Geçerli bir cihaz ID girin"
+      "err_device": "Geçerli bir cihaz ID girin",
+      "fleet": "Filo"
     },
     "status": {
       "sevkiyatta": "Sevkiyatta",
       "molada": "Molada",
       "bosta": "Boşta",
       "bakimda": "Bakımda"
+    },
+    "fleet": {
+      "bordo": "Bordo Filo",
+      "mavi": "Mavi Filo"
     },
     "detail": {
       "back": "Araçlar",
@@ -592,6 +597,7 @@
     },
     "filter_status": "Durum",
     "filter_all": "Tümü",
+    "filter_fleet": "Filo",
     "filter_sort": "Sırala",
     "sort_plate": "Plaka",
     "sort_driver": "Şoför",

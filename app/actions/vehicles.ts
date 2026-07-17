@@ -92,7 +92,7 @@ export type VehicleActionResult = {
 };
 
 const VEHICLE_COLS =
-  "id, plate, make, model, year, status, flespi_device_id, imei, assigned_worker_id, inspection_due, insurance_due, notes, created_at";
+  "id, plate, fleet, make, model, year, status, flespi_device_id, imei, assigned_worker_id, inspection_due, insurance_due, notes, created_at";
 
 /** All vehicles, raw columns (admin management list). */
 export async function listVehicles(): Promise<Vehicle[]> {
@@ -111,6 +111,7 @@ function parseVehicle(formData: FormData) {
     model: formData.get("model") || null,
     year: formData.get("year") || null,
     status: formData.get("status"),
+    fleet: formData.get("fleet") || "mavi",
     flespi_device_id: formData.get("flespi_device_id") || null,
     imei: formData.get("imei") || null,
     inspection_due: formData.get("inspection_due") || null,
@@ -178,6 +179,7 @@ export async function createVehicle(
       model: d.model ?? null,
       year: d.year ?? null,
       status: d.status,
+      fleet: d.fleet,
       flespi_device_id: d.flespi_device_id ?? null,
       imei: d.imei ?? null,
       inspection_due: d.inspection_due ?? null,
@@ -219,6 +221,7 @@ export async function updateVehicle(
       model: d.model ?? null,
       year: d.year ?? null,
       status: d.status,
+      fleet: d.fleet,
       flespi_device_id: d.flespi_device_id ?? null,
       imei: d.imei ?? null,
       inspection_due: d.inspection_due ?? null,

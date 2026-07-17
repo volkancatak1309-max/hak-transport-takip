@@ -217,6 +217,8 @@ export const vehicleSchema = z.object({
   model: z.string().trim().max(60).optional().nullable(),
   year: z.coerce.number().int().min(1950, "errYear").max(2100, "errYear").optional().nullable(),
   status: z.enum(["active", "maintenance", "inactive"]),
+  // Filo ayrımı (migration 023) — form her zaman gönderir, varsayılan 'mavi'.
+  fleet: z.enum(["bordo", "mavi"]),
   flespi_device_id: z.coerce
     .number()
     .int()

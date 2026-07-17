@@ -537,13 +537,18 @@
       "err_imei_taken": "Diese IMEI ist bereits bei {plate} registriert",
       "err_device_taken": "Diese Geräte-ID ist bereits bei {plate} registriert",
       "err_year": "Gültiges Baujahr eingeben",
-      "err_device": "Gültige Geräte-ID eingeben"
+      "err_device": "Gültige Geräte-ID eingeben",
+      "fleet": "Flotte"
     },
     "status": {
       "sevkiyatta": "Unterwegs",
       "molada": "Pause",
       "bosta": "Frei",
       "bakimda": "In Wartung"
+    },
+    "fleet": {
+      "bordo": "Bordo-Flotte",
+      "mavi": "Mavi-Flotte"
     },
     "detail": {
       "back": "Fahrzeuge",
@@ -592,6 +597,7 @@
     },
     "filter_status": "Status",
     "filter_all": "Alle",
+    "filter_fleet": "Flotte",
     "filter_sort": "Sortieren",
     "sort_plate": "Kennzeichen",
     "sort_driver": "Fahrer",

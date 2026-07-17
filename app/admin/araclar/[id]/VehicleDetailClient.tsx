@@ -42,7 +42,7 @@ import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/UserAvatar";
 import { HelpTip } from "@/components/help/HelpTip";
 import { PenaltiesSection } from "./PenaltiesSection";
-import { STATUS_STYLE } from "@/lib/vehicle-ui";
+import { STATUS_STYLE, FLEET_STYLE } from "@/lib/vehicle-ui";
 import { formatDate, formatTime, formatRelative, formatHoursMinutes } from "@/lib/format";
 import type { VehicleDetail } from "@/lib/vehicles";
 import type { TelemetryRow, VehicleEventRow, VehicleDtcRow } from "@/lib/telemetry";
@@ -126,9 +126,21 @@ export function VehicleDetailClient({
             </p>
           )}
         </div>
+        {/* Filo rozeti (migration 023) + canlı durum çipi. Kamyon ikonu bilinçli:
+            filo (kimlik) çipi ile durum çipi aynı geometride — ikon olmadan
+            "Mavi Filo" ve "Sevkiyatta" özdeş sky pill olarak taranamazdı. */}
         <span
           className={cn(
             "ml-auto inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium",
+            FLEET_STYLE[v.fleet].chip
+          )}
+        >
+          <Truck className="size-3.5 shrink-0" aria-hidden />
+          {t(`fleet.${v.fleet}`)}
+        </span>
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium",
             st.chip
           )}
         >

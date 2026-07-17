@@ -33,8 +33,8 @@ import {
 } from "@/components/ui/dialog";
 import { HelpTip } from "@/components/help/HelpTip";
 import { RevealFilterRow } from "@/components/ui-v2";
-import { STATUS_STYLE } from "@/lib/vehicle-ui";
-import type { VehicleWithStatus, VehicleBaseStatus } from "@/lib/types";
+import { STATUS_STYLE, FLEET_STYLE } from "@/lib/vehicle-ui";
+import type { VehicleWithStatus, VehicleBaseStatus, VehicleFleet } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   createVehicle,
@@ -48,6 +48,7 @@ const STATUSES: VehicleBaseStatus[] = ["active", "maintenance", "inactive"];
 /** Filtre bandı seçenekleri — Reveal'ın canlı-harita araç panelindeki tek satır
  *  "Order by …" dropdown deseni (REVEAL-CLONE-SPEC E). */
 type LiveFilter = "all" | "sevkiyatta" | "molada" | "bosta" | "bakimda";
+type FleetFilter = "all" | VehicleFleet;
 type SortKey = "plate" | "driver" | "status";
 
 export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
@@ -56,6 +57,7 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [liveFilter, setLiveFilter] = useState<LiveFilter>("all");
+  const [fleetFilter, setFleetFilter] = useState<FleetFilter>("all");
   const [sort, setSort] = useState<SortKey>("plate");
 
   // Create/edit dialog state.
@@ -66,6 +68,7 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
   const [model, setModel] = useState("");
   const [year, setYear] = useState("");
   const [status, setStatus] = useState<VehicleBaseStatus>("active");
+  const [fleet, setFleet] = useState<VehicleFleet>("mavi");
   const [deviceId, setDeviceId] = useState("");
   const [imei, setImei] = useState("");
   const [inspectionDue, setInspectionDue] = useState("");
@@ -82,6 +85,7 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
     const s = q.trim().toLocaleLowerCase("tr");
     let out = vehicles;
     if (liveFilter !== "all") out = out.filter((v) => v.live_status === liveFilter);
+    if (fleetFilter !== "all") out = out.filter((v) => v.fleet === fleetFilter);
     if (s) {
       out = out.filter(
         (v) =>
@@ -113,7 +117,7 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
       }
       return coll.compare(a.plate, b.plate);
     });
-  }, [vehicles, q, liveFilter, sort]);
+  }, [vehicles, q, liveFilter, fleetFilter, sort]);
 
   function openNew() {
     setEditing(null);
@@ -122,6 +126,7 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
     setModel("");
     setYear("");
     setStatus("active");
+    setFleet("mavi");
     setDeviceId("");
     setImei("");
     setInspectionDue("");
@@ -135,6 +140,7 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
     setModel(v.model ?? "");
     setYear(v.year ? String(v.year) : "");
     setStatus(v.status);
+    setFleet(v.fleet);
     setDeviceId(v.flespi_device_id != null ? String(v.flespi_device_id) : "");
     setImei(v.imei ?? "");
     setInspectionDue(v.inspection_due ?? "");
@@ -176,6 +182,7 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
     fd.set("model", model.trim());
     fd.set("year", year.trim());
     fd.set("status", status);
+    fd.set("fleet", fleet);
     fd.set("flespi_device_id", deviceId.trim());
     fd.set("imei", imei.trim());
     fd.set("inspection_due", inspectionDue);
@@ -243,6 +250,16 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
             ],
           },
           {
+            label: t("filter_fleet"),
+            value: fleetFilter,
+            onChange: (v) => setFleetFilter(v as FleetFilter),
+            options: [
+              { value: "all", label: t("filter_all") },
+              { value: "bordo", label: t("fleet.bordo") },
+              { value: "mavi", label: t("fleet.mavi") },
+            ],
+          },
+          {
             label: t("filter_sort"),
             value: sort,
             onChange: (v) => setSort(v as SortKey),
@@ -292,13 +309,26 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
                     href={`/admin/araclar/${v.id}`}
                     className="flex min-w-0 flex-1 items-center gap-3"
                   >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-surface-2 text-muted-foreground">
+                    <span
+                      className={cn(
+                        "flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-surface-2",
+                        FLEET_STYLE[v.fleet].text
+                      )}
+                    >
                       <Truck className="size-[18px]" />
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="nums truncate text-sm font-semibold uppercase tracking-wide">
                           {v.plate}
+                        </span>
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                            FLEET_STYLE[v.fleet].chip
+                          )}
+                        >
+                          {t(`fleet.${v.fleet}`)}
                         </span>
                         <span className="hidden truncate text-xs text-text-tertiary sm:inline">
                           {[v.make, v.model].filter(Boolean).join(" ")}
@@ -439,6 +469,21 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>{tm("fleet")}</Label>
+              <Select value={fleet} onValueChange={(v) => v && setFleet(v as VehicleFleet)}>
+                <SelectTrigger className="h-11">
+                  <SelectValue>
+                    {((v: unknown) => t(`fleet.${String(v)}`)) as never}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mavi">{t("fleet.mavi")}</SelectItem>
+                  <SelectItem value="bordo">{t("fleet.bordo")}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-1.5">

@@ -11,6 +11,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { HelpTip } from "@/components/help/HelpTip";
 import { SubTabs } from "@/components/ui-v2";
 import { formatRelative, formatTime, formatDurationShort } from "@/lib/format";
+import { FLEET_STYLE } from "@/lib/vehicle-ui";
 import { cn } from "@/lib/utils";
 import { VEHICLE_FRESH_MS, type ActiveDriver, type ActiveVehicle } from "@/lib/types";
 
@@ -45,6 +46,7 @@ export function LiveTrackingClient({
   serverNow: number;
 }) {
   const t = useTranslations("map");
+  const tf = useTranslations("vehicles.fleet");
   const tAdmin = useTranslations("admin");
   const locale = useLocale();
   const router = useRouter();
@@ -167,6 +169,18 @@ export function LiveTrackingClient({
                           <div className="flex items-center gap-2">
                             <span className="nums truncate text-sm font-semibold uppercase tracking-wide">
                               {v.plate}
+                            </span>
+                            {/* Filo rozeti (migration 023) — metinli, /admin/araclar
+                                ile aynı desen; renk tek kanal olmasın (WCAG 1.4.1).
+                                Kontak noktası sky anlamını korur (klon spec G4),
+                                filo kimliği bu çipte. */}
+                            <span
+                              className={cn(
+                                "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                                FLEET_STYLE[v.fleet].chip
+                              )}
+                            >
+                              {tf(v.fleet)}
                             </span>
                             <span
                               className={cn(

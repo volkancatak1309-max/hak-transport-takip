@@ -2,7 +2,7 @@ import "server-only";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { fetchLastKnownDtc } from "@/lib/flespi";
 import type { FlespiDtcSnapshot, FlespiEvent, FlespiPoint } from "@/lib/flespi";
-import type { ActiveVehicle } from "@/lib/types";
+import type { ActiveVehicle, VehicleFleet } from "@/lib/types";
 
 /**
  * Persistence helpers for vehicle-centric GPS telemetry (device_telemetry).
@@ -382,9 +382,13 @@ export async function listLatestVehiclePositions(): Promise<ActiveVehicle[]> {
   // (flespi_device_id NULL kalır), onları elemek haritadan düşürürdü.
   const { data: vData } = await supabaseAdmin
     .from("vehicles")
-    .select("id, plate")
+    .select("id, plate, fleet")
     .or("flespi_device_id.not.is.null,imei.not.is.null");
-  const vehicles = (vData ?? []) as { id: string; plate: string }[];
+  const vehicles = (vData ?? []) as {
+    id: string;
+    plate: string;
+    fleet: VehicleFleet;
+  }[];
   if (vehicles.length === 0) return [];
 
   const out = await Promise.all(
@@ -411,6 +415,7 @@ export async function listLatestVehiclePositions(): Promise<ActiveVehicle[]> {
       return {
         vehicle_id: v.id,
         plate: v.plate,
+        fleet: v.fleet,
         latitude: r.latitude,
         longitude: r.longitude,
         speed_kmh: r.speed_kmh,

@@ -15,8 +15,14 @@ import { VectorBaseLayer } from "@/components/VectorBaseLayer";
 import { useLocale, useTranslations } from "next-intl";
 import "leaflet/dist/leaflet.css";
 import { UserAvatar } from "@/components/UserAvatar";
+import { FLEET_STYLE } from "@/lib/vehicle-ui";
 import { formatRelative, formatTime } from "@/lib/format";
-import { VEHICLE_FRESH_MS, type ActiveDriver, type ActiveVehicle } from "@/lib/types";
+import {
+  VEHICLE_FRESH_MS,
+  type ActiveDriver,
+  type ActiveVehicle,
+  type VehicleFleet,
+} from "@/lib/types";
 
 const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
 
@@ -51,19 +57,24 @@ function makeIcon(name: string, variant: "active" | "warn"): L.DivIcon {
 }
 
 // Vehicle (hardware-tracker) marker — a plate pill, visually distinct from the
-// round driver pin (which is mavi). Color encodes ignition WITHOUT green/red
-// (project rule): bordo when the engine is on, muted when off/unknown. Bordo vs
-// the drivers' mavi keeps the two map layers instantly distinguishable.
-// Stale (no fix within VEHICLE_FRESH_MS) overrides ignition: the pill goes
-// faded gray — the vehicle stays on the map, its age readable at a glance.
+// round driver pin. Pill color = FLEET (migration 023): bordo filo = claret,
+// mavi filo = sky — working or idle, the fleet reads at a glance; ignition
+// lives in the popup. Freshness still wins: stale (no fix within
+// VEHICLE_FRESH_MS) renders faded gray — the vehicle stays on the map, its age
+// readable at a glance. The mavi pill uses dark text: white on sky is ~3.2:1,
+// under AA for 11px text (claret is dark enough for white).
 function makeVehicleIcon(
   plate: string,
-  ignitionOn: boolean | null,
+  fleet: VehicleFleet,
   stale: boolean
 ): L.DivIcon {
-  const on = ignitionOn === true && !stale;
-  const bg = on ? "var(--accent-claret)" : "var(--muted)";
-  const fg = on ? "#fff" : "var(--muted-foreground)";
+  const bordo = fleet === "bordo";
+  const bg = stale
+    ? "var(--muted)"
+    : bordo
+    ? "var(--accent-claret)"
+    : "var(--accent-sky)";
+  const fg = stale ? "var(--muted-foreground)" : bordo ? "#fff" : "#0c1626";
   const dim = stale ? "opacity:.55;filter:grayscale(1);" : "";
   return L.divIcon({
     className: "hak-veh-wrap",
@@ -105,6 +116,7 @@ export function FleetMap({
   vehicles?: ActiveVehicle[];
 }) {
   const t = useTranslations("map");
+  const tf = useTranslations("vehicles.fleet");
   const locale = useLocale();
   const now = Date.now();
 
@@ -124,6 +136,7 @@ export function FleetMap({
   }, [drivers, vehicles]);
 
   return (
+    <>
     <MapContainer
       center={AUSTRIA_CENTER}
       zoom={7}
@@ -188,7 +201,7 @@ export function FleetMap({
           <Marker
             key={`veh-${v.vehicle_id}`}
             position={[v.latitude, v.longitude]}
-            icon={makeVehicleIcon(v.plate, v.ignition_on, stale)}
+            icon={makeVehicleIcon(v.plate, v.fleet, stale)}
           >
             {stale && (
               <Tooltip direction="top" offset={[0, -14]}>
@@ -232,5 +245,29 @@ export function FleetMap({
         );
       })}
     </MapContainer>
+    {/* Filo lejantı — iki filo rengi + adı (migration 023). Haritayı saran
+        kapsayıcı relative (LiveTrackingClient); leaflet pane'lerinin üstünde
+        (z-1000), tıklamayı harita alır. Yüzey glass-pop: bg-background koyu
+        temada TRANSPARENT (bilinen Splash tuzağı) — açık harita üstünde küçük
+        metin ancak yoğun dolguyla okunur. Örnekler DİKDÖRTGEN + açık kenarlı:
+        yuvarlak sky nokta şoför pinleriyle karışırdı, kenarsız bordo dolgu ise
+        koyu zeminde 1.3:1 ile kaybolurdu (WCAG 1.4.11). */}
+    <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] space-y-1 rounded-[10px] glass-pop px-3 py-2 text-xs font-medium">
+      <span className="flex items-center gap-2">
+        <span
+          aria-hidden
+          className={`h-3 w-5 shrink-0 rounded-[4px] border border-white/45 ${FLEET_STYLE.bordo.dot}`}
+        />
+        {tf("bordo")}
+      </span>
+      <span className="flex items-center gap-2">
+        <span
+          aria-hidden
+          className={`h-3 w-5 shrink-0 rounded-[4px] border border-white/45 ${FLEET_STYLE.mavi.dot}`}
+        />
+        {tf("mavi")}
+      </span>
+    </div>
+    </>
   );
 }

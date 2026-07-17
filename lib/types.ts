@@ -121,6 +121,10 @@ export type DriverReport = {
 
 export type VehicleBaseStatus = "active" | "maintenance" | "inactive";
 
+/** Fleet membership (migration 023): two named fleets — bordo & mavi — color
+ *  the vehicle everywhere (map pill, list badge, filters), working or idle. */
+export type VehicleFleet = "bordo" | "mavi";
+
 export type Vehicle = {
   id: string;
   plate: string;
@@ -139,6 +143,8 @@ export type Vehicle = {
   imei: string | null;
   // Device-reported VIN (migration 021), backfilled from telemetry — nullable.
   vin: string | null;
+  // Fleet separation (migration 023) — not null, defaults to 'mavi'.
+  fleet: VehicleFleet;
 };
 
 /** Live operational status — derived, never stored. NO green/red. */
@@ -218,6 +224,7 @@ export type ActiveDriver = {
 export type ActiveVehicle = {
   vehicle_id: string;
   plate: string;
+  fleet: VehicleFleet;
   latitude: number;
   longitude: number;
   speed_kmh: number | null;

@@ -298,12 +298,23 @@ export const FleetMap = memo(function FleetMap({
                     : t("last_update", { time: formatTime(v.recorded_at, locale) })}
                 </div>
               </div>
-              <Link
-                href={`/admin/araclar/${v.vehicle_id}`}
-                className="inline-block text-xs font-medium text-primary hover:underline"
-              >
-                {t("view_detail")} →
-              </Link>
+              {/* İki giriş aynı satırda, eşit görsel ağırlıkta. whitespace-nowrap
+                  + justify-between: popup içeriğe göre büyür (Leaflet maxWidth 300)
+                  ama satır kırılmaz, mobilde de taşmaz. */}
+              <div className="flex items-center justify-between gap-3 border-t border-border pt-1.5">
+                <Link
+                  href={`/admin/araclar/${v.vehicle_id}`}
+                  className="whitespace-nowrap text-xs font-medium text-primary hover:underline"
+                >
+                  {t("view_detail")} →
+                </Link>
+                <Link
+                  href={`/admin/araclar/${v.vehicle_id}/rota`}
+                  className="whitespace-nowrap text-xs font-medium text-primary hover:underline"
+                >
+                  {t("route_history")} →
+                </Link>
+              </div>
             </div>
           </Popup>
         </Marker>

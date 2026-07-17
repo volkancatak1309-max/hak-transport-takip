@@ -13,7 +13,6 @@ import {
   Truck,
   FileText,
   History,
-  MapPinned,
   Radio,
   Compass,
   Navigation,
@@ -148,6 +147,21 @@ export function VehicleDetailClient({
           {t(`status.${st.labelKey}`)}
         </span>
         <HelpTip tkey="veh_status" className="ml-1" />
+      </div>
+
+      {/* Rota geçmişi — panelin en değerli ekranlarından biri; birincil aksiyon
+          olarak başlığın hemen altında (eskiden sayfa dibindeydi, ulaşmak için
+          ta aşağı inmek gerekiyordu). Mevcut btn-primary stili kullanılır. */}
+      <div className="flex items-center gap-2">
+        <Button
+          size="lg"
+          render={<Link href={`/admin/araclar/${v.id}/rota`} />}
+          className="w-full sm:w-auto"
+        >
+          <History className="size-4" />
+          {td("route_history")}
+        </Button>
+        <HelpTip tkey="veh_route" />
       </div>
 
       {/* Live telemetry — device (FMC003) hardware GPS. Single most-recent fix;
@@ -611,20 +625,6 @@ export function VehicleDetailClient({
 
       {/* Penalties (Strafe) */}
       <PenaltiesSection vehicleId={v.id} penalties={detail.penalties} />
-
-      {/* Route history / replay */}
-      <div className="glass flex items-center justify-between rounded-[16px] px-4 py-3.5">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <MapPinned className="size-4 text-accent-sky" />
-          {td("route_history")}
-          <HelpTip tkey="veh_route" />
-        </div>
-        <Button variant="outline" size="sm" render={<Link href={`/admin/araclar/${v.id}/rota`} />}>
-          <History className="size-4" />
-          {td("route_history")}
-        </Button>
-      </div>
-
     </div>
   );
 }

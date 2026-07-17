@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -13,7 +13,18 @@ import { SubTabs } from "@/components/ui-v2";
 import { formatRelative, formatTime, formatDurationShort } from "@/lib/format";
 import { FLEET_STYLE } from "@/lib/vehicle-ui";
 import { cn } from "@/lib/utils";
-import { VEHICLE_FRESH_MS, type ActiveDriver, type ActiveVehicle } from "@/lib/types";
+import {
+  VEHICLE_FRESH_MS,
+  type ActiveDriver,
+  type ActiveVehicle,
+  type VehicleFleet,
+} from "@/lib/types";
+
+/** Filo kimlik rengi (CSS var) — vurgulanan satırın sol aksan çubuğu için. */
+const FLEET_VAR: Record<VehicleFleet, string> = {
+  bordo: "var(--accent-claret)",
+  mavi: "var(--accent-sky)",
+};
 
 const FleetMap = dynamic(
   () => import("@/components/FleetMap").then((m) => m.FleetMap),
@@ -54,6 +65,34 @@ export function LiveTrackingClient({
   // Reveal canlı-harita panelinin sekmeleri (kişi / araç ikonları). Araçlar
   // haritada görünüyordu ama listelenmiyordu — Reveal paneli ikisini de listeler.
   const [panelTab, setPanelTab] = useState<"drivers" | "vehicles">("drivers");
+
+  // Liste ↔ harita hover senkronu. `source` yönü ayırır: 'map'ten gelen hover
+  // listeyi araç sekmesine çevirip satıra kaydırır; 'list'ten gelende satır zaten
+  // görünür (kaydırma yok). Callback'ler STABİL (useCallback[]) — FleetMap memo'lu,
+  // referans değişirse marker'lar yeniden kurulurdu.
+  const [hovered, setHovered] = useState<{ id: string; source: "list" | "map" } | null>(null);
+  const rowRefs = useRef<Map<string, HTMLLIElement | null>>(new Map());
+  const hoverFromList = useCallback(
+    (id: string | null) => setHovered(id ? { id, source: "list" } : null),
+    []
+  );
+  // Marker mouseover'dan çağrılır (event handler — efekt değil): araç sekmesine
+  // geçişi burada yaparız ki setState-in-effect olmasın; ikisi tek batch'te,
+  // satırlar aynı render'da DOM'a biner, aşağıdaki efekt de ona kaydırır.
+  const hoverFromMap = useCallback((id: string | null) => {
+    if (id) setPanelTab("vehicles");
+    setHovered(id ? { id, source: "map" } : null);
+  }, []);
+
+  // Ters yön: haritadaki işaretçiye hover → o satırı görünür alana kaydır.
+  // (Sekme geçişi hoverFromMap'te yapıldı; burada satır zaten mount.)
+  useEffect(() => {
+    if (hovered?.source !== "map") return;
+    const el = rowRefs.current.get(hovered.id);
+    if (!el) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+  }, [hovered]);
 
   // Soft auto-refresh of server data + a 1s tick for live durations.
   useEffect(() => {
@@ -121,7 +160,12 @@ export function LiveTrackingClient({
             </span>
           </div>
           <div className="relative h-[58vh] min-h-[420px] w-full">
-            <FleetMap drivers={drivers} vehicles={vehicles} />
+            <FleetMap
+              drivers={drivers}
+              vehicles={vehicles}
+              hoveredVehicleId={hovered?.id ?? null}
+              onHoverVehicle={hoverFromMap}
+            />
             {drivers.length === 0 && vehicles.length === 0 && (
               <div className="pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center">
                 <span className="rounded-[10px] border border-border bg-background/90 px-4 py-2 text-sm text-muted-foreground elevate">
@@ -153,14 +197,26 @@ export function LiveTrackingClient({
               <ul className="divide-y divide-border">
                 {sortedVehicles.map((v) => {
                   const fresh = isFresh(v);
+                  const isHi = hovered?.id === v.vehicle_id;
                   return (
-                    <li key={v.vehicle_id}>
+                    <li
+                      key={v.vehicle_id}
+                      ref={(el) => {
+                        rowRefs.current.set(v.vehicle_id, el);
+                      }}
+                    >
                       <Link
                         href={`/admin/araclar/${v.vehicle_id}`}
+                        onMouseEnter={() => hoverFromList(v.vehicle_id)}
+                        onMouseLeave={() => hoverFromList(null)}
+                        onFocus={() => hoverFromList(v.vehicle_id)}
+                        onBlur={() => hoverFromList(null)}
                         className={cn(
                           "group flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-surface-2",
-                          !fresh && "opacity-60 hover:opacity-100"
+                          isHi && "bg-surface-2",
+                          !fresh && (isHi ? "opacity-100" : "opacity-60 hover:opacity-100")
                         )}
+                        style={isHi ? { boxShadow: `inset 3px 0 0 ${FLEET_VAR[v.fleet]}` } : undefined}
                       >
                         <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-surface-2 text-muted-foreground">
                           <Truck className="size-[18px]" />

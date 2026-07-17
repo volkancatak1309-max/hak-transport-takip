@@ -482,6 +482,76 @@ body {
   0% { transform: scale(0.9); opacity: 0.55; }
   70%, 100% { transform: scale(1.6); opacity: 0; }
 }
+
+/* ── Araç işaretçisi (plaka pili) — filo rengi + tazelik + liste↔harita senkronu.
+   Hover/focus vurgusu React re-render'ı DEĞİL; HoverSync `.is-focused` sınıfını
+   imperatif toggle'lar (19 marker'da tek DOM sınıf değişimi, marker yeniden
+   kurulmaz). Lift İÇ pile uygulanır — Leaflet'in hit-box'ı (120×26 root) sabit
+   kalır, hover jitter olmaz. Filo rengi ve bayat soluk tonu korunur. */
+.hak-veh-wrap {
+  transition: opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.hak-veh-wrap.veh-bordo {
+  --veh-ring: var(--accent-claret);
+}
+.hak-veh-wrap.veh-mavi {
+  --veh-ring: var(--accent-sky);
+}
+/* Tazelik: bayat = kendi filosunun soluk tonu (gri DEĞİL). */
+.hak-veh-wrap.is-stale {
+  opacity: 0.55;
+  filter: saturate(0.4);
+}
+.hak-veh-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 2px solid var(--card, #fff);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font: 600 11px/1.4 system-ui, sans-serif;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+  transition:
+    transform 200ms cubic-bezier(0.25, 0.1, 0.25, 1),
+    box-shadow 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+/* Bir araç odaktayken diğer TÜM işaretçiler soluklaşır (spotlight); odaktaki
+   hafifçe yükselir + filo renginde yumuşak halka (box-shadow, sürekli). */
+.leaflet-container.hak-map-syncing .hak-veh-wrap:not(.is-focused),
+.leaflet-container.hak-map-syncing .hak-marker-wrap:not(.is-focused) {
+  opacity: 0.45;
+}
+.hak-veh-wrap.is-focused .hak-veh-pill {
+  transform: translateY(-4px);
+  box-shadow:
+    0 10px 26px rgb(0 0 0 / 0.55),
+    0 0 0 3px color-mix(in srgb, var(--veh-ring) 60%, transparent);
+}
+/* Tek nabız halkası — sürekli yanıp sönme YOK (iteration 1). Biter, opacity 0'da
+   kalır; sürekli halkayı yukarıdaki box-shadow taşır. */
+.hak-veh-wrap.is-focused .hak-veh-pill::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 10px;
+  border: 2px solid var(--veh-ring);
+  opacity: 0;
+  pointer-events: none;
+  animation: hak-veh-ring 520ms cubic-bezier(0.25, 0.1, 0.25, 1) 1;
+}
+@keyframes hak-veh-ring {
+  0% { transform: scale(0.8); opacity: 0.75; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+/* reduced-motion: hareket + nabız kapanır; opaklık düşüşü + statik halka kalır. */
+@media (prefers-reduced-motion: reduce) {
+  .hak-veh-wrap.is-focused .hak-veh-pill {
+    transform: none;
+  }
+}
+
 .hak-route-pin {
   width: 18px;
   height: 18px;

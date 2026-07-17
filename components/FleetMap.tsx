@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import {
   MapContainer,
@@ -61,10 +61,11 @@ function makeIcon(name: string, variant: "active" | "warn"): L.DivIcon {
 // mavi filo = sky — working or idle, the fleet reads at a glance; ignition
 // lives in the popup. Freshness dims but NEVER hides the fleet: stale (no fix
 // within VEHICLE_FRESH_MS) keeps the fleet color at low saturation + opacity
-// (pale bordo / pale mavi, not gray) with the "son görülme" tooltip — the
-// vehicle stays on the map, age AND fleet both readable at a glance. The mavi
-// pill uses dark text: white on sky is ~3.2:1, under AA for 11px text (claret
-// is dark enough for white).
+// (pale bordo / pale mavi, not gray) via `.is-stale`, with the "son görülme"
+// tooltip — the vehicle stays on the map, age AND fleet both readable at a
+// glance. The mavi pill uses dark text: white on sky is ~3.2:1, under AA for
+// 11px text (claret is dark enough for white). Layout/hover styling lives in
+// globals.css (.hak-veh-pill); only the dynamic fleet colors are inline.
 function makeVehicleIcon(
   plate: string,
   fleet: VehicleFleet,
@@ -73,15 +74,11 @@ function makeVehicleIcon(
   const bordo = fleet === "bordo";
   const bg = bordo ? "var(--accent-claret)" : "var(--accent-sky)";
   const fg = bordo ? "#fff" : "#0c1626";
-  const dim = stale ? "opacity:.55;filter:saturate(.4);" : "";
   return L.divIcon({
-    className: "hak-veh-wrap",
+    className: `hak-veh-wrap veh-${fleet}${stale ? " is-stale" : ""}`,
     html:
-      `<div style="display:flex;justify-content:center;align-items:center;${dim}">` +
-      `<div style="display:inline-flex;align-items:center;gap:4px;background:${bg};` +
-      `color:${fg};border:2px solid var(--card,#fff);border-radius:6px;` +
-      `padding:1px 6px;font:600 11px/1.4 system-ui,sans-serif;white-space:nowrap;` +
-      `box-shadow:0 1px 4px rgba(0,0,0,.35)">` +
+      `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%">` +
+      `<div class="hak-veh-pill" style="background:${bg};color:${fg}">` +
       `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" ` +
       `stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
       `<path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/>` +
@@ -106,17 +103,75 @@ function FitBounds({ points }: { points: [number, number][] }) {
   return null;
 }
 
-export function FleetMap({
+/**
+ * List ↔ map hover sync. Driven imperatively so a hover NEVER re-renders the
+ * markers (perf rule: 19 markers must not rebuild on hover). On `hoveredVehicleId`
+ * change it toggles `.is-focused` / `hak-map-syncing` classes on the existing
+ * marker DOM and, only when the focused marker is off-screen, softly `panTo`s to
+ * it (zoom unchanged). `vehicles` is a dep so focus re-applies after a 30 s data
+ * refresh swaps the marker elements (setIcon). Reduced-motion → instant pan.
+ */
+function HoverSync({
+  hoveredVehicleId,
+  markers,
+  vehicles,
+}: {
+  hoveredVehicleId: string | null;
+  markers: React.RefObject<Map<string, L.Marker>>;
+  vehicles: ActiveVehicle[];
+}) {
+  const map = useMap();
+  useEffect(() => {
+    const reg = markers.current;
+    if (!reg) return;
+    const container = map.getContainer();
+    let target: L.LatLng | null = null;
+    reg.forEach((m, id) => {
+      const focused = id === hoveredVehicleId;
+      const el = m.getElement();
+      if (el) el.classList.toggle("is-focused", focused);
+      m.setZIndexOffset(focused ? 1000 : 0);
+      if (focused) target = m.getLatLng();
+    });
+    if (hoveredVehicleId && target) {
+      container.classList.add("hak-map-syncing");
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      // pad(-0.12) shrinks the viewport so near-edge markers also pan into clear
+      // view. panTo keeps zoom; low easeLinearity = a gentle glide.
+      if (!map.getBounds().pad(-0.12).contains(target)) {
+        map.panTo(target, { animate: !reduce, duration: 0.6, easeLinearity: 0.2 });
+      }
+    } else {
+      container.classList.remove("hak-map-syncing");
+    }
+  }, [hoveredVehicleId, map, markers, vehicles]);
+  return null;
+}
+
+export const FleetMap = memo(function FleetMap({
   drivers,
   vehicles = [],
+  hoveredVehicleId = null,
+  onHoverVehicle,
 }: {
   drivers: ActiveDriver[];
   vehicles?: ActiveVehicle[];
+  /** Vehicle currently hovered/focused in the side list (or null). */
+  hoveredVehicleId?: string | null;
+  /** Fired on marker hover so the list can highlight + scroll the row. */
+  onHoverVehicle?: (id: string | null) => void;
 }) {
   const t = useTranslations("map");
   const tf = useTranslations("vehicles.fleet");
   const locale = useLocale();
-  const now = Date.now();
+
+  // Registry of live Leaflet markers by vehicle id — HoverSync reads it to focus
+  // a marker without a React re-render.
+  const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const emitHover = useCallback(
+    (id: string | null) => onHoverVehicle?.(id),
+    [onHoverVehicle]
+  );
 
   // FitBounds spans both layers so vehicles are framed too, not just drivers.
   // Age cap ONLY for the frame: weeks-dead trackers (sold vehicle, ripped-out
@@ -133,149 +188,182 @@ export function FleetMap({
     ];
   }, [drivers, vehicles]);
 
+  // Markers are memoized on the DATA (not on hover) so a hover never rebuilds
+  // them; `now`/stale are read inside the memo, so they refresh with the 30 s
+  // data poll, not on every render (a hover leaves these element refs stable →
+  // React bails out, only HoverSync runs).
+  const routeLines = useMemo(
+    () =>
+      drivers
+        .filter((d) => d.route.length > 1)
+        .map((d) => (
+          <Polyline
+            key={`route-${d.worker_id}`}
+            positions={d.route}
+            pathOptions={{ color: "var(--accent-sky)", weight: 3, opacity: 0.55 }}
+          />
+        )),
+    [drivers]
+  );
+
+  const driverMarkers = useMemo(() => {
+    const now = Date.now();
+    return drivers.map((d) => {
+      const activeMs = now - new Date(d.shift_started_at).getTime();
+      const minutesActive = Math.max(0, Math.floor(activeMs / 60000));
+      const variant = activeMs > NINE_HOURS_MS ? "warn" : "active";
+      return (
+        <Marker
+          key={d.worker_id}
+          position={[d.latitude, d.longitude]}
+          icon={makeIcon(d.name, variant)}
+        >
+          <Popup>
+            <div className="min-w-[180px] space-y-2">
+              <div className="flex items-center gap-2">
+                <UserAvatar name={d.name} size="sm" />
+                <div>
+                  <div className="font-semibold text-sm leading-tight">{d.name}</div>
+                  <div className="text-xs text-muted-foreground nums">
+                    {d.plate ?? "—"}
+                  </div>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                <div>{t("active_since", { minutes: minutesActive })}</div>
+                <div>{t("last_update", { time: formatTime(d.recorded_at, locale) })}</div>
+              </div>
+              <Link
+                href={`/admin/workers/${d.worker_id}`}
+                className="inline-block text-xs font-medium text-primary hover:underline"
+              >
+                {t("view_detail")} →
+              </Link>
+            </div>
+          </Popup>
+        </Marker>
+      );
+    });
+  }, [drivers, t, locale]);
+
+  // Vehicle layer (hardware GPS) — separate from the driver layer above. Every
+  // device vehicle is here (no recency window); stale ones render as their pale
+  // fleet tone with a "son görülme" tooltip instead of dropping off. Each marker
+  // registers its Leaflet instance + emits hover so the list stays in sync.
+  const vehicleMarkers = useMemo(() => {
+    const now = Date.now();
+    return vehicles.map((v) => {
+      const stale = now - new Date(v.recorded_at).getTime() >= VEHICLE_FRESH_MS;
+      return (
+        <Marker
+          key={`veh-${v.vehicle_id}`}
+          position={[v.latitude, v.longitude]}
+          icon={makeVehicleIcon(v.plate, v.fleet, stale)}
+          ref={(m) => {
+            if (m) markersRef.current.set(v.vehicle_id, m);
+            else markersRef.current.delete(v.vehicle_id);
+          }}
+          eventHandlers={{
+            mouseover: () => emitHover(v.vehicle_id),
+            mouseout: () => emitHover(null),
+          }}
+        >
+          {stale && (
+            <Tooltip direction="top" offset={[0, -14]}>
+              {t("last_seen", { ago: formatRelative(v.recorded_at, locale) })}
+            </Tooltip>
+          )}
+          <Popup>
+            <div className="min-w-[180px] space-y-2">
+              <div className="font-semibold text-sm leading-tight nums">{v.plate}</div>
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                <div>
+                  {t("vehicle_speed")}:{" "}
+                  <span className="nums">
+                    {v.speed_kmh != null ? `${Math.round(v.speed_kmh)} km/h` : "—"}
+                  </span>
+                </div>
+                {/* Bayatken kontak durumu BİLİNMİYOR — son bilinen "açık"
+                    göstermek soluk ikonla çelişir, uydurma olur: "—". */}
+                <div>
+                  {stale || v.ignition_on == null
+                    ? "—"
+                    : v.ignition_on
+                    ? t("ignition_on")
+                    : t("ignition_off")}
+                </div>
+                <div>
+                  {stale
+                    ? t("last_seen", { ago: formatRelative(v.recorded_at, locale) })
+                    : t("last_update", { time: formatTime(v.recorded_at, locale) })}
+                </div>
+              </div>
+              <Link
+                href={`/admin/araclar/${v.vehicle_id}`}
+                className="inline-block text-xs font-medium text-primary hover:underline"
+              >
+                {t("view_detail")} →
+              </Link>
+            </div>
+          </Popup>
+        </Marker>
+      );
+    });
+  }, [vehicles, emitHover, t, locale]);
+
   return (
     <>
-    <MapContainer
-      center={AUSTRIA_CENTER}
-      zoom={7}
-      scrollWheelZoom
-      className="h-full w-full"
-      style={{ background: "var(--muted)" }}
-    >
-      <VectorBaseLayer />
-      <FitBounds points={points} />
-      {drivers.map(
-        (d) =>
-          d.route.length > 1 && (
-            <Polyline
-              key={`route-${d.worker_id}`}
-              positions={d.route}
-              pathOptions={{ color: "var(--accent-sky)", weight: 3, opacity: 0.55 }}
-            />
-          )
-      )}
-      {drivers.map((d) => {
-        const activeMs = now - new Date(d.shift_started_at).getTime();
-        const minutesActive = Math.max(0, Math.floor(activeMs / 60000));
-        const variant = activeMs > NINE_HOURS_MS ? "warn" : "active";
-        return (
-          <Marker
-            key={d.worker_id}
-            position={[d.latitude, d.longitude]}
-            icon={makeIcon(d.name, variant)}
-          >
-            <Popup>
-              <div className="min-w-[180px] space-y-2">
-                <div className="flex items-center gap-2">
-                  <UserAvatar name={d.name} size="sm" />
-                  <div>
-                    <div className="font-semibold text-sm leading-tight">{d.name}</div>
-                    <div className="text-xs text-muted-foreground nums">
-                      {d.plate ?? "—"}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  <div>{t("active_since", { minutes: minutesActive })}</div>
-                  <div>{t("last_update", { time: formatTime(d.recorded_at, locale) })}</div>
-                </div>
-                <Link
-                  href={`/admin/workers/${d.worker_id}`}
-                  className="inline-block text-xs font-medium text-primary hover:underline"
-                >
-                  {t("view_detail")} →
-                </Link>
-              </div>
-            </Popup>
-          </Marker>
-        );
-      })}
-      {/* Vehicle layer (hardware GPS) — separate from the driver layer above.
-          Every device vehicle is here (no recency window); stale ones render
-          faded gray with a "son görülme" tooltip instead of dropping off. */}
-      {vehicles.map((v) => {
-        const stale = now - new Date(v.recorded_at).getTime() >= VEHICLE_FRESH_MS;
-        return (
-          <Marker
-            key={`veh-${v.vehicle_id}`}
-            position={[v.latitude, v.longitude]}
-            icon={makeVehicleIcon(v.plate, v.fleet, stale)}
-          >
-            {stale && (
-              <Tooltip direction="top" offset={[0, -14]}>
-                {t("last_seen", { ago: formatRelative(v.recorded_at, locale) })}
-              </Tooltip>
-            )}
-            <Popup>
-              <div className="min-w-[180px] space-y-2">
-                <div className="font-semibold text-sm leading-tight nums">{v.plate}</div>
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  <div>
-                    {t("vehicle_speed")}:{" "}
-                    <span className="nums">
-                      {v.speed_kmh != null ? `${Math.round(v.speed_kmh)} km/h` : "—"}
-                    </span>
-                  </div>
-                  {/* Bayatken kontak durumu BİLİNMİYOR — son bilinen "açık"
-                      göstermek gri ikonla çelişir, uydurma olur: "—". */}
-                  <div>
-                    {stale || v.ignition_on == null
-                      ? "—"
-                      : v.ignition_on
-                      ? t("ignition_on")
-                      : t("ignition_off")}
-                  </div>
-                  <div>
-                    {stale
-                      ? t("last_seen", { ago: formatRelative(v.recorded_at, locale) })
-                      : t("last_update", { time: formatTime(v.recorded_at, locale) })}
-                  </div>
-                </div>
-                <Link
-                  href={`/admin/araclar/${v.vehicle_id}`}
-                  className="inline-block text-xs font-medium text-primary hover:underline"
-                >
-                  {t("view_detail")} →
-                </Link>
-              </div>
-            </Popup>
-          </Marker>
-        );
-      })}
-    </MapContainer>
-    {/* Filo lejantı — iki filo rengi + adı (migration 023). Haritayı saran
-        kapsayıcı relative (LiveTrackingClient); leaflet pane'lerinin üstünde
-        (z-1000), tıklamayı harita alır. Yüzey glass-pop: bg-background koyu
-        temada TRANSPARENT (bilinen Splash tuzağı) — açık harita üstünde küçük
-        metin ancak yoğun dolguyla okunur. Örnekler DİKDÖRTGEN + açık kenarlı:
-        yuvarlak sky nokta şoför pinleriyle karışırdı, kenarsız bordo dolgu ise
-        koyu zeminde 1.3:1 ile kaybolurdu (WCAG 1.4.11). */}
-    <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] space-y-1 rounded-[10px] glass-pop px-3 py-2 text-xs font-medium">
-      <span className="flex items-center gap-2">
-        <span
-          aria-hidden
-          className={`h-3 w-5 shrink-0 rounded-[4px] border border-white/45 ${FLEET_STYLE.bordo.dot}`}
+      <MapContainer
+        center={AUSTRIA_CENTER}
+        zoom={7}
+        scrollWheelZoom
+        className="h-full w-full"
+        style={{ background: "var(--muted)" }}
+      >
+        <VectorBaseLayer />
+        <FitBounds points={points} />
+        <HoverSync
+          hoveredVehicleId={hoveredVehicleId}
+          markers={markersRef}
+          vehicles={vehicles}
         />
-        {tf("bordo")}
-      </span>
-      <span className="flex items-center gap-2">
-        <span
-          aria-hidden
-          className={`h-3 w-5 shrink-0 rounded-[4px] border border-white/45 ${FLEET_STYLE.mavi.dot}`}
-        />
-        {tf("mavi")}
-      </span>
-      {/* Bayat işaretçi soluk filo tonunda (gri DEĞİL) — örnek, pildeki
-          saturate filtresinin aynısıyla çizilir; opaklık kısılmaz ki koyu
-          glass zemininde örnek kaybolmasın (1.4.11 dersi). */}
-      <span className="flex items-center gap-2">
-        <span aria-hidden className="flex shrink-0 items-center gap-1" style={{ filter: "saturate(.4)" }}>
-          <span className={`h-3 w-5 rounded-[4px] border border-white/45 ${FLEET_STYLE.bordo.dot}`} />
-          <span className={`h-3 w-5 rounded-[4px] border border-white/45 ${FLEET_STYLE.mavi.dot}`} />
+        {routeLines}
+        {driverMarkers}
+        {vehicleMarkers}
+      </MapContainer>
+      {/* Filo lejantı — iki filo rengi + adı (migration 023). Haritayı saran
+          kapsayıcı relative (LiveTrackingClient); leaflet pane'lerinin üstünde
+          (z-1000), tıklamayı harita alır. Yüzey glass-pop: bg-background koyu
+          temada TRANSPARENT (bilinen Splash tuzağı) — açık harita üstünde küçük
+          metin ancak yoğun dolguyla okunur. Örnekler DİKDÖRTGEN + açık kenarlı:
+          yuvarlak sky nokta şoför pinleriyle karışırdı, kenarsız bordo dolgu ise
+          koyu zeminde 1.3:1 ile kaybolurdu (WCAG 1.4.11). */}
+      <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] space-y-1 rounded-[10px] glass-pop px-3 py-2 text-xs font-medium">
+        <span className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className={`h-3 w-5 shrink-0 rounded-[4px] border border-white/45 ${FLEET_STYLE.bordo.dot}`}
+          />
+          {tf("bordo")}
         </span>
-        {t("legend_stale", { min: VEHICLE_FRESH_MS / 60000 })}
-      </span>
-    </div>
+        <span className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className={`h-3 w-5 shrink-0 rounded-[4px] border border-white/45 ${FLEET_STYLE.mavi.dot}`}
+          />
+          {tf("mavi")}
+        </span>
+        {/* Bayat işaretçi soluk filo tonunda (gri DEĞİL) — örnek, pildeki
+            saturate filtresinin aynısıyla çizilir; opaklık kısılmaz ki koyu
+            glass zemininde örnek kaybolmasın (1.4.11 dersi). */}
+        <span className="flex items-center gap-2">
+          <span aria-hidden className="flex shrink-0 items-center gap-1" style={{ filter: "saturate(.4)" }}>
+            <span className={`h-3 w-5 rounded-[4px] border border-white/45 ${FLEET_STYLE.bordo.dot}`} />
+            <span className={`h-3 w-5 rounded-[4px] border border-white/45 ${FLEET_STYLE.mavi.dot}`} />
+          </span>
+          {t("legend_stale", { min: VEHICLE_FRESH_MS / 60000 })}
+        </span>
+      </div>
     </>
   );
-}
+});

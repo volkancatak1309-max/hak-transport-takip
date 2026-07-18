@@ -319,12 +319,16 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="nums truncate text-sm font-semibold uppercase tracking-wide">
+                        {/* Plaka bu listenin EN kritik bilgisi — HİÇBİR ekranda
+                            kırpılmaz: truncate yok, whitespace-nowrap ile tek satır. */}
+                        <span className="nums whitespace-nowrap text-sm font-semibold uppercase tracking-wide">
                           {v.plate}
                         </span>
+                        {/* Filo rozeti masaüstünde plakayla aynı satırda; mobilde
+                            plakaya yer açmak için alttaki meta satırına iner. */}
                         <span
                           className={cn(
-                            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                            "hidden shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium sm:inline",
                             FLEET_STYLE[v.fleet].chip
                           )}
                         >
@@ -338,6 +342,31 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
                             GPS
                           </span>
                         )}
+                      </div>
+                      {/* Mobil meta satırı — filo + durum rozeti plakanın ALTINA
+                          iner; masaüstünde gizli (rozetler sağ kümede kalır). */}
+                      <div className="mt-1 flex flex-wrap items-center gap-2 sm:hidden">
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                            FLEET_STYLE[v.fleet].chip
+                          )}
+                        >
+                          {t(`fleet.${v.fleet}`)}
+                        </span>
+                        <span
+                          className={cn(
+                            "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+                            st.chip
+                          )}
+                        >
+                          {st.live ? (
+                            <span className="live-dot" />
+                          ) : (
+                            <span className={cn("size-1.5 rounded-full", st.dot)} />
+                          )}
+                          {t(`status.${st.labelKey}`)}
+                        </span>
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                         <UserRound className="size-3.5 shrink-0 text-text-tertiary" />
@@ -354,36 +383,42 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
                       </div>
                     </div>
                   </Link>
-                  <span
-                    className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-                      st.chip
-                    )}
-                  >
-                    {st.live ? (
-                      <span className="live-dot" />
-                    ) : (
-                      <span className={cn("size-1.5 rounded-full", st.dot)} />
-                    )}
-                    {t(`status.${st.labelKey}`)}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={tm("edit")}
-                    onClick={() => openEdit(v)}
-                  >
-                    <Pencil className="size-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={tm("delete")}
-                    className="text-muted-foreground hover:text-destructive"
-                    onClick={() => remove(v)}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
+                  {/* Durum rozeti + düzenle/sil — masaüstüne özel. Mobilde satırdan
+                      kalkar: satır zaten detaya gidiyor (>), düzenleme/silme
+                      masaüstünden yapılır; böylece plakaya yer açılır. Sarmalayıcı
+                      gap-3 → masaüstü aralıkları BİREBİR korunur. */}
+                  <div className="hidden items-center gap-3 sm:flex">
+                    <span
+                      className={cn(
+                        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+                        st.chip
+                      )}
+                    >
+                      {st.live ? (
+                        <span className="live-dot" />
+                      ) : (
+                        <span className={cn("size-1.5 rounded-full", st.dot)} />
+                      )}
+                      {t(`status.${st.labelKey}`)}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={tm("edit")}
+                      onClick={() => openEdit(v)}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={tm("delete")}
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => remove(v)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
                   {/* Dokunma hedefi 24x24 (WCAG 2.2 AA 2.5.8) — ikon 16px kalıyor,
                       tıklanabilir alan büyüyor. */}
                   <Link

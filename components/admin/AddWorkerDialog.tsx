@@ -80,6 +80,9 @@ export function AddWorkerDialog({ children }: Props) {
 
   function handleCreate(formData: FormData) {
     if (employmentType !== "none") formData.set("employment_type", employmentType);
+    // Saha standardı: PIN boş bırakıldıysa geçici varsayılan 123456 (sunucu da
+    // aynısını uygular; must_change_pin ile ilk girişte zorunlu değişim).
+    if (!String(formData.get("pin") ?? "").trim()) formData.set("pin", "123456");
     startTransition(async () => {
       const res = await createWorkerAction(formData);
       if (res.ok) {
@@ -118,7 +121,7 @@ export function AddWorkerDialog({ children }: Props) {
                 inputMode="numeric"
                 pattern="\d{6}"
                 maxLength={6}
-                required
+                placeholder="123456"
                 className="h-11 tracking-widest"
               />
             </div>

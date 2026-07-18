@@ -20,14 +20,24 @@ export function isWeakPin(pin: string): boolean {
   return WEAK_PIN_PATTERNS.has(pin);
 }
 
-// New PINs (create worker / reset) must be 6 digits — 4 digits (10k keyspace)
-// is brute-forceable — AND not trivially weak: a 6-digit keyspace only helps
-// if the value itself isn't guessable. Used by createWorkerSchema, the reset
-// generator and changePinSchema.
+// New PINs must be 6 digits — 4 digits (10k keyspace) is brute-forceable — AND
+// not trivially weak: a 6-digit keyspace only helps if the value itself isn't
+// guessable. This strict rule is used verbatim by changePinSchema (the forced
+// PIN-change screen). createWorkerSchema uses a create-time VARIANT that also
+// whitelists the sanctioned temp default (see DEFAULT_TEMP_PIN below); the reset
+// generator (randomPin) applies the same non-weak rule via isWeakPin directly.
 export const pinSchema = z
   .string()
   .regex(/^\d{6}$/, "errPin")
   .refine((p) => !isWeakPin(p), "errPinWeak");
+
+// Saha standardı: yeni şoför OLUŞTURMA akışı geçici PIN 123456 ile başlar;
+// must_change_pin=true → sürücü ilk girişte zorunlu değiştirir. isWeakPin bu değeri
+// ZAYIF sayar (ardışık artan) — bilerek: sürücü onu KENDİ kalıcı PIN'i yapamaz
+// (changePinSchema → pinSchema hâlâ reddeder). Yalnızca OLUŞTURMADA
+// (createWorkerSchema) sanctioned geçici değer olarak izinlidir. (PIN sıfırlama
+// AYRI: resetPinAction → randomPin() güçlü rastgele üretir, 123456 DEĞİL.)
+export const DEFAULT_TEMP_PIN = "123456";
 
 // Login is more lenient DURING the transition so workers whose PIN is still the
 // old 4-digit one are not locked out before an admin resets them to 6 digits.
@@ -114,7 +124,13 @@ const optionalDate = z
 export const createWorkerSchema = z.object({
   name: z.string().trim().min(2, "errName").max(100),
   phone: phoneSchema,
-  pin: pinSchema,
+  // Geçici PIN: strong pinSchema 123456'yı reddederdi; oluşturmada bu tek
+  // sanctioned geçici değere izin ver (must_change_pin sürücüyü değişime zorlar,
+  // changePinSchema hâlâ reddeder). Diğer zayıflar (000000, 654321…) yasak kalır.
+  pin: z
+    .string()
+    .regex(/^\d{6}$/, "errPin")
+    .refine((p) => p === DEFAULT_TEMP_PIN || !isWeakPin(p), "errPinWeak"),
   plate: z.string().trim().max(20).optional().nullable(),
   employee_number: z.string().trim().max(20).optional().nullable(),
   is_admin: z.coerce.boolean().optional(),

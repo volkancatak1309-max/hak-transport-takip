@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
-import { createWorkerSchema, isWeakPin } from "@/lib/validation";
+import { createWorkerSchema, isWeakPin, DEFAULT_TEMP_PIN } from "@/lib/validation";
 
 export type WorkerResult = { ok: boolean; error?: string; newPin?: string };
 
@@ -42,10 +42,16 @@ async function nextEmployeeNumber(): Promise<string> {
 export async function createWorkerAction(formData: FormData): Promise<WorkerResult> {
   await requireAdmin();
 
+  // Saha standardı: PIN alanı boş bırakıldıysa geçici varsayılan (DEFAULT_TEMP_PIN
+  // = 123456). Sunucu tek doğruluk kaynağı — istemci boşluğu doldurmasa da garanti
+  // burada; must_change_pin=true zaten ilk girişte değişimi zorunlu kılıyor.
+  const rawPin = (formData.get("pin") as string | null)?.trim();
+  const pin = rawPin && rawPin.length > 0 ? rawPin : DEFAULT_TEMP_PIN;
+
   const parsed = createWorkerSchema.safeParse({
     name: formData.get("name"),
     phone: formData.get("phone"),
-    pin: formData.get("pin"),
+    pin,
     plate: formData.get("plate") || null,
     employee_number: formData.get("employee_number") || null,
     is_admin: formData.get("is_admin") === "on",

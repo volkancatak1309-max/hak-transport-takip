@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -66,33 +66,11 @@ export function LiveTrackingClient({
   // haritada görünüyordu ama listelenmiyordu — Reveal paneli ikisini de listeler.
   const [panelTab, setPanelTab] = useState<"drivers" | "vehicles">("drivers");
 
-  // Liste ↔ harita hover senkronu. `source` yönü ayırır: 'map'ten gelen hover
-  // listeyi araç sekmesine çevirip satıra kaydırır; 'list'ten gelende satır zaten
-  // görünür (kaydırma yok). Callback'ler STABİL (useCallback[]) — FleetMap memo'lu,
-  // referans değişirse marker'lar yeniden kurulurdu.
-  const [hovered, setHovered] = useState<{ id: string; source: "list" | "map" } | null>(null);
-  const rowRefs = useRef<Map<string, HTMLLIElement | null>>(new Map());
-  const hoverFromList = useCallback(
-    (id: string | null) => setHovered(id ? { id, source: "list" } : null),
-    []
-  );
-  // Marker mouseover'dan çağrılır (event handler — efekt değil): araç sekmesine
-  // geçişi burada yaparız ki setState-in-effect olmasın; ikisi tek batch'te,
-  // satırlar aynı render'da DOM'a biner, aşağıdaki efekt de ona kaydırır.
-  const hoverFromMap = useCallback((id: string | null) => {
-    if (id) setPanelTab("vehicles");
-    setHovered(id ? { id, source: "map" } : null);
-  }, []);
-
-  // Ters yön: haritadaki işaretçiye hover → o satırı görünür alana kaydır.
-  // (Sekme geçişi hoverFromMap'te yapıldı; burada satır zaten mount.)
-  useEffect(() => {
-    if (hovered?.source !== "map") return;
-    const el = rowRefs.current.get(hovered.id);
-    if (!el) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
-  }, [hovered]);
+  // Liste → harita hover senkronu (TEK YÖN). Liste satırına hover/focus o aracın
+  // işaretçisini haritada öne çıkarır (HoverSync `.is-focused` + gerekirse panTo).
+  // TERS YÖN KALDIRILDI: marker'a hover artık listeyi ne vurgular ne kaydırır —
+  // sayfa sürekli oynuyordu (Volkan geri bildirimi). `hovered` = vurgulu araç id.
+  const [hovered, setHovered] = useState<string | null>(null);
 
   // Soft auto-refresh of server data + a 1s tick for live durations.
   useEffect(() => {
@@ -163,8 +141,7 @@ export function LiveTrackingClient({
             <FleetMap
               drivers={drivers}
               vehicles={vehicles}
-              hoveredVehicleId={hovered?.id ?? null}
-              onHoverVehicle={hoverFromMap}
+              hoveredVehicleId={hovered}
             />
             {drivers.length === 0 && vehicles.length === 0 && (
               <div className="pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center">
@@ -197,20 +174,15 @@ export function LiveTrackingClient({
               <ul className="divide-y divide-border">
                 {sortedVehicles.map((v) => {
                   const fresh = isFresh(v);
-                  const isHi = hovered?.id === v.vehicle_id;
+                  const isHi = hovered === v.vehicle_id;
                   return (
-                    <li
-                      key={v.vehicle_id}
-                      ref={(el) => {
-                        rowRefs.current.set(v.vehicle_id, el);
-                      }}
-                    >
+                    <li key={v.vehicle_id}>
                       <Link
                         href={`/admin/araclar/${v.vehicle_id}`}
-                        onMouseEnter={() => hoverFromList(v.vehicle_id)}
-                        onMouseLeave={() => hoverFromList(null)}
-                        onFocus={() => hoverFromList(v.vehicle_id)}
-                        onBlur={() => hoverFromList(null)}
+                        onMouseEnter={() => setHovered(v.vehicle_id)}
+                        onMouseLeave={() => setHovered(null)}
+                        onFocus={() => setHovered(v.vehicle_id)}
+                        onBlur={() => setHovered(null)}
                         className={cn(
                           "group flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-surface-2",
                           isHi && "bg-surface-2",

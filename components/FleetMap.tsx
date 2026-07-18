@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import {
   MapContainer,
@@ -152,14 +152,11 @@ export const FleetMap = memo(function FleetMap({
   drivers,
   vehicles = [],
   hoveredVehicleId = null,
-  onHoverVehicle,
 }: {
   drivers: ActiveDriver[];
   vehicles?: ActiveVehicle[];
   /** Vehicle currently hovered/focused in the side list (or null). */
   hoveredVehicleId?: string | null;
-  /** Fired on marker hover so the list can highlight + scroll the row. */
-  onHoverVehicle?: (id: string | null) => void;
 }) {
   const t = useTranslations("map");
   const tf = useTranslations("vehicles.fleet");
@@ -168,10 +165,6 @@ export const FleetMap = memo(function FleetMap({
   // Registry of live Leaflet markers by vehicle id — HoverSync reads it to focus
   // a marker without a React re-render.
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
-  const emitHover = useCallback(
-    (id: string | null) => onHoverVehicle?.(id),
-    [onHoverVehicle]
-  );
 
   // FitBounds spans both layers so vehicles are framed too, not just drivers.
   // Age cap ONLY for the frame: weeks-dead trackers (sold vehicle, ripped-out
@@ -249,7 +242,8 @@ export const FleetMap = memo(function FleetMap({
   // Vehicle layer (hardware GPS) — separate from the driver layer above. Every
   // device vehicle is here (no recency window); stale ones render as their pale
   // fleet tone with a "son görülme" tooltip instead of dropping off. Each marker
-  // registers its Leaflet instance + emits hover so the list stays in sync.
+  // registers its Leaflet instance so HoverSync can focus it when the matching
+  // list row is hovered (list → map only; marker hover no longer drives the list).
   const vehicleMarkers = useMemo(() => {
     const now = Date.now();
     return vehicles.map((v) => {
@@ -262,10 +256,6 @@ export const FleetMap = memo(function FleetMap({
           ref={(m) => {
             if (m) markersRef.current.set(v.vehicle_id, m);
             else markersRef.current.delete(v.vehicle_id);
-          }}
-          eventHandlers={{
-            mouseover: () => emitHover(v.vehicle_id),
-            mouseout: () => emitHover(null),
           }}
         >
           {stale && (
@@ -320,7 +310,7 @@ export const FleetMap = memo(function FleetMap({
         </Marker>
       );
     });
-  }, [vehicles, emitHover, t, locale]);
+  }, [vehicles, t, locale]);
 
   return (
     <>

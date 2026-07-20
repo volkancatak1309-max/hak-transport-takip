@@ -19,13 +19,14 @@ import {
 } from "lucide-react";
 import {
   endShiftAction,
+  startShiftManualAction,
   addBreakMinutesAction,
   startBreakAction,
   updateStartKmAction,
 } from "../actions/shift";
 import { addPackageAction, undoPackageAction } from "../actions/driver-panel";
 import { formatDuration, formatTime, workedMs } from "@/lib/format";
-import type { TimeEntry } from "@/lib/types";
+import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +74,7 @@ type AssignedVehicle = {
   plate: string;
   make: string | null;
   model: string | null;
+  status: VehicleBaseStatus;
 };
 
 type Props = {
@@ -291,6 +293,10 @@ export function PanelClient({
       return t("errKmHigh", { diff, max });
     }
     if (e === "errKmRange") return t("errKmRange");
+    if (e === "no_vehicle") return t("v2WaitNoVehicle");
+    if (e === "vehicle_unavailable") return t("v2StartVehicleMaintenance");
+    if (e === "vehicle_busy") return t("v2StartVehicleBusy");
+    if (e === "inactive_worker") return t("v2StartInactiveWorker");
     return e;
   }
 
@@ -312,6 +318,43 @@ export function PanelClient({
         setKmEditOpen(false);
         router.refresh();
       } else toast.error(mapErr(r.error));
+    });
+  }
+
+  /**
+   * Manuel vardiya başlatma. Kontak sinyali gecikirse/gelmezse şoför kendi
+   * başlatır; sunucu satırı auto-shift'le aynı biçimde yazar, çift açık vardiya
+   * hem uygulama guard'ı hem uq_time_entries_one_open ile engellidir.
+   * Offline kuyruğuna GİRMEZ: başlangıç km'sini sunucu telemetriden çözüyor,
+   * istemci onu bilemez.
+   */
+  function handleManualStart() {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      toast.error(t("v2StartOffline"));
+      return;
+    }
+    startTransition(async () => {
+      let r;
+      try {
+        r = await startShiftManualAction();
+      } catch {
+        // navigator.onLine "şebeke var" der ama depoda/kapalı otoparkta istek
+        // yolda ölebilir. try/catch olmadan reddedilen promise transition'dan
+        // kaçar ve panel hata ekranına düşerdi. Vardiya sunucuda açılmış OLABİLİR
+        // → tazeleyip şoföre gerçek durumu gösteriyoruz.
+        toast.error(t("v2StartNetworkErr"));
+        router.refresh();
+        return;
+      }
+      if (r.ok) {
+        toast.success(t("shiftStarted"));
+        router.refresh();
+      } else {
+        toast.error(mapErr(r.error));
+        // "active" = kontak cron'u aynı anda açtı; ekran bekleme kartında
+        // kalmasın, gerçek aktif vardiyaya geçsin.
+        if (r.error === "active") router.refresh();
+      }
     });
   }
 
@@ -461,7 +504,8 @@ export function PanelClient({
           </div>
         </>
       ) : (
-        /* Bekleme ekranı: manuel başlatma yok — kontak vardiyayı başlatır. */
+        /* Bekleme ekranı: kontak vardiyayı otomatik başlatır; aracı atanmış
+           şoför beklemek istemezse elle de başlatabilir. */
         <Card>
           <CardContent className="space-y-5 py-10 text-center">
             <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-accent-sky/12 text-accent-sky pulse-soft">
@@ -485,6 +529,36 @@ export function PanelClient({
               <div className="mx-auto flex max-w-xs items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-left text-sm text-accent-gold">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                 {t("v2WaitNoVehicle")}
+              </div>
+            )}
+
+            {/* Aracı atanmamış şoförde buton çıkmaz — yukarıdaki uyarı kalır.
+                Aracı bakımdaysa buton yerine SEBEBİ yazılır; yoksa şoför
+                "ekran bozuk" sanıp bekler. */}
+            {assignedVehicle && assignedVehicle.status !== "active" && (
+              <div className="mx-auto flex max-w-xs items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-left text-sm text-accent-gold">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                {t("v2StartVehicleMaintenance")}
+              </div>
+            )}
+            {assignedVehicle && assignedVehicle.status === "active" && (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={handleManualStart}
+                  disabled={pending}
+                  className="btn-primary flex h-24 w-full items-center justify-center gap-4 rounded-2xl text-xl font-bold tracking-wide text-primary-foreground shadow-lg transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.98] disabled:opacity-60"
+                >
+                  {pending ? (
+                    <Loader2 className="size-8 animate-spin" aria-hidden />
+                  ) : (
+                    <PlayCircle className="size-8" aria-hidden />
+                  )}
+                  {t("v2StartShift")}
+                </button>
+                <p className="mx-auto max-w-xs text-xs text-muted-foreground">
+                  {t("v2StartHint")}
+                </p>
               </div>
             )}
           </CardContent>

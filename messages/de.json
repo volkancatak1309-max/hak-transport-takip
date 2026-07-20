@@ -542,7 +542,12 @@
       "err_device_taken": "Diese Geräte-ID ist bereits bei {plate} registriert",
       "err_year": "Gültiges Baujahr eingeben",
       "err_device": "Gültige Geräte-ID eingeben",
-      "fleet": "Flotte"
+      "err_driver": "Ungültige Fahrerauswahl",
+      "fleet": "Flotte",
+      "assigned_driver": "Zugewiesener Fahrer",
+      "assigned_driver_none": "— Kein Fahrer —",
+      "assigned_driver_passive": "inaktiv",
+      "assigned_driver_hint": "Der Fahrer sieht dieses Fahrzeug in seiner App und die Schicht startet bei Zündung mit diesem Fahrzeug. Ein Fahrer kann nur einem Fahrzeug zugewiesen sein."
     },
     "status": {
       "sevkiyatta": "Unterwegs",
@@ -782,7 +787,14 @@
     "v2ReportPackage": "Beschädigtes Paket",
     "v2ReportOther": "Sonstiges",
     "v2ReportSent": "Meldung gesendet",
-    "v2ReportErr": "Meldung fehlgeschlagen"
+    "v2ReportErr": "Meldung fehlgeschlagen",
+    "v2StartShift": "SCHICHT STARTEN",
+    "v2StartHint": "Wenn du nicht warten willst, starte sie manuell.",
+    "v2StartOffline": "Zum Starten der Schicht ist Internet erforderlich",
+    "v2StartNetworkErr": "Verbindung unterbrochen. Deine Schicht läuft möglicherweise schon — prüfe den Bildschirm.",
+    "v2StartVehicleMaintenance": "Dein Fahrzeug ist in Wartung. Bitte wende dich an die Verwaltung.",
+    "v2StartVehicleBusy": "Für dieses Fahrzeug ist noch eine Schicht offen. Bitte wende dich an die Verwaltung.",
+    "v2StartInactiveWorker": "Dein Konto ist deaktiviert. Bitte wende dich an die Verwaltung."
   },
   "history": {
     "title": "Schichtverlauf",

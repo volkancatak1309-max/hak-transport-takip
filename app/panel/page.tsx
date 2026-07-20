@@ -8,7 +8,7 @@ import {
   viennaDayKey,
 } from "@/lib/format";
 import { getAssignments } from "@/app/actions/assignments";
-import type { TimeEntry } from "@/lib/types";
+import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -57,17 +57,26 @@ export default async function PanelPage() {
   };
 
   // İş 1 — bekleme ekranı: şoförün atandığı araç (kontak bu aracı izler).
+  // Şoför↔araç ilişkisinin TEK kaynağı vehicles.assigned_worker_id'dir;
+  // workers.plate yalnızca eski kayıtlar için tutulan bir aynadır.
+  // status da okunur: bakımdaki araçta manuel başlatma butonu çıkmamalı
+  // (auto-shift de yalnız "active" araçta vardiya açar).
   const { data: veh } = await supabaseAdmin
     .from("vehicles")
-    .select("id, plate, make, model")
+    .select("id, plate, make, model, status")
     .eq("assigned_worker_id", session.worker_id!)
     .neq("status", "inactive")
     .order("plate")
     .limit(1)
     .maybeSingle();
   const assignedVehicle =
-    (veh as { id: string; plate: string; make: string | null; model: string | null } | null) ??
-    null;
+    (veh as {
+      id: string;
+      plate: string;
+      make: string | null;
+      model: string | null;
+      status: VehicleBaseStatus;
+    } | null) ?? null;
 
   const myAssignments = await getAssignments({ mine: true });
   const todayKey = viennaDayKey(new Date());

@@ -12,6 +12,8 @@ import {
   MAX_COUNT,
 } from "@/lib/validation";
 import { workedMs, formatDurationShort, formatTime } from "@/lib/format";
+import { latestVehicleTelemetry } from "@/lib/telemetry";
+import { resolveStartKm } from "@/lib/auto-shift";
 import { sendTelegramMessage } from "@/lib/telegram";
 import {
   shiftSummaryMessage,
@@ -122,6 +124,113 @@ export async function startShiftAction(formData: FormData): Promise<ShiftResult>
   await notifyAdminsShiftStarted(
     session.name ?? "—",
     shiftPlate ?? "—",
+    startedIso
+  );
+
+  revalidatePath("/panel");
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+/**
+ * Manuel vardiya başlatma (şoför paneli bekleme ekranı).
+ *
+ * Kontak sinyali gecikirse ya da hiç gelmezse şoför vardiyayı kendi başlatır.
+ * Araç ilişkisinin TEK kaynağı vehicles.assigned_worker_id'dir — şoför araç
+ * seçmez, atanmış aracıyla açar. Yazılan satır lib/auto-shift.ts'in yazdığıyla
+ * aynı kolon setine sahiptir; farklar bilinçli:
+ *   • auto_started=false  → auto-shift bu vardiyayı ASLA otomatik kapatmaz
+ *     (auto-shift.ts: `if (!vehicleShift || !vehicleShift.auto_started) continue`);
+ *     başlatan bitirir.
+ *   • confirmation_status="confirmed" → başlatma zaten şoförün kendi eylemi,
+ *     bir saniye sonra "VARDİYAYI ONAYLA" kartını göstermek anlamsız olurdu.
+ * vehicle_id HER ZAMAN doldurulur: auto-shift açık vardiyaları hem worker'a hem
+ * araca göre indeksler; boş bırakmak kontak açılınca ikinci satır riskidir.
+ */
+export async function startShiftManualAction(): Promise<ShiftResult> {
+  const session = await requireWorker();
+
+  // 0) Çalışan hâlâ aktif mi? requireWorker BUNU KAPSAMAZ: is_active yalnız
+  //    girişte bir kez bakılıyor (app/actions/auth.ts) ve oturum çerezi 30 gün
+  //    yaşıyor. İşten ayrılan şoförün telefonu aksi hâlde ay sonuna kadar
+  //    vardiya açabilirdi. auto-shift aynı kontrolü yapıyor (w.is_active).
+  const { data: me } = await supabaseAdmin
+    .from("workers")
+    .select("is_active")
+    .eq("id", session.worker_id!)
+    .maybeSingle();
+  if (!me || me.is_active !== true) return { ok: false, error: "inactive_worker" };
+
+  // 1) Atanmış araç — panel/page.tsx ile aynı sorgu. "active" katılığı
+  //    auto-shift ile aynı: bakımdaki araçla vardiya elle de açılmaz.
+  const { data: veh } = await supabaseAdmin
+    .from("vehicles")
+    .select("id, plate, status")
+    .eq("assigned_worker_id", session.worker_id!)
+    .neq("status", "inactive")
+    .order("plate")
+    .limit(1)
+    .maybeSingle();
+  if (!veh) return { ok: false, error: "no_vehicle" };
+  if ((veh.status as string) !== "active") {
+    return { ok: false, error: "vehicle_unavailable" };
+  }
+
+  // 2) Çift açık vardiya guard'ı (startShiftAction ile aynı). DB tarafında
+  //    uq_time_entries_one_open partial unique index son sözü söyler.
+  const { data: active } = await supabaseAdmin
+    .from("time_entries")
+    .select("id")
+    .eq("worker_id", session.worker_id!)
+    .is("ended_at", null)
+    .maybeSingle();
+  if (active) return { ok: false, error: "active" };
+
+  // 2b) ARAÇ guard'ı. uq_time_entries_one_open yalnız worker_id'ye bakar, yani
+  //     DB "aynı araçta iki açık vardiya"yı engellemez. auto-shift bu yarısını
+  //     kodla koruyor (`!vehicleShift`); manuel yol da korumazsa şu senaryo
+  //     bozuk veri üretir: önceki şoför vardiyasını kapatmayı unutmuş, yönetici
+  //     aracı yedek şoföre devretmiş → araca ait iki açık satır oluşur ve
+  //     openByVehicle/activeByVehicle haritaları hangisini tutacağını
+  //     bilemez. Şoföre net mesaj verip yöneticiye yönlendiriyoruz.
+  const { data: vehicleBusy } = await supabaseAdmin
+    .from("time_entries")
+    .select("id")
+    .eq("vehicle_id", veh.id as string)
+    .is("ended_at", null)
+    .limit(1)
+    .maybeSingle();
+  if (vehicleBusy) return { ok: false, error: "vehicle_busy" };
+
+  // 3) Başlangıç km: odometre → aracın son biten vardiyası → 0. Şoför
+  //    "Ayarlar → Başlangıç KM"den düzeltebilir.
+  const latest = await latestVehicleTelemetry(veh.id as string);
+  const startKm = await resolveStartKm(veh.id as string, latest?.odometer_km);
+
+  const startedIso = new Date().toISOString();
+  const { error } = await supabaseAdmin.from("time_entries").insert({
+    worker_id: session.worker_id!,
+    vehicle_id: veh.id,
+    plate: veh.plate,
+    started_at: startedIso,
+    start_km: startKm,
+    break_minutes: 0,
+    auto_started: false,
+    confirmation_status: "confirmed",
+    confirmed_at: startedIso,
+  });
+  if (error) {
+    // 23505 = uq_time_entries_one_open. Şoför butona bastığı saniyede cron
+    // kontaktan açtıysa bu bir hata değil, "zaten aktif" durumudur.
+    if (/duplicate key|23505/i.test(error.message)) {
+      return { ok: false, error: "active" };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  await notifyAdminsShiftStarted(
+    session.name ?? "—",
+    (veh.plate as string) ?? "—",
     startedIso
   );
 

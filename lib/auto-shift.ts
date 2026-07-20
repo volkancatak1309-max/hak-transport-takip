@@ -164,8 +164,12 @@ async function detectIgnitionOnAt(
   }
 }
 
-/** Otomatik açılan vardiyanın başlangıç km'si: odometre → son vardiya → 0. */
-async function resolveStartKm(
+/**
+ * Vardiya başlangıç km'si: odometre → aracın son biten vardiyası → 0.
+ * Manuel başlatma (startShiftManualAction) da bunu kullanır — iki yol arasında
+ * km kuralı çatallanmasın diye tek kaynak.
+ */
+export async function resolveStartKm(
   vehicleId: string,
   odometerKm: number | null | undefined
 ): Promise<number> {

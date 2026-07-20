@@ -542,7 +542,12 @@
       "err_device_taken": "Bu cihaz ID zaten {plate} aracında kayıtlı",
       "err_year": "Geçerli bir yıl girin",
       "err_device": "Geçerli bir cihaz ID girin",
-      "fleet": "Filo"
+      "err_driver": "Geçersiz şoför seçimi",
+      "fleet": "Filo",
+      "assigned_driver": "Atanmış şoför",
+      "assigned_driver_none": "— Şoför yok —",
+      "assigned_driver_passive": "pasif",
+      "assigned_driver_hint": "Şoförün panelinde bu araç görünür ve kontak açılınca vardiyası bu araçla başlar. Bir şoför tek araca atanabilir."
     },
     "status": {
       "sevkiyatta": "Sevkiyatta",
@@ -782,7 +787,14 @@
     "v2ReportPackage": "Hasarlı paket",
     "v2ReportOther": "Diğer",
     "v2ReportSent": "Bildirim gönderildi",
-    "v2ReportErr": "Bildirim gönderilemedi"
+    "v2ReportErr": "Bildirim gönderilemedi",
+    "v2StartShift": "VARDİYAYI BAŞLAT",
+    "v2StartHint": "Beklemek istemiyorsan elle başlat.",
+    "v2StartOffline": "Vardiya başlatmak için internet gerekli",
+    "v2StartNetworkErr": "Bağlantı koptu. Vardiyan açılmış olabilir — ekranı kontrol et.",
+    "v2StartVehicleMaintenance": "Aracın şu an bakımda. Yöneticinle görüş.",
+    "v2StartVehicleBusy": "Bu araçta kapatılmamış bir vardiya var. Yöneticinle görüş.",
+    "v2StartInactiveWorker": "Hesabın pasif durumda. Yöneticinle görüş."
   },
   "history": {
     "title": "Vardiya Geçmişi",

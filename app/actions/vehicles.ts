@@ -112,11 +112,50 @@ function parseVehicle(formData: FormData) {
     year: formData.get("year") || null,
     status: formData.get("status"),
     fleet: formData.get("fleet") || "mavi",
+    assigned_worker_id: formData.get("assigned_worker_id") || null,
     flespi_device_id: formData.get("flespi_device_id") || null,
     imei: formData.get("imei") || null,
     inspection_due: formData.get("inspection_due") || null,
     insurance_due: formData.get("insurance_due") || null,
   });
+}
+
+/**
+ * Atama yazıldıktan SONRA çalışan tutarlılık adımı.
+ *
+ *  1) Bir şoför aynı anda tek araca atanabilir: şoför paneli ve Çalışanlar
+ *     sayfası ilişkiden TEK araç okur (limit 1), ikinci atama sessizce
+ *     görünmez olurdu. Bu yüzden şoförün varsa eski aracı serbest bırakılır.
+ *  2) workers.plate AYNASI. Kanonik kaynak vehicles.assigned_worker_id ama
+ *     eski okuma noktaları (harita şoför listesi, rota geçmişi, seferler,
+ *     session.plate) hâlâ workers.plate'e bakıyor. Ayna burada güncellenmezse
+ *     bu ekranlar yeni personelde kalıcı "—" gösterirdi — plaka alanı personel
+ *     formundan kaldırıldığı için artık başka yazan yok.
+ */
+async function applyDriverAssignment(
+  vehicleId: string,
+  plate: string,
+  workerId: string | null,
+  previousWorkerId: string | null
+): Promise<void> {
+  if (workerId) {
+    await supabaseAdmin
+      .from("vehicles")
+      .update({ assigned_worker_id: null })
+      .eq("assigned_worker_id", workerId)
+      .neq("id", vehicleId);
+  }
+  // Aracı bırakan şoförün aynası temizlenir (başka araca geçtiyse aşağıda
+  // zaten yeni plakasıyla yeniden yazılır).
+  if (previousWorkerId && previousWorkerId !== workerId) {
+    await supabaseAdmin
+      .from("workers")
+      .update({ plate: null })
+      .eq("id", previousWorkerId);
+  }
+  if (workerId) {
+    await supabaseAdmin.from("workers").update({ plate }).eq("id", workerId);
+  }
 }
 
 /** Plate of a DIFFERENT vehicle already using `value` in `field`, else null. */
@@ -184,11 +223,20 @@ export async function createVehicle(
       imei: d.imei ?? null,
       inspection_due: d.inspection_due ?? null,
       insurance_due: d.insurance_due ?? null,
+      assigned_worker_id: d.assigned_worker_id ?? null,
     })
     .select("id")
     .maybeSingle();
   if (error || !data) return { ok: false, error: error?.message ?? "insert" };
+  await applyDriverAssignment(
+    data.id as string,
+    plate,
+    d.assigned_worker_id ?? null,
+    null
+  );
   revalidatePath("/admin/araclar");
+  revalidatePath("/admin/workers");
+  revalidatePath("/panel");
   return { ok: true, id: data.id as string };
 }
 
@@ -213,23 +261,51 @@ export async function updateVehicle(
   );
   if (conflict) return conflict;
 
-  const { error } = await supabaseAdmin
+  // Atama alanı yalnız GERÇEKTEN değiştirildiyse yazılır. Form açıldığındaki
+  // değeri (assigned_worker_id_prev) geri gönderiyoruz: aksi hâlde muayene
+  // tarihini düzeltmek için dakikalar önce açılmış bir dialog kaydedildiğinde,
+  // bu arada başka bir yöneticinin yaptığı şoför değişikliği sessizce geri
+  // alınırdı (lost update).
+  const prevRaw = formData.get("assigned_worker_id_prev");
+  const prevFromForm = typeof prevRaw === "string" && prevRaw ? prevRaw : null;
+  const nextWorkerId = d.assigned_worker_id ?? null;
+  const assignmentTouched = prevFromForm !== nextWorkerId;
+
+  const { data: current } = await supabaseAdmin
     .from("vehicles")
-    .update({
-      plate,
-      make: d.make ?? null,
-      model: d.model ?? null,
-      year: d.year ?? null,
-      status: d.status,
-      fleet: d.fleet,
-      flespi_device_id: d.flespi_device_id ?? null,
-      imei: d.imei ?? null,
-      inspection_due: d.inspection_due ?? null,
-      insurance_due: d.insurance_due ?? null,
-    })
-    .eq("id", id);
+    .select("assigned_worker_id")
+    .eq("id", id)
+    .maybeSingle();
+  const currentWorkerId = (current?.assigned_worker_id as string) ?? null;
+
+  const update: Record<string, unknown> = {
+    plate,
+    make: d.make ?? null,
+    model: d.model ?? null,
+    year: d.year ?? null,
+    status: d.status,
+    fleet: d.fleet,
+    flespi_device_id: d.flespi_device_id ?? null,
+    imei: d.imei ?? null,
+    inspection_due: d.inspection_due ?? null,
+    insurance_due: d.insurance_due ?? null,
+  };
+  if (assignmentTouched) update.assigned_worker_id = nextWorkerId;
+
+  const { error } = await supabaseAdmin.from("vehicles").update(update).eq("id", id);
   if (error) return { ok: false, error: error.message };
+  if (assignmentTouched) {
+    await applyDriverAssignment(id, plate, nextWorkerId, currentWorkerId);
+  } else if (currentWorkerId) {
+    // Atama değişmedi ama plaka değişmiş olabilir — ayna yine hizalanmalı.
+    await supabaseAdmin
+      .from("workers")
+      .update({ plate })
+      .eq("id", currentWorkerId);
+  }
   revalidatePath("/admin/araclar");
+  revalidatePath("/admin/workers");
+  revalidatePath("/panel");
   return { ok: true, id };
 }
 

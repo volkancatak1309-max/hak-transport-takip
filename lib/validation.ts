@@ -256,6 +256,8 @@ export const vehicleSchema = z.object({
   status: z.enum(["active", "maintenance", "inactive"]),
   // Filo ayrımı (migration 023) — form her zaman gönderir, varsayılan 'mavi'.
   fleet: z.enum(["bordo", "mavi"]),
+  // Şoför↔araç eşleşmesinin TEK kaynağı. Boş seçim null gelir (araç şoförsüz).
+  assigned_worker_id: z.string().uuid("errDriver").optional().nullable(),
   flespi_device_id: z.coerce
     .number()
     .int()

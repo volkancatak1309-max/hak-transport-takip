@@ -51,7 +51,16 @@ type LiveFilter = "all" | "sevkiyatta" | "molada" | "bosta" | "bakimda";
 type FleetFilter = "all" | VehicleFleet;
 type SortKey = "plate" | "driver" | "status";
 
-export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
+/** Select "şoför yok" seçeneği: Select boş string'i temizleme sayar. */
+const NO_DRIVER = "__none__";
+
+export function AraclarClient({
+  vehicles,
+  drivers,
+}: {
+  vehicles: VehicleWithStatus[];
+  drivers: { id: string; name: string; is_active: boolean }[];
+}) {
   const t = useTranslations("vehicles");
   const tm = useTranslations("vehicles.manage");
   const router = useRouter();
@@ -73,7 +82,21 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
   const [imei, setImei] = useState("");
   const [inspectionDue, setInspectionDue] = useState("");
   const [insuranceDue, setInsuranceDue] = useState("");
+  const [assignedWorkerId, setAssignedWorkerId] = useState<string>(NO_DRIVER);
   const [busy, setBusy] = useState(false);
+
+  // Pasif şoför adına etiket eklenir: yönetici ex-çalışana atanmış bir aracı
+  // gördüğünde bunu fark edip temizleyebilsin.
+  const driverNames = useMemo(
+    () =>
+      new Map(
+        drivers.map((d) => [
+          d.id,
+          d.is_active ? d.name : `${d.name} (${tm("assigned_driver_passive")})`,
+        ])
+      ),
+    [drivers, tm]
+  );
 
   const counts = useMemo(() => {
     const c = { total: vehicles.length, sevkiyatta: 0, molada: 0, bosta: 0, bakimda: 0 };
@@ -131,6 +154,7 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
     setImei("");
     setInspectionDue("");
     setInsuranceDue("");
+    setAssignedWorkerId(NO_DRIVER);
     setOpen(true);
   }
   function openEdit(v: VehicleWithStatus) {
@@ -145,6 +169,9 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
     setImei(v.imei ?? "");
     setInspectionDue(v.inspection_due ?? "");
     setInsuranceDue(v.insurance_due ?? "");
+    // driver_id DEĞİL: o, vardiyadaki canlı şoföre kayabilir. Form kalıcı
+    // atamayı düzenler, yani ham assigned_worker_id'yi.
+    setAssignedWorkerId(v.assigned_worker_id ?? NO_DRIVER);
     setOpen(true);
   }
 
@@ -164,6 +191,8 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
         return tm("err_year");
       case "errDevice":
         return tm("err_device");
+      case "errDriver":
+        return tm("err_driver");
       default:
         return tm("save_error");
     }
@@ -187,6 +216,13 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
     fd.set("imei", imei.trim());
     fd.set("inspection_due", inspectionDue);
     fd.set("insurance_due", insuranceDue);
+    fd.set(
+      "assigned_worker_id",
+      assignedWorkerId === NO_DRIVER ? "" : assignedWorkerId
+    );
+    // Form açıldığındaki değer: sunucu yalnız gerçekten değiştiyse atamayı
+    // yazsın, bayat dialog başkasının değişikliğini geri almasın.
+    fd.set("assigned_worker_id_prev", editing?.assigned_worker_id ?? "");
 
     setBusy(true);
     try {
@@ -519,6 +555,45 @@ export function AraclarClient({ vehicles }: { vehicles: VehicleWithStatus[] }) {
                   <SelectItem value="bordo">{t("fleet.bordo")}</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Şoför↔araç eşleşmesinin TEK yazma yolu. Şoför paneli "atanmış
+                aracım var mı"yı, Çalışanlar sayfası plaka kolonunu buradan
+                okur. Bir şoför tek araca atanır: aynı şoför başka araca
+                verilirse sunucu eski atamayı serbest bırakır. */}
+            <div className="space-y-1.5">
+              <Label>{tm("assigned_driver")}</Label>
+              <Select
+                value={assignedWorkerId}
+                onValueChange={(v) => v && setAssignedWorkerId(String(v))}
+              >
+                <SelectTrigger className="h-11">
+                  <SelectValue>
+                    {((v: unknown) =>
+                      String(v) === NO_DRIVER
+                        ? tm("assigned_driver_none")
+                        : driverNames.get(String(v)) ??
+                          tm("assigned_driver_none")) as never}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_DRIVER}>
+                    {tm("assigned_driver_none")}
+                  </SelectItem>
+                  {drivers
+                    // Pasifler yalnız zaten atanmışsa listelenir — yeni atama
+                    // için seçilemezler, ama mevcut atama görünür kalır.
+                    .filter((d) => d.is_active || d.id === assignedWorkerId)
+                    .map((d) => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {driverNames.get(d.id) ?? d.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {tm("assigned_driver_hint")}
+              </p>
             </div>
 
             <div className="space-y-1.5">

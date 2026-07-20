@@ -121,7 +121,11 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
                   <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${bg} ${tone}`}>
                     <Icon className="size-4" />
                   </span>
-                  <span className="flex-1 truncate text-sm">{r.text}</span>
+                  {/* Uyarı metni mobilde SARAR. Masaüstünde tek satırda kırpılır
+                      ama burada `title` bile yoktu — dar ekranda kesilen kısım
+                      hiçbir etkileşimle okunamıyordu (satır tıklanabilir değil,
+                      çekmece yok). Panonun kritik uyarıları burada yaşıyor. */}
+                  <span className="flex-1 text-sm sm:truncate">{r.text}</span>
                   <span className={`nums shrink-0 text-xs font-medium ${r.overdue ? tone : "text-muted-foreground"}`}>
                     {r.meta}
                   </span>

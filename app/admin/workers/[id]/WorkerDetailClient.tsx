@@ -282,7 +282,13 @@ export function WorkerDetailClient({
                         <TableCell className="nums">{e.start_package_count ?? "—"}</TableCell>
                         <TableCell className="nums">{isActive ? "—" : e.cargo_count ?? "—"}</TableCell>
                         <TableCell className="nums">{e.plate ?? "—"}</TableCell>
-                        <TableCell className="max-w-[200px] truncate" title={e.notes ?? ""}>
+                        {/* Vardiya notu mobilde SARAR, masaüstünde 200px'te
+                            kırpılır — bkz. ExpenseAdminClient'taki aynı kalıp.
+                            `sm:` öneki masaüstünü değiştirmez. */}
+                        <TableCell
+                          className="whitespace-normal break-words sm:max-w-[200px] sm:truncate"
+                          title={e.notes ?? ""}
+                        >
                           {e.notes ?? "—"}
                         </TableCell>
                         <TableCell className="text-right">

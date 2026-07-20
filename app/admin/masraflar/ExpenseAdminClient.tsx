@@ -223,7 +223,15 @@ export function ExpenseAdminClient({ entries }: Props) {
                     <TableCell>
                       {CATEGORY_ICON[e.category]} {t(`category.${e.category}`)}
                     </TableCell>
-                    <TableCell className="max-w-[200px] truncate" title={e.description ?? ""}>
+                    {/* Açıklama mobilde SARAR, masaüstünde 200px'te kırpılır.
+                        Kırpılan metnin tek kurtarma yolu `title` tooltip'iydi;
+                        dokunmatikte hover olmadığı için masrafı onaylayan
+                        yönetici neyi onayladığını okuyamıyordu. `sm:` öneki →
+                        masaüstü davranışı birebir aynı. */}
+                    <TableCell
+                      className="whitespace-normal break-words sm:max-w-[200px] sm:truncate"
+                      title={e.description ?? ""}
+                    >
                       {e.description ?? "—"}
                     </TableCell>
                     <TableCell className="text-right nums">{eur(Number(e.amount))} €</TableCell>

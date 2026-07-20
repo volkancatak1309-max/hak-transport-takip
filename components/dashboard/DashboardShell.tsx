@@ -249,6 +249,22 @@ export function DashboardShell({
                 </kbd>
               </button>
             )}
+            {/* Mobil arama. Yukarıdaki çerçeveli tetikleyici `sm:flex` ile dar
+                ekranda kalkıyor ve paletin TEK diğer girişi ⌘K kısayolu —
+                dokunmatikte klavye olmadığı için komut paleti mobilde hiç
+                açılamıyordu. Aynı state'i açan ikon buton, YALNIZ sm altında;
+                masaüstünde render edilmez. */}
+            {user.isAdmin && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="sm:hidden"
+                aria-label={tc("search")}
+                onClick={() => setPaletteOpen(true)}
+              >
+                <Search className="size-[18px]" />
+              </Button>
+            )}
             <Clock />
             <OfflineBadge />
             <HelpToggle />

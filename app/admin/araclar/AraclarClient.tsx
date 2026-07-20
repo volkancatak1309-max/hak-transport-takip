@@ -14,6 +14,7 @@ import {
   Pencil,
   Trash2,
   Loader2,
+  MoreHorizontal,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { HelpTip } from "@/components/help/HelpTip";
 import { RevealFilterRow } from "@/components/ui-v2";
 import { STATUS_STYLE, FLEET_STYLE } from "@/lib/vehicle-ui";
@@ -456,14 +463,46 @@ export function AraclarClient({
                     </Button>
                   </div>
                   {/* Dokunma hedefi 24x24 (WCAG 2.2 AA 2.5.8) — ikon 16px kalıyor,
-                      tıklanabilir alan büyüyor. */}
+                      tıklanabilir alan büyüyor. Mobilde yerini üç-nokta menüsü
+                      alır (aşağıda): satırın KENDİSİ zaten detaya gidiyor, yani
+                      chevron dar ekranda bilgi taşımıyor — o 24px'i düzenle/sil'e
+                      devrediyoruz. Aynı genişlik → plakanın alanı BİREBİR korunur
+                      (83caa88'in mobil plaka düzeni bozulmaz). */}
                   <Link
                     href={`/admin/araclar/${v.id}`}
                     aria-label={v.plate}
-                    className="flex size-6 shrink-0 items-center justify-center"
+                    className="hidden size-6 shrink-0 items-center justify-center sm:flex"
                   >
                     <ChevronRight className="size-4 text-text-tertiary transition-colors group-hover:text-foreground" />
                   </Link>
+                  {/* Mobil düzenle/sil. Masaüstünde kalem+çöp yukarıdaki
+                      `sm:flex` kümesinde duruyor, bu menü YALNIZ sm altında
+                      render edilir — masaüstü görünümü değişmez. */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="size-6 shrink-0 sm:hidden"
+                          aria-label={tm("actions")}
+                        />
+                      }
+                    >
+                      <MoreHorizontal className="size-4 text-text-tertiary" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => openEdit(v)}>
+                        <Pencil className="size-4" /> {tm("edit")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => remove(v)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="size-4" /> {tm("delete")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </li>
               );
             })}

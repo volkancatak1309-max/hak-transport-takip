@@ -126,21 +126,18 @@ export function AddWorkerDialog({ children }: Props) {
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="plate">{t("plate")}</Label>
-              <Input id="plate" name="plate" className="h-11 nums uppercase" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="employee_number">{t("employeeNumber")}</Label>
-              <Input
-                id="employee_number"
-                name="employee_number"
-                inputMode="numeric"
-                placeholder={t("employeeNumberHint")}
-                className="h-11 nums"
-              />
-            </div>
+          {/* Serbest metin plaka alanı kaldırıldı: şoför↔araç eşleşmesinin tek
+              kaynağı vehicles.assigned_worker_id. Araç ataması Araçlar
+              sayfasındaki araç formundan yapılır. */}
+          <div className="space-y-1.5">
+            <Label htmlFor="employee_number">{t("employeeNumber")}</Label>
+            <Input
+              id="employee_number"
+              name="employee_number"
+              inputMode="numeric"
+              placeholder={t("employeeNumberHint")}
+              className="h-11 nums"
+            />
           </div>
 
           {/* ── Kişisel (migration 025 — tümü opsiyonel) ── */}

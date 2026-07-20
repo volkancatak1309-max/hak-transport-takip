@@ -174,7 +174,9 @@ export function WorkersClient({ workers }: Props) {
                         </Link>
                       </TableCell>
                       <TableCell className="nums">{w.phone}</TableCell>
-                      <TableCell className="nums">{w.plate ?? "—"}</TableCell>
+                      <TableCell className="nums uppercase">
+                        {w.assignedPlate ?? "—"}
+                      </TableCell>
                       <TableCell>
                         {w.is_active ? (
                           <Badge variant="default">{tc("active")}</Badge>

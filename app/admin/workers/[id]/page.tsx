@@ -49,6 +49,18 @@ export default async function WorkerDetailPage({
   if (!worker) notFound();
   const w = worker as WorkerPublic;
 
+  // Plaka tek kaynaktan: vehicles.assigned_worker_id (şoför paneliyle aynı
+  // sorgu). workers.plate artık yalnız eski kayıtlar için tutulan bir aynadır.
+  const { data: assignedVeh } = await supabaseAdmin
+    .from("vehicles")
+    .select("plate")
+    .eq("assigned_worker_id", id)
+    .neq("status", "inactive")
+    .order("plate")
+    .limit(1)
+    .maybeSingle();
+  const assignedPlate = (assignedVeh?.plate as string) ?? null;
+
   const monthStart = startOfMonthVienna();
   const todayStart = startOfTodayVienna();
   const [monthEntriesResult, allEntriesResult, todayLocsResult] = await Promise.all([
@@ -125,7 +137,7 @@ export default async function WorkerDetailPage({
                   <div className="mt-2 flex flex-wrap gap-3 text-sm text-muted-foreground">
                     <span className="nums">{w.phone}</span>
                     <span>•</span>
-                    <span className="nums">{w.plate ?? "—"}</span>
+                    <span className="nums uppercase">{assignedPlate ?? "—"}</span>
                     <span>•</span>
                     <span>{w.is_admin ? tc("admin") : tc("worker")}</span>
                   </div>

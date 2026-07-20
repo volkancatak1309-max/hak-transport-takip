@@ -11,6 +11,12 @@ export const dynamic = "force-dynamic";
 export type WorkerWithStats = WorkerPublic & {
   lastShiftAt: string | null;
   monthHoursMs: number;
+  /**
+   * Şoförün atanmış aracının plakası. vehicles.assigned_worker_id üzerinden
+   * TÜRETİLİR — workers.plate DEĞİL. Şoför paneli de aynı ilişkiye baktığı için
+   * iki ekran artık aynı gerçeği gösterir.
+   */
+  assignedPlate: string | null;
 };
 
 export default async function WorkersPage() {
@@ -24,7 +30,7 @@ export default async function WorkersPage() {
   >;
   // Aylık vardiyalar 26-28 araçta 1000 satır tavanına dayanır; "Bu Ay" saat
   // toplamları ve "Son Vardiya" eksik hesaplanmasın diye sonuna kadar okunur.
-  const [workersResult, entriesResult] = await Promise.all([
+  const [workersResult, entriesResult, vehiclesResult] = await Promise.all([
     supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
     fetchAllRows<MonthEntry>((from, to) =>
       supabaseAdmin
@@ -34,10 +40,29 @@ export default async function WorkersPage() {
         .order("id")
         .range(from, to)
     ),
+    supabaseAdmin
+      .from("vehicles")
+      .select("plate, assigned_worker_id")
+      .not("assigned_worker_id", "is", null)
+      .neq("status", "inactive")
+      .order("plate"),
   ]);
 
   const workers = (workersResult.data ?? []) as WorkerPublic[];
   const entries = entriesResult.data;
+
+  // Plaka artık workers.plate serbest metninden değil, tek kaynak olan
+  // vehicles.assigned_worker_id ilişkisinden gelir (şoför paneliyle aynı kural,
+  // aynı sıralama: bir şoförde birden çok araç varsa plakaca ilk olanı).
+  const plateByWorker = new Map<string, string>();
+  for (const v of (vehiclesResult.data ?? []) as {
+    plate: string;
+    assigned_worker_id: string;
+  }[]) {
+    if (!plateByWorker.has(v.assigned_worker_id)) {
+      plateByWorker.set(v.assigned_worker_id, v.plate);
+    }
+  }
 
   const stats: Record<string, { lastShiftAt: string | null; ms: number }> = {};
   for (const w of workers) stats[w.id] = { lastShiftAt: null, ms: 0 };
@@ -59,6 +84,7 @@ export default async function WorkersPage() {
     ...w,
     lastShiftAt: stats[w.id].lastShiftAt,
     monthHoursMs: stats[w.id].ms,
+    assignedPlate: plateByWorker.get(w.id) ?? null,
   }));
 
   return (

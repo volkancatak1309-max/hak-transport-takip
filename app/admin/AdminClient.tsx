@@ -93,7 +93,7 @@ type Props = {
 };
 
 export function AdminClient({
-  entries,
+  entries: rawEntries,
   workers,
   range,
   from,
@@ -127,6 +127,20 @@ export function AdminClient({
 
   const nf = locale === "de" ? "de-AT" : "tr-TR";
   const photoIdSet = useMemo(() => new Set(photoEntryIds), [photoEntryIds]);
+
+  // Aynı vardiya id'si listede iki kez görünmesin — savunmacı dedup (tablo/kart
+  // ve detay gezinmesi tek kaynaktan bunu kullanır). Her satırın adı zaten kendi
+  // worker_id'sinden çözülür (page.tsx), yani doğru isim satırına bağlı kalır.
+  const entries = useMemo(() => {
+    const seen = new Set<string>();
+    const out: TimeEntryWithWorker[] = [];
+    for (const e of rawEntries) {
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      out.push(e);
+    }
+    return out;
+  }, [rawEntries]);
 
   const scopeLabel =
     range === "week"
@@ -598,34 +612,114 @@ export function AdminClient({
         {entries.length === 0 ? (
           <EmptyState kind="filtered" title={t("noEntries")} />
         ) : (
-          <DataTable
-            rows={entries}
-            columns={columns}
-            rowKey={(e) => e.id}
-            onRowClick={(e) => setDetail(e)}
-            stripe={stripeFor}
-            totalLabel={t("dash.shifts_table")}
-            rowMenu={(e) => (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={<Button variant="ghost" size="icon" className="size-8" aria-label={tc("edit")} />}
-                >
-                  <MoreHorizontal className="size-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setEditOpen(e)}>
-                    <Pencil className="size-4" /> {tc("edit")}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setConfirmDel(e)}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="size-4" /> {tc("delete")}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          />
+          <>
+            {/* Masaüstü (sm+): mevcut tablo — DEĞİŞMEDİ. Kendi iç scroll'u ve
+                hideBelow kolonları yalnız burada; mobilde hiç render edilmez. */}
+            <div className="hidden sm:block">
+              <DataTable
+                rows={entries}
+                columns={columns}
+                rowKey={(e) => e.id}
+                onRowClick={(e) => setDetail(e)}
+                stripe={stripeFor}
+                totalLabel={t("dash.shifts_table")}
+                rowMenu={(e) => (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={<Button variant="ghost" size="icon" className="size-8" aria-label={tc("edit")} />}
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setEditOpen(e)}>
+                        <Pencil className="size-4" /> {tc("edit")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setConfirmDel(e)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="size-4" /> {tc("delete")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              />
+            </div>
+
+            {/* Mobil (sm altı): KART düzeni — gizli kolon YOK, yatay/iç dikey
+                scroll YOK. Tüm bilgi (ad, durum, saatler, çalışılan, KM) kartta
+                açık; sayfayla tek scroll akar. Karta dokun → detay çekmecesi
+                (düzenle/sil orada). */}
+            <ul className="space-y-2.5 sm:hidden">
+              {entries.map((e) => {
+                const { active, onBreak, over } = shiftState(e);
+                const km = kmDiff(e);
+                const stripe = stripeFor(e);
+                return (
+                  <li key={e.id}>
+                    <button
+                      type="button"
+                      onClick={() => setDetail(e)}
+                      className="relative w-full overflow-hidden rounded-[14px] border border-border/60 bg-card p-3.5 text-left transition-colors active:bg-surface-2"
+                    >
+                      {stripe && (
+                        <span
+                          aria-hidden
+                          className="absolute inset-y-0 left-0 w-[3px]"
+                          style={{ background: stripe }}
+                        />
+                      )}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <UserAvatar name={e.workers?.name ?? "?"} size="sm" />
+                          <span className="truncate font-medium">{e.workers?.name ?? "—"}</span>
+                        </div>
+                        {onBreak ? (
+                          <StatusChip tone="break" dot>{t("dash.ops_on_break")}</StatusChip>
+                        ) : active ? (
+                          <StatusChip tone="active" dot>{t("active")}</StatusChip>
+                        ) : (
+                          <StatusChip tone="neutral">{t("statusCompleted")}</StatusChip>
+                        )}
+                      </div>
+                      {(e.confirmation_status === "pending" ||
+                        e.confirmation_status === "unconfirmed") && (
+                        <div className="mt-1.5">
+                          <StatusChip tone="warning">{t("unconfirmedBadge")}</StatusChip>
+                        </div>
+                      )}
+                      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
+                        <MobileField label={t("tblStart")} value={formatTime(e.started_at, locale)} />
+                        <MobileField
+                          label={t("tblEnd")}
+                          value={active ? "—" : formatTime(e.ended_at, locale)}
+                        />
+                        <MobileField
+                          label={t("tblWorked")}
+                          value={
+                            <span className="inline-flex items-center gap-1.5">
+                              {active ? <LiveWorked entry={e} /> : formatDurationShort(workedMs(e), locale)}
+                              {over && <StatusChip tone="warning">9h+</StatusChip>}
+                            </span>
+                          }
+                        />
+                        <MobileField
+                          label={t("tblKm")}
+                          value={km !== null ? km.toLocaleString(nf) : "—"}
+                        />
+                        {e.plate && (
+                          <MobileField
+                            label={t("tblPlate")}
+                            value={<span className="uppercase">{e.plate}</span>}
+                          />
+                        )}
+                      </dl>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
       </section>
 
@@ -788,6 +882,17 @@ export function AdminClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Mobil vardiya kartındaki tek etiket/değer alanı (masaüstü tablosunun kolon
+ *  karşılığı — gizli kolon yerine hepsi açık). */
+function MobileField({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
+      <dd className="nums mt-0.5 truncate">{value}</dd>
     </div>
   );
 }

@@ -11,7 +11,6 @@ import {
   KeyRound,
   Loader2,
   Package,
-  PackagePlus,
   Pause,
   Pencil,
   PlayCircle,
@@ -23,8 +22,8 @@ import {
   addBreakMinutesAction,
   startBreakAction,
   updateStartKmAction,
+  updatePackageCountAction,
 } from "../actions/shift";
-import { addPackageAction, undoPackageAction } from "../actions/driver-panel";
 import { formatDuration, formatTime, workedMs } from "@/lib/format";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -49,7 +48,6 @@ import { ConfirmShiftCard } from "./ConfirmShiftCard";
 import { ShiftSummaryCard } from "./ShiftSummaryCard";
 import { ShiftPhotoButton } from "./ShiftPhotoButton";
 import { ProblemReportDialog } from "./ProblemReportDialog";
-import { getGeoFix } from "./geo";
 
 /**
  * Şoför Paneli v2 (Faz 1) — eğitimsiz, telefonla çalışan şoförler için:
@@ -118,6 +116,11 @@ export function PanelClient({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [kmEditOpen, setKmEditOpen] = useState(false);
   const [kmVal, setKmVal] = useState("");
+  // Manuel paket sayısı (alınan/planlanan) — +1 sayaç yerine düz sayı girişi.
+  const [pkgOpen, setPkgOpen] = useState(false);
+  const [pkgVal, setPkgVal] = useState("");
+  // Kapanışta "teslim edilemeyen" — kontrollü, "teslim edilen" ön izlemesi için.
+  const [endUndel, setEndUndel] = useState("0");
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -138,12 +141,8 @@ export function PanelClient({
     }
   }, [activeId]);
 
-  // Paket sayacı: sunucu değeriyle başlar, dokunuşta iyimser artar,
-  // her router.refresh'te sunucuyla eşitlenir.
-  const [pkgCount, setPkgCount] = useState(active?.cargo_count ?? 0);
-  useEffect(() => {
-    setPkgCount(active?.cargo_count ?? 0);
-  }, [activeId, active?.cargo_count]);
+  // Alınan (planlanan) paket sayısı — sunucudaki manuel değer (start_package_count).
+  const packagesTaken = active?.start_package_count ?? null;
 
   const totalBreakSoFar =
     (active?.break_minutes ?? 0) +
@@ -162,7 +161,6 @@ export function PanelClient({
     : 0;
 
   const onBreak = breakStartLocal !== null;
-  const todayPackages = totals.todayClosedPackages + pkgCount;
 
   function toggleBreak() {
     if (breakStartLocal === null) {
@@ -200,48 +198,31 @@ export function PanelClient({
     }
   }
 
-  // İş 2 — "+1 PAKET": iyimser sayaç + GPS + 5 sn "Geri Al" tostu.
-  async function handleAddPackage() {
-    const clientTime = new Date().toISOString();
-    setPkgCount((c) => c + 1);
-    const fix = await getGeoFix();
-    const r = await tryServerAction(
-      "package",
-      { lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy },
-      clientTime,
-      () => addPackageAction({ ...fix, clientTime })
-    );
-    if (r.queued) {
-      toast.warning(tOffline("queued_toast"));
-      return;
+  // Manuel paket sayısı: dialog'u mevcut değerle aç.
+  function openPkg() {
+    setPkgVal(packagesTaken !== null ? String(packagesTaken) : "");
+    setPkgOpen(true);
+  }
+  // Kaydet: düz sayı → start_package_count (open-shift only). Boş = temizle.
+  function savePkg() {
+    const raw = pkgVal.trim();
+    let v: number | null = null;
+    if (raw !== "") {
+      v = Math.floor(Number(raw));
+      if (!Number.isFinite(v) || v < 0) {
+        toast.error(t("v2PkgErr"));
+        return;
+      }
     }
-    if (!r.result.ok) {
-      setPkgCount((c) => Math.max(0, c - 1));
-      toast.error(t("v2PkgErr"));
-      return;
-    }
-    const packageId = r.result.packageId;
-    if (typeof r.result.count === "number") setPkgCount(r.result.count);
-    toast.success(t("v2PkgSaved"), {
-      duration: 5000,
-      action: packageId
-        ? {
-            label: t("v2PkgUndo"),
-            onClick: () => {
-              void (async () => {
-                const u = await undoPackageAction(packageId);
-                if (u.ok) {
-                  if (typeof u.count === "number") setPkgCount(u.count);
-                  else setPkgCount((c) => Math.max(0, c - 1));
-                  toast.success(t("v2PkgUndone"));
-                  router.refresh();
-                } else {
-                  toast.error(t("v2PkgErr"));
-                }
-              })();
-            },
-          }
-        : undefined,
+    startTransition(async () => {
+      const r = await updatePackageCountAction(v);
+      if (r.ok) {
+        toast.success(t("v2PkgSaved"));
+        setPkgOpen(false);
+        router.refresh();
+      } else {
+        toast.error(t("v2PkgErr"));
+      }
     });
   }
 
@@ -283,6 +264,7 @@ export function PanelClient({
     if (!e) return "Error";
     if (e === "active") return t("errActive");
     if (e === "no_active") return t("errNoActive");
+    if (e === "undelivered_required") return t("v2UndeliveredRequired");
     if (e === "start_km_required" || e === "errKmNeg") return t("startKmErr");
     if (e.startsWith("km_low:")) {
       const [, end, start] = e.split(":");
@@ -440,10 +422,10 @@ export function PanelClient({
               <div className="flex items-center justify-center gap-3 border-t border-white/[0.06] pt-4">
                 <Package className="size-6 text-accent-sky" aria-hidden />
                 <span className="text-sm text-muted-foreground">
-                  {t("v2TodayPackages")}
+                  {t("v2TotalPackages")}
                 </span>
                 <span className="nums text-4xl font-bold text-foreground">
-                  {todayPackages}
+                  {packagesTaken ?? "—"}
                 </span>
               </div>
             </CardContent>
@@ -453,11 +435,11 @@ export function PanelClient({
           <div className="space-y-3">
             <button
               type="button"
-              onClick={handleAddPackage}
+              onClick={openPkg}
               className="btn-primary flex h-28 w-full items-center justify-center gap-4 rounded-2xl text-3xl font-bold tracking-wide text-primary-foreground shadow-lg transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.98]"
             >
-              <PackagePlus className="size-10" aria-hidden />
-              {t("v2AddPackage")}
+              <Package className="size-10" aria-hidden />
+              {packagesTaken !== null ? t("v2EditPackages") : t("v2SetPackages")}
             </button>
 
             <ShiftPhotoButton />
@@ -493,7 +475,10 @@ export function PanelClient({
               )}
             </Button>
             <Button
-              onClick={() => setEndOpen(true)}
+              onClick={() => {
+                setEndUndel("0");
+                setEndOpen(true);
+              }}
               variant="destructive"
               className="h-14 text-base"
               disabled={pending}
@@ -626,7 +611,7 @@ export function PanelClient({
           <DialogHeader>
             <DialogTitle>{t("endShift")}</DialogTitle>
             <DialogDescription>
-              {t("v2TodayPackages")}: {todayPackages}
+              {t("v2TotalPackages")}: {packagesTaken ?? "—"}
             </DialogDescription>
           </DialogHeader>
           <form action={handleEnd} className="space-y-4">
@@ -658,8 +643,23 @@ export function PanelClient({
                 type="number"
                 inputMode="numeric"
                 min={0}
-                className="h-12"
+                required
+                value={endUndel}
+                onChange={(e) => setEndUndel(e.target.value)}
+                className="h-14 text-lg nums"
               />
+              {/* Teslim edilen = alınan − teslim edilemeyen (otomatik, gösterilir). */}
+              {packagesTaken !== null && (
+                <p className="text-xs text-muted-foreground">
+                  {t("v2DeliveredPreview")}:{" "}
+                  <span className="nums font-medium text-foreground">
+                    {Math.max(
+                      0,
+                      packagesTaken - (Number.parseInt(endUndel, 10) || 0)
+                    )}
+                  </span>
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="notes">{t("notes")}</Label>
@@ -681,6 +681,40 @@ export function PanelClient({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Paket sayısı — alınan/planlanan toplam. Düz sayı girişi (mobil sayı
+          klavyesi), +1 sayaç YOK. Gün içinde düzeltilebilir. */}
+      <Dialog open={pkgOpen} onOpenChange={setPkgOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("v2SetPackages")}</DialogTitle>
+            <DialogDescription>{t("v2PackagesHint")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="pkg_total">{t("v2TotalPackages")}</Label>
+            <Input
+              id="pkg_total"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={pkgVal}
+              onChange={(e) => setPkgVal(e.target.value)}
+              className="h-16 text-2xl nums"
+              placeholder="0"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPkgOpen(false)}>
+              {tc("cancel")}
+            </Button>
+            <Button onClick={savePkg} disabled={pending}>
+              {pending && <Loader2 className="size-4 animate-spin" />}
+              {tc("save")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

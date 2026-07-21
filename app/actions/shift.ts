@@ -254,9 +254,18 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
   }
 
+  // Yeni paket akışı: "teslim edilemeyen" kapanışta ZORUNLU (0 girilebilir, boş
+  // bırakılamaz). İstemci de required yapıyor; sunucu son söz.
+  if (
+    parsed.data.undelivered_count === null ||
+    parsed.data.undelivered_count === undefined
+  ) {
+    return { ok: false, error: "undelivered_required" };
+  }
+
   const { data: active, error: findErr } = await supabaseAdmin
     .from("time_entries")
-    .select("id, start_km, started_at, break_minutes")
+    .select("id, start_km, started_at, break_minutes, start_package_count")
     .eq("worker_id", session.worker_id!)
     .is("ended_at", null)
     .order("started_at", { ascending: false })
@@ -280,23 +289,33 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
   const endedIso = new Date().toISOString();
   const finalBreak =
     parsed.data.break_minutes ?? active.break_minutes ?? 0;
+
+  // Paket muhasebesi (yeni akış, +1 sayaç yok):
+  //  • alınan  = start_package_count (şoför gün içinde manuel girdi)
+  //  • teslim edilemeyen = undelivered_count (kapanışta girilir, zorunlu)
+  //  • teslim edilen (cargo_count) = alınan − teslim edilemeyen  → TÜRETİLİR
+  // Alınan hiç girilmemişse (null) teslim edilen bilinmiyor kalır (null yazmayız,
+  // mevcut değeri ezmeyiz).
+  const undelivered = parsed.data.undelivered_count;
+  const totalTaken = active.start_package_count;
+  const delivered =
+    totalTaken !== null && totalTaken !== undefined
+      ? Math.max(0, totalTaken - undelivered)
+      : null;
+
   const updateData: Record<string, unknown> = {
     ended_at: endedIso,
     end_km: parsed.data.end_km,
     notes: parsed.data.notes,
     summary_notified_at: endedIso,
     end_reason: "manual",
+    undelivered_count: undelivered,
   };
   if (parsed.data.plate) updateData.plate = parsed.data.plate;
   if (parsed.data.break_minutes !== null && parsed.data.break_minutes !== undefined) {
     updateData.break_minutes = parsed.data.break_minutes;
   }
-  if (parsed.data.cargo_count !== null && parsed.data.cargo_count !== undefined) {
-    updateData.cargo_count = parsed.data.cargo_count;
-  }
-  if (parsed.data.undelivered_count !== null && parsed.data.undelivered_count !== undefined) {
-    updateData.undelivered_count = parsed.data.undelivered_count;
-  }
+  if (delivered !== null) updateData.cargo_count = delivered;
 
   let { error } = await supabaseAdmin
     .from("time_entries")
@@ -348,7 +367,7 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
       shiftSummaryMessage(loc, {
         hours: formatDurationShort(ms, loc),
         km: String(parsed.data.end_km - active.start_km),
-        cargo: String(parsed.data.cargo_count ?? 0),
+        cargo: String(delivered ?? 0),
         breakMin: String(finalBreak),
       })
     );

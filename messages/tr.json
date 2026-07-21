@@ -840,7 +840,13 @@
     "v2StartNetworkErr": "Bağlantı koptu. Vardiyan açılmış olabilir — ekranı kontrol et.",
     "v2StartVehicleMaintenance": "Aracın şu an bakımda. Yöneticinle görüş.",
     "v2StartVehicleBusy": "Bu araçta kapatılmamış bir vardiya var. Yöneticinle görüş.",
-    "v2StartInactiveWorker": "Hesabın pasif durumda. Yöneticinle görüş."
+    "v2StartInactiveWorker": "Hesabın pasif durumda. Yöneticinle görüş.",
+    "v2TotalPackages": "Alınan paket",
+    "v2SetPackages": "Paket Sayısı Gir",
+    "v2EditPackages": "Paket Sayısını Düzenle",
+    "v2PackagesHint": "Bugün alacağın/aldığın toplam paket sayısını yaz. Gün içinde düzeltebilirsin.",
+    "v2DeliveredPreview": "Teslim edilen",
+    "v2UndeliveredRequired": "Teslim edilemeyen sayısını gir (0 olabilir)."
   },
   "history": {
     "title": "Vardiya Geçmişi",

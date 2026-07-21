@@ -96,7 +96,7 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
 
     const { data: active } = await supabaseAdmin
       .from("time_entries")
-      .select("id, start_km")
+      .select("id, start_km, start_package_count")
       .eq("worker_id", workerId)
       .is("ended_at", null)
       .order("started_at", { ascending: false })
@@ -114,10 +114,17 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
     };
     const br = num(item.payload.break_minutes);
     if (br !== null && br >= 0 && br <= 1440) update.break_minutes = br;
-    const cargo = num(item.payload.cargo_count);
-    if (cargo !== null && cargo >= 0 && cargo <= MAX_COUNT) update.cargo_count = cargo;
     const undel = num(item.payload.undelivered_count);
     if (undel !== null && undel >= 0 && undel <= MAX_COUNT) update.undelivered_count = undel;
+    // Teslim edilen = alınan − teslim edilemeyen (online endShiftAction ile aynı
+    // türetme). Alınan bilinmiyorsa istemcinin gönderdiği cargo_count'a düşülür.
+    const total = active.start_package_count as number | null;
+    if (total !== null && total !== undefined && undel !== null) {
+      update.cargo_count = Math.max(0, total - undel);
+    } else {
+      const cargo = num(item.payload.cargo_count);
+      if (cargo !== null && cargo >= 0 && cargo <= MAX_COUNT) update.cargo_count = cargo;
+    }
     if (item.payload.plate) update.plate = item.payload.plate;
 
     let { error } = await supabaseAdmin

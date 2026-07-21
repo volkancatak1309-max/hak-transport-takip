@@ -840,7 +840,13 @@
     "v2StartNetworkErr": "Verbindung unterbrochen. Deine Schicht läuft möglicherweise schon — prüfe den Bildschirm.",
     "v2StartVehicleMaintenance": "Dein Fahrzeug ist in Wartung. Bitte wende dich an die Verwaltung.",
     "v2StartVehicleBusy": "Für dieses Fahrzeug ist noch eine Schicht offen. Bitte wende dich an die Verwaltung.",
-    "v2StartInactiveWorker": "Dein Konto ist deaktiviert. Bitte wende dich an die Verwaltung."
+    "v2StartInactiveWorker": "Dein Konto ist deaktiviert. Bitte wende dich an die Verwaltung.",
+    "v2TotalPackages": "Pakete gesamt",
+    "v2SetPackages": "Paketanzahl eingeben",
+    "v2EditPackages": "Paketanzahl ändern",
+    "v2PackagesHint": "Gib die Gesamtzahl der heutigen Pakete ein. Kann während des Tages geändert werden.",
+    "v2DeliveredPreview": "Zugestellt",
+    "v2UndeliveredRequired": "Bitte Anzahl nicht zugestellter Pakete eingeben (0 möglich)."
   },
   "history": {
     "title": "Schichtverlauf",

@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireWorker } from "@/lib/session";
-import { MAX_ODOMETER, MAX_PER_SHIFT_KM, MAX_COUNT } from "@/lib/validation";
+import { MAX_COUNT } from "@/lib/validation";
 import { recountShiftPackages } from "@/lib/shift-packages";
-import { hasShiftToday } from "@/lib/shift-day";
+import { latestVehicleTelemetry } from "@/lib/telemetry";
+import { resolveEndKm } from "@/lib/auto-shift";
 import { reportProblemAction } from "@/app/actions/driver-panel";
 import type { DriverReportType } from "@/lib/types";
 
@@ -51,68 +52,37 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
   const whenIso = resolveEventTime(item.clientTime);
 
   if (item.type === "start") {
-    const startKm = num(item.payload.start_km);
-    if (startKm === null || startKm < 0 || startKm > MAX_ODOMETER)
-      return { ok: false, error: "invalid" };
-
-    const { data: active } = await supabaseAdmin
-      .from("time_entries")
-      .select("id")
-      .eq("worker_id", workerId)
-      .is("ended_at", null)
-      .maybeSingle();
-    if (active) return { ok: true }; // already started; treat as done
-
-    // Günde tek vardiya (lib/shift-day.ts): şoför çevrimdışıyken kuyruğa
-    // giren başlatma, o gün zaten bir vardiya varsa ikinci satırı AÇMAZ.
-    // Hata değil "yapılacak bir şey kalmadı" durumudur — ok döner ki kuyruk
-    // öğeyi sonsuza dek yeniden denemesin.
-    if (await hasShiftToday(workerId)) return { ok: true };
-
-    const vehicleId = (item.payload.vehicle_id as string) || null;
-    let vehiclePlate: string | null = null;
-    if (vehicleId) {
-      const { data: v } = await supabaseAdmin
-        .from("vehicles")
-        .select("plate")
-        .eq("id", vehicleId)
-        .maybeSingle();
-      vehiclePlate = (v?.plate as string) ?? null;
-    }
-
-    const insert: Record<string, unknown> = {
-      worker_id: workerId,
-      started_at: whenIso,
-      start_km: startKm,
-      plate: vehiclePlate || (item.payload.plate as string) || session.plate || null,
-      vehicle_id: vehicleId,
-      break_minutes: 0,
-    };
-    const cargo = num(item.payload.expected_cargo);
-    if (cargo !== null && cargo >= 0 && cargo <= MAX_COUNT) {
-      insert.cargo_count = cargo;
-      insert.start_package_count = cargo;
-    }
-
-    const { error } = await supabaseAdmin.from("time_entries").insert(insert);
-    if (error) return { ok: false, error: error.message };
+    // Çevrimdışı vardiya BAŞLATMA kaldırıldı (21.07.2026). Tek başlatma yolu
+    // (panelin "VARDİYAYI BAŞLAT" butonu) zaten çevrimiçi gerektiriyordu:
+    // başlangıç km'sini sunucu telemetriden çözer, istemci onu bilemez. Bu dal
+    // yalnız client'ın istemci-tarafı km'siyle vardiya açabildiği eski yoldan
+    // kalmıştı; kalsaydı, uygulamadan silinen sayaç girişi kuyruk üzerinden
+    // geri sızabilirdi. Eski cihazda kalmış bir kuyruk öğesi sessizce düşer.
+    return { ok: true };
   } else if (item.type === "end") {
-    const endKm = num(item.payload.end_km);
-    if (endKm === null || endKm < 0 || endKm > MAX_ODOMETER)
-      return { ok: false, error: "invalid" };
-
     const { data: active } = await supabaseAdmin
       .from("time_entries")
-      .select("id, start_km, start_package_count")
+      .select("id, vehicle_id, start_km, started_at, start_package_count")
       .eq("worker_id", workerId)
       .is("ended_at", null)
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (!active) return { ok: true }; // nothing to close
-    if (endKm < active.start_km) return { ok: false, error: "km_low" };
-    if (endKm - active.start_km > MAX_PER_SHIFT_KM)
-      return { ok: false, error: "invalid" };
+
+    // Bitiş km'si CİHAZDAN — istemci km göndermiyor (21.07.2026). Online
+    // kapanışla (endShiftAction) birebir aynı kaynak: odometre → GPS → null.
+    // Kuyruk telefon çevrimiçi olunca işlendiği için telemetri o an okunabilir.
+    let endKm: number | null = null;
+    if (active.vehicle_id) {
+      const latest = await latestVehicleTelemetry(active.vehicle_id as string);
+      endKm = await resolveEndKm(
+        active.vehicle_id as string,
+        { started_at: active.started_at, start_km: active.start_km },
+        whenIso,
+        latest?.odometer_km
+      );
+    }
 
     const update: Record<string, unknown> = {
       ended_at: whenIso,

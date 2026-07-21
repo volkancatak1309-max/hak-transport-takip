@@ -80,15 +80,17 @@ const isoDate = z
   .refine((s) => !Number.isNaN(Date.parse(s)), { message: "errDate" });
 const isoDateOptional = isoDate.optional().nullable();
 
-export const startShiftSchema = z.object({
-  start_km: z.coerce.number().int().nonnegative("errKmNeg").max(MAX_ODOMETER, "errKmRange"),
-  plate: z.string().trim().max(20).optional().nullable(),
-  expected_cargo: z.coerce.number().int().nonnegative().max(MAX_COUNT).optional().nullable(),
-  vehicle_id: z.string().uuid().optional().nullable(),
-});
-
+/*
+ * startShiftSchema KALDIRILDI (21.07.2026): tek tüketicisi olan startShiftAction
+ * ile birlikte gitti. Vardiya artık ya kontaktan ya da panelin tek dokunuşluk
+ * "VARDİYAYI BAŞLAT" butonundan açılır; ikisinde de başlangıç km'si CİHAZDAN
+ * çözülür (resolveStartKm), istemciden gelen bir km alanı yoktur.
+ *
+ * endShiftSchema'da da end_km YOK — kapanış km'si sunucuda resolveEndKm ile
+ * türetilir. İstemciden km kabul eden hiçbir şema kalmadı; kalsaydı, alan
+ * arayüzden silinse bile doğrudan istekle geri girebilirdi.
+ */
 export const endShiftSchema = z.object({
-  end_km: z.coerce.number().int().nonnegative("errKmNeg").max(MAX_ODOMETER, "errKmRange"),
   plate: z.string().trim().max(20).optional().nullable(),
   notes: z.string().trim().max(500).optional().nullable(),
   break_minutes: z.coerce.number().int().min(0).max(1440).optional().nullable(),

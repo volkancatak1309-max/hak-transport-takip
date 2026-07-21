@@ -193,12 +193,18 @@ export async function resolveStartKm(
 }
 
 /**
- * Otomatik kapanan vardiyanın bitiş km'si: geçerli odometre → GPS mesafesi
- * (metrics-distance) → null (watchdog kapanışlarıyla aynı; rapor "—" gösterir).
+ * Vardiyanın bitiş km'si: geçerli odometre → GPS mesafesi (metrics-distance) →
+ * null (rapor "—" gösterir). Şoför bitiş km'si GİRMEZ (21.07.2026) — manuel
+ * kapanış da (endShiftAction) bu fonksiyonu çağırır, yani otomatik ve manuel
+ * kapanış birebir aynı kaynaktan türetir.
+ *
+ * Sıra bilinçli: cihaz odometresi aracın GERÇEK sayacıdır, GPS haversine'ı
+ * (sinyal boşluklarında eksik sayar) yenemez. GPS yalnız odometre yoksa ya da
+ * makul aralık dışındaysa devreye girer.
  */
-async function resolveEndKm(
+export async function resolveEndKm(
   vehicleId: string,
-  shift: OpenShift,
+  shift: { started_at: string; start_km: number },
   endedAtIso: string,
   odometerKm: number | null | undefined
 ): Promise<number | null> {

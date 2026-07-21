@@ -61,9 +61,8 @@ export const SHIFT_REPORT_DE = {
     end: "Ende",
     worked: "Arbeitszeit",
     breakMin: "Pause",
-    startKm: "Start-KM",
-    endKm: "End-KM",
-    km: "KM",
+    /** Sayaç kolonu yok; bu KAT EDİLEN mesafe (bkz. ShiftReport PdfHeaders). */
+    km: "Gefahrene km",
     loaded: "Aufgenommen",
     cargo: "Zugestellt",
     undelivered: "Nicht zugestellt",
@@ -115,8 +114,6 @@ export function buildShiftReportRow(e: ShiftReportEntry, workerName: string) {
     end: e.ended_at ? formatTime(e.ended_at, REPORT_LOCALE) : REPORT_EMPTY,
     worked: formatDurationShort(workedMs(e), REPORT_LOCALE),
     breakMin: String(e.break_minutes ?? 0),
-    startKm: e.start_km != null ? String(e.start_km) : REPORT_EMPTY,
-    endKm: e.end_km != null ? String(e.end_km) : REPORT_EMPTY,
     km: km !== null ? String(km) : REPORT_EMPTY,
     loaded:
       e.start_package_count != null ? String(e.start_package_count) : REPORT_EMPTY,

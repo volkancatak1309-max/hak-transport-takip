@@ -8,15 +8,6 @@ import { Package, Navigation, Play, Check, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { formatTime } from "@/lib/format";
 import { STATUS_STRIPE, routeSummary, directionsUrl } from "@/lib/assignments-ui";
@@ -25,16 +16,14 @@ import { startAssignment, completeAssignment } from "@/app/actions/assignments";
 
 type Props = { assignments: AssignmentWithWorker[] };
 
-type KmDialog = { mode: "start" | "complete"; a: AssignmentWithWorker } | null;
-
 export function TodayAssignments({ assignments }: Props) {
   const t = useTranslations("assignments");
   const locale = useLocale();
   const router = useRouter();
 
-  const [dialog, setDialog] = useState<KmDialog>(null);
-  const [km, setKm] = useState("");
-  const [busy, setBusy] = useState(false);
+  // Hangi seferin isteği uçuyor — buton başına kilitlenir (tek `busy` bayrağı
+  // olsaydı bir sefer başlatılırken diğerlerinin butonu da donardı).
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   // Only show the card when there is at least one active (assigned/started) trip.
   const hasActive = assignments.some(
@@ -42,32 +31,25 @@ export function TodayAssignments({ assignments }: Props) {
   );
   if (!hasActive) return null;
 
-  function openKm(mode: "start" | "complete", a: AssignmentWithWorker) {
-    setKm("");
-    setDialog({ mode, a });
-  }
-
-  async function confirmKm() {
-    if (!dialog) return;
-    const value = parseInt(km, 10);
-    if (!Number.isFinite(value) || value < 0) {
-      toast.error(dialog.mode === "start" ? t("start_km_prompt") : t("end_km_prompt"));
-      return;
-    }
-    setBusy(true);
+  /**
+   * Sefer başlat/bitir — SAYAÇ SORULMADAN (21.07.2026). Eskiden her iki eylem de
+   * şoföre odometre sorup `assignments.start_km/end_km`'e yazıyordu; şoför artık
+   * hiçbir yerde sayaç girmiyor, kilometre araç telemetrisinden geliyor.
+   */
+  async function run(mode: "start" | "complete", a: AssignmentWithWorker) {
+    setBusyId(a.id);
     try {
       const res =
-        dialog.mode === "start"
-          ? await startAssignment(dialog.a.id, value)
-          : await completeAssignment(dialog.a.id, value);
+        mode === "start"
+          ? await startAssignment(a.id)
+          : await completeAssignment(a.id);
       if (!res.ok) {
         toast.error(t("no_assignments"));
         return;
       }
-      setDialog(null);
       router.refresh();
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   }
 
@@ -102,13 +84,31 @@ export function TodayAssignments({ assignments }: Props) {
 
             <div className="mt-2 flex flex-wrap gap-2">
               {a.status === "assigned" && (
-                <Button size="sm" onClick={() => openKm("start", a)}>
-                  <Play className="size-4" /> {t("start_button")}
+                <Button
+                  size="sm"
+                  onClick={() => run("start", a)}
+                  disabled={busyId === a.id}
+                >
+                  {busyId === a.id ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Play className="size-4" />
+                  )}
+                  {t("start_button")}
                 </Button>
               )}
               {a.status === "started" && (
-                <Button size="sm" onClick={() => openKm("complete", a)}>
-                  <Check className="size-4" /> {t("complete_button")}
+                <Button
+                  size="sm"
+                  onClick={() => run("complete", a)}
+                  disabled={busyId === a.id}
+                >
+                  {busyId === a.id ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Check className="size-4" />
+                  )}
+                  {t("complete_button")}
                 </Button>
               )}
               {a.status === "completed" && (
@@ -125,40 +125,6 @@ export function TodayAssignments({ assignments }: Props) {
           </div>
         ))}
       </CardContent>
-
-      <Dialog open={!!dialog} onOpenChange={(o) => !o && setDialog(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {dialog?.mode === "start" ? t("start_km_prompt") : t("end_km_prompt")}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor="assignment_km">
-              {dialog?.mode === "start" ? t("start_km_prompt") : t("end_km_prompt")}
-            </Label>
-            <Input
-              id="assignment_km"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={km}
-              autoFocus
-              onChange={(e) => setKm(e.target.value)}
-              className="h-12"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialog(null)}>
-              {t("cancel")}
-            </Button>
-            <Button onClick={confirmKm} disabled={busy}>
-              {busy && <Loader2 className="size-4 animate-spin" />}
-              {dialog?.mode === "start" ? t("start_button") : t("complete_button")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Card>
   );
 }

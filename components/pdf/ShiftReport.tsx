@@ -13,6 +13,14 @@ import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
 
 registerPdfFont();
 
+/**
+ * Kolonlarda SAYAÇ (Start-KM/End-KM) YOK — 21.07.2026'da kaldırıldı.
+ * Şoför sayaç girmiyor; kilometre cihazdan geliyor ve iki kaynağı var:
+ * araçların 23'ünde gerçek odometre, kalan 6'sında GPS mesafesi. Yani MESAFE
+ * her araçta doğru, ama MUTLAK sayaç değeri hepsinde değil — resmî belgeye
+ * aracın panelindeki sayaçla uyuşmayabilecek bir rakam basmaktansa tek ve
+ * doğru olan "gefahrene Kilometer" kolonu bırakıldı.
+ */
 export type PdfHeaders = {
   worker: string;
   date: string;
@@ -20,8 +28,6 @@ export type PdfHeaders = {
   end: string;
   worked: string;
   breakMin: string;
-  startKm: string;
-  endKm: string;
   km: string;
   loaded: string;
   cargo: string;
@@ -29,21 +35,7 @@ export type PdfHeaders = {
   plate: string;
 };
 
-export type PdfRow = {
-  worker: string;
-  date: string;
-  start: string;
-  end: string;
-  worked: string;
-  breakMin: string;
-  startKm: string;
-  endKm: string;
-  km: string;
-  loaded: string;
-  cargo: string;
-  undelivered: string;
-  plate: string;
-};
+export type PdfRow = PdfHeaders;
 
 export type PdfOptions = {
   title: string;
@@ -122,18 +114,18 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: "#1e293b",
   },
-  colWorker: { width: "11%" },
-  colDate: { width: "8%" },
-  colStart: { width: "6%" },
-  colEnd: { width: "6%" },
-  colWorked: { width: "9%" },
-  colBreak: { width: "6%" },
-  colStartKm: { width: "8%" },
-  colEndKm: { width: "8%" },
-  colKm: { width: "7%" },
-  colLoaded: { width: "7%" },
-  colCargo: { width: "7%" },
-  colUndelivered: { width: "8%" },
+  // Toplam 100%. Start-KM/End-KM kolonlarından boşalan 16 puan kalan
+  // kolonlara dağıtıldı — özellikle isim ve sayı kolonları kırpılmasın diye.
+  colWorker: { width: "14%" },
+  colDate: { width: "9%" },
+  colStart: { width: "7%" },
+  colEnd: { width: "7%" },
+  colWorked: { width: "10%" },
+  colBreak: { width: "7%" },
+  colKm: { width: "9%" },
+  colLoaded: { width: "9%" },
+  colCargo: { width: "9%" },
+  colUndelivered: { width: "10%" },
   colPlate: { width: "9%" },
   footer: {
     position: "absolute",
@@ -182,8 +174,6 @@ function ReportDoc(opts: PdfOptions) {
             <Text style={[styles.th, styles.colEnd]}>{opts.headers.end}</Text>
             <Text style={[styles.th, styles.colWorked]}>{opts.headers.worked}</Text>
             <Text style={[styles.th, styles.colBreak]}>{opts.headers.breakMin}</Text>
-            <Text style={[styles.th, styles.colStartKm]}>{opts.headers.startKm}</Text>
-            <Text style={[styles.th, styles.colEndKm]}>{opts.headers.endKm}</Text>
             <Text style={[styles.th, styles.colKm]}>{opts.headers.km}</Text>
             <Text style={[styles.th, styles.colLoaded]}>{opts.headers.loaded}</Text>
             <Text style={[styles.th, styles.colCargo]}>{opts.headers.cargo}</Text>
@@ -198,8 +188,6 @@ function ReportDoc(opts: PdfOptions) {
               <Text style={[styles.td, styles.colEnd]}>{r.end}</Text>
               <Text style={[styles.td, styles.colWorked]}>{r.worked}</Text>
               <Text style={[styles.td, styles.colBreak]}>{r.breakMin}</Text>
-              <Text style={[styles.td, styles.colStartKm]}>{r.startKm}</Text>
-              <Text style={[styles.td, styles.colEndKm]}>{r.endKm}</Text>
               <Text style={[styles.td, styles.colKm]}>{r.km}</Text>
               <Text style={[styles.td, styles.colLoaded]}>{r.loaded}</Text>
               <Text style={[styles.td, styles.colCargo]}>{r.cargo}</Text>

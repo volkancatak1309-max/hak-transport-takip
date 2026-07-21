@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireWorker, requireAdmin } from "@/lib/session";
 import {
-  startShiftSchema,
   endShiftSchema,
   editEntrySchema,
   MAX_ODOMETER,
@@ -13,7 +12,7 @@ import {
 } from "@/lib/validation";
 import { workedMs, formatDurationShort, formatTime } from "@/lib/format";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
-import { resolveStartKm } from "@/lib/auto-shift";
+import { resolveStartKm, resolveEndKm } from "@/lib/auto-shift";
 import { hasShiftToday } from "@/lib/shift-day";
 import { sendTelegramMessage } from "@/lib/telegram";
 import {
@@ -49,94 +48,6 @@ async function notifyAdminsShiftStarted(
       })
     );
   }
-}
-
-export async function startShiftAction(formData: FormData): Promise<ShiftResult> {
-  const session = await requireWorker();
-
-  // Required: a vehicle (or plate fallback) AND a start odometer. Empty strings
-  // coerce to 0, so guard the raw values before validation. Enforced here on the
-  // server too — hiding the fields in the UI is not enough.
-  const rawVehicle = String(formData.get("vehicle_id") ?? "").trim();
-  const rawPlate = String(formData.get("plate") ?? "").trim();
-  const rawStartKm = String(formData.get("start_km") ?? "").trim();
-  if (!rawVehicle && !rawPlate) return { ok: false, error: "vehicle_required" };
-  if (rawStartKm === "") return { ok: false, error: "start_km_required" };
-
-  const parsed = startShiftSchema.safeParse({
-    start_km: formData.get("start_km"),
-    plate: formData.get("plate") || null,
-    expected_cargo: formData.get("expected_cargo") || null,
-    vehicle_id: formData.get("vehicle_id") || null,
-  });
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
-  }
-
-  const { data: active } = await supabaseAdmin
-    .from("time_entries")
-    .select("id")
-    .eq("worker_id", session.worker_id!)
-    .is("ended_at", null)
-    .maybeSingle();
-
-  if (active) return { ok: false, error: "active" };
-
-  // Günde tek vardiya (lib/shift-day.ts). Kapanmış bugünkü vardiya varsa yeni
-  // vardiya açılmaz — bugünün işi bitmiştir.
-  if (await hasShiftToday(session.worker_id!)) {
-    return { ok: false, error: "day_done" };
-  }
-
-  // If a vehicle was picked, that's the canonical link. Denormalize its plate
-  // into time_entries.plate so existing reports/exports keep working unchanged.
-  let vehiclePlate: string | null = null;
-  if (parsed.data.vehicle_id) {
-    const { data: v } = await supabaseAdmin
-      .from("vehicles")
-      .select("plate")
-      .eq("id", parsed.data.vehicle_id)
-      .maybeSingle();
-    vehiclePlate = (v?.plate as string) ?? null;
-  }
-
-  const startedIso = new Date().toISOString();
-  const shiftPlate = vehiclePlate ?? parsed.data.plate ?? session.plate ?? null;
-  const insert: Record<string, unknown> = {
-    worker_id: session.worker_id!,
-    started_at: startedIso,
-    start_km: parsed.data.start_km,
-    plate: shiftPlate,
-    vehicle_id: parsed.data.vehicle_id ?? null,
-    break_minutes: 0,
-  };
-  if (parsed.data.expected_cargo !== null && parsed.data.expected_cargo !== undefined) {
-    insert.cargo_count = parsed.data.expected_cargo;
-    insert.start_package_count = parsed.data.expected_cargo;
-  }
-
-  let { error } = await supabaseAdmin.from("time_entries").insert(insert);
-  if (error && /vehicle_id|start_package_count|column/i.test(error.message)) {
-    // Pre-migration fallback: vehicle columns not applied yet → insert legacy shape
-    // so shift-start never breaks before migration 009 is run.
-    const legacy = { ...insert };
-    delete legacy.vehicle_id;
-    delete legacy.start_package_count;
-    ({ error } = await supabaseAdmin.from("time_entries").insert(legacy));
-  }
-  if (error) return { ok: false, error: error.message };
-
-  // Telegram: alert linked admins that this driver started a shift
-  // (best-effort, never blocks the action).
-  await notifyAdminsShiftStarted(
-    session.name ?? "—",
-    shiftPlate ?? "—",
-    startedIso
-  );
-
-  revalidatePath("/panel");
-  revalidatePath("/admin");
-  return { ok: true };
 }
 
 /**
@@ -257,7 +168,6 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
   const session = await requireWorker();
 
   const parsed = endShiftSchema.safeParse({
-    end_km: formData.get("end_km"),
     plate: formData.get("plate") || null,
     notes: formData.get("notes") || null,
     break_minutes: formData.get("break_minutes") || null,
@@ -279,7 +189,9 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
 
   const { data: active, error: findErr } = await supabaseAdmin
     .from("time_entries")
-    .select("id, start_km, started_at, break_minutes, start_package_count")
+    .select(
+      "id, vehicle_id, start_km, started_at, break_minutes, start_package_count"
+    )
     .eq("worker_id", session.worker_id!)
     .is("ended_at", null)
     .order("started_at", { ascending: false })
@@ -289,18 +201,23 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
   if (findErr) return { ok: false, error: "db" };
   if (!active) return { ok: false, error: "no_active" };
 
-  if (parsed.data.end_km < active.start_km) {
-    return {
-      ok: false,
-      error: `km_low:${parsed.data.end_km}:${active.start_km}`,
-    };
-  }
-  const kmDiffShift = parsed.data.end_km - active.start_km;
-  if (kmDiffShift > MAX_PER_SHIFT_KM) {
-    return { ok: false, error: `km_high:${kmDiffShift}:${MAX_PER_SHIFT_KM}` };
-  }
-
   const endedIso = new Date().toISOString();
+
+  // BİTİŞ KM'Sİ CİHAZDAN — şoför sayaç girmez (21.07.2026). Yanlış girilen
+  // sayaç değerleri raporda 3.000 km'lik hayalet vardiyalar üretiyordu.
+  // Kaynak sırası otomatik kapanışın birebir aynısı (resolveEndKm): cihaz
+  // odometresi → GPS mesafesi → null. Telemetrisi olmayan araçta null kalır ve
+  // rapor dürüstçe "—" gösterir; uydurma sayı yazmayız.
+  let endKm: number | null = null;
+  if (active.vehicle_id) {
+    const latest = await latestVehicleTelemetry(active.vehicle_id as string);
+    endKm = await resolveEndKm(
+      active.vehicle_id as string,
+      { started_at: active.started_at, start_km: active.start_km },
+      endedIso,
+      latest?.odometer_km
+    );
+  }
   const finalBreak =
     parsed.data.break_minutes ?? active.break_minutes ?? 0;
 
@@ -319,7 +236,7 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
 
   const updateData: Record<string, unknown> = {
     ended_at: endedIso,
-    end_km: parsed.data.end_km,
+    end_km: endKm,
     notes: parsed.data.notes,
     summary_notified_at: endedIso,
     end_reason: "manual",
@@ -380,7 +297,8 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
       me.telegram_chat_id as string,
       shiftSummaryMessage(loc, {
         hours: formatDurationShort(ms, loc),
-        km: String(parsed.data.end_km - active.start_km),
+        // Cihazdan km çözülemediyse "—" — otomatik kapanış özetiyle aynı dil.
+        km: endKm !== null ? String(endKm - active.start_km) : "—",
         cargo: String(delivered ?? 0),
         breakMin: String(finalBreak),
       })
@@ -453,35 +371,13 @@ export async function addBreakMinutesAction(minutes: number): Promise<ShiftResul
   return { ok: true };
 }
 
-/**
- * Driver edits the start odometer of their OWN, still-OPEN shift. The server
- * enforces both (worker_id match + ended_at IS NULL): a closed shift or someone
- * else's shift is refused regardless of the UI.
+/*
+ * updateStartKmAction (şoförün kendi başlangıç km'sini düzeltmesi) 21.07.2026'da
+ * KALDIRILDI. Km artık cihazdan türetiliyor (odometre → GPS), şoför hiçbir yerde
+ * sayaç girmez — düzeltme yolu da kalırsa yanlış değerin geri sızacağı kapı
+ * açık kalırdı. Yanlış türetilmiş bir km'yi YÖNETİCİ düzeltir:
+ * adminUpdateKmAction (components/KmEditButton).
  */
-export async function updateStartKmAction(km: number): Promise<ShiftResult> {
-  const session = await requireWorker();
-  const v = Math.floor(Number(km));
-  if (!Number.isFinite(v) || v < 0) return { ok: false, error: "errKmNeg" };
-  if (v > MAX_ODOMETER) return { ok: false, error: "errKmRange" };
-
-  const { data, error } = await supabaseAdmin
-    .from("time_entries")
-    .update({
-      start_km: v,
-      updated_at: new Date().toISOString(),
-      updated_by: session.worker_id,
-    })
-    .eq("worker_id", session.worker_id!)
-    .is("ended_at", null)
-    .select("id");
-
-  if (error) return { ok: false, error: error.message };
-  if (!data || data.length === 0) return { ok: false, error: "no_active" };
-
-  revalidatePath("/panel");
-  revalidatePath("/admin");
-  return { ok: true };
-}
 
 /**
  * Driver sets/updates the start-of-day package count on their OWN, OPEN shift

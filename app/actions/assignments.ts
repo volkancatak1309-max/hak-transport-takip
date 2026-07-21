@@ -230,20 +230,23 @@ export async function cancelAssignment(
   return { ok: true, id };
 }
 
-/** Driver: mark own assignment started with the start odometer reading. */
+/**
+ * Driver: mark own assignment started.
+ *
+ * Sayaç SORULMAZ (21.07.2026): şoför hiçbir yerde odometre girmez. Kilometre
+ * araç telemetrisinden gelir; `assignments.start_km/end_km` kolonları geçmiş
+ * veri için duruyor ama ARTIK YAZILMIYOR (kolonu silmek eski seferlerin
+ * kaydını yok ederdi).
+ */
 export async function startAssignment(
-  id: string,
-  startKm: number
+  id: string
 ): Promise<AssignmentActionResult> {
   const session = await requireWorker();
-  const km = Math.floor(Number(startKm));
-  if (!Number.isFinite(km) || km < 0) return { ok: false, error: "km" };
 
   const { data: updated, error } = await supabaseAdmin
     .from("assignments")
     .update({
       status: "started",
-      start_km: km,
       started_at: new Date().toISOString(),
     })
     .eq("id", id)
@@ -258,40 +261,29 @@ export async function startAssignment(
   return { ok: true, id };
 }
 
-/** Driver: mark own assignment completed with the end odometer reading. */
+/** Driver: mark own assignment completed. Sayaç sorulmaz — bkz. startAssignment. */
 export async function completeAssignment(
-  id: string,
-  endKm: number
+  id: string
 ): Promise<AssignmentActionResult> {
   const session = await requireWorker();
-  const km = Math.floor(Number(endKm));
-  if (!Number.isFinite(km) || km < 0) return { ok: false, error: "km" };
 
-  const { data: existing } = await supabaseAdmin
-    .from("assignments")
-    .select("id, start_km")
-    .eq("id", id)
-    .eq("worker_id", session.worker_id!)
-    .eq("status", "started")
-    .maybeSingle();
-
-  if (!existing) return { ok: false, error: "not_allowed" };
-  if (existing.start_km != null && km < existing.start_km) {
-    return { ok: false, error: `km_low:${km}:${existing.start_km}` };
-  }
-
-  const { error } = await supabaseAdmin
+  // .select() + satır sayısı kontrolü: km ön-sorgusu kalkınca "bu sefer bu
+  // şoförün mü ve başlamış mı" kontrolü de onunla gitmişti. Eşleşen satır yoksa
+  // sessiz başarı değil, not_allowed döner.
+  const { data: updated, error } = await supabaseAdmin
     .from("assignments")
     .update({
       status: "completed",
-      end_km: km,
       completed_at: new Date().toISOString(),
     })
     .eq("id", id)
     .eq("worker_id", session.worker_id!)
-    .eq("status", "started");
+    .eq("status", "started")
+    .select("id");
 
   if (error) return { ok: false, error: error.message };
+  if (!updated || updated.length === 0) return { ok: false, error: "not_allowed" };
+
   revalidateAll();
   return { ok: true, id };
 }

@@ -13,7 +13,6 @@ import {
   Loader2,
   Package,
   Pause,
-  Pencil,
   PlayCircle,
   Square,
 } from "lucide-react";
@@ -22,7 +21,6 @@ import {
   startShiftManualAction,
   addBreakMinutesAction,
   startBreakAction,
-  updateStartKmAction,
   updatePackageCountAction,
 } from "../actions/shift";
 import { formatDuration, formatTime, workedMs } from "@/lib/format";
@@ -121,8 +119,6 @@ export function PanelClient({
   const [endForm, setEndForm] = useState<FormData | null>(null);
   const [problemOpen, setProblemOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [kmEditOpen, setKmEditOpen] = useState(false);
-  const [kmVal, setKmVal] = useState("");
   // Manuel paket sayısı (alınan/planlanan) — +1 sayaç yerine düz sayı girişi.
   const [pkgOpen, setPkgOpen] = useState(false);
   const [pkgVal, setPkgVal] = useState("");
@@ -249,8 +245,9 @@ export function PanelClient({
       // Süren mola, form alanı varsayılanı totalBreakSoFar'a zaten dahil.
       setBreakStartLocal(null);
     }
+    // Çevrimdışı kuyruk yükünde de km YOK — bitiş km'si sunucuda cihazdan
+    // türetilir (offline.ts "end" dalı endShiftAction ile aynı kaynağı kullanır).
     const payload = {
-      end_km: formData.get("end_km"),
       notes: formData.get("notes") || null,
       break_minutes: formData.get("break_minutes") || null,
       undelivered_count: formData.get("undelivered_count") || null,
@@ -285,43 +282,14 @@ export function PanelClient({
     if (e === "active") return t("errActive");
     if (e === "no_active") return t("errNoActive");
     if (e === "undelivered_required") return t("v2UndeliveredRequired");
-    if (e === "start_km_required" || e === "errKmNeg") return t("startKmErr");
-    if (e.startsWith("km_low:")) {
-      const [, end, start] = e.split(":");
-      return t("errKmLow", { end, start });
-    }
-    if (e.startsWith("km_high:")) {
-      const [, diff, max] = e.split(":");
-      return t("errKmHigh", { diff, max });
-    }
-    if (e === "errKmRange") return t("errKmRange");
+    // km_* hata kodları BİLİNÇLİ olarak kalktı: şoför km girmediği için sunucu
+    // ondan km hatası döndüremez (km cihazdan türetilir, doğrulanacak girdi yok).
     if (e === "no_vehicle") return t("v2WaitNoVehicle");
     if (e === "vehicle_unavailable") return t("v2StartVehicleMaintenance");
     if (e === "vehicle_busy") return t("v2StartVehicleBusy");
     if (e === "inactive_worker") return t("v2StartInactiveWorker");
     if (e === "day_done") return t("v2DayDoneToast");
     return e;
-  }
-
-  function openKmEdit() {
-    setKmVal(active ? String(active.start_km) : "");
-    setSettingsOpen(false);
-    setKmEditOpen(true);
-  }
-  function saveKm() {
-    const v = Number(kmVal);
-    if (!Number.isFinite(v) || v < 0) {
-      toast.error(t("startKmErr"));
-      return;
-    }
-    startTransition(async () => {
-      const r = await updateStartKmAction(v);
-      if (r.ok) {
-        toast.success(t("startKmSaved"));
-        setKmEditOpen(false);
-        router.refresh();
-      } else toast.error(mapErr(r.error));
-    });
   }
 
   /**
@@ -627,21 +595,11 @@ export function PanelClient({
           <DialogHeader>
             <DialogTitle>{t("v2LinkSettings")}</DialogTitle>
           </DialogHeader>
+          {/* Başlangıç KM düzeltme kaldırıldı: km cihazdan geliyor, şoför
+              sayaç girmiyor. Yanlış türetilmiş bir değeri yönetici düzeltir
+              (çalışan detayındaki KM düzenle). */}
           <div className="space-y-4">
             <TelegramLink linked={telegram.linked} username={telegram.username} />
-            {active && (
-              <Button
-                variant="outline"
-                onClick={openKmEdit}
-                className="h-12 w-full gap-2"
-              >
-                <Pencil className="size-4" />
-                {t("editStartKm")}
-                <span className="nums font-medium">
-                  {active.start_km.toLocaleString(locale === "de" ? "de-AT" : "tr-TR")}
-                </span>
-              </Button>
-            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -667,25 +625,9 @@ export function PanelClient({
             className="space-y-4"
           >
             <input type="hidden" name="break_minutes" value={totalBreakSoFar} />
-            <div className="space-y-1.5">
-              <Label htmlFor="end_km">{t("endKm")}</Label>
-              <Input
-                id="end_km"
-                name="end_km"
-                type="number"
-                inputMode="numeric"
-                min={active?.start_km ?? 0}
-                required
-                autoFocus
-                className="h-14 text-lg nums"
-              />
-              {active && (
-                <p className="text-xs text-muted-foreground">
-                  {t("startKm")}:{" "}
-                  {active.start_km.toLocaleString(locale === "de" ? "de-AT" : "tr-TR")}
-                </p>
-              )}
-            </div>
+            {/* KM ALANI YOK (21.07.2026). Şoför sayaç girmiyor; kilometre
+                kapanışta cihazdan türetiliyor (odometre → GPS). Yanlış girilen
+                sayaç raporda 3.000 km'lik hayalet vardiyalar üretiyordu. */}
             <div className="space-y-1.5">
               <Label htmlFor="undelivered_count">{t("cargoUndelivered")}</Label>
               <Input
@@ -695,6 +637,7 @@ export function PanelClient({
                 inputMode="numeric"
                 min={0}
                 required
+                autoFocus
                 value={endUndel}
                 onChange={(e) => setEndUndel(e.target.value)}
                 className="h-14 text-lg nums"
@@ -807,36 +750,6 @@ export function PanelClient({
         </DialogContent>
       </Dialog>
 
-      {/* Başlangıç km düzeltme (otomatik başlatılan vardiyada km yanlış olabilir) */}
-      <Dialog open={kmEditOpen} onOpenChange={setKmEditOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("editStartKm")}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor="edit_start_km">{t("startKm")}</Label>
-            <Input
-              id="edit_start_km"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={kmVal}
-              onChange={(e) => setKmVal(e.target.value)}
-              className="h-14 text-lg nums"
-              autoFocus
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setKmEditOpen(false)}>
-              {tc("cancel")}
-            </Button>
-            <Button onClick={saveKm} disabled={pending}>
-              {pending && <Loader2 className="size-4 animate-spin" />}
-              {tc("save")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

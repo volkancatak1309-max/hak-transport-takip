@@ -1,5 +1,14 @@
 import { getTranslations } from "next-intl/server";
-import { Clock3, Hourglass, Route, Siren, Gauge, BarChart3 } from "lucide-react";
+import {
+  Clock3,
+  Hourglass,
+  Route,
+  Siren,
+  Gauge,
+  BarChart3,
+  Milestone,
+  TrendingUp,
+} from "lucide-react";
 import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { PageHeader } from "@/components/ui-v2";
@@ -71,6 +80,22 @@ export default async function ReportsPage() {
               meta={t("distance_meta", { n: n(vehicles.count) })}
             />
             <ReportCard
+              href="/admin/raporlar/mesafe"
+              icon={Milestone}
+              title={t("fleet_distance_title")}
+              description={t("fleet_distance_desc")}
+              contains={[t("fd_c1"), t("fd_c2"), t("fd_c3")]}
+              meta={t("fd_meta", { n: n(vehicles.count) })}
+            />
+            <ReportCard
+              href="/admin/raporlar/hiz"
+              icon={Gauge}
+              title={t("speed_title")}
+              description={t("speed_desc")}
+              contains={[t("speed_c1"), t("speed_c2"), t("speed_c3")]}
+              meta={t("speed_meta", { n: n(events.count) })}
+            />
+            <ReportCard
               href="/admin/analiz"
               icon={Hourglass}
               title={t("idle_title")}
@@ -92,6 +117,14 @@ export default async function ReportsPage() {
         <section>
           <h2 className="mb-3 text-[15px] font-semibold">{t("cat_driver")}</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <ReportCard
+              href="/admin/raporlar/performans"
+              icon={TrendingUp}
+              title={t("perf_title")}
+              description={t("perf_desc")}
+              contains={[t("perf_c1"), t("perf_c2"), t("perf_c3")]}
+              meta={t("perf_meta", { n: n(shifts.count) })}
+            />
             <ReportCard
               href="/admin"
               icon={Clock3}

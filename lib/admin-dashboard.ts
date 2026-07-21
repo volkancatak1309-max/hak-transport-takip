@@ -8,7 +8,7 @@ import {
   kmDiff,
 } from "@/lib/format";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
-import { listFleetActiveDtc } from "@/lib/telemetry";
+import { listFleetActiveDtc, listLatestVehiclePositions } from "@/lib/telemetry";
 import type { TimeEntry, Worker, VehicleLiveStatus } from "@/lib/types";
 
 const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
@@ -23,6 +23,16 @@ const PERF_WINDOW_DAYS = 7;
 const UNDELIVERED_THRESHOLD = 5;
 /** Inspection/insurance within this many days (or already overdue) is flagged. */
 const DOC_DUE_WINDOW_DAYS = 30;
+/** Ehliyet bu kadar gün içinde doluyorsa aksiyon listesine düşer. */
+const LICENSE_DUE_WINDOW_DAYS = 30;
+/**
+ * Cihazlı bir araç bu kadar saattir HİÇ telemetri göndermediyse "konum
+ * göndermiyor" uyarısı çıkar. Eşik gerçek kadanstan türetildi: park hâlindeki
+ * araç kontak KAPALIYKEN bile saatlik heartbeat gönderiyor (canlı örnek:
+ * 12:18 · 13:18 · 14:18 · 15:18), yani 24 saat sessizlik "araç duruyor" değil,
+ * cihaz/bağlantı arızasıdır. (Volkan onayı, 21.07.2026.)
+ */
+const TELEMETRY_SILENT_HOURS = 24;
 
 /** Live snapshot of "where are we right now / today" — independent of the
  *  range/worker/status filters that drive the shift table below. */
@@ -80,11 +90,17 @@ export type AttentionItem =
       amount: number | null; // total amount of the unpaid penalties (null if none priced)
     }
   | {
-      kind: "unconfirmed"; // v2: auto-started shift not confirmed by the driver
+      kind: "license"; // şoför ehliyeti doldu / dolmak üzere (workers.license_expiry)
       id: string;
       worker_name: string;
-      date: string; // shift start
-      autoEnded: boolean; // true → shift already closed unconfirmed (more urgent)
+      due: string;
+      days: number; // dolmasına kaç gün (negatif = doldu)
+    }
+  | {
+      kind: "silent"; // cihazlı aktif araç uzun süredir hiç telemetri göndermiyor
+      id: string;
+      plate: string;
+      hours: number; // son kayıttan bu yana geçen saat
     };
 
 /** Per-driver / per-vehicle breakdown behind each OpsSummary tile, for the
@@ -167,8 +183,9 @@ export async function getDashboardData(
     activeRes,
     vehicles,
     workersRes,
+    licenseRes,
     penaltyRes,
-    unconfirmedRes,
+    positions,
     dtcRows,
   ] = await Promise.all([
     supabaseAdmin
@@ -206,21 +223,23 @@ export async function getDashboardData(
       .is("ended_at", null),
     listVehiclesWithStatus(),
     supabaseAdmin.from("workers").select("id, name"),
+    // Ehliyet uyarısı (migration 025). İsim haritasından AYRI sorgu: migration
+    // uygulanmamış bir ortamda license_expiry kolonu yoktur → sorgu error döner,
+    // data null → yalnız ehliyet uyarıları boş kalır, dashboard'ın geri kalanı
+    // (isimler dahil) etkilenmez. Yalnız çalışan personel uyarı üretir.
+    supabaseAdmin
+      .from("workers")
+      .select("id, name, license_expiry")
+      .eq("is_active", true)
+      .not("license_expiry", "is", null),
     // Unpaid vehicle penalties (Strafe) → surfaced as action items.
     supabaseAdmin
       .from("vehicle_penalties")
       .select("vehicle_id, amount")
       .eq("paid", false),
-    // v2 (migration 020): şoför onayı bekleyen / onaysız kapanan vardiyalar →
-    // dikkat listesinde "onaysız" rozeti. Migration 020 uygulanmadan önce
-    // confirmation_status kolonu yoktur → sorgu error döner, data null → boş
-    // liste (dashboard'ı asla bozmaz).
-    supabaseAdmin
-      .from("time_entries")
-      .select("id, worker_id, started_at, confirmation_status, auto_ended, auto_started")
-      .in("confirmation_status", ["pending", "unconfirmed"])
-      .order("started_at", { ascending: false })
-      .limit(50),
+    // Cihazlı araçların SON telemetri kaydı → "konum göndermiyor" uyarısı.
+    // Haritanın kullandığı sorgunun aynısı (araç başına indexli limit-1).
+    listLatestVehiclePositions(),
     // Filo geneli aktif arıza kodları (migration 021 yoksa boş liste).
     listFleetActiveDtc(),
   ]);
@@ -242,12 +261,10 @@ export async function getDashboardData(
     vehicle_id: string;
     amount: number | null;
   }[];
-  const unconfirmedShifts = (unconfirmedRes.data ?? []) as {
+  const licenses = (licenseRes.data ?? []) as {
     id: string;
-    worker_id: string | null;
-    started_at: string;
-    confirmation_status: string;
-    auto_ended: boolean | null;
+    name: string;
+    license_expiry: string;
   }[];
 
   const fleet = buildFleet(vehicles);
@@ -299,7 +316,8 @@ export async function getDashboardData(
       names,
       todayStart,
       unpaidPenalties,
-      unconfirmedShifts
+      licenses,
+      positions
     ),
   };
 }
@@ -518,34 +536,17 @@ function buildAttention(
   vehicles: {
     id: string;
     plate: string;
+    status: string;
     inspection_due: string | null;
     insurance_due: string | null;
   }[],
   names: Map<string, string>,
   todayStart: Date,
   unpaidPenalties: { vehicle_id: string; amount: number | null }[],
-  unconfirmedShifts: {
-    id: string;
-    worker_id: string | null;
-    started_at: string;
-    confirmation_status: string;
-    auto_ended: boolean | null;
-  }[]
+  licenses: { id: string; name: string; license_expiry: string }[],
+  positions: { vehicle_id: string; recorded_at: string }[]
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
-
-  // 0) v2 — onaysız vardiyalar: otomatik başlayıp şoförün onaylamadığı (pending)
-  //    ya da onaylanmadan kapanan (unconfirmed) vardiyalar. Kapanmış olan daha
-  //    acildir (şoför artık ekranı görmüyor → yalnız admin düzeltebilir).
-  for (const u of unconfirmedShifts) {
-    items.push({
-      kind: "unconfirmed",
-      id: `${u.id}-unconfirmed`,
-      worker_name: u.worker_id ? names.get(u.worker_id) ?? "—" : "—",
-      date: u.started_at,
-      autoEnded: !!u.auto_ended,
-    });
-  }
 
   // 1) Shifts past the 9h AZG threshold — only the ones that are *actionable
   //    right now*: shifts that started today, plus any still-open (active)
@@ -620,14 +621,58 @@ function buildAttention(
     });
   }
 
+  // 5) Ehliyeti dolmuş / dolmak üzere olan şoförler (workers.license_expiry).
+  //    Araç belgelerinden BİLİNÇLİ farkı: dolmuş ehliyetin alt sınırı yoktur.
+  //    Muayene kaydı eskidiğinde listeden düşer (bakımsız kayıt panoyu sürekli
+  //    kırmızı tutmasın diye), ama dolmuş ehliyet yasal olarak direksiyona
+  //    geçilemez demektir — düzeltilene kadar listede kalmalı.
+  for (const w of licenses) {
+    const t = new Date(w.license_expiry).getTime();
+    if (!Number.isFinite(t)) continue; // bozuk tarih → uyarı uydurma
+    const days = Math.round((t - today) / dayMs);
+    if (days > LICENSE_DUE_WINDOW_DAYS) continue;
+    items.push({
+      kind: "license",
+      id: `${w.id}-license`,
+      worker_name: w.name,
+      due: w.license_expiry,
+      days,
+    });
+  }
+
+  // 6) Cihazlı ama uzun süredir hiç telemetri göndermeyen AKTİF araçlar.
+  //    Hiç veri göndermemiş araç burada yoktur (listLatestVehiclePositions onu
+  //    zaten döndürmez) — "cihaz hiç kurulmamış" ile "cihaz sustu" ayrı şeyler,
+  //    ikincisini uydurmayız.
+  const activePlate = new Map(
+    vehicles.filter((v) => v.status !== "inactive").map((v) => [v.id, v.plate])
+  );
+  const nowMs = Date.now();
+  for (const p of positions) {
+    const plate = activePlate.get(p.vehicle_id);
+    if (!plate) continue;
+    const hours = Math.floor((nowMs - new Date(p.recorded_at).getTime()) / 3_600_000);
+    if (hours < TELEMETRY_SILENT_HOURS) continue;
+    items.push({
+      kind: "silent",
+      id: `${p.vehicle_id}-silent`,
+      plate,
+      hours,
+    });
+  }
+
   // Most urgent first: overdue/soonest docs, then biggest overruns/backlogs.
   const weight = (i: AttentionItem): number => {
     switch (i.kind) {
+      case "license":
+        // Ehliyet ve araç belgeleri aynı skalada yarışır (gün cinsinden), ama
+        // eşitlikte ehliyet öne geçer: şoför direksiyona geçemez > araç belgesi.
+        return i.days - 0.5;
       case "inspection":
       case "insurance":
         return i.days; // overdue (negative) and soonest first
-      case "unconfirmed":
-        return i.autoEnded ? 40 : 60; // after overdue docs; closed-unconfirmed first
+      case "silent":
+        return 50 - i.hours / 24; // belgelerden sonra; en uzun sessizlik önce
       case "penalty":
         return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "over9h":

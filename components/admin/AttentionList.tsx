@@ -8,7 +8,8 @@ import {
   PackageX,
   Receipt,
   CheckCircle2,
-  UserX,
+  IdCard,
+  SatelliteDish,
   type LucideIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,15 +36,34 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
           meta: formatDurationShort(item.ms, locale),
           overdue: true,
         };
-      case "unconfirmed":
+      case "license": {
+        const expired = item.days < 0;
         return {
-          icon: UserX,
-          text: t("dash.attn_unconfirmed", { name: item.worker_name }),
-          meta: item.autoEnded
-            ? t("dash.attn_unconfirmed_ended")
-            : formatDate(item.date, locale),
-          overdue: item.autoEnded,
+          icon: IdCard,
+          text: t(expired ? "dash.attn_license_expired" : "dash.attn_license", {
+            name: item.worker_name,
+            date: formatDate(item.due, locale),
+          }),
+          meta: expired
+            ? t("dash.attn_overdue_days", { days: Math.abs(item.days) })
+            : t("dash.attn_in_days", { days: item.days }),
+          overdue: expired,
         };
+      }
+      case "silent": {
+        // 48 saati aşan sessizlik saat cinsinden okunaksız ("116 saattir") →
+        // gün. Eşiğin (24s) hemen üstünde ise saat daha bilgilendirici.
+        const days = Math.floor(item.hours / 24);
+        return {
+          icon: SatelliteDish,
+          text: t("dash.attn_silent", { plate: item.plate }),
+          meta:
+            item.hours >= 48
+              ? t("dash.attn_silent_days", { days })
+              : t("dash.attn_silent_hours", { hours: item.hours }),
+          overdue: item.hours >= 48,
+        };
+      }
       case "inspection":
       case "insurance": {
         const overdue = item.days < 0;

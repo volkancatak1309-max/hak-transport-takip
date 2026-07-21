@@ -477,14 +477,16 @@ export function AdminClient({
       {/* Bugünün canlı operasyon özeti (analitik ızgaranın altında) */}
       <OpsSummary ops={dashboard.todayOps} detail={dashboard.opsDetail} />
 
-      {/* Dikkat kalemleri + şoför bildirimleri — yalnız içerik varken (boş-durum
-          ekonomisi); boş dev kutu yok. */}
-      {(dashboard.attention.length > 0 || reports.length > 0) && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          {dashboard.attention.length > 0 && <AttentionList items={dashboard.attention} />}
-          {reports.length > 0 && <DriverReportsCard reports={reports} />}
-        </div>
-      )}
+      {/* Dikkat kalemleri + şoför bildirimleri.
+          Dikkat panosu HER ZAMAN render edilir — kardeş kartların (DTC, şoför
+          bildirimi) boş-durum ekonomisinden bilinçli ayrılır: bu pano yalnız
+          "iş var mı" değil, "kontrol edildi mi" sorusunu da yanıtlar. Kartın
+          hiç görünmemesi ile hiç uyarı olmaması yönetici için ayırt edilemez;
+          "şu an dikkat gerektiren bir şey yok" satırı bilgidir. */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <AttentionList items={dashboard.attention} />
+        {reports.length > 0 && <DriverReportsCard reports={reports} />}
+      </div>
 
       {/* Vardiya kayıtları — özet · filtre · tablo */}
       <section className="space-y-4 border-t border-border pt-6">

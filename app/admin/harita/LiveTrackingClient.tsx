@@ -138,8 +138,9 @@ export function LiveTrackingClient({
             </span>
           </div>
           <div className="relative h-[58vh] min-h-[420px] w-full">
+            {/* Harita YALNIZ araç plaka katmanı — şoför isim marker'ları
+                kaldırıldı. Şoförler + konum durumu aşağıdaki yan panelde. */}
             <FleetMap
-              drivers={drivers}
               vehicles={vehicles}
               hoveredVehicleId={hovered}
             />

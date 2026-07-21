@@ -6,7 +6,6 @@ import {
   MapContainer,
   Marker,
   Popup,
-  Polyline,
   Tooltip,
   useMap,
 } from "react-leaflet";
@@ -14,46 +13,21 @@ import Link from "next/link";
 import { VectorBaseLayer } from "@/components/VectorBaseLayer";
 import { useLocale, useTranslations } from "next-intl";
 import "leaflet/dist/leaflet.css";
-import { UserAvatar } from "@/components/UserAvatar";
 import { FLEET_STYLE } from "@/lib/vehicle-ui";
 import { formatRelative, formatTime } from "@/lib/format";
 import {
   VEHICLE_FRESH_MS,
-  type ActiveDriver,
   type ActiveVehicle,
   type VehicleFleet,
 } from "@/lib/types";
 
 const AUSTRIA_CENTER: [number, number] = [47.5162, 14.5501];
 
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
 // Fixes older than this stay OFF the auto-fit frame (markers still render).
 const BOUNDS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function makeIcon(name: string, variant: "active" | "warn"): L.DivIcon {
-  const mod = variant === "warn" ? " is-warn" : "";
-  return L.divIcon({
-    className: "hak-marker-wrap",
-    html:
-      `<div class="hak-pin-wrap">` +
-      `<div class="hak-pin-label">${esc(name)}</div>` +
-      `<div class="hak-pin${mod}"><span>${initials(name)}</span></div>` +
-      `</div>`,
-    iconSize: [36, 36],
-    iconAnchor: [18, 18],
-    popupAnchor: [0, -18],
-  });
 }
 
 // Vehicle (hardware-tracker) marker — a plate pill, visually distinct from the
@@ -149,11 +123,9 @@ function HoverSync({
 }
 
 export const FleetMap = memo(function FleetMap({
-  drivers,
   vehicles = [],
   hoveredVehicleId = null,
 }: {
-  drivers: ActiveDriver[];
   vehicles?: ActiveVehicle[];
   /** Vehicle currently hovered/focused in the side list (or null). */
   hoveredVehicleId?: string | null;
@@ -166,85 +138,20 @@ export const FleetMap = memo(function FleetMap({
   // a marker without a React re-render.
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
 
-  // FitBounds spans both layers so vehicles are framed too, not just drivers.
+  // Harita YALNIZ araç plaka katmanını gösterir — şoför isim marker'ları/rota
+  // çizgileri haritadan KALDIRILDI (isim baloncukları plaka etiketleriyle iç içe
+  // geçiyordu). Şoförler + konum durumu artık yalnız yan panel listesinde
+  // (LiveTrackingClient); harita ile liste ayrı katmanlar.
   // Age cap ONLY for the frame: weeks-dead trackers (sold vehicle, ripped-out
   // device) must not zoom the whole fleet view out — their markers still render,
   // just outside the initial frame. Without this, one far-away stale fix would
   // reset the viewport to fleet+outlier on every 30 s refresh.
   const points = useMemo(() => {
     const boundsCutoff = Date.now() - BOUNDS_MAX_AGE_MS;
-    return [
-      // Konumsuz (waiting) şoför çerçeveye/haritaya girmez ama listede kalır.
-      ...drivers
-        .filter((d) => d.latitude != null && d.longitude != null)
-        .map((d) => [d.latitude, d.longitude] as [number, number]),
-      ...vehicles
-        .filter((v) => new Date(v.recorded_at).getTime() >= boundsCutoff)
-        .map((v) => [v.latitude, v.longitude] as [number, number]),
-    ];
-  }, [drivers, vehicles]);
-
-  // Markers are memoized on the DATA (not on hover) so a hover never rebuilds
-  // them; `now`/stale are read inside the memo, so they refresh with the 30 s
-  // data poll, not on every render (a hover leaves these element refs stable →
-  // React bails out, only HoverSync runs).
-  const routeLines = useMemo(
-    () =>
-      drivers
-        .filter((d) => d.route.length > 1)
-        .map((d) => (
-          <Polyline
-            key={`route-${d.worker_id}`}
-            positions={d.route}
-            pathOptions={{ color: "var(--accent-sky)", weight: 3, opacity: 0.55 }}
-          />
-        )),
-    [drivers]
-  );
-
-  const driverMarkers = useMemo(() => {
-    const now = Date.now();
-    // Konumu olan şoförler işaretlenir; "konum bekleniyor" (null) olanlar yalnız
-    // yan panel listesinde görünür, haritada marker'ı olmaz.
-    return drivers
-      .filter((d) => d.latitude != null && d.longitude != null)
-      .map((d) => {
-      const activeMs = now - new Date(d.shift_started_at).getTime();
-      const minutesActive = Math.max(0, Math.floor(activeMs / 60000));
-      const variant = activeMs > NINE_HOURS_MS ? "warn" : "active";
-      return (
-        <Marker
-          key={d.worker_id}
-          position={[d.latitude as number, d.longitude as number]}
-          icon={makeIcon(d.name, variant)}
-        >
-          <Popup>
-            <div className="min-w-[180px] space-y-2">
-              <div className="flex items-center gap-2">
-                <UserAvatar name={d.name} size="sm" />
-                <div>
-                  <div className="font-semibold text-sm leading-tight">{d.name}</div>
-                  <div className="text-xs text-muted-foreground nums">
-                    {d.plate ?? "—"}
-                  </div>
-                </div>
-              </div>
-              <div className="text-xs text-muted-foreground space-y-0.5">
-                <div>{t("active_since", { minutes: minutesActive })}</div>
-                <div>{t("last_update", { time: formatTime(d.recorded_at, locale) })}</div>
-              </div>
-              <Link
-                href={`/admin/workers/${d.worker_id}`}
-                className="inline-block text-xs font-medium text-primary hover:underline"
-              >
-                {t("view_detail")} →
-              </Link>
-            </div>
-          </Popup>
-        </Marker>
-      );
-    });
-  }, [drivers, t, locale]);
+    return vehicles
+      .filter((v) => new Date(v.recorded_at).getTime() >= boundsCutoff)
+      .map((v) => [v.latitude, v.longitude] as [number, number]);
+  }, [vehicles]);
 
   // Vehicle layer (hardware GPS) — separate from the driver layer above. Every
   // device vehicle is here (no recency window); stale ones render as their pale
@@ -335,8 +242,6 @@ export const FleetMap = memo(function FleetMap({
           markers={markersRef}
           vehicles={vehicles}
         />
-        {routeLines}
-        {driverMarkers}
         {vehicleMarkers}
       </MapContainer>
       {/* Filo lejantı — iki filo rengi + adı (migration 023). Haritayı saran

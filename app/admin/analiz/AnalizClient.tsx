@@ -1,0 +1,320 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { ArrowDown, ArrowRight, ArrowUp, BarChart3, Fuel } from "lucide-react";
+import {
+  RankingTile,
+  StatCard,
+  StatusChip,
+  SegmentedControl,
+  DataTable,
+  EmptyState,
+  PageHeader,
+  useUrlFilters,
+  type Column,
+  type RankRow,
+} from "@/components/ui-v2";
+import { Input } from "@/components/ui/input";
+import { formatEur, formatIdleShort, formatNumber } from "@/lib/format";
+import type {
+  AnalyticsRangeKey,
+  EventTypeAgg,
+  IdleWasteSummary,
+  SafetyScoreRow,
+  Top10EventType,
+} from "@/lib/analytics-shared";
+import { TOP10_EVENT_TYPES } from "@/lib/analytics-shared";
+
+// Reveal ranking-tile paleti: 6 kart için sabit döngü, ham renk yok (yalnız
+// mevcut token'lar). overspeeding/jamming kritik ton, diğerleri sky/gold.
+const TILE_COLOR: Record<Top10EventType, string> = {
+  harsh_acceleration: "var(--accent-sky)",
+  harsh_cornering: "var(--accent-sky)",
+  harsh_braking: "var(--accent-sky)",
+  overspeeding: "var(--accent-gold)",
+  idling: "var(--accent-gold)",
+  jamming: "var(--status-critical)",
+};
+
+export function AnalizClient({
+  rangeKey,
+  customFrom,
+  customTo,
+  topByType,
+  safetyRows,
+  idleWaste,
+  prevIdleWaste,
+}: {
+  rangeKey: AnalyticsRangeKey;
+  customFrom: string | null;
+  customTo: string | null;
+  topByType: Record<Top10EventType, EventTypeAgg>;
+  safetyRows: SafetyScoreRow[];
+  idleWaste: IdleWasteSummary;
+  prevIdleWaste: { totalMs: number; totalEuro: number } | null;
+}) {
+  const t = useTranslations("analiz");
+  const locale = useLocale();
+  const { set } = useUrlFilters();
+
+  // Özel aralık için LOKAL state — kaynak olarak server'dan gelen customFrom/
+  // customTo prop'larını DEĞİL bunu kullanıyoruz. Sebep: iki tarih alanına art
+  // arda hızlı girildiğinde ikinci onChange, birinci navigasyonun server'a
+  // gidip dönmesini (RSC round-trip) BEKLEMEDEN tetiklenebiliyor — prop'lar o an
+  // hâlâ eski değerde olur ve az önce yazılan tarih sessizce URL'den düşer.
+  // Lokal state React içinde senkron güncellendiği için bu yarışı önler.
+  const [localFrom, setLocalFrom] = useState(customFrom ?? "");
+  const [localTo, setLocalTo] = useState(customTo ?? "");
+
+  const rangeOptions = [
+    { value: "gun", label: t("range_gun") },
+    { value: "hafta", label: t("range_hafta") },
+    { value: "ay", label: t("range_ay") },
+    { value: "ozel", label: t("range_ozel") },
+    { value: "tumzaman", label: t("range_tumzaman") },
+  ];
+
+  function onRangeChange(v: string) {
+    if (v === "ozel") {
+      set({ aralik: v, baslangic: customFrom ?? "", bitis: customTo ?? "" });
+    } else {
+      set({ aralik: v === "hafta" ? null : v, baslangic: null, bitis: null });
+    }
+  }
+
+  const safetyColumns: Column<SafetyScoreRow>[] = useMemo(
+    () => [
+      {
+        key: "rank",
+        header: "#",
+        cell: (r) => safetyRows.indexOf(r) + 1,
+        nums: true,
+        className: "w-10",
+      },
+      {
+        key: "name",
+        header: t("col_driver"),
+        cell: (r) => <span className="font-medium">{r.name}</span>,
+        sortable: true,
+        sortValue: (r) => r.name,
+      },
+      {
+        key: "score",
+        header: t("col_score"),
+        cell: (r) => {
+          const idx = safetyRows.indexOf(r);
+          const tone = idx < 3 ? "info" : idx >= safetyRows.length - 3 && safetyRows.length > 3 ? "critical" : "neutral";
+          return <StatusChip tone={tone}>{r.score}</StatusChip>;
+        },
+        align: "right",
+        nums: true,
+        sortable: true,
+        sortValue: (r) => r.score,
+      },
+      {
+        key: "events",
+        header: t("col_events"),
+        cell: (r) => r.totalEvents,
+        align: "right",
+        nums: true,
+        sortable: true,
+        sortValue: (r) => r.totalEvents,
+        hideBelow: "sm",
+      },
+      {
+        key: "basis",
+        header: t("col_basis"),
+        cell: (r) => (
+          <span className="text-xs text-muted-foreground">
+            {r.basis === "km" ? `${formatNumber(r.distanceKm ?? 0, locale)} km` : t("basis_gun", { n: r.activeDays })}
+          </span>
+        ),
+        hideBelow: "md",
+      },
+      {
+        key: "trend",
+        header: t("col_trend"),
+        cell: (r) => {
+          if (r.trend === null) return <span className="text-muted-foreground">—</span>;
+          const Icon = r.trend === "up" ? ArrowUp : r.trend === "down" ? ArrowDown : ArrowRight;
+          return <Icon aria-hidden className="size-4 text-muted-foreground" />;
+        },
+        align: "right",
+        hideBelow: "sm",
+      },
+    ],
+    [safetyRows, t, locale]
+  );
+
+  const idleColumns: Column<(typeof idleWaste.rows)[number]>[] = useMemo(
+    () => [
+      {
+        key: "name",
+        header: t("col_driver"),
+        cell: (r) => <span className="font-medium">{r.name}</span>,
+        sortable: true,
+        sortValue: (r) => r.name,
+      },
+      {
+        key: "duration",
+        header: t("col_idle_duration"),
+        cell: (r) => formatIdleShort(r.totalMs, locale),
+        align: "right",
+        nums: true,
+        sortable: true,
+        sortValue: (r) => r.totalMs,
+      },
+      {
+        key: "episodes",
+        header: t("col_idle_episodes"),
+        cell: (r) => r.episodeCount,
+        align: "right",
+        nums: true,
+        sortable: true,
+        sortValue: (r) => r.episodeCount,
+        hideBelow: "sm",
+      },
+      {
+        key: "liters",
+        header: t("col_idle_liters"),
+        cell: (r) => `${formatNumber(r.liters, locale, 1)} L`,
+        align: "right",
+        nums: true,
+        hideBelow: "sm",
+      },
+      {
+        key: "euro",
+        header: t("col_idle_euro"),
+        cell: (r) => <span className="font-semibold">{formatEur(r.euro, locale)}</span>,
+        align: "right",
+        nums: true,
+        sortable: true,
+        sortValue: (r) => r.euro,
+      },
+    ],
+    [t, locale]
+  );
+
+  const idleDeltaPct =
+    prevIdleWaste && prevIdleWaste.totalMs > 0
+      ? Math.round(((idleWaste.totalMs - prevIdleWaste.totalMs) / prevIdleWaste.totalMs) * 100)
+      : null;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader title={t("title")} description={t("subtitle")} />
+
+      {/* Ortak filtre çubuğu — tüm bölümleri yönetir, URL'e yazar (?aralik=) */}
+      <div className="flex flex-wrap items-center gap-3 rounded-[12px] border border-border/60 px-3 py-2.5">
+        <SegmentedControl value={rangeKey} onChange={onRangeChange} options={rangeOptions} ariaLabel={t("range_label")} />
+        {rangeKey === "ozel" && (
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              value={localFrom}
+              onChange={(e) => {
+                setLocalFrom(e.target.value);
+                set({ aralik: "ozel", baslangic: e.target.value, bitis: localTo });
+              }}
+              className="h-8 w-[140px]"
+              aria-label={t("range_ozel_from")}
+            />
+            <span className="text-xs text-muted-foreground">—</span>
+            <Input
+              type="date"
+              value={localTo}
+              onChange={(e) => {
+                setLocalTo(e.target.value);
+                set({ aralik: "ozel", baslangic: localFrom, bitis: e.target.value });
+              }}
+              className="h-8 w-[140px]"
+              aria-label={t("range_ozel_to")}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Bölüm 1 — olay tipi bazında top-10 personel */}
+      <div>
+        <h2 className="mb-3 text-[15px] font-semibold">{t("section1_title")}</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {TOP10_EVENT_TYPES.map((ty) => {
+            const agg = topByType[ty];
+            const rows: RankRow[] = agg.rows.map((d) => ({
+              key: d.key,
+              label: d.label,
+              value: ty === "idling" ? (d.idleMs ?? 0) : d.count,
+              display:
+                ty === "overspeeding"
+                  ? `${d.count} · ${Math.round(d.maxSpeedKmh ?? 0)} km/h`
+                  : ty === "idling"
+                    ? `${d.count} · ${formatIdleShort(d.idleMs ?? 0, locale)}`
+                    : String(d.count),
+              color: TILE_COLOR[ty],
+            }));
+            return (
+              <RankingTile
+                key={ty}
+                title={t(`event.${ty}`)}
+                icon={<BarChart3 className="size-4" />}
+                rows={rows}
+                scope={t("tile_scope", { n: agg.total })}
+                emptyLabel={t("tile_empty")}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Bölüm 2 — şoför güvenlik skor kartı */}
+      <div>
+        <h2 className="mb-3 text-[15px] font-semibold">{t("section2_title")}</h2>
+        {safetyRows.length === 0 ? (
+          <EmptyState kind="none" title={t("section2_empty")} hint={t("section2_empty_hint")} />
+        ) : (
+          <DataTable
+            rows={safetyRows}
+            columns={safetyColumns}
+            rowKey={(r) => r.workerId}
+            totalLabel={t("count_driver")}
+          />
+        )}
+      </div>
+
+      {/* Bölüm 3 — rölanti israf panosu */}
+      <div>
+        <h2 className="mb-3 text-[15px] font-semibold">{t("section3_title")}</h2>
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <StatCard
+            label={t("stat_idle_hours")}
+            value={formatNumber(idleWaste.totalMs / 3_600_000, locale, 1)}
+            scope={t(`range_${rangeKey}`)}
+            delta={idleDeltaPct !== null ? `${idleDeltaPct > 0 ? "▲" : idleDeltaPct < 0 ? "▼" : "→"} ${Math.abs(idleDeltaPct)}%` : undefined}
+          />
+          <StatCard
+            label={t("stat_idle_euro")}
+            value={formatEur(idleWaste.totalEuro, locale)}
+            scope={t(`range_${rangeKey}`)}
+            tone="warning"
+            delta={idleDeltaPct !== null ? `${idleDeltaPct > 0 ? "▲" : idleDeltaPct < 0 ? "▼" : "→"} ${Math.abs(idleDeltaPct)}%` : undefined}
+          />
+        </div>
+        <p className="mb-2.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Fuel className="size-3.5 shrink-0" />
+          {t("idle_estimate_note")}
+        </p>
+        {idleWaste.rows.length === 0 ? (
+          <EmptyState kind="none" title={t("section3_empty")} hint={t("section3_empty_hint")} />
+        ) : (
+          <DataTable
+            rows={idleWaste.rows}
+            columns={idleColumns}
+            rowKey={(r) => r.key}
+            totalLabel={t("count_driver")}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

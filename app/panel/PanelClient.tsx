@@ -39,7 +39,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { LocationTracker } from "@/components/LocationTracker";
 import { LenkzeitWarning } from "@/components/LenkzeitWarning";
 import { TelegramLink } from "@/components/TelegramLink";
 import { tryServerAction } from "@/lib/offline-aware";
@@ -363,9 +362,12 @@ export function PanelClient({
     <div className="mx-auto max-w-md space-y-5">
       {/* Telefon GPS + Lenkzeit uyarısı, onay durumu ne olursa olsun vardiya
           boyunca çalışır ("şoför onaylamasa bile veri akmaya devam eder"). */}
+      {/* Telefon GPS'i KALDIRILDI (21.07.2026): rota takibinin tek kaynağı araç
+          cihazı (FMC003 → device_telemetry). Şoför telefonu artık konum
+          göndermiyor; Lenkzeit uyarısı vardiya saatinden hesaplandığı için
+          konumdan bağımsız çalışmaya devam eder. */}
       {active && (
         <>
-          <LocationTracker shiftId={active.id} />
           <LenkzeitWarning
             timeEntryId={active.id}
             startedAt={active.started_at}

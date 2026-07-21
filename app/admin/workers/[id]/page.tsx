@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Route as RouteIcon } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -17,12 +17,11 @@ import { WorkerDetailClient } from "./WorkerDetailClient";
 import {
   formatDate,
   startOfMonthVienna,
-  startOfTodayVienna,
   workedMs,
   kmDiff,
 } from "@/lib/format";
 import { licenseState, LICENSE_BADGE } from "@/lib/worker-ui";
-import type { WorkerPublic, TimeEntry, DriverLocation } from "@/lib/types";
+import type { WorkerPublic, TimeEntry } from "@/lib/types";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 import { getLocale, getTranslations } from "next-intl/server";
 
@@ -37,7 +36,6 @@ export default async function WorkerDetailPage({
   const { id } = await params;
   const t = await getTranslations("workers");
   const tc = await getTranslations("common");
-  const tRoute = await getTranslations("route");
   const ta = await getTranslations("admin");
   const locale = await getLocale();
 
@@ -62,8 +60,10 @@ export default async function WorkerDetailPage({
   const assignedPlate = (assignedVeh?.plate as string) ?? null;
 
   const monthStart = startOfMonthVienna();
-  const todayStart = startOfTodayVienna();
-  const [monthEntriesResult, allEntriesResult, todayLocsResult] = await Promise.all([
+  // Telefon GPS'i kaldırıldı (21.07.2026): "bugünkü rota" haritası
+  // driver_locations'tan besleniyordu. Rota takibi artık yalnız araç
+  // cihazından (FMC003) gelir — araç detayındaki rota sayfası korunuyor.
+  const [monthEntriesResult, allEntriesResult] = await Promise.all([
     supabaseAdmin
       .from("time_entries")
       .select("*")
@@ -75,23 +75,10 @@ export default async function WorkerDetailPage({
       .eq("worker_id", id)
       .order("started_at", { ascending: false })
       .limit(200),
-    supabaseAdmin
-      .from("driver_locations")
-      .select("*")
-      .eq("worker_id", id)
-      .gte("recorded_at", todayStart.toISOString())
-      .order("recorded_at", { ascending: true }),
   ]);
 
   const monthEntries = (monthEntriesResult.data ?? []) as TimeEntry[];
   const allEntries = (allEntriesResult.data ?? []) as TimeEntry[];
-  const todayLocations = (todayLocsResult.data ?? []) as DriverLocation[];
-  const routePoints = todayLocations.map((l) => ({
-    lat: l.latitude,
-    lng: l.longitude,
-    recorded_at: l.recorded_at,
-  }));
-
   let monthMs = 0;
   let monthKm = 0;
   let monthCargo = 0;
@@ -117,12 +104,6 @@ export default async function WorkerDetailPage({
             <Button variant="ghost" size="sm" className="gap-1.5">
               <ArrowLeft className="size-4" />
               {t("title")}
-            </Button>
-          </Link>
-          <Link href={`/admin/rota?worker=${w.id}`} className="ml-auto">
-            <Button variant="outline" size="sm" className="gap-1.5">
-              <RouteIcon className="size-4" />
-              {tRoute("title")}
             </Button>
           </Link>
         </div>
@@ -263,7 +244,6 @@ export default async function WorkerDetailPage({
         <WorkerDetailClient
           worker={w}
           entries={allEntries}
-          routePoints={routePoints}
           monthSummary={{
             shifts: monthEntries.length,
             ms: monthMs,

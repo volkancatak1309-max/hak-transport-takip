@@ -8,17 +8,16 @@ import type { ActiveDriver } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const RECENT_MS = 10 * 60 * 1000; // marker shown only if last ping < 10 min old
+/** Bu yaştan taze konum "canlı", daha eskisi "son bilinen" sayılır. */
+const RECENT_MS = 10 * 60 * 1000;
 
-type ShiftRow = { id: string; started_at: string; worker_id: string };
-type WorkerRow = { id: string; name: string; plate: string | null };
-type LocRow = {
+type ShiftRow = {
+  id: string;
+  started_at: string;
   worker_id: string;
-  time_entry_id: string | null;
-  latitude: number;
-  longitude: number;
-  recorded_at: string;
+  vehicle_id: string | null;
 };
+type WorkerRow = { id: string; name: string; plate: string | null };
 
 export default async function HaritaPage() {
   const session = await requireAdmin();
@@ -26,12 +25,11 @@ export default async function HaritaPage() {
   // 1) All active shifts (ended_at IS NULL)
   const { data: shiftsData, error: shiftsErr } = await supabaseAdmin
     .from("time_entries")
-    .select("id, started_at, worker_id")
+    .select("id, started_at, worker_id, vehicle_id")
     .is("ended_at", null);
   const shifts = (shiftsData ?? []) as ShiftRow[];
 
   const workerIds = [...new Set(shifts.map((s) => s.worker_id))];
-  const timeEntryIds = shifts.map((s) => s.id);
 
   // 2) Worker info (separate query — avoids fragile embed joins)
   const { data: workersData, error: workersErr } = workerIds.length
@@ -39,88 +37,46 @@ export default async function HaritaPage() {
     : { data: [] as WorkerRow[], error: null };
   const workerMap = new Map((workersData ?? []).map((w) => [w.id, w as WorkerRow]));
 
-  // 3) Recent pings (last 10 min) for the active workers
-  const recentSince = new Date(Date.now() - RECENT_MS).toISOString();
-  const { data: recentData, error: recentErr } = workerIds.length
-    ? await supabaseAdmin
-        .from("driver_locations")
-        .select("worker_id, time_entry_id, latitude, longitude, recorded_at")
-        .in("worker_id", workerIds)
-        .gte("recorded_at", recentSince)
-        .order("recorded_at", { ascending: false })
-    : { data: [] as LocRow[], error: null };
-  const recentLocs = (recentData ?? []) as LocRow[];
-
-  const latestByWorker = new Map<string, LocRow>();
-  for (const l of recentLocs) {
-    if (!latestByWorker.has(l.worker_id)) latestByWorker.set(l.worker_id, l);
-  }
-
-  // 4) Full route points for the active shifts (for the polyline)
-  const { data: routeData, error: routeErr } = timeEntryIds.length
-    ? await supabaseAdmin
-        .from("driver_locations")
-        .select("worker_id, time_entry_id, latitude, longitude, recorded_at")
-        .in("time_entry_id", timeEntryIds)
-        .order("recorded_at", { ascending: true })
-    : { data: [] as LocRow[], error: null };
-  const routeLocs = (routeData ?? []) as LocRow[];
-
-  const routeByEntry = new Map<string, [number, number][]>();
-  // Vardiya başına SON bilinen konum (yaş sınırı yok) — routeLocs artan sıralı
-  // olduğu için her time_entry için en son yazılan satır kalır. Taze ping (<10 dk)
-  // yoksa şoför bu "son bilinen konum"la haritada/işaretle listede kalır.
-  const lastKnownByEntry = new Map<string, LocRow>();
-  for (const r of routeLocs) {
-    if (!r.time_entry_id) continue;
-    const arr = routeByEntry.get(r.time_entry_id) ?? [];
-    arr.push([r.latitude, r.longitude]);
-    routeByEntry.set(r.time_entry_id, arr);
-    lastKnownByEntry.set(r.time_entry_id, r);
-  }
+  // 3) Şoförün konumu = SÜRDÜĞÜ ARACIN cihaz konumu.
+  //    Telefon GPS'i (driver_locations) kaldırıldı — 21.07.2026. Konumun tek
+  //    kaynağı FMC003. Şoför ile araç zaten vardiya satırında bağlı, dolayısıyla
+  //    aracın son fix'i şoförün de konumudur; ayrı bir telefon hattına gerek yok.
+  const vehicles = await listLatestVehiclePositions();
+  const posByVehicle = new Map(vehicles.map((v) => [v.vehicle_id, v]));
 
   // Şoför listesi = AÇIK VARDİYA sayacıyla AYNI küme (shifts). Konum yoksa şoför
   // DÜŞMEZ; sadece durumu işaretlenir. Böylece üst kutu (Aktif Vardiya) ile
   // "Şoförler (N)" sekmesi her zaman tutarlı kalır.
+  const nowForLoc = Date.now();
   const drivers: ActiveDriver[] = [];
   for (const s of shifts) {
     const w = workerMap.get(s.worker_id);
-    const recent = latestByWorker.get(s.worker_id); // taze (<10 dk)
-    const lastKnown = lastKnownByEntry.get(s.id); // daha eski olabilir
-    const loc = recent ?? lastKnown ?? null;
-    const locStatus: ActiveDriver["locStatus"] = recent
-      ? "live"
-      : lastKnown
-        ? "stale"
-        : "waiting";
+    const pos = s.vehicle_id ? posByVehicle.get(s.vehicle_id) ?? null : null;
+    const ageMs = pos ? nowForLoc - new Date(pos.recorded_at).getTime() : null;
+    const locStatus: ActiveDriver["locStatus"] =
+      pos === null ? "waiting" : (ageMs as number) <= RECENT_MS ? "live" : "stale";
     drivers.push({
       worker_id: s.worker_id,
       name: w?.name ?? "—",
       plate: w?.plate ?? null,
       shift_started_at: s.started_at,
       time_entry_id: s.id,
-      latitude: loc?.latitude ?? null,
-      longitude: loc?.longitude ?? null,
-      recorded_at: loc?.recorded_at ?? null,
+      latitude: pos?.latitude ?? null,
+      longitude: pos?.longitude ?? null,
+      recorded_at: pos?.recorded_at ?? null,
       locStatus,
-      route: routeByEntry.get(s.id) ?? [],
+      // Şoför polyline'ı ARTIK YOK: telefon izi kalktı, araç izi zaten araç
+      // katmanında ve rota tekrarı sayfasında. Alan tip uyumu için boş kalır.
+      route: [],
     });
   }
-
-  // Vehicle layer (hardware GPS / flespi) — independent of the driver layer.
-  // No recency window: every device vehicle shows its last known fix; the
-  // client derives freshness (normal vs. faded marker) from recorded_at.
-  const vehicles = await listLatestVehiclePositions();
 
   // Debug logging — kept in production to diagnose missing markers via Vercel logs
   console.log(
     `[harita] activeShifts=${shifts.length} workers=${workerMap.size} ` +
-      `recentLocs(<10m)=${recentLocs.length} routeLocs=${routeLocs.length} ` +
       `drivers=${drivers.length} vehicles=${vehicles.length}` +
       (shiftsErr ? ` shiftsErr=${shiftsErr.message}` : "") +
-      (workersErr ? ` workersErr=${workersErr.message}` : "") +
-      (recentErr ? ` recentErr=${recentErr.message}` : "") +
-      (routeErr ? ` routeErr=${routeErr.message}` : "")
+      (workersErr ? ` workersErr=${workersErr.message}` : "")
   );
 
   // Lightweight KPIs from the same data — no extra logic, demo-ready summary.

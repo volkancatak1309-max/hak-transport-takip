@@ -125,126 +125,14 @@ function dayWindow(date: string): { gte: string; lt: string } {
   return { gte: gte.toISOString(), lt: lt.toISOString() };
 }
 
-type LocRow = {
-  worker_id: string;
-  latitude: number;
-  longitude: number;
-  recorded_at: string;
-};
-
-function toPoints(rows: LocRow[], date: string): RoutePoint[] {
-  return rows
-    .filter((r) => viennaDayKey(r.recorded_at) === date)
-    .map((r) => ({ lat: r.latitude, lng: r.longitude, t: r.recorded_at }));
-}
-
-/** All GPS points recorded for a worker on a given Vienna day. */
-export async function getWorkerRoute(workerId: string, date: string): Promise<RouteDay> {
-  const { gte, lt } = dayWindow(date);
-  const [{ data: locs }, { data: w }] = await Promise.all([
-    supabaseAdmin
-      .from("driver_locations")
-      .select("worker_id, latitude, longitude, recorded_at")
-      .eq("worker_id", workerId)
-      .gte("recorded_at", gte)
-      .lt("recorded_at", lt)
-      .order("recorded_at", { ascending: true }),
-    supabaseAdmin.from("workers").select("name, plate").eq("id", workerId).maybeSingle(),
-  ]);
-
-  const rawPts = toPoints((locs ?? []) as LocRow[], date);
-  const points = sample(rawPts);
-  const { geometry, matched } = await buildMatchedGeometry(points);
-  return {
-    date,
-    points,
-    geometry,
-    matched,
-    totalRaw: rawPts.length,
-    plate: (w?.plate as string) ?? null,
-    driverName: (w?.name as string) ?? null,
-    driverId: workerId,
-  };
-}
-
-/**
- * Route of a vehicle on a given day — the GPS points of the shifts driven on
- * that vehicle that day (joined via time_entries.vehicle_id → driver_locations).
+/*
+ * TELEFON GPS'İ KALDIRILDI (21.07.2026). Buradaki iki fonksiyon —
+ * getWorkerRoute (şoförün telefon izleri) ve getVehicleRoute (aynı izlerin
+ * araca göre gruplanmışı) — `driver_locations` okuyordu. Rota takibinin tek
+ * kaynağı artık araç cihazıdır (FMC003 → device_telemetry); aşağıdaki
+ * getVehicleDeviceRoute o hattı kullanır. `driver_locations` tablosu geçmiş
+ * veri olarak DURUYOR, yalnız hiçbir yerde okunmuyor.
  */
-export async function getVehicleRoute(vehicleId: string, date: string): Promise<RouteDay> {
-  const { gte, lt } = dayWindow(date);
-
-  const [{ data: vehicle }, { data: shifts }] = await Promise.all([
-    supabaseAdmin.from("vehicles").select("plate").eq("id", vehicleId).maybeSingle(),
-    supabaseAdmin
-      .from("time_entries")
-      .select("id, worker_id, started_at, ended_at")
-      .eq("vehicle_id", vehicleId)
-      .lt("started_at", lt)
-      .or(`ended_at.is.null,ended_at.gte.${gte}`),
-  ]);
-
-  const plate = (vehicle?.plate as string) ?? null;
-  const shiftRows = (shifts ?? []) as {
-    id: string;
-    worker_id: string;
-    started_at: string;
-    ended_at: string | null;
-  }[];
-
-  if (shiftRows.length === 0) {
-    return {
-      date,
-      points: [],
-      geometry: [],
-      matched: false,
-      totalRaw: 0,
-      plate,
-      driverName: null,
-      driverId: null,
-    };
-  }
-
-  const ids = shiftRows.map((s) => s.id);
-  const { data: locs } = await supabaseAdmin
-    .from("driver_locations")
-    .select("worker_id, latitude, longitude, recorded_at")
-    .in("time_entry_id", ids)
-    .gte("recorded_at", gte)
-    .lt("recorded_at", lt)
-    .order("recorded_at", { ascending: true });
-
-  const rawPts = toPoints((locs ?? []) as LocRow[], date);
-  const points = sample(rawPts);
-  const { geometry, matched } = await buildMatchedGeometry(points);
-
-  // Driver = the worker who actually logged points that day (fallback: first shift).
-  const driverId = points.length
-    ? ((locs ?? []) as LocRow[]).find((r) => viennaDayKey(r.recorded_at) === date)?.worker_id ??
-      shiftRows[0].worker_id
-    : shiftRows[0].worker_id;
-  let driverName: string | null = null;
-  if (driverId) {
-    const { data: w } = await supabaseAdmin
-      .from("workers")
-      .select("name")
-      .eq("id", driverId)
-      .maybeSingle();
-    driverName = (w?.name as string) ?? null;
-  }
-
-  return {
-    date,
-    points,
-    geometry,
-    matched,
-    totalRaw: rawPts.length,
-    plate,
-    driverName,
-    driverId,
-  };
-}
-
 /**
  * Route of a vehicle on a given day from its OWN hardware tracker
  * (device_telemetry) — the FMC003's 24/7 GPS, independent of any phone or open

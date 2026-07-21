@@ -32,7 +32,8 @@ import { workersWithShiftToday } from "@/lib/shift-day";
  * tekilliği migration 020'deki uq_time_entries_one_open partial unique
  * index'iyle, kapanış ise .is("ended_at", null) guard'ıyla korunur.
  *
- * Telefon GPS hattına (driver_locations) ASLA yazmaz — yalnız okur.
+ * Telefon GPS hattına (driver_locations) hiç dokunmaz: o hat 21.07.2026'da
+ * tamamen kaldırıldı, tablo yalnız geçmiş veri olarak duruyor.
  */
 
 const DEFAULT_IDLE_END_MINUTES = 30;
@@ -229,9 +230,17 @@ export async function resolveEndKm(
   return null;
 }
 
-/** Vardiyadaki son "yaşam belirtisi" (ms epoch). */
+/**
+ * Vardiyadaki son "yaşam belirtisi" (ms epoch).
+ *
+ * Telefon GPS'i (driver_locations) sinyal setinden ÇIKARILDI — 21.07.2026:
+ * şoför telefonu artık konum göndermiyor, sinyal her zaman boş dönerdi. Kalan
+ * dört sinyal yeterli: kontak açık, araç hareketi, paket, foto. Cihaz kontak
+ * kapalıyken bile saatlik heartbeat attığı için hareket sinyali telefon
+ * izlerinden zaten daha güvenilirdi.
+ */
 async function lastActivityMs(vehicleId: string, shift: OpenShift): Promise<number> {
-  const [lastIgnOn, lastMove, lastPhoneGps, lastPackage, lastPhoto] =
+  const [lastIgnOn, lastMove, lastPackage, lastPhoto] =
     await Promise.all([
       newestTime("recorded_at", () =>
         supabaseAdmin
@@ -251,15 +260,6 @@ async function lastActivityMs(vehicleId: string, shift: OpenShift): Promise<numb
           .eq("vehicle_id", vehicleId)
           .gte("speed_kmh", MOVE_SPEED_KMH)
           .gte("recorded_at", shift.started_at)
-          .order("recorded_at", { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      ),
-      newestTime("recorded_at", () =>
-        supabaseAdmin
-          .from("driver_locations")
-          .select("recorded_at")
-          .eq("time_entry_id", shift.id)
           .order("recorded_at", { ascending: false })
           .limit(1)
           .maybeSingle()
@@ -288,7 +288,6 @@ async function lastActivityMs(vehicleId: string, shift: OpenShift): Promise<numb
     shift.confirmed_at,
     lastIgnOn,
     lastMove,
-    lastPhoneGps,
     lastPackage,
     lastPhoto
   );

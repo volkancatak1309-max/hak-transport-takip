@@ -72,7 +72,7 @@ async function handleShiftCallback(cb: NonNullable<TgUpdate["callback_query"]>) 
   // can never break this lookup. The shift must still be open.
   const { data: shift } = await supabaseAdmin
     .from("time_entries")
-    .select("id, worker_id, started_at")
+    .select("id, worker_id, started_at, vehicle_id")
     .eq("id", shiftId)
     .is("ended_at", null)
     .maybeSingle();
@@ -109,16 +109,22 @@ async function handleShiftCallback(cb: NonNullable<TgUpdate["callback_query"]>) 
     return;
   }
 
-  // action === "no" → close the shift now. Prefer the last recorded location
-  // time (more truthful than "now"), falling back to now if there is none.
-  const { data: lastLoc } = await supabaseAdmin
-    .from("driver_locations")
-    .select("recorded_at")
-    .eq("time_entry_id", shift.id)
-    .order("recorded_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const endedAt = lastLoc?.recorded_at ?? new Date().toISOString();
+  // action === "no" → vardiyayı şimdi kapat. Bitiş anı için ARACIN son telemetri
+  // kaydını tercih ediyoruz ("şimdi"den daha doğru: şoför saatler sonra da
+  // dokunabilir). Eskiden bu telefon GPS'inden okunuyordu; o hat 21.07.2026'da
+  // kaldırıldı, kaynak artık cihaz. Cihaz kaydı yoksa "şimdi"ye düşer.
+  let endedAt = new Date().toISOString();
+  if (shift.vehicle_id) {
+    const { data: lastFix } = await supabaseAdmin
+      .from("device_telemetry")
+      .select("recorded_at")
+      .eq("vehicle_id", shift.vehicle_id as string)
+      .gte("recorded_at", shift.started_at as string)
+      .order("recorded_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastFix?.recorded_at) endedAt = lastFix.recorded_at as string;
+  }
 
   let { error: closeErr } = await supabaseAdmin
     .from("time_entries")

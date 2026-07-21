@@ -2,12 +2,9 @@
 
 import { useLocale, useTranslations } from "next-intl";
 import { useState, useTransition } from "react";
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { FileText, KeyRound, Route, Pencil } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
-import type { RoutePoint } from "@/components/RouteMap";
+import { FileText, KeyRound, Pencil } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -42,31 +39,20 @@ import { KmEditButton } from "@/components/KmEditButton";
 import { EditWorkerDialog } from "@/components/admin/EditWorkerDialog";
 import type { WorkerPublic, TimeEntry } from "@/lib/types";
 
-const RouteMap = dynamic(
-  () => import("@/components/RouteMap").then((m) => m.RouteMap),
-  {
-    ssr: false,
-    loading: () => <Skeleton className="h-[50vh] w-full rounded-lg" />,
-  }
-);
-
 type Props = {
   worker: WorkerPublic;
   entries: TimeEntry[];
-  routePoints: RoutePoint[];
   monthSummary: { shifts: number; ms: number; km: number; cargo: number };
 };
 
 export function WorkerDetailClient({
   worker,
   entries,
-  routePoints,
   monthSummary,
 }: Props) {
   const t = useTranslations("workers");
   const ta = useTranslations("admin");
   const tc = useTranslations("common");
-  const tmap = useTranslations("map");
   const tExport = useTranslations("export");
   const locale = useLocale();
   const router = useRouter();
@@ -188,25 +174,9 @@ export function WorkerDetailClient({
         </Button>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <Route className="size-4 text-primary" />
-            {tmap("today_route")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {routePoints.length === 0 ? (
-            <p className="px-6 pb-6 text-sm text-muted-foreground">
-              {tmap("no_route_data")}
-            </p>
-          ) : (
-            <div className="h-[50vh] w-full overflow-hidden rounded-b-lg">
-              <RouteMap points={routePoints} />
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* "Bugünkü rota" haritası kaldırıldı (21.07.2026): şoför telefonunun
+          GPS izlerinden (driver_locations) çiziliyordu. Rota takibinin tek
+          kaynağı araç cihazıdır — araç detayındaki rota sayfası korunuyor. */}
 
       <Card>
         <CardHeader>

@@ -2,7 +2,7 @@
 
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
-import { COMPANY } from "@/lib/report-de";
+import { COMPANY, COMPANY_UID_LINE } from "@/lib/report-de";
 import type { AZGData, AZGSeverity } from "@/app/actions/azg-report";
 
 registerPdfFont();
@@ -122,6 +122,7 @@ function ReportDoc({ data }: { data: AZGData }) {
         </View>
         <Text style={styles.company}>{COMPANY.name}</Text>
         <Text style={styles.address}>{COMPANY.address}</Text>
+        <Text style={styles.address}>{COMPANY_UID_LINE}</Text>
         <Text style={styles.coverTitle}>{title}</Text>
         <Text style={styles.coverMonth}>{data.monthLabel}</Text>
         <Text style={styles.meta}>Erstellt am: {genStr}</Text>

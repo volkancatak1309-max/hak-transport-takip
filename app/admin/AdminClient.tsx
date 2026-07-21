@@ -313,6 +313,7 @@ export function AdminClient({
         title: SHIFT_REPORT_DE.title,
         company: SHIFT_REPORT_DE.company,
         address: SHIFT_REPORT_DE.address,
+        uid: SHIFT_REPORT_DE.uid,
         period: `${SHIFT_REPORT_DE.period}: ${reportPeriodDe(range)}`,
         generatedAt: `${SHIFT_REPORT_DE.generatedAt}: ${new Date().toLocaleString(
           "de-AT",

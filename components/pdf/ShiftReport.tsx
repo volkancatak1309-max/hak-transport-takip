@@ -49,6 +49,8 @@ export type PdfOptions = {
   title: string;
   company: string;
   address: string;
+  /** "UID-Nr.: ATU…" — Avusturya resmî belgesinde künyenin üçüncü satırı. */
+  uid: string;
   period: string;
   generatedAt: string;
   footer: string;
@@ -163,6 +165,7 @@ function ReportDoc(opts: PdfOptions) {
             )}
             <Text style={styles.company}>{opts.company}</Text>
             <Text style={styles.address}>{opts.address}</Text>
+            <Text style={styles.address}>{opts.uid}</Text>
           </View>
           <View style={{ alignItems: "flex-end" }}>
             <Text style={styles.title}>{opts.title}</Text>

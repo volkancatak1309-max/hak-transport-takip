@@ -112,6 +112,7 @@ export function WorkerDetailClient({
       title: `${SHIFT_REPORT_DE.title} — ${worker.name}`,
       company: SHIFT_REPORT_DE.company,
       address: SHIFT_REPORT_DE.address,
+      uid: SHIFT_REPORT_DE.uid,
       period: `${SHIFT_REPORT_DE.period}: ${formatDate(entries[entries.length - 1]?.started_at, REPORT_LOCALE)} – ${formatDate(entries[0]?.started_at, REPORT_LOCALE)}`,
       generatedAt: `${SHIFT_REPORT_DE.generatedAt}: ${new Date().toLocaleString(
         "de-AT",

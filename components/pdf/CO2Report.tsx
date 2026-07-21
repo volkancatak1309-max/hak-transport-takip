@@ -2,7 +2,7 @@
 
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
-import { COMPANY } from "@/lib/report-de";
+import { COMPANY, COMPANY_UID_LINE } from "@/lib/report-de";
 import type { CO2ReportData } from "@/lib/co2";
 
 registerPdfFont();
@@ -64,6 +64,7 @@ function Doc({ data, title }: { data: CO2ReportData; title: string }) {
         </View>
         <Text style={styles.company}>{COMPANY.name}</Text>
         <Text style={styles.address}>{COMPANY.address}</Text>
+        <Text style={styles.address}>{COMPANY_UID_LINE}</Text>
         <Text style={styles.coverTitle}>{title}</Text>
         <Text style={styles.coverMonth}>{data.monthLabel}</Text>
         <Text style={styles.meta}>Erstellt am: {gen}</Text>

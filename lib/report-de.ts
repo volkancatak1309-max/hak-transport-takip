@@ -34,13 +34,22 @@ export const REPORT_EMPTY = "—";
  */
 export const COMPANY = {
   name: "HAK61 GmbH",
-  address: "Manstraße 21/1/5, 2333 Leopoldsdorf, Österreich",
+  address: "Josef-Ganahl-Straße 4, 6850 Dornbirn, Österreich",
+  /**
+   * ATU-Nummer. Avusturya'da resmî belgede firma adı + adres + UID birlikte
+   * bulunur; antette "UID-Nr.: …" biçiminde yazılır (uidLabel).
+   */
+  uid: "ATU79519228",
 } as const;
+
+/** Antette basılan UID satırı — üç PDF'te de aynı biçim. */
+export const COMPANY_UID_LINE = `UID-Nr.: ${COMPANY.uid}`;
 
 export const SHIFT_REPORT_DE = {
   title: "Schichtbericht",
   company: COMPANY.name,
   address: COMPANY.address,
+  uid: COMPANY_UID_LINE,
   period: "Zeitraum",
   generatedAt: "Erstellt am",
   /** Alt not: belgenin hukuki dayanağı (Arbeitszeitgesetz kayıt yükümlülüğü). */

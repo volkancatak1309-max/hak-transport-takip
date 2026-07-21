@@ -11,13 +11,6 @@ import { RevealFilterRow } from "@/components/ui-v2";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -31,12 +24,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { toggleActiveAction, resetPinAction } from "../../actions/workers";
+import { toggleActiveAction } from "../../actions/workers";
 import { formatDate, formatDurationShort } from "@/lib/format";
 import { licenseState, LICENSE_BADGE } from "@/lib/worker-ui";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AddWorkerDialog } from "@/components/admin/AddWorkerDialog";
 import { EditWorkerDialog } from "@/components/admin/EditWorkerDialog";
+import { SetPinDialog } from "@/components/admin/SetPinDialog";
 import type { WorkerWithStats } from "./page";
 
 type Props = { workers: WorkerWithStats[] };
@@ -48,7 +42,8 @@ export function WorkersClient({ workers }: Props) {
   const ta = useTranslations("admin");
   const locale = useLocale();
   const [pending, startTransition] = useTransition();
-  const [shownPin, setShownPin] = useState<{ worker: string; pin: string } | null>(null);
+  // PIN'i YÖNETİCİ belirler (SetPinDialog). Mevcut PIN hiçbir yerde gösterilmez.
+  const [pinFor, setPinFor] = useState<WorkerWithStats | null>(null);
   const [editing, setEditing] = useState<WorkerWithStats | null>(null);
   // Client-side status filter. Default "active" so the passive roster doesn't
   // clutter the list; passive workers are only hidden, never deleted — their
@@ -80,18 +75,6 @@ export function WorkersClient({ workers }: Props) {
     });
   }
 
-  function handleReset(w: WorkerWithStats) {
-    if (!confirm(t("confirmPin", { name: w.name }))) return;
-    startTransition(async () => {
-      const res = await resetPinAction(w.id);
-      if (res.ok && res.newPin) {
-        setShownPin({ worker: w.name, pin: res.newPin });
-        router.refresh();
-      } else {
-        toast.error(res.error ?? "Error");
-      }
-    });
-  }
 
   return (
     <>
@@ -220,8 +203,8 @@ export function WorkersClient({ workers }: Props) {
                             <DropdownMenuItem onClick={() => setEditing(w)}>
                               <Pencil className="size-4" /> {tc("edit")}
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleReset(w)}>
-                              <KeyRound className="size-4" /> {t("resetPin")}
+                            <DropdownMenuItem onClick={() => setPinFor(w)}>
+                              <KeyRound className="size-4" /> {t("setPin")}
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleToggle(w)}>
                               <Power className="size-4" />{" "}
@@ -240,30 +223,7 @@ export function WorkersClient({ workers }: Props) {
       </Card>
 
       <EditWorkerDialog worker={editing} onClose={() => setEditing(null)} />
-
-      <Dialog open={!!shownPin} onOpenChange={(o) => !o && setShownPin(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("newPin")}</DialogTitle>
-          </DialogHeader>
-          {shownPin && (
-            <div className="text-center space-y-4">
-              <p className="text-sm text-muted-foreground">
-                {t("newPinFor", { name: shownPin.worker })}
-              </p>
-              <p className="nums text-5xl font-bold tracking-widest text-foreground bg-secondary rounded-lg py-6">
-                {shownPin.pin}
-              </p>
-              <p className="text-xs text-destructive">{t("newPinWarn")}</p>
-              <DialogFooter>
-                <Button onClick={() => setShownPin(null)} className="w-full">
-                  {t("newPinClose")}
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <SetPinDialog worker={pinFor} onClose={() => setPinFor(null)} />
     </>
   );
 }

@@ -34,10 +34,25 @@ export const pinSchema = z
 // Saha standardı: yeni şoför OLUŞTURMA akışı geçici PIN 123456 ile başlar;
 // must_change_pin=true → sürücü ilk girişte zorunlu değiştirir. isWeakPin bu değeri
 // ZAYIF sayar (ardışık artan) — bilerek: sürücü onu KENDİ kalıcı PIN'i yapamaz
-// (changePinSchema → pinSchema hâlâ reddeder). Yalnızca OLUŞTURMADA
-// (createWorkerSchema) sanctioned geçici değer olarak izinlidir. (PIN sıfırlama
-// AYRI: resetPinAction → randomPin() güçlü rastgele üretir, 123456 DEĞİL.)
+// (changePinSchema → pinSchema hâlâ reddeder). Yalnızca YÖNETİCİNİN atadığı
+// akışlarda (oluşturma + PIN belirleme) sanctioned geçici değer olarak izinlidir.
 export const DEFAULT_TEMP_PIN = "123456";
+
+/**
+ * YÖNETİCİNİN bir şoföre atadığı PIN (oluşturma ve "PIN Belirle").
+ *
+ * pinSchema'dan tek farkı 123456'ya izin vermesi: saha standardı, yönetici bunu
+ * telefonda şoföre sözlü iletiyor ve kâğıda yazmıyor. Diğer zayıf kalıplar
+ * (000000, 111111, 654321, 121212 …) HÂLÂ reddedilir — 123456 istisnası
+ * "zayıf PIN serbest" demek değildir.
+ *
+ * Şoförün KENDİ seçtiği kalıcı PIN buradan geçmez: changePinSchema katı
+ * pinSchema'yı kullanır, yani 123456 kalıcı PIN olamaz.
+ */
+export const adminSetPinSchema = z
+  .string()
+  .regex(/^\d{6}$/, "errPin")
+  .refine((p) => p === DEFAULT_TEMP_PIN || !isWeakPin(p), "errPinWeak");
 
 // Login is more lenient DURING the transition so workers whose PIN is still the
 // old 4-digit one are not locked out before an admin resets them to 6 digits.
@@ -126,13 +141,9 @@ const optionalDate = z
 export const createWorkerSchema = z.object({
   name: z.string().trim().min(2, "errName").max(100),
   phone: phoneSchema,
-  // Geçici PIN: strong pinSchema 123456'yı reddederdi; oluşturmada bu tek
-  // sanctioned geçici değere izin ver (must_change_pin sürücüyü değişime zorlar,
-  // changePinSchema hâlâ reddeder). Diğer zayıflar (000000, 654321…) yasak kalır.
-  pin: z
-    .string()
-    .regex(/^\d{6}$/, "errPin")
-    .refine((p) => p === DEFAULT_TEMP_PIN || !isWeakPin(p), "errPinWeak"),
+  // Yöneticinin atadığı PIN — "PIN Belirle" ile aynı kural (bkz.
+  // adminSetPinSchema): 123456 serbest, diğer zayıf kalıplar yasak.
+  pin: adminSetPinSchema,
   plate: z.string().trim().max(20).optional().nullable(),
   employee_number: z.string().trim().max(20).optional().nullable(),
   is_admin: z.coerce.boolean().optional(),

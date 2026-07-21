@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, FileText, KeyRound, Route, Pencil } from "lucide-react";
+import { FileText, KeyRound, Route, Pencil } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { RoutePoint } from "@/components/RouteMap";
 import {
@@ -31,7 +31,8 @@ import {
   kmDiff,
   formatDuration,
 } from "@/lib/format";
-import { toggleActiveAction, resetPinAction } from "../../../actions/workers";
+import { toggleActiveAction } from "../../../actions/workers";
+import { SetPinDialog } from "@/components/admin/SetPinDialog";
 import {
   SHIFT_REPORT_DE,
   REPORT_LOCALE,
@@ -71,6 +72,7 @@ export function WorkerDetailClient({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [editOpen, setEditOpen] = useState(false);
+  const [pinOpen, setPinOpen] = useState(false);
 
   function handleToggle() {
     if (
@@ -91,18 +93,6 @@ export function WorkerDetailClient({
     });
   }
 
-  function handleReset() {
-    if (!confirm(t("confirmPin", { name: worker.name }))) return;
-    startTransition(async () => {
-      const res = await resetPinAction(worker.id);
-      if (res.ok && res.newPin) {
-        alert(`${t("newPinFor", { name: worker.name })}\n\n${res.newPin}\n\n${t("newPinWarn")}`);
-        router.refresh();
-      } else {
-        toast.error(res.error ?? "Error");
-      }
-    });
-  }
 
   async function exportPdf() {
     try {
@@ -178,9 +168,11 @@ export function WorkerDetailClient({
           <Pencil className="size-4" />
           {tc("edit")}
         </Button>
-        <Button variant="outline" size="sm" onClick={handleReset} disabled={pending}>
-          {pending ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-          {t("resetPin")}
+        {/* PIN'i yönetici belirler; mevcut PIN gösterilmez (bcrypt, geri
+            döndürülemez). Bkz. components/admin/SetPinDialog. */}
+        <Button variant="outline" size="sm" onClick={() => setPinOpen(true)}>
+          <KeyRound className="size-4" />
+          {t("setPin")}
         </Button>
         <Button
           variant={worker.is_active ? "outline" : "default"}
@@ -288,6 +280,10 @@ export function WorkerDetailClient({
       <EditWorkerDialog
         worker={editOpen ? worker : null}
         onClose={() => setEditOpen(false)}
+      />
+      <SetPinDialog
+        worker={pinOpen ? { id: worker.id, name: worker.name } : null}
+        onClose={() => setPinOpen(false)}
       />
     </>
   );

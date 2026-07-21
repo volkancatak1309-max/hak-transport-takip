@@ -1,6 +1,5 @@
 "use server";
 
-import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -8,27 +7,14 @@ import { requireAdmin } from "@/lib/session";
 import {
   createWorkerSchema,
   updateWorkerSchema,
-  isWeakPin,
+  adminSetPinSchema,
   DEFAULT_TEMP_PIN,
 } from "@/lib/validation";
 
-export type WorkerResult = { ok: boolean; error?: string; newPin?: string };
+export type WorkerResult = { ok: boolean; error?: string };
 
 function normalizePhone(raw: string): string {
   return raw.replace(/[\s\-()]/g, "");
-}
-
-/**
- * Cryptographically secure 6-digit reset PIN (leading zeros allowed). Re-rolls
- * on the rare weak draw (000000, 123456, …) so a generated temp PIN is never
- * one the strong pinSchema would itself reject.
- */
-function randomPin(): string {
-  let pin: string;
-  do {
-    pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
-  } while (isWeakPin(pin));
-  return pin;
 }
 
 /** Next free 4-digit Personalnummer (0001, 0002, …) based on the current max. */
@@ -313,20 +299,51 @@ export async function toggleActiveAction(workerId: string): Promise<WorkerResult
   return { ok: true };
 }
 
-export async function resetPinAction(workerId: string): Promise<WorkerResult> {
+/**
+ * Yönetici bir şoföre YENİ PIN ATAR (21.07.2026 — eskiden sistem rastgele
+ * üretiyordu; artık yönetici kendisi yazıyor, çünkü PIN'i şoföre sözlü olarak
+ * o iletiyor).
+ *
+ * MEVCUT PIN HİÇBİR ZAMAN OKUNAMAZ/GÖSTERİLEMEZ: `workers.pin_hash` bcrypt'tir,
+ * geri döndürülemez — bu eylem yalnızca ÜZERİNE YAZAR. "Şifreyi göster" diye bir
+ * yol yoktur ve eklenmemelidir.
+ *
+ * `mustChange=true` (varsayılan) → şoför bu PIN'le girer ve /pin ekranında kendi
+ * kalıcı PIN'ini belirlemeye zorlanır; yöneticinin verdiği geçici PIN böylece
+ * kalıcı olmaz. Yönetici bilinçli olarak kapatabilir (ekranı çeviremeyen şoför
+ * için PIN sabit kalsın istenebilir) — bu yüzden bayrak zorlanmıyor, soruluyor.
+ */
+export async function setWorkerPinAction(
+  workerId: string,
+  pin: string,
+  mustChange: boolean
+): Promise<WorkerResult> {
   await requireAdmin();
 
-  const newPin = randomPin();
-  const pin_hash = await bcrypt.hash(newPin, 10);
+  const parsed = adminSetPinSchema.safeParse(pin);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "errPin" };
+  }
+
+  const { data: worker } = await supabaseAdmin
+    .from("workers")
+    .select("id")
+    .eq("id", workerId)
+    .maybeSingle();
+  if (!worker) return { ok: false, error: "notFound" };
+
+  const pin_hash = await bcrypt.hash(parsed.data, 10);
 
   const { error } = await supabaseAdmin
     .from("workers")
-    // Reset PIN is temporary — force the driver to set their own at next login.
-    .update({ pin_hash, must_change_pin: true })
+    .update({ pin_hash, must_change_pin: mustChange })
     .eq("id", workerId);
 
-  if (error) return { ok: false, error: "PIN güncellenemedi" };
+  if (error) return { ok: false, error: "pinUpdateFailed" };
 
   revalidatePath("/admin/workers");
-  return { ok: true, newPin };
+  revalidatePath(`/admin/workers/${workerId}`);
+  // PIN'i geri DÖNDÜRMEYİZ: yönetici zaten kendi yazdı, ekranda duruyor.
+  // Sunucudan geri yollamak onu bir yanıt gövdesine ve loglara sokardı.
+  return { ok: true };
 }

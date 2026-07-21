@@ -23,7 +23,8 @@
     "themeLight": "Aydınlık",
     "themeDark": "Karanlık",
     "themeSystem": "Sistem",
-    "search": "Ara"
+    "search": "Ara",
+    "actions": "Eylemler"
   },
   "errors": {
     "error_title": "Bir şeyler ters gitti",
@@ -1000,7 +1001,11 @@
       "dtc_days": "{days} gündür açık",
       "dtc_today": "bugün açıldı",
       "dtc_unknown": "kod yok"
-    }
+    },
+    "editWorker": "Çalışanı Düzenle",
+    "workerUpdated": "Çalışan güncellendi",
+    "assignedVehicle": "Atanmış Araç",
+    "assignedVehicleNone": "— Araç yok —"
   },
   "workers": {
     "title": "Çalışan Yönetimi",

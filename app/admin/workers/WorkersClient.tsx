@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Loader2, KeyRound, UserPlus } from "lucide-react";
+import { KeyRound, UserPlus, MoreHorizontal, Pencil, Power } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { RevealFilterRow } from "@/components/ui-v2";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -30,6 +36,7 @@ import { formatDate, formatDurationShort } from "@/lib/format";
 import { licenseState, LICENSE_BADGE } from "@/lib/worker-ui";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AddWorkerDialog } from "@/components/admin/AddWorkerDialog";
+import { EditWorkerDialog } from "@/components/admin/EditWorkerDialog";
 import type { WorkerWithStats } from "./page";
 
 type Props = { workers: WorkerWithStats[] };
@@ -42,6 +49,7 @@ export function WorkersClient({ workers }: Props) {
   const locale = useLocale();
   const [pending, startTransition] = useTransition();
   const [shownPin, setShownPin] = useState<{ worker: string; pin: string } | null>(null);
+  const [editing, setEditing] = useState<WorkerWithStats | null>(null);
   // Client-side status filter. Default "active" so the passive roster doesn't
   // clutter the list; passive workers are only hidden, never deleted — their
   // shift history stays intact. The dataset is one company's staff (already
@@ -191,29 +199,36 @@ export function WorkersClient({ workers }: Props) {
                         {formatDurationShort(w.monthHoursMs, locale)}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex gap-1 justify-end">
-                          {/* aria-label ŞART: metin `hidden md:inline` — dar
-                              ekranda gizlenince butonun erişilebilir adı hiç
-                              kalmıyordu (Lighthouse button-name, mobil). */}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleReset(w)}
-                            disabled={pending}
-                            aria-label={t("resetPin")}
+                        {/* İşlemler araçlardaki gibi tek üç-nokta menüde toplandı
+                            (Düzenle / PIN Sıfırla / Aktif-Pasif) — hem masaüstü
+                            hem mobilde tek dokunuşla erişilir, satır dar ekranda
+                            taşmaz. Handler'lar aynen korundu. */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                disabled={pending}
+                                aria-label={tc("actions")}
+                              />
+                            }
                           >
-                            <KeyRound className="size-4" />
-                            <span className="hidden md:inline ml-1">{t("resetPin")}</span>
-                          </Button>
-                          <Button
-                            variant={w.is_active ? "outline" : "default"}
-                            size="sm"
-                            onClick={() => handleToggle(w)}
-                            disabled={pending}
-                          >
-                            {w.is_active ? t("deactivate") : t("activate")}
-                          </Button>
-                        </div>
+                            <MoreHorizontal className="size-4 text-text-tertiary" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setEditing(w)}>
+                              <Pencil className="size-4" /> {tc("edit")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleReset(w)}>
+                              <KeyRound className="size-4" /> {t("resetPin")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleToggle(w)}>
+                              <Power className="size-4" />{" "}
+                              {w.is_active ? t("deactivate") : t("activate")}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))
@@ -223,6 +238,8 @@ export function WorkersClient({ workers }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      <EditWorkerDialog worker={editing} onClose={() => setEditing(null)} />
 
       <Dialog open={!!shownPin} onOpenChange={(o) => !o && setShownPin(null)}>
         <DialogContent>

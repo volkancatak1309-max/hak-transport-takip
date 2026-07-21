@@ -5,7 +5,12 @@ import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
-import { createWorkerSchema, isWeakPin, DEFAULT_TEMP_PIN } from "@/lib/validation";
+import {
+  createWorkerSchema,
+  updateWorkerSchema,
+  isWeakPin,
+  DEFAULT_TEMP_PIN,
+} from "@/lib/validation";
 
 export type WorkerResult = { ok: boolean; error?: string; newPin?: string };
 
@@ -117,6 +122,173 @@ export async function createWorkerAction(formData: FormData): Promise<WorkerResu
 
   revalidatePath("/admin");
   revalidatePath("/admin/workers");
+  return { ok: true };
+}
+
+/**
+ * Şoför → araç ataması TEK KAYNAK olan vehicles.assigned_worker_id üzerinden
+ * uygulanır (araç formundaki applyDriverAssignment'ın şoför-tarafı ikizi; aynı
+ * kurallar). Bir şoför tek araca atanır; workers.plate yalnız türetilmiş AYNA.
+ *
+ *  1) Bu şoförü işaret eden diğer tüm araçlar (hedef hariç) serbest bırakılır —
+ *     "bir şoför → bir araç" kuralı korunur.
+ *  2) Hedef araçta BAŞKA şoför varsa onun plaka aynası temizlenir (o araçtan
+ *     düştü), sonra hedef araca bu şoför yazılır.
+ *  3) workers.plate aynası hedef aracın plakasıyla (veya atama kaldırıldıysa
+ *     null) hizalanır — harita/rota/session gibi hâlâ plate okuyan noktalar için.
+ */
+async function applyWorkerVehicle(
+  workerId: string,
+  nextVehicleId: string | null
+): Promise<void> {
+  let release = supabaseAdmin
+    .from("vehicles")
+    .update({ assigned_worker_id: null })
+    .eq("assigned_worker_id", workerId);
+  if (nextVehicleId) release = release.neq("id", nextVehicleId);
+  await release;
+
+  if (nextVehicleId) {
+    const { data: veh } = await supabaseAdmin
+      .from("vehicles")
+      .select("plate, assigned_worker_id")
+      .eq("id", nextVehicleId)
+      .maybeSingle();
+    const otherWorker = (veh?.assigned_worker_id as string | null) ?? null;
+    if (otherWorker && otherWorker !== workerId) {
+      await supabaseAdmin.from("workers").update({ plate: null }).eq("id", otherWorker);
+    }
+    await supabaseAdmin
+      .from("vehicles")
+      .update({ assigned_worker_id: workerId })
+      .eq("id", nextVehicleId);
+    await supabaseAdmin
+      .from("workers")
+      .update({ plate: (veh?.plate as string | null) ?? null })
+      .eq("id", workerId);
+  } else {
+    await supabaseAdmin.from("workers").update({ plate: null }).eq("id", workerId);
+  }
+}
+
+/** Düzenle dialog'u açılınca lazy çekilir: araç seçenekleri (id+plaka) ve bu
+ *  şoförün şu anki atanmış aracının id'si (vehicles.assigned_worker_id'den). */
+export async function getWorkerVehicleOptions(workerId: string): Promise<{
+  vehicles: { id: string; plate: string }[];
+  currentVehicleId: string | null;
+}> {
+  await requireAdmin();
+  const { data } = await supabaseAdmin
+    .from("vehicles")
+    .select("id, plate, assigned_worker_id")
+    .neq("status", "inactive")
+    .order("plate");
+  const rows = (data ?? []) as {
+    id: string;
+    plate: string;
+    assigned_worker_id: string | null;
+  }[];
+  const current = rows.find((v) => v.assigned_worker_id === workerId) ?? null;
+  return {
+    vehicles: rows.map((v) => ({ id: v.id, plate: v.plate })),
+    currentVehicleId: current?.id ?? null,
+  };
+}
+
+export async function updateWorkerAction(formData: FormData): Promise<WorkerResult> {
+  await requireAdmin();
+
+  const id = formData.get("id");
+  if (typeof id !== "string" || !id) return { ok: false, error: "Geçersiz kayıt" };
+
+  const et = formData.get("employment_type");
+  const parsed = updateWorkerSchema.safeParse({
+    name: formData.get("name"),
+    phone: formData.get("phone"),
+    employee_number: formData.get("employee_number") || null,
+    birth_date: formData.get("birth_date") || null,
+    email: formData.get("email") || null,
+    address: formData.get("address") || null,
+    social_security_no: formData.get("social_security_no") || null,
+    employment_start: formData.get("employment_start") || null,
+    // Select "none" sentinel → null (alanı temizleme). Boş string de null'a düşer.
+    employment_type: et && et !== "none" ? et : null,
+    license_no: formData.get("license_no") || null,
+    license_expiry: formData.get("license_expiry") || null,
+    emergency_contact_name: formData.get("emergency_contact_name") || null,
+    emergency_contact_relation: formData.get("emergency_contact_relation") || null,
+    emergency_contact_phone: formData.get("emergency_contact_phone") || null,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Geçersiz veri" };
+  }
+  const d = parsed.data;
+  const phone = normalizePhone(d.phone);
+
+  // Telefon benzersizliği — kendisi hariç.
+  const { data: dupe } = await supabaseAdmin
+    .from("workers")
+    .select("id")
+    .eq("phone", phone)
+    .neq("id", id)
+    .maybeSingle();
+  if (dupe) return { ok: false, error: "Bu telefon zaten kayıtlı" };
+
+  // Mevcut satırı çek → SADECE DEĞİŞEN alanı yaz (mevcut doğru veriyi ezme).
+  // plate/pin_hash/is_active/must_change_pin bu diff'e HİÇ girmez.
+  const { data: cur } = await supabaseAdmin
+    .from("workers")
+    .select(
+      "name, phone, employee_number, birth_date, email, address, social_security_no, employment_start, employment_type, license_no, license_expiry, emergency_contact_name, emergency_contact_relation, emergency_contact_phone"
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (!cur) return { ok: false, error: "Çalışan bulunamadı" };
+
+  const next: Record<string, unknown> = {
+    name: d.name,
+    phone,
+    employee_number: d.employee_number ?? null,
+    birth_date: d.birth_date ?? null,
+    email: d.email ?? null,
+    address: d.address ?? null,
+    social_security_no: d.social_security_no ?? null,
+    employment_start: d.employment_start ?? null,
+    employment_type: d.employment_type ?? null,
+    license_no: d.license_no ?? null,
+    license_expiry: d.license_expiry ?? null,
+    emergency_contact_name: d.emergency_contact_name ?? null,
+    emergency_contact_relation: d.emergency_contact_relation ?? null,
+    emergency_contact_phone: d.emergency_contact_phone ?? null,
+  };
+  const update: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(next)) {
+    if ((cur as Record<string, unknown>)[k] !== v) update[k] = v;
+  }
+
+  if (Object.keys(update).length > 0) {
+    const { error } = await supabaseAdmin.from("workers").update(update).eq("id", id);
+    if (error) return { ok: false, error: "Güncelleme başarısız: " + error.message };
+  }
+
+  // Araç ataması — yalnız GERÇEKTEN değiştiyse dokunulur (form açıldığındaki
+  // değeri prev olarak geri gönderiyoruz; lost-update'i önler). Tek kaynak:
+  // vehicles.assigned_worker_id.
+  const prevRaw = formData.get("assigned_vehicle_id_prev");
+  const nextRaw = formData.get("assigned_vehicle_id");
+  const prevVehicle =
+    typeof prevRaw === "string" && prevRaw && prevRaw !== "none" ? prevRaw : null;
+  const nextVehicle =
+    typeof nextRaw === "string" && nextRaw && nextRaw !== "none" ? nextRaw : null;
+  if (prevVehicle !== nextVehicle) {
+    await applyWorkerVehicle(id, nextVehicle);
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/workers");
+  revalidatePath(`/admin/workers/${id}`);
+  revalidatePath("/admin/araclar");
+  revalidatePath("/panel");
   return { ok: true };
 }
 

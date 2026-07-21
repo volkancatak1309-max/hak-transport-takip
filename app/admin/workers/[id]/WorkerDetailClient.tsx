@@ -1,11 +1,11 @@
 "use client";
 
 import { useLocale, useTranslations } from "next-intl";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, FileText, KeyRound, Route } from "lucide-react";
+import { Loader2, FileText, KeyRound, Route, Pencil } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { RoutePoint } from "@/components/RouteMap";
 import {
@@ -33,6 +33,7 @@ import {
 } from "@/lib/format";
 import { toggleActiveAction, resetPinAction } from "../../../actions/workers";
 import { KmEditButton } from "@/components/KmEditButton";
+import { EditWorkerDialog } from "@/components/admin/EditWorkerDialog";
 import type { WorkerPublic, TimeEntry } from "@/lib/types";
 
 const RouteMap = dynamic(
@@ -65,6 +66,7 @@ export function WorkerDetailClient({
   const locale = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [editOpen, setEditOpen] = useState(false);
 
   function handleToggle() {
     if (
@@ -197,6 +199,12 @@ export function WorkerDetailClient({
       </div>
 
       <div className="flex flex-wrap gap-2 justify-end">
+        {/* Düzenle — personel dosyasını (telefon/SV/ehliyet/adres/acil durum/araç)
+            düzeltir. flex-wrap sayesinde 390px'te de görünür ve dokunulabilir. */}
+        <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+          <Pencil className="size-4" />
+          {tc("edit")}
+        </Button>
         <Button variant="outline" size="sm" onClick={handleReset} disabled={pending}>
           {pending ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
           {t("resetPin")}
@@ -303,6 +311,11 @@ export function WorkerDetailClient({
           )}
         </CardContent>
       </Card>
+
+      <EditWorkerDialog
+        worker={editOpen ? worker : null}
+        onClose={() => setEditOpen(false)}
+      />
     </>
   );
 }

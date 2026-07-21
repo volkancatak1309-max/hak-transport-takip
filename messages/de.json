@@ -23,7 +23,8 @@
     "themeLight": "Hell",
     "themeDark": "Dunkel",
     "themeSystem": "System",
-    "search": "Suchen"
+    "search": "Suchen",
+    "actions": "Aktionen"
   },
   "errors": {
     "error_title": "Etwas ist schiefgelaufen",
@@ -1000,7 +1001,11 @@
       "dtc_days": "seit {days} Tagen offen",
       "dtc_today": "heute aufgetreten",
       "dtc_unknown": "kein Code"
-    }
+    },
+    "editWorker": "Mitarbeiter bearbeiten",
+    "workerUpdated": "Mitarbeiter aktualisiert",
+    "assignedVehicle": "Zugewiesenes Fahrzeug",
+    "assignedVehicleNone": "— Kein Fahrzeug —"
   },
   "workers": {
     "title": "Mitarbeiterverwaltung",

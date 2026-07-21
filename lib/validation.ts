@@ -149,6 +149,30 @@ export const createWorkerSchema = z.object({
   emergency_contact_phone: z.string().trim().max(30).optional().nullable(),
 });
 
+/**
+ * Mevcut çalışan kaydını düzenleme şeması (personel dosyası). createWorkerSchema'nın
+ * PIN'siz sürümü: PIN/durum/must_change_pin bu formdan ASLA değişmez (PIN "Sıfırla"
+ * ayrı akış). `plate` de yok — şoför↔araç tek kaynağı vehicles.assigned_worker_id;
+ * atama `assigned_vehicle_id` üzerinden yürür (action tarafında işlenir). Tüm profil
+ * alanları opsiyonel (kâğıt formlar eksik gelebilir), zorunlu olan yalnız ad/telefon.
+ */
+export const updateWorkerSchema = z.object({
+  name: z.string().trim().min(2, "errName").max(100),
+  phone: phoneSchema,
+  employee_number: z.string().trim().max(20).optional().nullable(),
+  birth_date: optionalDate,
+  email: z.string().trim().email("errEmail").max(120).optional().nullable(),
+  address: z.string().trim().max(200).optional().nullable(),
+  social_security_no: z.string().trim().max(20).optional().nullable(),
+  employment_start: optionalDate,
+  employment_type: z.enum(["full_time", "hourly"]).optional().nullable(),
+  license_no: z.string().trim().max(30).optional().nullable(),
+  license_expiry: optionalDate,
+  emergency_contact_name: z.string().trim().max(100).optional().nullable(),
+  emergency_contact_relation: z.string().trim().max(50).optional().nullable(),
+  emergency_contact_phone: z.string().trim().max(30).optional().nullable(),
+});
+
 export const breakToggleSchema = z.object({
   break_start: z.string().optional(),
   break_end: z.string().optional(),

@@ -88,7 +88,9 @@
       "overspeeding": "Aşırı Hız",
       "idling": "Uzun Rölanti",
       "jamming": "Sinyal Karıştırma"
-    }
+    },
+    "insufficient_title": "{n} şoför · yetersiz veri",
+    "insufficient_hint": "Bu aralıkta güvenilir skor için yeterli sürüş (km) yok — ne iyi ne kötü, nötr."
   },
   "alarms": {
     "title": "Alarmlar",

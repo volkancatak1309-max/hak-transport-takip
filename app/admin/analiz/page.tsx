@@ -9,6 +9,7 @@ import {
   computeIdleWaste,
   getVehicleDistanceKm,
   listVehiclesAndWorkers,
+  scoreMinKmForRange,
   type AnalyticsRangeKey,
   type SafetyScoreRow,
 } from "@/lib/analytics";
@@ -60,7 +61,8 @@ export default async function AnalizPage({
     current.idleEpisodes,
     vehiclesById,
     workersById,
-    current.distanceByVehicle
+    current.distanceByVehicle,
+    scoreMinKmForRange(range)
   );
   const idleWaste = computeIdleWaste(current.idleEpisodes, vehiclesById, workersById);
 
@@ -78,13 +80,22 @@ export default async function AnalizPage({
       prev.idleEpisodes,
       vehiclesById,
       workersById,
-      prev.distanceByVehicle
+      prev.distanceByVehicle,
+      scoreMinKmForRange(prevRange)
     );
     const prevScoreByWorker = new Map(prevSafety.map((r) => [r.workerId, r.score]));
     safetyRowsWithTrend = safetyRows.map((r) => {
       const prevScore = prevScoreByWorker.get(r.workerId) ?? null;
+      // Trend yalnız İKİ dönemde de gerçek skor varsa anlamlı; biri "veri yok"
+      // (null) ise ok gösterme.
       const trend: "up" | "down" | "flat" | null =
-        prevScore === null ? null : r.score > prevScore ? "up" : r.score < prevScore ? "down" : "flat";
+        prevScore === null || r.score === null
+          ? null
+          : r.score > prevScore
+            ? "up"
+            : r.score < prevScore
+              ? "down"
+              : "flat";
       return { ...r, prevScore, trend };
     });
     prevIdleWaste = computeIdleWaste(prev.idleEpisodes, vehiclesById, workersById);

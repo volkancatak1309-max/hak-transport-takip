@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowDown, ArrowRight, ArrowUp, BarChart3, Fuel } from "lucide-react";
 import {
@@ -58,6 +58,14 @@ export function AnalizClient({
   const locale = useLocale();
   const { set } = useUrlFilters();
 
+  // Filtre geçişi: navigasyonu transition'a alıp segment vurgusunu OPTIMISTIK
+  // güncelliyoruz — tık anında segment kayar, mevcut veri isPending ile hafif
+  // soluk kalır ve yeni veri arkada gelince değişir (tam sayfa iskelet donması
+  // yok). URL senkronu ve doğru veri korunur: yine router.replace, yine sunucu.
+  const [isPending, startTransition] = useTransition();
+  const [optimisticRange, setOptimisticRange] = useState<string>(rangeKey);
+  useEffect(() => setOptimisticRange(rangeKey), [rangeKey]);
+
   // Özel aralık için LOKAL state — kaynak olarak server'dan gelen customFrom/
   // customTo prop'larını DEĞİL bunu kullanıyoruz. Sebep: iki tarih alanına art
   // arda hızlı girildiğinde ikinci onChange, birinci navigasyonun server'a
@@ -76,19 +84,30 @@ export function AnalizClient({
   ];
 
   function onRangeChange(v: string) {
-    if (v === "ozel") {
-      set({ aralik: v, baslangic: customFrom ?? "", bitis: customTo ?? "" });
-    } else {
-      set({ aralik: v === "hafta" ? null : v, baslangic: null, bitis: null });
-    }
+    setOptimisticRange(v); // segment anında kayar
+    startTransition(() => {
+      if (v === "ozel") {
+        set({ aralik: v, baslangic: customFrom ?? "", bitis: customTo ?? "" });
+      } else {
+        set({ aralik: v === "hafta" ? null : v, baslangic: null, bitis: null });
+      }
+    });
   }
+
+  // Skorlu şoförler ana tabloda; "veri yok" (null skor) olanlar ayrı kompakt
+  // bölümde toplanır — gizlenmez ki günlük görünüm boş kalmasın.
+  const scoredRows = useMemo(() => safetyRows.filter((r) => r.score !== null), [safetyRows]);
+  const insufficientRows = useMemo(
+    () => safetyRows.filter((r) => r.score === null),
+    [safetyRows]
+  );
 
   const safetyColumns: Column<SafetyScoreRow>[] = useMemo(
     () => [
       {
         key: "rank",
         header: "#",
-        cell: (r) => safetyRows.indexOf(r) + 1,
+        cell: (r) => scoredRows.indexOf(r) + 1,
         nums: true,
         className: "w-10",
       },
@@ -103,14 +122,17 @@ export function AnalizClient({
         key: "score",
         header: t("col_score"),
         cell: (r) => {
-          const idx = safetyRows.indexOf(r);
-          const tone = idx < 3 ? "info" : idx >= safetyRows.length - 3 && safetyRows.length > 3 ? "critical" : "neutral";
-          return <StatusChip tone={tone}>{r.score}</StatusChip>;
+          // Ton MUTLAK skora bağlı, sıraya değil: yalnız gerçekten düşük skor
+          // (<50) kırmızı; yüksek (≥85) yeşil-bilgi; arası nötr. Böylece "en
+          // alttaki 3" otomatik kırmızı sayılmaz.
+          const s = r.score as number;
+          const tone = s >= 85 ? "info" : s < 50 ? "critical" : "neutral";
+          return <StatusChip tone={tone}>{s}</StatusChip>;
         },
         align: "right",
         nums: true,
         sortable: true,
-        sortValue: (r) => r.score,
+        sortValue: (r) => r.score ?? 0,
       },
       {
         key: "events",
@@ -144,7 +166,7 @@ export function AnalizClient({
         hideBelow: "sm",
       },
     ],
-    [safetyRows, t, locale]
+    [scoredRows, t, locale]
   );
 
   const idleColumns: Column<(typeof idleWaste.rows)[number]>[] = useMemo(
@@ -207,15 +229,17 @@ export function AnalizClient({
 
       {/* Ortak filtre çubuğu — tüm bölümleri yönetir, URL'e yazar (?aralik=) */}
       <div className="flex flex-wrap items-center gap-3 rounded-[12px] border border-border/60 px-3 py-2.5">
-        <SegmentedControl value={rangeKey} onChange={onRangeChange} options={rangeOptions} ariaLabel={t("range_label")} />
-        {rangeKey === "ozel" && (
+        <SegmentedControl value={optimisticRange} onChange={onRangeChange} options={rangeOptions} ariaLabel={t("range_label")} />
+        {optimisticRange === "ozel" && (
           <div className="flex items-center gap-2">
             <Input
               type="date"
               value={localFrom}
               onChange={(e) => {
                 setLocalFrom(e.target.value);
-                set({ aralik: "ozel", baslangic: e.target.value, bitis: localTo });
+                startTransition(() =>
+                  set({ aralik: "ozel", baslangic: e.target.value, bitis: localTo })
+                );
               }}
               className="h-8 w-[140px]"
               aria-label={t("range_ozel_from")}
@@ -226,7 +250,9 @@ export function AnalizClient({
               value={localTo}
               onChange={(e) => {
                 setLocalTo(e.target.value);
-                set({ aralik: "ozel", baslangic: localFrom, bitis: e.target.value });
+                startTransition(() =>
+                  set({ aralik: "ozel", baslangic: localFrom, bitis: e.target.value })
+                );
               }}
               className="h-8 w-[140px]"
               aria-label={t("range_ozel_to")}
@@ -234,6 +260,15 @@ export function AnalizClient({
           </div>
         )}
       </div>
+
+      {/* Veri bölümleri — geçişte hafif soluk (isPending), filtre çubuğu aktif kalır */}
+      <div
+        className={
+          isPending
+            ? "space-y-6 opacity-60 transition-opacity"
+            : "space-y-6 transition-opacity"
+        }
+      >
 
       {/* Bölüm 1 — olay tipi bazında top-10 personel */}
       <div>
@@ -273,12 +308,38 @@ export function AnalizClient({
         {safetyRows.length === 0 ? (
           <EmptyState kind="none" title={t("section2_empty")} hint={t("section2_empty_hint")} />
         ) : (
-          <DataTable
-            rows={safetyRows}
-            columns={safetyColumns}
-            rowKey={(r) => r.workerId}
-            totalLabel={t("count_driver")}
-          />
+          <>
+            {scoredRows.length > 0 && (
+              <DataTable
+                rows={scoredRows}
+                columns={safetyColumns}
+                rowKey={(r) => r.workerId}
+                totalLabel={t("count_driver")}
+              />
+            )}
+            {/* Yetersiz veri — gizlenmez, ayrı kompakt bölümde toplanır. Bu aralıkta
+                skor için yeterli km'si olmayan şoförler; nötr, cezasız. */}
+            {insufficientRows.length > 0 && (
+              <div className="mt-3 rounded-[12px] border border-border/60 px-3.5 py-3">
+                <div className="text-sm font-medium">
+                  {t("insufficient_title", { n: insufficientRows.length })}
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {t("insufficient_hint")}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {insufficientRows.map((r) => (
+                    <span
+                      key={r.workerId}
+                      className="rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground"
+                    >
+                      {r.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -314,6 +375,7 @@ export function AnalizClient({
             totalLabel={t("count_driver")}
           />
         )}
+      </div>
       </div>
     </div>
   );

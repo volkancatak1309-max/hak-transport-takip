@@ -88,7 +88,9 @@
       "overspeeding": "Geschwindigkeitsüberschreitung",
       "idling": "Langer Leerlauf",
       "jamming": "Signalstörung"
-    }
+    },
+    "insufficient_title": "{n} Fahrer · zu wenig Daten",
+    "insufficient_hint": "In diesem Zeitraum nicht genug Fahrleistung (km) für eine faire Bewertung — neutral."
   },
   "alarms": {
     "title": "Alarme",

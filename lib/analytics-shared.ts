@@ -60,10 +60,15 @@ export type EventTypeAgg = {
 export type SafetyScoreRow = {
   workerId: string;
   name: string;
-  score: number;
+  /**
+   * Güvenlik skoru 0–100, YA DA null. null = "yeterli sürüş verisi yok" (aralıkta
+   * güvenilir km < eşik): ne 100 ne 0, nötr. Skor yalnız eşiği geçen şoför için
+   * hesaplanır — böylece "hiç sürmemiş" ile "temiz sürmüş" karışmaz.
+   */
+  score: number | null;
   totalEvents: number;
   penalty: number;
-  /** Ceza hangi birimle normalize edildi — km varsa km, yoksa gün. */
+  /** Ceza hangi birimle normalize edildi — skor artık yalnız km bazlı. */
   basis: "km" | "gun";
   distanceKm: number | null;
   activeDays: number;

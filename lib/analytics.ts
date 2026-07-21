@@ -60,6 +60,29 @@ export {
 // aralığından kaçınır (fetchAllRows'un tüm tabloyu taramasını sınırlar).
 const FLEET_EPOCH = new Date("2026-06-01T00:00:00.000Z");
 
+/**
+ * Güvenlik skoru için "yeterli sürüş" eşiği — GÜN BAŞINA minimum güvenilir km.
+ * Toplam eşik seçili aralığa göre ölçeklenir (bkz. scoreMinKmForRange): günlük
+ * ~40 km, haftalık ~280 km, aylık ~1200 km. Sebep: "adil bir skor için gereken
+ * sürüş" pencere uzunluğuyla orantılıdır — SABİT 150 km günlük görünümde neredeyse
+ * herkesi "veri yok" yapardı. AYARLANABİLİR: firmanın günlük teslimat km yoğunluğuna
+ * göre tek yerden değiştirilir.
+ */
+export const SCORE_MIN_KM_PER_DAY = 40;
+
+/**
+ * Aralık için toplam km eşiği = SCORE_MIN_KM_PER_DAY × aralığın GEÇEN gün sayısı.
+ * "Geçen": dönem sonu gelecekteyse (bu hafta/bu ay) şimdiye kadar kırpılır —
+ * telemetri km'si de yalnız şimdiye kadar biriktiği için eşik de öyle olmalı ki
+ * hafta/ay ortasında herkes haksızca "veri yok" düşmesin. En az 1 gün.
+ */
+export function scoreMinKmForRange(range: DateRange): number {
+  const effectiveEnd = Math.min(Date.now(), range.end.getTime());
+  const spanMs = Math.max(0, effectiveEnd - range.start.getTime());
+  const spanDays = Math.max(1, Math.round(spanMs / 86_400_000));
+  return SCORE_MIN_KM_PER_DAY * spanDays;
+}
+
 export function computeAnalyticsRange(
   key: AnalyticsRangeKey,
   customFrom?: string | null,
@@ -249,18 +272,17 @@ export function computeSafetyScores(
   idleEpisodes: IdleEpisodeWithPlate[],
   vehiclesById: Map<string, VehicleLite>,
   workersById: Map<string, WorkerLite>,
-  distanceByVehicle: Map<string, number | null>
+  distanceByVehicle: Map<string, number | null>,
+  minKm: number
 ): SafetyScoreRow[] {
-  type Acc = { penalty: number; totalEvents: number; days: Set<string>; vehicleIds: Set<string> };
+  type Acc = { penalty: number; totalEvents: number; days: Set<string> };
   const acc = new Map<string, Acc>();
 
-  function bump(workerId: string, weight: number, dayKey: string, vehicleId: string) {
-    const cur =
-      acc.get(workerId) ?? { penalty: 0, totalEvents: 0, days: new Set<string>(), vehicleIds: new Set<string>() };
+  function bump(workerId: string, weight: number, dayKey: string) {
+    const cur = acc.get(workerId) ?? { penalty: 0, totalEvents: 0, days: new Set<string>() };
     cur.penalty += weight;
     cur.totalEvents += 1;
     cur.days.add(dayKey);
-    cur.vehicleIds.add(vehicleId);
     acc.set(workerId, cur);
   }
 
@@ -269,62 +291,77 @@ export function computeSafetyScores(
     if (!v?.assigned_worker_id) continue; // atanmamış araç şoför liginde yer almaz
     const weight = SAFETY_SCORE_WEIGHTS[e.event_type];
     if (weight === undefined) continue;
-    bump(v.assigned_worker_id, weight, viennaDayKey(e.occurred_at), e.vehicle_id);
+    bump(v.assigned_worker_id, weight, viennaDayKey(e.occurred_at));
   }
   for (const ep of idleEpisodes) {
     const v = vehiclesById.get(ep.vehicle_id);
     if (!v?.assigned_worker_id) continue;
-    bump(v.assigned_worker_id, SAFETY_SCORE_WEIGHTS.idling ?? 0, viennaDayKey(ep.started_at), ep.vehicle_id);
+    bump(v.assigned_worker_id, SAFETY_SCORE_WEIGHTS.idling ?? 0, viennaDayKey(ep.started_at));
+  }
+
+  // Şoför → atanmış araç(lar). Temiz (hiç olayı olmayan) şoförün de km'sini bilmek
+  // için TÜM araçlardan kurulur, yalnız olay üreten araçlardan değil. Böylece "çok
+  // sürüp hiç ihlal yapmayan" şoför gerçek km'siyle skor alır (eskiden zorla 100'dü).
+  const vehiclesByWorker = new Map<string, string[]>();
+  for (const v of vehiclesById.values()) {
+    if (!v.assigned_worker_id) continue;
+    const arr = vehiclesByWorker.get(v.assigned_worker_id) ?? [];
+    arr.push(v.id);
+    vehiclesByWorker.set(v.assigned_worker_id, arr);
   }
 
   const rows: SafetyScoreRow[] = [];
-  for (const [workerId, a] of acc) {
-    const w = workersById.get(workerId);
-    if (!w) continue;
-    let hasKm = true;
+  for (const w of workersById.values()) {
+    const a = acc.get(w.id);
+    const penalty = a?.penalty ?? 0;
+    const totalEvents = a?.totalEvents ?? 0;
+    const activeDays = a?.days.size ?? 0;
+
+    // Güvenilir km: şoförün atanmış araçlarının toplam mesafesi (null okumalar
+    // hariç). Hiç güvenilir okuma yoksa null (yetersiz veri).
     let km = 0;
-    for (const vid of a.vehicleIds) {
+    let anyKm = false;
+    for (const vid of vehiclesByWorker.get(w.id) ?? []) {
       const d = distanceByVehicle.get(vid);
-      if (d == null) {
-        hasKm = false;
-        break;
+      if (d != null) {
+        km += d;
+        anyKm = true;
       }
-      km += d;
     }
-    const basis: "km" | "gun" = hasKm && km > 0 ? "km" : "gun";
-    const normalized = basis === "km" ? a.penalty / (km / 1000) : a.penalty / Math.max(1, a.days.size);
-    const score = Math.max(0, Math.min(100, Math.round(100 - normalized)));
+    const reliableKm = anyKm ? km : null;
+
+    // YETERLİ VERİ KAPISI: güvenilir km eşiğin altındaysa (ya da hiç yoksa) SKOR
+    // YOK → null ("Veri yok"). Ne yeşil 100 ne kırmızı 0. Skor SADECE eşiği geçen
+    // şoför için, ihlal/1000km oranıyla hesaplanır — düşük skor artık yalnız
+    // "yeterince sürüp çok ihlal yapan"a düşer, seyrek-veri gürültüsüne değil.
+    const qualifies = reliableKm != null && reliableKm >= minKm;
+    const score = qualifies
+      ? Math.max(0, Math.min(100, Math.round(100 - penalty / (reliableKm! / 1000))))
+      : null;
+
     rows.push({
-      workerId,
+      workerId: w.id,
       name: w.name,
       score,
-      totalEvents: a.totalEvents,
-      penalty: a.penalty,
-      basis,
-      distanceKm: hasKm ? km : null,
-      activeDays: a.days.size,
+      totalEvents,
+      penalty,
+      basis: "km",
+      distanceKm: reliableKm,
+      activeDays,
       trend: null,
       prevScore: null,
     });
   }
-  // Sürüş kaydı olmayan şoförler de listede — skor 100 (temiz sicil).
-  for (const w of workersById.values()) {
-    if (!acc.has(w.id)) {
-      rows.push({
-        workerId: w.id,
-        name: w.name,
-        score: 100,
-        totalEvents: 0,
-        penalty: 0,
-        basis: "gun",
-        distanceKm: null,
-        activeDays: 0,
-        trend: null,
-        prevScore: null,
-      });
-    }
-  }
-  rows.sort((a, b) => b.score - a.score || b.totalEvents - a.totalEvents);
+
+  // Skorlular önce (skora göre azalan, eşitlikte olayı çok olan aşağıda), "veri
+  // yok" olanlar en altta ayrı — cezalandırılmış gibi değil, isimle sıralı.
+  rows.sort((a, b) => {
+    const an = a.score === null;
+    const bn = b.score === null;
+    if (an !== bn) return an ? 1 : -1;
+    if (!an && !bn) return (b.score as number) - (a.score as number) || b.totalEvents - a.totalEvents;
+    return a.name.localeCompare(b.name);
+  });
   return rows;
 }
 

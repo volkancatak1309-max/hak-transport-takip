@@ -529,7 +529,9 @@
     "tab_vehicles": "Araçlar",
     "no_vehicles": "Henüz konum bildiren araç yok",
     "last_seen": "Son görülme: {ago}",
-    "kpi_live_count": "{count} canlı"
+    "kpi_live_count": "{count} canlı",
+    "last_known": "Son bilinen: {time}",
+    "awaiting_location": "Konum bekleniyor"
   },
   "route": {
     "title": "Rota Geçmişi",

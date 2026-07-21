@@ -174,7 +174,10 @@ export const FleetMap = memo(function FleetMap({
   const points = useMemo(() => {
     const boundsCutoff = Date.now() - BOUNDS_MAX_AGE_MS;
     return [
-      ...drivers.map((d) => [d.latitude, d.longitude] as [number, number]),
+      // Konumsuz (waiting) şoför çerçeveye/haritaya girmez ama listede kalır.
+      ...drivers
+        .filter((d) => d.latitude != null && d.longitude != null)
+        .map((d) => [d.latitude, d.longitude] as [number, number]),
       ...vehicles
         .filter((v) => new Date(v.recorded_at).getTime() >= boundsCutoff)
         .map((v) => [v.latitude, v.longitude] as [number, number]),
@@ -201,14 +204,18 @@ export const FleetMap = memo(function FleetMap({
 
   const driverMarkers = useMemo(() => {
     const now = Date.now();
-    return drivers.map((d) => {
+    // Konumu olan şoförler işaretlenir; "konum bekleniyor" (null) olanlar yalnız
+    // yan panel listesinde görünür, haritada marker'ı olmaz.
+    return drivers
+      .filter((d) => d.latitude != null && d.longitude != null)
+      .map((d) => {
       const activeMs = now - new Date(d.shift_started_at).getTime();
       const minutesActive = Math.max(0, Math.floor(activeMs / 60000));
       const variant = activeMs > NINE_HOURS_MS ? "warn" : "active";
       return (
         <Marker
           key={d.worker_id}
-          position={[d.latitude, d.longitude]}
+          position={[d.latitude as number, d.longitude as number]}
           icon={makeIcon(d.name, variant)}
         >
           <Popup>

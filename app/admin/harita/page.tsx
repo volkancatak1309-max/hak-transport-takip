@@ -67,27 +67,42 @@ export default async function HaritaPage() {
   const routeLocs = (routeData ?? []) as LocRow[];
 
   const routeByEntry = new Map<string, [number, number][]>();
+  // Vardiya başına SON bilinen konum (yaş sınırı yok) — routeLocs artan sıralı
+  // olduğu için her time_entry için en son yazılan satır kalır. Taze ping (<10 dk)
+  // yoksa şoför bu "son bilinen konum"la haritada/işaretle listede kalır.
+  const lastKnownByEntry = new Map<string, LocRow>();
   for (const r of routeLocs) {
     if (!r.time_entry_id) continue;
     const arr = routeByEntry.get(r.time_entry_id) ?? [];
     arr.push([r.latitude, r.longitude]);
     routeByEntry.set(r.time_entry_id, arr);
+    lastKnownByEntry.set(r.time_entry_id, r);
   }
 
+  // Şoför listesi = AÇIK VARDİYA sayacıyla AYNI küme (shifts). Konum yoksa şoför
+  // DÜŞMEZ; sadece durumu işaretlenir. Böylece üst kutu (Aktif Vardiya) ile
+  // "Şoförler (N)" sekmesi her zaman tutarlı kalır.
   const drivers: ActiveDriver[] = [];
   for (const s of shifts) {
-    const loc = latestByWorker.get(s.worker_id);
     const w = workerMap.get(s.worker_id);
-    if (!loc || !w) continue;
+    const recent = latestByWorker.get(s.worker_id); // taze (<10 dk)
+    const lastKnown = lastKnownByEntry.get(s.id); // daha eski olabilir
+    const loc = recent ?? lastKnown ?? null;
+    const locStatus: ActiveDriver["locStatus"] = recent
+      ? "live"
+      : lastKnown
+        ? "stale"
+        : "waiting";
     drivers.push({
       worker_id: s.worker_id,
-      name: w.name,
-      plate: w.plate,
+      name: w?.name ?? "—",
+      plate: w?.plate ?? null,
       shift_started_at: s.started_at,
       time_entry_id: s.id,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      recorded_at: loc.recorded_at,
+      latitude: loc?.latitude ?? null,
+      longitude: loc?.longitude ?? null,
+      recorded_at: loc?.recorded_at ?? null,
+      locStatus,
       route: routeByEntry.get(s.id) ?? [],
     });
   }

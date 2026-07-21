@@ -226,9 +226,15 @@ export type ActiveDriver = {
   plate: string | null;
   shift_started_at: string;
   time_entry_id: string;
-  latitude: number;
-  longitude: number;
-  recorded_at: string;
+  // Konum artık opsiyonel: vardiyası açık ama aracı o an sinyal vermeyen şoför de
+  // listede kalır (harita şoför sekmesi = açık vardiya sayacıyla aynı küme).
+  //   live    = son 10 dk içinde taze ping
+  //   stale   = daha eski "son bilinen konum" var
+  //   waiting = bu vardiyada hiç konum yok ("konum bekleniyor")
+  latitude: number | null;
+  longitude: number | null;
+  recorded_at: string | null;
+  locStatus: "live" | "stale" | "waiting";
   route: [number, number][];
 };
 

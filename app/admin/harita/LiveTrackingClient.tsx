@@ -263,7 +263,18 @@ export function LiveTrackingClient({
                     >
                       <div className="relative">
                         <UserAvatar name={d.name} size="sm" />
-                        <span className="live-dot absolute -bottom-0.5 -right-0.5 ring-2 ring-card" />
+                        {/* Konum durumu noktası: canlı = yeşil nabız, son bilinen =
+                            amber, konum bekleniyor = gri. Şoför her durumda listede. */}
+                        <span
+                          className={cn(
+                            "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-card",
+                            d.locStatus === "live"
+                              ? "live-dot"
+                              : d.locStatus === "stale"
+                                ? "bg-accent-gold"
+                                : "bg-text-tertiary"
+                          )}
+                        />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
@@ -275,9 +286,15 @@ export function LiveTrackingClient({
                             {formatDurationShort(activeMs, locale)}
                           </span>
                           <span className="text-text-tertiary">·</span>
-                          <span className="nums text-text-tertiary">
-                            {t("last_update", { time: formatTime(d.recorded_at, locale) })}
-                          </span>
+                          {d.locStatus === "waiting" ? (
+                            <span className="text-text-tertiary">{t("awaiting_location")}</span>
+                          ) : (
+                            <span className="nums text-text-tertiary">
+                              {t(d.locStatus === "live" ? "last_update" : "last_known", {
+                                time: formatTime(d.recorded_at, locale),
+                              })}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <ChevronRight className="size-4 shrink-0 text-text-tertiary transition-colors group-hover:text-foreground" />

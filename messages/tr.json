@@ -850,7 +850,13 @@
     "v2EditPackages": "Paket Sayısını Düzenle",
     "v2PackagesHint": "Bugün alacağın/aldığın toplam paket sayısını yaz. Gün içinde düzeltebilirsin.",
     "v2DeliveredPreview": "Teslim edilen",
-    "v2UndeliveredRequired": "Teslim edilemeyen sayısını gir (0 olabilir)."
+    "v2UndeliveredRequired": "Teslim edilemeyen sayısını gir (0 olabilir).",
+    "v2OncePerDayHint": "Vardiya günde bir kez açılır.",
+    "v2ConfirmEndTitle": "Vardiyayı kapatmak istiyor musun?",
+    "v2ConfirmEndDesc": "Vardiya günde bir kez açılır. Kapattıktan sonra bugün tekrar vardiya açamazsın.",
+    "v2DayDoneTitle": "Bugünkü vardiyan tamamlandı",
+    "v2DayDoneDesc": "Vardiya günde bir kez açılır. Yeni vardiya yarın açılabilir.",
+    "v2DayDoneToast": "Bugünkü vardiyan tamamlandı. Yeni vardiya yarın açılabilir."
   },
   "history": {
     "title": "Vardiya Geçmişi",
@@ -1059,15 +1065,6 @@
   "footer": {
     "poweredBy": "Powered by Galzura",
     "version": "v{v}"
-  },
-  "pdf": {
-    "title": "Vardiya Raporu",
-    "company": "HAK61 GmbH",
-    "address": "Manstraße 21/1/5, 2333 Leopoldsdorf, Avusturya",
-    "period": "Dönem",
-    "generatedAt": "Üretim Zamanı",
-    "page": "Sayfa {n} / {total}",
-    "footer": "AZG / Avusturya İş Kanunu uyumlu çıktı"
   },
   "help": {
     "toggle": "Yardım",

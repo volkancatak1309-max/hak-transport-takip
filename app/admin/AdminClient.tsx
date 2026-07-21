@@ -74,6 +74,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { editEntryAction, deleteEntryAction } from "../actions/shift";
+import {
+  SHIFT_REPORT_DE,
+  REPORT_EMPTY,
+  buildShiftReportRow,
+  reportPeriodDe,
+} from "@/lib/report-de";
 import type { TimeEntryWithWorker, WorkerPublic } from "@/lib/types";
 
 const NINE_HOURS = 9 * 60 * 60 * 1000;
@@ -107,7 +113,6 @@ export function AdminClient({
 }: Props) {
   const t = useTranslations("admin");
   const tc = useTranslations("common");
-  const tpdf = useTranslations("pdf");
   const tExport = useTranslations("export");
   const tAzg = useTranslations("azg");
   const locale = useLocale();
@@ -302,41 +307,22 @@ export function AdminClient({
   async function exportPdf() {
     try {
       const { downloadPdf } = await import("@/components/pdf/ShiftReport");
+      // PDF SABİT ALMANCA — arayüz Türkçe olsa da. Bkz. lib/report-de.ts:
+      // bu çıktı AZG kapsamında ibraz edilen bir Avusturya resmî belgesidir.
       await downloadPdf({
-        title: tpdf("title"),
-        company: tpdf("company"),
-        address: tpdf("address"),
-        period: `${tpdf("period")}: ${range}`,
-        generatedAt: `${tpdf("generatedAt")}: ${new Date().toLocaleString(nf, {
-          timeZone: "Europe/Vienna",
-        })}`,
-        footer: tpdf("footer"),
-        headers: {
-          worker: t("tblWorker"), date: t("tblDate"), start: t("tblStart"),
-          end: t("tblEnd"), worked: t("tblWorked"), breakMin: t("tblBreak"),
-          startKm: t("tblStartKm"), endKm: t("tblEndKm"), km: t("tblKm"),
-          loaded: t("tblLoaded"), cargo: t("tblCargo"),
-          undelivered: t("tblUndelivered"), plate: t("tblPlate"),
-        },
-        rows: entries.map((e) => {
-          const w = workedMs(e);
-          const km = kmDiff(e);
-          return {
-            worker: e.workers?.name ?? "—",
-            date: formatDate(e.started_at, locale),
-            start: formatTime(e.started_at, locale),
-            end: e.ended_at ? formatTime(e.ended_at, locale) : "—",
-            worked: formatDurationShort(w, locale),
-            breakMin: String(e.break_minutes ?? 0),
-            startKm: e.start_km != null ? String(e.start_km) : "—",
-            endKm: e.end_km != null ? String(e.end_km) : "—",
-            km: km !== null ? String(km) : "—",
-            loaded: e.start_package_count != null ? String(e.start_package_count) : "—",
-            cargo: e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "—",
-            undelivered: e.undelivered_count !== null ? String(e.undelivered_count) : "—",
-            plate: e.plate ?? "—",
-          };
-        }),
+        title: SHIFT_REPORT_DE.title,
+        company: SHIFT_REPORT_DE.company,
+        address: SHIFT_REPORT_DE.address,
+        period: `${SHIFT_REPORT_DE.period}: ${reportPeriodDe(range)}`,
+        generatedAt: `${SHIFT_REPORT_DE.generatedAt}: ${new Date().toLocaleString(
+          "de-AT",
+          { timeZone: "Europe/Vienna" }
+        )}`,
+        footer: SHIFT_REPORT_DE.footer,
+        headers: SHIFT_REPORT_DE.headers,
+        rows: entries.map((e) =>
+          buildShiftReportRow(e, e.workers?.name ?? REPORT_EMPTY)
+        ),
         filename: `hak-report-${range}-${new Date().toISOString().slice(0, 10)}.pdf`,
       });
     } catch {

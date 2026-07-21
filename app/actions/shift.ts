@@ -14,6 +14,7 @@ import {
 import { workedMs, formatDurationShort, formatTime } from "@/lib/format";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { resolveStartKm } from "@/lib/auto-shift";
+import { hasShiftToday } from "@/lib/shift-day";
 import { sendTelegramMessage } from "@/lib/telegram";
 import {
   shiftSummaryMessage,
@@ -80,6 +81,12 @@ export async function startShiftAction(formData: FormData): Promise<ShiftResult>
     .maybeSingle();
 
   if (active) return { ok: false, error: "active" };
+
+  // Günde tek vardiya (lib/shift-day.ts). Kapanmış bugünkü vardiya varsa yeni
+  // vardiya açılmaz — bugünün işi bitmiştir.
+  if (await hasShiftToday(session.worker_id!)) {
+    return { ok: false, error: "day_done" };
+  }
 
   // If a vehicle was picked, that's the canonical link. Denormalize its plate
   // into time_entries.plate so existing reports/exports keep working unchanged.
@@ -185,6 +192,13 @@ export async function startShiftManualAction(): Promise<ShiftResult> {
     .is("ended_at", null)
     .maybeSingle();
   if (active) return { ok: false, error: "active" };
+
+  // 2a) GÜNDE TEK VARDİYA (lib/shift-day.ts). Şoför bugün vardiya açıp
+  //     kapattıysa yenisini açamaz; panel de butonu göstermez ama sunucu son
+  //     sözü söyler (eski sekme, geri tuşu, doğrudan istek).
+  if (await hasShiftToday(session.worker_id!)) {
+    return { ok: false, error: "day_done" };
+  }
 
   // 2b) ARAÇ guard'ı. uq_time_entries_one_open yalnız worker_id'ye bakar, yani
   //     DB "aynı araçta iki açık vardiya"yı engellemez. auto-shift bu yarısını

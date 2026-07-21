@@ -10,15 +10,18 @@ import {
   shiftSummaryMessage,
 } from "@/lib/telegram-messages";
 import { workedMs, formatDurationShort, formatTime } from "@/lib/format";
+import { workersWithShiftToday } from "@/lib/shift-day";
 
 /**
  * Otomatik vardiya motoru (Şoför Paneli v2 — İş 1).
  *
  * Araç telemetrisi (device_telemetry.ignition_on) üzerinden:
  *  - BAŞLAT: atanmış şoförü (vehicles.assigned_worker_id) olan bir araçta
- *    kontak açılınca, o şoförün açık vardiyası yoksa vardiya otomatik açılır
- *    (auto_started=true, confirmation_status='pending'). Şoför panelden tek
- *    dokunuşla onaylar; onaylamasa da veri akmaya devam eder.
+ *    kontak açılınca, o şoförün açık vardiyası yoksa VE o gün hiç vardiyası
+ *    olmadıysa vardiya otomatik açılır (auto_started=true,
+ *    confirmation_status='pending'). Şoför panelden tek dokunuşla onaylar;
+ *    onaylamasa da veri akmaya devam eder. Günde tek vardiya kuralı için bkz.
+ *    lib/shift-day.ts — kontak açılıp kapandıkça ikinci vardiya AÇILMAZ.
  *  - BİTİR: auto_started açık vardiyada kontak kapalı + hiçbir aktivite
  *    (araç hareketi, telefon GPS'i, +1 paket, foto) olmadan
  *    AUTO_SHIFT_IDLE_END_MINUTES (varsayılan 30 dk) geçince vardiya, son
@@ -339,6 +342,12 @@ export async function processAutoShifts(
     }
     const open = (openData ?? []) as OpenShift[];
     const openByWorker = new Map(open.map((s) => [s.worker_id, s]));
+    // GÜNDE TEK VARDİYA (lib/shift-day.ts). Çöp vardiyanın kaynağı tam burasıydı:
+    // kontak her açılıp kapandığında bu motor yeni bir vardiya açıyordu. Artık
+    // şoför o gün bir kez vardiya açtıysa (manuel ya da otomatik, KAPANMIŞ olsa
+    // bile) kontak ikinci vardiyayı açmaz. Otomatik BİTİRME bu kümeden
+    // etkilenmez — açık vardiya her hâlükârda kapatılabilmelidir.
+    const startedToday = await workersWithShiftToday();
     const openByVehicle = new Map(
       open.filter((s) => s.vehicle_id).map((s) => [s.vehicle_id as string, s])
     );
@@ -361,7 +370,8 @@ export async function processAutoShifts(
           v.status === "active" &&
           latest.ignition_on === true &&
           now - latestMs <= START_FRESH_MS &&
-          !openByWorker.has(v.assigned_worker_id)
+          !openByWorker.has(v.assigned_worker_id) &&
+          !startedToday.has(v.assigned_worker_id)
         ) {
           const { data: w } = await supabaseAdmin
             .from("workers")
@@ -398,6 +408,8 @@ export async function processAutoShifts(
           }
           if (ins) {
             summary.started++;
+            // Aynı turda başka bir araç aynı şoför için ikinci vardiya açmasın.
+            startedToday.add(v.assigned_worker_id);
             openByWorker.set(v.assigned_worker_id, {
               id: ins.id as string,
               worker_id: v.assigned_worker_id,

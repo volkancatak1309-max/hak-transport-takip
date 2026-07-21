@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { requireWorker } from "@/lib/session";
 import { MAX_ODOMETER, MAX_PER_SHIFT_KM, MAX_COUNT } from "@/lib/validation";
 import { recountShiftPackages } from "@/lib/shift-packages";
+import { hasShiftToday } from "@/lib/shift-day";
 import { reportProblemAction } from "@/app/actions/driver-panel";
 import type { DriverReportType } from "@/lib/types";
 
@@ -61,6 +62,12 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
       .is("ended_at", null)
       .maybeSingle();
     if (active) return { ok: true }; // already started; treat as done
+
+    // Günde tek vardiya (lib/shift-day.ts): şoför çevrimdışıyken kuyruğa
+    // giren başlatma, o gün zaten bir vardiya varsa ikinci satırı AÇMAZ.
+    // Hata değil "yapılacak bir şey kalmadı" durumudur — ok döner ki kuyruk
+    // öğeyi sonsuza dek yeniden denemesin.
+    if (await hasShiftToday(workerId)) return { ok: true };
 
     const vehicleId = (item.payload.vehicle_id as string) || null;
     let vehiclePlate: string | null = null;

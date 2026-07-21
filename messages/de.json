@@ -850,7 +850,13 @@
     "v2EditPackages": "Paketanzahl ändern",
     "v2PackagesHint": "Gib die Gesamtzahl der heutigen Pakete ein. Kann während des Tages geändert werden.",
     "v2DeliveredPreview": "Zugestellt",
-    "v2UndeliveredRequired": "Bitte Anzahl nicht zugestellter Pakete eingeben (0 möglich)."
+    "v2UndeliveredRequired": "Bitte Anzahl nicht zugestellter Pakete eingeben (0 möglich).",
+    "v2OncePerDayHint": "Die Schicht wird einmal pro Tag gestartet.",
+    "v2ConfirmEndTitle": "Schicht wirklich beenden?",
+    "v2ConfirmEndDesc": "Die Schicht wird einmal pro Tag gestartet. Nach dem Beenden kannst du heute keine neue Schicht mehr starten.",
+    "v2DayDoneTitle": "Deine heutige Schicht ist abgeschlossen",
+    "v2DayDoneDesc": "Die Schicht wird einmal pro Tag gestartet. Eine neue Schicht ist morgen möglich.",
+    "v2DayDoneToast": "Deine heutige Schicht ist abgeschlossen. Eine neue Schicht ist morgen möglich."
   },
   "history": {
     "title": "Schichtverlauf",
@@ -1059,15 +1065,6 @@
   "footer": {
     "poweredBy": "Powered by Galzura",
     "version": "v{v}"
-  },
-  "pdf": {
-    "title": "Arbeitszeit-Bericht",
-    "company": "HAK61 GmbH",
-    "address": "Manstraße 21/1/5, 2333 Leopoldsdorf, Österreich",
-    "period": "Zeitraum",
-    "generatedAt": "Erstellt am",
-    "page": "Seite {n} / {total}",
-    "footer": "AZG-konform"
   },
   "help": {
     "toggle": "Hilfe",

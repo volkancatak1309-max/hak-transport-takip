@@ -131,6 +131,11 @@ export default async function PanelPage() {
           pendingSummary={pendingSummary}
           telegram={telegram}
           todayAssignmentCount={todayAssignmentCount}
+          /* Günde tek vardiya (lib/shift-day.ts): bugün açılmış bir vardiya
+             varsa panel "bugünkü vardiyan tamamlandı" der ve başlat butonunu
+             göstermez. `past` üzerinden hesaplanır — açık vardiya zaten
+             `active` dalında ele alınır. */
+          shiftDoneToday={todayEntries.length > 0}
           totals={{
             todayClosedPackages: sumCargo(todayEntries),
             weekMs: sumWorkedMs(weekEntries),

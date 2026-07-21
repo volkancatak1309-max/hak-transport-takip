@@ -32,6 +32,11 @@ import {
   formatDuration,
 } from "@/lib/format";
 import { toggleActiveAction, resetPinAction } from "../../../actions/workers";
+import {
+  SHIFT_REPORT_DE,
+  REPORT_LOCALE,
+  buildShiftReportRow,
+} from "@/lib/report-de";
 import { KmEditButton } from "@/components/KmEditButton";
 import { EditWorkerDialog } from "@/components/admin/EditWorkerDialog";
 import type { WorkerPublic, TimeEntry } from "@/lib/types";
@@ -60,7 +65,6 @@ export function WorkerDetailClient({
   const t = useTranslations("workers");
   const ta = useTranslations("admin");
   const tc = useTranslations("common");
-  const tpdf = useTranslations("pdf");
   const tmap = useTranslations("map");
   const tExport = useTranslations("export");
   const locale = useLocale();
@@ -103,51 +107,19 @@ export function WorkerDetailClient({
   async function exportPdf() {
     try {
       const { downloadPdf } = await import("@/components/pdf/ShiftReport");
+      // Arayüz dili ne olursa olsun SABİT ALMANCA — bkz. lib/report-de.ts.
       await downloadPdf({
-      title: `${tpdf("title")} — ${worker.name}`,
-      company: tpdf("company"),
-      address: tpdf("address"),
-      period: `${tpdf("period")}: ${formatDate(entries[entries.length - 1]?.started_at, locale)} – ${formatDate(entries[0]?.started_at, locale)}`,
-      generatedAt: `${tpdf("generatedAt")}: ${new Date().toLocaleString(
-        locale === "de" ? "de-AT" : "tr-TR",
+      title: `${SHIFT_REPORT_DE.title} — ${worker.name}`,
+      company: SHIFT_REPORT_DE.company,
+      address: SHIFT_REPORT_DE.address,
+      period: `${SHIFT_REPORT_DE.period}: ${formatDate(entries[entries.length - 1]?.started_at, REPORT_LOCALE)} – ${formatDate(entries[0]?.started_at, REPORT_LOCALE)}`,
+      generatedAt: `${SHIFT_REPORT_DE.generatedAt}: ${new Date().toLocaleString(
+        "de-AT",
         { timeZone: "Europe/Vienna" }
       )}`,
-      footer: tpdf("footer"),
-      headers: {
-        worker: ta("tblWorker"),
-        date: ta("tblDate"),
-        start: ta("tblStart"),
-        end: ta("tblEnd"),
-        worked: ta("tblWorked"),
-        breakMin: ta("tblBreak"),
-        startKm: ta("tblStartKm"),
-        endKm: ta("tblEndKm"),
-        km: ta("tblKm"),
-        loaded: ta("tblLoaded"),
-        cargo: ta("tblCargo"),
-        undelivered: ta("tblUndelivered"),
-        plate: ta("tblPlate"),
-      },
-      rows: entries.map((e) => {
-        const w = workedMs(e);
-        const km = kmDiff(e);
-        return {
-          worker: worker.name,
-          date: formatDate(e.started_at, locale),
-          start: formatTime(e.started_at, locale),
-          end: e.ended_at ? formatTime(e.ended_at, locale) : "—",
-          worked: formatDurationShort(w, locale),
-          breakMin: String(e.break_minutes ?? 0),
-          startKm: e.start_km != null ? String(e.start_km) : "—",
-          endKm: e.end_km != null ? String(e.end_km) : "—",
-          km: km !== null ? String(km) : "—",
-          loaded: e.start_package_count != null ? String(e.start_package_count) : "—",
-          // Delivered only counts once the shift has ended.
-          cargo: e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "—",
-          undelivered: e.undelivered_count !== null ? String(e.undelivered_count) : "—",
-          plate: e.plate ?? "—",
-        };
-      }),
+      footer: SHIFT_REPORT_DE.footer,
+      headers: SHIFT_REPORT_DE.headers,
+      rows: entries.map((e) => buildShiftReportRow(e, worker.name)),
       filename: `hak-${worker.name.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`,
       });
     } catch {

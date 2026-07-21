@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   ArrowRight,
+  CheckCircle2,
   KeyRound,
   Loader2,
   Package,
@@ -82,6 +83,8 @@ type Props = {
   todayAssignmentCount: number;
   totals: Totals;
   assignedVehicle: AssignedVehicle | null;
+  /** Bugün (Viyana günü) bir vardiya açılmış mı — günde tek vardiya kuralı. */
+  shiftDoneToday: boolean;
 };
 
 export function PanelClient({
@@ -91,6 +94,7 @@ export function PanelClient({
   todayAssignmentCount,
   totals,
   assignedVehicle,
+  shiftDoneToday,
 }: Props) {
   const t = useTranslations("panel");
   const tc = useTranslations("common");
@@ -112,6 +116,9 @@ export function PanelClient({
   const [summaryLater, setSummaryLater] = useState(false);
 
   const [endOpen, setEndOpen] = useState(false);
+  // Kapatma onayı: form değerleri onay verilene kadar burada bekler.
+  const [confirmEndOpen, setConfirmEndOpen] = useState(false);
+  const [endForm, setEndForm] = useState<FormData | null>(null);
   const [problemOpen, setProblemOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [kmEditOpen, setKmEditOpen] = useState(false);
@@ -226,6 +233,17 @@ export function PanelClient({
     });
   }
 
+  /**
+   * Kapatma iki adımlıdır. Vardiya kapatmak artık GERİ ALINAMAZ bir karardır
+   * (günde tek vardiya — kapanınca o gün yenisi açılamaz), bu yüzden form
+   * gönderimi doğrudan kapatmaz: değerler tutulur, şoföre sonucu açıkça yazan
+   * bir onay sorulur. "Hayır" derse vardiya olduğu gibi açık kalır.
+   */
+  function requestEnd(formData: FormData) {
+    setEndForm(formData);
+    setConfirmEndOpen(true);
+  }
+
   function handleEnd(formData: FormData) {
     if (breakStartLocal !== null) {
       // Süren mola, form alanı varsayılanı totalBreakSoFar'a zaten dahil.
@@ -247,11 +265,13 @@ export function PanelClient({
       if (r.queued) {
         toast.warning(tOffline("queued_toast"));
         setEndOpen(false);
+        setEndForm(null);
         return;
       }
       if (r.result.ok) {
         toast.success(t("shiftEnded"));
         setEndOpen(false);
+        setEndForm(null);
         setSummaryLater(false); // biten vardiyanın özeti hemen çıksın
         router.refresh();
       } else {
@@ -279,6 +299,7 @@ export function PanelClient({
     if (e === "vehicle_unavailable") return t("v2StartVehicleMaintenance");
     if (e === "vehicle_busy") return t("v2StartVehicleBusy");
     if (e === "inactive_worker") return t("v2StartInactiveWorker");
+    if (e === "day_done") return t("v2DayDoneToast");
     return e;
   }
 
@@ -488,6 +509,26 @@ export function PanelClient({
             </Button>
           </div>
         </>
+      ) : shiftDoneToday ? (
+        /* Günde tek vardiya: bugünkü vardiya kapandı. Bekleme ekranını
+           göstermek yanlış olurdu — şoför kontağı açıp bekler, hiçbir şey
+           olmaz. Durum net yazılır ve başlat butonu HİÇ render edilmez
+           (pasif buton "bozuk mu?" sorusunu doğurur). */
+        <Card>
+          <CardContent className="space-y-5 py-10 text-center">
+            <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-accent-green/12 text-accent-green">
+              <CheckCircle2 className="size-10" aria-hidden />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-2xl font-bold text-foreground">
+                {t("v2DayDoneTitle")}
+              </h1>
+              <p className="mx-auto max-w-xs text-sm text-muted-foreground">
+                {t("v2DayDoneDesc")}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       ) : (
         /* Bekleme ekranı: kontak vardiyayı otomatik başlatır; aracı atanmış
            şoför beklemek istemezse elle de başlatabilir. */
@@ -542,7 +583,7 @@ export function PanelClient({
                   {t("v2StartShift")}
                 </button>
                 <p className="mx-auto max-w-xs text-xs text-muted-foreground">
-                  {t("v2StartHint")}
+                  {t("v2StartHint")} {t("v2OncePerDayHint")}
                 </p>
               </div>
             )}
@@ -614,7 +655,17 @@ export function PanelClient({
               {t("v2TotalPackages")}: {packagesTaken ?? "—"}
             </DialogDescription>
           </DialogHeader>
-          <form action={handleEnd} className="space-y-4">
+          {/* action={} DEĞİL onSubmit: React 19 form action'ı tamamlanınca
+              formu otomatik sıfırlar. Onay iki adımlı olduğu için şoför
+              "Hayır" derse geri döndüğü formda girdiği bitiş km'si ve notu
+              DURMALI — sıfırlanmış form onu baştan yazmaya zorlardı. */}
+          <form
+            onSubmit={(ev) => {
+              ev.preventDefault();
+              requestEnd(new FormData(ev.currentTarget));
+            }}
+            className="space-y-4"
+          >
             <input type="hidden" name="break_minutes" value={totalBreakSoFar} />
             <div className="space-y-1.5">
               <Label htmlFor="end_km">{t("endKm")}</Label>
@@ -681,6 +732,44 @@ export function PanelClient({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Kapatma onayı — geri alınamaz kararın son kapısı. Sonucu ("bugün
+          tekrar açamazsın") soruyla BİRLİKTE yazar; şoför "Evet"e basarken
+          neyi kaybettiğini bilir. */}
+      <Dialog open={confirmEndOpen} onOpenChange={setConfirmEndOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="size-5 text-accent-gold" aria-hidden />
+              {t("v2ConfirmEndTitle")}
+            </DialogTitle>
+            <DialogDescription>{t("v2ConfirmEndDesc")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="h-12 flex-1"
+              onClick={() => setConfirmEndOpen(false)}
+              disabled={pending}
+            >
+              {tc("no")}
+            </Button>
+            <Button
+              variant="destructive"
+              className="h-12 flex-1"
+              disabled={pending || !endForm}
+              onClick={() => {
+                if (!endForm) return;
+                setConfirmEndOpen(false);
+                handleEnd(endForm);
+              }}
+            >
+              {pending && <Loader2 className="size-4 animate-spin" />}
+              {pending ? tc("saving") : tc("yes")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

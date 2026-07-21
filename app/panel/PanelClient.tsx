@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
@@ -24,10 +24,10 @@ import {
   updatePackageCountAction,
 } from "../actions/shift";
 import { formatDuration, formatTime, workedMs } from "@/lib/format";
+import { BREAK_TARGET_MIN, BREAK_TARGET_MS } from "@/lib/break-rules";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -45,8 +45,6 @@ import { TelegramLink } from "@/components/TelegramLink";
 import { tryServerAction } from "@/lib/offline-aware";
 import { ConfirmShiftCard } from "./ConfirmShiftCard";
 import { ShiftSummaryCard } from "./ShiftSummaryCard";
-import { ShiftPhotoButton } from "./ShiftPhotoButton";
-import { ProblemReportDialog } from "./ProblemReportDialog";
 
 /**
  * Şoför Paneli v2 (Faz 1) — eğitimsiz, telefonla çalışan şoförler için:
@@ -55,7 +53,7 @@ import { ProblemReportDialog } from "./ProblemReportDialog";
  * Ekran öncelik sırası:
  *  1. İmzasız vardiya özeti varsa → tam ekran özet + yeşil ONAYLA (İş 3).
  *  2. Aktif vardiya "onay bekliyor" ise → tam ekran VARDİYAYI ONAYLA (İş 1).
- *  3. Aktif vardiya → süre sayacı + bugünkü paket + 3 dev buton (İş 2).
+ *  3. Aktif vardiya → süre/mola sayacı + bugünkü paket + paket butonu.
  *  4. Vardiya yok → "kontak açılınca otomatik başlar" bekleme ekranı.
  */
 
@@ -78,7 +76,6 @@ type Props = {
   active: TimeEntry | null;
   pendingSummary: TimeEntry | null;
   telegram: { linked: boolean; username: string | null };
-  todayAssignmentCount: number;
   totals: Totals;
   assignedVehicle: AssignedVehicle | null;
   /** Bugün (Viyana günü) bir vardiya açılmış mı — günde tek vardiya kuralı. */
@@ -89,7 +86,6 @@ export function PanelClient({
   active,
   pendingSummary,
   telegram,
-  todayAssignmentCount,
   totals,
   assignedVehicle,
   shiftDoneToday,
@@ -114,10 +110,8 @@ export function PanelClient({
   const [summaryLater, setSummaryLater] = useState(false);
 
   const [endOpen, setEndOpen] = useState(false);
-  // Kapatma onayı: form değerleri onay verilene kadar burada bekler.
+  // Kapatma öncesi DİKKAT uyarısı (tek onay katmanı).
   const [confirmEndOpen, setConfirmEndOpen] = useState(false);
-  const [endForm, setEndForm] = useState<FormData | null>(null);
-  const [problemOpen, setProblemOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Manuel paket sayısı (alınan/planlanan) — +1 sayaç yerine düz sayı girişi.
   const [pkgOpen, setPkgOpen] = useState(false);
@@ -164,42 +158,83 @@ export function PanelClient({
     : 0;
 
   const onBreak = breakStartLocal !== null;
+  /** Süren molanın geçen süresi — sayaç bunu 00:00:00'dan itibaren sayar. */
+  const breakElapsedMs = breakStartLocal !== null ? Math.max(0, now - breakStartLocal) : 0;
 
-  function toggleBreak() {
-    if (breakStartLocal === null) {
-      setBreakStartLocal(Date.now());
-      toast.info(t("breakStarted"));
-      void startBreakAction().catch(() => {});
+  function startBreak() {
+    setBreakStartLocal(Date.now());
+    toast.info(t("breakStarted"));
+    void startBreakAction().catch(() => {});
+  }
+
+  /**
+   * Molayı bitirir ve GERÇEKTEN geçen dakikayı yazar.
+   * `auto` = hedef süreye (BREAK_TARGET_MIN) ulaşıldığı için kendiliğinden
+   * bitti; şoför erken bastıysa false. İkisinde de aynı kayıt yolu kullanılır —
+   * mola süresi tek yerden birikir (time_entries.break_minutes), rapordaki
+   * "Pause" kolonu buradan beslenir.
+   */
+  function endBreak(auto: boolean) {
+    if (breakStartLocal === null) return;
+    const elapsedMin = Math.max(0, Math.floor((Date.now() - breakStartLocal) / 60_000));
+    setBreakStartLocal(null);
+    setPendingBreakMinutes((m) => m + elapsedMin);
+    // Şoför kaç dakika mola yaptığını HER hâlükârda görür (0 dk dahil).
+    const msg = auto
+      ? t("breakAutoDone", { min: BREAK_TARGET_MIN })
+      : t("breakEndedMin", { min: elapsedMin });
+    if (elapsedMin > 0) {
+      startTransition(async () => {
+        const r = await tryServerAction(
+          "break",
+          { minutes: elapsedMin },
+          new Date().toISOString(),
+          () => addBreakMinutesAction(elapsedMin)
+        );
+        if (r.queued) {
+          toast.warning(tOffline("queued_toast"));
+          setPendingBreakMinutes(0);
+          return;
+        }
+        if (r.result.ok) {
+          toast.success(msg);
+          setPendingBreakMinutes(0);
+          router.refresh();
+        } else {
+          toast.error(r.result.error ?? "Error");
+        }
+      });
     } else {
-      const elapsedMin = Math.max(0, Math.floor((Date.now() - breakStartLocal) / 60_000));
-      setBreakStartLocal(null);
-      setPendingBreakMinutes((m) => m + elapsedMin);
-      if (elapsedMin > 0) {
-        startTransition(async () => {
-          const r = await tryServerAction(
-            "break",
-            { minutes: elapsedMin },
-            new Date().toISOString(),
-            () => addBreakMinutesAction(elapsedMin)
-          );
-          if (r.queued) {
-            toast.warning(tOffline("queued_toast"));
-            setPendingBreakMinutes(0);
-            return;
-          }
-          if (r.result.ok) {
-            toast.success(t("breakEnded"));
-            setPendingBreakMinutes(0);
-            router.refresh();
-          } else {
-            toast.error(r.result.error ?? "Error");
-          }
-        });
-      } else {
-        toast.success(t("breakEnded"));
-      }
+      toast.success(msg);
     }
   }
+
+  function toggleBreak() {
+    if (breakStartLocal === null) startBreak();
+    else endBreak(false);
+  }
+
+  // "En güncel fonksiyon" ref'i: endBreak her render'da yeni bir kimlik alır.
+  // Zamanlayıcıya doğrudan verilseydi mola boyunca her saniye yeniden kurulur
+  // ve hedefe hiç ulaşamazdı. Ref efekt İÇİNDE yazılır (render sırasında ref
+  // yazmak React 19'da kirli sayılır).
+  const endBreakRef = useRef(endBreak);
+  useEffect(() => {
+    endBreakRef.current = endBreak;
+  });
+
+  /**
+   * Hedef süre (BREAK_TARGET_MIN) dolunca molayı OTOMATİK bitirir. Zamanlayıcı
+   * mola başlangıcına göre KALAN süre kadar kurulur — her saniye kontrol eden
+   * bir efekt değil. Telefon uykuya dalıp geç uyansa bile kaydedilen süre
+   * gerçek zaman damgalarından hesaplandığı için doğru kalır.
+   */
+  useEffect(() => {
+    if (breakStartLocal === null) return;
+    const remaining = BREAK_TARGET_MS - (Date.now() - breakStartLocal);
+    const id = setTimeout(() => endBreakRef.current(true), Math.max(0, remaining));
+    return () => clearTimeout(id);
+  }, [breakStartLocal]);
 
   // Manuel paket sayısı: dialog'u mevcut değerle aç.
   function openPkg() {
@@ -229,17 +264,6 @@ export function PanelClient({
     });
   }
 
-  /**
-   * Kapatma iki adımlıdır. Vardiya kapatmak artık GERİ ALINAMAZ bir karardır
-   * (günde tek vardiya — kapanınca o gün yenisi açılamaz), bu yüzden form
-   * gönderimi doğrudan kapatmaz: değerler tutulur, şoföre sonucu açıkça yazan
-   * bir onay sorulur. "Hayır" derse vardiya olduğu gibi açık kalır.
-   */
-  function requestEnd(formData: FormData) {
-    setEndForm(formData);
-    setConfirmEndOpen(true);
-  }
-
   function handleEnd(formData: FormData) {
     if (breakStartLocal !== null) {
       // Süren mola, form alanı varsayılanı totalBreakSoFar'a zaten dahil.
@@ -262,13 +286,11 @@ export function PanelClient({
       if (r.queued) {
         toast.warning(tOffline("queued_toast"));
         setEndOpen(false);
-        setEndForm(null);
         return;
       }
       if (r.result.ok) {
         toast.success(t("shiftEnded"));
         setEndOpen(false);
-        setEndForm(null);
         setSummaryLater(false); // biten vardiyanın özeti hemen çıksın
         router.refresh();
       } else {
@@ -377,37 +399,60 @@ export function PanelClient({
           {/* Üst blok: kocaman süre sayacı + bugünkü paket. Başka hiçbir şey. */}
           <Card>
             <CardContent className="space-y-4 py-5 text-center">
-              <div>
-                <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-                  {t("v2ShiftTime")}
-                  {onBreak && (
-                    <Badge variant="secondary" className="text-[10px]">
-                      {t("onBreak")}
-                    </Badge>
-                  )}
+              {/* MOLADAYKEN sayaç yer değiştirir: molanın kendi süresi 00:00:00'dan
+                  başlayıp öne çıkar, vardiya süresi küçülüp arkaya geçer. Eskiden
+                  ekranda yalnız vardiya süresi dönüyordu ve şoför molasının kaç
+                  dakika olduğunu göremiyordu — molanın tek görünür işareti donmuş
+                  bir sayaçtı. */}
+              {onBreak ? (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-accent-gold">
+                    {t("v2OnBreakLabel")}
+                  </div>
+                  <div className="nums mt-1 text-6xl font-bold text-accent-gold">
+                    {formatDuration(breakElapsedMs)}
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {t("v2BreakTarget", { min: BREAK_TARGET_MIN })}
+                    {" · "}
+                    {t("v2ShiftTime")}:{" "}
+                    <span className="nums text-foreground">
+                      {formatDuration(workedMsLive)}
+                    </span>
+                  </div>
                 </div>
-                <div
-                  className={`nums mt-1 text-6xl font-bold ${
-                    onBreak ? "text-muted-foreground" : "text-primary"
-                  }`}
-                >
-                  {formatDuration(workedMsLive)}
+              ) : (
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {t("v2ShiftTime")}
+                  </div>
+                  <div className="nums mt-1 text-6xl font-bold text-primary">
+                    {formatDuration(workedMsLive)}
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {t("started")}:{" "}
+                    <span className="nums text-foreground">
+                      {formatTime(active.started_at, locale)}
+                    </span>
+                    {active.plate && (
+                      <>
+                        {" · "}
+                        <span className="nums uppercase text-foreground">
+                          {active.plate}
+                        </span>
+                      </>
+                    )}
+                    {/* Bugüne kadar yapılan toplam mola — molayı erken bitiren
+                        şoför kaç dakika yaptığını burada görmeye devam eder. */}
+                    {totalBreakSoFar > 0 && (
+                      <>
+                        {" · "}
+                        {t("v2BreakTotal", { min: totalBreakSoFar })}
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  {t("started")}:{" "}
-                  <span className="nums text-foreground">
-                    {formatTime(active.started_at, locale)}
-                  </span>
-                  {active.plate && (
-                    <>
-                      {" · "}
-                      <span className="nums uppercase text-foreground">
-                        {active.plate}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
+              )}
               <div className="flex items-center justify-center gap-3 border-t border-white/[0.06] pt-4">
                 <Package className="size-6 text-accent-sky" aria-hidden />
                 <span className="text-sm text-muted-foreground">
@@ -420,7 +465,10 @@ export function PanelClient({
             </CardContent>
           </Card>
 
-          {/* 3 dev buton */}
+          {/* Tek dev buton. "FOTO ÇEK" ve "SORUN BİLDİR" panelden kaldırıldı
+              (Volkan, 21.07.2026) — HAK61 kullanmıyordu. Bileşenleri ve rotaları
+              (ShiftPhotoButton, ProblemReportDialog, /api foto yükleme) repoda
+              DURUYOR; yalnız şoför ekranından gizlendi. */}
           <div className="space-y-3">
             <button
               type="button"
@@ -429,17 +477,6 @@ export function PanelClient({
             >
               <Package className="size-10" aria-hidden />
               {packagesTaken !== null ? t("v2EditPackages") : t("v2SetPackages")}
-            </button>
-
-            <ShiftPhotoButton />
-
-            <button
-              type="button"
-              onClick={() => setProblemOpen(true)}
-              className="glass-field flex h-24 w-full items-center justify-center gap-4 rounded-2xl text-xl font-bold tracking-wide text-foreground transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] hover:bg-white/[0.06] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.98]"
-            >
-              <AlertTriangle className="size-8 text-accent-gold" aria-hidden />
-              {t("v2Report")}
             </button>
           </div>
 
@@ -463,11 +500,12 @@ export function PanelClient({
                 </>
               )}
             </Button>
+            {/* Önce DİKKAT uyarısı, sonra kapatma formu — TEK onay katmanı.
+                Uyarı formdan SONRA sorulsaydı şoför paket sayısını girdikten
+                sonra vazgeçmek zorunda kalırdı; kararın maliyeti en başta
+                söylenmeli. */}
             <Button
-              onClick={() => {
-                setEndUndel("0");
-                setEndOpen(true);
-              }}
+              onClick={() => setConfirmEndOpen(true)}
               variant="destructive"
               className="h-14 text-base"
               disabled={pending}
@@ -559,19 +597,9 @@ export function PanelClient({
         </Card>
       )}
 
-      {/* Sessiz alt bağlantılar: seferler / geçmiş / ayarlar */}
+      {/* Sessiz alt bağlantılar: geçmiş / ayarlar. "Seferler" linki kaldırıldı
+          (Volkan, 21.07.2026); /panel/seferler rotası ve sefer modülü DURUYOR. */}
       <div className="flex items-center justify-center gap-6 pb-2 text-sm">
-        <Link
-          href="/panel/seferler"
-          className="flex items-center gap-1 font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {t("v2LinkAssignments")}
-          {todayAssignmentCount > 0 && (
-            <span className="nums rounded-full bg-accent-sky/15 px-1.5 text-xs text-accent-sky">
-              {todayAssignmentCount}
-            </span>
-          )}
-        </Link>
         <Link
           href="/panel/gecmis"
           className="font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -586,8 +614,6 @@ export function PanelClient({
           {t("v2LinkSettings")} <ArrowRight className="size-3" aria-hidden />
         </button>
       </div>
-
-      <ProblemReportDialog open={problemOpen} onOpenChange={setProblemOpen} />
 
       {/* Ayarlar: Telegram bağlantısı + başlangıç km düzeltme */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
@@ -613,14 +639,14 @@ export function PanelClient({
               {t("v2TotalPackages")}: {packagesTaken ?? "—"}
             </DialogDescription>
           </DialogHeader>
-          {/* action={} DEĞİL onSubmit: React 19 form action'ı tamamlanınca
-              formu otomatik sıfırlar. Onay iki adımlı olduğu için şoför
-              "Hayır" derse geri döndüğü formda girdiği bitiş km'si ve notu
-              DURMALI — sıfırlanmış form onu baştan yazmaya zorlardı. */}
+          {/* action={} DEĞİL onSubmit: React 19 form action'ı tamamlanınca formu
+              otomatik sıfırlar; sunucu hatasında şoför girdiği değerleri
+              kaybederdi. Dikkat uyarısı bu formdan ÖNCE verildiği için burada
+              ikinci bir onay YOK. */}
           <form
             onSubmit={(ev) => {
               ev.preventDefault();
-              requestEnd(new FormData(ev.currentTarget));
+              handleEnd(new FormData(ev.currentTarget));
             }}
             className="space-y-4"
           >
@@ -678,9 +704,9 @@ export function PanelClient({
         </DialogContent>
       </Dialog>
 
-      {/* Kapatma onayı — geri alınamaz kararın son kapısı. Sonucu ("bugün
-          tekrar açamazsın") soruyla BİRLİKTE yazar; şoför "Evet"e basarken
-          neyi kaybettiğini bilir. */}
+      {/* DİKKAT — kapatma akışının ilk ve TEK uyarısı. Kararın sonucunu
+          ("bugün tekrar vardiya açamazsınız") soruyla birlikte yazar; "Evet"
+          teslim edilemeyen paket formunu açar, kapatma orada tamamlanır. */}
       <Dialog open={confirmEndOpen} onOpenChange={setConfirmEndOpen}>
         <DialogContent>
           <DialogHeader>
@@ -695,22 +721,19 @@ export function PanelClient({
               variant="outline"
               className="h-12 flex-1"
               onClick={() => setConfirmEndOpen(false)}
-              disabled={pending}
             >
               {tc("no")}
             </Button>
             <Button
               variant="destructive"
               className="h-12 flex-1"
-              disabled={pending || !endForm}
               onClick={() => {
-                if (!endForm) return;
                 setConfirmEndOpen(false);
-                handleEnd(endForm);
+                setEndUndel("0");
+                setEndOpen(true);
               }}
             >
-              {pending && <Loader2 className="size-4 animate-spin" />}
-              {pending ? tc("saving") : tc("yes")}
+              {tc("yes")}
             </Button>
           </DialogFooter>
         </DialogContent>

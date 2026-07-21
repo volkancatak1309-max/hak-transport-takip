@@ -2,12 +2,7 @@ import { requireWorker } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { PanelClient } from "./PanelClient";
-import {
-  startOfTodayVienna,
-  startOfWeekVienna,
-  viennaDayKey,
-} from "@/lib/format";
-import { getAssignments } from "@/app/actions/assignments";
+import { startOfTodayVienna, startOfWeekVienna } from "@/lib/format";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -78,11 +73,9 @@ export default async function PanelPage() {
       status: VehicleBaseStatus;
     } | null) ?? null;
 
-  const myAssignments = await getAssignments({ mine: true });
-  const todayKey = viennaDayKey(new Date());
-  const todayAssignmentCount = myAssignments.filter(
-    (a) => viennaDayKey(a.scheduled_at) === todayKey && a.status !== "cancelled"
-  ).length;
+  // Sefer sayacı sorgusu kaldırıldı (21.07.2026): panelde "Seferler" linki
+  // yok artık, rozetini besleyecek bir tüketici kalmadı. /panel/seferler
+  // rotası ve sefer modülü DURUYOR — yalnız bu sayfanın sorgusu düştü.
 
   const todayStart = startOfTodayVienna();
   const weekStart = startOfWeekVienna();
@@ -130,7 +123,6 @@ export default async function PanelPage() {
           active={active}
           pendingSummary={pendingSummary}
           telegram={telegram}
-          todayAssignmentCount={todayAssignmentCount}
           /* Günde tek vardiya (lib/shift-day.ts): bugün açılmış bir vardiya
              varsa panel "bugünkü vardiyan tamamlandı" der ve başlat butonunu
              göstermez. `past` üzerinden hesaplanır — açık vardiya zaten

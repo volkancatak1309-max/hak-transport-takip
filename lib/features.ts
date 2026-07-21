@@ -18,11 +18,11 @@
  * /panel/masraflar). Komut paleti navItems'tan türediği için kendiliğinden
  * temizlenir.
  *
- * NOT: Bakım (MAINTENANCE) ayrı bir modül ve AÇIK bırakıldı — ama sayfası
- * /admin/yakit'i yakıtla PAYLAŞIYOR, yani artık menüden erişilemiyor (rota
- * çalışmaya devam ediyor, veri 0 kayıt). İstenirse ya kendi menü öğesi
- * eklenir ya da bu bayrak da kapatılır.
+ * Bakım (MAINTENANCE) da kapatıldı (Volkan, 21.07.2026): sayfasını /admin/yakit
+ * ile paylaştığı için yakıt kapanınca zaten menüsüz kalmıştı; 0 kayıtla
+ * kullanılmıyordu. Üçü de kapalı olduğundan /admin/yakit artık tamamen
+ * yönlendiriyor.
  */
 export const FUEL_ENABLED = false;
 export const EXPENSE_ENABLED = false;
-export const MAINTENANCE_ENABLED = true;
+export const MAINTENANCE_ENABLED = false;

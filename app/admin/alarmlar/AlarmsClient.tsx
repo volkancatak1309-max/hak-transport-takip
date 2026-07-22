@@ -18,6 +18,7 @@ import {
   type RevealFilter,
 } from "@/components/ui-v2";
 import { EpochWarning } from "@/components/admin/EpochWarning";
+import { HelpTip } from "@/components/help/HelpTip";
 import { eventTone, EVENT_STRIPE, EVENT_TONE_RANK } from "@/lib/event-ui";
 import { formatDateTime, formatIdleShort } from "@/lib/format";
 import type { VehicleEventWithPlate } from "@/lib/telemetry";
@@ -234,7 +235,10 @@ export function AlarmsClient({
       />
 
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+          <HelpTip tkey="alarms_page" />
+        </div>
         <p className="mt-0.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
 

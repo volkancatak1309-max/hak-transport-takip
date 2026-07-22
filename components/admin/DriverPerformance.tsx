@@ -51,7 +51,9 @@ export function DriverPerformance({
       case "shifts":
         return r.shifts;
       case "rate":
-        return rateOf(r) ?? 1;
+        // Veri yok → EN ALTA (22.07.2026). Eskiden `?? 1` idi: paket verisi
+        // olmayan şoför "%100" gibi sıralanıp listenin başına çıkıyordu.
+        return rateOf(r) ?? -1;
       case "azg":
         return r.azgViol * 1000 + r.azgWarn; // most issues first
       case "score":

@@ -2,6 +2,8 @@
 
 import { useLocale, useTranslations } from "next-intl";
 import { DataTable, StatCard, EmptyState, type Column } from "@/components/ui-v2";
+import { HelpTip } from "@/components/help/HelpTip";
+import { SPEED_MIN_KM } from "@/lib/metric-thresholds";
 import type { SpeedReport, SpeedRow } from "@/lib/reports";
 
 /**
@@ -74,9 +76,17 @@ export function SpeedClient({ report }: { report: SpeedReport }) {
       align: "right",
       nums: true,
       hideBelow: "md",
+      // SEBEBİ YAZILAN BOŞLUK (22.07.2026): eskiden üç farklı durum da tek bir
+      // "Veri yok" ile gösteriliyordu; yönetici hangi aracı kontrol ettireceğini
+      // bilemiyordu. Sebebi yazılmayan boşluk "panel bozuk" dedirtir, sebebi
+      // yazılan boşluk iş verir (cihazı kontrol ettir / bekle).
       cell: (r) =>
         r.per100Km === null ? (
-          <span className="text-muted-foreground">{t("no_data")}</span>
+          <span className="text-[11px] leading-tight text-muted-foreground">
+            {t(`ratio_reason_${r.per100Reason ?? "no_odometer"}`, {
+              min: SPEED_MIN_KM,
+            })}
+          </span>
         ) : (
           r.per100Km.toLocaleString(nf, { maximumFractionDigits: 1 })
         ),
@@ -109,15 +119,23 @@ export function SpeedClient({ report }: { report: SpeedReport }) {
       {report.rows.length === 0 ? (
         <EmptyState kind="none" title={t("empty_title")} hint={t("empty_hint")} />
       ) : (
-        <DataTable
-          rows={report.rows}
-          columns={columns}
-          rowKey={(r) => r.vehicleId}
-          totalLabel={t("total_vehicles")}
-        />
+        <>
+          <div className="flex items-center gap-1">
+            <span className="text-[13px] font-medium">{t("speed_table_title")}</span>
+            <HelpTip tkey="rep_speed_table" />
+          </div>
+          <DataTable
+            rows={report.rows}
+            columns={columns}
+            rowKey={(r) => r.vehicleId}
+            totalLabel={t("total_vehicles")}
+          />
+        </>
       )}
 
-      <p className="text-xs text-muted-foreground">{t("speed_note")}</p>
+      <p className="text-xs text-muted-foreground">
+        {t("speed_note")} {t("speed_min_km_note", { min: SPEED_MIN_KM })}
+      </p>
     </div>
   );
 }

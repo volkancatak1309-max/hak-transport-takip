@@ -11,6 +11,12 @@ import {
   EmptyState,
   type Column,
 } from "@/components/ui-v2";
+import { HelpTip } from "@/components/help/HelpTip";
+import {
+  FUEL_L100_MIN_DAYS,
+  FUEL_MIN_CONSUMED_PCT,
+  FUEL_MIN_KM,
+} from "@/lib/metric-thresholds";
 import type { FuelReport, FuelRow } from "@/lib/reports";
 
 /**
@@ -59,6 +65,8 @@ export function FuelClient({
       t("col_tank"),
       t("col_avg_fuel"),
       t("col_consumed"),
+      t("col_km"),
+      t("col_samples"),
       t("col_l_100km"),
       t("col_refills"),
       t("col_leak"),
@@ -79,7 +87,16 @@ export function FuelClient({
             : r.hasData
               ? `${Math.round(r.consumedPct)}%`
               : "",
-        r.dataUnreliable || r.lPer100Km === null ? "" : num(r.lPer100Km, 1),
+        r.km === null ? "" : Math.round(r.km),
+        r.sampleCount,
+        // Ekranda sebebi yazılan boşluk CSV'ye de sebebiyle gider — Excel'e
+        // düşen boş hücre "sıfır" diye okunabilir, sebep okunamaz.
+        r.lPer100Km === null
+          ? t(`fuel_reason_${r.lPer100Reason ?? "no_odometer"}`, {
+              minKm: FUEL_MIN_KM,
+              minPct: FUEL_MIN_CONSUMED_PCT,
+            })
+          : num(r.lPer100Km, 1),
         r.dataUnreliable ? "" : r.refillCount,
         r.dataUnreliable ? "" : r.suspiciousDropCount,
       ].join(";")
@@ -114,7 +131,12 @@ export function FuelClient({
               : r.hasData
                 ? `${Math.round(r.consumedPct)}%`
                 : "—",
-          l100: r.dataUnreliable || r.lPer100Km === null ? "—" : num(r.lPer100Km, 1),
+          // PDF kolonu dar (11%) — uzun sebep metni satırı sarar ve tabloyu
+          // bozar. Kâğıtta KISA sebep kullanılır; uzun hâli ekranda ve CSV'de.
+          l100:
+            r.lPer100Km === null
+              ? t(`fuel_reason_short_${r.lPer100Reason ?? "no_odometer"}`)
+              : num(r.lPer100Km, 1),
           refills:
             r.dataUnreliable || r.refillCount === 0
               ? "—"
@@ -208,16 +230,62 @@ export function FuelClient({
       sortable: true,
       sortValue: (r) => (r.dataUnreliable ? -1 : r.consumedLiters ?? r.consumedPct),
     },
+    // KM (payda) ve OKUMA (örneklem) kolonları 22.07.2026'da EKLENDİ. Yönetici
+    // "80,0 L/100km" görüyordu ama onu doğuran 2,5 km'yi göremiyordu — sayının
+    // nereden geldiği ekranda olmalı ki güvenilirliği tartışılabilsin.
     {
-      key: "l100",
-      header: t("col_l_100km"),
+      key: "km",
+      header: t("col_km"),
       align: "right",
       nums: true,
+      hideBelow: "md",
       cell: (r) =>
-        r.dataUnreliable || r.lPer100Km === null ? "—" : num(r.lPer100Km, 1),
+        r.km === null ? <span className="text-muted-foreground">—</span> : `${num(r.km)} km`,
       sortable: true,
-      sortValue: (r) => (r.dataUnreliable ? -1 : r.lPer100Km ?? -1),
+      sortValue: (r) => r.km ?? -1,
     },
+    {
+      key: "samples",
+      header: t("col_samples"),
+      align: "right",
+      nums: true,
+      hideBelow: "lg",
+      cell: (r) =>
+        r.sampleCount === 0 ? (
+          <span className="text-muted-foreground">—</span>
+        ) : (
+          num(r.sampleCount)
+        ),
+      sortable: true,
+      sortValue: (r) => r.sampleCount,
+    },
+    // L/100km — ÜÇ KAPI (payda ≥50 km · pay ≥15 puan · pencere örtüşmesi ≥%80).
+    // Kapı kapalıysa boş "—" değil SEBEP yazılır. Kolonun kendisi de yalnız
+    // yeterince uzun aralıkta var: tam sayı yüzde sensörüyle GÜNLÜK araç bazlı
+    // tüketim ölçülemez, ölçülemeyeni kolon olarak açmayız.
+    ...(report.l100Available
+      ? [
+          {
+            key: "l100",
+            header: t("col_l_100km"),
+            align: "right" as const,
+            nums: true,
+            cell: (r: FuelRow) =>
+              r.lPer100Km === null ? (
+                <span className="text-[11px] leading-tight text-muted-foreground">
+                  {t(`fuel_reason_${r.lPer100Reason ?? "no_odometer"}`, {
+                    minKm: FUEL_MIN_KM,
+                    minPct: FUEL_MIN_CONSUMED_PCT,
+                  })}
+                </span>
+              ) : (
+                num(r.lPer100Km, 1)
+              ),
+            sortable: true,
+            sortValue: (r: FuelRow) => r.lPer100Km ?? -1,
+          },
+        ]
+      : []),
     {
       key: "refills",
       header: t("col_refills"),
@@ -271,10 +339,23 @@ export function FuelClient({
           value={`${num(report.totalConsumedLiters)} L`}
           scope={t("scope_range")}
         />
+        {/* FİLO ORTALAMASI — yalnız üç kapıyı geçen araçlardan (22.07.2026).
+            Eskiden satırda gizlediğimiz saçma değerlerin km'si ve litresi yine
+            de bu toplamın içindeydi. Kapsam etiketi artık kaç araçtan
+            hesaplandığını söylüyor: ortalama filonun tamamı değildir. */}
         <StatCard
           label={t("stat_fleet_l100")}
           value={report.fleetLPer100Km === null ? "—" : num(report.fleetLPer100Km, 1)}
-          scope={t("scope_range")}
+          scope={
+            !report.l100Available
+              ? t("l100_needs_days", { days: FUEL_L100_MIN_DAYS })
+              : report.fleetLPer100Km === null
+                ? t("l100_no_vehicle")
+                : t("stat_fleet_l100_scope", {
+                    n: report.l100VehicleCount,
+                    total: report.vehicleCount,
+                  })
+          }
         />
         <StatCard
           label={t("stat_thirstiest")}
@@ -313,19 +394,37 @@ export function FuelClient({
         </p>
       )}
 
+      {/* L/100km kolonu bu aralıkta HİÇ YOK — sebebi yazılmazsa yönetici kolonu
+          arar. Tam sayı yüzde sensörüyle günlük araç bazlı tüketim ölçülemez. */}
+      {!report.l100Available && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <AlertTriangle className="size-3.5 shrink-0 text-accent-gold" />
+          {t("fuel_l100_hidden_note", {
+            days: FUEL_L100_MIN_DAYS,
+            current: report.rangeDays,
+          })}
+        </p>
+      )}
+
       {report.rows.length === 0 ? (
         <EmptyState kind="none" title={t("empty_title")} hint={t("empty_hint")} />
       ) : (
         <>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={exportCsv}>
-              <Download className="size-4" />
-              {t("export_csv")}
-            </Button>
-            <Button variant="outline" size="sm" onClick={exportPdf}>
-              <FileText className="size-4" />
-              {t("export_pdf")}
-            </Button>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1">
+              <span className="text-[13px] font-medium">{t("fuel_table_title")}</span>
+              <HelpTip tkey="rep_fuel_table" />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={exportCsv}>
+                <Download className="size-4" />
+                {t("export_csv")}
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportPdf}>
+                <FileText className="size-4" />
+                {t("export_pdf")}
+              </Button>
+            </div>
           </div>
           <DataTable
             rows={report.rows}

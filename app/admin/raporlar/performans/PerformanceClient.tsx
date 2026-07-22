@@ -5,8 +5,13 @@ import { toast } from "sonner";
 import { FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, StatCard, EmptyState, type Column } from "@/components/ui-v2";
+import { HelpTip } from "@/components/help/HelpTip";
 import { formatDurationShort } from "@/lib/format";
 import type { PerformanceReport, PerformanceRow } from "@/lib/reports";
+import {
+  SAFETY_SCORE_CALIBRATED,
+  TOP_DRIVER_MIN_SCORED,
+} from "@/lib/metric-thresholds";
 
 /**
  * Sürücü performans raporu.
@@ -37,6 +42,9 @@ export function PerformanceClient({
       );
       await downloadPerformancePdf({
         period: `${period.from} – ${period.to}`,
+        // Skor kalibre edilene kadar PDF'e de BASILMAZ — kâğıda basılmış yanlış
+        // bir sayı ekrandakinden daha uzun yaşar (22.07.2026).
+        showScore: SAFETY_SCORE_CALIBRATED,
         rows: report.rows.map((r) => ({
           name: r.name,
           score: r.safetyScore === null ? "—" : String(r.safetyScore),
@@ -75,15 +83,22 @@ export function PerformanceClient({
       sortable: true,
       sortValue: (r) => r.name,
     },
-    {
-      key: "score",
-      header: t("col_score"),
-      align: "right",
-      nums: true,
-      cell: scoreCell,
-      sortable: true,
-      sortValue: (r) => r.safetyScore ?? -1,
-    },
+    // SKOR KOLONU — kalibrasyona kadar YOK (22.07.2026). Yürürlükteki doğrusal
+    // formül herkesi 0'a çakıyordu; sıfır bir ölçüm değil taban çarpmasıydı ve
+    // bu sayı bir İNSAN hakkında. Gerekçe: lib/metric-thresholds.ts.
+    ...(SAFETY_SCORE_CALIBRATED
+      ? [
+          {
+            key: "score",
+            header: t("col_score"),
+            align: "right" as const,
+            nums: true,
+            cell: scoreCell,
+            sortable: true,
+            sortValue: (r: PerformanceRow) => r.safetyScore ?? -1,
+          },
+        ]
+      : []),
     {
       key: "shifts",
       header: t("col_shifts"),
@@ -144,21 +159,55 @@ export function PerformanceClient({
     },
   ];
 
-  const best = report.rows.find((r) => r.safetyScore !== null);
+  /**
+   * "EN İYİ ŞOFÖR" KARTI — üç şart birden (22.07.2026).
+   *
+   * Eski kod `rows.find(r => r.safetyScore !== null)` idi: en yükseği DEĞİL,
+   * sıralı listedeki ilk null-olmayanı alıyordu. Herkes 0 olunca sıralama
+   * ikincil ölçüte düşüyor ve rastgele biri "En iyi şoför — skor 0" ilan
+   * ediliyordu. Müşteri önünde utanç, o personele haksızlık.
+   *
+   *   1. en az TOP_DRIVER_MIN_SCORED şoför skorlanmış olmalı
+   *   2. en yüksek skor ikinciden KESİN büyük olmalı (beraberlik varsa iddia yok)
+   *   3. en yüksek skor 0'dan büyük olmalı
+   * Sağlanmazsa kart HİÇ render edilmez — boş kart da soru işareti doğurur.
+   */
+  const scored = report.rows
+    .filter((r): r is PerformanceRow & { safetyScore: number } => r.safetyScore !== null)
+    .sort((a, b) => b.safetyScore - a.safetyScore);
+  const best =
+    SAFETY_SCORE_CALIBRATED &&
+    scored.length >= TOP_DRIVER_MIN_SCORED &&
+    scored[0].safetyScore > 0 &&
+    scored[0].safetyScore > scored[1].safetyScore
+      ? scored[0]
+      : null;
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="grid gap-3 sm:grid-cols-4">
-        <StatCard
-          label={t("stat_avg_score")}
-          value={report.avgScore === null ? "—" : report.avgScore}
-          scope={t("stat_scored", { n: report.scoredCount })}
-        />
-        <StatCard
-          label={t("stat_top_driver")}
-          value={best ? best.name : "—"}
-          scope={best ? t("stat_top_scope", { n: best.safetyScore ?? 0 }) : t("no_data")}
-        />
+      {/* Skor kalibrasyon notu — kolonun NEDEN olmadığı ekranda yazar. Boş bir
+          kolon ya da "—" yöneticiye "panel bozuk" dedirtir; sebep ona bilgi verir. */}
+      {!SAFETY_SCORE_CALIBRATED && (
+        <p className="rounded-[12px] border border-border/60 px-3.5 py-2.5 text-xs text-muted-foreground">
+          {t("score_calibrating")}
+        </p>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {SAFETY_SCORE_CALIBRATED && (
+          <StatCard
+            label={t("stat_avg_score")}
+            value={report.avgScore === null ? "—" : report.avgScore}
+            scope={t("stat_scored", { n: report.scoredCount })}
+          />
+        )}
+        {best && (
+          <StatCard
+            label={t("stat_top_driver")}
+            value={best.name}
+            scope={t("stat_top_scope", { n: best.safetyScore })}
+          />
+        )}
         <StatCard
           label={t("stat_shifts")}
           value={report.totalShifts}
@@ -175,7 +224,11 @@ export function PerformanceClient({
         <EmptyState kind="none" title={t("empty_title")} hint={t("empty_hint")} />
       ) : (
         <>
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1">
+              <span className="text-[13px] font-medium">{t("perf_table_title")}</span>
+              <HelpTip tkey="rep_perf_table" />
+            </div>
             <Button variant="outline" size="sm" onClick={exportPdf}>
               <FileText className="size-4" />
               {t("export_pdf")}
@@ -191,7 +244,9 @@ export function PerformanceClient({
       )}
 
       {/* Olay kolonunun kısaltması ve skorun anlamı — tablo altında tek satır. */}
-      <p className="text-xs text-muted-foreground">{t("perf_note")}</p>
+      <p className="text-xs text-muted-foreground">
+        {SAFETY_SCORE_CALIBRATED ? t("perf_note") : t("perf_note_no_score")}
+      </p>
     </div>
   );
 }

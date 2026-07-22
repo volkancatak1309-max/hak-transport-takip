@@ -4,6 +4,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, StatCard, EmptyState, type Column } from "@/components/ui-v2";
+import { HelpTip } from "@/components/help/HelpTip";
 import type { DistanceReport, DistanceRow } from "@/lib/reports";
 
 /**
@@ -109,7 +110,11 @@ export function DistanceClient({ report }: { report: DistanceReport }) {
         <EmptyState kind="none" title={t("empty_title")} hint={t("empty_hint")} />
       ) : (
         <>
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1">
+              <span className="text-[13px] font-medium">{t("distance_table_title")}</span>
+              <HelpTip tkey="rep_distance_table" />
+            </div>
             <Button variant="outline" size="sm" onClick={exportCsv}>
               <Download className="size-4" />
               {t("export_csv")}

@@ -3,11 +3,20 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
 import {
   computeSafetyScores,
-  getVehicleDistanceKm,
+  getVehicleDistanceSpan,
+  getVehicleFuelSpan,
   listVehiclesAndWorkers,
   scoreMinKmForRange,
+  type DistanceUnavailableReason,
 } from "@/lib/analytics";
 import type { DateRange, SafetyScoreRow } from "@/lib/analytics-shared";
+import {
+  FUEL_L100_MIN_DAYS,
+  FUEL_MIN_CONSUMED_PCT,
+  FUEL_MIN_KM,
+  FUEL_MIN_WINDOW_OVERLAP_RATIO,
+  SPEED_MIN_KM,
+} from "@/lib/metric-thresholds";
 import { getTestScope, dropTestRows, withoutTestRows } from "@/lib/test-data";
 import { workedMs, kmDiff, viennaDayKey } from "@/lib/format";
 import type { TimeEntry } from "@/lib/types";
@@ -29,6 +38,16 @@ import type { TimeEntry } from "@/lib/types";
  * toplulaştırma ister (RPC) — bu dosyada BİLEREK yoklar.
  */
 
+/**
+ * "Aşırı hız / 100 km" neden gösterilmiyor? Boş bir "Veri yok" yöneticiye hiçbir
+ * iş vermiyordu (22.07.2026 denetimi); artık sebep taşınır ve ekranda ayrı ayrı
+ * yazılır:
+ *  • no_odometer  → cihaz odometre göndermiyor      → cihazı kontrol ettir
+ *  • inconsistent → sayaç geri saymış / bozuk okuma  → cihaz değişimi mi?
+ *  • too_short    → mesafe eşiğin altında            → yapacak bir şey yok, bekle
+ */
+export type RatioUnavailableReason = "no_odometer" | "inconsistent" | "too_short" | null;
+
 export type SpeedRow = {
   vehicleId: string;
   plate: string;
@@ -38,6 +57,8 @@ export type SpeedRow = {
   distanceKm: number | null;
   /** 100 km başına ihlal — Analiz'in km-normalizasyonuyla aynı mantık. */
   per100Km: number | null;
+  /** per100Km null ise SEBEBİ (ekranda ayrı mesaj olarak yazılır). */
+  per100Reason: RatioUnavailableReason;
 };
 
 export type SpeedReport = {
@@ -109,12 +130,12 @@ async function loadBase(range: DateRange) {
   const startISO = range.start.toISOString();
   const endISO = range.end.toISOString();
   const { vehicles, workers } = await listVehiclesAndWorkers();
-  const [events, idleEpisodes, distanceEntries] = await Promise.all([
+  const [events, idleEpisodes, spanEntries] = await Promise.all([
     listEventsInRange(startISO, endISO),
     listIdleEpisodesInRange(startISO, endISO),
     Promise.all(
       vehicles.map(
-        async (v) => [v.id, await getVehicleDistanceKm(v.id, startISO, endISO)] as const
+        async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
       )
     ),
   ]);
@@ -125,8 +146,27 @@ async function loadBase(range: DateRange) {
     workers,
     events,
     idleEpisodes,
-    distanceByVehicle: new Map(distanceEntries),
+    distanceByVehicle: new Map(spanEntries.map(([id, s]) => [id, s.km] as const)),
+    /** km null ise sebebi — oran metrikleri "neden yok" diyebilsin diye. */
+    distanceReasonByVehicle: new Map(
+      spanEntries.map(([id, s]) => [id, s.reason] as const)
+    ),
   };
+}
+
+/**
+ * Bir oran metriğinin paydası (km) yeterli mi? Değilse SEBEBİYLE birlikte döner.
+ * Tek yerde durur ki hız raporu ile yakıt raporu aynı araçta farklı gerekçe
+ * göstermesin.
+ */
+function checkKmDenominator(
+  km: number | null,
+  reason: DistanceUnavailableReason,
+  minKm: number
+): RatioUnavailableReason {
+  if (km === null) return reason ?? "no_odometer";
+  if (km < minKm) return "too_short";
+  return null;
 }
 
 /** HIZ RAPORU — ihlaller `vehicle_events`'ten (gerçek olay + kayıtlı hız). */
@@ -148,6 +188,14 @@ export async function buildSpeedReport(range: DateRange): Promise<SpeedReport> {
   const rows: SpeedRow[] = base.vehicles.map((v) => {
     const agg = byVehicle.get(v.id);
     const km = base.distanceByVehicle.get(v.id) ?? null;
+    // PAYDA KAPISI (22.07.2026): eskiden yalnız `km > 0` bakılıyordu — 2 km
+    // giden araçtaki 1 ihlal ekranda "50 ihlal/100 km" oluyordu. Artık payda
+    // SPEED_MIN_KM'in altındaysa oran hesaplanmaz ve sebebi yazılır.
+    const reason = checkKmDenominator(
+      km,
+      base.distanceReasonByVehicle.get(v.id) ?? null,
+      SPEED_MIN_KM
+    );
     return {
       vehicleId: v.id,
       plate: v.plate,
@@ -157,8 +205,8 @@ export async function buildSpeedReport(range: DateRange): Promise<SpeedReport> {
       violations: agg?.count ?? 0,
       maxSpeedKmh: agg?.max ?? null,
       distanceKm: km,
-      // Km bilinmiyorsa oran da bilinmez — 0'a bölüp "0 ihlal" demeyiz.
-      per100Km: km !== null && km > 0 ? ((agg?.count ?? 0) / km) * 100 : null,
+      per100Km: reason === null ? ((agg?.count ?? 0) / (km as number)) * 100 : null,
+      per100Reason: reason,
     };
   });
 
@@ -334,6 +382,14 @@ export async function buildPerformanceReport(
 // satırlar sayfaya taşınmaz. Litre/L100km çevrimi BURADA, kapasiteyle yapılır;
 // kapasitesi olmayan araçta (DO-671GY) yalnız % gösterilir, UYDURMA litre yok.
 
+/** L/100km neden hesaplanmadı — bkz. FuelRow.lPer100Reason. */
+export type FuelRatioReason =
+  | RatioUnavailableReason
+  | "too_little_fuel"
+  | "window_mismatch"
+  | "unreliable_sensor"
+  | "no_capacity";
+
 export type FuelRow = {
   vehicleId: string;
   plate: string;
@@ -355,6 +411,15 @@ export type FuelRow = {
   consumedLiters: number | null;
   km: number | null;
   lPer100Km: number | null;
+  /**
+   * lPer100Km null ise SEBEBİ — ekranda boş "—" yerine bu yazılır.
+   *  • no_odometer / inconsistent → mesafe ölçülemedi (cihaz sorunu)
+   *  • too_short                  → mesafe < FUEL_MIN_KM
+   *  • too_little_fuel            → tüketim < FUEL_MIN_CONSUMED_PCT (sensör gürültüsü)
+   *  • window_mismatch            → odometre ve yakıt okumaları aynı zamanı ölçmüyor
+   *  • unreliable_sensor          → sensör arızalı (zaten tüm sayıları gizli)
+   */
+  lPer100Reason: FuelRatioReason;
   /** Hareketsizken düşüş = olası kaçak/hırsızlık (odometre ilerlemedi). */
   suspiciousDropCount: number;
   suspiciousDropPct: number;
@@ -397,6 +462,19 @@ export type FuelReport = {
   /** Kapasitesi bilinen araçların toplam tüketimi (litre). */
   totalConsumedLiters: number;
   fleetLPer100Km: number | null;
+  /**
+   * L/100km kolonu bu aralıkta GÖSTERİLİR Mİ? Tam sayı yüzde sensörüyle günlük
+   * araç bazlı tüketim ölçülemez — aralık FUEL_L100_MIN_DAYS'ten kısaysa kolon
+   * hiç çıkmaz (boş kolon da soru işareti doğurur).
+   */
+  l100Available: boolean;
+  /** Aralık gün sayısı — "en az 7 gün gerekir" mesajında gösterilir. */
+  rangeDays: number;
+  /**
+   * Filo ortalamasına GERÇEKTEN giren araç sayısı (üç kapıyı da geçenler).
+   * Ekranda "18/29 araçtan" diye yazılır: ortalama, filonun tamamı değildir.
+   */
+  l100VehicleCount: number;
   refillTotalCount: number;
   refillTotalLiters: number;
   /** En az bir şüpheli düşüşü olan araç sayısı. */
@@ -493,6 +571,11 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     ).map((w) => [w.id, w.name])
   );
 
+  // L/100km KOLON KAPISI (22.07.2026): tam sayı yüzde sensörüyle günlük araç
+  // bazlı tüketim ölçülemez. Aralık eşiğin altındaysa kolon HİÇ çıkmaz.
+  const days = rangeDays(range);
+  const l100Available = days >= FUEL_L100_MIN_DAYS;
+
   const empty = (reason: FuelUnavailableReason): FuelReport => ({
     available: false,
     unavailableReason: reason,
@@ -501,6 +584,9 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     measured: 0,
     totalConsumedLiters: 0,
     fleetLPer100Km: null,
+    l100Available,
+    rangeDays: days,
+    l100VehicleCount: 0,
     refillTotalCount: 0,
     refillTotalLiters: 0,
     suspiciousVehicles: 0,
@@ -523,12 +609,22 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
 
   // L/100km için mesafe — mesafe raporuyla AYNI kaynak (odometre uç-noktaları +
   // km-guard). Araç başına iki indeksli sorgu, telemetri satırı taşımaz.
+  // 22.07.2026: artık ölçüm PENCERESİ de geliyor (aşağıdaki 3. kapı için).
   const distEntries = await Promise.all(
     vehicles.map(
-      async (v) => [v.id, await getVehicleDistanceKm(v.id, startISO, endISO)] as const
+      async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
     )
   );
   const distByVehicle = new Map(distEntries);
+
+  // Yakıt okumalarının ölçüm penceresi — odometre penceresiyle kıyaslanacak.
+  // Aynı desen: araç başına iki indeksli limit-1 sorgusu, satır taşımaz.
+  const fuelSpanEntries = await Promise.all(
+    vehicles.map(
+      async (v) => [v.id, await getVehicleFuelSpan(v.id, startISO, endISO)] as const
+    )
+  );
+  const fuelSpanByVehicle = new Map(fuelSpanEntries);
 
   // ARIZALI SENSÖR TESPİTİ (22.07.2026). Canlı örnek DO-687GX: 18.07'de 7.801
   // okumanın 1.729'u (%22) %0. Bu bir CAN dropout çukuru DEĞİL — yarı ölü
@@ -555,9 +651,54 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   );
   const zeroByVehicle = new Map(zeroEntries);
 
+  /**
+   * ÜÇ KAPI (22.07.2026 veri bütünlüğü denetimi).
+   * Canlıda "80,0 L/100km" ve "4,0 L/100km" gösterildi; ikisi de gerçek değildi.
+   *   1. PAYDA  : mesafe ≥ FUEL_MIN_KM            (80,0 vakası — payda 2,5 km'ydi)
+   *   2. PAY    : tüketim ≥ FUEL_MIN_CONSUMED_PCT (4,0 vakası — sensör gürültüsü)
+   *   3. PENCERE: odometre penceresi, yakıt penceresinin ≥%80'ini kapsamalı
+   *               (en sinsi olan: pay 3 günü, payda 2,5 km'yi ölçüyordu)
+   * Kapılardan biri kapalıysa SAYI GÖSTERİLMEZ ve sebebi ekrana taşınır.
+   */
+  const l100Gate = (
+    km: number | null,
+    kmReason: DistanceUnavailableReason,
+    consumedPct: number,
+    unreliable: boolean,
+    hasCapacity: boolean,
+    fuelSpan: { firstAt: string | null; lastAt: string | null },
+    odoSpan: { firstAt: string | null; lastAt: string | null }
+  ): FuelRatioReason => {
+    if (unreliable) return "unreliable_sensor";
+    // Depo hacmi girilmemişse yüzdeyi litreye çeviremeyiz → oran YOK. Bu bir
+    // ölçüm sorunu değil, EKSİK KAYIT: sebebi ayrı yazılır ki yönetici cihazı
+    // değil FORMU kontrol etsin (canlı vaka DO-671GY, 22.07.2026 doğrulaması —
+    // sebep null kalınca ekranda yanlışlıkla "Odometre verisi yok" yazıyordu).
+    if (!hasCapacity) return "no_capacity";
+    const kmReasonOrNull = checkKmDenominator(km, kmReason, FUEL_MIN_KM);
+    if (kmReasonOrNull !== null) return kmReasonOrNull;
+    if (consumedPct < FUEL_MIN_CONSUMED_PCT) return "too_little_fuel";
+
+    // 3. kapı: iki pencerenin ÖRTÜŞMESİ. Yakıt penceresi tek noktaysa (süre 0)
+    // örtüşme doğrulanamaz → temkinli davran, gösterme.
+    const fA = fuelSpan.firstAt ? Date.parse(fuelSpan.firstAt) : NaN;
+    const fB = fuelSpan.lastAt ? Date.parse(fuelSpan.lastAt) : NaN;
+    const oA = odoSpan.firstAt ? Date.parse(odoSpan.firstAt) : NaN;
+    const oB = odoSpan.lastAt ? Date.parse(odoSpan.lastAt) : NaN;
+    if (!Number.isFinite(fA) || !Number.isFinite(fB) || !Number.isFinite(oA) || !Number.isFinite(oB)) {
+      return "window_mismatch";
+    }
+    const fuelMs = fB - fA;
+    if (fuelMs <= 0) return "window_mismatch";
+    const overlapMs = Math.max(0, Math.min(fB, oB) - Math.max(fA, oA));
+    if (overlapMs / fuelMs < FUEL_MIN_WINDOW_OVERLAP_RATIO) return "window_mismatch";
+    return null;
+  };
+
   const rows: FuelRow[] = vehicles.map((v) => {
     const cap = v.tank_capacity_l != null ? Number(v.tank_capacity_l) : null;
-    const km = distByVehicle.get(v.id) ?? null;
+    const span = distByVehicle.get(v.id) ?? { km: null, reason: null, firstAt: null, lastAt: null };
+    const km = span.km;
     const driverName = v.assigned_worker_id
       ? workerName.get(v.assigned_worker_id) ?? null
       : null;
@@ -580,6 +721,8 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
         consumedLiters: null,
         km,
         lPer100Km: null,
+        // Aralıkta hiç yakıt okuması yok: L/100km'nin PAYI ölçülemedi.
+        lPer100Reason: "too_little_fuel",
         suspiciousDropCount: 0,
         suspiciousDropPct: 0,
         suspiciousDropLiters: null,
@@ -600,10 +743,24 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     // Küçük gürültüde negatife düşerse 0'a kırpılır (net dolu bitti demektir).
     const consumedPct = Math.max(0, refillPct + (first - last));
     const consumedLiters = cap != null ? (consumedPct / 100) * cap : null;
+    const unreliable = zeroRatio > UNRELIABLE_ZERO_RATIO;
+
+    // ÜÇ KAPI. Kapasitesi girilmemiş araçta litre yok → oran zaten hesaplanamaz;
+    // sebebi "yeterli tüketim yok" değil, kapasite eksikliğidir ve ayrı bir not
+    // olarak zaten gösteriliyor (fuel_capacity_note).
+    const gateReason = l100Gate(
+      km,
+      span.reason,
+      consumedPct,
+      unreliable,
+      cap != null,
+      fuelSpanByVehicle.get(v.id) ?? { firstAt: null, lastAt: null },
+      { firstAt: span.firstAt, lastAt: span.lastAt }
+    );
+    // gateReason null ⇒ kapasite de var (no_capacity kapısından geçti), yani
+    // consumedLiters kesinlikle dolu. Sebepsiz null oran ARTIK ÜRETİLEMEZ.
     const lPer100Km =
-      consumedLiters != null && km != null && km > 0
-        ? (consumedLiters / km) * 100
-        : null;
+      gateReason === null ? ((consumedLiters as number) / (km as number)) * 100 : null;
     return {
       vehicleId: v.id,
       plate: v.plate,
@@ -621,12 +778,13 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
       consumedLiters,
       km,
       lPer100Km,
+      lPer100Reason: gateReason,
       suspiciousDropCount: Number(s.drop_count) || 0,
       suspiciousDropPct: dropPct,
       suspiciousDropLiters: cap != null ? (dropPct / 100) * cap : null,
       zeroCount,
       zeroRatio,
-      dataUnreliable: zeroRatio > UNRELIABLE_ZERO_RATIO,
+      dataUnreliable: unreliable,
     };
   });
 
@@ -644,13 +802,19 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   });
 
   let totalConsumedLiters = 0;
-  let kmForConsumed = 0;
   let refillTotalLiters = 0;
   let refillTotalCount = 0;
   let suspiciousVehicles = 0;
   let unreliableVehicles = 0;
   let measured = 0;
   let capacityMissing = 0;
+  // Filo ortalaması AYRI biriktirilir: yalnız üç kapıyı da geçen araçlar
+  // (22.07.2026). Eskiden satırda gizlenen bir aracın km'si ve litresi yine de
+  // filo ortalamasına giriyordu — yani gizlediğimiz saçma değer, toplamın içinde
+  // görünmeden yaşamaya devam ediyordu.
+  let l100Liters = 0;
+  let l100Km = 0;
+  let l100VehicleCount = 0;
   for (const r of rows) {
     if (r.hasData) measured++;
     if (r.hasData && r.tankCapacityL == null) capacityMissing++;
@@ -660,16 +824,18 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
       unreliableVehicles++;
       continue;
     }
-    if (r.consumedLiters != null) {
-      totalConsumedLiters += r.consumedLiters;
-      if (r.km != null && r.km > 0) kmForConsumed += r.km;
+    if (r.consumedLiters != null) totalConsumedLiters += r.consumedLiters;
+    if (r.lPer100Km !== null && r.consumedLiters != null && r.km != null) {
+      l100Liters += r.consumedLiters;
+      l100Km += r.km;
+      l100VehicleCount++;
     }
     if (r.refillLiters != null) refillTotalLiters += r.refillLiters;
     refillTotalCount += r.refillCount;
     if (r.suspiciousDropCount > 0) suspiciousVehicles++;
   }
   const fleetLPer100Km =
-    kmForConsumed > 0 ? (totalConsumedLiters / kmForConsumed) * 100 : null;
+    l100Available && l100Km > 0 ? (l100Liters / l100Km) * 100 : null;
 
   return {
     available: true,
@@ -679,6 +845,9 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     measured,
     totalConsumedLiters,
     fleetLPer100Km,
+    l100Available,
+    rangeDays: days,
+    l100VehicleCount,
     refillTotalCount,
     refillTotalLiters,
     suspiciousVehicles,

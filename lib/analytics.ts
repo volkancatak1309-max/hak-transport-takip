@@ -13,6 +13,7 @@ import {
   viennaDayKey,
 } from "@/lib/format";
 import { IDLE_TRIGGER_S } from "@/lib/telemetry";
+import { SCORE_MIN_KM_PER_DAY } from "@/lib/metric-thresholds";
 import type { VehicleEventWithPlate, IdleEpisodeWithPlate } from "@/lib/telemetry";
 import {
   SAFETY_SCORE_WEIGHTS,
@@ -63,13 +64,12 @@ const FLEET_EPOCH = new Date("2026-06-01T00:00:00.000Z");
 
 /**
  * Güvenlik skoru için "yeterli sürüş" eşiği — GÜN BAŞINA minimum güvenilir km.
- * Toplam eşik seçili aralığa göre ölçeklenir (bkz. scoreMinKmForRange): günlük
- * ~40 km, haftalık ~280 km, aylık ~1200 km. Sebep: "adil bir skor için gereken
- * sürüş" pencere uzunluğuyla orantılıdır — SABİT 150 km günlük görünümde neredeyse
- * herkesi "veri yok" yapardı. AYARLANABİLİR: firmanın günlük teslimat km yoğunluğuna
- * göre tek yerden değiştirilir.
+ *
+ * 22.07.2026: sabitin TANIMI lib/metric-thresholds.ts'e taşındı (tüm türev
+ * metrik eşikleri artık tek dosyada). Buradan yeniden dışa veriliyor ki mevcut
+ * çağıranlar (analiz/page.tsx, reports.ts) kırılmasın — davranış aynı.
  */
-export const SCORE_MIN_KM_PER_DAY = 40;
+export { SCORE_MIN_KM_PER_DAY };
 
 /**
  * Aralık için toplam km eşiği = SCORE_MIN_KM_PER_DAY × aralığın GEÇEN gün sayısı.
@@ -172,10 +172,48 @@ export async function getVehicleDistanceKm(
   startISO: string,
   endISO: string
 ): Promise<number | null> {
+  return (await getVehicleDistanceSpan(vehicleId, startISO, endISO)).km;
+}
+
+/**
+ * km NEDEN null? — "veri yok" ile "veri tutarsız" aynı şey değildir (22.07.2026).
+ * Ekranda tek bir "Veri yok" yazınca yönetici hangi aracı kontrol ettireceğini
+ * bilemiyordu. Artık sebep taşınır:
+ *  • no_odometer  → aralıkta hiç odometre okuması yok (cihaz göndermiyor)
+ *  • inconsistent → sayaç geri saymış (cihaz değişimi/reset) ya da günlük makul
+ *                   sınırı aşmış (bozuk tekil okuma)
+ */
+export type DistanceUnavailableReason = "no_odometer" | "inconsistent" | null;
+
+export type VehicleDistanceSpan = {
+  /** Kat edilen mesafe (km) — güvenilmezse null. */
+  km: number | null;
+  /** km null ise sebebi; değilse null. */
+  reason: DistanceUnavailableReason;
+  /** Odometre okumalarının İLK/SON zamanı — ölçüm penceresi karşılaştırması için. */
+  firstAt: string | null;
+  lastAt: string | null;
+};
+
+/**
+ * getVehicleDistanceKm'in tam sürümü: mesafeyle birlikte SEBEBİ ve ÖLÇÜM
+ * PENCERESİNİ de döndürür.
+ *
+ * Pencere neden gerekli: yakıt raporu tüketimi yakıt-yüzdesi okumalarından,
+ * mesafeyi ise odometre okumalarından alıyor. İkisi AYNI zaman aralığını
+ * kapsamazsa L/100km sessizce saçmalar (canlı vaka DO-818HF: günlerce süren
+ * yakıt düşüşü, 2,5 km'lik odometre penceresine bölündü → 80 L/100km).
+ * Bu yüzden pencere sınırları da taşınır ve yakıt raporunda kıyaslanır.
+ */
+export async function getVehicleDistanceSpan(
+  vehicleId: string,
+  startISO: string,
+  endISO: string
+): Promise<VehicleDistanceSpan> {
   const [{ data: first }, { data: last }] = await Promise.all([
     supabaseAdmin
       .from("device_telemetry")
-      .select("odometer_km")
+      .select("odometer_km, recorded_at")
       .eq("vehicle_id", vehicleId)
       .not("odometer_km", "is", null)
       .gte("recorded_at", startISO)
@@ -185,7 +223,7 @@ export async function getVehicleDistanceKm(
       .maybeSingle(),
     supabaseAdmin
       .from("device_telemetry")
-      .select("odometer_km")
+      .select("odometer_km, recorded_at")
       .eq("vehicle_id", vehicleId)
       .not("odometer_km", "is", null)
       .gte("recorded_at", startISO)
@@ -196,12 +234,57 @@ export async function getVehicleDistanceKm(
   ]);
   const a = first?.odometer_km as number | null | undefined;
   const b = last?.odometer_km as number | null | undefined;
-  if (a == null || b == null) return null;
+  const firstAt = (first?.recorded_at as string | undefined) ?? null;
+  const lastAt = (last?.recorded_at as string | undefined) ?? null;
+
+  if (a == null || b == null) {
+    return { km: null, reason: "no_odometer", firstAt, lastAt };
+  }
   const diff = b - a;
-  if (diff < 0) return null;
+  if (diff < 0) return { km: null, reason: "inconsistent", firstAt, lastAt };
   const spanDays = Math.max(1, (new Date(endISO).getTime() - new Date(startISO).getTime()) / 86_400_000);
-  if (diff > spanDays * MAX_PLAUSIBLE_KM_PER_DAY) return null;
-  return diff;
+  if (diff > spanDays * MAX_PLAUSIBLE_KM_PER_DAY) {
+    return { km: null, reason: "inconsistent", firstAt, lastAt };
+  }
+  return { km: diff, reason: null, firstAt, lastAt };
+}
+
+/**
+ * Bir aracın seçili aralıktaki YAKIT okumalarının ölçüm penceresi. Odometre
+ * penceresiyle kıyaslanır (bkz. getVehicleDistanceSpan): iki pencere yeterince
+ * örtüşmüyorsa L/100km hesaplanmaz. İki indeksli limit-1 sorgusu — satır taşımaz.
+ */
+export async function getVehicleFuelSpan(
+  vehicleId: string,
+  startISO: string,
+  endISO: string
+): Promise<{ firstAt: string | null; lastAt: string | null }> {
+  const [{ data: first }, { data: last }] = await Promise.all([
+    supabaseAdmin
+      .from("device_telemetry")
+      .select("recorded_at")
+      .eq("vehicle_id", vehicleId)
+      .not("fuel_level_pct", "is", null)
+      .gte("recorded_at", startISO)
+      .lte("recorded_at", endISO)
+      .order("recorded_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("device_telemetry")
+      .select("recorded_at")
+      .eq("vehicle_id", vehicleId)
+      .not("fuel_level_pct", "is", null)
+      .gte("recorded_at", startISO)
+      .lte("recorded_at", endISO)
+      .order("recorded_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  return {
+    firstAt: (first?.recorded_at as string | undefined) ?? null,
+    lastAt: (last?.recorded_at as string | undefined) ?? null,
+  };
 }
 
 function idleEpisodeDurationMs(ep: { started_at: string; ended_at: string | null; last_seen_at: string }): number {

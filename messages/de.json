@@ -96,7 +96,11 @@
       "jamming": "Signalstörung"
     },
     "insufficient_title": "{n} Fahrer · zu wenig Daten",
-    "insufficient_hint": "In diesem Zeitraum nicht genug Fahrleistung (km) für eine faire Bewertung — neutral."
+    "insufficient_hint": "In diesem Zeitraum nicht genug Fahrleistung (km) für eine faire Bewertung — neutral.",
+    "section2_calibrating_title": "Sicherheitsscore wird kalibriert",
+    "section2_calibrating_hint": "Die Alarmschwellen wurden am 22.07.2026 geändert (Beschleunigen/Bremsen 3,3 · Kurve 4,5 m/s² · Tempo 120 km/h). Die Score-Formel wird mit den unter den neuen Schwellen erfassten Daten kalibriert; bis dahin wird keine Zahl angezeigt — ein unzuverlässiger Score bedeutet eine falsche Beurteilung von Mitarbeitern.",
+    "unit_hour": "Std",
+    "idle_trigger_note": "Jeder Leerlauf-Episode ist die Auslöseschwelle des Geräts (5 Min.) hinzugerechnet."
   },
   "alarms": {
     "title": "Alarme",
@@ -1210,7 +1214,15 @@
     "veh_route": "Vergangene Routen des Fahrzeugs Schritt für Schritt auf der Karte ansehen.",
     "veh_penalties": "Verkehrs-/Parkstrafen des Fahrzeugs. Offene Strafen erscheinen in der Achtungsliste im Admin-Dashboard.",
     "ops_over_limit": "Anzahl der heutigen Schichten über der gesetzlichen Tageshöchstarbeitszeit (§ 9 Abs. 1 AZG: 12 Stunden; an Tagen mit Nachtarbeit § 14 Abs. 2 AZG: 10 Stunden). Das ist eine echte Überschreitung.",
-    "ops_break45": "Anzahl der Schichten über 9 Stunden, die daher 45 statt 30 Minuten Pause erfordern (§ 13c Abs. 1 AZG). Keine Überschreitung, sondern ein Pausenhinweis."
+    "ops_break45": "Anzahl der Schichten über 9 Stunden, die daher 45 statt 30 Minuten Pause erfordern (§ 13c Abs. 1 AZG). Keine Überschreitung, sondern ein Pausenhinweis.",
+    "anl_top10": "Jede Kachel zeigt die Mitarbeiter mit den meisten Ereignissen je Ereignistyp. Die Zahlen sind echte Gerätemeldungen und hängen vom Zeitraumfilter ab. Die Alarmschwellen wurden am 22.07.2026 gelockert — Zeiträume über dieses Datum hinweg mischen zwei Einstellungen; ein Hinweis erscheint oben.",
+    "anl_safety": "Teilt die Ereignisse eines Fahrers durch die gefahrenen Kilometer und ergibt eine Note von 0 bis 100. Derzeit in Kalibrierung: die alte Formel zeigte bei allen 0, deshalb ausgeblendet.",
+    "anl_idle": "Zeit, in der das Fahrzeug bei laufendem Motor steht. Liter- und Euro-Werte sind KEINE Messung, sondern eine Schätzung (Faktoren 0,9 L/Std × 1,65 €/L). In der Dauer ist je Episode die 5-minütige Auslöseschwelle des Geräts enthalten.",
+    "rep_fuel_table": "Verbrauch = Betankungen + Nettoabfall (erster − letzter Stand), über das Tankvolumen in Liter umgerechnet. Km = Differenz zwischen erstem und letztem Kilometerstand im Zeitraum. L/100km wird nur berechnet, wenn drei Bedingungen zugleich erfüllt sind: mindestens 50 km Strecke, mindestens 15 % Verbrauch und übereinstimmende Messzeiträume von Kilometerstand und Tankfüllstand. Andernfalls steht statt einer Zahl der Grund.",
+    "rep_speed_table": "Die Verstöße sind Tempo-Ereignisse des Geräts; die Höchstgeschwindigkeit ist der zum Ereignis gemeldete Wert. \"Tempoverstöße / 100 km\" gleicht aus, dass Vielfahrer naturgemäß mehr Verstöße sammeln, und wird nur ab 50 km Fahrleistung berechnet.",
+    "rep_distance_table": "Km ist die Differenz zwischen erstem und letztem Kilometerstand des Fahrzeugs im Zeitraum — nicht aus GPS abgeleitet. Fehlen Messwerte oder ist die Differenz unplausibel (rückläufig / über dem Tagesmaximum), wird kein Wert erfunden, sondern \"—\" angezeigt.",
+    "rep_perf_table": "Schichten, Arbeitszeit, km und Zustellungen stammen aus den Schichtdaten; die Ereigniszahlen vom Gerät im zugeordneten Fahrzeug. Das Tripel in der Spalte Ereignisse: Bremsen / Beschleunigen / Tempo.",
+    "alarms_page": "Vom Gerät gemeldete Fahrereignisse. Die Schwellen werden auf das Gerät geschrieben; am 22.07.2026 wurden sie gelockert (Beschleunigen/Bremsen 3,3 · Kurve 4,5 m/s² · Tempo 120 km/h). Zeiträume über dieses Datum hinweg mischen alte und neue Einstellung — ein Hinweis erscheint unter dem Titel."
   },
   "reports": {
     "title": "Berichte",
@@ -1283,7 +1295,7 @@
     "col_km_day": "Ø pro Tag",
     "col_violations": "Verstöße",
     "col_max_speed": "Höchstwert",
-    "col_per_100km": "je 100 km",
+    "col_per_100km": "Tempoverstöße / 100 km",
     "col_score": "Score",
     "col_shifts": "Schichten",
     "col_worked": "Arbeitszeit",
@@ -1342,6 +1354,35 @@
     "stat_thirstiest": "Höchster Verbrauch",
     "stat_thirstiest_scope": "{n} L/100km",
     "stat_leak_vehicles": "Verdächtiger Abfall",
-    "stat_leak_scope": "möglicher Diebstahl · Fahrzeuge"
+    "stat_leak_scope": "möglicher Diebstahl · Fahrzeuge",
+    "score_calibrating": "Sicherheitsscore wird kalibriert — die Alarmschwellen wurden am 22.07. geändert und der Score wird mit den neuen Daten neu eingestellt.",
+    "perf_note_no_score": "Spalte Ereignisse: gesamt (Bremsen / Beschleunigen / Tempo). Der Sicherheitsscore wird derzeit kalibriert und in diesem Bericht nicht angezeigt.",
+    "perf_table_title": "Fahrerliste",
+    "speed_table_title": "Fahrzeugliste",
+    "speed_min_km_note": "\"Tempoverstöße / 100 km\" wird nur für Fahrzeuge mit mindestens {min} km Fahrleistung berechnet; darunter verzerrt ein einzelner Verstoß die Quote erheblich.",
+    "ratio_reason_no_odometer": "Kein Kilometerstand",
+    "ratio_reason_inconsistent": "Kilometerstand inkonsistent",
+    "ratio_reason_too_short": "Strecke zu kurz (< {min} km)",
+    "col_samples": "Messwerte",
+    "fuel_table_title": "Fahrzeugliste",
+    "stat_fleet_l100_scope": "aus {n}/{total} Fahrzeugen",
+    "l100_needs_days": "mind. {days} Tage nötig",
+    "l100_no_vehicle": "keine ausreichenden Daten",
+    "fuel_l100_hidden_note": "Die Spalte L/100km wird in diesem Zeitraum nicht angezeigt: für einen belastbaren Verbrauch sind mindestens {days} Tage nötig (gewählt: {current} Tage). Das Gerät meldet den Tankfüllstand nur in ganzen Prozent — in kurzen Zeiträumen ist der Messfehler größer als der Verbrauch selbst.",
+    "fuel_reason_no_odometer": "Kein Kilometerstand",
+    "fuel_reason_inconsistent": "Kilometerstand inkonsistent",
+    "fuel_reason_too_short": "Strecke zu kurz (< {minKm} km)",
+    "fuel_reason_too_little_fuel": "Verbrauch unter der Messschwelle (< {minPct} %)",
+    "fuel_reason_window_mismatch": "Messzeiträume stimmen nicht überein",
+    "fuel_reason_unreliable_sensor": "Sensor defekt",
+    "fuel_reason_short_no_odometer": "kein Km-Stand",
+    "fuel_reason_short_inconsistent": "Km inkonsistent",
+    "fuel_reason_short_too_short": "Strecke zu kurz",
+    "fuel_reason_short_too_little_fuel": "Verbrauch zu gering",
+    "fuel_reason_short_window_mismatch": "Zeitraum abweichend",
+    "fuel_reason_short_unreliable_sensor": "Sensor defekt",
+    "distance_table_title": "Fahrzeugliste",
+    "fuel_reason_no_capacity": "Tankvolumen nicht erfasst",
+    "fuel_reason_short_no_capacity": "kein Tankvolumen"
   }
 }

@@ -33,6 +33,8 @@ const DE = {
   period: "Zeitraum",
   generatedAt: "Erstellt am",
   footer: "Sicherheitsscore: 100 = keine Ereignisse, km-normalisiert",
+  footerNoScore:
+    "Sicherheitsscore wird derzeit kalibriert (Alarmschwellen am 22.07.2026 geändert) — Spalte vorübergehend ausgeblendet",
   headers: {
     name: "Mitarbeiter",
     score: "Score",
@@ -90,10 +92,20 @@ const styles = StyleSheet.create({
   },
 });
 
-function Doc({ period, rows }: { period: string; rows: PerformancePdfRow[] }) {
+function Doc({
+  period,
+  rows,
+  showScore,
+}: {
+  period: string;
+  rows: PerformancePdfRow[];
+  showScore: boolean;
+}) {
   const gen = new Date().toLocaleString("de-AT", { timeZone: "Europe/Vienna" });
+  // Skor kalibre edilene kadar sütun PDF'e de girmez (22.07.2026). Kâğıda
+  // basılmış yanlış bir sayı ekrandakinden uzun yaşar ve geri alınamaz.
   const numCols: (keyof PerformancePdfRow)[] = [
-    "score",
+    ...(showScore ? (["score"] as const) : []),
     "shifts",
     "worked",
     "km",
@@ -102,6 +114,8 @@ function Doc({ period, rows }: { period: string; rows: PerformancePdfRow[] }) {
     "braking",
     "accel",
   ];
+  // Sütun sayısı değiştiği için genişlik sabit kalamaz: ad %22, kalanı eşit böl.
+  const colNumWidth = `${(78 / (numCols.length + 1)).toFixed(2)}%`;
   return (
     <Document>
       <Page size="A4" orientation="landscape" style={styles.page} wrap>
@@ -126,27 +140,31 @@ function Doc({ period, rows }: { period: string; rows: PerformancePdfRow[] }) {
           <View style={styles.thead} fixed>
             <Text style={[styles.th, styles.colName]}>{DE.headers.name}</Text>
             {numCols.map((k) => (
-              <Text key={k} style={[styles.th, styles.colNum]}>
+              <Text key={k} style={[styles.th, styles.colNum, { width: colNumWidth }]}>
                 {DE.headers[k]}
               </Text>
             ))}
-            <Text style={[styles.th, styles.colNum]}>{DE.headers.speeding}</Text>
+            <Text style={[styles.th, styles.colNum, { width: colNumWidth }]}>
+              {DE.headers.speeding}
+            </Text>
           </View>
           {rows.map((r, i) => (
             <View key={i} style={[styles.tr, i % 2 === 1 ? styles.trAlt : {}]} wrap={false}>
               <Text style={[styles.td, styles.colName]}>{r.name}</Text>
               {numCols.map((k) => (
-                <Text key={k} style={[styles.td, styles.colNum]}>
+                <Text key={k} style={[styles.td, styles.colNum, { width: colNumWidth }]}>
                   {r[k]}
                 </Text>
               ))}
-              <Text style={[styles.td, styles.colNum]}>{r.speeding}</Text>
+              <Text style={[styles.td, styles.colNum, { width: colNumWidth }]}>
+                {r.speeding}
+              </Text>
             </View>
           ))}
         </View>
 
         <View style={styles.footer_} fixed>
-          <Text>{DE.footer}</Text>
+          <Text>{showScore ? DE.footer : DE.footerNoScore}</Text>
           <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
         </View>
       </Page>
@@ -157,10 +175,14 @@ function Doc({ period, rows }: { period: string; rows: PerformancePdfRow[] }) {
 export async function downloadPerformancePdf(opts: {
   period: string;
   rows: PerformancePdfRow[];
+  /** false → skor sütunu basılmaz (kalibrasyon bekliyor). */
+  showScore: boolean;
 }) {
   let url: string | null = null;
   try {
-    const blob = await pdf(<Doc period={opts.period} rows={opts.rows} />).toBlob();
+    const blob = await pdf(
+      <Doc period={opts.period} rows={opts.rows} showScore={opts.showScore} />
+    ).toBlob();
     url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

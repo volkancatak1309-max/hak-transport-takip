@@ -851,16 +851,34 @@ function buildPerformance(
   const activityTarget = Math.max(1, Math.round((days * 5) / 7));
 
   for (const row of byWorker.values()) {
-    // Delivery success rate: delivered / (delivered + undelivered). No package
-    // data at all → treated as 1.0 (no failed deliveries to penalise).
+    // TESLİM BAŞARI ORANI — delivered / (delivered + undelivered).
+    //
+    // 22.07.2026 DÜZELTMESİ: paket verisi hiç yokken oran 1.0 (=%100) sayılıyor
+    // ve şoför teslim bileşeninin 50 puanını TAM alıyordu. Sonuç, sistemin
+    // amacının tersiydi: paket girmeyen şoför, girenden yüksek skor alıyordu —
+    // yani veri girmemek ödüllendiriliyordu.
+    //
+    // Doğrusu: veri yoksa oran YOK (null). O bileşen skordan düşer ve skor
+    // KALAN AĞIRLIKLARA GÖRE YENİDEN NORMALİZE edilir; 50 puanı ne hediye
+    // ederiz ne ceza olarak sileriz — ölçemediğimiz şeyi hiç saymayız.
     const handled = row.delivered + row.undelivered;
-    const deliveryRate = handled > 0 ? row.delivered / handled : 1;
+    const deliveryRate: number | null = handled > 0 ? row.delivered / handled : null;
     // AZG compliance: 1.0 with no issues; each violation costs more than a warning.
     const azgCompliance = Math.max(0, 1 - (0.34 * row.azgViol + 0.1 * row.azgWarn));
     // Activity: completed shifts vs the range's target (capped at 1.0).
     const activity = Math.min(1, row.shifts / activityTarget);
-    // Weights: delivery 50, AZG compliance 35, activity 15 → 0..100.
-    row.score = Math.round(50 * deliveryRate + 35 * azgCompliance + 15 * activity);
+
+    // Ağırlıklar: teslim 50, AZG 35, aktiflik 15. Ölçülemeyen bileşen paydadan
+    // da düşer — kalan iki bileşen 50/(35+15) oranında büyür, skor yine 0..100.
+    const parts: { weight: number; value: number }[] = [
+      { weight: 35, value: azgCompliance },
+      { weight: 15, value: activity },
+    ];
+    if (deliveryRate !== null) parts.push({ weight: 50, value: deliveryRate });
+    const weightSum = parts.reduce((a, p) => a + p.weight, 0);
+    row.score = Math.round(
+      parts.reduce((a, p) => a + p.weight * p.value, 0) / weightSum * 100
+    );
   }
 
   // Default sort: highest score first (caller can re-sort client-side).

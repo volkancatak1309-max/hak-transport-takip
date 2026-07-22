@@ -96,7 +96,11 @@
       "jamming": "Sinyal Karıştırma"
     },
     "insufficient_title": "{n} şoför · yetersiz veri",
-    "insufficient_hint": "Bu aralıkta güvenilir skor için yeterli sürüş (km) yok — ne iyi ne kötü, nötr."
+    "insufficient_hint": "Bu aralıkta güvenilir skor için yeterli sürüş (km) yok — ne iyi ne kötü, nötr.",
+    "section2_calibrating_title": "Güvenlik skoru kalibrasyon aşamasında",
+    "section2_calibrating_hint": "Alarm eşikleri 22.07.2026'da değişti (ani hızlanma/fren 3,3 · viraj 4,5 m/s² · aşırı hız 120 km/h). Skor formülü yeni eşiklerle biriken veriyle kalibre edilecek; o zamana kadar sayı gösterilmiyor — güvenilmez bir skor, personel hakkında yanlış karar demektir.",
+    "unit_hour": "sa",
+    "idle_trigger_note": "Her rölanti epizoduna cihazın tetikleme eşiği (5 dk) eklenmiştir."
   },
   "alarms": {
     "title": "Alarmlar",
@@ -1210,7 +1214,15 @@
     "veh_route": "Aracın geçmiş rotalarını harita üzerinde adım adım izleme.",
     "veh_penalties": "Araca kesilen trafik/park cezaları. Ödenmemiş cezalar yönetici panelindeki Dikkat/Aksiyon listesinde görünür.",
     "ops_over_limit": "Bugün günlük yasal çalışma süresi sınırını aşan vardiya sayısı (§ 9 Abs. 1 AZG: 12 saat; gece çalışması yapılan günde § 14 Abs. 2 AZG: 10 saat). Bu gerçek bir ihlaldir.",
-    "ops_break45": "9 saati aşan ve bu yüzden 30 değil 45 dakika mola gerektiren vardiya sayısı (§ 13c Abs. 1 AZG). İhlal değil, mola uyarısıdır."
+    "ops_break45": "9 saati aşan ve bu yüzden 30 değil 45 dakika mola gerektiren vardiya sayısı (§ 13c Abs. 1 AZG). İhlal değil, mola uyarısıdır.",
+    "anl_top10": "Her kutu bir olay tipinde en çok olay üreten personeli sıralar. Sayılar cihazın bildirdiği gerçek olaylardır; aralık filtresine bağlıdır. Alarm eşikleri 22.07.2026'da gevşetildi — o tarihi kesen aralıklarda iki farklı ayar karışır, uyarı üstte belirir.",
+    "anl_safety": "Şoförün olay sayısını sürdüğü km'ye bölerek 0-100 arası tek bir not üretir. Şu an kalibrasyon aşamasında: eski formül herkesi 0 gösteriyordu, bu yüzden kapalı.",
+    "anl_idle": "Motor çalışırken aracın durduğu süre. Yakıt ve € değerleri ÖLÇÜM DEĞİL tahmindir (0,9 L/sa × 1,65 €/L katsayılarıyla). Süreye her epizod için cihazın 5 dakikalık tetikleme eşiği dahildir.",
+    "rep_fuel_table": "Tüketim = dolumlar + net düşüş (ilk − son), depo hacmiyle litreye çevrilir. Km = odometrenin dönemdeki ilk/son okuma farkı. L/100km yalnız üç şart birden sağlanınca hesaplanır: en az 50 km yol, en az %15 tüketim, odometre ve yakıt okumalarının aynı zaman aralığını kapsaması. Sağlanmayan satırda sayı yerine sebebi yazar.",
+    "rep_speed_table": "İhlal sayısı cihazın aşırı hız olaylarıdır; maksimum hız o olay anında bildirilen değerdir. \"Aşırı hız / 100 km\" çok yol yapan şoförün doğal olarak çok ihlal üretmesini dengeler ve yalnız en az 50 km yol yapmış araçlarda hesaplanır.",
+    "rep_distance_table": "Km, aracın kendi odometresinin dönemdeki ilk ve son okuması arasındaki farktır — GPS'ten türetilmez. Okuma yoksa veya fark güvenilmezse (geri saymış / günlük makul sınırın üstünde) km uydurulmaz, \"—\" gösterilir.",
+    "rep_perf_table": "Vardiya, çalışma süresi, km ve teslimat sayıları vardiya kayıtlarından; olay sayıları araca bağlı cihazdan gelir. Olay kolonundaki üçlü: sert fren / ani hızlanma / aşırı hız.",
+    "alarms_page": "Cihazın bildirdiği sürüş olayları. Eşik değerleri cihaza yüklenir; 22.07.2026'da gevşetildi (ani hızlanma/fren 3,3 · viraj 4,5 m/s² · aşırı hız 120 km/h). O tarihi kesen aralıklarda eski ve yeni ayar karışır — uyarı başlığın altında belirir."
   },
   "reports": {
     "title": "Raporlar",
@@ -1283,7 +1295,7 @@
     "col_km_day": "Günlük ort.",
     "col_violations": "İhlal",
     "col_max_speed": "En yüksek",
-    "col_per_100km": "100 km'de",
+    "col_per_100km": "Aşırı hız / 100 km",
     "col_score": "Skor",
     "col_shifts": "Vardiya",
     "col_worked": "Çalışma",
@@ -1342,6 +1354,35 @@
     "stat_thirstiest": "En çok yakan",
     "stat_thirstiest_scope": "{n} L/100km",
     "stat_leak_vehicles": "Şüpheli düşüş",
-    "stat_leak_scope": "olası kaçak · araç"
+    "stat_leak_scope": "olası kaçak · araç",
+    "score_calibrating": "Güvenlik skoru kalibrasyon aşamasında — alarm eşikleri 22.07'de değişti, yeni veriyle kalibre edilecek.",
+    "perf_note_no_score": "Olay kolonu: toplam (sert fren / ani hızlanma / aşırı hız). Güvenlik skoru kalibrasyon aşamasında olduğu için bu raporda gösterilmiyor.",
+    "perf_table_title": "Sürücü listesi",
+    "speed_table_title": "Araç listesi",
+    "speed_min_km_note": "\"Aşırı hız / 100 km\" yalnız en az {min} km yol yapmış araçlarda hesaplanır; altındaki mesafede tek bir ihlal oranı yanıltıcı ölçüde büyütür.",
+    "ratio_reason_no_odometer": "Odometre verisi yok",
+    "ratio_reason_inconsistent": "Odometre tutarsız",
+    "ratio_reason_too_short": "Mesafe yetersiz (< {min} km)",
+    "col_samples": "Okuma",
+    "fuel_table_title": "Araç listesi",
+    "stat_fleet_l100_scope": "{n}/{total} araçtan",
+    "l100_needs_days": "en az {days} gün gerekir",
+    "l100_no_vehicle": "yeterli veri yok",
+    "fuel_l100_hidden_note": "L/100km kolonu bu aralıkta gösterilmiyor: güvenilir tüketim için en az {days} günlük aralık gerekir (seçili: {current} gün). Cihaz yakıt seviyesini tam sayı yüzde olarak bildiriyor; kısa aralıkta ölçüm hatası tüketimin kendisinden büyük oluyor.",
+    "fuel_reason_no_odometer": "Odometre verisi yok",
+    "fuel_reason_inconsistent": "Odometre tutarsız",
+    "fuel_reason_too_short": "Mesafe yetersiz (< {minKm} km)",
+    "fuel_reason_too_little_fuel": "Tüketim ölçüm eşiğinin altında (< %{minPct})",
+    "fuel_reason_window_mismatch": "Ölçüm pencereleri uyuşmuyor",
+    "fuel_reason_unreliable_sensor": "Sensör arızalı",
+    "fuel_reason_short_no_odometer": "Odometre yok",
+    "fuel_reason_short_inconsistent": "Km tutarsız",
+    "fuel_reason_short_too_short": "Km yetersiz",
+    "fuel_reason_short_too_little_fuel": "Tüketim düşük",
+    "fuel_reason_short_window_mismatch": "Pencere uyumsuz",
+    "fuel_reason_short_unreliable_sensor": "Sensör arızalı",
+    "distance_table_title": "Araç listesi",
+    "fuel_reason_no_capacity": "Depo hacmi girilmemiş",
+    "fuel_reason_short_no_capacity": "Depo hacmi yok"
   }
 }

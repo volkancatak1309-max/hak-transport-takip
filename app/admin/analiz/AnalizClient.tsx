@@ -24,6 +24,8 @@ import {
 } from "@/components/ui-v2";
 import { Input } from "@/components/ui/input";
 import { EpochWarning } from "@/components/admin/EpochWarning";
+import { HelpTip } from "@/components/help/HelpTip";
+import { SAFETY_SCORE_CALIBRATED } from "@/lib/metric-thresholds";
 import { formatDate, formatEur, formatIdleShort, formatNumber } from "@/lib/format";
 import type {
   AnalyticsRangeKey,
@@ -298,7 +300,10 @@ export function AnalizClient({
           show={showEpochNote}
           className="mb-3"
         />
-        <h2 className="mb-3 text-[15px] font-semibold">{t("section1_title")}</h2>
+        <div className="mb-3 flex items-center gap-1">
+          <h2 className="text-[15px] font-semibold">{t("section1_title")}</h2>
+          <HelpTip tkey="anl_top10" />
+        </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {TOP10_EVENT_TYPES.map((ty) => {
             const agg = topByType[ty];
@@ -328,10 +333,25 @@ export function AnalizClient({
         </div>
       </div>
 
-      {/* Bölüm 2 — şoför güvenlik skor kartı */}
+      {/* Bölüm 2 — şoför güvenlik skor kartı.
+          22.07.2026: skor KALİBRE EDİLENE KADAR bu bölüm hiç hesap göstermez.
+          Yürürlükteki doğrusal formül (100 − ceza/(km/1000)) herkesi 0'a
+          çakıyordu; sıfır bir ölçüm değil taban çarpmasıydı ve bu sayı bir
+          İNSAN hakkında. Bölüm başlığı kalır, yerine SEBEP yazılır — sayfada
+          açıklanmadan kaybolan bir bölüm "panel bozuk" izlenimi verir. */}
       <div>
-        <h2 className="mb-3 text-[15px] font-semibold">{t("section2_title")}</h2>
-        {safetyRows.length === 0 ? (
+        <div className="mb-3 flex items-center gap-1">
+          <h2 className="text-[15px] font-semibold">{t("section2_title")}</h2>
+          <HelpTip tkey="anl_safety" />
+        </div>
+        {!SAFETY_SCORE_CALIBRATED ? (
+          <div className="rounded-[12px] border border-border/60 px-3.5 py-3">
+            <div className="text-sm font-medium">{t("section2_calibrating_title")}</div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {t("section2_calibrating_hint")}
+            </p>
+          </div>
+        ) : safetyRows.length === 0 ? (
           <EmptyState kind="none" title={t("section2_empty")} hint={t("section2_empty_hint")} />
         ) : (
           <>
@@ -371,11 +391,19 @@ export function AnalizClient({
 
       {/* Bölüm 3 — rölanti israf panosu */}
       <div>
-        <h2 className="mb-3 text-[15px] font-semibold">{t("section3_title")}</h2>
+        <div className="mb-3 flex items-center gap-1">
+          <h2 className="text-[15px] font-semibold">{t("section3_title")}</h2>
+          <HelpTip tkey="anl_idle" />
+        </div>
         <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <StatCard
             label={t("stat_idle_hours")}
-            value={formatNumber(idleWaste.totalMs / 3_600_000, locale, 1)}
+            // BİRİM (22.07.2026): değer çıplak "8" olarak basılıyordu — 8 saat
+            // mi, 8 epizod mu, 8 dakika mı ayırt edilemiyordu. Birimsiz sayı
+            // yanlış sayıdan beterdir: yanlış sayı sorgulanır, birimsiz sayı
+            // herkes kendi birimini uydurarak okur. (StatCard'da ⓘ yasak —
+            // DESIGN-SYSTEM §7 — bu yüzden birim değerin yanına yazılır.)
+            value={`${formatNumber(idleWaste.totalMs / 3_600_000, locale, 1)} ${t("unit_hour")}`}
             scope={t(`range_${rangeKey}`)}
             delta={idleDeltaPct !== null ? `${idleDeltaPct > 0 ? "▲" : idleDeltaPct < 0 ? "▼" : "→"} ${Math.abs(idleDeltaPct)}%` : undefined}
           />
@@ -391,6 +419,10 @@ export function AnalizClient({
           <Fuel className="size-3.5 shrink-0" />
           {t("idle_estimate_note")}
         </p>
+        {/* Cihaz rölantiyi ancak eşiği (5 dk) geçince bildiriyor; o eşik her
+            epizoda ekleniyor (lib/analytics.ts idleEpisodeDurationMs). Ekranda
+            yazmıyordu — 20 epizodluk bir günde bu +1,7 saat demek. */}
+        <p className="mb-2.5 text-xs text-muted-foreground">{t("idle_trigger_note")}</p>
         {idleWaste.rows.length === 0 ? (
           <EmptyState kind="none" title={t("section3_empty")} hint={t("section3_empty_hint")} />
         ) : (

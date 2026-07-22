@@ -178,6 +178,20 @@ function ReportDoc({ data }: { data: AZGData }) {
           )}
         </View>
 
+        {/* ELLE DÜZELTİLEN KAYIT DİPNOTU (22.07.2026). Bu raporu besleyen üç
+            alan (Beginn/Ende/Pause) yönetici tarafından değiştirilebiliyor;
+            denetim karşısında bunun beyan edilmesi gerekir. Düzeltme yasak
+            değil — görünmez olması sorundu. */}
+        {data.editedCount > 0 && (
+          <View style={styles.noteBox}>
+            <Text>
+              In diesem Zeitraum wurden {data.editedCount} Aufzeichnung(en) manuell
+              korrigiert. Die Änderungen sind im System protokolliert
+              (Feld, alter Wert, neuer Wert, Bearbeiter, Zeitpunkt).
+            </Text>
+          </View>
+        )}
+
         {data.suspicious.length > 0 && (
           <>
             <Text style={styles.h2sub}>Verdächtige Aufzeichnungen</Text>

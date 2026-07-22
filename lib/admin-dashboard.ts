@@ -78,6 +78,8 @@ export type AttentionItem =
   | {
       kind: "undelivered";
       id: string;
+      /** Düzeltme kısayolu için vardiya kaydının kendi id'si (22.07.2026). */
+      entry_id: string;
       worker_name: string;
       count: number;
       date: string;
@@ -772,6 +774,7 @@ function buildAttention(
       items.push({
         kind: "undelivered",
         id: `${e.id}-undelivered`,
+        entry_id: e.id,
         worker_name: e.worker_id ? names.get(e.worker_id) ?? "—" : "—",
         count: e.undelivered_count ?? 0,
         date: e.started_at,

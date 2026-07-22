@@ -12,6 +12,8 @@ import {
   KeyRound,
   Loader2,
   Package,
+  PackageCheck,
+  PackageX,
   Pause,
   PlayCircle,
   Square,
@@ -25,6 +27,7 @@ import {
 } from "../actions/shift";
 import { formatDuration, formatTime, workedMs } from "@/lib/format";
 import { BREAK_TARGET_MIN, BREAK_TARGET_MS } from "@/lib/break-rules";
+import { classifyUndelivered } from "@/lib/package-limits";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -115,8 +118,15 @@ export function PanelClient({
   // Manuel paket sayısı (alınan/planlanan) — +1 sayaç yerine düz sayı girişi.
   const [pkgOpen, setPkgOpen] = useState(false);
   const [pkgVal, setPkgVal] = useState("");
-  // Kapanışta "teslim edilemeyen" — kontrollü, "teslim edilen" ön izlemesi için.
-  const [endUndel, setEndUndel] = useState("0");
+  // Kapanış akışı (22.07.2026 yeniden yazımı):
+  //   returnMode null   → soru + iki büyük buton
+  //   returnMode "none" → "hepsini teslim ettim" (geri = 0)
+  //   returnMode "some" → sayı girişi açık
+  // endUndel BOŞ başlar (eski varsayılan "0" üzerine yazılıyordu).
+  const [returnMode, setReturnMode] = useState<null | "none" | "some">(null);
+  const [endUndel, setEndUndel] = useState("");
+  /** Sıra dışı sayı girildiğinde gösterilen teyit adımı (engel değil). */
+  const [confirmNeeded, setConfirmNeeded] = useState(false);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -254,13 +264,53 @@ export function PanelClient({
     startTransition(async () => {
       const r = await updatePackageCountAction(v);
       if (r.ok) {
-        toast.success(t("v2PkgSaved"));
+        // Girilen sayıyı GERİ OKUR. Eskiden burada "+1 paket eklendi" yazıyordu
+        // — kaldırılmış +1 sayaç akışından kalma metin. Şoför 175 yazıp
+        // "+1 paket eklendi" görünce alanın tek tek saydığını sanabiliyordu.
+        toast.success(v === null ? t("v2PkgCleared") : t("v2PkgSavedN", { n: v }));
         setPkgOpen(false);
         router.refresh();
       } else {
         toast.error(t("v2PkgErr"));
       }
     });
+  }
+
+  // ── Kapanış hesapları — tek kaynak lib/package-limits.ts ────────────────
+  /** Geri getirilen paket: "none" ise 0, "some" ise yazılan sayı (boşsa null). */
+  const undeliveredValue: number | null =
+    returnMode === "none"
+      ? 0
+      : endUndel.trim() === ""
+        ? null
+        : Number.isFinite(Number(endUndel))
+          ? Math.floor(Number(endUndel))
+          : null;
+
+  /** Alan henüz boş: hata DEĞİL, sadece eksik. Uyarı basmayız, gönderimi kapatırız. */
+  const undelEmpty = returnMode === "some" && endUndel.trim() === "";
+  const undelCheck = classifyUndelivered(undeliveredValue, packagesTaken);
+  /** Görsel uyarı yalnız gerçek çelişkilerde çıkar (boş alan sessizdir). */
+  const showBlock = !undelEmpty && undelCheck.level === "block";
+
+  const deliveredPreview =
+    packagesTaken !== null
+      ? Math.max(0, packagesTaken - (undeliveredValue ?? 0))
+      : 0;
+
+  /**
+   * Gönderim kapısı: "confirm" seviyesindeki sayılar ENGELLENMEZ, sorulur.
+   * Şoför teyit ettiyse (confirmNeeded true iken submit) doğrudan geçer —
+   * gerçekten bütün paketler geri gelmiş olabilir.
+   */
+  function submitEnd(formData: FormData) {
+    if (undelCheck.level === "block") return;
+    if (undelCheck.level === "confirm" && !confirmNeeded) {
+      setConfirmNeeded(true);
+      return;
+    }
+    setConfirmNeeded(false);
+    handleEnd(formData);
   }
 
   function handleEnd(formData: FormData) {
@@ -674,72 +724,203 @@ export function PanelClient({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("endShift")}</DialogTitle>
-            <DialogDescription>
-              {t("v2TotalPackages")}: {packagesTaken ?? "—"}
+            {/* SORU ARTIK BAŞLIKTA. Eskiden burada şoförün kendi girdiği
+                "Pakete gesamt: 175" yazıyordu — girmesi gereken sayı ile
+                girdiği sayı yan yana duruyordu ve karışıyordu. */}
+            <DialogDescription className="text-base text-foreground">
+              {t("v2ReturnQuestion")}
             </DialogDescription>
           </DialogHeader>
-          {/* action={} DEĞİL onSubmit: React 19 form action'ı tamamlanınca formu
-              otomatik sıfırlar; sunucu hatasında şoför girdiği değerleri
-              kaybederdi. Dikkat uyarısı bu formdan ÖNCE verildiği için burada
-              ikinci bir onay YOK. */}
-          <form
-            onSubmit={(ev) => {
-              ev.preventDefault();
-              handleEnd(new FormData(ev.currentTarget));
-            }}
-            className="space-y-4"
-          >
-            <input type="hidden" name="break_minutes" value={totalBreakSoFar} />
-            {/* KM ALANI YOK (21.07.2026). Şoför sayaç girmiyor; kilometre
-                kapanışta cihazdan türetiliyor (odometre → GPS). Yanlış girilen
-                sayaç raporda 3.000 km'lik hayalet vardiyalar üretiyordu. */}
-            <div className="space-y-1.5">
-              <Label htmlFor="undelivered_count">{t("cargoUndelivered")}</Label>
-              <Input
-                id="undelivered_count"
-                name="undelivered_count"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                required
-                autoFocus
-                value={endUndel}
-                onChange={(e) => setEndUndel(e.target.value)}
-                className="h-14 text-lg nums"
-              />
-              {/* Teslim edilen = alınan − teslim edilemeyen (otomatik, gösterilir). */}
-              {packagesTaken !== null && (
-                <p className="text-xs text-muted-foreground">
-                  {t("v2DeliveredPreview")}:{" "}
-                  <span className="nums font-medium text-foreground">
-                    {Math.max(
-                      0,
-                      packagesTaken - (Number.parseInt(endUndel, 10) || 0)
-                    )}
-                  </span>
-                </p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="notes">{t("notes")}</Label>
-              <Textarea
-                id="notes"
-                name="notes"
-                rows={2}
-                maxLength={500}
-                placeholder={t("notesPlaceholder")}
-              />
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setEndOpen(false)}>
+          {/* ADIM 1 — SORU + İKİ BÜYÜK BUTON (22.07.2026 yeniden yazımı).
+              Eski form tek bir "Nicht zugestellt (retour)" alanıydı: otomatik
+              odaklı, varsayılan "0", üstünde de şoförün kendi girdiği toplam
+              paket sayısı yazıyordu. Bir şoför aynı sayıyı iki kere girdi
+              (alınan 175 / geri 175 → teslim edilen 0). Olumsuz soru + hazır
+              sayı + otomatik odak üst üste binince hata kaçınılmazdı.
+              Artık soru fiziksel ("kaç paket geri getirdin"), en sık cevap tek
+              dokunuş, sayı girişi ise bilinçli bir seçimin arkasında. */}
+          {returnMode === null ? (
+            <div className="space-y-3 py-1">
+              <button
+                type="button"
+                onClick={() => setReturnMode("none")}
+                className="btn-primary flex h-20 w-full items-center justify-center gap-3 rounded-2xl text-xl font-bold text-primary-foreground shadow-lg transition-all active:scale-[0.98]"
+              >
+                <PackageCheck className="size-7" aria-hidden />
+                {t("v2ReturnNone")}
+              </button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setReturnMode("some")}
+                className="h-20 w-full rounded-2xl text-lg font-semibold"
+              >
+                <PackageX className="size-6" aria-hidden />
+                {t("v2ReturnSome")}
+                <ArrowRight className="size-5" aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setEndOpen(false)}
+                className="h-11 w-full text-muted-foreground"
+              >
                 {tc("cancel")}
               </Button>
-              <Button type="submit" variant="destructive" disabled={pending}>
-                {pending && <Loader2 className="size-4 animate-spin" />}
-                {pending ? tc("saving") : t("endShift")}
-              </Button>
-            </DialogFooter>
-          </form>
+            </div>
+          ) : (
+            /* ADIM 2 — sayı (gerekiyorsa) + BÜYÜK hesap + not + kapat.
+               action={} DEĞİL onSubmit: React 19 form action'ı tamamlanınca
+               formu sıfırlar, sunucu hatasında şoför girdiğini kaybederdi. */
+            <form
+              onSubmit={(ev) => {
+                ev.preventDefault();
+                submitEnd(new FormData(ev.currentTarget));
+              }}
+              className="space-y-4"
+            >
+              <input type="hidden" name="break_minutes" value={totalBreakSoFar} />
+              <input type="hidden" name="undelivered_count" value={undeliveredValue ?? ""} />
+              {/* KM ALANI YOK (21.07.2026). Kilometre cihazdan türetiliyor. */}
+
+              {returnMode === "some" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="undel_input" className="text-base">
+                    {t("v2ReturnCountLabel")}
+                  </Label>
+                  {/* autoFocus YOK ve varsayılan BOŞ: şoför bilinçli yazsın. */}
+                  <Input
+                    id="undel_input"
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    placeholder="0"
+                    value={endUndel}
+                    onChange={(e) => setEndUndel(e.target.value)}
+                    className="nums h-16 text-2xl"
+                  />
+                </div>
+              )}
+
+              {/* BÜYÜK HESAP — eski tasarımda bu bilgi 11px soluk griydi ve
+                  "Zugestellt: 0" uyarısı görülmedi. Artık ekranın en okunur
+                  cümlesi; sonuç 0 ise bordoya döner. */}
+              <div className="rounded-xl bg-surface-2/60 px-4 py-3">
+                <p className="text-sm text-muted-foreground">
+                  {packagesTaken !== null
+                    ? t("v2CalcLine", {
+                        taken: packagesTaken,
+                        returned: undeliveredValue ?? 0,
+                      })
+                    : t("v2CalcNoTotal")}
+                </p>
+                {packagesTaken !== null && (
+                  <p
+                    className={`nums mt-1 text-3xl font-bold ${
+                      deliveredPreview === 0 ? "text-accent-claret-text" : "text-foreground"
+                    }`}
+                  >
+                    {t("v2CalcDelivered", { n: deliveredPreview })}
+                  </p>
+                )}
+              </div>
+
+              {/* ENGEL — alınan girilmemişken geri > 0. Şoförü çıkmaza sokmadan
+                  eksik bilgiyi tamamlatıyoruz: buton paket dialogunu açar. */}
+              {showBlock && (
+                <div className="space-y-2 rounded-xl bg-accent-claret/12 px-4 py-3">
+                  <p className="flex items-start gap-2 text-sm text-accent-claret-text">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    {t(
+                      undelCheck.code === "no_total"
+                        ? "v2BlockNoTotal"
+                        : undelCheck.code === "over"
+                          ? "v2BlockOver"
+                          : "v2PkgErr"
+                    )}
+                  </p>
+                  {undelCheck.code === "no_total" && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 w-full"
+                      onClick={() => {
+                        setEndOpen(false);
+                        openPkg();
+                      }}
+                    >
+                      <Package className="size-4" aria-hidden />
+                      {t("v2SetPackages")}
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* ONAY — mümkün ama sıra dışı. Engel değil, soru. */}
+              {confirmNeeded && (
+                <div className="space-y-2 rounded-xl bg-accent-gold/12 px-4 py-3">
+                  <p className="flex items-start gap-2 text-sm text-accent-gold">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    {t(
+                      undelCheck.level === "confirm" && undelCheck.code === "all_returned"
+                        ? "v2ConfirmAllReturned"
+                        : "v2ConfirmManyReturned"
+                    )}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 flex-1"
+                      onClick={() => setConfirmNeeded(false)}
+                    >
+                      {t("v2ConfirmFix")}
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="destructive"
+                      className="h-11 flex-1"
+                      disabled={pending}
+                    >
+                      {pending && <Loader2 className="size-4 animate-spin" />}
+                      {t("v2ConfirmYesClose")}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="notes">{t("notes")}</Label>
+                <Textarea
+                  id="notes"
+                  name="notes"
+                  rows={2}
+                  maxLength={500}
+                  placeholder={t("notesPlaceholder")}
+                />
+              </div>
+
+              {!confirmNeeded && (
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setReturnMode(null)}
+                  >
+                    {t("v2Back")}
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="destructive"
+                    disabled={pending || undelEmpty || undelCheck.level === "block"}
+                  >
+                    {pending && <Loader2 className="size-4 animate-spin" />}
+                    {pending ? tc("saving") : t("endShift")}
+                  </Button>
+                </DialogFooter>
+              )}
+            </form>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -768,7 +949,10 @@ export function PanelClient({
               className="h-12 flex-1"
               onClick={() => {
                 setConfirmEndOpen(false);
-                setEndUndel("0");
+                // Her açılışta sıfırdan: mod seçilmemiş, sayı boş, teyit yok.
+                setReturnMode(null);
+                setEndUndel("");
+                setConfirmNeeded(false);
                 setEndOpen(true);
               }}
             >

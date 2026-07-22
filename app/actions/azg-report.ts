@@ -1,6 +1,7 @@
 "use server";
 
 import { getTranslations } from "next-intl/server";
+import { listEditedEntryIds } from "@/lib/shift-edit-log";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { workedMs, formatDate, formatTime } from "@/lib/format";
@@ -51,6 +52,8 @@ export type AZGData = {
   perWorker: AZGPerWorker[];
   violations: AZGViolation[];
   suspicious: AZGSuspicious[];
+  /** Bu dönemde elle düzeltilmiş vardiya sayısı (AZG dipnotu). */
+  editedCount: number;
 };
 
 export type AZGResult =
@@ -137,6 +140,7 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         generatedAt: new Date().toISOString(),
         totalShifts: 0,
         totalWorkers: 0,
+        editedCount: 0,
         totalViolations: 0,
         warningCount: 0,
         violationCount: 0,
@@ -443,6 +447,11 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
       perWorker,
       violations,
       suspicious,
+      // ELLE DÜZELTİLEN KAYIT SAYISI (22.07.2026). AZG'yi besleyen üç alan
+      // (started_at / ended_at / break_minutes) yönetici tarafından
+      // değiştirilebiliyor; rapor bunu dipnotta açıkça beyan etmeli.
+      // Tablo yoksa 0 döner ve dipnot hiç basılmaz.
+      editedCount: (await listEditedEntryIds(entries.map((e) => e.id))).size,
     },
   };
 }

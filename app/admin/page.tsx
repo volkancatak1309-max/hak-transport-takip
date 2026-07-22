@@ -24,6 +24,7 @@ import type {
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 import type { AdminDriverReport } from "@/components/admin/DriverReportsCard";
 import type { OpenShiftRow } from "@/components/admin/OpenShiftsCard";
+import { listEditedEntryIds } from "@/lib/shift-edit-log";
 
 export const dynamic = "force-dynamic";
 
@@ -174,6 +175,10 @@ export default async function AdminPage({
     longitude: r.longitude,
   }));
 
+  // Elle düzeltilmiş kayıtlar → listede "düzenlendi" rozeti. Tablo yoksa boş
+  // küme döner ve hiçbir rozet çıkmaz (bkz. lib/shift-edit-log.ts).
+  const editedEntryIds = [...(await listEditedEntryIds(entryIds))];
+
   const photoEntryIds = [
     ...new Set(
       ((photosRes.data ?? []) as { time_entry_id: string }[]).map(
@@ -237,6 +242,7 @@ export default async function AdminPage({
           reports={openReports}
           openShifts={openShifts}
           photoEntryIds={photoEntryIds}
+          editedEntryIds={editedEntryIds}
         />
       </div>
     </DashboardShell>

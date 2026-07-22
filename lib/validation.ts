@@ -123,7 +123,15 @@ export const editEntrySchema = z
     plate: z.string().trim().max(20).optional().nullable(),
     notes: z.string().trim().max(500).optional().nullable(),
     break_minutes: z.coerce.number().int().min(0).max(1440).optional().nullable(),
+    // cargo_count (teslim edilen) ARTIK FORMDAN GELMİYOR (22.07.2026):
+    // alınan − geri getirilen olarak sunucuda hesaplanır, böylece yönetici
+    // tarafı da şoför tarafıyla aynı matematiği kullanır. Şema alanı, eski
+    // istemcilerden gelen gönderimlerde patlamamak için opsiyonel kaldı.
     cargo_count: z.coerce.number().int().min(0).max(MAX_COUNT).optional().nullable(),
+    // Kaynak alanlar — düzeltilebilir olması gereken ikisi (bkz. teşhis):
+    // türetilmiş alan düzenlenebilirken kaynak alanlar düzenlenemiyordu.
+    start_package_count: z.coerce.number().int().min(0).max(MAX_COUNT).optional().nullable(),
+    undelivered_count: z.coerce.number().int().min(0).max(MAX_COUNT).optional().nullable(),
   })
   .refine(
     (d) => d.end_km == null || d.end_km - d.start_km <= MAX_PER_SHIFT_KM,

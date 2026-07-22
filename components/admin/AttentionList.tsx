@@ -10,14 +10,23 @@ import {
   CheckCircle2,
   IdCard,
   SatelliteDish,
+  Pencil,
   type LucideIcon,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HelpTip } from "@/components/help/HelpTip";
 import { formatDate, formatDurationShort } from "@/lib/format";
 import type { AttentionItem } from "@/lib/admin-dashboard";
 
-export function AttentionList({ items }: { items: AttentionItem[] }) {
+export function AttentionList({
+  items,
+  onEditEntry,
+}: {
+  items: AttentionItem[];
+  /** Verilirse hatalı paket uyarısında "Düzelt" kısayolu çıkar. */
+  onEditEntry?: (entryId: string) => void;
+}) {
   const t = useTranslations("admin");
   const locale = useLocale();
   const nf = locale === "de" ? "de-AT" : "tr-TR";
@@ -146,6 +155,20 @@ export function AttentionList({ items }: { items: AttentionItem[] }) {
                       hiçbir etkileşimle okunamıyordu (satır tıklanabilir değil,
                       çekmece yok). Panonun kritik uyarıları burada yaşıyor. */}
                   <span className="flex-1 text-sm sm:truncate">{r.text}</span>
+                  {/* DÜZELTME KISAYOLU (22.07.2026) — yanlış paket sayısı
+                      uyarısından doğrudan düzenleme dialoguna. Yönetici uyarıyı
+                      görüp kaydı arşivde aramak zorunda kalmasın. */}
+                  {item.kind === "undelivered" && onEditEntry && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 px-2 text-xs"
+                      onClick={() => onEditEntry(item.entry_id)}
+                    >
+                      <Pencil className="size-3.5" />
+                      <span className="hidden sm:inline">{t("attnFix")}</span>
+                    </Button>
+                  )}
                   <span className={`nums shrink-0 text-xs font-medium ${r.overdue ? tone : "text-muted-foreground"}`}>
                     {r.meta}
                   </span>

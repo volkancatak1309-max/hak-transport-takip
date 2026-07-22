@@ -44,8 +44,59 @@ export function checkUndelivered(
     }
     return { ok: true };
   }
+  // ALINAN BİLİNMİYORKEN GERİ > 0 KABUL EDİLMEZ (22.07.2026).
+  // Canlı örnekler: Sercan Kalkanli (alınan boş, geri 1), Abdulhamit Muslu
+  // (alınan boş, geri 87.189). Alınan sayı olmadan "geri getirilen" bir şey
+  // ifade etmez — teslim edilen hesaplanamaz, oran denetlenemez. Şoförden
+  // önce aldığı sayıyı isteriz; bu bir reddetme değil, eksik bilgi talebidir.
+  if (undelivered > 0) {
+    return { ok: false, code: "undelivered_no_total" };
+  }
   if (undelivered > MAX_SHIFT_PACKAGES) {
     return { ok: false, code: `undelivered_max:${MAX_SHIFT_PACKAGES}` };
   }
   return { ok: true };
+}
+
+/**
+ * MANTIK DENETİMİ — arayüz katmanı (şoför paneli + yönetici düzenleme).
+ *
+ * `checkUndelivered` sunucunun SON SÖZÜdür (reddeder). Bu fonksiyon ise
+ * kullanıcıya ne söyleyeceğimizi belirler ve üç seviyesi vardır:
+ *   • block   → devam edilemez, eksik/imkânsız veri
+ *   • confirm → mümkün ama sıra dışı; SORULUR, engellenmez. Gerçekten bütün
+ *               paketler geri gelmiş olabilir (araç arızası, kapalı adres).
+ *               Sistemin işi şoförü yalanlamak değil, "emin misin?" demek.
+ *   • ok      → sessiz geç
+ *
+ * Kural kaynağı tek: aynı fonksiyonu hem kapatma formu hem yönetici düzenleme
+ * dialogu çağırır, böylece iki taraf aynı matematiği uygular.
+ */
+export type UndeliveredCheck =
+  | { level: "ok" }
+  | { level: "confirm"; code: "all_returned" | "many_returned" }
+  | { level: "block"; code: "no_total" | "over" | "invalid" };
+
+export function classifyUndelivered(
+  undelivered: number | null,
+  taken: number | null | undefined
+): UndeliveredCheck {
+  if (undelivered === null || !Number.isFinite(undelivered) || undelivered < 0) {
+    return { level: "block", code: "invalid" };
+  }
+  if (taken === null || taken === undefined) {
+    // Alınan girilmemiş: 0 geri sorun değil, 1+ geri eksik bilgidir.
+    return undelivered > 0 ? { level: "block", code: "no_total" } : { level: "ok" };
+  }
+  if (undelivered > taken) return { level: "block", code: "over" };
+  // Hiç teslim edilmemiş: matematiksel olarak geçerli ama günün tamamının
+  // boşa gittiği anlamına gelir — mutlaka teyit edilmeli.
+  if (taken > 0 && undelivered === taken) {
+    return { level: "confirm", code: "all_returned" };
+  }
+  // Yarısından fazlası geri: olağandışı, yumuşak teyit.
+  if (taken > 0 && undelivered > taken / 2) {
+    return { level: "confirm", code: "many_returned" };
+  }
+  return { level: "ok" };
 }

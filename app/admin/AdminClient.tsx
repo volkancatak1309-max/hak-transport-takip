@@ -35,6 +35,7 @@ import {
   Loader2,
   MoreHorizontal,
   ChevronRight,
+  AlertTriangle,
 } from "lucide-react";
 import {
   formatDate,
@@ -60,6 +61,8 @@ import {
   type OpenShiftRow,
 } from "@/components/admin/OpenShiftsCard";
 import { TodayBoard, TodayStrip, rosterCounts } from "@/components/admin/TodayBoard";
+import { classifyUndelivered } from "@/lib/package-limits";
+import { ShiftEditHistory } from "@/components/admin/ShiftEditHistory";
 import { ShiftPhotosButton } from "@/components/admin/ShiftPhotosButton";
 import {
   PageHeader,
@@ -103,6 +106,8 @@ type Props = {
   reports: AdminDriverReport[];
   openShifts: OpenShiftRow[];
   photoEntryIds: string[];
+  /** Elle düzeltilmiş vardiyalar — listede "düzenlendi" rozeti çıkar. */
+  editedEntryIds: string[];
 };
 
 export function AdminClient({
@@ -118,6 +123,7 @@ export function AdminClient({
   reports,
   openShifts,
   photoEntryIds,
+  editedEntryIds,
 }: Props) {
   const t = useTranslations("admin");
   const tc = useTranslations("common");
@@ -128,6 +134,10 @@ export function AdminClient({
   const params = useSearchParams();
 
   const [editOpen, setEditOpen] = useState<TimeEntryWithWorker | null>(null);
+  // Paket alanları kontrollü: "teslim edilen" canlı hesaplanıyor ve uyarılar
+  // şoför tarafıyla aynı kuraldan (lib/package-limits.ts) türüyor.
+  const [editTaken, setEditTaken] = useState("");
+  const [editReturned, setEditReturned] = useState("");
   const [detail, setDetail] = useState<TimeEntryWithWorker | null>(null);
   const [confirmDel, setConfirmDel] = useState<TimeEntryWithWorker | null>(null);
   const [azgOpen, setAzgOpen] = useState(false);
@@ -137,6 +147,20 @@ export function AdminClient({
   // Şerit sayıları panonun KENDİ satırlarından türer — ikinci bir kaynak
   // olmadığı için pano ile şerit hiçbir zaman çelişemez ("Aktif Vardiya 6 /
   // Sahadaki şoför 6" çakışmasının kök sebebi iki ayrı kaynaktı).
+  // Düzenleme dialogu her açılışta o kaydın değerleriyle doldurulur.
+  useEffect(() => {
+    setEditTaken(editOpen?.start_package_count != null ? String(editOpen.start_package_count) : "");
+    setEditReturned(editOpen?.undelivered_count != null ? String(editOpen.undelivered_count) : "");
+  }, [editOpen]);
+
+  const editTakenNum = editTaken.trim() === "" ? null : Math.floor(Number(editTaken));
+  const editReturnedNum = editReturned.trim() === "" ? null : Math.floor(Number(editReturned));
+  const editPkgCheck = classifyUndelivered(editReturnedNum, editTakenNum);
+  const editDerivedCargo =
+    editTakenNum !== null && editReturnedNum !== null
+      ? Math.max(0, editTakenNum - editReturnedNum)
+      : null;
+
   const boardCounts = useMemo(() => rosterCounts(dashboard.roster), [dashboard.roster]);
   // Sessiz araç sayısı dikkat panosuyla AYNI kaynaktan (kind === "silent"),
   // böylece iki yerde farklı sayı çıkamaz.
@@ -153,6 +177,7 @@ export function AdminClient({
 
   const nf = locale === "de" ? "de-AT" : "tr-TR";
   const photoIdSet = useMemo(() => new Set(photoEntryIds), [photoEntryIds]);
+  const editedIdSet = useMemo(() => new Set(editedEntryIds), [editedEntryIds]);
 
   // Aynı vardiya id'si listede iki kez görünmesin — savunmacı dedup (tablo/kart
   // ve detay gezinmesi tek kaynaktan bunu kullanır). Her satırın adı zaten kendi
@@ -379,6 +404,11 @@ export function AdminClient({
             e.confirmation_status === "unconfirmed") && (
             <StatusChip tone="warning">{t("unconfirmedBadge")}</StatusChip>
           )}
+          {/* ELLE DÜZELTİLDİ (22.07.2026) — AZG yasal rapor bu tablodan
+              besleniyor; düzeltilmiş kayıt görsel olarak ayrılmalı. */}
+          {editedIdSet.has(e.id) && (
+            <StatusChip tone="neutral">{t("editedBadge")}</StatusChip>
+          )}
         </div>
       ),
       sortable: true,
@@ -536,7 +566,16 @@ export function AdminClient({
           hiç görünmemesi ile hiç uyarı olmaması yönetici için ayırt edilemez;
           "şu an dikkat gerektiren bir şey yok" satırı bilgidir. */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <AttentionList items={dashboard.attention} />
+        <AttentionList
+          items={dashboard.attention}
+          /* Hatalı paket uyarısından doğrudan düzenlemeye. Kayıt seçili
+             aralıkta yüklü değilse (worker/status filtresi) kısayol sessizce
+             hiçbir şey yapmaz — yanlış kaydı açmaktansa hiç açmamak doğru. */
+          onEditEntry={(entryId) => {
+            const e = entries.find((x) => x.id === entryId);
+            if (e) setEditOpen(e);
+          }}
+        />
         {/* Kapanmamış vardiyalar HER ZAMAN render edilir — dikkat panosuyla
             aynı gerekçe: "liste boş" ile "kart yok" yönetici için ayırt
             edilemez, oysa "açıkta vardiya kalmadı" bilgidir. Otomatik kapanış
@@ -718,10 +757,17 @@ export function AdminClient({
                           <StatusChip tone="neutral">{t("statusCompleted")}</StatusChip>
                         )}
                       </div>
-                      {(e.confirmation_status === "pending" ||
-                        e.confirmation_status === "unconfirmed") && (
-                        <div className="mt-1.5">
-                          <StatusChip tone="warning">{t("unconfirmedBadge")}</StatusChip>
+                      {((e.confirmation_status === "pending" ||
+                        e.confirmation_status === "unconfirmed") ||
+                        editedIdSet.has(e.id)) && (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {(e.confirmation_status === "pending" ||
+                            e.confirmation_status === "unconfirmed") && (
+                            <StatusChip tone="warning">{t("unconfirmedBadge")}</StatusChip>
+                          )}
+                          {editedIdSet.has(e.id) && (
+                            <StatusChip tone="neutral">{t("editedBadge")}</StatusChip>
+                          )}
                         </div>
                       )}
                       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2">
@@ -798,13 +844,17 @@ export function AdminClient({
         }
       >
         {detail && (
-          <ShiftDetail
-            entry={detail}
-            locale={locale}
-            t={t}
-            nf={nf}
-            hasPhotos={photoIdSet.has(detail.id)}
-          />
+          <>
+            <ShiftDetail
+              entry={detail}
+              locale={locale}
+              t={t}
+              nf={nf}
+              hasPhotos={photoIdSet.has(detail.id)}
+            />
+            {/* Düzenleme geçmişi — kayıt hiç düzenlenmediyse hiç render edilmez. */}
+            <ShiftEditHistory entryId={detail.id} />
+          </>
         )}
       </DetailDrawer>
 
@@ -853,24 +903,88 @@ export function AdminClient({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="e_sk">{t("tblKm")} ({t("tblStart")})</Label>
+                  <Label htmlFor="e_sk">{t("editStartKm")}</Label>
                   <Input id="e_sk" type="number" name="start_km" defaultValue={editOpen.start_km} required className="h-10" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="e_ek">{t("tblKm")} ({t("tblEnd")})</Label>
+                  <Label htmlFor="e_ek">{t("editEndKm")}</Label>
                   <Input id="e_ek" type="number" name="end_km" defaultValue={editOpen.end_km ?? ""} className="h-10" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="e_br">{t("tblBreak")}</Label>
-                  <Input id="e_br" type="number" name="break_minutes" defaultValue={editOpen.break_minutes ?? 0} className="h-10" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="e_cg">{t("tblCargo")}</Label>
-                  <Input id="e_cg" type="number" name="cargo_count" defaultValue={editOpen.cargo_count ?? ""} className="h-10" />
-                </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="e_br">{t("tblBreak")}</Label>
+                <Input id="e_br" type="number" name="break_minutes" defaultValue={editOpen.break_minutes ?? 0} className="h-10" />
               </div>
+
+              {/* PAKETLER — kaynak alanlar artık düzenlenebilir (22.07.2026).
+                  Eskiden yalnız TÜRETİLMİŞ alan (teslim edilen) düzenlenebiliyor,
+                  hatanın gerçekte olduğu iki kaynak alan düzenlenemiyordu.
+                  Teslim edilen artık elle girilmiyor: alınan − geri getirilen
+                  olarak hesaplanıyor, yani yönetici de şoförle aynı matematiği
+                  kullanıyor ve tutarsız üçlü oluşturulamıyor. */}
+              <fieldset className="space-y-3 rounded-xl border border-border/60 p-3">
+                <legend className="px-1 text-xs uppercase tracking-wide text-muted-foreground">
+                  {t("editPackagesGroup")}
+                </legend>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="e_pk">{t("tblLoaded")}</Label>
+                    <Input
+                      id="e_pk"
+                      type="number"
+                      min={0}
+                      name="start_package_count"
+                      value={editTaken}
+                      onChange={(e) => setEditTaken(e.target.value)}
+                      className="nums h-10"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="e_un">{t("editReturned")}</Label>
+                    <Input
+                      id="e_un"
+                      type="number"
+                      min={0}
+                      name="undelivered_count"
+                      value={editReturned}
+                      onChange={(e) => setEditReturned(e.target.value)}
+                      className="nums h-10"
+                    />
+                  </div>
+                </div>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">{t("tblCargo")}: </span>
+                  <span
+                    className={`nums font-semibold ${
+                      editDerivedCargo === 0 ? "text-accent-claret-text" : "text-foreground"
+                    }`}
+                  >
+                    {editDerivedCargo === null ? "—" : editDerivedCargo}
+                  </span>
+                  <span className="ml-1.5 text-xs text-muted-foreground">
+                    {t("editCargoAuto")}
+                  </span>
+                </p>
+                {/* Şoför tarafındaki kuralların aynısı: engel kırmızı, teyit
+                    altın. Yönetici teyit gerektiren değeri yazabilir — kaydı
+                    düzeltmek için bazen gerekir — ama görmeden geçemez. */}
+                {editPkgCheck.level === "block" && (
+                  <p className="flex items-start gap-1.5 text-xs text-accent-claret-text">
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                    {t(editPkgCheck.code === "no_total" ? "v2BlockNoTotalAdmin" : "v2BlockOverAdmin")}
+                  </p>
+                )}
+                {editPkgCheck.level === "confirm" && (
+                  <p className="flex items-start gap-1.5 text-xs text-accent-gold">
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                    {t(
+                      editPkgCheck.code === "all_returned"
+                        ? "v2ConfirmAllReturnedAdmin"
+                        : "v2ConfirmManyReturnedAdmin"
+                    )}
+                  </p>
+                )}
+              </fieldset>
               <div className="space-y-1.5">
                 <Label htmlFor="e_pl">{t("tblPlate")}</Label>
                 <Input id="e_pl" name="plate" defaultValue={editOpen.plate ?? ""} className="nums h-10 uppercase" />

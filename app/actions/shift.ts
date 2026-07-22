@@ -17,6 +17,7 @@ import {
   startOfTodayVienna,
 } from "@/lib/format";
 import { checkUndelivered } from "@/lib/package-limits";
+import { logShiftEdit, listShiftEdits } from "@/lib/shift-edit-log";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { resolveStartKm, resolveEndKm } from "@/lib/auto-shift";
 import { hasShiftToday } from "@/lib/shift-day";
@@ -508,17 +509,27 @@ export async function adminUpdateKmAction(
     if (e - s > MAX_PER_SHIFT_KM) return { ok: false, error: `km_high:${e - s}:${MAX_PER_SHIFT_KM}` };
   }
 
+  // Düzenleme izi için önceki km değerleri (bkz. lib/shift-edit-log.ts).
+  const { data: beforeKm } = await supabaseAdmin
+    .from("time_entries")
+    .select("start_km, end_km")
+    .eq("id", entryId)
+    .maybeSingle();
+
+  const kmUpdate = {
+    start_km: s,
+    end_km: e,
+    updated_at: new Date().toISOString(),
+    updated_by: session.worker_id,
+  };
   const { error } = await supabaseAdmin
     .from("time_entries")
-    .update({
-      start_km: s,
-      end_km: e,
-      updated_at: new Date().toISOString(),
-      updated_by: session.worker_id,
-    })
+    .update(kmUpdate)
     .eq("id", entryId);
 
   if (error) return { ok: false, error: error.message };
+
+  await logShiftEdit(entryId, session.worker_id ?? null, beforeKm ?? null, kmUpdate);
 
   revalidatePath("/admin");
   revalidatePath("/panel");
@@ -621,11 +632,25 @@ export async function editEntryAction(formData: FormData): Promise<ShiftResult> 
     plate: formData.get("plate") || null,
     notes: formData.get("notes") || null,
     break_minutes: formData.get("break_minutes") || null,
-    cargo_count: formData.get("cargo_count") || null,
+    start_package_count: formData.get("start_package_count") || null,
+    undelivered_count: formData.get("undelivered_count") || null,
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
   }
+
+  // PAKET MANTIĞI ŞOFÖRLE AYNI (22.07.2026). Yönetici de "teslim edilen"i elle
+  // giremez; alınan − geri getirilen olarak hesaplanır. Böylece düzeltme
+  // sırasında tutarsız üçlü (alınan/teslim/geri) oluşturulamaz — eskiden
+  // türetilmiş alan düzenlenebilirken kaynak alanlar düzenlenemiyordu.
+  const taken = parsed.data.start_package_count ?? null;
+  const returned = parsed.data.undelivered_count ?? null;
+  if (returned !== null) {
+    const bound = checkUndelivered(returned, taken);
+    if (!bound.ok) return { ok: false, error: bound.code };
+  }
+  const derivedCargo =
+    taken !== null && returned !== null ? Math.max(0, taken - returned) : null;
 
   const startedAtIso = new Date(parsed.data.started_at).toISOString();
   const endedAtIso = parsed.data.ended_at ? new Date(parsed.data.ended_at).toISOString() : null;
@@ -647,10 +672,24 @@ export async function editEntryAction(formData: FormData): Promise<ShiftResult> 
     plate: parsed.data.plate,
     notes: parsed.data.notes,
     break_minutes: parsed.data.break_minutes ?? 0,
-    cargo_count: parsed.data.cargo_count,
+    start_package_count: taken,
+    undelivered_count: returned,
     updated_at: new Date().toISOString(),
     updated_by: session.worker_id,
   };
+  // Teslim edilen yalnız ikisi de biliniyorsa yazılır; biri boşsa mevcut
+  // değeri EZMEYİZ (yarım veriyle uydurma sayı üretmek yerine dokunmayız).
+  if (derivedCargo !== null) update.cargo_count = derivedCargo;
+
+  // Değişiklik izini yazabilmek için ÖNCEKİ hâli okuyoruz (AZG yasal rapor:
+  // started_at/ended_at/break_minutes doğrudan bu tablodan besleniyor).
+  const { data: before } = await supabaseAdmin
+    .from("time_entries")
+    .select(
+      "started_at, ended_at, start_km, end_km, plate, notes, break_minutes, start_package_count, undelivered_count, cargo_count"
+    )
+    .eq("id", parsed.data.id)
+    .maybeSingle();
 
   const { error } = await supabaseAdmin
     .from("time_entries")
@@ -659,9 +698,20 @@ export async function editEntryAction(formData: FormData): Promise<ShiftResult> 
 
   if (error) return { ok: false, error: error.message };
 
+  await logShiftEdit(parsed.data.id, session.worker_id ?? null, before ?? null, update);
+
   revalidatePath("/admin");
   revalidatePath("/panel");
   return { ok: true };
+}
+
+/**
+ * Bir vardiyanın düzenleme geçmişi (detay çekmecesi). Yalnız yönetici.
+ * Tablo yoksa boş dizi döner — ekranda "geçmiş yok" görünür, hata değil.
+ */
+export async function getShiftEditsAction(entryId: string) {
+  await requireAdmin();
+  return listShiftEdits(entryId);
 }
 
 export async function deleteEntryAction(id: string): Promise<ShiftResult> {

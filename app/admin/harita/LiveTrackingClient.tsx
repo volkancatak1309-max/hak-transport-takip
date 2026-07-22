@@ -13,6 +13,7 @@ import { SubTabs } from "@/components/ui-v2";
 import { formatRelative, formatTime, formatDurationShort } from "@/lib/format";
 import { FLEET_STYLE } from "@/lib/vehicle-ui";
 import { cn } from "@/lib/utils";
+import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
 import {
   VEHICLE_FRESH_MS,
   type ActiveDriver,
@@ -35,7 +36,7 @@ const FleetMap = dynamic(
 );
 
 const REFRESH_MS = 30_000;
-const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
+// Yasal tavan (§ 9 Abs. 1 / gece § 14 Abs. 2) — 9 saat değil.
 
 type Summary = {
   activeShifts: number;
@@ -255,7 +256,8 @@ export function LiveTrackingClient({
             <ul className="divide-y divide-border">
               {drivers.map((d) => {
                 const activeMs = Math.max(0, now - new Date(d.shift_started_at).getTime());
-                const over = activeMs > NINE_HOURS_MS;
+                const over =
+                  activeMs > dailyCapMs(touchesNightWindow(d.shift_started_at, null));
                 return (
                   <li key={d.worker_id}>
                     <Link

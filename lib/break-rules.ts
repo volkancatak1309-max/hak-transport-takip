@@ -1,22 +1,37 @@
 /**
- * Mola kuralları — şoför panelindeki mola sayacının tek kaynağı.
+ * Mola kuralları — şoför panelindeki mola sayacının arayüzü.
  *
- * AZG (Arbeitszeitgesetz, Avusturya) § 11 dinlenme molası:
- *   • günlük çalışma süresi 6 saati aşıyorsa  → en az 30 dakika mola
- *   • 9 saati aşıyorsa                        → en az 45 dakika
+ * Eşiklerin kendisi lib/azg-rules.ts'te (tüm AZG sabitleriyle birlikte, her
+ * biri dayandığı paragrafla); bu dosya yalnız panelin okuduğu ince katman.
  *
- * HAK61'de pratik hedef 30 dakikadır: vardiyaların ezici çoğunluğu 6-9 saat
- * bandında (canlı medyan ~7 sa). 9 saat üstü için 45 dakikalık ikinci kademe
- * BİLİNÇLİ olarak eklenmedi — eklenecekse burada, çalışılan süreye bakan bir
- * fonksiyona dönüştürülmeli (`breakTargetMin(workedMs)`), sayaç UI'ı zaten tek
- * bir hedef değeri okuyor.
+ * § 13c Abs. 1 AZG — şoförler için geçerli paragraf budur; rapor 22.07.2026'ya
+ * kadar yanlışlıkla genel hüküm olan § 11'i gösteriyordu:
+ *   • 6 saati aşan çalışma → en az 30 dakika mola
+ *   • 9 saati aşan çalışma → en az 45 dakika mola
  *
- * 9 saati aşan vardiyalar ayrıca yönetici tarafında AZG uyarısı üretir
- * (lib/admin-dashboard.ts → over9h), yani o durum gözden kaçmıyor.
+ * 22.07.2026'ya kadar hedef SABİT 30 dakikaydı; 45 dakikalık ikinci kademe
+ * bilinçli olarak eksik bırakılmıştı. Artık hedef, molanın başladığı andaki
+ * çalışılmış süreye göre seçiliyor (breakTargetMin).
  */
 
-/** Molanın hedef süresi (dakika). Sayaç buna ulaşınca mola otomatik biter. */
-export const BREAK_TARGET_MIN = 30;
+export {
+  breakTargetMin,
+  requiredBreakMin,
+  AZG_BREAK_AFTER_6H_MIN,
+  AZG_BREAK_AFTER_9H_MIN,
+  AZG_BREAK_TIER1_MS,
+  AZG_BREAK_TIER2_MS,
+} from "@/lib/azg-rules";
 
-/** Aynı hedef milisaniye cinsinden (sayaç ve zamanlayıcı için). */
+import { AZG_BREAK_AFTER_6H_MIN } from "@/lib/azg-rules";
+
+/**
+ * Varsayılan hedef (dakika) — 6-9 saat bandındaki vardiyalar için.
+ *
+ * SABİT DEĞİL, VARSAYILAN: çalışılan süreyi bilen her yerde bunun yerine
+ * `breakTargetMin(workedMs)` çağırın; 9 saati aşan vardiyada o 45 döner.
+ */
+export const BREAK_TARGET_MIN = AZG_BREAK_AFTER_6H_MIN;
+
+/** Aynı varsayılan milisaniye cinsinden. */
 export const BREAK_TARGET_MS = BREAK_TARGET_MIN * 60_000;

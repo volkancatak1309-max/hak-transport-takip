@@ -4,6 +4,7 @@ import { useLocale, useTranslations } from "next-intl";
 import {
   AlertTriangle,
   CalendarClock,
+  Coffee,
   ShieldAlert,
   PackageX,
   Receipt,
@@ -38,12 +39,30 @@ export function AttentionList({
     overdue: boolean;
   } {
     switch (item.kind) {
-      case "over9h":
+      // § 9 Abs. 1 / § 14 Abs. 2 — yasal tavan aşıldı. Gerçek ihlal (bordo).
+      case "overLimit":
         return {
           icon: AlertTriangle,
-          text: t("dash.attn_over9h", { name: item.worker_name }),
+          text: t(
+            item.night ? "dash.attn_over_limit_night" : "dash.attn_over_limit",
+            { name: item.worker_name, cap: Math.round(item.capMs / 3_600_000) }
+          ),
           meta: formatDurationShort(item.ms, locale),
           overdue: true,
+        };
+      // § 13c Abs. 1 — 9 saati aştı, molası eksik. Uyarı (gold), ihlal DEĞİL.
+      case "break45":
+        return {
+          icon: Coffee,
+          text: t("dash.attn_break45", {
+            name: item.worker_name,
+            required: item.requiredMin,
+          }),
+          meta: t("dash.attn_break45_meta", {
+            worked: formatDurationShort(item.ms, locale),
+            min: item.breakMin,
+          }),
+          overdue: false,
         };
       case "license": {
         const expired = item.days < 0;

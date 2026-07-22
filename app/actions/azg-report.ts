@@ -6,6 +6,14 @@ import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { requireAdmin } from "@/lib/session";
 import { workedMs, formatDate, formatTime } from "@/lib/format";
+import {
+  AZG_REF,
+  requiredBreakMin,
+  touchesNightWindow,
+  dailyCapMs,
+  AZG_DAILY_MAX_MS,
+  AZG_NIGHT_DAILY_MAX_MS,
+} from "@/lib/azg-rules";
 
 export type AZGSeverity = "warning" | "violation" | "serious_violation";
 
@@ -172,7 +180,7 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
   // minute counts toward the daily cap. Grouped by the shift's start date.
   const daily = new Map<
     string,
-    { ms: number; worker: string; iso: string; shifts: number }
+    { ms: number; worker: string; iso: string; shifts: number; night: boolean }
   >();
   // Rest-period analysis ignores micro shifts (< 5 min): a test blip is not a
   // real work period to demand 11 h rest around.
@@ -215,40 +223,45 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
 
     // Single-shift checks (kept as an extra layer on top of the daily total —
     // one shift alone exceeding the limit is still its own violation).
-    if (hours > 10) {
+    // TAVAN: § 9 Abs. 1 -> 12 saat. Gece penceresine degen vardiyada
+    // § 14 Abs. 2 -> 10 saat. 22.07.2026'ya kadar tavan 10 saat saniliyor,
+    // 9 saat ise ayrica "uyari" uretiyordu - ikisi de yanlisti.
+    const night = touchesNightWindow(e.started_at, e.ended_at);
+    const capMs = dailyCapMs(night);
+    const capH = Math.round(capMs / 3_600_000);
+    if (ms > capMs) {
       violations.push({
         date: dateStr,
         worker,
         end: endStr,
         workedHours: fmtH(hours),
-        type: t("v.shift10_type"),
-        description: t("v.shift10_desc", { hours: fmtH(hours) }),
-        legalRef: "§ 9 Abs. 1 AZG — Überschreitung (Geldstrafe 72–1.815 €)",
+        type: t(night ? "v.shiftNight_type" : "v.shiftMax_type"),
+        description: t(night ? "v.shiftNight_desc" : "v.shiftMax_desc", {
+          hours: fmtH(hours),
+          cap: capH,
+        }),
+        legalRef: night ? AZG_REF.nightMax : AZG_REF.dailyMax,
         severity: "serious_violation",
-      });
-    } else if (hours > 9) {
-      violations.push({
-        date: dateStr,
-        worker,
-        end: endStr,
-        workedHours: fmtH(hours),
-        type: t("v.shift9_type"),
-        description: t("v.shift9_desc", { hours: fmtH(hours) }),
-        legalRef: "§ 9 Abs. 1 AZG (max. 10 Stunden täglich)",
-        severity: "warning",
       });
     }
 
+    // MOLA: § 13c Abs. 1 - 6 saat ustu 30 dk, 9 saat ustu 45 dk.
+    // (Rapor 22.07.2026'ya kadar § 11'i gosteriyor ve sabit 30 dk ariyordu.)
     const breakMin = e.break_minutes ?? 0;
-    if (hours > 6 && breakMin < 30) {
+    const requiredMin = requiredBreakMin(ms);
+    if (requiredMin > 0 && breakMin < requiredMin) {
       violations.push({
         date: dateStr,
         worker,
         end: endStr,
         workedHours: fmtH(hours),
         type: t("v.break_type"),
-        description: t("v.break_desc", { min: breakMin, hours: fmtH(hours) }),
-        legalRef: "§ 11 Abs. 1 AZG (mind. 30 Min nach 6 Std)",
+        description: t("v.break_desc", {
+          min: breakMin,
+          hours: fmtH(hours),
+          required: requiredMin,
+        }),
+        legalRef: requiredMin >= 45 ? AZG_REF.break45 : AZG_REF.break30,
         severity: "violation",
       });
     }
@@ -259,9 +272,13 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     weekly.set(wk, acc);
 
     const dk = `${e.worker_id}:${viennaDateKey(e.started_at)}`;
-    const dacc = daily.get(dk) ?? { ms: 0, worker, iso: e.started_at, shifts: 0 };
+    const dacc =
+      daily.get(dk) ?? { ms: 0, worker, iso: e.started_at, shifts: 0, night: false };
     dacc.ms += ms;
     dacc.shifts += 1;
+    // Gunun HERHANGI bir vardiyasi gece penceresine degiyorsa o gun icin
+    // 14 Abs. 2 tavani (10 sa) gecerlidir.
+    if (touchesNightWindow(e.started_at, e.ended_at)) dacc.night = true;
     if (new Date(e.started_at) < new Date(dacc.iso)) dacc.iso = e.started_at;
     daily.set(dk, dacc);
 
@@ -302,7 +319,7 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
           workedHours: "—",
           type: t("v.rest_type"),
           description: t("v.rest_desc", { hours: fmtH(gapH) }),
-          legalRef: "§ 12 Abs. 1 AZG (ununterbrochene Ruhezeit mind. 11 Std.)",
+          legalRef: AZG_REF.rest11,
           severity: "violation",
         });
       }
@@ -324,21 +341,23 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     let typeKey = "";
     let descKey = "";
     let legalRef = "";
-    if (h > 12) {
+    // § 9 Abs. 1 -> 12 sa. Gece calisilan gunde § 14 Abs. 2 -> 10 sa.
+    // 10-12 saat arasi GECE OLMAYAN bir gunde ihlal DEGILDIR.
+    if (d.ms > AZG_DAILY_MAX_MS) {
       severity = "serious_violation";
       typeKey = "v.dailyAbs_type";
       descKey = "v.dailyAbs_desc";
-      legalRef = "§ 9 Abs. 1 AZG — absolute Höchstgrenze (Geldstrafe 72–1.815 €)";
-    } else if (h > 10) {
+      legalRef = AZG_REF.dailyMax;
+    } else if (d.night && d.ms > AZG_NIGHT_DAILY_MAX_MS) {
       severity = "violation";
-      typeKey = "v.dailyMax_type";
-      descKey = "v.dailyMax_desc";
-      legalRef = "§ 9 Abs. 1 AZG (max. 10 Std. täglich)";
+      typeKey = "v.dailyNight_type";
+      descKey = "v.dailyNight_desc";
+      legalRef = AZG_REF.nightMax;
     } else if (h > 8) {
       severity = "warning";
       typeKey = "v.dailyNormal_type";
       descKey = "v.dailyNormal_desc";
-      legalRef = "§ 9 Abs. 1 AZG (Normalarbeitszeit 8 Std. täglich)";
+      legalRef = "§ 3 AZG (Normalarbeitszeit 8 Stunden täglich)";
     }
     if (!severity) continue;
     violations.push({
@@ -355,7 +374,21 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
 
   // Weekly total work time — § 9 Abs. 1 AZG (ISO week, Monday start).
   for (const acc of weekly.values()) {
-    if (acc.hours > 48) {
+    // TEK HAFTADA mutlak tavan 60 saattir; 48 saat 17 HAFTALIK ORTALAMA
+    // sinriridir (§ 13b Abs. 2). Rapor 22.07.2026'ya kadar tek bir haftanin
+    // 48'i asmasini dogrudan ihlal sayiyordu - yanlis.
+    if (acc.hours > 60) {
+      violations.push({
+        date: formatDate(acc.iso, "de"),
+        worker: acc.worker,
+        end: "—",
+        workedHours: fmtH(acc.hours),
+        type: t("v.weeklyAbs_type"),
+        description: t("v.weeklyAbs_desc", { hours: fmtH(acc.hours) }),
+        legalRef: AZG_REF.weeklyMax,
+        severity: "violation",
+      });
+    } else if (acc.hours > 48) {
       violations.push({
         date: formatDate(acc.iso, "de"),
         worker: acc.worker,
@@ -363,8 +396,8 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         workedHours: fmtH(acc.hours),
         type: t("v.weeklyMax_type"),
         description: t("v.weeklyMax_desc", { hours: fmtH(acc.hours) }),
-        legalRef: "§ 9 Abs. 1 AZG (max. 48 Stunden wöchentlich)",
-        severity: "violation",
+        legalRef: AZG_REF.weeklyAvg,
+        severity: "warning",
       });
     } else if (acc.hours > 40) {
       violations.push({
@@ -374,7 +407,7 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
         workedHours: fmtH(acc.hours),
         type: t("v.weeklyNormal_type"),
         description: t("v.weeklyNormal_desc", { hours: fmtH(acc.hours) }),
-        legalRef: "§ 9 Abs. 1 AZG (Normalarbeitszeit 40 Stunden wöchentlich)",
+        legalRef: AZG_REF.weeklyNormal,
         severity: "warning",
       });
     }

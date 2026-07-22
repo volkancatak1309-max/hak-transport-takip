@@ -5,6 +5,7 @@ import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { LiveTrackingClient } from "./LiveTrackingClient";
 import { listLatestVehiclePositions } from "@/lib/telemetry";
+import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
 import type { ActiveDriver } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -87,14 +88,14 @@ export default async function HaritaPage() {
   );
 
   // Lightweight KPIs from the same data — no extra logic, demo-ready summary.
-  const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
+  // Yasal tavan (§ 9 Abs. 1 / gece § 14 Abs. 2) — 9 saat ihlal değil.
   const nowMs = Date.now();
   let longestMs = 0;
   let overLimit = 0;
   for (const s of shifts) {
     const ms = nowMs - new Date(s.started_at).getTime();
     if (ms > longestMs) longestMs = ms;
-    if (ms > NINE_HOURS_MS) overLimit++;
+    if (ms > dailyCapMs(touchesNightWindow(s.started_at, null))) overLimit++;
   }
 
   const t = await getTranslations("map");

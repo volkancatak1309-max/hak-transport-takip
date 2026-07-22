@@ -10,9 +10,22 @@ import {
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { listFleetActiveDtc, listLatestVehiclePositions } from "@/lib/telemetry";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import {
+  BREAK45_THRESHOLD_MS,
+  AZG_BREAK_TIER1_MS,
+  requiredBreakMin,
+  touchesNightWindow,
+  dailyCapMs,
+} from "@/lib/azg-rules";
 import type { TimeEntry, Worker, VehicleLiveStatus } from "@/lib/types";
 
-const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
+/**
+ * 9 SAAT ARTIK "İHLAL" DEĞİL (22.07.2026). Eşikler lib/azg-rules.ts'te:
+ *   • OVER_LIMIT_MS        = 12 sa → § 9 Abs. 1, gerçek yasal ihlal (bordo)
+ *   • BREAK45_THRESHOLD_MS =  9 sa → § 13c Abs. 1, mola 45 dk'ya çıkar (gold)
+ * Panel bu ikisini AYRI gösteriyor; eskiden 9 saat ihlal gibi işaretlendiği
+ * için 20 şoför kırmızı görünüyordu.
+ */
 /**
  * Performans tile'ları vardiya tablosunun aralığından BAĞIMSIZ, sabit kayan bir
  * pencere kullanır (Volkan onayı, 17.07.2026). Gerekçe: tile'lar aralığa bağlıyken
@@ -45,7 +58,10 @@ export type TodayOps = {
   loaded: number | null; // sum of start_package_count today (packages LOADED at start)
   delivered: number | null; // sum of cargo_count on ENDED shifts today (actually delivered)
   undelivered: number | null; // sum of undelivered_count today
-  overNine: number; // shifts today already past 9h
+  /** § 9 Abs. 1 — günlük tavanı (gece vardiyasında 10 sa) aşan vardiya sayısı. */
+  overLimit: number;
+  /** § 13c Abs. 1 — 9 saati aşıp 45 dk mola gerektiren vardiya sayısı. */
+  needsBreak45: number;
   shiftsToday: number; // total shifts started today (for "no data" states)
 };
 
@@ -68,7 +84,25 @@ export type DriverPerf = {
 };
 
 export type AttentionItem =
-  | { kind: "over9h"; id: string; worker_name: string; ms: number }
+  /** § 9 Abs. 1 / § 14 Abs. 2 — günlük tavan aşıldı. Gerçek ihlal. */
+  | {
+      kind: "overLimit";
+      id: string;
+      worker_name: string;
+      ms: number;
+      /** Bu vardiyaya uygulanan tavan (gece ise 10 sa, değilse 12 sa). */
+      capMs: number;
+      night: boolean;
+    }
+  /** § 13c Abs. 1 — 9 saati aştı, molası 45 dakikanın altında kaldı. */
+  | {
+      kind: "break45";
+      id: string;
+      worker_name: string;
+      ms: number;
+      breakMin: number;
+      requiredMin: number;
+    }
   | {
       kind: "inspection" | "insurance";
       id: string;
@@ -118,7 +152,8 @@ export type OpsDetail = {
   loaded: OpsDetailRow[];
   delivered: OpsDetailRow[];
   undelivered: OpsDetailRow[];
-  overNine: { name: string; ms: number }[];
+  overLimit: { name: string; ms: number }[];
+  needsBreak45: { name: string; ms: number; breakMin: number }[];
 };
 
 /** Filo geneli arıza (DTC) özeti — plaka + aktif kod sayısı + en uzun süredir
@@ -383,7 +418,8 @@ export async function getDashboardData(
 }
 
 function buildTodayOps(entries: LiteEntry[]): TodayOps {
-  let overNine = 0;
+  let overLimit = 0;
+  let needsBreak45 = 0;
   let km = 0;
   let hasKm = false;
   let loaded = 0;
@@ -394,7 +430,13 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
   let hasUndelivered = false;
 
   for (const e of entries) {
-    if (workedMs(e) > NINE_HOURS_MS) overNine++;
+    const w = workedMs(e);
+    // Tavan gece çalışmasında 10 saate iner (§ 14 Abs. 2).
+    if (w > dailyCapMs(touchesNightWindow(e.started_at, e.ended_at))) overLimit++;
+    // 45 dk mola gerektiren ama molası eksik kalan vardiyalar.
+    if (w > BREAK45_THRESHOLD_MS && (e.break_minutes ?? 0) < requiredBreakMin(w)) {
+      needsBreak45++;
+    }
     const d = kmDiff(e);
     if (d !== null) {
       km += d;
@@ -428,7 +470,8 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
     loaded: hasLoaded ? loaded : null,
     delivered: hasDelivered ? delivered : null,
     undelivered: hasUndelivered ? undelivered : null,
-    overNine,
+    overLimit,
+    needsBreak45,
     shiftsToday: entries.length,
   };
 }
@@ -627,7 +670,8 @@ function buildOpsDetail(
   const loaded = new Map<string, number>();
   const delivered = new Map<string, number>();
   const undelivered = new Map<string, number>();
-  const overNine: { name: string; ms: number }[] = [];
+  const overLimit: { name: string; ms: number }[] = [];
+  const needsBreak45: { name: string; ms: number; breakMin: number }[] = [];
   for (const e of todayEntries) {
     const name = nameOf(e.worker_id);
     const d = kmDiff(e);
@@ -638,7 +682,13 @@ function buildOpsDetail(
       delivered.set(name, (delivered.get(name) ?? 0) + e.cargo_count);
     if ((e.undelivered_count ?? 0) > 0)
       undelivered.set(name, (undelivered.get(name) ?? 0) + (e.undelivered_count ?? 0));
-    if (workedMs(e) > NINE_HOURS_MS) overNine.push({ name, ms: workedMs(e) });
+    const w = workedMs(e);
+    if (w > dailyCapMs(touchesNightWindow(e.started_at, e.ended_at))) {
+      overLimit.push({ name, ms: w });
+    }
+    if (w > BREAK45_THRESHOLD_MS && (e.break_minutes ?? 0) < requiredBreakMin(w)) {
+      needsBreak45.push({ name, ms: w, breakMin: e.break_minutes ?? 0 });
+    }
   }
 
   const rows = (m: Map<string, number>): OpsDetailRow[] =>
@@ -652,7 +702,8 @@ function buildOpsDetail(
     loaded: rows(loaded),
     delivered: rows(delivered),
     undelivered: rows(undelivered),
-    overNine: overNine.sort((a, b) => b.ms - a.ms),
+    overLimit: overLimit.sort((a, b) => b.ms - a.ms),
+    needsBreak45: needsBreak45.sort((a, b) => b.ms - a.ms),
   };
 }
 
@@ -667,8 +718,7 @@ function buildFleet(vehicles: { live_status: VehicleLiveStatus }[]): FleetStatus
   return { total: vehicles.length, counts };
 }
 
-const TEN_HOURS_MS = 10 * 60 * 60 * 1000;
-const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+// Güvenlik/AZG puanı eşikleri — lib/azg-rules.ts'ten türetilir.
 
 function buildPerformance(
   entries: LiteEntry[],
@@ -706,14 +756,21 @@ function buildPerformance(
     if (d !== null) row.km += d;
     if (e.cargo_count !== null) row.delivered += e.cargo_count;
     if (e.undelivered_count !== null) row.undelivered += e.undelivered_count;
-    // Per-shift AZG checks — the SAME § 9 / § 11 per-shift rules the AZG audit
-    // report uses (worked time is break-excluded). Cross-shift checks (daily
-    // total, weekly, rest period) are NOT included here; the score's AZG part is
-    // the per-shift compliance only (explained to the admin in the (i) tooltip).
+    // Vardiya bazlı AZG kontrolleri — AZG denetim raporuyla AYNI kurallar
+    // (§ 9 Abs. 1 tavan + § 13c Abs. 1 mola; çalışılan süre mola hariç).
+    // Vardiyalar arası kontroller (günlük toplam, haftalık, dinlenme) burada
+    // YOK; puanın AZG kısmı yalnız vardiya bazlı uyumdur ((i) ipucunda yazılı).
+    //
+    // 22.07.2026: ihlal eşiği 10 saatten § 9 Abs. 1'deki 12 saate çekildi,
+    // gece vardiyasında 10 saat (§ 14 Abs. 2). 9 saat artık ihlal değil,
+    // molası eksikse UYARI üretir (§ 13c Abs. 1 → 45 dk).
     const breakMin = e.break_minutes ?? 0;
-    const isViolation = worked > TEN_HOURS_MS || (worked > SIX_HOURS_MS && breakMin < 30);
+    const cap = dailyCapMs(touchesNightWindow(e.started_at, e.ended_at));
+    const needBreak = requiredBreakMin(worked);
+    const isViolation =
+      worked > cap || (worked > AZG_BREAK_TIER1_MS && breakMin < needBreak);
     if (isViolation) row.azgViol++;
-    else if (worked > NINE_HOURS_MS) row.azgWarn++;
+    else if (worked > BREAK45_THRESHOLD_MS) row.azgWarn++;
   }
 
   // Activity target scales with the selected range length (~5 shifts / week),
@@ -759,25 +816,52 @@ function buildAttention(
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
 
-  // 1) Shifts past the 9h AZG threshold — only the ones that are *actionable
-  //    right now*: shifts that started today, plus any still-open (active)
-  //    shift regardless of when it started (e.g. left running overnight). We do
-  //    NOT scan the whole selected range, otherwise picking "month" floods the
-  //    action list with every historical overrun. Deduped by entry id.
-  const over9h = new Map<string, LiteEntry>();
-  for (const e of todayEntries) {
-    if (workedMs(e) > NINE_HOURS_MS) over9h.set(e.id, e);
-  }
-  for (const e of rangeEntries) {
-    if (e.ended_at === null && workedMs(e) > NINE_HOURS_MS) over9h.set(e.id, e);
-  }
-  for (const e of over9h.values()) {
-    items.push({
-      kind: "over9h",
-      id: e.id,
-      worker_name: e.worker_id ? names.get(e.worker_id) ?? "—" : "—",
-      ms: workedMs(e),
-    });
+  // 1) AZG çalışma süresi — İKİ AYRI kalem (22.07.2026):
+  //      • overLimit → günlük tavan aşıldı (§ 9 Abs. 1: 12 sa; gece çalışması
+  //        varsa § 14 Abs. 2: 10 sa). GERÇEK İHLAL.
+  //      • break45   → 9 saati aştı ve molası 45 dakikanın altında kaldı
+  //        (§ 13c Abs. 1). İhlal değil, mola uyarısı.
+  //    Eskiden tek bir "9 saati aştı" kalemi vardı ve 9 saat ihlal gibi
+  //    görünüyordu; 20 şoför kırmızıya düşüyordu.
+  //
+  //    Kapsam aynı: bugün başlayan vardiyalar + hâlâ AÇIK olan her vardiya
+  //    (gece boyu unutulmuş olabilir). Tüm aralık taranmaz, yoksa "ay"
+  //    seçilince liste geçmiş aşımlarla dolar. Kayıt id'siyle tekilleştirilir.
+  const azgEntries = new Map<string, LiteEntry>();
+  for (const e of todayEntries) azgEntries.set(e.id, e);
+  for (const e of rangeEntries) if (e.ended_at === null) azgEntries.set(e.id, e);
+
+  for (const e of azgEntries.values()) {
+    const worked = workedMs(e);
+    const night = touchesNightWindow(e.started_at, e.ended_at);
+    const cap = dailyCapMs(night);
+    const workerName = e.worker_id ? names.get(e.worker_id) ?? "—" : "—";
+
+    if (worked > cap) {
+      items.push({
+        kind: "overLimit",
+        id: e.id,
+        worker_name: workerName,
+        ms: worked,
+        capMs: cap,
+        night,
+      });
+      // Tavanı aşan vardiya zaten en ağır kalem; mola uyarısını üstüne
+      // eklemek aynı vardiyayı listede iki kez gösterirdi.
+      continue;
+    }
+
+    const needBreak = requiredBreakMin(worked);
+    if (worked > BREAK45_THRESHOLD_MS && (e.break_minutes ?? 0) < needBreak) {
+      items.push({
+        kind: "break45",
+        id: e.id,
+        worker_name: workerName,
+        ms: worked,
+        breakMin: e.break_minutes ?? 0,
+        requiredMin: needBreak,
+      });
+    }
   }
 
   // 2) Vehicle documents due soon or overdue (§57a inspection + insurance).
@@ -887,8 +971,12 @@ function buildAttention(
         return 50 - i.hours / 24; // belgelerden sonra; en uzun sessizlik önce
       case "penalty":
         return 100 - i.count; // unpaid fines: after overdue docs, before overruns
-      case "over9h":
-        return 1000 - i.ms / 3_600_000; // longest overrun first
+      case "overLimit":
+        return 1000 - i.ms / 3_600_000; // yasal tavan aşımı — en uzunu önce
+      case "break45":
+        // Mola uyarısı ihlal DEĞİL: tavan aşımlarının ve teslim edilemeyen
+        // paketlerin arasında, ihlallerin ARKASINDA sıralanır.
+        return 1500 - i.ms / 3_600_000
       case "undelivered":
         return 2000 - i.count; // biggest backlog first
     }

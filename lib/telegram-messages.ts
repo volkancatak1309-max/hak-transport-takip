@@ -11,7 +11,15 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** 9-hour active-shift alert → admins. */
+/**
+ * Uzun süredir açık vardiya uyarısı → yöneticiler.
+ *
+ * ŞU AN ÇAĞRILMIYOR (ölü kod, 22.07.2026). Metni yine de düzeltildi: içindeki
+ * "AZG § 9: maksimum 10 saat" ifadesi YANLIŞTI — § 9 Abs. 1'e göre günlük
+ * tavan 12 saat, gece çalışması yapılan günde § 14 Abs. 2'ye göre 10 saattir.
+ * Yanlış hukuki iddianın kod tabanında durmasına gerek yok. Yeniden
+ * kullanılacaksa eşik lib/azg-rules.ts'ten okunmalı.
+ */
 export function nineHourMessage(
   locale: string | null,
   p: { name: string; plate: string; hours: string }
@@ -22,14 +30,14 @@ export function nineHourMessage(
     return (
       "🚨 HAK61\n\n" +
       `<b>${name}</b> (${plate}) <b>${p.hours}</b> Stunden aktiv.\n\n` +
-      "AZG § 9: maximal 10 Stunden täglich.\n" +
+      "AZG § 9 Abs. 1: höchstens 12 Stunden täglich (bei Nachtarbeit 10).\n" +
       "Bitte mit dem Fahrer Kontakt aufnehmen."
     );
   }
   return (
     "🚨 HAK61\n\n" +
     `<b>${name}</b> (${plate}) <b>${p.hours}</b> saattir aktif.\n\n` +
-    "AZG § 9: maksimum 10 saat günlük.\n" +
+    "AZG § 9 Abs. 1: günlük en fazla 12 saat (gece çalışmasında 10).\n" +
     "Lütfen şoförle iletişime geçin."
   );
 }

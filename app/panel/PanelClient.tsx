@@ -26,7 +26,7 @@ import {
   updatePackageCountAction,
 } from "../actions/shift";
 import { formatDuration, formatTime, workedMs } from "@/lib/format";
-import { BREAK_TARGET_MIN, BREAK_TARGET_MS } from "@/lib/break-rules";
+import { breakTargetMin, AZG_BREAK_AFTER_6H_MIN } from "@/lib/break-rules";
 import { classifyUndelivered } from "@/lib/package-limits";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -137,6 +137,13 @@ export function PanelClient({
 
   // Mola — v1 ile aynı yerel-önce mantık: yerelde biriktir, kapatınca DB'ye yaz.
   const [breakStartLocal, setBreakStartLocal] = useState<number | null>(null);
+  // Molanın hedef süresi (dakika) — molanın BAŞLADIĞI anda sabitlenir.
+  // § 13c Abs. 1 AZG: 9 saati aşan vardiyada 30 değil 45 dakika. Hedefi her
+  // render'da yeniden hesaplamıyoruz; mola sürerken çalışılan süre eşiği
+  // geçseydi hedef mola ortasında 30'dan 45'e atlar, sayaç geri sıçrardı.
+  const [breakTargetLocal, setBreakTargetLocal] = useState(
+    AZG_BREAK_AFTER_6H_MIN
+  );
   const [pendingBreakMinutes, setPendingBreakMinutes] = useState(0);
   const activeId = active?.id ?? null;
   useEffect(() => {
@@ -171,6 +178,7 @@ export function PanelClient({
   const breakElapsedMs = breakStartLocal !== null ? Math.max(0, now - breakStartLocal) : 0;
 
   function startBreak() {
+    setBreakTargetLocal(breakTargetMin(workedMsLive));
     setBreakStartLocal(Date.now());
     toast.info(t("breakStarted"));
     void startBreakAction().catch(() => {});
@@ -190,7 +198,7 @@ export function PanelClient({
     setPendingBreakMinutes((m) => m + elapsedMin);
     // Şoför kaç dakika mola yaptığını HER hâlükârda görür (0 dk dahil).
     const msg = auto
-      ? t("breakAutoDone", { min: BREAK_TARGET_MIN })
+      ? t("breakAutoDone", { min: breakTargetLocal })
       : t("breakEndedMin", { min: elapsedMin });
 
     // SUNUCU HER HÂLÜKÂRDA ÇAĞRILIR — 0 dakikalık mola dahil (22.07.2026).
@@ -250,10 +258,11 @@ export function PanelClient({
    */
   useEffect(() => {
     if (breakStartLocal === null) return;
-    const remaining = BREAK_TARGET_MS - (Date.now() - breakStartLocal);
+    const remaining =
+      breakTargetLocal * 60_000 - (Date.now() - breakStartLocal);
     const id = setTimeout(() => endBreakRef.current(true), Math.max(0, remaining));
     return () => clearTimeout(id);
-  }, [breakStartLocal]);
+  }, [breakStartLocal, breakTargetLocal]);
 
   // Manuel paket sayısı: dialog'u mevcut değerle aç.
   function openPkg() {
@@ -490,7 +499,7 @@ export function PanelClient({
                     {formatDuration(breakElapsedMs)}
                   </div>
                   <div className="mt-2 text-xs text-muted-foreground">
-                    {t("v2BreakTarget", { min: BREAK_TARGET_MIN })}
+                    {t("v2BreakTarget", { min: breakTargetLocal })}
                     {" · "}
                     {t("v2ShiftTime")}:{" "}
                     <span className="nums text-foreground">

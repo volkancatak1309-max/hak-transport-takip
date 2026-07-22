@@ -45,6 +45,7 @@ import {
   workedMs,
   kmDiff,
 } from "@/lib/format";
+import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
 import { UserAvatar } from "@/components/UserAvatar";
 import { OpsSummary } from "@/components/admin/OpsSummary";
 import { AttentionList } from "@/components/admin/AttentionList";
@@ -91,7 +92,9 @@ import {
 } from "@/lib/report-de";
 import type { TimeEntryWithWorker, WorkerPublic } from "@/lib/types";
 
-const NINE_HOURS = 9 * 60 * 60 * 1000;
+// 22.07.2026: satır vurgusu 9 saatte değil YASAL TAVANDA kırmızıya döner
+// (§ 9 Abs. 1 = 12 sa; gece çalışması varsa § 14 Abs. 2 = 10 sa). 9 saat bir
+// ihlal değil, mola kademesidir — tabloda 20 şoförü kırmızı yapıyordu.
 
 type Props = {
   entries: TimeEntryWithWorker[];
@@ -381,7 +384,8 @@ export function AdminClient({
   const shiftState = (e: TimeEntryWithWorker) => {
     const active = e.ended_at === null;
     const onBreak = active && !!e.break_started_at;
-    const over = (active ? workedMs(e) : workedMs(e)) > NINE_HOURS;
+    const over =
+      workedMs(e) > dailyCapMs(touchesNightWindow(e.started_at, e.ended_at));
     return { active, onBreak, over };
   };
   const stripeFor = (e: TimeEntryWithWorker) => {

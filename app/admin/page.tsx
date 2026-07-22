@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin, fetchAllRows, chunkIds } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AdminClient } from "./AdminClient";
 import {
@@ -122,7 +123,9 @@ export default async function AdminPage({
     } as TimeEntryWithWorker;
   });
   if (statusFilter === "over") {
-    entriesData = entriesData.filter((e) => workedMs(e) > 9 * 60 * 60 * 1000);
+    entriesData = entriesData.filter(
+      (e) => workedMs(e) > dailyCapMs(touchesNightWindow(e.started_at, e.ended_at))
+    );
   }
 
   // Totals reflect the SELECTED range. Hours/KM come from COMPLETED shifts only.
@@ -138,7 +141,8 @@ export default async function AdminPage({
       const km = kmDiff(e);
       if (km !== null) totalKm += km;
     }
-    if (workedMs(e) > 9 * 60 * 60 * 1000) overLimit++;
+    if (workedMs(e) > dailyCapMs(touchesNightWindow(e.started_at, e.ended_at)))
+      overLimit++;
   }
   const activeCount = dashboard.todayOps.driversInField;
 

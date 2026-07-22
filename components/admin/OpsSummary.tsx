@@ -85,7 +85,12 @@ export function OpsSummary({ ops, detail }: { ops: TodayOps; detail: OpsDetail }
     { key: "loaded", label: t("dash.ops_loaded"), help: "ops_loaded", value: num(ops.loaded), icon: Package, tone: "neutral" },
     { key: "delivered", label: t("dash.ops_delivered"), help: "ops_delivered", value: num(ops.delivered), icon: PackageCheck, tone: "neutral" },
     { key: "undelivered", label: t("dash.ops_undelivered"), help: "ops_undelivered", value: num(ops.undelivered), icon: PackageX, tone: ops.undelivered && ops.undelivered > 0 ? "gold" : "neutral" },
-    { key: "over9", label: t("dash.ops_over_nine"), help: "ops_over9", value: num(ops.overNine), icon: AlertTriangle, tone: ops.overNine > 0 ? "gold" : "neutral" },
+    // İKİ AYRI KART (22.07.2026). Eskiden tek "9 Saati Aşan" kartı vardı ve
+    // 9 saat ihlal gibi görünüyordu; 20 şoför kırmızıya düşüyordu.
+    //   • overLimit → § 9 Abs. 1 (gece: § 14 Abs. 2) yasal tavan → claret
+    //   • break45   → § 13c Abs. 1 mola kademesi → gold (uyarı, ihlal değil)
+    { key: "overLimit", label: t("dash.ops_over_limit"), help: "ops_over_limit", value: num(ops.overLimit), icon: AlertTriangle, tone: ops.overLimit > 0 ? "claret" : "neutral" },
+    { key: "break45", label: t("dash.ops_break45"), help: "ops_break45", value: num(ops.needsBreak45), icon: Coffee, tone: ops.needsBreak45 > 0 ? "gold" : "neutral" },
   ];
 
   function rowsFor(key: string): Row[] {
@@ -110,8 +115,16 @@ export function OpsSummary({ ops, detail }: { ops: TodayOps; detail: OpsDetail }
         return detail.delivered.map((r) => ({ left: r.name, right: r.value.toLocaleString(nf) }));
       case "undelivered":
         return detail.undelivered.map((r) => ({ left: r.name, right: r.value.toLocaleString(nf) }));
-      case "over9":
-        return detail.overNine.map((o) => ({ left: o.name, right: formatDurationShort(o.ms, locale) }));
+      case "overLimit":
+        return detail.overLimit.map((o) => ({
+          left: o.name,
+          right: formatDurationShort(o.ms, locale),
+        }));
+      case "break45":
+        return detail.needsBreak45.map((o) => ({
+          left: o.name,
+          right: `${formatDurationShort(o.ms, locale)} · ${o.breakMin} dk`,
+        }));
       default:
         return [];
     }

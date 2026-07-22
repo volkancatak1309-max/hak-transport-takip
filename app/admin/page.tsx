@@ -23,6 +23,7 @@ import type {
 } from "@/lib/types";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 import type { AdminDriverReport } from "@/components/admin/DriverReportsCard";
+import type { OpenShiftRow } from "@/components/admin/OpenShiftsCard";
 
 export const dynamic = "force-dynamic";
 
@@ -181,6 +182,38 @@ export default async function AdminPage({
     ),
   ];
 
+  // KAPANMAMIŞ VARDİYALAR (22.07.2026) — seçili tarih aralığından BAĞIMSIZ.
+  // Açık vardiya "bugünün verisi" değil, şu anki durumdur; "bu ay" filtresinde
+  // kaybolması onu telafi aracı olmaktan çıkarırdı (canlı örnek: dünden kalmış
+  // 27 saatlik kayıt). Süre sunucuda hesaplanır — istemcide Date.now() ile
+  // hesaplansaydı ilk render'da hidrasyon uyuşmazlığı üretirdi.
+  const { data: openShiftData } = await supabaseAdmin
+    .from("time_entries")
+    .select("id, worker_id, plate, started_at")
+    .is("ended_at", null)
+    .order("started_at", { ascending: true });
+
+  const nowMs = Date.now();
+  const todayStartMs = startOfTodayVienna().getTime();
+  const openShifts: OpenShiftRow[] = (
+    (openShiftData ?? []) as {
+      id: string;
+      worker_id: string | null;
+      plate: string | null;
+      started_at: string;
+    }[]
+  ).map((e) => {
+    const startedMs = new Date(e.started_at).getTime();
+    return {
+      id: e.id,
+      worker_name: e.worker_id ? workerMap.get(e.worker_id)?.name ?? "—" : "—",
+      plate: e.plate,
+      started_at: e.started_at,
+      elapsedMs: Math.max(0, nowMs - startedMs),
+      stale: startedMs < todayStartMs,
+    };
+  });
+
   return (
     <DashboardShell
       user={{
@@ -202,6 +235,7 @@ export default async function AdminPage({
           summary={{ totalMs, totalKm, activeCount, overLimit }}
           dashboard={dashboard}
           reports={openReports}
+          openShifts={openShifts}
           photoEntryIds={photoEntryIds}
         />
       </div>

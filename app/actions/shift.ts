@@ -10,7 +10,13 @@ import {
   MAX_PER_SHIFT_KM,
   MAX_COUNT,
 } from "@/lib/validation";
-import { workedMs, formatDurationShort, formatTime } from "@/lib/format";
+import {
+  workedMs,
+  formatDurationShort,
+  formatTime,
+  startOfTodayVienna,
+} from "@/lib/format";
+import { checkUndelivered } from "@/lib/package-limits";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { resolveStartKm, resolveEndKm } from "@/lib/auto-shift";
 import { hasShiftToday } from "@/lib/shift-day";
@@ -20,7 +26,12 @@ import {
   shiftStartedMessage,
 } from "@/lib/telegram-messages";
 
-export type ShiftResult = { ok: boolean; error?: string };
+export type ShiftResult = {
+  ok: boolean;
+  error?: string;
+  /** true = yeni satır açılmadı, o günün kapanmış vardiyası yeniden açıldı. */
+  reopened?: boolean;
+};
 
 /**
  * Notify every linked admin that a driver just started a shift. Best-effort:
@@ -104,20 +115,14 @@ export async function startShiftManualAction(): Promise<ShiftResult> {
     .maybeSingle();
   if (active) return { ok: false, error: "active" };
 
-  // 2a) GÜNDE TEK VARDİYA (lib/shift-day.ts). Şoför bugün vardiya açıp
-  //     kapattıysa yenisini açamaz; panel de butonu göstermez ama sunucu son
-  //     sözü söyler (eski sekme, geri tuşu, doğrudan istek).
-  if (await hasShiftToday(session.worker_id!)) {
-    return { ok: false, error: "day_done" };
-  }
-
-  // 2b) ARAÇ guard'ı. uq_time_entries_one_open yalnız worker_id'ye bakar, yani
+  // 2a) ARAÇ guard'ı. uq_time_entries_one_open yalnız worker_id'ye bakar, yani
   //     DB "aynı araçta iki açık vardiya"yı engellemez. auto-shift bu yarısını
   //     kodla koruyor (`!vehicleShift`); manuel yol da korumazsa şu senaryo
   //     bozuk veri üretir: önceki şoför vardiyasını kapatmayı unutmuş, yönetici
   //     aracı yedek şoföre devretmiş → araca ait iki açık satır oluşur ve
   //     openByVehicle/activeByVehicle haritaları hangisini tutacağını
   //     bilemez. Şoföre net mesaj verip yöneticiye yönlendiriyoruz.
+  //     GÜN KİLİDİNDEN ÖNCE bakılır: yeniden açma da bu aracı meşgul eder.
   const { data: vehicleBusy } = await supabaseAdmin
     .from("time_entries")
     .select("id")
@@ -126,6 +131,67 @@ export async function startShiftManualAction(): Promise<ShiftResult> {
     .limit(1)
     .maybeSingle();
   if (vehicleBusy) return { ok: false, error: "vehicle_busy" };
+
+  // 2b) GÜNDE TEK VARDİYA (lib/shift-day.ts) — artık çıkmaz sokak DEĞİL.
+  //
+  //     Kural aynı kalıyor: bir şoförün bir Viyana gününde EN FAZLA BİR vardiya
+  //     SATIRI olur. Ama "bugün zaten kapattın" demek yerine o satırı YENİDEN
+  //     AÇIYORUZ. Gerekçe (22.07.2026): kapanış artık yalnız insan eliyle
+  //     oluyor ve tek yanlış dokunuş şoförün gününü bitiriyordu — kurtarma yolu
+  //     yalnız yöneticideydi. Yeniden açmak yeni satır üretmediği için "günde
+  //     tek vardiya" muhasebesi bozulmaz; gün sonunda yine tek kayıt kalır.
+  //
+  //     Kapanışa ait ne varsa temizlenir: imza (vardiya bitmediği için geçersiz),
+  //     km/kapanış sebebi ve watchdog sayacı. break_minutes ve start_km korunur —
+  //     aynı vardiyanın devamıdır. undelivered_count sıfırlanır ki kapanış formu
+  //     yeniden sorsun; cargo_count kapanışta zaten yeniden türetilir.
+  if (await hasShiftToday(session.worker_id!)) {
+    const { data: todays } = await supabaseAdmin
+      .from("time_entries")
+      .select("id")
+      .eq("worker_id", session.worker_id!)
+      .gte("started_at", startOfTodayVienna().toISOString())
+      .not("ended_at", "is", null)
+      .order("ended_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // Kapanmış vardiya bulunamadıysa kural gerçekten uygulanır (savunmacı: açık
+    // vardiya ihtimali yukarıdaki guard'da zaten elendi).
+    if (!todays) return { ok: false, error: "day_done" };
+
+    const { error: reopenErr } = await supabaseAdmin
+      .from("time_entries")
+      .update({
+        ended_at: null,
+        end_km: null,
+        end_reason: null,
+        auto_ended: false,
+        summary_notified_at: null,
+        summary_confirmed_at: null,
+        summary_confirmed_by: null,
+        still_active_asked_at: null,
+        undelivered_count: null,
+        updated_at: new Date().toISOString(),
+        updated_by: session.worker_id,
+      })
+      .eq("id", todays.id as string)
+      .eq("worker_id", session.worker_id!)
+      .not("ended_at", "is", null);
+
+    if (reopenErr) {
+      // 23505 = uq_time_entries_one_open: aynı saniyede başka bir yol vardiya
+      // açtıysa bu hata değil, "zaten aktif" durumudur.
+      if (/duplicate key|23505/i.test(reopenErr.message)) {
+        return { ok: false, error: "active" };
+      }
+      return { ok: false, error: reopenErr.message };
+    }
+
+    revalidatePath("/panel");
+    revalidatePath("/admin");
+    return { ok: true, reopened: true };
+  }
 
   // 3) Başlangıç km: odometre → aracın son biten vardiyası → 0. Şoför
   //    "Ayarlar → Başlangıç KM"den düzeltebilir.
@@ -229,6 +295,13 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
   // mevcut değeri ezmeyiz).
   const undelivered = parsed.data.undelivered_count;
   const totalTaken = active.start_package_count;
+
+  // ÜST SINIR (22.07.2026). endShiftSchema'daki MAX_COUNT (100.000) bir şema
+  // tavanı; anlamlı değil — canlıya 87.189 "teslim edilemeyen" girilebildi.
+  // Anlamsal sınır: teslim edilemeyen ≤ alınan (bilinmiyorsa mutlak tavan).
+  // Şema geçse bile sunucu son sözü söyler.
+  const bound = checkUndelivered(undelivered, totalTaken as number | null);
+  if (!bound.ok) return { ok: false, error: bound.code };
   const delivered =
     totalTaken !== null && totalTaken !== undefined
       ? Math.max(0, totalTaken - undelivered)
@@ -446,6 +519,90 @@ export async function adminUpdateKmAction(
     .eq("id", entryId);
 
   if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin");
+  revalidatePath("/panel");
+  return { ok: true };
+}
+
+/**
+ * Yönetici, KAPANMAMIŞ bir vardiyayı kapatır ("Kapanmamış Vardiyalar" kartı).
+ *
+ * Neden gerekli (22.07.2026): otomatik kapanış kaldırıldı, yani unutulan
+ * vardiyayı kapatacak tek mekanizma watchdog'un Telegram sorusuydu — ve o
+ * fiilen ölü: 31 aktif şoförün HİÇBİRİ Telegram'a bağlı değil, watchdog yalnız
+ * adminlere haber verip `still_active_asked_at` damgalıyor. Telafi yolu
+ * olmadan "vardiyayı sadece personel kapatır" kuralı, unutulan vardiyanın
+ * günlerce açık kalması demekti (canlı: 27 saat açık kayıt).
+ *
+ * Bitiş anı "şimdi" DEĞİL: aracın son telemetri kaydı tercih edilir — watchdog
+ * kapanışıyla (app/api/telegram/webhook) birebir aynı kural. 27 saattir açık
+ * duran bir vardiyayı "şimdi"ye kapatmak 27 saatlik çalışma yazardı.
+ * Bitiş km'si de manuel kapanışla aynı kaynaktan türetilir (resolveEndKm).
+ */
+export async function adminCloseShiftAction(entryId: string): Promise<ShiftResult> {
+  const session = await requireAdmin();
+
+  const { data: entry } = await supabaseAdmin
+    .from("time_entries")
+    .select("id, worker_id, vehicle_id, started_at, start_km, confirmation_status")
+    .eq("id", entryId)
+    .is("ended_at", null)
+    .maybeSingle();
+  if (!entry) return { ok: false, error: "no_active" };
+
+  // Bitiş anı: aracın son telemetrisi → yoksa şimdi. Vardiya başlangıcından
+  // önceye asla düşmez (bozuk telemetride negatif süre üretmesin).
+  let endedIso = new Date().toISOString();
+  if (entry.vehicle_id) {
+    const { data: lastFix } = await supabaseAdmin
+      .from("device_telemetry")
+      .select("recorded_at")
+      .eq("vehicle_id", entry.vehicle_id as string)
+      .gte("recorded_at", entry.started_at as string)
+      .order("recorded_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastFix?.recorded_at) endedIso = lastFix.recorded_at as string;
+  }
+
+  let endKm: number | null = null;
+  if (entry.vehicle_id) {
+    const latest = await latestVehicleTelemetry(entry.vehicle_id as string);
+    endKm = await resolveEndKm(
+      entry.vehicle_id as string,
+      { started_at: entry.started_at as string, start_km: entry.start_km as number },
+      endedIso,
+      latest?.odometer_km
+    );
+  }
+
+  const { error } = await supabaseAdmin
+    .from("time_entries")
+    .update({
+      ended_at: endedIso,
+      end_km: endKm,
+      end_reason: "admin",
+      summary_notified_at: endedIso,
+      updated_at: new Date().toISOString(),
+      updated_by: session.worker_id,
+    })
+    .eq("id", entryId)
+    .is("ended_at", null);
+
+  if (error) return { ok: false, error: error.message };
+
+  // Başlangıç onayı verilmeden kapanan vardiya "onaysız" işaretlenir — manuel
+  // kapanıştaki desenin aynısı (best-effort, kapanışı geri döndürmez).
+  await supabaseAdmin
+    .from("time_entries")
+    .update({ confirmation_status: "unconfirmed" })
+    .eq("id", entryId)
+    .eq("confirmation_status", "pending")
+    .then(
+      () => {},
+      () => {}
+    );
 
   revalidatePath("/admin");
   revalidatePath("/panel");

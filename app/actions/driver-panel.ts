@@ -7,6 +7,7 @@ import { uploadReceipt, signedReceiptUrls } from "@/lib/storage";
 import { recountShiftPackages } from "@/lib/shift-packages";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { driverReportMessage } from "@/lib/telegram-messages";
+import { SUMMARY_WINDOW_MS } from "@/lib/shift-summary";
 import type { DriverReportType } from "@/lib/types";
 
 /**
@@ -32,6 +33,8 @@ const MAX_FUTURE_SKEW_MS = 5 * 60_000;
 const MAX_BACKDATE_MS = 48 * 60 * 60_000;
 
 export type DriverPanelResult = { ok: boolean; error?: string };
+/** Toplu özet imzası: kaç vardiya imzalandı (0 = imzalanacak kayıt yoktu). */
+export type ConfirmSummaryResult = DriverPanelResult & { signed?: number };
 export type AddPackageResult = {
   ok: boolean;
   error?: string;
@@ -312,13 +315,25 @@ export async function reportProblemAction(input: {
 
 /**
  * İş 3 — Vardiya sonu özetinin şoför onayı = günlük çalışma kaydına dijital
- * imza (timestamp + user_id). Yalnız kendi, kapanmış, henüz imzasız vardiyası.
- * İdempotent: zaten imzalıysa ok döner.
+ * imza (timestamp + user_id).
+ *
+ * TOPLU İMZA (22.07.2026). Eskiden tek `entryId` imzalanıyordu; panel ise her
+ * yenilemede sıradaki imzasız vardiyayı aynı ekranla gösteriyordu. Şoförde 7
+ * imzasız kayıt birikince ONAYLA'ya basmak ekranı kapatmıyor, bir sonrakini
+ * açıyordu — sahadan "onaylıyorum, kapanmıyor, döngüde" diye bildirilen hata
+ * buydu (canlı kanıt: aynı şoförün 12 saniyede 3 imzası).
+ *
+ * Artık istemci kayıt seçmez: sunucu, şoförün 72 saatteki TÜM imzasız kapalı
+ * vardiyalarını TEK update ile imzalar. Tek dokunuş = ekran kesin kapanır.
+ * Pencere dışında kalan eski kayıtlara dokunulmaz (panel de göstermiyor).
+ *
+ * İdempotent: imzalanacak kayıt kalmamışsa `signed: 0` ile ok döner — ekran
+ * zaten kapanacağı için bu bir hata değildir.
  */
-export async function confirmShiftSummaryAction(
-  entryId: string
-): Promise<DriverPanelResult> {
+export async function confirmShiftSummaryAction(): Promise<ConfirmSummaryResult> {
   const session = await requireWorker();
+
+  const sinceIso = new Date(Date.now() - SUMMARY_WINDOW_MS).toISOString();
 
   const { data, error } = await supabaseAdmin
     .from("time_entries")
@@ -326,35 +341,21 @@ export async function confirmShiftSummaryAction(
       summary_confirmed_at: new Date().toISOString(),
       summary_confirmed_by: session.worker_id!,
     })
-    .eq("id", entryId)
     .eq("worker_id", session.worker_id!)
     .not("ended_at", "is", null)
     .is("summary_confirmed_at", null)
+    .gte("ended_at", sinceIso)
     .select("id");
 
-  if (error) {
-    // Pre-migration fallback: migration 020 imza kolonları (summary_confirmed_*)
-    // henüz uygulanmadıysa onayı sessizce no-op geçer (crash yok, eski davranış:
-    // v2 öncesi imza adımı hiç yoktu). Diğer action'lardaki desenle aynı.
-    if (/summary_confirmed|column/i.test(error.message)) return { ok: true };
-    return { ok: false, error: error.message };
-  }
-
-  if (!data || data.length === 0) {
-    // Yarış/tekrar: zaten imzalıysa sorun değil; değilse kayıt bizim değil.
-    const { data: row } = await supabaseAdmin
-      .from("time_entries")
-      .select("id, summary_confirmed_at")
-      .eq("id", entryId)
-      .eq("worker_id", session.worker_id!)
-      .maybeSingle();
-    if (row?.summary_confirmed_at) return { ok: true };
-    return { ok: false, error: "not_found" };
-  }
+  // Sessiz `ok: true` KALDIRILDI (22.07.2026). Eskiden kolon/migration kokan
+  // her hata "başarılı" sayılıyordu: sunucu hiçbir şey yazmazken şoför yeşil
+  // tost görüyor, ekran açık kalıyordu — gerçek sonsuz döngünün reçetesi.
+  // Artık yazamadıysak şoför bunu görür ve tekrar dener.
+  if (error) return { ok: false, error: error.message };
 
   revalidatePath("/panel");
   revalidatePath("/admin");
-  return { ok: true };
+  return { ok: true, signed: data?.length ?? 0 };
 }
 
 /**

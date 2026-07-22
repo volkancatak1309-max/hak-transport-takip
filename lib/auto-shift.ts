@@ -22,10 +22,11 @@ import { workersWithShiftToday } from "@/lib/shift-day";
  *    confirmation_status='pending'). Şoför panelden tek dokunuşla onaylar;
  *    onaylamasa da veri akmaya devam eder. Günde tek vardiya kuralı için bkz.
  *    lib/shift-day.ts — kontak açılıp kapandıkça ikinci vardiya AÇILMAZ.
- *  - BİTİR: auto_started açık vardiyada kontak kapalı + hiçbir aktivite
- *    (araç hareketi, telefon GPS'i, +1 paket, foto) olmadan
- *    AUTO_SHIFT_IDLE_END_MINUTES (varsayılan 30 dk) geçince vardiya, son
- *    aktivite anına kapatılır (auto_ended=true, end_reason='auto_idle').
+ *  - BİTİR: KALDIRILDI (22.07.2026, AUTO_END_ENABLED=false). Vardiyayı
+ *    yalnızca personel kapatır; sistem hiçbir koşulda kapatmaz. Eski davranış
+ *    (kontak kapalı + AUTO_SHIFT_IDLE_END_MINUTES hareketsizlik → auto_idle)
+ *    kodda duruyor ama şalter kapalı. Gerekçe: eşik, depoda yükleme yapan
+ *    şoförü ölü sayıp vardiyayı 9 dakikada kapatıyordu.
  *
  * /api/flespi/sync (her ~30-60 sn, harici cron) ve /api/flespi/ingest
  * (stream push) çağırır. Eşzamanlı çalışmaya dayanıklıdır: açık vardiya
@@ -37,6 +38,14 @@ import { workersWithShiftToday } from "@/lib/shift-day";
  */
 
 const DEFAULT_IDLE_END_MINUTES = 30;
+
+/**
+ * OTOMATİK KAPANIŞ ANA ŞALTERİ — KAPALI (Volkan, 22.07.2026).
+ * "Vardiyayı yalnızca personel kapatır." Tip açıkça `boolean`: literal `false`
+ * olarak daraltılsaydı aşağıdaki blok statik olarak erişilmez sayılırdı.
+ * Kural geri istenirse tek yapılacak bunu `true` yapmaktır.
+ */
+const AUTO_END_ENABLED: boolean = false;
 
 /** Config: kontak kapalı + hareketsizlik eşiği (dk). Env ile ayarlanabilir. */
 export function autoEndIdleMinutes(): number {
@@ -458,7 +467,27 @@ export async function processAutoShifts(
           continue;
         }
 
-        // ── OTOMATİK BİTİR ──────────────────────────────────────────────
+        // ── OTOMATİK BİTİR — KAPALI (Volkan, 22.07.2026) ────────────────
+        // KURAL: VARDİYAYI YALNIZCA PERSONEL KAPATIR. Sistem bir vardiyayı
+        // asla kendiliğinden kapatmaz.
+        //
+        // Neden kaldırıldı: kontak kapalı + 30 dk hareketsizlik eşiği, depoda
+        // paket yükleyen şoförü "ölü" sayıyordu. 22.07.2026 sabahı 24 şoförün
+        // 20'si, 8–48 dakikalık vardiyalarla otomatik kapatıldı; ardından
+        // "günde tek vardiya" kilidi (lib/shift-day.ts) yeni vardiya açılmasını
+        // engelleyince şoförler güne kayıtsız devam etti ("GPS çalışmıyor").
+        //
+        // Otomatik BAŞLATMA (yukarısı) DURUYOR — kural yalnız kapanış hakkında.
+        // Kapanış yolları artık yalnız insan eliyle: panel (endShiftAction),
+        // çevrimdışı kuyruk replay'i, Telegram watchdog "Hayır" yanıtı ve
+        // yönetici (adminCloseShiftAction / editEntryAction).
+        //
+        // Aşağıdaki blok AUTO_END_ENABLED=false ile kapatıldı (silinmedi):
+        // eşik/aktivite mantığı, kural bir gün geri istenirse tek sabitin
+        // true yapılmasıyla geri gelir. lastActivityMs/resolveEndKm hâlâ
+        // kullanımda (resolveEndKm manuel kapanışın km kaynağı).
+        if (!AUTO_END_ENABLED) continue;
+
         if (!vehicleShift || !vehicleShift.auto_started) continue;
         // Şoför molada — mola, vardiyanın bilinçli sürdüğünün beyanı.
         if (vehicleShift.break_started_at) continue;

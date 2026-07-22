@@ -303,6 +303,16 @@ export function PanelClient({
     if (e === "active") return t("errActive");
     if (e === "no_active") return t("errNoActive");
     if (e === "undelivered_required") return t("v2UndeliveredRequired");
+    // Paket üst sınırı (lib/package-limits.ts). Şoför neyin fazla olduğunu
+    // rakamla görmeli — "geçersiz değer" tek başına düzeltmeyi öğretmez.
+    if (e.startsWith("undelivered_over:")) {
+      const [, got, taken] = e.split(":");
+      return t("v2UndeliveredOver", { got, taken });
+    }
+    if (e.startsWith("undelivered_max:")) {
+      return t("v2UndeliveredMax", { max: e.split(":")[1] });
+    }
+    if (e === "undelivered_invalid") return t("v2PkgErr");
     // km_* hata kodları BİLİNÇLİ olarak kalktı: şoför km girmediği için sunucu
     // ondan km hatası döndüremez (km cihazdan türetilir, doğrulanacak girdi yok).
     if (e === "no_vehicle") return t("v2WaitNoVehicle");
@@ -339,7 +349,9 @@ export function PanelClient({
         return;
       }
       if (r.ok) {
-        toast.success(t("shiftStarted"));
+        // Yeniden açma ile yeni vardiya farklı şeylerdir; şoför hangisinin
+        // olduğunu görmeli (aynı satıra devam mı, yeni gün mü).
+        toast.success(r.reopened ? t("v2ReopenedToast") : t("shiftStarted"));
         router.refresh();
       } else {
         toast.error(mapErr(r.error));
@@ -351,7 +363,10 @@ export function PanelClient({
   }
 
   // ── Ekran seçimi ───────────────────────────────────────────────────────────
-  const showSummary = !!pendingSummary && !summaryLater;
+  // `!active`: özet katmanı tam ekran ve paneli tamamen kapatıyor. Açık vardiya
+  // varken gösterilirse şoför "Vardiyayı Bitir"e ulaşamaz (22.07.2026 olayı).
+  // Sunucu da aynı kararı veriyor (app/panel/page.tsx) — bu ikinci savunma.
+  const showSummary = !!pendingSummary && !summaryLater && !active;
   const showConfirm =
     !showSummary &&
     !!active &&
@@ -518,10 +533,12 @@ export function PanelClient({
           </div>
         </>
       ) : shiftDoneToday ? (
-        /* Günde tek vardiya: bugünkü vardiya kapandı. Bekleme ekranını
-           göstermek yanlış olurdu — şoför kontağı açıp bekler, hiçbir şey
-           olmaz. Durum net yazılır ve başlat butonu HİÇ render edilmez
-           (pasif buton "bozuk mu?" sorusunu doğurur). */
+        /* Günde tek vardiya: bugünkü vardiya kapandı. Kural duruyor — ikinci
+           bir vardiya SATIRI açılmaz. Ama ekran artık çıkmaz sokak değil
+           (22.07.2026): yanlışlıkla/erken kapatan şoför aynı vardiyayı
+           YENİDEN AÇAR (sunucu yeni satır yazmaz, o günün son kapanmış
+           vardiyasının ended_at'ini boşaltır). Aksi hâlde tek yanlış dokunuş
+           günü bitiriyor ve yalnız yönetici kurtarabiliyordu. */
         <Card>
           <CardContent className="space-y-5 py-10 text-center">
             <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-accent-green/12 text-accent-green">
@@ -533,6 +550,26 @@ export function PanelClient({
               </h1>
               <p className="mx-auto max-w-xs text-sm text-muted-foreground">
                 {t("v2DayDoneDesc")}
+              </p>
+            </div>
+            {/* İkincil eylem: dev yeşil "başlat" değil — bu bir düzeltme yolu,
+                günün normal akışı değil. Bordo/outline ton hiyerarşiyi korur. */}
+            <div className="space-y-2">
+              <Button
+                variant="outline"
+                onClick={handleManualStart}
+                disabled={pending}
+                className="mx-auto h-14 w-full max-w-xs text-base"
+              >
+                {pending ? (
+                  <Loader2 className="size-5 animate-spin" aria-hidden />
+                ) : (
+                  <PlayCircle className="size-5" aria-hidden />
+                )}
+                {t("v2DayDoneReopen")}
+              </Button>
+              <p className="mx-auto max-w-xs text-xs text-muted-foreground">
+                {t("v2DayDoneReopenHint")}
               </p>
             </div>
           </CardContent>

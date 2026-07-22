@@ -21,6 +21,11 @@ type Props = {
  * Dev yeşil ONAYLA = şoförün günlük çalışma kaydına dijital imzası
  * (summary_confirmed_at + summary_confirmed_by). Onaylanmadan kapatılırsa
  * bir sonraki girişte tekrar çıkar (sunucu summary_confirmed_at null gördükçe).
+ *
+ * ONAYLA artık TEK KAYIT değil, şoförün 72 saatteki tüm imzasız vardiyalarını
+ * imzalar (confirmShiftSummaryAction) — ekran tek dokunuşta kapanır. Katman
+ * yalnız AÇIK VARDİYA YOKKEN gösterilir (app/panel/page.tsx), yani "Vardiyayı
+ * Bitir" yolunu asla kapatmaz.
  */
 export function ShiftSummaryCard({ entry, week, onLater }: Props) {
   const t = useTranslations("panel");
@@ -35,12 +40,22 @@ export function ShiftSummaryCard({ entry, week, onLater }: Props) {
 
   function confirm() {
     startTransition(async () => {
-      const r = await confirmShiftSummaryAction(entry.id);
+      // Ağ/sunucu hatası transition'dan kaçıp paneli hata ekranına düşürmesin;
+      // şoför için sonuç aynı: "yazılamadı, tekrar dene".
+      let r;
+      try {
+        r = await confirmShiftSummaryAction();
+      } catch {
+        toast.error(t("v2ConfirmErrRetry"));
+        return;
+      }
       if (r.ok) {
         toast.success(t("v2SummaryConfirmedToast"));
         router.refresh();
       } else {
-        toast.error(t("v2ConfirmErr"));
+        // Sunucu imzayı YAZAMADI. Sessiz "başarılı" yok (22.07.2026): şoför
+        // hatayı görür, ekran açık kalır, tekrar deneyebilir.
+        toast.error(t("v2ConfirmErrRetry"));
       }
     });
   }

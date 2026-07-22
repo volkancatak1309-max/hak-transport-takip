@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireWorker } from "@/lib/session";
 import { MAX_COUNT } from "@/lib/validation";
+import { checkUndelivered } from "@/lib/package-limits";
 import { recountShiftPackages } from "@/lib/shift-packages";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { resolveEndKm } from "@/lib/auto-shift";
@@ -91,8 +92,14 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
     };
     const br = num(item.payload.break_minutes);
     if (br !== null && br >= 0 && br <= 1440) update.break_minutes = br;
+    // Üst sınır online kapanışla AYNI kural (lib/package-limits.ts): kuyruk,
+    // arayüzün reddettiği bir değerin arka kapıdan girmesine izin vermemeli.
+    // Sınır dışıysa alan yazılmaz (kapanış yine de tamamlanır — çevrimdışı
+    // kuyruk hiçbir koşulda vardiyayı açıkta bırakmamalı).
     const undel = num(item.payload.undelivered_count);
-    if (undel !== null && undel >= 0 && undel <= MAX_COUNT) update.undelivered_count = undel;
+    if (undel !== null && checkUndelivered(undel, active.start_package_count as number | null).ok) {
+      update.undelivered_count = undel;
+    }
     // Teslim edilen = alınan − teslim edilemeyen (online endShiftAction ile aynı
     // türetme). Alınan bilinmiyorsa istemcinin gönderdiği cargo_count'a düşülür.
     const total = active.start_package_count as number | null;

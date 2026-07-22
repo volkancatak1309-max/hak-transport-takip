@@ -3,15 +3,10 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { PanelClient } from "./PanelClient";
 import { startOfTodayVienna, startOfWeekVienna } from "@/lib/format";
+import { needsSummarySignature } from "@/lib/shift-summary";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-/**
- * İmzasız özet bu kadar geriye kadar tekrar gösterilir; daha eskisi şoförü
- * rahatsız etmez (admin tarafında "onaysız" görünür kalır).
- */
-const SUMMARY_WINDOW_MS = 72 * 60 * 60 * 1000;
 
 export default async function PanelPage() {
   const session = await requireWorker();
@@ -30,16 +25,18 @@ export default async function PanelPage() {
   const active = all.find((e) => e.ended_at === null) ?? null;
   const past = all.filter((e) => e.ended_at !== null);
 
-  // İş 3 — imzasız vardiya özeti: son 72 saatte bitmiş, summary_confirmed_at
-  // boş olan en yeni vardiya. Şoför onaylamadan kapattıysa her girişte çıkar.
+  // İş 3 — imzasız vardiya özeti. Kuralın TEK kaynağı lib/shift-summary.ts:
+  // 72 saatlik pencere + sistem kapanışları ve 25 dakikadan kısa vardiyalar
+  // imza istemez (çöp yığınının kaynağı buydu — bkz. modül başlığı).
+  //
+  // AÇIK VARDİYA VARKEN ÖZET GÖSTERİLMEZ (22.07.2026): özet katmanı tam ekran
+  // (fixed inset-0 z-50) ve paneli tamamen kaplıyordu; imzasız eski kaydı olan
+  // şoför "Vardiyayı Bitir" butonuna hiç ulaşamıyor, vardiya açık kalıyordu.
+  // Sıra artık net: önce çalış ve kendi kapat, imza sonra.
   const nowMs = Date.now();
-  const pendingSummary =
-    past.find(
-      (e) =>
-        !e.summary_confirmed_at &&
-        e.ended_at !== null &&
-        nowMs - new Date(e.ended_at).getTime() <= SUMMARY_WINDOW_MS
-    ) ?? null;
+  const pendingSummary = active
+    ? null
+    : past.find((e) => needsSummarySignature(e, nowMs)) ?? null;
 
   const { data: me } = await supabaseAdmin
     .from("workers")

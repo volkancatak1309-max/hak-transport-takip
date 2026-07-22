@@ -54,6 +54,10 @@ import {
   DriverReportsCard,
   type AdminDriverReport,
 } from "@/components/admin/DriverReportsCard";
+import {
+  OpenShiftsCard,
+  type OpenShiftRow,
+} from "@/components/admin/OpenShiftsCard";
 import { ShiftPhotosButton } from "@/components/admin/ShiftPhotosButton";
 import {
   PageHeader,
@@ -95,6 +99,7 @@ type Props = {
   summary: { totalMs: number; totalKm: number; activeCount: number; overLimit: number };
   dashboard: DashboardData;
   reports: AdminDriverReport[];
+  openShifts: OpenShiftRow[];
   photoEntryIds: string[];
 };
 
@@ -109,6 +114,7 @@ export function AdminClient({
   summary,
   dashboard,
   reports,
+  openShifts,
   photoEntryIds,
 }: Props) {
   const t = useTranslations("admin");
@@ -472,6 +478,11 @@ export function AdminClient({
           "şu an dikkat gerektiren bir şey yok" satırı bilgidir. */}
       <div className="grid gap-6 lg:grid-cols-2">
         <AttentionList items={dashboard.attention} />
+        {/* Kapanmamış vardiyalar HER ZAMAN render edilir — dikkat panosuyla
+            aynı gerekçe: "liste boş" ile "kart yok" yönetici için ayırt
+            edilemez, oysa "açıkta vardiya kalmadı" bilgidir. Otomatik kapanış
+            kaldırıldığı için bu kart artık günlük kontrol noktası. */}
+        <OpenShiftsCard rows={openShifts} />
         {reports.length > 0 && <DriverReportsCard reports={reports} />}
       </div>
 

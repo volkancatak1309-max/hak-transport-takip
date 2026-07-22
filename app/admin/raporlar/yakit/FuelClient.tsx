@@ -36,15 +36,17 @@ export function FuelClient({
     v.toLocaleString(nf, { minimumFractionDigits: d, maximumFractionDigits: d });
   const pct = (v: number) => `%${Math.round(v)}`;
 
-  // Migration 026 henüz uygulanmadıysa RPC yok — rapor çökmez, açıklayıcı boş
-  // durum gösterir.
+  // Rapor hesaplanamadıysa SEBEBİ söylenir (22.07.2026). Eskiden her hata
+  // "migration bekliyor" diye gösteriliyordu; migration uygulanmışken zaman
+  // aşımına düşen sorgu yöneticiyi olmayan bir soruna yönlendiriyordu.
   if (!report.available) {
+    const timedOut = report.unavailableReason === "timeout";
     return (
       <div className="pt-4">
         <EmptyState
           kind="none"
-          title={t("fuel_unavailable_title")}
-          hint={t("fuel_unavailable_hint")}
+          title={timedOut ? t("fuel_timeout_title") : t("fuel_unavailable_title")}
+          hint={timedOut ? t("fuel_timeout_hint") : t("fuel_unavailable_hint")}
         />
       </div>
     );
@@ -61,20 +63,25 @@ export function FuelClient({
       t("col_refills"),
       t("col_leak"),
     ];
+    // Dışa aktarım ekranla AYNI kuralı uygular: güvenilmez sensörün türetilmiş
+    // sayıları CSV'ye de yazılmaz, yerine sebebi yazılır. Aksi hâlde ekranda
+    // gizlenen sayı Excel'e sızıp karar tablosuna girerdi.
     const lines = report.rows.map((r) =>
       [
         r.plate,
         r.driverName ?? "",
         r.tankCapacityL ?? "",
         r.avgPct === null ? "" : Math.round(r.avgPct),
-        r.consumedLiters !== null
-          ? Math.round(r.consumedLiters)
-          : r.hasData
-            ? `${Math.round(r.consumedPct)}%`
-            : "",
-        r.lPer100Km === null ? "" : num(r.lPer100Km, 1),
-        r.refillCount,
-        r.suspiciousDropCount,
+        r.dataUnreliable
+          ? t("fuel_unreliable_badge")
+          : r.consumedLiters !== null
+            ? Math.round(r.consumedLiters)
+            : r.hasData
+              ? `${Math.round(r.consumedPct)}%`
+              : "",
+        r.dataUnreliable || r.lPer100Km === null ? "" : num(r.lPer100Km, 1),
+        r.dataUnreliable ? "" : r.refillCount,
+        r.dataUnreliable ? "" : r.suspiciousDropCount,
       ].join(";")
     );
     const csv = "﻿" + [header.join(";"), ...lines].join("\r\n");
@@ -100,20 +107,24 @@ export function FuelClient({
           driver: r.driverName ?? "—",
           tank: r.tankCapacityL === null ? "—" : `${r.tankCapacityL} L`,
           avg: r.avgPct === null ? "—" : `${Math.round(r.avgPct)}%`,
-          consumed:
-            r.consumedLiters !== null
+          consumed: r.dataUnreliable
+            ? t("fuel_unreliable_badge")
+            : r.consumedLiters !== null
               ? `${Math.round(r.consumedLiters)} L`
               : r.hasData
                 ? `${Math.round(r.consumedPct)}%`
                 : "—",
-          l100: r.lPer100Km === null ? "—" : num(r.lPer100Km, 1),
+          l100: r.dataUnreliable || r.lPer100Km === null ? "—" : num(r.lPer100Km, 1),
           refills:
-            r.refillCount === 0
+            r.dataUnreliable || r.refillCount === 0
               ? "—"
               : r.refillLiters !== null
                 ? `${r.refillCount} · ${Math.round(r.refillLiters)} L`
                 : String(r.refillCount),
-          leak: r.suspiciousDropCount === 0 ? "—" : String(r.suspiciousDropCount),
+          leak:
+            r.dataUnreliable || r.suspiciousDropCount === 0
+              ? "—"
+              : String(r.suspiciousDropCount),
         })),
       });
     } catch {
@@ -125,7 +136,21 @@ export function FuelClient({
     {
       key: "plate",
       header: t("col_plate"),
-      cell: (r) => <span className="nums font-medium uppercase">{r.plate}</span>,
+      // Güvenilmez sensör rozeti plakanın yanında durur: satırdaki tirelerin
+      // SEBEBİ burada okunur, yoksa "veri yok" ile karışır.
+      cell: (r) => (
+        <span className="flex items-center gap-1.5">
+          <span className="nums font-medium uppercase">{r.plate}</span>
+          {r.dataUnreliable && (
+            <span title={t("fuel_unreliable_tooltip", { pct: Math.round(r.zeroRatio * 100) })}>
+              <AlertTriangle
+                className="size-3.5 shrink-0 text-accent-gold"
+                aria-label={t("fuel_unreliable_badge")}
+              />
+            </span>
+          )}
+        </span>
+      ),
       sortable: true,
       sortValue: (r) => r.plate,
     },
@@ -167,8 +192,13 @@ export function FuelClient({
       header: t("col_consumed"),
       align: "right",
       nums: true,
+      // Güvenilmez sensörde SAYI GÖSTERİLMEZ. Sıfır serisinin bitişi "dolum"
+      // gibi göründüğü için tüketim de dolum da anlamsız; yarım doğru sayı
+      // yokluktan daha zararlıdır (yönetici ona göre karar verir).
       cell: (r) =>
-        r.consumedLiters !== null ? (
+        r.dataUnreliable ? (
+          <span className="text-muted-foreground">—</span>
+        ) : r.consumedLiters !== null ? (
           <span className="font-semibold">{`${num(r.consumedLiters)} L`}</span>
         ) : r.hasData ? (
           <span className="font-semibold">{pct(r.consumedPct)}</span>
@@ -176,16 +206,17 @@ export function FuelClient({
           <span className="text-muted-foreground">{t("no_data")}</span>
         ),
       sortable: true,
-      sortValue: (r) => r.consumedLiters ?? r.consumedPct,
+      sortValue: (r) => (r.dataUnreliable ? -1 : r.consumedLiters ?? r.consumedPct),
     },
     {
       key: "l100",
       header: t("col_l_100km"),
       align: "right",
       nums: true,
-      cell: (r) => (r.lPer100Km === null ? "—" : num(r.lPer100Km, 1)),
+      cell: (r) =>
+        r.dataUnreliable || r.lPer100Km === null ? "—" : num(r.lPer100Km, 1),
       sortable: true,
-      sortValue: (r) => r.lPer100Km ?? -1,
+      sortValue: (r) => (r.dataUnreliable ? -1 : r.lPer100Km ?? -1),
     },
     {
       key: "refills",
@@ -194,7 +225,7 @@ export function FuelClient({
       nums: true,
       hideBelow: "md",
       cell: (r) =>
-        r.refillCount === 0 ? (
+        r.dataUnreliable || r.refillCount === 0 ? (
           <span className="text-muted-foreground">—</span>
         ) : (
           <span className="whitespace-nowrap">
@@ -213,18 +244,24 @@ export function FuelClient({
       key: "leak",
       header: t("col_leak"),
       align: "right",
+      // Kaçak sinyali de gizlenir: %0'a düşüp geri dönen ölü bir sensör, "araç
+      // hareketsizken yakıt düştü" desenini birebir taklit eder. Arızalı
+      // sensörden gelen kırmızı bir hırsızlık rozeti, şoför için haksız bir
+      // suçlamadır — önce sensör onarılmalı.
       cell: (r) =>
-        r.suspiciousDropCount === 0 ? (
+        r.dataUnreliable || r.suspiciousDropCount === 0 ? (
           <span className="text-muted-foreground">—</span>
         ) : (
           <StatusChip tone="critical">{r.suspiciousDropCount}</StatusChip>
         ),
       sortable: true,
-      sortValue: (r) => r.suspiciousDropCount,
+      sortValue: (r) => (r.dataUnreliable ? -1 : r.suspiciousDropCount),
     },
   ];
 
-  const top = report.rows.find((r) => r.hasData);
+  // "En çok yakan" güvenilmez sensörden seçilemez — sayısı gösterilmeyen bir
+  // aracı filo birincisi ilan etmek yanıltıcı olurdu.
+  const top = report.rows.find((r) => r.hasData && !r.dataUnreliable);
 
   return (
     <div className="space-y-4 pt-4">
@@ -264,6 +301,15 @@ export function FuelClient({
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <AlertTriangle className="size-3.5 shrink-0 text-accent-gold" />
           {t("fuel_capacity_note", { n: report.capacityMissing })}
+        </p>
+      )}
+
+      {/* Arızalı sensör uyarısı: bu araçların türetilmiş sayıları hem tabloda
+          hem filo toplamlarında YOK — yönetici eksikliğin sebebini bilmeli. */}
+      {report.unreliableVehicles > 0 && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <AlertTriangle className="size-3.5 shrink-0 text-accent-gold" />
+          {t("fuel_unreliable_note", { n: report.unreliableVehicles })}
         </p>
       )}
 

@@ -353,11 +353,37 @@ export type FuelRow = {
   suspiciousDropCount: number;
   suspiciousDropPct: number;
   suspiciousDropLiters: number | null;
+  /** Aralıktaki HAM %0 okuma sayısı (de-glitch öncesi). */
+  zeroCount: number;
+  /** Sıfır okumaların payı (0–1). */
+  zeroRatio: number;
+  /**
+   * true → sensör güvenilmez; tüketim/dolum sayıları GÖSTERİLMEZ ve filo
+   * toplamlarına girmez. Yarım doğru sayı, yokluktan daha zararlıdır.
+   */
+  dataUnreliable: boolean;
 };
 
+/**
+ * Rapor neden boş döndü? "Fonksiyon yok" ile "sorgu zaman aşımına uğradı"
+ * BİRBİRİNDEN AYRILMALI (22.07.2026): ikisi de `available:false` sayıldığı için
+ * migration uygulanmış olmasına rağmen ekranda "026 henüz çalıştırılmadı"
+ * yazıyordu. Yönetici olmayan bir sorunu kovalıyordu.
+ *  • missing_function → migration gerçekten uygulanmamış (PGRST202 / 42883)
+ *  • timeout          → fonksiyon var, aralık çok geniş (57014)
+ *  • error            → başka bir DB hatası
+ */
+export type FuelUnavailableReason =
+  | "missing_function"
+  | "timeout"
+  | "error"
+  | null;
+
 export type FuelReport = {
-  /** false → report_fuel_stats fonksiyonu henüz yok (migration 026 bekliyor). */
+  /** false → rapor hesaplanamadı; sebebi `unavailableReason` söyler. */
   available: boolean;
+  /** available=false iken doldurulur; available=true iken null. */
+  unavailableReason: FuelUnavailableReason;
   rows: FuelRow[];
   vehicleCount: number;
   /** Aralıkta yakıt verisi olan araç sayısı. */
@@ -369,6 +395,8 @@ export type FuelReport = {
   refillTotalLiters: number;
   /** En az bir şüpheli düşüşü olan araç sayısı. */
   suspiciousVehicles: number;
+  /** Sensörü güvenilmez sayılan (okumalarının >%10'u sıfır) araç sayısı. */
+  unreliableVehicles: number;
   /** Verisi olan ama kapasitesi girilmemiş araç sayısı (litre gösterilemez). */
   capacityMissing: number;
 };
@@ -386,6 +414,47 @@ type FuelStatRow = {
   drop_count: number;
   drop_pct: number;
 };
+
+/**
+ * Okumalarının bu oranından FAZLASI %0 olan aracın yakıt sensörü güvenilmez
+ * sayılır (canlı gözlem: DO-687GX %22; sağlıklı araçlarda oran %0,01'in altında,
+ * yani eşik geniş bir boşluğun ortasında durur).
+ */
+const UNRELIABLE_ZERO_RATIO = 0.1;
+
+/**
+ * RPC hatasını ayırt eder. Kritik ayrım (22.07.2026): "fonksiyon yok" yöneticiye
+ * migration çalıştırtır, "zaman aşımı" ise aralık daralttırır. İkisini aynı
+ * mesajla göstermek, migration uygulanmışken "026'yı çalıştırın" demek oluyordu.
+ *  • 57014  = query_canceled (statement timeout) — canlıda soğuk cache'te görüldü
+ *  • PGRST202 = PostgREST şema önbelleğinde fonksiyon yok
+ *  • 42883  = undefined_function
+ */
+function classifyRpcError(error: {
+  code?: string | null;
+  message?: string | null;
+}): FuelUnavailableReason {
+  const code = (error.code ?? "").toUpperCase();
+  const msg = (error.message ?? "").toLowerCase();
+
+  if (
+    code === "57014" ||
+    msg.includes("statement timeout") ||
+    msg.includes("canceling statement")
+  ) {
+    return "timeout";
+  }
+  if (
+    code === "PGRST202" ||
+    code === "42883" ||
+    msg.includes("report_fuel_stats") ||
+    msg.includes("could not find the function") ||
+    msg.includes("function")
+  ) {
+    return "missing_function";
+  }
+  return "error";
+}
 
 export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   const startISO = range.start.toISOString();
@@ -407,8 +476,9 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     ((wData ?? []) as { id: string; name: string }[]).map((w) => [w.id, w.name])
   );
 
-  const empty = (): FuelReport => ({
+  const empty = (reason: FuelUnavailableReason): FuelReport => ({
     available: false,
+    unavailableReason: reason,
     rows: [],
     vehicleCount: vehicles.length,
     measured: 0,
@@ -417,16 +487,18 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     refillTotalCount: 0,
     refillTotalLiters: 0,
     suspiciousVehicles: 0,
+    unreliableVehicles: 0,
     capacityMissing: 0,
   });
 
-  // 258 bin satır Postgres'te toplulaştırılır. Fonksiyon yoksa (migration 026
-  // uygulanmadıysa) rapor çökmez — "migrasyon bekliyor" boş durumuna düşer.
+  // 280 bin satır Postgres'te toplulaştırılır. Hata hâlinde rapor çökmez ama
+  // SEBEBİ ayırt edilir — "fonksiyon yok" ile "zaman aşımı" farklı sorunlardır
+  // ve yöneticiye farklı şey yaptırırlar (migration çalıştır / aralığı daralt).
   const { data: statData, error } = await supabaseAdmin.rpc("report_fuel_stats", {
     p_from: startISO,
     p_to: endISO,
   });
-  if (error) return empty();
+  if (error) return empty(classifyRpcError(error));
 
   const stats = new Map(
     ((statData ?? []) as FuelStatRow[]).map((s) => [s.vehicle_id, s])
@@ -440,6 +512,31 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     )
   );
   const distByVehicle = new Map(distEntries);
+
+  // ARIZALI SENSÖR TESPİTİ (22.07.2026). Canlı örnek DO-687GX: 18.07'de 7.801
+  // okumanın 1.729'u (%22) %0. Bu bir CAN dropout çukuru DEĞİL — yarı ölü
+  // sensörün sürekli sıfırı; de-glitch onu elemez ve ELEMEMELİ (sürekli sıfır
+  // gerçek bir sinyal olabilir). Ama böyle bir seriden hesaplanan tüketim ve
+  // dolum sayıları anlamsızdır: sıfır serisinin bitişi "dolum" gibi görünür.
+  //
+  // Ölçüm HAM veri üzerinden yapılır (de-glitch öncesi), çünkü soru "sensör
+  // sağlıklı mı" — "temizlikten sonra ne kaldı" değil. Yalnız başlık sayısı
+  // çekilir (head:true), satır taşınmaz.
+  const zeroEntries = await Promise.all(
+    vehicles.map(async (v) => {
+      const s = stats.get(v.id);
+      if (!s || Number(s.sample_count) === 0) return [v.id, 0] as const;
+      const { count } = await supabaseAdmin
+        .from("device_telemetry")
+        .select("id", { count: "exact", head: true })
+        .eq("vehicle_id", v.id)
+        .eq("fuel_level_pct", 0)
+        .gte("recorded_at", startISO)
+        .lte("recorded_at", endISO);
+      return [v.id, count ?? 0] as const;
+    })
+  );
+  const zeroByVehicle = new Map(zeroEntries);
 
   const rows: FuelRow[] = vehicles.map((v) => {
     const cap = v.tank_capacity_l != null ? Number(v.tank_capacity_l) : null;
@@ -469,8 +566,15 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
         suspiciousDropCount: 0,
         suspiciousDropPct: 0,
         suspiciousDropLiters: null,
+        zeroCount: 0,
+        zeroRatio: 0,
+        dataUnreliable: false,
       };
     }
+    const zeroCount = zeroByVehicle.get(v.id) ?? 0;
+    // Payda de-glitch SONRASI örnek sayısı; de-glitch yalnız birkaç V-çukurunu
+    // atar (canlı: 277 → 276), yani oran pratikte ham orana eşit. 1'e kırpılır.
+    const zeroRatio = Math.min(1, zeroCount / Math.max(1, Number(s.sample_count)));
     const first = s.first_pct != null ? Number(s.first_pct) : 0;
     const last = s.last_pct != null ? Number(s.last_pct) : 0;
     const refillPct = Number(s.refill_pct) || 0;
@@ -503,13 +607,20 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
       suspiciousDropCount: Number(s.drop_count) || 0,
       suspiciousDropPct: dropPct,
       suspiciousDropLiters: cap != null ? (dropPct / 100) * cap : null,
+      zeroCount,
+      zeroRatio,
+      dataUnreliable: zeroRatio > UNRELIABLE_ZERO_RATIO,
     };
   });
 
-  // En çok yakan önce (litre biliniyorsa litreye, yoksa yüzdeye göre); verisi
-  // olmayan araçlar en altta.
+  // En çok yakan önce (litre biliniyorsa litreye, yoksa yüzdeye göre).
+  // Sıra: güvenilir veri → güvenilmez sensör → verisi olmayan. Güvenilmez satır
+  // listenin başında durursa "en çok yakan" izlenimi verir, oysa sayısı
+  // gösterilmiyor bile.
+  const tier = (r: FuelRow) => (!r.hasData ? 2 : r.dataUnreliable ? 1 : 0);
   rows.sort((a, b) => {
-    if (a.hasData !== b.hasData) return a.hasData ? -1 : 1;
+    const t = tier(a) - tier(b);
+    if (t !== 0) return t;
     const av = a.consumedLiters ?? a.consumedPct;
     const bv = b.consumedLiters ?? b.consumedPct;
     return bv - av || a.plate.localeCompare(b.plate);
@@ -520,11 +631,18 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   let refillTotalLiters = 0;
   let refillTotalCount = 0;
   let suspiciousVehicles = 0;
+  let unreliableVehicles = 0;
   let measured = 0;
   let capacityMissing = 0;
   for (const r of rows) {
     if (r.hasData) measured++;
     if (r.hasData && r.tankCapacityL == null) capacityMissing++;
+    if (r.dataUnreliable) {
+      // Güvenilmez sensör filo toplamlarına GİRMEZ: satırda gizlediğimiz bir
+      // sayıyı toplamda saymak, gizlemeyi anlamsız kılar ve L/100km'yi bozar.
+      unreliableVehicles++;
+      continue;
+    }
     if (r.consumedLiters != null) {
       totalConsumedLiters += r.consumedLiters;
       if (r.km != null && r.km > 0) kmForConsumed += r.km;
@@ -538,6 +656,7 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
 
   return {
     available: true,
+    unavailableReason: null,
     rows,
     vehicleCount: vehicles.length,
     measured,
@@ -546,6 +665,7 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     refillTotalCount,
     refillTotalLiters,
     suspiciousVehicles,
+    unreliableVehicles,
     capacityMissing,
   };
 }

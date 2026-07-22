@@ -161,6 +161,9 @@ export type Vehicle = {
   vin: string | null;
   // Fleet separation (migration 023) — not null, defaults to 'mavi'.
   fleet: VehicleFleet;
+  // Depo hacmi (litre) — yakıt raporunun % → litre / L100km çevrimi için tek
+  // kaynak. Supabase'de dolu (28 araç 60-80 L); null ise rapor %-bazlı kalır.
+  tank_capacity_l: number | null;
 };
 
 /** Live operational status — derived, never stored. NO green/red. */

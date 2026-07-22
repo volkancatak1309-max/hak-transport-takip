@@ -306,4 +306,7 @@ export const vehicleSchema = z.object({
   // §57a muayene (Pickerl) + sigorta bitiş tarihleri — input type=date "YYYY-MM-DD" verir.
   inspection_due: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "errDate").optional().nullable(),
   insurance_due: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "errDate").optional().nullable(),
+  // Depo hacmi (litre) — yakıt raporunun litre/L100km hesabı için. Boş bırakılabilir
+  // (o araç %-bazlı kalır). Makul üst sınır: ağır ticari araç deposu ~1500 L'yi aşmaz.
+  tank_capacity_l: z.coerce.number().positive("errTank").max(1500, "errTank").optional().nullable(),
 });

@@ -87,6 +87,7 @@ export function AraclarClient({
   const [fleet, setFleet] = useState<VehicleFleet>("mavi");
   const [deviceId, setDeviceId] = useState("");
   const [imei, setImei] = useState("");
+  const [tankCapacity, setTankCapacity] = useState("");
   const [inspectionDue, setInspectionDue] = useState("");
   const [insuranceDue, setInsuranceDue] = useState("");
   const [assignedWorkerId, setAssignedWorkerId] = useState<string>(NO_DRIVER);
@@ -159,6 +160,7 @@ export function AraclarClient({
     setFleet("mavi");
     setDeviceId("");
     setImei("");
+    setTankCapacity("");
     setInspectionDue("");
     setInsuranceDue("");
     setAssignedWorkerId(NO_DRIVER);
@@ -174,6 +176,7 @@ export function AraclarClient({
     setFleet(v.fleet);
     setDeviceId(v.flespi_device_id != null ? String(v.flespi_device_id) : "");
     setImei(v.imei ?? "");
+    setTankCapacity(v.tank_capacity_l != null ? String(v.tank_capacity_l) : "");
     setInspectionDue(v.inspection_due ?? "");
     setInsuranceDue(v.insurance_due ?? "");
     // driver_id DEĞİL: o, vardiyadaki canlı şoföre kayabilir. Form kalıcı
@@ -198,6 +201,8 @@ export function AraclarClient({
         return tm("err_year");
       case "errDevice":
         return tm("err_device");
+      case "errTank":
+        return tm("err_tank");
       case "errDriver":
         return tm("err_driver");
       default:
@@ -221,6 +226,7 @@ export function AraclarClient({
     fd.set("fleet", fleet);
     fd.set("flespi_device_id", deviceId.trim());
     fd.set("imei", imei.trim());
+    fd.set("tank_capacity_l", tankCapacity.trim());
     fd.set("inspection_due", inspectionDue);
     fd.set("insurance_due", insuranceDue);
     fd.set(
@@ -594,6 +600,24 @@ export function AraclarClient({
                   <SelectItem value="bordo">{t("fleet.bordo")}</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Depo hacmi (litre) — yakıt raporunun % → litre / L100km çevriminin
+                tek kaynağı. Boş bırakılırsa o araç raporda %-bazlı kalır. */}
+            <div className="space-y-1.5">
+              <Label htmlFor="veh-tank">{tm("tank_capacity")}</Label>
+              <Input
+                id="veh-tank"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={1500}
+                value={tankCapacity}
+                onChange={(e) => setTankCapacity(e.target.value)}
+                placeholder="70"
+                className="nums h-11"
+              />
+              <p className="text-xs text-text-tertiary">{tm("tank_capacity_hint")}</p>
             </div>
 
             {/* Şoför↔araç eşleşmesinin TEK yazma yolu. Şoför paneli "atanmış

@@ -320,6 +320,236 @@ export async function buildPerformanceReport(
   };
 }
 
+// ── YAKIT RAPORU (fuel) ─────────────────────────────────────────────────────
+//
+// Kaynak: device_telemetry.fuel_level_pct (cihazın gerçek % okuması) +
+// vehicles.tank_capacity_l. Yüzde istatistikleri 258 bin satırlık telemetriden
+// Postgres tarafında toplulaştırılır (report_fuel_stats RPC, migration 026) —
+// satırlar sayfaya taşınmaz. Litre/L100km çevrimi BURADA, kapasiteyle yapılır;
+// kapasitesi olmayan araçta (DO-671GY) yalnız % gösterilir, UYDURMA litre yok.
+
+export type FuelRow = {
+  vehicleId: string;
+  plate: string;
+  driverName: string | null;
+  /** vehicles.tank_capacity_l — null ise litre/L100km hesaplanamaz. */
+  tankCapacityL: number | null;
+  /** RPC bu araç için satır döndü mü (aralıkta yakıt okuması var mı). */
+  hasData: boolean;
+  sampleCount: number;
+  avgPct: number | null;
+  minPct: number | null;
+  maxPct: number | null;
+  refillCount: number;
+  refillPct: number;
+  /** Kapasite biliniyorsa dolum litresi, yoksa null. */
+  refillLiters: number | null;
+  /** Dönemde yakılan yakıt = dolumlar + (ilk − son), 0'a kırpılı (yüzde). */
+  consumedPct: number;
+  consumedLiters: number | null;
+  km: number | null;
+  lPer100Km: number | null;
+  /** Hareketsizken düşüş = olası kaçak/hırsızlık (odometre ilerlemedi). */
+  suspiciousDropCount: number;
+  suspiciousDropPct: number;
+  suspiciousDropLiters: number | null;
+};
+
+export type FuelReport = {
+  /** false → report_fuel_stats fonksiyonu henüz yok (migration 026 bekliyor). */
+  available: boolean;
+  rows: FuelRow[];
+  vehicleCount: number;
+  /** Aralıkta yakıt verisi olan araç sayısı. */
+  measured: number;
+  /** Kapasitesi bilinen araçların toplam tüketimi (litre). */
+  totalConsumedLiters: number;
+  fleetLPer100Km: number | null;
+  refillTotalCount: number;
+  refillTotalLiters: number;
+  /** En az bir şüpheli düşüşü olan araç sayısı. */
+  suspiciousVehicles: number;
+  /** Verisi olan ama kapasitesi girilmemiş araç sayısı (litre gösterilemez). */
+  capacityMissing: number;
+};
+
+type FuelStatRow = {
+  vehicle_id: string;
+  sample_count: number;
+  avg_pct: number | null;
+  min_pct: number | null;
+  max_pct: number | null;
+  first_pct: number | null;
+  last_pct: number | null;
+  refill_count: number;
+  refill_pct: number;
+  drop_count: number;
+  drop_pct: number;
+};
+
+export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
+  const startISO = range.start.toISOString();
+  const endISO = range.end.toISOString();
+
+  const [{ data: vData }, { data: wData }] = await Promise.all([
+    supabaseAdmin
+      .from("vehicles")
+      .select("id, plate, assigned_worker_id, tank_capacity_l"),
+    supabaseAdmin.from("workers").select("id, name").eq("is_active", true),
+  ]);
+  const vehicles = (vData ?? []) as {
+    id: string;
+    plate: string;
+    assigned_worker_id: string | null;
+    tank_capacity_l: number | null;
+  }[];
+  const workerName = new Map(
+    ((wData ?? []) as { id: string; name: string }[]).map((w) => [w.id, w.name])
+  );
+
+  const empty = (): FuelReport => ({
+    available: false,
+    rows: [],
+    vehicleCount: vehicles.length,
+    measured: 0,
+    totalConsumedLiters: 0,
+    fleetLPer100Km: null,
+    refillTotalCount: 0,
+    refillTotalLiters: 0,
+    suspiciousVehicles: 0,
+    capacityMissing: 0,
+  });
+
+  // 258 bin satır Postgres'te toplulaştırılır. Fonksiyon yoksa (migration 026
+  // uygulanmadıysa) rapor çökmez — "migrasyon bekliyor" boş durumuna düşer.
+  const { data: statData, error } = await supabaseAdmin.rpc("report_fuel_stats", {
+    p_from: startISO,
+    p_to: endISO,
+  });
+  if (error) return empty();
+
+  const stats = new Map(
+    ((statData ?? []) as FuelStatRow[]).map((s) => [s.vehicle_id, s])
+  );
+
+  // L/100km için mesafe — mesafe raporuyla AYNI kaynak (odometre uç-noktaları +
+  // km-guard). Araç başına iki indeksli sorgu, telemetri satırı taşımaz.
+  const distEntries = await Promise.all(
+    vehicles.map(
+      async (v) => [v.id, await getVehicleDistanceKm(v.id, startISO, endISO)] as const
+    )
+  );
+  const distByVehicle = new Map(distEntries);
+
+  const rows: FuelRow[] = vehicles.map((v) => {
+    const cap = v.tank_capacity_l != null ? Number(v.tank_capacity_l) : null;
+    const km = distByVehicle.get(v.id) ?? null;
+    const driverName = v.assigned_worker_id
+      ? workerName.get(v.assigned_worker_id) ?? null
+      : null;
+    const s = stats.get(v.id);
+    if (!s || Number(s.sample_count) === 0) {
+      return {
+        vehicleId: v.id,
+        plate: v.plate,
+        driverName,
+        tankCapacityL: cap,
+        hasData: false,
+        sampleCount: 0,
+        avgPct: null,
+        minPct: null,
+        maxPct: null,
+        refillCount: 0,
+        refillPct: 0,
+        refillLiters: null,
+        consumedPct: 0,
+        consumedLiters: null,
+        km,
+        lPer100Km: null,
+        suspiciousDropCount: 0,
+        suspiciousDropPct: 0,
+        suspiciousDropLiters: null,
+      };
+    }
+    const first = s.first_pct != null ? Number(s.first_pct) : 0;
+    const last = s.last_pct != null ? Number(s.last_pct) : 0;
+    const refillPct = Number(s.refill_pct) || 0;
+    const dropPct = Number(s.drop_pct) || 0;
+    // Yakıt dengesi kimliği: yakılan = alınan (dolum) + net düşüş (ilk − son).
+    // Küçük gürültüde negatife düşerse 0'a kırpılır (net dolu bitti demektir).
+    const consumedPct = Math.max(0, refillPct + (first - last));
+    const consumedLiters = cap != null ? (consumedPct / 100) * cap : null;
+    const lPer100Km =
+      consumedLiters != null && km != null && km > 0
+        ? (consumedLiters / km) * 100
+        : null;
+    return {
+      vehicleId: v.id,
+      plate: v.plate,
+      driverName,
+      tankCapacityL: cap,
+      hasData: true,
+      sampleCount: Number(s.sample_count),
+      avgPct: s.avg_pct != null ? Number(s.avg_pct) : null,
+      minPct: s.min_pct != null ? Number(s.min_pct) : null,
+      maxPct: s.max_pct != null ? Number(s.max_pct) : null,
+      refillCount: Number(s.refill_count) || 0,
+      refillPct,
+      refillLiters: cap != null ? (refillPct / 100) * cap : null,
+      consumedPct,
+      consumedLiters,
+      km,
+      lPer100Km,
+      suspiciousDropCount: Number(s.drop_count) || 0,
+      suspiciousDropPct: dropPct,
+      suspiciousDropLiters: cap != null ? (dropPct / 100) * cap : null,
+    };
+  });
+
+  // En çok yakan önce (litre biliniyorsa litreye, yoksa yüzdeye göre); verisi
+  // olmayan araçlar en altta.
+  rows.sort((a, b) => {
+    if (a.hasData !== b.hasData) return a.hasData ? -1 : 1;
+    const av = a.consumedLiters ?? a.consumedPct;
+    const bv = b.consumedLiters ?? b.consumedPct;
+    return bv - av || a.plate.localeCompare(b.plate);
+  });
+
+  let totalConsumedLiters = 0;
+  let kmForConsumed = 0;
+  let refillTotalLiters = 0;
+  let refillTotalCount = 0;
+  let suspiciousVehicles = 0;
+  let measured = 0;
+  let capacityMissing = 0;
+  for (const r of rows) {
+    if (r.hasData) measured++;
+    if (r.hasData && r.tankCapacityL == null) capacityMissing++;
+    if (r.consumedLiters != null) {
+      totalConsumedLiters += r.consumedLiters;
+      if (r.km != null && r.km > 0) kmForConsumed += r.km;
+    }
+    if (r.refillLiters != null) refillTotalLiters += r.refillLiters;
+    refillTotalCount += r.refillCount;
+    if (r.suspiciousDropCount > 0) suspiciousVehicles++;
+  }
+  const fleetLPer100Km =
+    kmForConsumed > 0 ? (totalConsumedLiters / kmForConsumed) * 100 : null;
+
+  return {
+    available: true,
+    rows,
+    vehicleCount: vehicles.length,
+    measured,
+    totalConsumedLiters,
+    fleetLPer100Km,
+    refillTotalCount,
+    refillTotalLiters,
+    suspiciousVehicles,
+    capacityMissing,
+  };
+}
+
 /** Rapor başlığında gösterilecek dönem etiketi (gün sayısı + tarih aralığı). */
 export function rangeLabel(range: DateRange): { from: string; to: string; days: number } {
   return {

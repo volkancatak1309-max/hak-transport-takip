@@ -92,7 +92,7 @@ export type VehicleActionResult = {
 };
 
 const VEHICLE_COLS =
-  "id, plate, fleet, make, model, year, status, flespi_device_id, imei, assigned_worker_id, inspection_due, insurance_due, notes, created_at";
+  "id, plate, fleet, make, model, year, status, flespi_device_id, imei, assigned_worker_id, inspection_due, insurance_due, tank_capacity_l, notes, created_at";
 
 /** All vehicles, raw columns (admin management list). */
 export async function listVehicles(): Promise<Vehicle[]> {
@@ -117,6 +117,7 @@ function parseVehicle(formData: FormData) {
     imei: formData.get("imei") || null,
     inspection_due: formData.get("inspection_due") || null,
     insurance_due: formData.get("insurance_due") || null,
+    tank_capacity_l: formData.get("tank_capacity_l") || null,
   });
 }
 
@@ -223,6 +224,7 @@ export async function createVehicle(
       imei: d.imei ?? null,
       inspection_due: d.inspection_due ?? null,
       insurance_due: d.insurance_due ?? null,
+      tank_capacity_l: d.tank_capacity_l ?? null,
       assigned_worker_id: d.assigned_worker_id ?? null,
     })
     .select("id")
@@ -289,6 +291,7 @@ export async function updateVehicle(
     imei: d.imei ?? null,
     inspection_due: d.inspection_due ?? null,
     insurance_due: d.insurance_due ?? null,
+    tank_capacity_l: d.tank_capacity_l ?? null,
   };
   if (assignmentTouched) update.assigned_worker_id = nextWorkerId;
 

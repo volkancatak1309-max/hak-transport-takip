@@ -8,6 +8,7 @@ import {
   BarChart3,
   Milestone,
   TrendingUp,
+  Fuel,
 } from "lucide-react";
 import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -94,6 +95,14 @@ export default async function ReportsPage() {
               description={t("speed_desc")}
               contains={[t("speed_c1"), t("speed_c2"), t("speed_c3")]}
               meta={t("speed_meta", { n: n(events.count) })}
+            />
+            <ReportCard
+              href="/admin/raporlar/yakit"
+              icon={Fuel}
+              title={t("fuel_title")}
+              description={t("fuel_desc")}
+              contains={[t("fuel_c1"), t("fuel_c2"), t("fuel_c3")]}
+              meta={t("fuel_meta", { n: n(vehicles.count) })}
             />
             <ReportCard
               href="/admin/analiz"

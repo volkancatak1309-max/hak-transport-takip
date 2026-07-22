@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "lint:test-filters": "node scripts/check-test-filters.mjs",
+    "verify:test-hidden": "node scripts/verify-test-hidden.mjs",
     "verify": "npm run lint && npm run lint:test-filters && npm run build"
   },
   "dependencies": {

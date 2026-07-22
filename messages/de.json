@@ -81,6 +81,8 @@
     "stat_idle_hours": "Gesamte Leerlaufzeit",
     "stat_idle_euro": "Geschätzte Kraftstoffverschwendung",
     "idle_estimate_note": "Schätzwert, basiert auf Koeffizienten (0,9 L/Std · 1,65 €/L — anpassbar).",
+    "epoch_note": "Vor dem {date} galten andere Alarmschwellen. Ereigniszahlen von vor und nach diesem Datum sind nicht direkt vergleichbar.",
+    "epoch_trend_blocked": "Kein Trend: Die beiden verglichenen Zeiträume liegen auf verschiedenen Seiten der Schwellenänderung vom {date}. Der Unterschied entsteht durch die Messschwelle, nicht durch das Fahrverhalten.",
     "count_driver": "Fahrer",
     "event": {
       "harsh_acceleration": "Starkes Beschleunigen",

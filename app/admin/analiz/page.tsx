@@ -13,6 +13,11 @@ import {
   type AnalyticsRangeKey,
   type SafetyScoreRow,
 } from "@/lib/analytics";
+import {
+  getLatestConfigEpoch,
+  rangeStartsBeforeEpoch,
+  comparisonCrossesEpoch,
+} from "@/lib/config-epoch";
 import { AnalizClient } from "./AnalizClient";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +36,10 @@ export default async function AnalizPage({
   ) as AnalyticsRangeKey;
   const range = computeAnalyticsRange(rangeKey, sp.baslangic, sp.bitis);
   const prevRange = previousPeriod(range);
+
+  // Alarm eşiklerinin toplu değiştiği an (lib/config-epoch.ts). Tablo yoksa
+  // null döner ve her şey eskisi gibi çalışır.
+  const configEpoch = await getLatestConfigEpoch();
 
   const { vehicles, workers } = await listVehiclesAndWorkers();
   const vehiclesById = new Map(vehicles.map((v) => [v.id, v]));
@@ -73,7 +82,21 @@ export default async function AnalizPage({
   }));
   let prevIdleWaste: { totalMs: number; totalEuro: number } | null = null;
 
-  if (prevRange) {
+  // TREND KAPISI (22.07.2026): önceki dönemle karşılaştırma, alarm eşiklerinin
+  // değiştiği sınırı aşıyorsa trend HESAPLANMAZ. Aşan bir karşılaştırmada her
+  // şoför "düzelmiş" görünürdü — düzelen sürüş değil, cetvel. Önceki dönemin
+  // verisini çekmeye de gerek yok (gereksiz sorgu).
+  const trendBlocked =
+    !!prevRange &&
+    comparisonCrossesEpoch(
+      range.start,
+      range.end,
+      prevRange.start,
+      prevRange.end,
+      configEpoch
+    );
+
+  if (prevRange && !trendBlocked) {
     const prev = await loadPeriod(prevRange);
     const prevSafety = computeSafetyScores(
       prev.events,
@@ -119,6 +142,11 @@ export default async function AnalizPage({
           safetyRows={safetyRowsWithTrend}
           idleWaste={idleWaste}
           prevIdleWaste={prevIdleWaste}
+          /* Eşik sınırı: not yalnız aralık sınırdan ÖNCE başlıyorsa çıkar;
+             trend uyarısı ise karşılaştırma sınırı aştığında. */
+          configEpochISO={configEpoch ? configEpoch.changedAt.toISOString() : null}
+          showEpochNote={rangeStartsBeforeEpoch(range.start, configEpoch)}
+          trendBlocked={trendBlocked}
         />
       </div>
     </DashboardShell>

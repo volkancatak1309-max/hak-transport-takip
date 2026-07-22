@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowDown, ArrowRight, ArrowUp, BarChart3, Fuel } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  BarChart3,
+  Fuel,
+} from "lucide-react";
 import {
   RankingTile,
   StatCard,
@@ -16,7 +23,7 @@ import {
   type RankRow,
 } from "@/components/ui-v2";
 import { Input } from "@/components/ui/input";
-import { formatEur, formatIdleShort, formatNumber } from "@/lib/format";
+import { formatDate, formatEur, formatIdleShort, formatNumber } from "@/lib/format";
 import type {
   AnalyticsRangeKey,
   EventTypeAgg,
@@ -45,6 +52,9 @@ export function AnalizClient({
   safetyRows,
   idleWaste,
   prevIdleWaste,
+  configEpochISO,
+  showEpochNote,
+  trendBlocked,
 }: {
   rangeKey: AnalyticsRangeKey;
   customFrom: string | null;
@@ -53,6 +63,12 @@ export function AnalizClient({
   safetyRows: SafetyScoreRow[];
   idleWaste: IdleWasteSummary;
   prevIdleWaste: { totalMs: number; totalEuro: number } | null;
+  /** Alarm eşiklerinin değiştiği an (ISO) — yoksa null. */
+  configEpochISO: string | null;
+  /** Görüntülenen aralık sınırdan önce başlıyor → açıklama notu göster. */
+  showEpochNote: boolean;
+  /** Karşılaştırma sınırı aşıyor → trend gösterilmedi, sebebini yaz. */
+  trendBlocked: boolean;
 }) {
   const t = useTranslations("analiz");
   const locale = useLocale();
@@ -376,6 +392,23 @@ export function AnalizClient({
           />
         )}
       </div>
+
+      {/* EŞİK SINIRI NOTU — sayfanın en altında, tüm bölümler için geçerli.
+          Alarm eşikleri filoya toplu değiştiğinde bu tarihten önceki olaylar
+          farklı bir cetvelle ölçülmüştür; sayıları karşılaştırmak yanıltır. */}
+      {configEpochISO && (showEpochNote || trendBlocked) && (
+        <div className="flex items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-xs text-accent-gold">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <div className="space-y-1">
+            {showEpochNote && (
+              <p>{t("epoch_note", { date: formatDate(configEpochISO, locale) })}</p>
+            )}
+            {trendBlocked && (
+              <p>{t("epoch_trend_blocked", { date: formatDate(configEpochISO, locale) })}</p>
+            )}
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

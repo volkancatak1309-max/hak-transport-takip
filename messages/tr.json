@@ -81,6 +81,8 @@
     "stat_idle_hours": "Toplam Rölanti Süresi",
     "stat_idle_euro": "Tahmini Yakıt İsrafı",
     "idle_estimate_note": "Tahmini değerdir, katsayılara dayanır (0,9 L/sa · 1,65 €/L — ayarlanabilir).",
+    "epoch_note": "{date} tarihinden önce farklı alarm eşikleri kullanılmıştır. Bu tarihten önceki ve sonraki olay sayıları doğrudan karşılaştırılamaz.",
+    "epoch_trend_blocked": "Trend gösterilmiyor: karşılaştırılan iki dönem {date} tarihindeki alarm eşiği değişikliğinin farklı taraflarında kalıyor. Aradaki fark sürüşten değil, ölçüm eşiğinden kaynaklanır.",
     "count_driver": "şoför",
     "event": {
       "harsh_acceleration": "Ani Hızlanma",

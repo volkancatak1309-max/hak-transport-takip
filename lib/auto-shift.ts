@@ -304,6 +304,8 @@ async function lastActivityMs(vehicleId: string, shift: OpenShift): Promise<numb
 
 /** Telegram'a bağlı tüm adminler (best-effort bildirimler için). */
 async function linkedAdmins(): Promise<{ chat: string; locale: string | null }[]> {
+  // test-visible: alıcı listesi (is_admin). Özne elemesi araç taramasında —
+  // test aracının cihazı yok, otomatik vardiya döngüsüne hiç girmiyor.
   const { data } = await supabaseAdmin
     .from("workers")
     .select("telegram_chat_id, telegram_locale")
@@ -330,6 +332,8 @@ export async function processAutoShifts(
   try {
     // Telemetrisi olabilecek araçlar (auto-end tüm açık oto-vardiyaları kapsar;
     // auto-start ayrıca atanmış şoför + aktif durum ister).
+    // test-visible: YAZMA yolu — otomatik vardiya açma/kapama taraması.
+    // `.or(flespi_device_id/imei not null)` cihazsız test aracını zaten eler.
     let vq = supabaseAdmin
       .from("vehicles")
       .select("id, plate, status, assigned_worker_id, flespi_device_id, imei")

@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { startOfTodayVienna } from "@/lib/format";
 import { computeLiveStatus } from "@/lib/vehicle-ui";
+import { getTestScope, dropTestRows } from "@/lib/test-data";
 import type {
   Vehicle,
   VehicleWithStatus,
@@ -19,16 +20,22 @@ type ActiveShift = Pick<
 export async function listVehiclesForSelect(): Promise<
   Pick<Vehicle, "id" | "plate" | "make" | "model">[]
 > {
+  const scope = await getTestScope();
+  // test-filtered: dropTestRows — test aracı yönetici seçicilerinde çıkmaz.
   const { data } = await supabaseAdmin
     .from("vehicles")
     .select("id, plate, make, model")
     .neq("status", "inactive")
     .order("plate");
-  return (data ?? []) as Pick<Vehicle, "id" | "plate" | "make" | "model">[];
+  const rows = (data ?? []) as Pick<Vehicle, "id" | "plate" | "make" | "model">[];
+  return dropTestRows(rows, (v) => ({ vehicle: v.id }), scope);
 }
 
 /** All vehicles with derived live status + current/assigned driver. */
 export async function listVehiclesWithStatus(): Promise<VehicleWithStatus[]> {
+  const scope = await getTestScope();
+  // test-filtered: dropTestRows — Araçlar sayfasını, yönetici panosunun filo
+  // sayaçlarını ve Operasyon Özeti'ni besleyen ana boğaz.
   const [{ data: vData }, { data: sData }] = await Promise.all([
     supabaseAdmin.from("vehicles").select("*").order("plate"),
     supabaseAdmin
@@ -37,8 +44,16 @@ export async function listVehiclesWithStatus(): Promise<VehicleWithStatus[]> {
       .is("ended_at", null),
   ]);
 
-  const vehicles = (vData ?? []) as Vehicle[];
-  const activeShifts = (sData ?? []) as ActiveShift[];
+  const vehicles = dropTestRows(
+    (vData ?? []) as Vehicle[],
+    (v) => ({ vehicle: v.id }),
+    scope
+  );
+  const activeShifts = dropTestRows(
+    (sData ?? []) as ActiveShift[],
+    (s) => ({ worker: s.worker_id, vehicle: s.vehicle_id }),
+    scope
+  );
 
   const activeByVehicle = new Map<string, ActiveShift>();
   for (const s of activeShifts) {

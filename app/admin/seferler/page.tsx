@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getAssignments } from "@/app/actions/assignments";
 import { AdminAssignmentsClient } from "./AdminAssignmentsClient";
@@ -11,11 +12,16 @@ export default async function AssignmentsPage() {
 
   const assignments = await getAssignments();
 
-  const { data: workers } = await supabaseAdmin
-    .from("workers")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
+  const scope = await getTestScope();
+  const { data: workers } = await withoutTestRows(
+    supabaseAdmin
+      .from("workers")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name"),
+    "id",
+    scope.workerIds
+  );
   const workerOpts = (workers ?? []).map((w) => ({
     id: w.id as string,
     name: w.name as string,

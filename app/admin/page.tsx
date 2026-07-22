@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin, fetchAllRows, chunkIds } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AdminClient } from "./AdminClient";
 import {
@@ -77,6 +78,7 @@ export default async function AdminPage({
   // We fetch entries plainly and attach the worker from a separate query.
   // Uzun aralıklar (ay/özel) 1000 satır tavanını aşabilir; toplamlar ve
   // Excel/PDF dışa aktarımlar eksik kalmasın diye sonuna kadar sayfalanır.
+  const scope = await getTestScope();
   const entriesQuery = fetchAllRows<TimeEntry>((from, to) => {
     let query = supabaseAdmin
       .from("time_entries")
@@ -90,12 +92,20 @@ export default async function AdminPage({
     if (statusFilter === "active") query = query.is("ended_at", null);
     else if (statusFilter === "completed")
       query = query.not("ended_at", "is", null);
+    // Vardiya Kayıtları arşivi + üst toplamlar + CSV/PDF dışa aktarımı hepsi
+    // bu diziden türer; eleme tek noktada.
+    query = withoutTestRows(query, "worker_id", scope.workerIds);
     return query.range(from, to);
   });
 
   const [entriesResult, workersResult, dashboard] = await Promise.all([
     entriesQuery,
-    supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
+    // test-filtered: withoutTestRows — isim haritası + şoför filtresi dropdown'ı.
+    withoutTestRows(
+      supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
+      "id",
+      scope.workerIds
+    ),
     getDashboardData(start.toISOString(), end.toISOString()),
   ]);
 

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getTranslations } from "next-intl/server";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
+import { getTestScope } from "@/lib/test-data";
 import { requireWorker, requireAdmin } from "@/lib/session";
 import { createExpenseSchema } from "@/lib/validation";
 import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storage";
@@ -26,10 +27,14 @@ function revalidateExpenses() {
 }
 
 async function notifyAdminsExpenseSubmitted(p: {
+  workerId: string;
   name: string;
   category: string;
   amount: number;
 }): Promise<void> {
+  const scope = await getTestScope();
+  if (scope.isTestWorker(p.workerId)) return;
+  // test-visible: alıcı listesi (is_admin) — özne yukarıda elendi.
   const { data: admins } = await supabaseAdmin
     .from("workers")
     .select("telegram_chat_id, telegram_locale")
@@ -114,6 +119,7 @@ export async function createExpenseEntry(formData: FormData): Promise<ExpenseRes
   if (error || !inserted) return { ok: false, error: error?.message ?? "insert" };
 
   await notifyAdminsExpenseSubmitted({
+    workerId: session.worker_id!,
     name: session.name ?? "—",
     category: parsed.data.category,
     amount: parsed.data.amount,

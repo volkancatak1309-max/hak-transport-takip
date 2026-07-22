@@ -8,6 +8,7 @@ import {
   scoreMinKmForRange,
 } from "@/lib/analytics";
 import type { DateRange, SafetyScoreRow } from "@/lib/analytics-shared";
+import { getTestScope, dropTestRows, withoutTestRows } from "@/lib/test-data";
 import { workedMs, kmDiff, viennaDayKey } from "@/lib/format";
 import type { TimeEntry } from "@/lib/types";
 
@@ -215,13 +216,18 @@ export async function buildPerformanceReport(
   const base = await loadBase(range);
 
   // Aralıktaki vardiyalar — admin panosuyla aynı alanlar, aynı türetmeler.
-  const { data: entryData } = await supabaseAdmin
-    .from("time_entries")
-    .select(
-      "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count"
-    )
-    .gte("started_at", base.startISO)
-    .lte("started_at", base.endISO);
+  const scope = await getTestScope();
+  const { data: entryData } = await withoutTestRows(
+    supabaseAdmin
+      .from("time_entries")
+      .select(
+        "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count"
+      )
+      .gte("started_at", base.startISO)
+      .lte("started_at", base.endISO),
+    "worker_id",
+    scope.workerIds
+  );
   const entries = (entryData ?? []) as TimeEntry[];
 
   const safety = new Map<string, SafetyScoreRow>(
@@ -460,20 +466,31 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   const startISO = range.start.toISOString();
   const endISO = range.end.toISOString();
 
+  // test-filtered: dropTestRows — yakıt raporu loadBase'i KULLANMIYOR, kendi
+  // araç/şoför evrenini kuruyor. Analiz kapısını filtrelemek buraya yetmez.
+  const scope = await getTestScope();
   const [{ data: vData }, { data: wData }] = await Promise.all([
     supabaseAdmin
       .from("vehicles")
       .select("id, plate, assigned_worker_id, tank_capacity_l"),
     supabaseAdmin.from("workers").select("id, name").eq("is_active", true),
   ]);
-  const vehicles = (vData ?? []) as {
-    id: string;
-    plate: string;
-    assigned_worker_id: string | null;
-    tank_capacity_l: number | null;
-  }[];
+  const vehicles = dropTestRows(
+    (vData ?? []) as {
+      id: string;
+      plate: string;
+      assigned_worker_id: string | null;
+      tank_capacity_l: number | null;
+    }[],
+    (v) => ({ vehicle: v.id }),
+    scope
+  );
   const workerName = new Map(
-    ((wData ?? []) as { id: string; name: string }[]).map((w) => [w.id, w.name])
+    dropTestRows(
+      (wData ?? []) as { id: string; name: string }[],
+      (w) => ({ worker: w.id }),
+      scope
+    ).map((w) => [w.id, w.name])
   );
 
   const empty = (reason: FuelUnavailableReason): FuelReport => ({

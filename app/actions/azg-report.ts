@@ -3,6 +3,7 @@
 import { getTranslations } from "next-intl/server";
 import { listEditedEntryIds } from "@/lib/shift-edit-log";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { requireAdmin } from "@/lib/session";
 import { workedMs, formatDate, formatTime } from "@/lib/format";
 
@@ -109,6 +110,9 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
   const start = new Date(Date.UTC(year, mon - 1, 1));
   const end = new Date(Date.UTC(year, mon, 1));
 
+  // Test vardiyaları resmî AZG raporuna GİRMEZ — bu belge denetime çıkar.
+  const scope = await getTestScope();
+
   // Resmî § 26 AZG raporu: aylık vardiyalar 1000 satır tavanını aşarsa rapor
   // eksik basılır — sorgu sonuna kadar sayfalanır.
   const { data: entriesData, error } = await fetchAllRows<{
@@ -118,15 +122,18 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     ended_at: string | null;
     break_minutes: number | null;
   }>((from, to) =>
-    supabaseAdmin
-      .from("time_entries")
-      .select("id, worker_id, started_at, ended_at, break_minutes")
-      .gte("started_at", start.toISOString())
-      .lt("started_at", end.toISOString())
-      .not("ended_at", "is", null)
-      .order("started_at", { ascending: true })
-      .order("id")
-      .range(from, to)
+    withoutTestRows(
+      supabaseAdmin
+        .from("time_entries")
+        .select("id, worker_id, started_at, ended_at, break_minutes")
+        .gte("started_at", start.toISOString())
+        .lt("started_at", end.toISOString())
+        .not("ended_at", "is", null)
+        .order("started_at", { ascending: true })
+        .order("id"),
+      "worker_id",
+      scope.workerIds
+    ).range(from, to)
   );
 
   if (error) return { ok: false, error: error.message };

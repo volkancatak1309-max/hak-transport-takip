@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { vehicleSchema } from "@/lib/validation";
 import type { Vehicle } from "@/lib/types";
 
@@ -97,10 +98,12 @@ const VEHICLE_COLS =
 /** All vehicles, raw columns (admin management list). */
 export async function listVehicles(): Promise<Vehicle[]> {
   await requireAdmin();
-  const { data } = await supabaseAdmin
-    .from("vehicles")
-    .select(VEHICLE_COLS)
-    .order("plate");
+  const scope = await getTestScope();
+  const { data } = await withoutTestRows(
+    supabaseAdmin.from("vehicles").select(VEHICLE_COLS).order("plate"),
+    "id",
+    scope.vehicleIds
+  );
   return (data ?? []) as Vehicle[];
 }
 
@@ -329,9 +332,11 @@ export async function listVehiclePlates(): Promise<
   { id: string; plate: string }[]
 > {
   await requireAdmin();
-  const { data } = await supabaseAdmin
-    .from("vehicles")
-    .select("id, plate")
-    .order("plate");
+  const scope = await getTestScope();
+  const { data } = await withoutTestRows(
+    supabaseAdmin.from("vehicles").select("id, plate").order("plate"),
+    "id",
+    scope.vehicleIds
+  );
   return (data ?? []) as { id: string; plate: string }[];
 }

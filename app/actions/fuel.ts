@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getTranslations } from "next-intl/server";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
+import { getTestScope, dropTestRows } from "@/lib/test-data";
 import { requireWorker, requireAdmin } from "@/lib/session";
 import { createFuelSchema } from "@/lib/validation";
 import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storage";
@@ -31,6 +32,9 @@ async function notifyAdminsFuelSubmitted(p: {
   liters: number;
   cost: number;
 }): Promise<void> {
+  const scope = await getTestScope();
+  if (scope.isTestPlate(p.plate)) return;
+  // test-visible: alıcı listesi (is_admin) — özne yukarıda elendi.
   const { data: admins } = await supabaseAdmin
     .from("workers")
     .select("telegram_chat_id, telegram_locale")
@@ -279,7 +283,10 @@ export async function generateCO2Report(month: string): Promise<CO2Result> {
       .order("id")
       .range(from, to)
   );
-  const rows = data;
+  // fuel_entries araca vehicle_id ile DEĞİL, vehicle_plate TEXT'i ile bağlı
+  // (FK yok) → eleme plaka üzerinden yapılmak zorunda.
+  const scope = await getTestScope();
+  const rows = dropTestRows(data, (r) => ({ plate: r.vehicle_plate }), scope);
 
   const byPlate = new Map<
     string,

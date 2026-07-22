@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { WorkersClient } from "./WorkersClient";
 import { startOfMonthVienna, workedMs } from "@/lib/format";
@@ -30,22 +31,35 @@ export default async function WorkersPage() {
   >;
   // Aylık vardiyalar 26-28 araçta 1000 satır tavanına dayanır; "Bu Ay" saat
   // toplamları ve "Son Vardiya" eksik hesaplanmasın diye sonuna kadar okunur.
+  const scope = await getTestScope();
   const [workersResult, entriesResult, vehiclesResult] = await Promise.all([
-    supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
-    fetchAllRows<MonthEntry>((from, to) =>
-      supabaseAdmin
-        .from("time_entries")
-        .select("worker_id, started_at, ended_at, break_minutes")
-        .gte("started_at", monthStart.toISOString())
-        .order("id")
-        .range(from, to)
+    // test-filtered: withoutTestRows — Çalışanlar listesinin ana giriş noktası.
+    withoutTestRows(
+      supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
+      "id",
+      scope.workerIds
     ),
-    supabaseAdmin
-      .from("vehicles")
-      .select("plate, assigned_worker_id")
-      .not("assigned_worker_id", "is", null)
-      .neq("status", "inactive")
-      .order("plate"),
+    fetchAllRows<MonthEntry>((from, to) =>
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select("worker_id, started_at, ended_at, break_minutes")
+          .gte("started_at", monthStart.toISOString())
+          .order("id"),
+        "worker_id",
+        scope.workerIds
+      ).range(from, to)
+    ),
+    withoutTestRows(
+      supabaseAdmin
+        .from("vehicles")
+        .select("plate, assigned_worker_id")
+        .not("assigned_worker_id", "is", null)
+        .neq("status", "inactive")
+        .order("plate"),
+      "id",
+      scope.vehicleIds
+    ),
   ]);
 
   const workers = (workersResult.data ?? []) as WorkerPublic[];

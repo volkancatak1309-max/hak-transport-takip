@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { getFleetDtc } from "@/lib/admin-dashboard";
@@ -15,12 +16,17 @@ export default async function AraclarPage() {
   // Pasifler de listelenir (is_active filtresi YOK): pasifleştirme atamayı
   // temizlemiyor, filtrelenirse o araç formda "Şoför yok" görünür ve yönetici
   // atamayı temizlediğini sanıp aslında ex-çalışanı geri yazar.
+  const scope = await getTestScope();
   const [vehicles, driversResult, dtc] = await Promise.all([
     listVehiclesWithStatus(),
-    supabaseAdmin
-      .from("workers")
-      .select("id, name, is_active")
-      .order("name"),
+    withoutTestRows(
+      supabaseAdmin
+        .from("workers")
+        .select("id, name, is_active")
+        .order("name"),
+      "id",
+      scope.workerIds
+    ),
     // Filo arıza özeti — 22.07.2026'da yönetici panosundan buraya taşındı.
     // Arıza aracın özelliğidir; panoda sayfanın ilk 420 px'ini işgal ediyordu.
     getFleetDtc(),

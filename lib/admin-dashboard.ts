@@ -9,6 +9,7 @@ import {
 } from "@/lib/format";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { listFleetActiveDtc, listLatestVehiclePositions } from "@/lib/telemetry";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import type { TimeEntry, Worker, VehicleLiveStatus } from "@/lib/types";
 
 const NINE_HOURS_MS = 9 * 60 * 60 * 1000;
@@ -215,6 +216,11 @@ export async function getDashboardData(
   const perfStart = addCalendarDaysVienna(todayStart, -(PERF_WINDOW_DAYS - 1));
   const perfEnd = endOfTodayVienna();
 
+  // Test kayıtları (migration 028) panonun HİÇBİR bölümünde görünmez: roster,
+  // Operasyon Özeti, Dikkat/Aksiyon ve Kapanmamış Vardiyalar hepsi aşağıdaki
+  // dizilerden türediği için eleme burada bir kez yapılır.
+  const scope = await getTestScope();
+
   const [
     todayRes,
     rangeRes,
@@ -227,52 +233,75 @@ export async function getDashboardData(
     positions,
     dtcRows,
   ] = await Promise.all([
-    supabaseAdmin
-      .from("time_entries")
-      .select(ENTRY_COLS)
-      .gte("started_at", todayStart.toISOString()),
+    withoutTestRows(
+      supabaseAdmin
+        .from("time_entries")
+        .select(ENTRY_COLS)
+        .gte("started_at", todayStart.toISOString()),
+      "worker_id",
+      scope.workerIds
+    ),
     // Uzun aralıklar 1000 satır tavanını aşabilir → performans sıralaması ve
     // aksiyon kalemleri eksik hesaplanmasın diye sonuna kadar sayfalanır.
     fetchAllRows<LiteEntry>((from, to) =>
-      supabaseAdmin
-        .from("time_entries")
-        .select(ENTRY_COLS)
-        .gte("started_at", rangeStart)
-        .lte("started_at", rangeEnd)
-        .order("id")
-        .range(from, to)
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select(ENTRY_COLS)
+          .gte("started_at", rangeStart)
+          .lte("started_at", rangeEnd)
+          .order("id"),
+        "worker_id",
+        scope.workerIds
+      ).range(from, to)
     ),
     // Performans penceresi — tablo aralığından ayrı, sabit son 7 gün.
     fetchAllRows<LiteEntry>((from, to) =>
-      supabaseAdmin
-        .from("time_entries")
-        .select(ENTRY_COLS)
-        .gte("started_at", perfStart.toISOString())
-        .lte("started_at", perfEnd.toISOString())
-        .order("id")
-        .range(from, to)
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select(ENTRY_COLS)
+          .gte("started_at", perfStart.toISOString())
+          .lte("started_at", perfEnd.toISOString())
+          .order("id"),
+        "worker_id",
+        scope.workerIds
+      ).range(from, to)
     ),
     // Single source of truth for live status: EVERY open shift (ended_at IS
     // NULL), independent of the today/range window. The top summary, the
     // active-shift card and the table all derive their "active / on break /
     // in field" numbers from this one set so they can never disagree.
-    supabaseAdmin
-      .from("time_entries")
-      .select("id, worker_id, vehicle_id, started_at, break_started_at")
-      .is("ended_at", null),
+    withoutTestRows(
+      supabaseAdmin
+        .from("time_entries")
+        .select("id, worker_id, vehicle_id, started_at, break_started_at")
+        .is("ended_at", null),
+      "worker_id",
+      scope.workerIds
+    ),
     listVehiclesWithStatus(),
     // is_active/is_admin de okunur: Günün Panosu satırları AKTİF ŞOFÖRLERDEN
     // kurulur (yönetici hesapları ve ayrılmış personel panoyu şişirmemeli).
-    supabaseAdmin.from("workers").select("id, name, is_active, is_admin"),
+    // test-filtered: withoutTestRows — Günün Panosu roster'ının kaynağı.
+    withoutTestRows(
+      supabaseAdmin.from("workers").select("id, name, is_active, is_admin"),
+      "id",
+      scope.workerIds
+    ),
     // Ehliyet uyarısı (migration 025). İsim haritasından AYRI sorgu: migration
     // uygulanmamış bir ortamda license_expiry kolonu yoktur → sorgu error döner,
     // data null → yalnız ehliyet uyarıları boş kalır, dashboard'ın geri kalanı
     // (isimler dahil) etkilenmez. Yalnız çalışan personel uyarı üretir.
-    supabaseAdmin
-      .from("workers")
-      .select("id, name, license_expiry")
-      .eq("is_active", true)
-      .not("license_expiry", "is", null),
+    withoutTestRows(
+      supabaseAdmin
+        .from("workers")
+        .select("id, name, license_expiry")
+        .eq("is_active", true)
+        .not("license_expiry", "is", null),
+      "id",
+      scope.workerIds
+    ),
     // Unpaid vehicle penalties (Strafe) → surfaced as action items.
     supabaseAdmin
       .from("vehicle_penalties")

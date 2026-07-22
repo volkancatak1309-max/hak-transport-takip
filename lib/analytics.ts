@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, dropTestRows } from "@/lib/test-data";
 import {
   startOfTodayVienna,
   endOfTodayVienna,
@@ -128,13 +129,24 @@ export async function listVehiclesAndWorkers(): Promise<{
   vehicles: VehicleLite[];
   workers: WorkerLite[];
 }> {
+  const scope = await getTestScope();
+  // test-filtered: dropTestRows — Analiz sayfasının ve Hız/Mesafe/Performans
+  // raporlarının ORTAK araç/şoför evreni (lib/reports.ts loadBase buradan okur).
   const [{ data: vData }, { data: wData }] = await Promise.all([
     supabaseAdmin.from("vehicles").select("id, plate, assigned_worker_id"),
     supabaseAdmin.from("workers").select("id, name").eq("is_active", true),
   ]);
   return {
-    vehicles: (vData ?? []) as VehicleLite[],
-    workers: (wData ?? []) as WorkerLite[],
+    vehicles: dropTestRows(
+      (vData ?? []) as VehicleLite[],
+      (v) => ({ vehicle: v.id }),
+      scope
+    ),
+    workers: dropTestRows(
+      (wData ?? []) as WorkerLite[],
+      (w) => ({ worker: w.id }),
+      scope
+    ),
   };
 }
 

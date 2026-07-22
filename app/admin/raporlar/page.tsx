@@ -15,6 +15,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { PageHeader } from "@/components/ui-v2";
 import { ReportCard } from "@/components/admin/ReportCard";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 
 export const dynamic = "force-dynamic";
 
@@ -36,14 +37,23 @@ export default async function ReportsPage() {
 
   // Kart altyazılarındaki hacimler — head:true ile yalnız sayım döner (satır
   // taşınmaz). Sayım başarısızsa kart yine görünür, yalnız hacim "—" olur.
+  const scope = await getTestScope();
   const [events, idle, shifts, vehicles] = await Promise.all([
     supabaseAdmin.from("vehicle_events").select("id", { count: "exact", head: true }),
     supabaseAdmin.from("idle_episodes").select("id", { count: "exact", head: true }),
-    supabaseAdmin.from("time_entries").select("id", { count: "exact", head: true }),
-    supabaseAdmin
-      .from("vehicles")
-      .select("id", { count: "exact", head: true })
-      .or("flespi_device_id.not.is.null,imei.not.is.null"),
+    withoutTestRows(
+      supabaseAdmin.from("time_entries").select("id", { count: "exact", head: true }),
+      "worker_id",
+      scope.workerIds
+    ),
+    withoutTestRows(
+      supabaseAdmin
+        .from("vehicles")
+        .select("id", { count: "exact", head: true })
+        .or("flespi_device_id.not.is.null,imei.not.is.null"),
+      "id",
+      scope.vehicleIds
+    ),
   ]);
   const n = (c: number | null) => (c === null ? "—" : c.toLocaleString("tr-TR"));
 

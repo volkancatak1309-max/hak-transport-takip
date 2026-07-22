@@ -21,6 +21,7 @@ import { logShiftEdit, listShiftEdits } from "@/lib/shift-edit-log";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { resolveStartKm, resolveEndKm } from "@/lib/auto-shift";
 import { hasShiftToday } from "@/lib/shift-day";
+import { getTestScope } from "@/lib/test-data";
 import { sendTelegramMessage } from "@/lib/telegram";
 import {
   shiftSummaryMessage,
@@ -39,10 +40,18 @@ export type ShiftResult = {
  * runs after the shift row is committed and never blocks or fails the action.
  */
 async function notifyAdminsShiftStarted(
+  workerId: string,
   workerName: string,
   plate: string,
   startedIso: string
 ): Promise<void> {
+  // Test vardiyası yöneticilere bildirim ATMAZ. Telegram, panelden bağımsız
+  // ikinci bir yüzey — burada elemezsek test hesabı ekranlarda gizliyken
+  // herkesin telefonuna düşer.
+  const scope = await getTestScope();
+  if (scope.isTestWorker(workerId)) return;
+
+  // test-visible: alıcı listesi (is_admin) — özne yukarıda elendi.
   const { data: admins } = await supabaseAdmin
     .from("workers")
     .select("telegram_chat_id, telegram_locale")
@@ -221,6 +230,7 @@ export async function startShiftManualAction(): Promise<ShiftResult> {
   }
 
   await notifyAdminsShiftStarted(
+    session.worker_id!,
     session.name ?? "—",
     (veh.plate as string) ?? "—",
     startedIso

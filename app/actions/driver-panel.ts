@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope } from "@/lib/test-data";
 import { requireWorker } from "@/lib/session";
 import { uploadReceipt, signedReceiptUrls } from "@/lib/storage";
 import { recountShiftPackages } from "@/lib/shift-packages";
@@ -288,7 +289,11 @@ export async function reportProblemAction(input: {
 
   // Best-effort Telegram → adminler; bildirim hatası kaydı etkilemez.
   try {
+    // Test şoförünün bildirimi yöneticilerin telefonuna DÜŞMEZ.
+    const scope = await getTestScope();
+    if (scope.isTestWorker(session.worker_id)) return { ok: true };
     const plate = active?.plate ?? session.plate ?? "—";
+    // test-visible: alıcı listesi (is_admin) — özne yukarıda elendi.
     const { data: admins } = await supabaseAdmin
       .from("workers")
       .select("telegram_chat_id, telegram_locale")

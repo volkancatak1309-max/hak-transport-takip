@@ -37,6 +37,10 @@ const FIRST_WINDOW_MS = 60 * 60 * 1000; // 1 h
 type VehRow = { id: string; plate: string; flespi_device_id: number };
 
 async function runSync() {
+  // test-visible: YAZMA yolu — cron'un telemetri çekeceği cihazlı araçlar.
+  // Test aracının flespi_device_id'si NULL, yani aşağıdaki filtre onu zaten
+  // dışarıda bırakıyor. Eleme koymak ileride gerçek bir araç test işaretlenirse
+  // o aracın telemetrisini sessizce durdururdu.
   const { data, error } = await supabaseAdmin
     .from("vehicles")
     .select("id, plate, flespi_device_id")

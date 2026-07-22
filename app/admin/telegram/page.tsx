@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getWebhookInfo } from "@/lib/telegram";
 import { TelegramAdminClient } from "./TelegramAdminClient";
@@ -9,11 +10,16 @@ export const dynamic = "force-dynamic";
 export default async function TelegramAdminPage() {
   const session = await requireAdmin();
 
-  const { data: connectedRaw } = await supabaseAdmin
-    .from("workers")
-    .select("id, name, telegram_username, telegram_linked_at, telegram_chat_id")
-    .not("telegram_chat_id", "is", null)
-    .order("telegram_linked_at", { ascending: false });
+  const scope = await getTestScope();
+  const { data: connectedRaw } = await withoutTestRows(
+    supabaseAdmin
+      .from("workers")
+      .select("id, name, telegram_username, telegram_linked_at, telegram_chat_id")
+      .not("telegram_chat_id", "is", null)
+      .order("telegram_linked_at", { ascending: false }),
+    "id",
+    scope.workerIds
+  );
 
   const connected = (connectedRaw ?? []).map((w) => ({
     id: w.id as string,

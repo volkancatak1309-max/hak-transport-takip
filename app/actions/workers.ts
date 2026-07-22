@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { requireAdmin } from "@/lib/session";
 import {
   createWorkerSchema,
@@ -19,6 +20,9 @@ function normalizePhone(raw: string): string {
 
 /** Next free 4-digit Personalnummer (0001, 0002, …) based on the current max. */
 async function nextEmployeeNumber(): Promise<string> {
+  // test-visible: test hesabının employee_number'ı NULL (migration 028), yani
+  // aşağıdaki `not null` filtresi onu zaten dışarıda bırakıyor. Filtre koymak
+  // sonucu değiştirmez, yalnız yanıltıcı olurdu.
   const { data } = await supabaseAdmin
     .from("workers")
     .select("employee_number")
@@ -164,11 +168,16 @@ export async function getWorkerVehicleOptions(workerId: string): Promise<{
   currentVehicleId: string | null;
 }> {
   await requireAdmin();
-  const { data } = await supabaseAdmin
-    .from("vehicles")
-    .select("id, plate, assigned_worker_id")
-    .neq("status", "inactive")
-    .order("plate");
+  const scope = await getTestScope();
+  const { data } = await withoutTestRows(
+    supabaseAdmin
+      .from("vehicles")
+      .select("id, plate, assigned_worker_id")
+      .neq("status", "inactive")
+      .order("plate"),
+    "id",
+    scope.vehicleIds
+  );
   const rows = (data ?? []) as {
     id: string;
     plate: string;

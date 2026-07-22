@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { safeEqual } from "@/lib/secure-compare";
 import { sendTelegramMessage } from "@/lib/telegram";
 import {
@@ -49,12 +50,20 @@ async function runWatchdog() {
   const now = Date.now();
   const openCutoff = new Date(now - ASK_AFTER_MS).toISOString();
 
+  // Test vardiyası bekçiye takılmaz: açık unutulan bir test vardiyası aksi
+  // hâlde her saat başı yöneticilere "hâlâ sahada mı?" alarmı ürettirirdi.
+  const scope = await getTestScope();
+
   // Open shifts that have already crossed the "ask" threshold.
-  const { data: shiftRows } = await supabaseAdmin
-    .from("time_entries")
-    .select("id, worker_id, started_at, plate, still_active_asked_at")
-    .is("ended_at", null)
-    .lte("started_at", openCutoff);
+  const { data: shiftRows } = await withoutTestRows(
+    supabaseAdmin
+      .from("time_entries")
+      .select("id, worker_id, started_at, plate, still_active_asked_at")
+      .is("ended_at", null)
+      .lte("started_at", openCutoff),
+    "worker_id",
+    scope.workerIds
+  );
 
   const shifts = shiftRows ?? [];
   // Only those we haven't asked about within the last hour.
@@ -76,6 +85,8 @@ async function runWatchdog() {
   );
 
   // Admins (fallback for unreachable drivers).
+  // test-visible: alıcı listesi (is_admin) — test vardiyaları `shifts`
+  // sorgusunda zaten elendi, yani buraya hiç gelmiyorlar.
   const { data: adminRows } = await supabaseAdmin
     .from("workers")
     .select("telegram_chat_id, telegram_locale")

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getTranslations } from "next-intl/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope } from "@/lib/test-data";
 import { requireAdmin } from "@/lib/session";
 import { createMaintenanceSchema } from "@/lib/validation";
 import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storage";
@@ -160,6 +161,9 @@ export async function triggerMaintenanceReminder(
   // Only fire on the entry that crosses the threshold.
   if (!(prevKm < threshold && currentKm >= threshold)) return;
 
+  const scope = await getTestScope();
+  if (scope.isTestPlate(plate)) return;
+  // test-visible: alıcı listesi (is_admin) — özne yukarıda elendi.
   const { data: admins } = await supabaseAdmin
     .from("workers")
     .select("telegram_chat_id, telegram_locale")

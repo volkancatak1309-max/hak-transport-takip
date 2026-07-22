@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { LiveTrackingClient } from "./LiveTrackingClient";
 import { listLatestVehiclePositions } from "@/lib/telemetry";
@@ -23,10 +24,16 @@ export default async function HaritaPage() {
   const session = await requireAdmin();
 
   // 1) All active shifts (ended_at IS NULL)
-  const { data: shiftsData, error: shiftsErr } = await supabaseAdmin
-    .from("time_entries")
-    .select("id, started_at, worker_id, vehicle_id")
-    .is("ended_at", null);
+  const scope = await getTestScope();
+  // Test şoförünün açık vardiyası haritanın "Şoförler (N)" sekmesine düşmesin.
+  const { data: shiftsData, error: shiftsErr } = await withoutTestRows(
+    supabaseAdmin
+      .from("time_entries")
+      .select("id, started_at, worker_id, vehicle_id")
+      .is("ended_at", null),
+    "worker_id",
+    scope.workerIds
+  );
   const shifts = (shiftsData ?? []) as ShiftRow[];
 
   const workerIds = [...new Set(shifts.map((s) => s.worker_id))];

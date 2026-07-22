@@ -8,6 +8,7 @@ import type {
   IdleReading,
 } from "@/lib/flespi";
 import { IDLE_SPEED_THRESHOLD_KMH, MAX_GAP_MS } from "@/lib/metrics-idle";
+import { getTestScope, dropTestRows } from "@/lib/test-data";
 import type { ActiveVehicle, VehicleFleet } from "@/lib/types";
 
 /**
@@ -246,7 +247,12 @@ export async function listRecentEvents(
     )
     .order("occurred_at", { ascending: false })
     .limit(limit);
-  const rows = (data ?? []) as VehicleEventRow[];
+  const scope = await getTestScope();
+  const rows = dropTestRows(
+    (data ?? []) as VehicleEventRow[],
+    (r) => ({ vehicle: r.vehicle_id }),
+    scope
+  );
   if (rows.length === 0) return [];
 
   const ids = [...new Set(rows.map((r) => r.vehicle_id))];
@@ -281,7 +287,8 @@ export async function listEventsInRange(
       .order("id")
       .range(from, to)
   );
-  const rows = data;
+  const scope = await getTestScope();
+  const rows = dropTestRows(data, (r) => ({ vehicle: r.vehicle_id }), scope);
   if (rows.length === 0) return [];
 
   const ids = [...new Set(rows.map((r) => r.vehicle_id))];
@@ -474,7 +481,8 @@ export async function listIdleEpisodesInRange(
       .order("id")
       .range(from, to)
   );
-  const rows = data;
+  const scope = await getTestScope();
+  const rows = dropTestRows(data, (r) => ({ vehicle: r.vehicle_id }), scope);
   if (rows.length === 0) return [];
 
   const ids = [...new Set(rows.map((r) => r.vehicle_id))];
@@ -593,15 +601,23 @@ export async function listLatestVehiclePositions(): Promise<ActiveVehicle[]> {
   // "Cihazlı araç" = flespi_device_id VEYA imei dolu — auto-shift ile aynı
   // tanım. IMEI-only araçlar stream ingest üzerinden telemetri üretir
   // (flespi_device_id NULL kalır), onları elemek haritadan düşürürdü.
+  const scope = await getTestScope();
+  // test-filtered: dropTestRows — harita araç katmanı + panonun "konum
+  // göndermiyor" uyarısı. Test aracının cihazı yok, yani bugün zaten bu
+  // sorgudan düşüyor; filtre ileride cihaz eklenirse sızmasın diye.
   const { data: vData } = await supabaseAdmin
     .from("vehicles")
     .select("id, plate, fleet")
     .or("flespi_device_id.not.is.null,imei.not.is.null");
-  const vehicles = (vData ?? []) as {
-    id: string;
-    plate: string;
-    fleet: VehicleFleet;
-  }[];
+  const vehicles = dropTestRows(
+    (vData ?? []) as {
+      id: string;
+      plate: string;
+      fleet: VehicleFleet;
+    }[],
+    (v) => ({ vehicle: v.id }),
+    scope
+  );
   if (vehicles.length === 0) return [];
 
   const out = await Promise.all(

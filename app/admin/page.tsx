@@ -80,6 +80,8 @@ export default async function AdminPage({
   // Excel/PDF dışa aktarımlar eksik kalmasın diye sonuna kadar sayfalanır.
   const scope = await getTestScope();
   const entriesQuery = fetchAllRows<TimeEntry>((from, to) => {
+    // test-filtered: withoutTestRows aşağıda, koşullu filtrelerden SONRA
+    // uygulanıyor (zincirin sonunda `query = withoutTestRows(...)`).
     let query = supabaseAdmin
       .from("time_entries")
       .select("*")
@@ -202,11 +204,15 @@ export default async function AdminPage({
   // kaybolması onu telafi aracı olmaktan çıkarırdı (canlı örnek: dünden kalmış
   // 27 saatlik kayıt). Süre sunucuda hesaplanır — istemcide Date.now() ile
   // hesaplansaydı ilk render'da hidrasyon uyuşmazlığı üretirdi.
-  const { data: openShiftData } = await supabaseAdmin
-    .from("time_entries")
-    .select("id, worker_id, plate, started_at")
-    .is("ended_at", null)
-    .order("started_at", { ascending: true });
+  const { data: openShiftData } = await withoutTestRows(
+    supabaseAdmin
+      .from("time_entries")
+      .select("id, worker_id, plate, started_at")
+      .is("ended_at", null)
+      .order("started_at", { ascending: true }),
+    "worker_id",
+    scope.workerIds
+  );
 
   const nowMs = Date.now();
   const todayStartMs = startOfTodayVienna().getTime();

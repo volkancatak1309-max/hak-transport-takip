@@ -348,6 +348,10 @@ export async function processAutoShifts(
     if (vehicles.length === 0) return summary;
 
     // Tüm açık vardiyalar tek sorguda.
+    // test-visible: YAZMA yolu. Bu harita "bu araçta/şoförde zaten açık vardiya
+    // var mı?" guard'ını besliyor; test satırını elemek motoru İKİNCİ bir
+    // vardiya açmaya iter. Test aracının cihazı yok, zaten yukarıdaki araç
+    // taramasına hiç girmiyor.
     const { data: openData, error: openErr } = await supabaseAdmin
       .from("time_entries")
       .select(

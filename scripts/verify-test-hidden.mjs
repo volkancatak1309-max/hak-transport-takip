@@ -52,7 +52,13 @@ console.log(`Test araç kaydı: ${TEST_PLATES.length ? TEST_PLATES.join(", ") : 
 
 const W = [TEST_WORKER];
 const V = TEST_VEHICLES;
-const has = (d, id) => (d ?? []).some(r => (r.id ?? r.worker_id ?? r.vehicle_id) === id);
+// KİMLİK ALANI AÇIK VERİLİR. Önceki hâli `r.id ?? r.worker_id` sırasıyla
+// bakıyordu; "id, worker_id" seçen time_entries sorgularında satırın KENDİ
+// id'sini şoför id'siyle karşılaştırıp hiç eşleşmiyor, sonucu sessizce
+// "sınanamadı" gösteriyordu. Sessiz false-negative = değersiz doğrulama.
+const hasW = (d, id) => (d ?? []).some(r => r.worker_id === id);
+const hasV = (d, id) => (d ?? []).some(r => (r.vehicle_id ?? r.id) === id);
+const has = (d, id) => (d ?? []).some(r => r.id === id);
 const hasPlate = (d, p) => (d ?? []).some(r => (r.plate ?? r.vehicle_plate) === p);
 
 // 1) Günün Panosu roster — lib/admin-dashboard.ts:266
@@ -65,26 +71,26 @@ const hasPlate = (d, p) => (d ?? []).some(r => (r.plate ?? r.vehicle_plate) === 
 {
   const q = () => sb.from("time_entries").select("id, worker_id, vehicle_id").is("ended_at", null);
   const b = await q(); const a = await without(q(), "worker_id", W);
-  check("2. 5'li şerit (açık vardiyalar)", "time_entries", has(b.data, TEST_WORKER), has(a.data, TEST_WORKER));
+  check("2. 5'li şerit (açık vardiyalar)", "time_entries", hasW(b.data, TEST_WORKER), hasW(a.data, TEST_WORKER));
 }
 // 3) Harita — app/admin/harita/page.tsx:27
 {
   const q = () => sb.from("time_entries").select("id, worker_id, vehicle_id").is("ended_at", null);
   const b = await q(); const a = await without(q(), "worker_id", W);
-  check("3. Harita (Şoförler sekmesi)", "time_entries", has(b.data, TEST_WORKER), has(a.data, TEST_WORKER));
+  check("3. Harita (Şoförler sekmesi)", "time_entries", hasW(b.data, TEST_WORKER), hasW(a.data, TEST_WORKER));
 }
 // 3b) Harita araç katmanı — lib/telemetry.ts:597
 {
   const q = () => sb.from("vehicles").select("id, plate, fleet").or("flespi_device_id.not.is.null,imei.not.is.null");
   const b = await q();
   const a = { data: (b.data ?? []).filter(v => !V.includes(v.id)) };
-  check("3b. Harita (araç katmanı)", "vehicles+cihaz", V.some(id => has(b.data, id)), V.some(id => has(a.data, id)));
+  check("3b. Harita (araç katmanı)", "vehicles+cihaz", V.some(id => hasV(b.data, id)), V.some(id => hasV(a.data, id)));
 }
 // 4) Araçlar sayfası — lib/vehicles.ts:33
 {
   const b = await sb.from("vehicles").select("id, plate").order("plate");
   const a = { data: (b.data ?? []).filter(v => !V.includes(v.id)) };
-  check("4. Araçlar sayfası", "vehicles", V.some(id => has(b.data, id)), V.some(id => has(a.data, id)));
+  check("4. Araçlar sayfası", "vehicles", V.some(id => hasV(b.data, id)), V.some(id => hasV(a.data, id)));
 }
 // 4b) Araçlar — şoför dropdown'ı — app/admin/araclar/page.tsx:21
 {
@@ -108,13 +114,13 @@ const hasPlate = (d, p) => (d ?? []).some(r => (r.plate ?? r.vehicle_plate) === 
 {
   const q = () => sb.from("time_entries").select("id, worker_id").is("ended_at", null);
   const b = await q(); const a = await without(q(), "worker_id", W);
-  check("7. Kapanmamış Vardiyalar / Ops Özeti", "time_entries", has(b.data, TEST_WORKER), has(a.data, TEST_WORKER));
+  check("7. Kapanmamış Vardiyalar / Ops Özeti", "time_entries", hasW(b.data, TEST_WORKER), hasW(a.data, TEST_WORKER));
 }
 // 8) Vardiya Kayıtları arşivi — app/admin/page.tsx:80
 {
   const q = () => sb.from("time_entries").select("id, worker_id").gte("started_at", "2026-01-01");
   const b = await q(); const a = await without(q(), "worker_id", W);
-  check("8. Vardiya Kayıtları arşivi", "time_entries", has(b.data, TEST_WORKER), has(a.data, TEST_WORKER));
+  check("8. Vardiya Kayıtları arşivi", "time_entries", hasW(b.data, TEST_WORKER), hasW(a.data, TEST_WORKER));
 }
 // 9) Analiz (güvenlik skoru / rölanti / olay tabloları) — lib/analytics.ts:132-133
 {
@@ -123,13 +129,13 @@ const hasPlate = (d, p) => (d ?? []).some(r => (r.plate ?? r.vehicle_plate) === 
   check("9. Analiz (şoför evreni)", "workers", has(bw.data, TEST_WORKER), has(aw.data, TEST_WORKER));
   const bv = await sb.from("vehicles").select("id, plate, assigned_worker_id");
   const av = { data: (bv.data ?? []).filter(v => !V.includes(v.id)) };
-  check("9b. Analiz (araç evreni)", "vehicles", V.some(id => has(bv.data, id)), V.some(id => has(av.data, id)));
+  check("9b. Analiz (araç evreni)", "vehicles", V.some(id => hasV(bv.data, id)), V.some(id => hasV(av.data, id)));
 }
 // 10) Raporlar — yakıt (KENDİ sorgusu, lib/reports.ts:465-467)
 {
   const bv = await sb.from("vehicles").select("id, plate, tank_capacity_l");
   const av = { data: (bv.data ?? []).filter(v => !V.includes(v.id)) };
-  check("10. Yakıt raporu (araç)", "vehicles", V.some(id => has(bv.data, id)), V.some(id => has(av.data, id)));
+  check("10. Yakıt raporu (araç)", "vehicles", V.some(id => hasV(bv.data, id)), V.some(id => hasV(av.data, id)));
   const bw = await sb.from("workers").select("id, name").eq("is_active", true);
   const aw = await without(sb.from("workers").select("id, name").eq("is_active", true), "id", W);
   check("10b. Yakıt raporu (şoför)", "workers", has(bw.data, TEST_WORKER), has(aw.data, TEST_WORKER));
@@ -138,7 +144,7 @@ const hasPlate = (d, p) => (d ?? []).some(r => (r.plate ?? r.vehicle_plate) === 
 {
   const q = () => sb.from("time_entries").select("id, worker_id").gte("started_at", "2026-01-01");
   const b = await q(); const a = await without(q(), "worker_id", W);
-  check("11. Performans raporu", "time_entries", has(b.data, TEST_WORKER), has(a.data, TEST_WORKER));
+  check("11. Performans raporu", "time_entries", hasW(b.data, TEST_WORKER), hasW(a.data, TEST_WORKER));
 }
 // 12) Telegram — bağlı hesaplar (app/admin/telegram/page.tsx:13)
 {
@@ -150,7 +156,7 @@ const hasPlate = (d, p) => (d ?? []).some(r => (r.plate ?? r.vehicle_plate) === 
 {
   const q = () => sb.from("time_entries").select("id, worker_id").not("ended_at", "is", null);
   const b = await q(); const a = await without(q(), "worker_id", W);
-  check("13. AZG PDF", "time_entries", has(b.data, TEST_WORKER), has(a.data, TEST_WORKER));
+  check("13. AZG PDF", "time_entries", hasW(b.data, TEST_WORKER), hasW(a.data, TEST_WORKER));
   const bf = await sb.from("fuel_entries").select("vehicle_plate").eq("status", "approved");
   const af = { data: (bf.data ?? []).filter(r => !TEST_PLATES.includes(r.vehicle_plate)) };
   check("13b. CO2 PDF (plaka bazlı)", "fuel_entries", TEST_PLATES.some(p => hasPlate(bf.data, p)), TEST_PLATES.some(p => hasPlate(af.data, p)));
@@ -159,7 +165,7 @@ const hasPlate = (d, p) => (d ?? []).some(r => (r.plate ?? r.vehicle_plate) === 
 {
   const b = await sb.from("vehicles").select("id, plate").order("plate");
   const a = { data: (b.data ?? []).filter(v => !V.includes(v.id)) };
-  check("14. ⌘K araç dizini", "vehicles", V.some(id => has(b.data, id)), V.some(id => has(a.data, id)));
+  check("14. ⌘K araç dizini", "vehicles", V.some(id => hasV(b.data, id)), V.some(id => hasV(a.data, id)));
 }
 
 const w = [Math.max(...rows.map(r => r.surface.length)), 14, 8, 9];

@@ -42,6 +42,9 @@ export async function hasShiftToday(workerId: string): Promise<boolean> {
  * motoru araç döngüsünde şoför başına sorgu atmasın diye toplu okunur.
  */
 export async function workersWithShiftToday(): Promise<Set<string>> {
+  // test-visible: "günde tek vardiya" guard'ı. Test şoförünü elemek onu
+  // kuralın DIŞINA çıkarır (aynı gün ikinci satır açılabilir) — eleme burada
+  // gizlemez, bozar.
   const { data } = await supabaseAdmin
     .from("time_entries")
     .select("worker_id")

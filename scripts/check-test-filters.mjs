@@ -36,8 +36,15 @@ const ROOT = process.cwd();
 const SCAN_DIRS = ["app", "lib"];
 const EXT = /\.(ts|tsx)$/;
 
-/** Bu tablolara giden sorgular denetlenir. */
-const GUARDED = ["workers", "vehicles"];
+/**
+ * Bu tablolara giden sorgular denetlenir.
+ *
+ * `time_entries` 22.07.2026'da EKLENDİ: yalnız workers/vehicles denetlenirken
+ * app/admin/page.tsx'teki "Kapanmamış Vardiyalar" sorgusu (ikinci, ayrı bir
+ * time_entries okuması) gözden kaçtı ve test vardiyası yönetici panosunda
+ * göründü. Test kaydı üç tablodan da sızabilir.
+ */
+const GUARDED = ["workers", "vehicles", "time_entries"];
 
 /** Zincirde bunlardan biri varsa sorgu ANAHTARLI sayılır. */
 const KEYED = [

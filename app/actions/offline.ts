@@ -135,9 +135,17 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
       .is("ended_at", null)
       .maybeSingle();
     if (!active) return { ok: true };
+    // break_started_at DA TEMİZLENİR (22.07.2026). Bu yol yalnız break_minutes'ı
+    // güncelliyordu; addBreakMinutesAction'ın ikinci adımı (bayrağı sıfırla)
+    // burada yoktu. Yani çevrimdışı bitirilen bir mola — süresi ne olursa olsun —
+    // şoförü yönetici tarafında "Molada" bırakıyordu. İki yol artık aynı işi
+    // yapıyor; mola bitişinin tek anlamı var.
     const { error } = await supabaseAdmin
       .from("time_entries")
-      .update({ break_minutes: (active.break_minutes ?? 0) + Math.max(0, add) })
+      .update({
+        break_minutes: (active.break_minutes ?? 0) + Math.max(0, add),
+        break_started_at: null,
+      })
       .eq("id", active.id)
       .eq("worker_id", workerId);
     if (error) return { ok: false, error: error.message };

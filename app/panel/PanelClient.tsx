@@ -192,30 +192,40 @@ export function PanelClient({
     const msg = auto
       ? t("breakAutoDone", { min: BREAK_TARGET_MIN })
       : t("breakEndedMin", { min: elapsedMin });
-    if (elapsedMin > 0) {
-      startTransition(async () => {
-        const r = await tryServerAction(
-          "break",
-          { minutes: elapsedMin },
-          new Date().toISOString(),
-          () => addBreakMinutesAction(elapsedMin)
-        );
-        if (r.queued) {
-          toast.warning(tOffline("queued_toast"));
-          setPendingBreakMinutes(0);
-          return;
-        }
-        if (r.result.ok) {
-          toast.success(msg);
-          setPendingBreakMinutes(0);
-          router.refresh();
-        } else {
-          toast.error(r.result.error ?? "Error");
-        }
-      });
-    } else {
-      toast.success(msg);
-    }
+
+    // SUNUCU HER HÂLÜKÂRDA ÇAĞRILIR — 0 dakikalık mola dahil (22.07.2026).
+    //
+    // Eskiden bu çağrı `elapsedMin > 0` koşuluna bağlıydı. 60 saniyeden kısa
+    // bir molada koşul tutmuyor, sunucuya hiç gidilmiyor ve
+    // time_entries.break_started_at DB'de SET kalıyordu. Sonucu: şoför işe
+    // dönmüş olsa bile YÖNETİCİ tarafı onu vardiya kapanana kadar "Molada"
+    // gösteriyordu — hem Araçlar sayfası (computeLiveStatus) hem panonun
+    // "Molada" sayacı `!!break_started_at`e bakıyor, ikisi de yanılıyordu.
+    // Canlıda 5 gerçek vardiyada görüldü; en uzunu 7s 56dk yanlış "Molada".
+    //
+    // addBreakMinutesAction 0'ı zaten güvenle işliyor: toplama 0 ekler,
+    // bayrağı temizler. Yani "sıfır dakika" ayrı bir yol değil, aynı yolun
+    // sınır hâli — ayırmak zaten hatanın kaynağıydı.
+    startTransition(async () => {
+      const r = await tryServerAction(
+        "break",
+        { minutes: elapsedMin },
+        new Date().toISOString(),
+        () => addBreakMinutesAction(elapsedMin)
+      );
+      if (r.queued) {
+        toast.warning(tOffline("queued_toast"));
+        setPendingBreakMinutes(0);
+        return;
+      }
+      if (r.result.ok) {
+        toast.success(msg);
+        setPendingBreakMinutes(0);
+        router.refresh();
+      } else {
+        toast.error(r.result.error ?? "Error");
+      }
+    });
   }
 
   function toggleBreak() {

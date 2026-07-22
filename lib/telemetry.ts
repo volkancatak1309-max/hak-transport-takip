@@ -9,6 +9,7 @@ import type {
 } from "@/lib/flespi";
 import { IDLE_SPEED_THRESHOLD_KMH, MAX_GAP_MS } from "@/lib/metrics-idle";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
+import { UNRESTRICTED, dropOtherFleets, type FleetScope } from "@/lib/fleet-scope";
 import type { ActiveVehicle, VehicleFleet } from "@/lib/types";
 
 /**
@@ -597,7 +598,9 @@ export async function latestVehicleTelemetry(
  * window of rows. Degrades to an empty list if the telemetry table doesn't
  * exist yet (migrations not run).
  */
-export async function listLatestVehiclePositions(): Promise<ActiveVehicle[]> {
+export async function listLatestVehiclePositions(
+  fleet: FleetScope = UNRESTRICTED
+): Promise<ActiveVehicle[]> {
   // "Cihazlı araç" = flespi_device_id VEYA imei dolu — auto-shift ile aynı
   // tanım. IMEI-only araçlar stream ingest üzerinden telemetri üretir
   // (flespi_device_id NULL kalır), onları elemek haritadan düşürürdü.
@@ -609,14 +612,18 @@ export async function listLatestVehiclePositions(): Promise<ActiveVehicle[]> {
     .from("vehicles")
     .select("id, plate, fleet")
     .or("flespi_device_id.not.is.null,imei.not.is.null");
-  const vehicles = dropTestRows(
-    (vData ?? []) as {
-      id: string;
-      plate: string;
-      fleet: VehicleFleet;
-    }[],
+  const vehicles = dropOtherFleets(
+    dropTestRows(
+      (vData ?? []) as {
+        id: string;
+        plate: string;
+        fleet: VehicleFleet;
+      }[],
+      (v) => ({ vehicle: v.id }),
+      scope
+    ),
     (v) => ({ vehicle: v.id }),
-    scope
+    fleet
   );
   if (vehicles.length === 0) return [];
 

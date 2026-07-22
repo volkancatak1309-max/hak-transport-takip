@@ -47,7 +47,9 @@
     "expenses": "Masraflar",
     "alarms": "Alarmlar",
     "analytics": "Analiz",
-    "reports": "Raporlar"
+    "reports": "Raporlar",
+    "backToPanel": "Panelime dön",
+    "fleetAdmin": "Filo Yönetimi"
   },
   "analiz": {
     "title": "Analiz",
@@ -1100,7 +1102,9 @@
     "v2BlockNoTotalAdmin": "Dağıtılacak paket girilmeden geri getirilen sayısı kaydedilemez.",
     "v2BlockOverAdmin": "Geri getirilen, alınandan fazla olamaz.",
     "v2ConfirmAllReturnedAdmin": "Bu kayıtta hiç paket teslim edilmemiş görünüyor.",
-    "v2ConfirmManyReturnedAdmin": "Dağıtılacak paketin yarısından fazlası geri getirilmiş görünüyor."
+    "v2ConfirmManyReturnedAdmin": "Dağıtılacak paketin yarısından fazlası geri getirilmiş görünüyor.",
+    "boardFleetlessTitle": "Filosuz personel ({n})",
+    "boardFleetlessHint": "Atanmış aracı olmadığı için hiçbir filoya bağlı değiller. Filo şefleri bu kişileri görmez."
   },
   "workers": {
     "title": "Çalışan Yönetimi",

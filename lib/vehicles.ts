@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { startOfTodayVienna } from "@/lib/format";
 import { computeLiveStatus } from "@/lib/vehicle-ui";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
+import { UNRESTRICTED, dropOtherFleets, type FleetScope } from "@/lib/fleet-scope";
 import type {
   Vehicle,
   VehicleWithStatus,
@@ -32,7 +33,9 @@ export async function listVehiclesForSelect(): Promise<
 }
 
 /** All vehicles with derived live status + current/assigned driver. */
-export async function listVehiclesWithStatus(): Promise<VehicleWithStatus[]> {
+export async function listVehiclesWithStatus(
+  fleet: FleetScope = UNRESTRICTED
+): Promise<VehicleWithStatus[]> {
   const scope = await getTestScope();
   // test-filtered: dropTestRows — Araçlar sayfasını, yönetici panosunun filo
   // sayaçlarını ve Operasyon Özeti'ni besleyen ana boğaz.
@@ -44,15 +47,20 @@ export async function listVehiclesWithStatus(): Promise<VehicleWithStatus[]> {
       .is("ended_at", null),
   ]);
 
-  const vehicles = dropTestRows(
-    (vData ?? []) as Vehicle[],
+  // Iki eleme UST USTE: once test kayitlari, sonra filo kapsami.
+  const vehicles = dropOtherFleets(
+    dropTestRows((vData ?? []) as Vehicle[], (v) => ({ vehicle: v.id }), scope),
     (v) => ({ vehicle: v.id }),
-    scope
+    fleet
   );
-  const activeShifts = dropTestRows(
-    (sData ?? []) as ActiveShift[],
-    (s) => ({ worker: s.worker_id, vehicle: s.vehicle_id }),
-    scope
+  const activeShifts = dropOtherFleets(
+    dropTestRows(
+      (sData ?? []) as ActiveShift[],
+      (s) => ({ worker: s.worker_id, vehicle: s.vehicle_id }),
+      scope
+    ),
+    (s) => ({ vehicle: s.vehicle_id }),
+    fleet
   );
 
   const activeByVehicle = new Map<string, ActiveShift>();

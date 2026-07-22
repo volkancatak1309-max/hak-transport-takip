@@ -16,6 +16,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { adminCloseShiftAction } from "@/app/actions/shift";
+// readOnly: filo sefi yalniz IZLER. Sunucu tarafi zaten requireAdmin()
+// ile korunuyor (adminCloseShiftAction), bu yalniz olu buton gostermemek
+// icin — basildiginda hata verecek bir dugme, olmayan dugmeden kotudur.
 import { formatDate, formatTime, formatDurationShort } from "@/lib/format";
 
 /** Kapanmamış vardiya — sunucuda hazırlanır (elapsedMs dahil: hidrasyon farkı olmasın). */
@@ -43,7 +46,13 @@ export type OpenShiftRow = {
  * Gecikmişler (dünden kalanlar) bordo ile ayrılır — renk sırası panelin geri
  * kalanıyla aynı: normal=sky, dikkat=bordo.
  */
-export function OpenShiftsCard({ rows }: { rows: OpenShiftRow[] }) {
+export function OpenShiftsCard({
+  rows,
+  readOnly = false,
+}: {
+  rows: OpenShiftRow[];
+  readOnly?: boolean;
+}) {
   const t = useTranslations("admin");
   const tc = useTranslations("common");
   const locale = useLocale();
@@ -131,16 +140,20 @@ export function OpenShiftsCard({ rows }: { rows: OpenShiftRow[] }) {
                         </span>
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setClosing(r)}
-                      disabled={pending}
-                      className="shrink-0"
-                    >
-                      <Square className="size-4" />
-                      <span className="hidden sm:inline">{t("openShiftClose")}</span>
-                    </Button>
+                    {!readOnly && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setClosing(r)}
+                        disabled={pending}
+                        className="shrink-0"
+                      >
+                        <Square className="size-4" />
+                        <span className="hidden sm:inline">
+                          {t("openShiftClose")}
+                        </span>
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>

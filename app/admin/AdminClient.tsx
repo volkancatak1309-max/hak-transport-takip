@@ -111,6 +111,14 @@ type Props = {
   photoEntryIds: string[];
   /** Elle düzeltilmiş vardiyalar — listede "düzenlendi" rozeti çıkar. */
   editedEntryIds: string[];
+  /**
+   * Filo sefi modu: SADECE IZLEME. Excel/PDF/AZG/Calisan Ekle,
+   * Vardiya Kayitlari arsivi, sofor bildirimleri ve Kapat/Duzelt
+   * kisayollari gizlenir. Sunucu tarafi zaten requireAdmin() ile korunuyor
+   * (adminCloseShiftAction / editEntryAction / getAZGReportData); bu prop
+   * yalniz basildiginda hata verecek olu buton gostermemek icin.
+   */
+  readOnly?: boolean;
 };
 
 export function AdminClient({
@@ -127,6 +135,7 @@ export function AdminClient({
   openShifts,
   photoEntryIds,
   editedEntryIds,
+  readOnly = false,
 }: Props) {
   const t = useTranslations("admin");
   const tc = useTranslations("common");
@@ -515,6 +524,7 @@ export function AdminClient({
       <PageHeader
         title={t("title")}
         action={
+          readOnly ? null : (
           <div className="flex flex-wrap items-center gap-1.5">
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={!entries.length} title={t("exportExcel")}>
               <FileSpreadsheet className="size-4" />
@@ -541,6 +551,7 @@ export function AdminClient({
               </Button>
             </AddWorkerDialog>
           </div>
+          )
         }
       />
 
@@ -575,17 +586,23 @@ export function AdminClient({
           /* Hatalı paket uyarısından doğrudan düzenlemeye. Kayıt seçili
              aralıkta yüklü değilse (worker/status filtresi) kısayol sessizce
              hiçbir şey yapmaz — yanlış kaydı açmaktansa hiç açmamak doğru. */
-          onEditEntry={(entryId) => {
-            const e = entries.find((x) => x.id === entryId);
-            if (e) setEditOpen(e);
-          }}
+          onEditEntry={
+            readOnly
+              ? undefined
+              : (entryId) => {
+                  const e = entries.find((x) => x.id === entryId);
+                  if (e) setEditOpen(e);
+                }
+          }
         />
         {/* Kapanmamış vardiyalar HER ZAMAN render edilir — dikkat panosuyla
             aynı gerekçe: "liste boş" ile "kart yok" yönetici için ayırt
             edilemez, oysa "açıkta vardiya kalmadı" bilgidir. Otomatik kapanış
             kaldırıldığı için bu kart artık günlük kontrol noktası. */}
-        <OpenShiftsCard rows={openShifts} />
-        {reports.length > 0 && <DriverReportsCard reports={reports} />}
+        <OpenShiftsCard rows={openShifts} readOnly={readOnly} />
+        {!readOnly && reports.length > 0 && (
+          <DriverReportsCard reports={reports} />
+        )}
       </div>
 
       {/* Bugünün ÖLÇÜM katmanı — karar katmanının altında. */}
@@ -594,7 +611,10 @@ export function AdminClient({
       {/* ARŞİV — vardiya kayıtları. VARSAYILAN KAPALI (22.07.2026): mobilde
           sayfa 21.389 px'ti ve bunun büyük kısmı bu tabloydu. Geçmiş kayıt
           günlük karar aracı değil, arama aracıdır; isteyen açar. Kapalıyken
-          tablo hiç render edilmez (mobil DOM'u da küçülür). */}
+          tablo hiç render edilmez (mobil DOM'u da küçülür).
+          FİLO ŞEFİNDE HİÇ YOK (Volkan onayı 22.07.2026) — sefin isi gunluk
+          operasyon, gecmis kayit arama degil. */}
+      {!readOnly && (
       <section className="space-y-4 border-t border-border pt-6">
         <button
           type="button"
@@ -821,6 +841,7 @@ export function AdminClient({
           </>
         )}
       </section>
+      )}
 
       {/* Vardiya detay çekmecesi */}
       <DetailDrawer

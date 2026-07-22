@@ -42,9 +42,19 @@ export function TodayBoard({ rows }: { rows: TodayRosterRow[] }) {
   const locale = useLocale();
   const ageLabel = useAgeLabel();
 
+  // FİLOSUZ PERSONEL ayrı tutulur (22.07.2026). Filo, aracın filosundan
+  // türüyor (lib/fleet-scope.ts); atanmış aracı olmayan kişinin filosu YOK ve
+  // hiçbir filo şefinin kapsamına girmez. Bu satırlar yalnız patrona ulaşır —
+  // şef için sunucu tarafında zaten elenmişlerdir. Panoda ana listeye karışıp
+  // "kimse ilgilenmiyor" durumuna düşmesinler diye kendi grubunda gösterilir.
+  const fleetless = useMemo(() => rows.filter((r) => r.plate === null), [rows]);
+
   const groups = useMemo(() => {
     const g: Record<Tab, TodayRosterRow[]> = { not_started: [], in_field: [], closed: [] };
-    for (const r of rows) g[tabOf(r.status)].push(r);
+    for (const r of rows) {
+      if (r.plate === null) continue; // filosuz personel: aşağıda ayrı grup
+      g[tabOf(r.status)].push(r);
+    }
     return g;
   }, [rows]);
 
@@ -197,6 +207,33 @@ export function TodayBoard({ rows }: { rows: TodayRosterRow[] }) {
               ))}
             </ul>
           </>
+        )}
+
+        {/* ── FİLOSUZ PERSONEL ── atanmış aracı olmadığı için hiçbir filoya
+            bağlanamayan çalışanlar. Sekmelere karışmaz; kaybolmasın diye
+            listenin altında kendi başlığıyla durur. */}
+        {fleetless.length > 0 && (
+          <div className="mt-5 border-t border-border pt-4">
+            <div className="mb-2 flex items-center gap-2">
+              <AlertTriangle className="size-3.5 text-accent-gold" aria-hidden />
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-accent-gold">
+                {t("boardFleetlessTitle", { n: fleetless.length })}
+              </h3>
+            </div>
+            <p className="mb-2.5 text-xs text-muted-foreground">
+              {t("boardFleetlessHint")}
+            </p>
+            <ul className="flex flex-wrap gap-1.5">
+              {fleetless.map((r) => (
+                <li
+                  key={r.workerId}
+                  className="rounded-full bg-surface-2 px-2.5 py-1 text-xs text-foreground"
+                >
+                  {r.name}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </CardContent>
     </Card>

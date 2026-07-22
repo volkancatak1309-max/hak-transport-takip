@@ -1,5 +1,6 @@
 import { getTranslations } from "next-intl/server";
-import { requireAdmin } from "@/lib/session";
+import { requireFleetView } from "@/lib/session";
+import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -22,18 +23,24 @@ type ShiftRow = {
 type WorkerRow = { id: string; name: string; plate: string | null };
 
 export default async function HaritaPage() {
-  const session = await requireAdmin();
+  const { session, fleet, isChief } = await requireFleetView();
+  const fleetScope = await getFleetScope(fleet);
 
   // 1) All active shifts (ended_at IS NULL)
   const scope = await getTestScope();
   // Test şoförünün açık vardiyası haritanın "Şoförler (N)" sekmesine düşmesin.
-  const { data: shiftsData, error: shiftsErr } = await withoutTestRows(
-    supabaseAdmin
-      .from("time_entries")
-      .select("id, started_at, worker_id, vehicle_id")
-      .is("ended_at", null),
-    "worker_id",
-    scope.workerIds
+  const { data: shiftsData, error: shiftsErr } = await onlyFleet(
+    withoutTestRows(
+      supabaseAdmin
+        .from("time_entries")
+        .select("id, started_at, worker_id, vehicle_id")
+        .is("ended_at", null),
+      "worker_id",
+      scope.workerIds
+    ),
+    "vehicle_id",
+    fleetScope.vehicleIds,
+    fleetScope
   );
   const shifts = (shiftsData ?? []) as ShiftRow[];
 
@@ -49,7 +56,7 @@ export default async function HaritaPage() {
   //    Telefon GPS'i (driver_locations) kaldırıldı — 21.07.2026. Konumun tek
   //    kaynağı FMC003. Şoför ile araç zaten vardiya satırında bağlı, dolayısıyla
   //    aracın son fix'i şoförün de konumudur; ayrı bir telefon hattına gerek yok.
-  const vehicles = await listLatestVehiclePositions();
+  const vehicles = await listLatestVehiclePositions(fleetScope);
   const posByVehicle = new Map(vehicles.map((v) => [v.vehicle_id, v]));
 
   // Şoför listesi = AÇIK VARDİYA sayacıyla AYNI küme (shifts). Konum yoksa şoför
@@ -106,7 +113,8 @@ export default async function HaritaPage() {
         id: session.worker_id!,
         name: session.name!,
         phone: session.phone ?? "",
-        isAdmin: true,
+        isAdmin: !isChief,
+        managedFleet: fleet,
       }}
       title={t("live_title")}
     >

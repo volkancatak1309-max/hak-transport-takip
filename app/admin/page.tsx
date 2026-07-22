@@ -1,4 +1,5 @@
-import { requireAdmin } from "@/lib/session";
+import { requireFleetView } from "@/lib/session";
+import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin, fetchAllRows, chunkIds } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
@@ -66,7 +67,11 @@ export default async function AdminPage({
     status?: string;
   }>;
 }) {
-  const session = await requireAdmin();
+  // Patron VE filo sefi girer; sef icin kapsam kendi filosuyla sinirlidir.
+  // Diger 17 yonetici sayfasi requireAdmin() ile korunmaya devam ediyor,
+  // yani sef oralara URL'den de giremez (bkz. lib/session.ts).
+  const { session, fleet, isChief } = await requireFleetView();
+  const fleetScope = await getFleetScope(fleet);
   const sp = await searchParams;
   const range = (sp.range ?? "today") as Range;
   const workerFilter = sp.worker ?? "all";
@@ -81,8 +86,10 @@ export default async function AdminPage({
   // Excel/PDF dışa aktarımlar eksik kalmasın diye sonuna kadar sayfalanır.
   const scope = await getTestScope();
   const entriesQuery = fetchAllRows<TimeEntry>((from, to) => {
-    // test-filtered: withoutTestRows aşağıda, koşullu filtrelerden SONRA
-    // uygulanıyor (zincirin sonunda `query = withoutTestRows(...)`).
+    // Her iki eleme de AŞAĞIDA, koşullu filtrelerden SONRA uygulanıyor
+    // (zincirin sonunda `query = ...`), muhafızın penceresi dışında kalıyor:
+    // test-filtered: withoutTestRows(query, "worker_id", scope.workerIds)
+    // fleet-scoped: onlyFleet(query, "vehicle_id", fleetScope.vehicleIds)
     let query = supabaseAdmin
       .from("time_entries")
       .select("*")
@@ -98,18 +105,26 @@ export default async function AdminPage({
     // Vardiya Kayıtları arşivi + üst toplamlar + CSV/PDF dışa aktarımı hepsi
     // bu diziden türer; eleme tek noktada.
     query = withoutTestRows(query, "worker_id", scope.workerIds);
+    // Arsiv sefte GIZLI; veriyi yine de daraltiyoruz ki gizli bir bilesen
+    // ya da ileride acilacak bir gorunum karsi filoyu sizdirmasin.
+    query = onlyFleet(query, "vehicle_id", fleetScope.vehicleIds, fleetScope);
     return query.range(from, to);
   });
 
   const [entriesResult, workersResult, dashboard] = await Promise.all([
     entriesQuery,
     // test-filtered: withoutTestRows — isim haritası + şoför filtresi dropdown'ı.
-    withoutTestRows(
-      supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
+    onlyFleet(
+      withoutTestRows(
+        supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
+        "id",
+        scope.workerIds
+      ),
       "id",
-      scope.workerIds
+      fleetScope.workerIds,
+      fleetScope
     ),
-    getDashboardData(start.toISOString(), end.toISOString()),
+    getDashboardData(start.toISOString(), end.toISOString(), fleetScope),
   ]);
 
   const workersData = (workersResult.data ?? []) as WorkerPublic[];
@@ -208,14 +223,23 @@ export default async function AdminPage({
   // kaybolması onu telafi aracı olmaktan çıkarırdı (canlı örnek: dünden kalmış
   // 27 saatlik kayıt). Süre sunucuda hesaplanır — istemcide Date.now() ile
   // hesaplansaydı ilk render'da hidrasyon uyuşmazlığı üretirdi.
-  const { data: openShiftData } = await withoutTestRows(
-    supabaseAdmin
-      .from("time_entries")
-      .select("id, worker_id, plate, started_at")
-      .is("ended_at", null)
-      .order("started_at", { ascending: true }),
-    "worker_id",
-    scope.workerIds
+  // test-filtered + fleet-scoped: bu kart filo sefinin gordugu dort
+  // bolumden biri. Kapsam UNUTULMUSTU ve muhafiz yakaladi (22.07.2026):
+  // sef karsi filonun acik vardiyalarini goruyordu. vehicle_id select'e
+  // eklendi — filo bagi arac uzerinden kuruluyor, plaka metni degil.
+  const { data: openShiftData } = await onlyFleet(
+    withoutTestRows(
+      supabaseAdmin
+        .from("time_entries")
+        .select("id, worker_id, vehicle_id, plate, started_at")
+        .is("ended_at", null)
+        .order("started_at", { ascending: true }),
+      "worker_id",
+      scope.workerIds
+    ),
+    "vehicle_id",
+    fleetScope.vehicleIds,
+    fleetScope
   );
 
   const nowMs = Date.now();
@@ -224,6 +248,7 @@ export default async function AdminPage({
     (openShiftData ?? []) as {
       id: string;
       worker_id: string | null;
+      vehicle_id: string | null;
       plate: string | null;
       started_at: string;
     }[]
@@ -245,11 +270,17 @@ export default async function AdminPage({
         id: session.worker_id!,
         name: session.name!,
         phone: session.phone ?? "",
-        isAdmin: true,
+        isAdmin: !isChief,
+        managedFleet: fleet,
       }}
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
         <AdminClient
+          /* Sef SADECE IZLER: Excel/PDF/AZG/Calisan Ekle, arsiv, sofor
+             bildirimleri ve Kapat/Duzelt kisayollari gizlenir. Sunucu
+             tarafi zaten requireAdmin() ile korunuyor; bu, olu buton
+             gostermemek icin. */
+          readOnly={isChief}
           entries={entriesData}
           workers={workersData}
           range={range}

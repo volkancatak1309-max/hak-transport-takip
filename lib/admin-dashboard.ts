@@ -11,6 +11,11 @@ import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { listFleetActiveDtc, listLatestVehiclePositions } from "@/lib/telemetry";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import {
+  UNRESTRICTED,
+  onlyFleet,
+  type FleetScope,
+} from "@/lib/fleet-scope";
+import {
   BREAK45_THRESHOLD_MS,
   AZG_BREAK_TIER1_MS,
   requiredBreakMin,
@@ -243,7 +248,15 @@ const ENTRY_COLS =
  */
 export async function getDashboardData(
   rangeStart: string,
-  rangeEnd: string
+  rangeEnd: string,
+  /**
+   * Filo kapsami (migration 029). Patronda UNRESTRICTED -> hicbir sorgu
+   * daraltilmaz; filo sefinde yalniz kendi filosunun arac/soforleri.
+   * Panonun HER bolumu (Gunun Panosu, Dikkat/Aksiyon, Kapanmamis
+   * Vardiyalar, Ops Ozeti, 5'li serit) asagidaki dizilerden turedigi
+   * icin eleme burada bir kez yapilir.
+   */
+  fleetScope: FleetScope = UNRESTRICTED
 ): Promise<DashboardData> {
   const todayStart = startOfTodayVienna();
   // Sabit kayan performans penceresi: bugün dahil son PERF_WINDOW_DAYS gün.
@@ -268,83 +281,120 @@ export async function getDashboardData(
     positions,
     dtcRows,
   ] = await Promise.all([
-    withoutTestRows(
-      supabaseAdmin
-        .from("time_entries")
-        .select(ENTRY_COLS)
-        .gte("started_at", todayStart.toISOString()),
-      "worker_id",
-      scope.workerIds
+    onlyFleet(
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select(ENTRY_COLS)
+          .gte("started_at", todayStart.toISOString()),
+        "worker_id",
+        scope.workerIds
+      ),
+      "vehicle_id",
+      fleetScope.vehicleIds,
+      fleetScope
     ),
     // Uzun aralıklar 1000 satır tavanını aşabilir → performans sıralaması ve
     // aksiyon kalemleri eksik hesaplanmasın diye sonuna kadar sayfalanır.
     fetchAllRows<LiteEntry>((from, to) =>
-      withoutTestRows(
-        supabaseAdmin
-          .from("time_entries")
-          .select(ENTRY_COLS)
-          .gte("started_at", rangeStart)
-          .lte("started_at", rangeEnd)
-          .order("id"),
-        "worker_id",
-        scope.workerIds
+      onlyFleet(
+        withoutTestRows(
+          supabaseAdmin
+            .from("time_entries")
+            .select(ENTRY_COLS)
+            .gte("started_at", rangeStart)
+            .lte("started_at", rangeEnd)
+            .order("id"),
+          "worker_id",
+          scope.workerIds
+        ),
+        "vehicle_id",
+        fleetScope.vehicleIds,
+        fleetScope
       ).range(from, to)
     ),
     // Performans penceresi — tablo aralığından ayrı, sabit son 7 gün.
     fetchAllRows<LiteEntry>((from, to) =>
-      withoutTestRows(
-        supabaseAdmin
-          .from("time_entries")
-          .select(ENTRY_COLS)
-          .gte("started_at", perfStart.toISOString())
-          .lte("started_at", perfEnd.toISOString())
-          .order("id"),
-        "worker_id",
-        scope.workerIds
+      onlyFleet(
+        withoutTestRows(
+          supabaseAdmin
+            .from("time_entries")
+            .select(ENTRY_COLS)
+            .gte("started_at", perfStart.toISOString())
+            .lte("started_at", perfEnd.toISOString())
+            .order("id"),
+          "worker_id",
+          scope.workerIds
+        ),
+        "vehicle_id",
+        fleetScope.vehicleIds,
+        fleetScope
       ).range(from, to)
     ),
     // Single source of truth for live status: EVERY open shift (ended_at IS
     // NULL), independent of the today/range window. The top summary, the
     // active-shift card and the table all derive their "active / on break /
     // in field" numbers from this one set so they can never disagree.
-    withoutTestRows(
-      supabaseAdmin
-        .from("time_entries")
-        .select("id, worker_id, vehicle_id, started_at, break_started_at")
-        .is("ended_at", null),
-      "worker_id",
-      scope.workerIds
+    onlyFleet(
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select("id, worker_id, vehicle_id, started_at, break_started_at")
+          .is("ended_at", null),
+        "worker_id",
+        scope.workerIds
+      ),
+      "vehicle_id",
+      fleetScope.vehicleIds,
+      fleetScope
     ),
-    listVehiclesWithStatus(),
+    listVehiclesWithStatus(fleetScope),
     // is_active/is_admin de okunur: Günün Panosu satırları AKTİF ŞOFÖRLERDEN
     // kurulur (yönetici hesapları ve ayrılmış personel panoyu şişirmemeli).
     // test-filtered: withoutTestRows — Günün Panosu roster'ının kaynağı.
-    withoutTestRows(
-      supabaseAdmin.from("workers").select("id, name, is_active, is_admin"),
+    // Filo sefinde YALNIZ kendi filosunun soforleri; araci olmayan
+    // personel hicbir sefin kapsaminda degildir (bkz. lib/fleet-scope.ts).
+    onlyFleet(
+      withoutTestRows(
+        supabaseAdmin.from("workers").select("id, name, is_active, is_admin"),
+        "id",
+        scope.workerIds
+      ),
       "id",
-      scope.workerIds
+      fleetScope.workerIds,
+      fleetScope
     ),
     // Ehliyet uyarısı (migration 025). İsim haritasından AYRI sorgu: migration
     // uygulanmamış bir ortamda license_expiry kolonu yoktur → sorgu error döner,
     // data null → yalnız ehliyet uyarıları boş kalır, dashboard'ın geri kalanı
     // (isimler dahil) etkilenmez. Yalnız çalışan personel uyarı üretir.
-    withoutTestRows(
-      supabaseAdmin
-        .from("workers")
-        .select("id, name, license_expiry")
-        .eq("is_active", true)
-        .not("license_expiry", "is", null),
+    onlyFleet(
+      withoutTestRows(
+        supabaseAdmin
+          .from("workers")
+          .select("id, name, license_expiry")
+          .eq("is_active", true)
+          .not("license_expiry", "is", null),
+        "id",
+        scope.workerIds
+      ),
       "id",
-      scope.workerIds
+      fleetScope.workerIds,
+      fleetScope
     ),
     // Unpaid vehicle penalties (Strafe) → surfaced as action items.
-    supabaseAdmin
-      .from("vehicle_penalties")
-      .select("vehicle_id, amount")
-      .eq("paid", false),
+    onlyFleet(
+      supabaseAdmin
+        .from("vehicle_penalties")
+        .select("vehicle_id, amount")
+        .eq("paid", false),
+      "vehicle_id",
+      fleetScope.vehicleIds,
+      fleetScope
+    ),
     // Cihazlı araçların SON telemetri kaydı → "konum göndermiyor" uyarısı.
     // Haritanın kullandığı sorgunun aynısı (araç başına indexli limit-1).
-    listLatestVehiclePositions(),
+    listLatestVehiclePositions(fleetScope),
     // Filo geneli aktif arıza kodları (migration 021 yoksa boş liste).
     listFleetActiveDtc(),
   ]);

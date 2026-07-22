@@ -69,8 +69,24 @@ const KEYED = [
   ".delete(",
 ];
 
-/** Bunlardan biri geçiyorsa sorgu FİLTRELİ sayılır. */
+/** Bunlardan biri geçiyorsa sorgu test verisine karşı FİLTRELİ sayılır. */
 const FILTERED = ["withoutTestRows(", "dropTestRows(", "// test-filtered:"];
+
+/**
+ * FİLO KAPSAMI (migration 029). Filo şefi yalnız kendi filosunu görür; bir
+ * sorgu kapsamı uygulamayı unutursa şef KARŞI FİLOYU görür. Test verisi
+ * sızıntısında yaşadığımız hatanın birebir aynısı, bu yüzden aynı muhafız.
+ *
+ * Yalnız FİLO YÜZEYLERİ denetlenir: filo şefinin erişebildiği iki sayfa ve
+ * onları besleyen paylaşılan fonksiyonlar. Diğer yönetici sayfaları
+ * requireAdmin() ile zaten şefe kapalı, oralarda kapsam GEREKMEZ.
+ */
+const FLEET_SURFACES = [
+  "app/admin/page.tsx",
+  "app/admin/harita/page.tsx",
+  "lib/admin-dashboard.ts",
+];
+const FLEET_FILTERED = ["onlyFleet(", "dropOtherFleets(", "// fleet-scoped:"];
 
 /** Muafiyet yorumu. Gerekçe zorunlu: `// test-visible: <neden>`. */
 const EXEMPT = /\/\/\s*test-visible:\s*\S/;
@@ -136,39 +152,69 @@ for (const d of SCAN_DIRS) {
         .slice(Math.max(0, i - LOOKBEHIND), Math.min(lines.length, end + 6))
         .join("\n");
 
-      if (EXEMPT.test(before)) continue;
-      if (FILTERED.some((f) => wide.includes(f))) continue;
-      if (KEYED.some((k) => stmt.includes(k))) continue;
+      const rel = relative(ROOT, file).split(sep).join("/");
 
-      findings.push({
-        file: relative(ROOT, file).split(sep).join("/"),
-        line: i + 1,
-        table,
-        snippet: lines[i].trim(),
-      });
+      // ── 1) Test verisi kapsamı ─────────────────────────────────────────
+      const testOk =
+        EXEMPT.test(before) ||
+        FILTERED.some((f) => wide.includes(f)) ||
+        KEYED.some((k) => stmt.includes(k));
+      if (!testOk) {
+        findings.push({ file: rel, line: i + 1, table, kind: "test", snippet: lines[i].trim() });
+      }
+
+      // ── 2) Filo kapsamı ────────────────────────────────────────────────
+      // Yalnız filo şefinin gördüğü yüzeylerde ve yalnız ANAHTARSIZ liste
+      // okumalarında aranır.
+      if (!FLEET_SURFACES.includes(rel)) continue;
+      if (EXEMPT.test(before)) continue;
+      if (KEYED.some((k) => stmt.includes(k))) continue;
+      if (FLEET_FILTERED.some((f) => wide.includes(f))) continue;
+      findings.push({ file: rel, line: i + 1, table, kind: "fleet", snippet: lines[i].trim() });
     }
   }
 }
 
 if (findings.length === 0) {
   console.log(
-    `✓ test-filtre muhafızı: ${checked} sorgu denetlendi, anahtarsız+filtresiz sorgu yok.`
+    `✓ kapsam muhafızı: ${checked} sorgu denetlendi (test verisi + filo). Filtresiz sorgu yok.`
   );
   process.exit(0);
 }
 
-console.error(
-  `\n✗ TEST VERİSİ SIZINTI RİSKİ — ${findings.length} anahtarsız liste sorgusu test kayıtlarını elemiyor:\n`
-);
-for (const f of findings) {
-  console.error(`  ${f.file}:${f.line}  (${f.table})`);
-  console.error(`      ${f.snippet}`);
+const testFindings = findings.filter((f) => f.kind === "test");
+const fleetFindings = findings.filter((f) => f.kind === "fleet");
+
+function dump(list) {
+  for (const f of list) {
+    console.error(`  ${f.file}:${f.line}  (${f.table})`);
+    console.error(`      ${f.snippet}`);
+  }
 }
-console.error(`
-Çözüm — üçünden biri:
-  1) Liste okumasıysa  → withoutTestRows(query, "id"|"worker_id"|"vehicle_id", scope.*)
-                          ya da dropTestRows(rows, pick, scope)   [lib/test-data.ts]
-  2) Tek kaydı hedefliyorsa (id/phone ile) → zaten güvenli; anahtar filtresini ekle.
-  3) Bilinçli istisnaysa → sorgunun üstüne  // test-visible: <gerekçe>
+
+if (testFindings.length) {
+  console.error(
+    `\n✗ TEST VERİSİ SIZINTI RİSKİ — ${testFindings.length} anahtarsız liste sorgusu test kayıtlarını elemiyor:\n`
+  );
+  dump(testFindings);
+  console.error(`
+  Çözüm: withoutTestRows(query, "id"|"worker_id"|"vehicle_id", scope.*)
+         ya da dropTestRows(rows, pick, scope)   [lib/test-data.ts]
+         Bilinçli istisnaysa: // test-visible: <gerekçe>
 `);
+}
+
+if (fleetFindings.length) {
+  console.error(
+    `\n✗ FİLO SIZINTI RİSKİ — ${fleetFindings.length} sorgu filo kapsamını uygulamıyor.\n` +
+      `  Filo şefi bu sorgular üzerinden KARŞI FİLOYU görür.\n`
+  );
+  dump(fleetFindings);
+  console.error(`
+  Çözüm: onlyFleet(query, "vehicle_id"|"id"|"worker_id", fleetScope.*, fleetScope)
+         ya da dropOtherFleets(rows, pick, fleetScope)   [lib/fleet-scope.ts]
+         Bilinçli istisnaysa: // fleet-scoped: <gerekçe>
+`);
+}
+
 process.exit(1);

@@ -47,7 +47,9 @@
     "expenses": "Spesen",
     "alarms": "Alarme",
     "analytics": "Analyse",
-    "reports": "Berichte"
+    "reports": "Berichte",
+    "backToPanel": "Zurück zu meinem Panel",
+    "fleetAdmin": "Flottenverwaltung"
   },
   "analiz": {
     "title": "Analyse",
@@ -1100,7 +1102,9 @@
     "v2BlockNoTotalAdmin": "Ohne die Anzahl der zu liefernden Pakete kann die Rückgabe nicht gespeichert werden.",
     "v2BlockOverAdmin": "Zurückgebracht darf nicht größer sein als aufgenommen.",
     "v2ConfirmAllReturnedAdmin": "In diesem Eintrag wurde offenbar kein Paket zugestellt.",
-    "v2ConfirmManyReturnedAdmin": "Mehr als die Hälfte der zu liefernden Pakete wurde zurückgebracht."
+    "v2ConfirmManyReturnedAdmin": "Mehr als die Hälfte der zu liefernden Pakete wurde zurückgebracht.",
+    "boardFleetlessTitle": "Mitarbeiter ohne Flotte ({n})",
+    "boardFleetlessHint": "Ohne zugewiesenes Fahrzeug gehören sie zu keiner Flotte. Flottenleiter sehen diese Personen nicht."
   },
   "workers": {
     "title": "Mitarbeiterverwaltung",

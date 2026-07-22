@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useRef, useState, useTransition, useEffect } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import {
+  ArrowLeft,
   LayoutDashboard,
   MapPinned,
   Route,
@@ -41,6 +42,11 @@ export type HeaderUser = {
   name: string;
   phone: string;
   isAdmin: boolean;
+  /**
+   * Filo sefi ise yonettigi filo (migration 029); degilse null/undefined.
+   * isAdmin ile BIRLIKTE kullanilmaz: sef isAdmin=false'tur.
+   */
+  managedFleet?: string | null;
 };
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
@@ -86,7 +92,18 @@ export function DashboardShell({
   const [localePending, startLocale] = useTransition();
   const logoutRef = useRef<HTMLFormElement>(null);
 
-  const navItems: NavItem[] = user.isAdmin
+  // UC MOD: patron (tam menu) / filo sefi (2 buton + panele donus) /
+  // sofor (panel menusu). Sefin menusu KISITLI DEGIL, KAPSAMLI: gormedigi
+  // sayfalar zaten requireAdmin() ile sunucu tarafinda kapali.
+  const isChief = !user.isAdmin && !!user.managedFleet;
+  const onAdminSide = pathname.startsWith("/admin");
+  const navItems: NavItem[] = isChief
+    ? [
+        { href: "/admin", label: t("admin"), icon: LayoutDashboard },
+        { href: "/admin/harita", label: t("map"), icon: MapPinned },
+        { href: "/panel", label: t("backToPanel"), icon: ArrowLeft },
+      ]
+    : user.isAdmin
     ? [
         { href: "/admin", label: t("admin"), icon: LayoutDashboard },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
@@ -169,7 +186,7 @@ export function DashboardShell({
       {/* Desktop sidebar */}
       <aside className="glass sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col lg:flex">
         <div className="flex h-16 items-center px-5">
-          <Link href={user.isAdmin ? "/admin" : "/panel"} className="flex items-center">
+          <Link href={user.isAdmin || isChief ? "/admin" : "/panel"} className="flex items-center">
             <BrandLogo height={38} />
           </Link>
         </div>
@@ -239,6 +256,25 @@ export function DashboardShell({
             {pageTitle}
           </h1>
           <div className="ml-auto flex items-center gap-1.5">
+            {/* FILO SEFI GECISI (migration 029). Sef gunun buyuk kismini
+                sofor panelinde gecirir; yonetim gorunumu ikincil is.
+                Panelde "Filo Yonetimi", yonetim tarafinda "Panelime don".
+                Bordo aksan, yeni renk yok. */}
+            {isChief && (
+              <Link
+                href={onAdminSide ? "/panel" : "/admin"}
+                className="inline-flex items-center gap-1.5 rounded-[10px] border border-accent-claret/40 px-2.5 py-1.5 text-xs font-medium text-accent-claret-text transition-colors hover:bg-accent-claret/10"
+              >
+                {onAdminSide ? (
+                  <ArrowLeft className="size-4" aria-hidden />
+                ) : (
+                  <LayoutDashboard className="size-4" aria-hidden />
+                )}
+                <span className="hidden sm:inline">
+                  {onAdminSide ? t("backToPanel") : t("fleetAdmin")}
+                </span>
+              </Link>
+            )}
             {user.isAdmin && (
               <button
                 type="button"

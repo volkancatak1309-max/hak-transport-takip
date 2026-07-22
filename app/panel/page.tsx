@@ -1,4 +1,5 @@
 import { requireWorker } from "@/lib/session";
+import { getManagedFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { PanelClient } from "./PanelClient";
@@ -10,6 +11,9 @@ export const dynamic = "force-dynamic";
 
 export default async function PanelPage() {
   const session = await requireWorker();
+  // Filo sefi ise ust barda "Filo Yonetimi" gecisi cikar (migration 029).
+  // Rol cerezden DEGIL DB'den okunur: cerez 30 gun yasiyor.
+  const managedFleet = await getManagedFleet(session.worker_id!);
 
   const since = new Date();
   since.setDate(since.getDate() - 30);
@@ -113,6 +117,7 @@ export default async function PanelPage() {
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: false,
+        managedFleet,
       }}
     >
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6">

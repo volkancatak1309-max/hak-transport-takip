@@ -63,7 +63,13 @@ export const SHIFT_REPORT_DE = {
     breakMin: "Pause",
     /** Sayaç kolonu yok; bu KAT EDİLEN mesafe (bkz. ShiftReport PdfHeaders). */
     km: "Gefahrene km",
-    loaded: "Aufgenommen",
+    /**
+     * "Zu liefernde Pakete"nin KISA hâli. Uygulamada terim tam yazılıyor
+     * (messages/de.json), burada kısaltıldı: bu kolon PDF tablosunda %9
+     * genişlikte ve 8pt — tam terim üç satıra sararak başlık satırını
+     * şişirirdi. Anlam aynı, kolon eni "Aufgenommen" ile birebir.
+     */
+    loaded: "Zu liefern",
     cargo: "Zugestellt",
     undelivered: "Nicht zugestellt",
     plate: "Kennzeichen",

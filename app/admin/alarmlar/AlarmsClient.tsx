@@ -17,6 +17,7 @@ import {
   type Column,
   type RevealFilter,
 } from "@/components/ui-v2";
+import { EpochWarning } from "@/components/admin/EpochWarning";
 import { eventTone, EVENT_STRIPE, EVENT_TONE_RANK } from "@/lib/event-ui";
 import { formatDateTime, formatIdleShort } from "@/lib/format";
 import type { VehicleEventWithPlate } from "@/lib/telemetry";
@@ -42,9 +43,15 @@ const SPEED_EVENTS = new Set(["overspeeding", "harsh_acceleration", "harsh_braki
 export function AlarmsClient({
   events,
   range,
+  epochISO,
+  showEpochWarning,
 }: {
   events: AlarmRow[];
   range: AlarmRange;
+  /** Alarm eşiklerinin değiştiği an (ISO); kayıt yoksa null. */
+  epochISO: string | null;
+  /** Görüntülenen aralık sınırdan önce başlıyor → üstte uyarı. */
+  showEpochWarning: boolean;
 }) {
   const t = useTranslations("alarms");
   const locale = useLocale();
@@ -120,7 +127,11 @@ export function AlarmsClient({
       label: t("filter_shown"),
       value: range,
       onChange: (v) => startNav(() => router.replace(`/admin/alarmlar?range=${v}`, { scroll: false })),
+      // "Yeni eşiklerden beri" EN ÜSTTE ve varsayılan (sunucu tarafında
+      // seçiliyor). Sınır kaydı yoksa seçenek hiç listelenmez — tıklanınca
+      // 7 güne düşen ölü bir seçenek göstermeyiz.
       options: [
+        ...(epochISO ? [{ value: "epoch", label: t("range_epoch") }] : []),
         { value: "today", label: t("range_today") },
         { value: "7d", label: t("range_7d") },
         { value: "30d", label: t("range_30d") },
@@ -226,6 +237,11 @@ export function AlarmsClient({
         <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
+
+      {/* Eşik sınırı uyarısı — başlığın hemen altında, İKİ sekmede de görünür:
+          sayılar hem Genel Bakış tile'larında hem Alarm Kaydı'nda aynı karışık
+          veriden geliyor. */}
+      <EpochWarning epochISO={epochISO} show={showEpochWarning} />
 
       {tab === "overview" ? (
         <>

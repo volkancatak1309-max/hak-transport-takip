@@ -24,7 +24,8 @@
     "themeDark": "Karanlık",
     "themeSystem": "Sistem",
     "search": "Ara",
-    "actions": "Eylemler"
+    "actions": "Eylemler",
+    "epoch_warning": "Seçilen aralık eski alarm eşiklerini kapsıyor — {date} öncesi kayıtlar farklı ayarlarla üretildi, sayılar kıyaslanabilir değil."
   },
   "errors": {
     "error_title": "Bir şeyler ters gitti",
@@ -173,7 +174,8 @@
     "sort_most": "En çok tetiklenen",
     "tile_last": "Son tetiklenme",
     "tile_alerts": "Alarm",
-    "all": "Tümü"
+    "all": "Tümü",
+    "range_epoch": "Yeni eşiklerden beri"
   },
   "approval": {
     "pending": "Onay Bekliyor",

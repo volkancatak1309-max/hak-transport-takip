@@ -23,6 +23,7 @@ import {
   type RankRow,
 } from "@/components/ui-v2";
 import { Input } from "@/components/ui/input";
+import { EpochWarning } from "@/components/admin/EpochWarning";
 import { formatDate, formatEur, formatIdleShort, formatNumber } from "@/lib/format";
 import type {
   AnalyticsRangeKey,
@@ -288,6 +289,15 @@ export function AnalizClient({
 
       {/* Bölüm 1 — olay tipi bazında top-10 personel */}
       <div>
+        {/* Eşik sınırı uyarısı BAŞLIĞIN ÜSTÜNDE: bu bölümün sayıları doğrudan
+            vehicle_events'ten geliyor, yani sınırı aşan bir aralıkta iki farklı
+            cetvelin toplamı. Uyarı sayfanın dibindeyken tabloyu okuyan kişi onu
+            görmeden yorumluyordu. */}
+        <EpochWarning
+          epochISO={configEpochISO}
+          show={showEpochNote}
+          className="mb-3"
+        />
         <h2 className="mb-3 text-[15px] font-semibold">{t("section1_title")}</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {TOP10_EVENT_TYPES.map((ty) => {
@@ -393,20 +403,15 @@ export function AnalizClient({
         )}
       </div>
 
-      {/* EŞİK SINIRI NOTU — sayfanın en altında, tüm bölümler için geçerli.
-          Alarm eşikleri filoya toplu değiştiğinde bu tarihten önceki olaylar
-          farklı bir cetvelle ölçülmüştür; sayıları karşılaştırmak yanıltır. */}
-      {configEpochISO && (showEpochNote || trendBlocked) && (
+      {/* TREND KAPISI NOTU — yalnız karşılaştırma sınırı aştığında.
+          Aralık uyarısı (epoch_note) buradan ALINDI ve Bölüm 1'in üstüne
+          taşındı; ikisini birlikte dipte tutmak, tabloyu okuyanın uyarıyı hiç
+          görmemesi demekti. Bu not ise güvenlik skoru TRENDİNE ait, yerinde
+          kalıyor. */}
+      {configEpochISO && trendBlocked && (
         <div className="flex items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-xs text-accent-gold">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-          <div className="space-y-1">
-            {showEpochNote && (
-              <p>{t("epoch_note", { date: formatDate(configEpochISO, locale) })}</p>
-            )}
-            {trendBlocked && (
-              <p>{t("epoch_trend_blocked", { date: formatDate(configEpochISO, locale) })}</p>
-            )}
-          </div>
+          <p>{t("epoch_trend_blocked", { date: formatDate(configEpochISO, locale) })}</p>
         </div>
       )}
       </div>

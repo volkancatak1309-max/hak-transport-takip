@@ -24,7 +24,8 @@
     "themeDark": "Dunkel",
     "themeSystem": "System",
     "search": "Suchen",
-    "actions": "Aktionen"
+    "actions": "Aktionen",
+    "epoch_warning": "Der gewählte Zeitraum umfasst die alten Alarmschwellen — Einträge vor dem {date} wurden mit anderen Einstellungen erzeugt, die Zahlen sind nicht vergleichbar."
   },
   "errors": {
     "error_title": "Etwas ist schiefgelaufen",
@@ -173,7 +174,8 @@
     "sort_most": "Meist ausgelöst",
     "tile_last": "Zuletzt ausgelöst",
     "tile_alerts": "Alarme",
-    "all": "Alle"
+    "all": "Alle",
+    "range_epoch": "Seit den neuen Schwellen"
   },
   "approval": {
     "pending": "Ausstehend",

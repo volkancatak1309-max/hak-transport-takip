@@ -34,6 +34,7 @@ import {
   UserPlus,
   Loader2,
   MoreHorizontal,
+  ChevronRight,
 } from "lucide-react";
 import {
   formatDate,
@@ -58,6 +59,7 @@ import {
   OpenShiftsCard,
   type OpenShiftRow,
 } from "@/components/admin/OpenShiftsCard";
+import { TodayBoard, TodayStrip, rosterCounts } from "@/components/admin/TodayBoard";
 import { ShiftPhotosButton } from "@/components/admin/ShiftPhotosButton";
 import {
   PageHeader,
@@ -129,6 +131,19 @@ export function AdminClient({
   const [detail, setDetail] = useState<TimeEntryWithWorker | null>(null);
   const [confirmDel, setConfirmDel] = useState<TimeEntryWithWorker | null>(null);
   const [azgOpen, setAzgOpen] = useState(false);
+  /** Arşiv (vardiya kayıtları) varsayılan KAPALI — bkz. bölüm başlığındaki not. */
+  const [archiveOpen, setArchiveOpen] = useState(false);
+
+  // Şerit sayıları panonun KENDİ satırlarından türer — ikinci bir kaynak
+  // olmadığı için pano ile şerit hiçbir zaman çelişemez ("Aktif Vardiya 6 /
+  // Sahadaki şoför 6" çakışmasının kök sebebi iki ayrı kaynaktı).
+  const boardCounts = useMemo(() => rosterCounts(dashboard.roster), [dashboard.roster]);
+  // Sessiz araç sayısı dikkat panosuyla AYNI kaynaktan (kind === "silent"),
+  // böylece iki yerde farklı sayı çıkamaz.
+  const silentVehicleCount = useMemo(
+    () => dashboard.attention.filter((a) => a.kind === "silent").length,
+    [dashboard.attention]
+  );
   const [azgMonth, setAzgMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -461,14 +476,58 @@ export function AdminClient({
 
   return (
     <div className="space-y-6">
-      {/* Filo arıza özeti — yalnız aktif arızası olan araç varsa. Boş filoda
-          "arıza yok" kutusu göstermeye gerek yok (boş-durum ekonomisi); kart
-          kendi içindeki temiz boş-durumunu yalnız veri gelip sıfırlandığında
-          göstermez, hiç render edilmez. */}
-      {dashboard.dtc.length > 0 && <FleetDtcCard rows={dashboard.dtc} />}
+      {/* Sayfa başlığı + genel eylemler. Excel/PDF/AZG/Çalışan Ekle en üste
+          alındı: yönetici bunları arşiv tablosunu açmadan da kullanır. */}
+      <PageHeader
+        title={t("title")}
+        action={
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={!entries.length} title={t("exportExcel")}>
+              <FileSpreadsheet className="size-4" />
+              <span className="hidden xl:inline">Excel</span>
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportPdf} disabled={!entries.length} title={t("exportPdf")}>
+              <FileText className="size-4" />
+              <span className="hidden xl:inline">PDF</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAzgOpen(true)}
+              title={tAzg("report_title")}
+              className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Shield className="size-4" />
+              <span className="hidden xl:inline">AZG</span>
+            </Button>
+            <AddWorkerDialog>
+              <Button size="sm" className="btn-primary text-white" title={t("addWorker")}>
+                <UserPlus className="size-4" />
+                <span className="hidden xl:inline">{t("addWorker")}</span>
+              </Button>
+            </AddWorkerDialog>
+          </div>
+        }
+      />
 
-      {/* Bugünün canlı operasyon özeti (analitik ızgaranın altında) */}
-      <OpsSummary ops={dashboard.todayOps} detail={dashboard.opsDetail} />
+      <TodayStrip
+        counts={boardCounts}
+        openShifts={openShifts.length}
+        silentVehicles={silentVehicleCount}
+      />
+
+      {/* GÜNÜN PANOSU — sayfanın merkezi. Vardiya açmayan şoför dahil, her
+          aktif şoför için bir satır. */}
+      <TodayBoard rows={dashboard.roster} />
+
+      {/* ARAÇ ARIZALARI (DTC) BURADAN KALDIRILDI (22.07.2026) → /admin/araclar.
+          Ölçtük: masaüstünde sayfanın ilk bloğuydu (420px), mobilde en tepedeki
+          içerikti — operasyon özetinden de dikkat panosundan da önce geliyordu.
+          Arıza aracın özelliğidir, günün operasyon panosunun konusu değil. */}
+
+      {/* KARAR KATMANI — şerit + pano yukarıda kurulur (bkz. yukarıdaki blok).
+          Sıra bilinçli: önce "bugün ne oluyor / kim eksik", sonra dikkat
+          kalemleri, sonra ölçüm (operasyon özeti), en sonda arşiv. */}
 
       {/* Dikkat kalemleri + şoför bildirimleri.
           Dikkat panosu HER ZAMAN render edilir — kardeş kartların (DTC, şoför
@@ -486,57 +545,34 @@ export function AdminClient({
         {reports.length > 0 && <DriverReportsCard reports={reports} />}
       </div>
 
-      {/* Vardiya kayıtları — özet · filtre · tablo */}
+      {/* Bugünün ÖLÇÜM katmanı — karar katmanının altında. */}
+      <OpsSummary ops={dashboard.todayOps} detail={dashboard.opsDetail} />
+
+      {/* ARŞİV — vardiya kayıtları. VARSAYILAN KAPALI (22.07.2026): mobilde
+          sayfa 21.389 px'ti ve bunun büyük kısmı bu tabloydu. Geçmiş kayıt
+          günlük karar aracı değil, arama aracıdır; isteyen açar. Kapalıyken
+          tablo hiç render edilmez (mobil DOM'u da küçülür). */}
       <section className="space-y-4 border-t border-border pt-6">
-        <PageHeader
-          title={t("dash.shifts_title")}
-          action={
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Button variant="outline" size="sm" onClick={exportCsv} disabled={!entries.length} title={t("exportExcel")}>
-                <FileSpreadsheet className="size-4" />
-                <span className="hidden xl:inline">Excel</span>
-              </Button>
-              <Button variant="outline" size="sm" onClick={exportPdf} disabled={!entries.length} title={t("exportPdf")}>
-                <FileText className="size-4" />
-                <span className="hidden xl:inline">PDF</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setAzgOpen(true)}
-                title={tAzg("report_title")}
-                className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              >
-                <Shield className="size-4" />
-                <span className="hidden xl:inline">AZG</span>
-              </Button>
-              <AddWorkerDialog>
-                <Button size="sm" className="btn-primary text-white" title={t("addWorker")}>
-                  <UserPlus className="size-4" />
-                  <span className="hidden xl:inline">{t("addWorker")}</span>
-                </Button>
-              </AddWorkerDialog>
-            </div>
-          }
-        />
+        <button
+          type="button"
+          onClick={() => setArchiveOpen((v) => !v)}
+          aria-expanded={archiveOpen}
+          className="flex w-full items-center justify-between gap-2 rounded-lg px-1 py-1 text-left transition-colors hover:bg-surface-2/50"
+        >
+          <span className="flex items-center gap-2">
+            <ChevronRight
+              className={`size-4 shrink-0 text-muted-foreground transition-transform ${archiveOpen ? "rotate-90" : ""}`}
+              aria-hidden
+            />
+            <span className="text-base font-semibold">{t("dash.shifts_title")}</span>
+          </span>
+          <span className="nums text-xs text-muted-foreground">
+            {t("archiveCount", { n: entries.length, scope: scopeLabel })}
+          </span>
+        </button>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard label={t("totalHours")} value={formatDuration(summary.totalMs)} scope={scopeLabel} />
-          <StatCard label={t("totalKm")} value={summary.totalKm.toLocaleString(nf)} scope={scopeLabel} />
-          <StatCard
-            label={t("activeShifts")}
-            value={String(summary.activeCount)}
-            scope={t("rangeToday")}
-            tone={summary.activeCount > 0 ? ("info" as StatTone) : "neutral"}
-          />
-          <StatCard
-            label={t("overLimit")}
-            value={String(summary.overLimit)}
-            scope={scopeLabel}
-            tone={summary.overLimit > 0 ? ("warning" as StatTone) : "neutral"}
-          />
-        </div>
-
+        {archiveOpen && (
+          <>
         {/* Filtre çubuğu */}
         <Card>
           <CardContent className="flex flex-wrap items-end gap-3 p-4">
@@ -719,6 +755,19 @@ export function AdminClient({
                 );
               })}
             </ul>
+          </>
+        )}
+
+        {/* Aralığa ait toplam KM — üst karttan buraya indi: aralık filtresinin
+            hemen altında, ait olduğu tablonun yanında anlam kazanıyor. */}
+        {entries.length > 0 && (
+          <p className="nums text-xs text-muted-foreground">
+            {t("archiveTotals", {
+              km: summary.totalKm.toLocaleString(nf),
+              scope: scopeLabel,
+            })}
+          </p>
+        )}
           </>
         )}
       </section>

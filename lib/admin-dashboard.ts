@@ -129,6 +129,39 @@ export type FleetDtcRow = {
   oldest_since: string | null;
 };
 
+/**
+ * GÜNÜN PANOSU — yönetici sabah açtığında sorduğu tek soru: "bugün kim, hangi
+ * araçla, ne durumda?" (Volkan, 22.07.2026).
+ *
+ * Satır sayısı vardiya sayısı DEĞİL, AKTİF ŞOFÖR sayısıdır: vardiya açmamış
+ * şoför de bir satırdır — panonun asıl varlık sebebi odur. Eski panoda 12 kutu
+ * vardı ama "kim işe çıkmadı" sorusu hiçbir yerde cevaplanmıyordu.
+ *
+ * Araç eşleşmesinin tek kaynağı `vehicles.assigned_worker_id`. Şoför o gün
+ * BAŞKA bir araçla vardiya açtıysa (`usedPlate`) bu ayrıca gösterilir — sessiz
+ * düzeltmek yerine farkı görünür kılıyoruz.
+ */
+export type RosterStatus = "not_started" | "in_field" | "on_break" | "closed";
+
+export type TodayRosterRow = {
+  workerId: string;
+  name: string;
+  /** vehicles.assigned_worker_id ile eşleşen araç; yoksa null. */
+  plate: string | null;
+  vehicleStatus: string | null;
+  /** Vardiyada GERÇEKTEN kullanılan plaka — atanmışdan farklıysa doludur. */
+  usedPlate: string | null;
+  status: RosterStatus;
+  startedAt: string | null;
+  endedAt: string | null;
+  /** Gün başında alınan paket (start_package_count). */
+  loadedPackages: number | null;
+  /** Atanmış aracın son telemetrisinin yaşı (ms); cihaz/veri yoksa null. */
+  telemetryAgeMs: number | null;
+  /** Son veri 24 saatten eskiyse true — araç "kör" demektir. */
+  telemetryStale: boolean;
+};
+
 export type DashboardData = {
   todayOps: TodayOps;
   opsDetail: OpsDetail;
@@ -138,6 +171,8 @@ export type DashboardData = {
   performanceWindowDays: number;
   dtc: FleetDtcRow[];
   attention: AttentionItem[];
+  /** Günün panosu — her aktif şoför için bir satır. */
+  roster: TodayRosterRow[];
 };
 
 type LiteEntry = Pick<
@@ -153,10 +188,12 @@ type LiteEntry = Pick<
   | "start_package_count"
   | "cargo_count"
   | "undelivered_count"
+  | "vehicle_id"
+  | "plate"
 >;
 
 const ENTRY_COLS =
-  "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, break_started_at, start_package_count, cargo_count, undelivered_count";
+  "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, break_started_at, start_package_count, cargo_count, undelivered_count, vehicle_id, plate";
 
 /**
  * Everything the redesigned admin command panel needs, derived purely from the
@@ -222,7 +259,9 @@ export async function getDashboardData(
       .select("id, worker_id, vehicle_id, started_at, break_started_at")
       .is("ended_at", null),
     listVehiclesWithStatus(),
-    supabaseAdmin.from("workers").select("id, name"),
+    // is_active/is_admin de okunur: Günün Panosu satırları AKTİF ŞOFÖRLERDEN
+    // kurulur (yönetici hesapları ve ayrılmış personel panoyu şişirmemeli).
+    supabaseAdmin.from("workers").select("id, name, is_active, is_admin"),
     // Ehliyet uyarısı (migration 025). İsim haritasından AYRI sorgu: migration
     // uygulanmamış bir ortamda license_expiry kolonu yoktur → sorgu error döner,
     // data null → yalnız ehliyet uyarıları boş kalır, dashboard'ın geri kalanı
@@ -254,9 +293,11 @@ export async function getDashboardData(
     started_at: string;
     break_started_at: string | null;
   }[];
-  const names = new Map(
-    ((workersRes.data ?? []) as Pick<Worker, "id" | "name">[]).map((w) => [w.id, w.name])
-  );
+  const workerRows = (workersRes.data ?? []) as (Pick<Worker, "id" | "name"> & {
+    is_active?: boolean | null;
+    is_admin?: boolean | null;
+  })[];
+  const names = new Map(workerRows.map((w) => [w.id, w.name]));
   const unpaidPenalties = (penaltyRes.data ?? []) as {
     vehicle_id: string;
     amount: number | null;
@@ -281,20 +322,7 @@ export async function getDashboardData(
 
   // Arıza satırlarına plaka iliştirilir; plakası bulunamayan (silinmiş araç)
   // satır düşürülür — "—" plakalı hayalet satır göstermeyiz.
-  const plateById = new Map(vehicles.map((v) => [v.id, v.plate]));
-  const dtc: FleetDtcRow[] = dtcRows.flatMap((d) => {
-    const plate = plateById.get(d.vehicle_id);
-    if (!plate) return [];
-    return [
-      {
-        vehicle_id: d.vehicle_id,
-        plate,
-        count: d.count,
-        oldest_code: d.oldest?.code ?? null,
-        oldest_since: d.oldest?.first_seen ?? null,
-      },
-    ];
-  });
+  const dtc = attachPlatesToDtc(dtcRows, vehicles);
 
   return {
     todayOps,
@@ -309,6 +337,7 @@ export async function getDashboardData(
     ),
     performanceWindowDays: PERF_WINDOW_DAYS,
     dtc,
+    roster: buildTodayRoster(workerRows, vehicles, todayEntries, positions),
     attention: buildAttention(
       rangeEntries,
       todayEntries,
@@ -375,6 +404,157 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
 
 /** Per-driver / per-vehicle breakdown for the click-to-expand tile dialogs.
  *  Derived from the same data as buildTodayOps — purely read-only. */
+/**
+ * Arıza satırlarına plaka iliştirir; plakası bulunamayan (silinmiş araç) satır
+ * düşürülür — "—" plakalı hayalet satır göstermeyiz.
+ */
+function attachPlatesToDtc(
+  dtcRows: {
+    vehicle_id: string;
+    count: number;
+    oldest?: { code: string; first_seen: string } | null;
+  }[],
+  vehicles: { id: string; plate: string }[]
+): FleetDtcRow[] {
+  const plateById = new Map(vehicles.map((v) => [v.id, v.plate]));
+  return dtcRows.flatMap((d) => {
+    const plate = plateById.get(d.vehicle_id);
+    if (!plate) return [];
+    return [
+      {
+        vehicle_id: d.vehicle_id,
+        plate,
+        count: d.count,
+        oldest_code: d.oldest?.code ?? null,
+        oldest_since: d.oldest?.first_seen ?? null,
+      },
+    ];
+  });
+}
+
+/**
+ * Filo arıza (DTC) özeti — ARAÇLAR sayfası için tek başına çağrılır.
+ * 22.07.2026'da bu kart yönetici panosundan Araçlar'a taşındı: arıza aracın
+ * özelliğidir, günün operasyon panosunun konusu değil.
+ */
+export async function getFleetDtc(): Promise<FleetDtcRow[]> {
+  const [dtcRows, vehicles] = await Promise.all([
+    listFleetActiveDtc(),
+    listVehiclesWithStatus(),
+  ]);
+  return attachPlatesToDtc(dtcRows, vehicles);
+}
+
+/**
+ * GÜNÜN PANOSU satırlarını kurar (bkz. TodayRosterRow).
+ *
+ * Sıralama bilinçli: AÇMADI → SAHADA/MOLADA → KAPANDI. Sabah 07:00'de yöneticinin
+ * gözü ilk "açmadı" satırına düşmeli, çünkü tek eylem gerektiren satır odur.
+ * Grup içinde: açmayanlar isme göre (hepsi eşdeğer), sahadakiler ve kapananlar
+ * giriş saatine göre (erken çıkan üstte — gün akışını okumak kolaylaşsın).
+ *
+ * Yeni sorgu YOK: dört girdi de getDashboardData'nın zaten çektiği veriler.
+ */
+function buildTodayRoster(
+  workerRows: (Pick<Worker, "id" | "name"> & {
+    is_active?: boolean | null;
+    is_admin?: boolean | null;
+  })[],
+  vehicles: {
+    id: string;
+    plate: string;
+    status: string;
+    assigned_worker_id: string | null;
+  }[],
+  todayEntries: LiteEntry[],
+  positions: { vehicle_id: string; recorded_at: string }[]
+): TodayRosterRow[] {
+  const nowMs = Date.now();
+
+  // Şoför → atanmış araç. Tek kaynak vehicles.assigned_worker_id.
+  const vehicleByWorker = new Map<string, (typeof vehicles)[number]>();
+  for (const v of vehicles) {
+    if (v.assigned_worker_id && !vehicleByWorker.has(v.assigned_worker_id)) {
+      vehicleByWorker.set(v.assigned_worker_id, v);
+    }
+  }
+
+  const lastSeen = new Map(positions.map((p) => [p.vehicle_id, p.recorded_at]));
+
+  // Şoförün BUGÜNKÜ vardiyası. Birden çok satır varsa (eski veri) açık olan,
+  // yoksa en geç başlayan alınır — panoda "şu anki durum" gösterilir.
+  const entryByWorker = new Map<string, LiteEntry>();
+  for (const e of todayEntries) {
+    if (!e.worker_id) continue;
+    const cur = entryByWorker.get(e.worker_id);
+    if (!cur) {
+      entryByWorker.set(e.worker_id, e);
+      continue;
+    }
+    const curOpen = cur.ended_at === null;
+    const newOpen = e.ended_at === null;
+    if (newOpen && !curOpen) entryByWorker.set(e.worker_id, e);
+    else if (newOpen === curOpen && e.started_at > cur.started_at) {
+      entryByWorker.set(e.worker_id, e);
+    }
+  }
+
+  const rows: TodayRosterRow[] = [];
+  for (const w of workerRows) {
+    // Yönetici hesapları ve ayrılmış personel panoda yer almaz.
+    if (w.is_admin === true) continue;
+    if (w.is_active === false) continue;
+
+    const veh = vehicleByWorker.get(w.id) ?? null;
+    const entry = entryByWorker.get(w.id) ?? null;
+
+    let status: RosterStatus = "not_started";
+    if (entry) {
+      if (entry.ended_at !== null) status = "closed";
+      else if (entry.break_started_at) status = "on_break";
+      else status = "in_field";
+    }
+
+    // Telemetri yaşı ATANMIŞ araçtan okunur: "şoförün aracından veri geliyor mu"
+    // sorusu, vardiya açılmamış olsa da geçerlidir (sabah kör araç fark edilsin).
+    const seen = veh ? lastSeen.get(veh.id) : undefined;
+    const ageMs = seen ? Math.max(0, nowMs - new Date(seen).getTime()) : null;
+
+    const usedPlate =
+      entry?.plate && veh?.plate && entry.plate !== veh.plate ? entry.plate : null;
+
+    rows.push({
+      workerId: w.id,
+      name: w.name,
+      plate: veh?.plate ?? null,
+      vehicleStatus: (veh?.status as string) ?? null,
+      usedPlate,
+      status,
+      startedAt: entry?.started_at ?? null,
+      endedAt: entry?.ended_at ?? null,
+      loadedPackages: entry?.start_package_count ?? null,
+      telemetryAgeMs: ageMs,
+      telemetryStale: ageMs !== null && ageMs >= TELEMETRY_SILENT_HOURS * 3_600_000,
+    });
+  }
+
+  const rank: Record<RosterStatus, number> = {
+    not_started: 0,
+    in_field: 1,
+    on_break: 1, // molada = sahada sayılır, ayrı grup açmaz
+    closed: 2,
+  };
+  rows.sort((a, b) => {
+    const r = rank[a.status] - rank[b.status];
+    if (r !== 0) return r;
+    if (a.status === "not_started") return a.name.localeCompare(b.name);
+    const at = a.startedAt ?? "";
+    const bt = b.startedAt ?? "";
+    return at.localeCompare(bt) || a.name.localeCompare(b.name);
+  });
+  return rows;
+}
+
 function buildOpsDetail(
   todayEntries: LiteEntry[],
   activeShifts: {

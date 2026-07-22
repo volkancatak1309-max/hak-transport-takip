@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { FleetDtcCard } from "@/components/admin/FleetDtcCard";
+import type { FleetDtcRow } from "@/lib/admin-dashboard";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -64,9 +66,12 @@ const NO_DRIVER = "__none__";
 export function AraclarClient({
   vehicles,
   drivers,
+  dtc,
 }: {
   vehicles: VehicleWithStatus[];
   drivers: { id: string; name: string; is_active: boolean }[];
+  /** Aktif arıza kodu olan araçlar (yönetici panosundan taşındı). */
+  dtc: FleetDtcRow[];
 }) {
   const t = useTranslations("vehicles");
   const tm = useTranslations("vehicles.manage");
@@ -281,6 +286,12 @@ export function AraclarClient({
         <Kpi label={t("kpi_break")} value={counts.molada} accent="claret" />
         <Kpi label={t("kpi_idle")} value={counts.bosta} accent="gold" />
       </div>
+
+      {/* FİLO ARIZALARI (DTC) — 22.07.2026'da yönetici panosundan buraya
+          taşındı. Arıza aracın özelliğidir; panoda sayfanın ilk bloğuydu ve
+          mobilde operasyon özetinden de önce geliyordu. Yalnız aktif arızası
+          olan araç varsa render edilir (boş-durum ekonomisi). */}
+      {dtc.length > 0 && <FleetDtcCard rows={dtc} />}
 
       {/* Filtre bandı — Reveal araç panelinin tek satır düzeni (A3 dili):
           etiketli dropdown'lar solda, arama + eylem sağda. Çip yok. */}

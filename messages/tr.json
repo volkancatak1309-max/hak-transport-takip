@@ -668,7 +668,8 @@
     "filter_sort": "Sırala",
     "sort_plate": "Plaka",
     "sort_driver": "Şoför",
-    "sort_status": "Durum"
+    "sort_status": "Durum",
+    "shared_vehicle": "{n} şoför"
   },
   "offline": {
     "online": "Çevrimiçi",
@@ -886,7 +887,14 @@
     "v2ConfirmFix": "Düzelt",
     "v2PkgSavedN": "{n} paket kaydedildi",
     "v2PkgCleared": "Paket sayısı silindi",
-    "v2Back": "Geri"
+    "v2Back": "Geri",
+    "v2OtherVehicle": "Başka araç kullanacağım",
+    "v2OtherVehicleHint": "Bugün hangi araçla çıkacaksan seç. Seçim yalnız bugün için geçerli — yarın yine kendi aracınla açarsın.",
+    "v2OtherVehicleErr": "Araç listesi alınamadı, tekrar dene.",
+    "v2OwnVehicle": "kendi aracın",
+    "v2VehicleInUse": "kullanımda",
+    "v2VehicleBusyWarn": "Bu aracı şu an {name} kullanıyor. Aynı araca iki kişi binemez — o kişinin de kendi panelinden bindiği aracın plakasını girmesi gerekiyor.",
+    "v2VehicleBusyProceed": "Yine de devam et"
   },
   "history": {
     "title": "Vardiya Geçmişi",
@@ -1104,7 +1112,10 @@
     "v2ConfirmAllReturnedAdmin": "Bu kayıtta hiç paket teslim edilmemiş görünüyor.",
     "v2ConfirmManyReturnedAdmin": "Dağıtılacak paketin yarısından fazlası geri getirilmiş görünüyor.",
     "boardFleetlessTitle": "Filosuz personel ({n})",
-    "boardFleetlessHint": "Atanmış aracı olmadığı için hiçbir filoya bağlı değiller. Filo şefleri bu kişileri görmez."
+    "boardFleetlessHint": "Atanmış aracı olmadığı için hiçbir filoya bağlı değiller. Filo şefleri bu kişileri görmez.",
+    "boardTempVehicle": "geçici",
+    "boardSharedVehicle": "paylaşılan araç",
+    "boardSharedVehicleHint": "Bu aracı bugün birden çok şoför kullandı. Bitiş kilometresi araç sayacından türediği için mesafe her iki vardiyada da aynı görünür — toplam km çift sayılmış olabilir."
   },
   "workers": {
     "title": "Çalışan Yönetimi",

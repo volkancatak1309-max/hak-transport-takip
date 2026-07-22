@@ -86,7 +86,16 @@ async function notifyAdminsShiftStarted(
  * vehicle_id HER ZAMAN doldurulur: auto-shift açık vardiyaları hem worker'a hem
  * araca göre indeksler; boş bırakmak kontak açılınca ikinci satır riskidir.
  */
-export async function startShiftManualAction(): Promise<ShiftResult> {
+export async function startShiftManualAction(
+  /**
+   * GEÇİCİ ARAÇ (22.07.2026). Verilirse vardiya BU araçla açılır; şoförün
+   * atanmış aracı (vehicles.assigned_worker_id) DEĞİŞMEZ — o kalıcı ilişki,
+   * bu ise "bugün hangi araçla" sorusunun cevabıdır ve time_entries.vehicle_id
+   * üzerinde yaşar. Ertesi gün yeni satır yine atanmış araçla açılır;
+   * temizlenecek bir durum YOKTUR.
+   */
+  overrideVehicleId?: string
+): Promise<ShiftResult> {
   const session = await requireWorker();
 
   // 0) Çalışan hâlâ aktif mi? requireWorker BUNU KAPSAMAZ: is_active yalnız
@@ -100,19 +109,43 @@ export async function startShiftManualAction(): Promise<ShiftResult> {
     .maybeSingle();
   if (!me || me.is_active !== true) return { ok: false, error: "inactive_worker" };
 
-  // 1) Atanmış araç — panel/page.tsx ile aynı sorgu. "active" katılığı
-  //    auto-shift ile aynı: bakımdaki araçla vardiya elle de açılmaz.
-  const { data: veh } = await supabaseAdmin
-    .from("vehicles")
-    .select("id, plate, status")
-    .eq("assigned_worker_id", session.worker_id!)
-    .neq("status", "inactive")
-    .order("plate")
-    .limit(1)
-    .maybeSingle();
-  if (!veh) return { ok: false, error: "no_vehicle" };
-  if ((veh.status as string) !== "active") {
-    return { ok: false, error: "vehicle_unavailable" };
+  // 1) Araç. Şoför geçici araç seçtiyse O, seçmediyse atanmış aracı.
+  //    "active" katılığı iki yolda da aynı: bakımdaki araçla vardiya açılmaz.
+  let veh: { id: string; plate: string; status: string } | null = null;
+  if (overrideVehicleId) {
+    const { data } = await supabaseAdmin
+      .from("vehicles")
+      .select("id, plate, status, is_test")
+      .eq("id", overrideVehicleId)
+      .maybeSingle();
+    // Test aracı seçiciye hiç gelmiyor; yine de sunucu son sözü söyler.
+    if (!data || data.is_test === true) return { ok: false, error: "no_vehicle" };
+    if ((data.status as string) !== "active") {
+      return { ok: false, error: "vehicle_unavailable" };
+    }
+    veh = {
+      id: data.id as string,
+      plate: data.plate as string,
+      status: data.status as string,
+    };
+  } else {
+    const { data } = await supabaseAdmin
+      .from("vehicles")
+      .select("id, plate, status")
+      .eq("assigned_worker_id", session.worker_id!)
+      .neq("status", "inactive")
+      .order("plate")
+      .limit(1)
+      .maybeSingle();
+    if (!data) return { ok: false, error: "no_vehicle" };
+    if ((data.status as string) !== "active") {
+      return { ok: false, error: "vehicle_unavailable" };
+    }
+    veh = {
+      id: data.id as string,
+      plate: data.plate as string,
+      status: data.status as string,
+    };
   }
 
   // 2) Çift açık vardiya guard'ı (startShiftAction ile aynı). DB tarafında
@@ -125,22 +158,15 @@ export async function startShiftManualAction(): Promise<ShiftResult> {
     .maybeSingle();
   if (active) return { ok: false, error: "active" };
 
-  // 2a) ARAÇ guard'ı. uq_time_entries_one_open yalnız worker_id'ye bakar, yani
-  //     DB "aynı araçta iki açık vardiya"yı engellemez. auto-shift bu yarısını
-  //     kodla koruyor (`!vehicleShift`); manuel yol da korumazsa şu senaryo
-  //     bozuk veri üretir: önceki şoför vardiyasını kapatmayı unutmuş, yönetici
-  //     aracı yedek şoföre devretmiş → araca ait iki açık satır oluşur ve
-  //     openByVehicle/activeByVehicle haritaları hangisini tutacağını
-  //     bilemez. Şoföre net mesaj verip yöneticiye yönlendiriyoruz.
-  //     GÜN KİLİDİNDEN ÖNCE bakılır: yeniden açma da bu aracı meşgul eder.
-  const { data: vehicleBusy } = await supabaseAdmin
-    .from("time_entries")
-    .select("id")
-    .eq("vehicle_id", veh.id as string)
-    .is("ended_at", null)
-    .limit(1)
-    .maybeSingle();
-  if (vehicleBusy) return { ok: false, error: "vehicle_busy" };
+  // 2a) ARAÇ guard'ı KALDIRILDI (22.07.2026, Volkan kararı). Eskiden aynı
+  //     araçta ikinci açık vardiya `vehicle_busy` ile reddediliyordu. Artık
+  //     ENGELLENMİYOR: şoför paneldeki seçicide "bu aracı şu an X kullanıyor"
+  //     uyarısını görür ve yine de devam edebilir (kural 3). Sahada iki kişinin
+  //     aynı araca binmesi gerçek bir durum; yazılım onu yasaklamak yerine
+  //     GÖRÜNÜR kılıyor — yönetici Araçlar sayfasında iki şoförü de görür ve
+  //     km çift sayımı rozetle işaretlenir.
+  //     DB tarafı zaten güvenli: uq_time_entries_one_open worker_id bazlıdır,
+  //     yani bir şoförün iki açık vardiyası hâlâ imkânsız.
 
   // 2b) GÜNDE TEK VARDİYA (lib/shift-day.ts) — artık çıkmaz sokak DEĞİL.
   //

@@ -668,7 +668,8 @@
     "filter_sort": "Sortieren",
     "sort_plate": "Kennzeichen",
     "sort_driver": "Fahrer",
-    "sort_status": "Status"
+    "sort_status": "Status",
+    "shared_vehicle": "{n} Fahrer"
   },
   "offline": {
     "online": "Online",
@@ -886,7 +887,14 @@
     "v2ConfirmFix": "Korrigieren",
     "v2PkgSavedN": "{n} Pakete gespeichert",
     "v2PkgCleared": "Paketanzahl gelöscht",
-    "v2Back": "Zurück"
+    "v2Back": "Zurück",
+    "v2OtherVehicle": "Ich fahre ein anderes Fahrzeug",
+    "v2OtherVehicleHint": "Wähle das Fahrzeug für heute. Die Wahl gilt nur für heute — morgen startest du wieder mit deinem eigenen.",
+    "v2OtherVehicleErr": "Fahrzeugliste konnte nicht geladen werden, bitte erneut versuchen.",
+    "v2OwnVehicle": "dein Fahrzeug",
+    "v2VehicleInUse": "in Benutzung",
+    "v2VehicleBusyWarn": "Dieses Fahrzeug wird gerade von {name} genutzt. Zwei Personen können nicht dasselbe Fahrzeug fahren — die andere Person muss in ihrem eigenen Panel das Kennzeichen des tatsächlich gefahrenen Fahrzeugs eintragen.",
+    "v2VehicleBusyProceed": "Trotzdem fortfahren"
   },
   "history": {
     "title": "Schichtverlauf",
@@ -1104,7 +1112,10 @@
     "v2ConfirmAllReturnedAdmin": "In diesem Eintrag wurde offenbar kein Paket zugestellt.",
     "v2ConfirmManyReturnedAdmin": "Mehr als die Hälfte der zu liefernden Pakete wurde zurückgebracht.",
     "boardFleetlessTitle": "Mitarbeiter ohne Flotte ({n})",
-    "boardFleetlessHint": "Ohne zugewiesenes Fahrzeug gehören sie zu keiner Flotte. Flottenleiter sehen diese Personen nicht."
+    "boardFleetlessHint": "Ohne zugewiesenes Fahrzeug gehören sie zu keiner Flotte. Flottenleiter sehen diese Personen nicht.",
+    "boardTempVehicle": "temporär",
+    "boardSharedVehicle": "geteiltes Fahrzeug",
+    "boardSharedVehicleHint": "Dieses Fahrzeug wurde heute von mehreren Fahrern genutzt. Da die End-Kilometer vom Fahrzeugzähler stammen, erscheint dieselbe Strecke in beiden Schichten — die Gesamt-km können doppelt gezählt sein."
   },
   "workers": {
     "title": "Mitarbeiterverwaltung",

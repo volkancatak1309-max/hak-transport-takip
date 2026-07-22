@@ -430,7 +430,18 @@ export function AraclarClient({
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                         <UserRound className="size-3.5 shrink-0 text-text-tertiary" />
-                        {v.driver_name ? (
+                        {v.live_drivers.length > 1 ? (
+                          /* AYNI ARAÇTA BİRDEN ÇOK ŞOFÖR (22.07.2026): geçici
+                             araç seçimi serbest bırakıldıktan sonra mümkün.
+                             Eskiden yalnız ilki gösteriliyordu — yönetici
+                             eksik bilgi görüyordu. */
+                          <span className="truncate">
+                            {v.live_drivers.join(", ")}
+                            <span className="ml-1 rounded-full bg-accent-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-gold">
+                              {t("shared_vehicle", { n: v.live_drivers.length })}
+                            </span>
+                          </span>
+                        ) : v.driver_name ? (
                           <span className="truncate">
                             {v.driver_name}
                             {!v.driver_is_live && (

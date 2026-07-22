@@ -38,8 +38,11 @@ export default async function HaritaPage() {
       "worker_id",
       scope.workerIds
     ),
-    "vehicle_id",
-    fleetScope.vehicleIds,
+    // Şoför ekseni (kural 7): şoför ödünç araç kullansa da şefi onu görür.
+    // Konumu ise aracın telemetrisinden gelir — o araç getFleetScope'ta
+    // "bugün kullanılan" olarak kapsama eklenmiştir.
+    "worker_id",
+    fleetScope.workerIds,
     fleetScope
   );
   const shifts = (shiftsData ?? []) as ShiftRow[];

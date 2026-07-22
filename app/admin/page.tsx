@@ -89,7 +89,7 @@ export default async function AdminPage({
     // Her iki eleme de AŞAĞIDA, koşullu filtrelerden SONRA uygulanıyor
     // (zincirin sonunda `query = ...`), muhafızın penceresi dışında kalıyor:
     // test-filtered: withoutTestRows(query, "worker_id", scope.workerIds)
-    // fleet-scoped: onlyFleet(query, "vehicle_id", fleetScope.vehicleIds)
+    // fleet-scoped: onlyFleet(query, "worker_id", fleetScope.workerIds)
     let query = supabaseAdmin
       .from("time_entries")
       .select("*")
@@ -107,7 +107,7 @@ export default async function AdminPage({
     query = withoutTestRows(query, "worker_id", scope.workerIds);
     // Arsiv sefte GIZLI; veriyi yine de daraltiyoruz ki gizli bir bilesen
     // ya da ileride acilacak bir gorunum karsi filoyu sizdirmasin.
-    query = onlyFleet(query, "vehicle_id", fleetScope.vehicleIds, fleetScope);
+    query = onlyFleet(query, "worker_id", fleetScope.workerIds, fleetScope);
     return query.range(from, to);
   });
 
@@ -237,8 +237,9 @@ export default async function AdminPage({
       "worker_id",
       scope.workerIds
     ),
-    "vehicle_id",
-    fleetScope.vehicleIds,
+    // Şoför ekseni: ödünç araç kullanan şoför kendi şefinin listesinde kalır.
+    "worker_id",
+    fleetScope.workerIds,
     fleetScope
   );
 

@@ -267,10 +267,28 @@ function VehicleCell({ row, t }: { row: TodayRosterRow; t: TFn }) {
       {row.vehicleStatus && row.vehicleStatus !== "active" && (
         <StatusChip tone="warning">{t("boardVehicleNotActive")}</StatusChip>
       )}
-      {/* Şoför başka araçla açtıysa sessizce düzeltmiyoruz — farkı yazıyoruz. */}
+      {/* GEÇİCİ ARAÇ (22.07.2026): şoför bugün başka araçla çıktıysa
+          ASIL aracı solda kalır, kullandığı sağda "geçici" rozetiyle
+          gösterilir — ikisi karışmasın. Gold ton = uyarı, ihlal değil. */}
       {row.usedPlate && (
-        <span className="nums text-[11px] text-muted-foreground">
-          → {row.usedPlate}
+        <span className="inline-flex items-center gap-1">
+          <span className="nums text-[11px] text-muted-foreground">
+            → {row.usedPlate}
+          </span>
+          <span className="rounded-full bg-accent-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-gold">
+            {t("boardTempVehicle")}
+          </span>
+        </span>
+      )}
+      {/* PAYLAŞILAN ARAÇ: aynı araçta bugün başka şoför de var. Bitiş km'si
+          iki vardiyada da aynı odometreden türediği için mesafe ÇİFT sayılır —
+          sayıyı bozmuyoruz, yöneticiye görünür kılıyoruz. */}
+      {row.sharedVehicle && (
+        <span
+          className="rounded-full bg-accent-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-gold"
+          title={t("boardSharedVehicleHint")}
+        >
+          {t("boardSharedVehicle")}
         </span>
       )}
     </span>

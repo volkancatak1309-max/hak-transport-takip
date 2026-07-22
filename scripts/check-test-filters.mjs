@@ -85,6 +85,10 @@ const FLEET_SURFACES = [
   "app/admin/page.tsx",
   "app/admin/harita/page.tsx",
   "lib/admin-dashboard.ts",
+  // Geçici araç seçicisi burada yaşıyor (22.07.2026). Filo kapsamı BİLEREK
+  // uygulanmıyor ama bu kararın gerekçelendirilmiş olması gerekiyor —
+  // denetime dahil, istisna `// fleet-scoped:` ile yazılı.
+  "lib/vehicles.ts",
 ];
 const FLEET_FILTERED = ["onlyFleet(", "dropOtherFleets(", "// fleet-scoped:"];
 

@@ -203,6 +203,14 @@ export type TodayRosterRow = {
   telemetryAgeMs: number | null;
   /** Son veri 24 saatten eskiyse true — araç "kör" demektir. */
   telemetryStale: boolean;
+  /**
+   * Bu şoförün bugün kullandığı aracı BAŞKA bir şoför de kullandı mı?
+   * (22.07.2026) Geçici araç seçimi serbest bırakıldı; aynı araca iki kişi
+   * binebiliyor. Bitiş km'si İKİ vardiyada da AYNI odometreden türediği için
+   * mesafe çift sayılır. Sayıyı BOZMUYORUZ (Volkan kararı) — rozetle görünür
+   * kılıyoruz ki yönetici gerekirse elle düzeltsin.
+   */
+  sharedVehicle: boolean;
 };
 
 export type DashboardData = {
@@ -290,8 +298,8 @@ export async function getDashboardData(
         "worker_id",
         scope.workerIds
       ),
-      "vehicle_id",
-      fleetScope.vehicleIds,
+      "worker_id",
+      fleetScope.workerIds,
       fleetScope
     ),
     // Uzun aralıklar 1000 satır tavanını aşabilir → performans sıralaması ve
@@ -308,8 +316,8 @@ export async function getDashboardData(
           "worker_id",
           scope.workerIds
         ),
-        "vehicle_id",
-        fleetScope.vehicleIds,
+        "worker_id",
+        fleetScope.workerIds,
         fleetScope
       ).range(from, to)
     ),
@@ -326,8 +334,8 @@ export async function getDashboardData(
           "worker_id",
           scope.workerIds
         ),
-        "vehicle_id",
-        fleetScope.vehicleIds,
+        "worker_id",
+        fleetScope.workerIds,
         fleetScope
       ).range(from, to)
     ),
@@ -344,8 +352,8 @@ export async function getDashboardData(
         "worker_id",
         scope.workerIds
       ),
-      "vehicle_id",
-      fleetScope.vehicleIds,
+      "worker_id",
+      fleetScope.workerIds,
       fleetScope
     ),
     listVehiclesWithStatus(fleetScope),
@@ -388,6 +396,8 @@ export async function getDashboardData(
         .from("vehicle_penalties")
         .select("vehicle_id, amount")
         .eq("paid", false),
+      // ARAÇ verisi → araç ekseniyle daraltılır (vardiya verisi gibi şoför
+      // ekseniyle DEĞİL). Ceza aracın borcudur, şoförün değil.
       "vehicle_id",
       fleetScope.vehicleIds,
       fleetScope
@@ -647,12 +657,21 @@ function buildTodayRoster(
     const usedPlate =
       entry?.plate && veh?.plate && entry.plate !== veh.plate ? entry.plate : null;
 
+    // Aynı araçta bugün başka şoförün de vardiyası var mı?
+    const usedVehicleId = entry?.vehicle_id ?? veh?.id ?? null;
+    const sharedVehicle =
+      !!usedVehicleId &&
+      todayEntries.some(
+        (e) => e.vehicle_id === usedVehicleId && e.worker_id !== w.id
+      );
+
     rows.push({
       workerId: w.id,
       name: w.name,
       plate: veh?.plate ?? null,
       vehicleStatus: (veh?.status as string) ?? null,
       usedPlate,
+      sharedVehicle,
       status,
       startedAt: entry?.started_at ?? null,
       endedAt: entry?.ended_at ?? null,

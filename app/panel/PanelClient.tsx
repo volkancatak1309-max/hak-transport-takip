@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  Truck,
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
@@ -26,6 +27,8 @@ import {
   updatePackageCountAction,
 } from "../actions/shift";
 import { formatDuration, formatTime, workedMs } from "@/lib/format";
+import { listPickableVehiclesAction } from "@/app/actions/driver-panel";
+import type { PickableVehicle } from "@/lib/vehicles";
 import { breakTargetMin, AZG_BREAK_AFTER_6H_MIN } from "@/lib/break-rules";
 import { classifyUndelivered } from "@/lib/package-limits";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
@@ -136,6 +139,13 @@ export function PanelClient({
   }, [active]);
 
   // Mola — v1 ile aynı yerel-önce mantık: yerelde biriktir, kapatınca DB'ye yaz.
+  // GEÇİCİ ARAÇ seçicisi (22.07.2026) — liste LAZY çekilir.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickable, setPickable] = useState<PickableVehicle[]>([]);
+  /** Meşgul araç seçildiğinde önce onay sorulur; seçilen araç burada bekler. */
+  const [confirmBusy, setConfirmBusy] = useState<PickableVehicle | null>(null);
+
   const [breakStartLocal, setBreakStartLocal] = useState<number | null>(null);
   // Molanın hedef süresi (dakika) — molanın BAŞLADIĞI anda sabitlenir.
   // § 13c Abs. 1 AZG: 9 saati aşan vardiyada 30 değil 45 dakika. Hedefi her
@@ -399,7 +409,7 @@ export function PanelClient({
    * Offline kuyruğuna GİRMEZ: başlangıç km'sini sunucu telemetriden çözüyor,
    * istemci onu bilemez.
    */
-  function handleManualStart() {
+  function handleManualStart(overrideVehicleId?: string) {
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       toast.error(t("v2StartOffline"));
       return;
@@ -407,7 +417,7 @@ export function PanelClient({
     startTransition(async () => {
       let r;
       try {
-        r = await startShiftManualAction();
+        r = await startShiftManualAction(overrideVehicleId);
       } catch {
         // navigator.onLine "şebeke var" der ama depoda/kapalı otoparkta istek
         // yolda ölebilir. try/catch olmadan reddedilen promise transition'dan
@@ -429,6 +439,34 @@ export function PanelClient({
         if (r.error === "active") router.refresh();
       }
     });
+  }
+
+  /** "Başka araç kullanacağım" — listeyi çeker ve seçiciyi açar. */
+  function openVehiclePicker() {
+    setPickerLoading(true);
+    startTransition(async () => {
+      try {
+        setPickable(await listPickableVehiclesAction());
+        setPickerOpen(true);
+      } catch {
+        toast.error(t("v2OtherVehicleErr"));
+      } finally {
+        setPickerLoading(false);
+      }
+    });
+  }
+
+  /**
+   * Araç seçildi. Araçta AÇIK vardiyası olan başka şoför varsa önce uyarı
+   * çıkar — ENGEL DEĞİL (kural 3): şoför "Yine de devam et" diyebilir.
+   */
+  function pickVehicle(v: PickableVehicle) {
+    if (v.inUseBy.length > 0) {
+      setConfirmBusy(v);
+      return;
+    }
+    setPickerOpen(false);
+    handleManualStart(v.id);
   }
 
   // ── Ekran seçimi ───────────────────────────────────────────────────────────
@@ -626,7 +664,7 @@ export function PanelClient({
             <div className="space-y-2">
               <Button
                 variant="outline"
-                onClick={handleManualStart}
+                onClick={() => handleManualStart()}
                 disabled={pending}
                 className="mx-auto h-14 w-full max-w-xs text-base"
               >
@@ -685,7 +723,7 @@ export function PanelClient({
               <div className="space-y-2">
                 <button
                   type="button"
-                  onClick={handleManualStart}
+                  onClick={() => handleManualStart()}
                   disabled={pending}
                   className="btn-primary flex h-24 w-full items-center justify-center gap-4 rounded-2xl text-xl font-bold tracking-wide text-primary-foreground shadow-lg transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.98] disabled:opacity-60"
                 >
@@ -695,6 +733,23 @@ export function PanelClient({
                     <PlayCircle className="size-8" aria-hidden />
                   )}
                   {t("v2StartShift")}
+                </button>
+                {/* GEÇİCİ ARAÇ (22.07.2026): aracı bozulan / izinde olan
+                    şoför başka araçla çıkar. Seçim YALNIZ bu vardiya için
+                    geçerlidir — atanmış aracı değişmez, yarın yine kendi
+                    aracıyla açar. Bordo aksan, yeni renk yok. */}
+                <button
+                  type="button"
+                  onClick={openVehiclePicker}
+                  disabled={pending || pickerLoading}
+                  className="mx-auto flex items-center justify-center gap-2 rounded-[10px] border border-accent-claret/40 px-4 py-2.5 text-sm font-medium text-accent-claret-text transition-colors hover:bg-accent-claret/10 disabled:opacity-60"
+                >
+                  {pickerLoading ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Truck className="size-4" aria-hidden />
+                  )}
+                  {t("v2OtherVehicle")}
                 </button>
                 <p className="mx-auto max-w-xs text-xs text-muted-foreground">
                   {t("v2StartHint")} {t("v2OncePerDayHint")}
@@ -1015,6 +1070,75 @@ export function PanelClient({
         </DialogContent>
       </Dialog>
 
+      {/* ── GEÇİCİ ARAÇ SEÇİCİSİ ─────────────────────────────────────────────
+          TÜM aktif araçlar listelenir; filo ayrımı BİLEREK yoktur (kural 2).
+          Kendi aracı en üstte. Meşgul araçta uyarı rozeti, ama seçim serbest. */}
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t("v2OtherVehicle")}</DialogTitle>
+            <DialogDescription>{t("v2OtherVehicleHint")}</DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-1.5">
+            {pickable.map((v) => (
+              <li key={v.id}>
+                <button
+                  type="button"
+                  onClick={() => pickVehicle(v)}
+                  disabled={pending}
+                  className="flex w-full items-center justify-between gap-3 rounded-[10px] border border-border/70 px-3 py-2.5 text-left transition-colors hover:bg-surface-2 disabled:opacity-60"
+                >
+                  <span className="min-w-0">
+                    <span className="nums block font-semibold">{v.plate}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {[v.make, v.model].filter(Boolean).join(" ") || "—"}
+                      {v.isOwn ? ` · ${t("v2OwnVehicle")}` : ""}
+                    </span>
+                  </span>
+                  {v.inUseBy.length > 0 && (
+                    <span className="shrink-0 rounded-full bg-accent-gold/15 px-2 py-0.5 text-[11px] font-medium text-accent-gold">
+                      {t("v2VehicleInUse")}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </DialogContent>
+      </Dialog>
+
+      {/* Meşgul araç onayı — bilgilendirir, engellemez. */}
+      <Dialog
+        open={confirmBusy !== null}
+        onOpenChange={(o) => !o && setConfirmBusy(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{confirmBusy?.plate}</DialogTitle>
+            <DialogDescription>
+              {t("v2VehicleBusyWarn", {
+                name: confirmBusy?.inUseBy.join(", ") ?? "",
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmBusy(null)}>
+              {tc("cancel")}
+            </Button>
+            <Button
+              onClick={() => {
+                const v = confirmBusy;
+                setConfirmBusy(null);
+                setPickerOpen(false);
+                if (v) handleManualStart(v.id);
+              }}
+              disabled={pending}
+            >
+              {t("v2VehicleBusyProceed")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

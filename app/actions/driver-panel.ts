@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
+import { listVehiclesForDriverPick, type PickableVehicle } from "@/lib/vehicles";
 import { getTestScope } from "@/lib/test-data";
 import { requireWorker } from "@/lib/session";
 import { uploadReceipt, signedReceiptUrls } from "@/lib/storage";
@@ -420,4 +421,14 @@ export async function resolveDriverReportAction(
 
   revalidatePath("/admin");
   return { ok: true };
+}
+
+/**
+ * GEÇİCİ ARAÇ SEÇİCİSİ (22.07.2026) — şoför "Başka araç kullanacağım" dediğinde
+ * LAZY çekilir. Bekleme ekranını 29 araçlık bir listeyle her açılışta
+ * şişirmemek için ayrı action (⌘K araç dizini ile aynı gerekçe).
+ */
+export async function listPickableVehiclesAction(): Promise<PickableVehicle[]> {
+  const session = await requireWorker();
+  return listVehiclesForDriverPick(session.worker_id!);
 }

@@ -5,6 +5,7 @@ import { computeLiveStatus } from "@/lib/vehicle-ui";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
 import { UNRESTRICTED, dropOtherFleets, type FleetScope } from "@/lib/fleet-scope";
 import type {
+  VehicleFleet,
   Vehicle,
   VehicleWithStatus,
   VehiclePenalty,
@@ -23,6 +24,8 @@ export async function listVehiclesForSelect(): Promise<
 > {
   const scope = await getTestScope();
   // test-filtered: dropTestRows — test aracı yönetici seçicilerinde çıkmaz.
+  // fleet-scoped: BİLEREK filo kapsamı YOK — bu seçici şoföre aittir, yönetici
+  // yüzeyi değildir; şoför her filodan araç seçebilmelidir (kural 2).
   const { data } = await supabaseAdmin
     .from("vehicles")
     .select("id, plate, make, model")
@@ -30,6 +33,97 @@ export async function listVehiclesForSelect(): Promise<
     .order("plate");
   const rows = (data ?? []) as Pick<Vehicle, "id" | "plate" | "make" | "model">[];
   return dropTestRows(rows, (v) => ({ vehicle: v.id }), scope);
+}
+
+/** Şoför seçicisindeki bir araç satırı. */
+export type PickableVehicle = {
+  id: string;
+  plate: string;
+  make: string | null;
+  model: string | null;
+  fleet: VehicleFleet;
+  /** Bu aracı ŞU AN açık vardiyada kullanan şoför(ler)in adı. */
+  inUseBy: string[];
+  /** Bu, şoförün kendi atanmış aracı mı? Listede en üstte gösterilir. */
+  isOwn: boolean;
+};
+
+/**
+ * GEÇİCİ ARAÇ SEÇİCİSİ (22.07.2026) — şoför paneli.
+ *
+ * Aracı bozulan / izinde olan şoför başka araçla vardiya açar. Liste
+ * BİLEREK filo ayrımı yapmaz: mavi şoför bordo araç seçebilir.
+ *
+ * `inUseBy` boş değilse o araçta şu an açık vardiyası olan biri vardır.
+ * Bu ENGEL DEĞİL, UYARIDIR (kural 3): şoför yine de seçebilir. Panel
+ * uyarıyı gösterir, karar şoförün.
+ */
+export async function listVehiclesForDriverPick(
+  workerId: string
+): Promise<PickableVehicle[]> {
+  const scope = await getTestScope();
+
+  // fleet-scoped: BİLEREK filo kapsamı YOK. Bu şoföre ait bir seçicidir,
+  // yönetici yüzeyi değil; kural 2 gereği tüm aktif araçlar listelenir
+  // (mavi şoför bordo araç seçebilmeli). Filo şefinin gördüğü yüzeyler
+  // ayrı ve orada kapsam uygulanıyor.
+  // test-filtered: dropTestRows — test aracı şoföre de gösterilmez.
+  const [{ data: vData }, { data: sData }] = await Promise.all([
+    supabaseAdmin
+      .from("vehicles")
+      .select("id, plate, make, model, fleet, assigned_worker_id")
+      .eq("status", "active")
+      .order("plate"),
+    // test-filtered: dropTestRows (aşağıda) — açık vardiyalar, "kim kullanıyor".
+    // fleet-scoped: BİLEREK kapsam YOK — "bu aracı şu an kim kullanıyor"
+    // sorusunun cevabı filoya bağlı değildir; şoför hangi filodan araç seçerse
+    // seçsin doğru uyarıyı görmelidir.
+    supabaseAdmin
+      .from("time_entries")
+      .select("worker_id, vehicle_id")
+      .is("ended_at", null),
+  ]);
+
+  const vehicles = dropTestRows(
+    (vData ?? []) as (Pick<Vehicle, "id" | "plate" | "make" | "model" | "fleet"> & {
+      assigned_worker_id: string | null;
+    })[],
+    (v) => ({ vehicle: v.id }),
+    scope
+  );
+  const openShifts = dropTestRows(
+    (sData ?? []) as { worker_id: string | null; vehicle_id: string | null }[],
+    (s) => ({ worker: s.worker_id, vehicle: s.vehicle_id }),
+    scope
+  );
+
+  const names = await workerNames([
+    ...new Set(openShifts.map((s) => s.worker_id).filter(Boolean) as string[]),
+  ]);
+  const usersByVehicle = new Map<string, string[]>();
+  for (const s of openShifts) {
+    if (!s.vehicle_id || !s.worker_id) continue;
+    // Şoförün KENDİ açık vardiyası "başkası kullanıyor" sayılmaz.
+    if (s.worker_id === workerId) continue;
+    const arr = usersByVehicle.get(s.vehicle_id) ?? [];
+    arr.push(names.get(s.worker_id) ?? "—");
+    usersByVehicle.set(s.vehicle_id, arr);
+  }
+
+  return vehicles
+    .map((v) => ({
+      id: v.id,
+      plate: v.plate,
+      make: v.make,
+      model: v.model,
+      fleet: v.fleet,
+      inUseBy: usersByVehicle.get(v.id) ?? [],
+      isOwn: v.assigned_worker_id === workerId,
+    }))
+    // Kendi aracı en üstte, sonra plakaya göre.
+    .sort((a, b) =>
+      a.isOwn === b.isOwn ? a.plate.localeCompare(b.plate) : a.isOwn ? -1 : 1
+    );
 }
 
 /** All vehicles with derived live status + current/assigned driver. */
@@ -63,11 +157,15 @@ export async function listVehiclesWithStatus(
     fleet
   );
 
-  const activeByVehicle = new Map<string, ActiveShift>();
+  // Araç → o araçtaki AÇIK vardiyalar. Eskiden yalnız İLKİ tutuluyordu;
+  // geçici araç seçimi serbest bırakıldıktan sonra (22.07.2026) bir araçta
+  // iki şoför olabiliyor ve yönetici ikisini de görmeli.
+  const shiftsByVehicle = new Map<string, ActiveShift[]>();
   for (const s of activeShifts) {
-    if (s.vehicle_id && !activeByVehicle.has(s.vehicle_id)) {
-      activeByVehicle.set(s.vehicle_id, s);
-    }
+    if (!s.vehicle_id) continue;
+    const arr = shiftsByVehicle.get(s.vehicle_id) ?? [];
+    arr.push(s);
+    shiftsByVehicle.set(s.vehicle_id, arr);
   }
 
   // Resolve all worker names we need (active drivers + assigned drivers).
@@ -77,8 +175,11 @@ export async function listVehiclesWithStatus(
   const names = await workerNames([...workerIds]);
 
   return vehicles.map((v) => {
-    const shift = activeByVehicle.get(v.id);
-    const onBreak = !!shift?.break_started_at;
+    const shifts = shiftsByVehicle.get(v.id) ?? [];
+    const shift = shifts[0];
+    // Araç "molada" ancak o araçtaki HERKES moladaysa sayılır; biri hâlâ
+    // yoldaysa araç sevkiyattadır.
+    const onBreak = shifts.length > 0 && shifts.every((x) => !!x.break_started_at);
     const live_status = computeLiveStatus({
       baseStatus: v.status,
       hasActiveShift: !!shift,
@@ -91,6 +192,9 @@ export async function listVehiclesWithStatus(
       driver_id,
       driver_name: driver_id ? names.get(driver_id) ?? null : null,
       driver_is_live: !!shift,
+      live_drivers: shifts
+        .map((x) => (x.worker_id ? names.get(x.worker_id) ?? null : null))
+        .filter((n): n is string => !!n),
     };
   });
 }
@@ -171,6 +275,10 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
     driver_id,
     driver_name: driver_id ? names.get(driver_id) ?? null : null,
     driver_is_live: !!activeShift,
+    live_drivers: shifts
+      .filter((x) => x.ended_at === null && x.worker_id)
+      .map((x) => names.get(x.worker_id as string) ?? null)
+      .filter((n): n is string => !!n),
   };
 
   // Today's figures (Vienna day) across this vehicle's shifts.

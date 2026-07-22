@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { supabaseAdmin } from "@/lib/supabase";
+import { startOfTodayVienna } from "@/lib/format";
 import type { VehicleFleet } from "@/lib/types";
 
 /**
@@ -16,6 +17,23 @@ import type { VehicleFleet } from "@/lib/types";
  * Gerekçe: şoför↔araç ilişkisinin tek kaynağı zaten vehicles.assigned_worker_id
  * (workers.plate bile ondan türetilen bir ayna). İkinci bir filo kolonu koymak,
  * araç filosu değiştiğinde sessizce eskiyen bir kopya üretirdi.
+ *
+ * ── GEÇİCİ ARAÇ (22.07.2026) ───────────────────────────────────────────────
+ * Şoför bozulma/izin gibi durumlarda BAŞKA FİLODAN araç seçebilir
+ * (app/actions/shift.ts, startShiftManualAction). Bu yüzden kapsam iki
+ * eksenlidir ve ikisi FARKLI sorulara cevap verir:
+ *
+ *   workerIds  → "benim şoförüm kim?"  — VARDİYA verisi bununla daraltılır.
+ *                Şoför hangi aracı kullanırsa kullansın şefinin listesinde
+ *                kalır (kural 7). Araçla daraltılsaydı ödünç araç kullanan
+ *                şoför kendi şefinden düşer, karşı şefe görünürdü.
+ *   vehicleIds → "benim aracım hangisi?" — ARAÇ verisi (konum, ceza, araç
+ *                listesi) bununla daraltılır. Filo araçlarına EK OLARAK
+ *                şoförlerimin bugün kullandığı yabancı araçlar da girer;
+ *                yoksa şef şoförünü listede görür ama haritada göremezdi.
+ *
+ * Bilinçli ÖRTÜŞME (Volkan onayı): ödünç verilen araçta bordo şef ARACI,
+ * mavi şef ŞOFÖRÜ ve o aracın konumunu görür. İkisinin de meşru menfaati var.
  *
  * SONUCU — bilinçli boşluk: ATANMIŞ ARACI OLMAYAN şoförün filosu yoktur ve
  * HİÇBİR şefin kapsamına girmez. Bu bir kayıp değil, karar: o kişiler patronun
@@ -107,10 +125,31 @@ export const getFleetScope = cache(
     }
 
     const rows = (data ?? []) as { id: string; assigned_worker_id: string | null }[];
-    const vehicleIds = rows.map((v) => v.id);
     const workerIds = [
       ...new Set(rows.map((v) => v.assigned_worker_id).filter(Boolean) as string[]),
     ];
+
+    // GEÇİCİ ARAÇLAR: şoförlerimin BUGÜN fiilen kullandığı araçlar kapsama
+    // eklenir (başka filodan olsa bile). Yalnız bugün — dünkü ödünç araç
+    // bugünün kapsamına girmez, seçim vardiya satırında yaşar ve ertesi gün
+    // kendiliğinden düşer.
+    const borrowed: string[] = [];
+    if (workerIds.length > 0) {
+      // test-visible: workerIds YALNIZ filo araçlarına atanmış şoförlerden
+      // gelir; test şoförünün aracı is_test olduğu için kapsama hiç girmez,
+      // dolayısıyla buradan test vardiyası çekilemez.
+      const { data: used } = await supabaseAdmin
+        .from("time_entries")
+        .select("vehicle_id")
+        .in("worker_id", workerIds)
+        .gte("started_at", startOfTodayVienna().toISOString())
+        .not("vehicle_id", "is", null);
+      for (const r of (used ?? []) as { vehicle_id: string }[]) {
+        borrowed.push(r.vehicle_id);
+      }
+    }
+
+    const vehicleIds = [...new Set([...rows.map((v) => v.id), ...borrowed])];
     const vSet = new Set(vehicleIds);
     const wSet = new Set(workerIds);
 

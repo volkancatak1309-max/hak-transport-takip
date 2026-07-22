@@ -176,6 +176,13 @@ export type VehicleWithStatus = Vehicle & {
   driver_id: string | null;
   /** Whether driver_name is the live (active-shift) driver vs. just assigned. */
   driver_is_live: boolean;
+  /**
+   * Bu araçta ŞU AN açık vardiyası olan TÜM şoförler (22.07.2026).
+   * Geçici araç seçimi serbest bırakıldığı için bir araca iki kişi
+   * binebiliyor; yönetici ikisini de görmeli, `driver_name` yalnız
+   * ilkini taşıyordu ve eksik bilgi veriyordu.
+   */
+  live_drivers: string[];
 };
 
 /** A traffic/parking penalty (Strafe) booked against a vehicle (migration 014). */

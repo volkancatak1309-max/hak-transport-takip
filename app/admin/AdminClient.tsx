@@ -58,9 +58,9 @@ import {
   type AdminDriverReport,
 } from "@/components/admin/DriverReportsCard";
 import {
-  OpenShiftsCard,
-  type OpenShiftRow,
-} from "@/components/admin/OpenShiftsCard";
+  ActiveShiftsCard,
+  type ActiveShiftRow,
+} from "@/components/admin/ActiveShiftsCard";
 import { TodayBoard, TodayStrip, rosterCounts } from "@/components/admin/TodayBoard";
 import { classifyUndelivered } from "@/lib/package-limits";
 import { ShiftEditHistory } from "@/components/admin/ShiftEditHistory";
@@ -107,7 +107,8 @@ type Props = {
   summary: { totalMs: number; totalKm: number; activeCount: number; overLimit: number };
   dashboard: DashboardData;
   reports: AdminDriverReport[];
-  openShifts: OpenShiftRow[];
+  activeShifts: ActiveShiftRow[];
+  overLimitShifts: number;
   photoEntryIds: string[];
   /** Elle düzeltilmiş vardiyalar — listede "düzenlendi" rozeti çıkar. */
   editedEntryIds: string[];
@@ -132,7 +133,8 @@ export function AdminClient({
   summary,
   dashboard,
   reports,
-  openShifts,
+  activeShifts,
+  overLimitShifts,
   photoEntryIds,
   editedEntryIds,
   readOnly = false,
@@ -557,7 +559,7 @@ export function AdminClient({
 
       <TodayStrip
         counts={boardCounts}
-        openShifts={openShifts.length}
+        overLimitShifts={overLimitShifts}
         silentVehicles={silentVehicleCount}
       />
 
@@ -595,11 +597,11 @@ export function AdminClient({
                 }
           }
         />
-        {/* Kapanmamış vardiyalar HER ZAMAN render edilir — dikkat panosuyla
-            aynı gerekçe: "liste boş" ile "kart yok" yönetici için ayırt
-            edilemez, oysa "açıkta vardiya kalmadı" bilgidir. Otomatik kapanış
-            kaldırıldığı için bu kart artık günlük kontrol noktası. */}
-        <OpenShiftsCard rows={openShifts} readOnly={readOnly} />
+        {/* Aktif vardiyalar HER ZAMAN render edilir — dikkat panosuyla aynı
+            gerekçe: "liste boş" ile "kart yok" yönetici için ayırt edilemez,
+            oysa "şu an açık vardiya yok" bilgidir. Kart bir uyarı değil durum
+            listesidir; uyarıyı yalnız yasal tavanı aşan satırlar üretir. */}
+        <ActiveShiftsCard rows={activeShifts} readOnly={readOnly} />
         {!readOnly && reports.length > 0 && (
           <DriverReportsCard reports={reports} />
         )}

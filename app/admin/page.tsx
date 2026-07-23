@@ -26,7 +26,7 @@ import type {
 } from "@/lib/types";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 import type { AdminDriverReport } from "@/components/admin/DriverReportsCard";
-import type { OpenShiftRow } from "@/components/admin/OpenShiftsCard";
+import type { ActiveShiftRow } from "@/components/admin/ActiveShiftsCard";
 import { listEditedEntryIds } from "@/lib/shift-edit-log";
 
 export const dynamic = "force-dynamic";
@@ -218,16 +218,16 @@ export default async function AdminPage({
     ),
   ];
 
-  // KAPANMAMIŞ VARDİYALAR (22.07.2026) — seçili tarih aralığından BAĞIMSIZ.
-  // Açık vardiya "bugünün verisi" değil, şu anki durumdur; "bu ay" filtresinde
-  // kaybolması onu telafi aracı olmaktan çıkarırdı (canlı örnek: dünden kalmış
-  // 27 saatlik kayıt). Süre sunucuda hesaplanır — istemcide Date.now() ile
+  // AKTİF VARDİYALAR (23.07.2026'da yeniden kuruldu) — seçili tarih
+  // aralığından BAĞIMSIZ. Açık vardiya "bugünün verisi" değil, şu anki
+  // durumdur; "bu ay" filtresinde kaybolması onu telafi aracı olmaktan
+  // çıkarırdı. Süre sunucuda hesaplanır — istemcide Date.now() ile
   // hesaplansaydı ilk render'da hidrasyon uyuşmazlığı üretirdi.
   // test-filtered + fleet-scoped: bu kart filo sefinin gordugu dort
   // bolumden biri. Kapsam UNUTULMUSTU ve muhafiz yakaladi (22.07.2026):
   // sef karsi filonun acik vardiyalarini goruyordu. vehicle_id select'e
   // eklendi — filo bagi arac uzerinden kuruluyor, plaka metni degil.
-  const { data: openShiftData } = await onlyFleet(
+  const { data: activeShiftData } = await onlyFleet(
     withoutTestRows(
       supabaseAdmin
         .from("time_entries")
@@ -244,9 +244,14 @@ export default async function AdminPage({
   );
 
   const nowMs = Date.now();
-  const todayStartMs = startOfTodayVienna().getTime();
-  const openShifts: OpenShiftRow[] = (
-    (openShiftData ?? []) as {
+  // Açık vardiyada "dünden kalmış mı" YANLIŞ sinyaldi (23.07.2026): 22:00'de
+  // başlayan gece vardiyası ertesi güne sarkar ve tamamen normaldir; o ölçüt
+  // her gece şoförünü uyarı listesine sokuyordu. Tek gerçek sinyal yasal
+  // günlük tavanın aşılmasıdır. Tavan gece penceresine değen vardiyada 10
+  // saate iner — panelin geri kalanı (harita, dikkat panosu, AZG raporu)
+  // zaten bu ikili hesabı kullanıyor, kart da aynı kaynağa bağlandı.
+  const activeShifts: ActiveShiftRow[] = (
+    (activeShiftData ?? []) as {
       id: string;
       worker_id: string | null;
       vehicle_id: string | null;
@@ -255,15 +260,24 @@ export default async function AdminPage({
     }[]
   ).map((e) => {
     const startedMs = new Date(e.started_at).getTime();
+    const elapsedMs = Math.max(0, nowMs - startedMs);
+    const capMs = dailyCapMs(touchesNightWindow(e.started_at, null));
     return {
       id: e.id,
       worker_name: e.worker_id ? workerMap.get(e.worker_id)?.name ?? "—" : "—",
       plate: e.plate,
       started_at: e.started_at,
-      elapsedMs: Math.max(0, nowMs - startedMs),
-      stale: startedMs < todayStartMs,
+      elapsedMs,
+      capMs,
+      overLimit: elapsedMs > capMs,
     };
   });
+  // Tavanı aşanlar en üstte, her iki grup kendi içinde en uzundan kısaya.
+  activeShifts.sort(
+    (a, b) =>
+      Number(b.overLimit) - Number(a.overLimit) || b.elapsedMs - a.elapsedMs
+  );
+  const overLimitCount = activeShifts.filter((s) => s.overLimit).length;
 
   return (
     <DashboardShell
@@ -292,7 +306,8 @@ export default async function AdminPage({
           summary={{ totalMs, totalKm, activeCount, overLimit }}
           dashboard={dashboard}
           reports={openReports}
-          openShifts={openShifts}
+          activeShifts={activeShifts}
+          overLimitShifts={overLimitCount}
           photoEntryIds={photoEntryIds}
           editedEntryIds={editedEntryIds}
         />

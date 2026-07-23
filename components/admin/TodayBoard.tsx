@@ -377,11 +377,12 @@ export function rosterCounts(rows: TodayRosterRow[]) {
  */
 export function TodayStrip({
   counts,
-  openShifts,
+  overLimitShifts,
   silentVehicles,
 }: {
   counts: ReturnType<typeof rosterCounts>;
-  openShifts: number;
+  /** Yasal günlük tavanı aşmış AÇIK vardiya sayısı — bkz. ActiveShiftsCard. */
+  overLimitShifts: number;
   silentVehicles: number;
 }) {
   const t = useTranslations("admin");
@@ -405,11 +406,17 @@ export function TodayStrip({
       value: String(counts.notStarted),
       urgent: counts.notStarted > 0,
     },
+    // Burada eskiden AÇIK VARDİYA sayısı vardı ve "Sahada 25/30" ile aynı
+    // sayıyı gösteriyordu — beş kutuluk şeridin biri tekrara gidiyordu.
+    // Yerine yasal tavanı aşan vardiya sayısı kondu: şeritteki tek gerçek
+    // aksiyon sinyali. urgent(gold) değil critical(bordo) — gold "bak",
+    // bordo "müdahale et" demek ve bu ikincisi.
     {
-      key: "open",
-      label: t("stripOpenShifts"),
-      value: String(openShifts),
-      urgent: openShifts > 0,
+      key: "overLimit",
+      label: t("stripOverLimit"),
+      value: String(overLimitShifts),
+      urgent: false,
+      critical: overLimitShifts > 0,
     },
     {
       key: "silent",

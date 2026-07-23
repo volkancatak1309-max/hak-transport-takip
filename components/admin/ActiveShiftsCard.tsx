@@ -21,36 +21,44 @@ import { adminCloseShiftAction } from "@/app/actions/shift";
 // icin — basildiginda hata verecek bir dugme, olmayan dugmeden kotudur.
 import { formatDate, formatTime, formatDurationShort } from "@/lib/format";
 
-/** Kapanmamış vardiya — sunucuda hazırlanır (elapsedMs dahil: hidrasyon farkı olmasın). */
-export type OpenShiftRow = {
+/** Aktif vardiya — sunucuda hazırlanır (elapsedMs dahil: hidrasyon farkı olmasın). */
+export type ActiveShiftRow = {
   id: string;
   worker_name: string;
   plate: string | null;
   started_at: string;
   elapsedMs: number;
-  /** Vardiya bugünden ÖNCE açıldı mı — gecikmiş kaydın asıl işareti. */
-  stale: boolean;
+  /** Bu vardiyaya uygulanan yasal günlük tavan (gece penceresine değiyorsa 10 sa). */
+  capMs: number;
+  /** Tavan aşıldı mı — kartta uyarı üreten TEK ölçüt. */
+  overLimit: boolean;
 };
 
 /**
- * "Kapanmamış Vardiyalar" — yöneticinin telafi aracı (22.07.2026).
+ * "Aktif Vardiyalar" — şu an sahada açık olan vardiyaların durum listesi.
  *
- * Otomatik kapanış kaldırıldı: vardiyayı artık yalnız personel kapatır. Şoför
- * unutursa devreye girecek tek mekanizma watchdog'un Telegram sorusuydu ve o
- * fiilen ölü (hiçbir şoför Telegram'a bağlı değil) — yönetici, unutulan
- * vardiyayı buradan kapatır.
+ * 23.07.2026'da yeniden kuruldu. Önceki hali "Kapanmamış Vardiyalar" adıyla
+ * bir UYARI kartıydı ve şu an çalışan HERKESİ listeliyordu: 04:05'te vardiya
+ * açmış, saat 10:00'da normal çalışan şoför de "kapanmamış" sayılıyordu.
+ * Bu, kartı sürekli dolu tutarak uyarı değerini sıfırlıyordu — her şey
+ * uyarıysa hiçbir şey uyarı değildir.
  *
- * Liste TÜM açık vardiyaları gösterir, en eskisi üstte. Bu bilinçli: kart aynı
- * zamanda "şu an sahada kim var" cevabıdır; yalnız gecikmişleri göstermek
- * yöneticiyi "liste boş, demek ki kimse çalışmıyor" yanılgısına düşürürdü.
- * Gecikmişler (dünden kalanlar) bordo ile ayrılır — renk sırası panelin geri
- * kalanıyla aynı: normal=sky, dikkat=bordo.
+ * Şimdi: kart nötr bir DURUM listesi. Uyarı yalnız yasal günlük tavanı aşan
+ * vardiyalarda çıkar (AZG § 9 Abs. 1 — 12 sa, gece penceresine değiyorsa 10
+ * sa); onlar bordo işaretlenir ve listenin başında durur. Renk sırası panelin
+ * geri kalanıyla aynı: normal=sky, dikkat=bordo. Gold/uyarı tonu KULLANILMAZ.
+ *
+ * Eski "dünden kalma" ölçütü bilerek kaldırıldı: 22:00'de başlayan gece
+ * vardiyası ertesi güne sarkar ve tamamen normaldir.
+ *
+ * "Kapat" butonu kalır — otomatik kapanış yok, vardiyayı yalnız personel
+ * kapatır; kapanmadıysa yönetici buradan kapatabilir.
  */
-export function OpenShiftsCard({
+export function ActiveShiftsCard({
   rows,
   readOnly = false,
 }: {
-  rows: OpenShiftRow[];
+  rows: ActiveShiftRow[];
   readOnly?: boolean;
 }) {
   const t = useTranslations("admin");
@@ -58,7 +66,7 @@ export function OpenShiftsCard({
   const locale = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [closing, setClosing] = useState<OpenShiftRow | null>(null);
+  const [closing, setClosing] = useState<ActiveShiftRow | null>(null);
 
   function confirmClose() {
     const row = closing;
@@ -66,16 +74,16 @@ export function OpenShiftsCard({
     startTransition(async () => {
       const r = await adminCloseShiftAction(row.id);
       if (r.ok) {
-        toast.success(t("openShiftClosed", { name: row.worker_name }));
+        toast.success(t("activeShiftClosed", { name: row.worker_name }));
         setClosing(null);
         router.refresh();
       } else {
-        toast.error(t("openShiftCloseErr"));
+        toast.error(t("activeShiftCloseErr"));
       }
     });
   }
 
-  const staleCount = rows.filter((r) => r.stale).length;
+  const overCount = rows.filter((r) => r.overLimit).length;
 
   return (
     <>
@@ -84,20 +92,30 @@ export function OpenShiftsCard({
           <CardTitle className="flex items-center justify-between gap-2 text-sm font-semibold">
             <span className="flex items-center gap-2">
               <Clock className="size-4 text-muted-foreground" />
-              {t("openShiftsTitle")}
+              {t("activeShiftsTitle")}
             </span>
-            {staleCount > 0 && (
-              <span className="nums rounded-full bg-accent-claret/12 px-2 py-0.5 text-[11px] font-semibold text-accent-claret-text">
-                {staleCount}
-              </span>
-            )}
+            {/* İki ayrı rozet, iki ayrı iş: soldaki NÖTR sayaç ("kaç kişi
+                sahada"), sağdaki yalnız gerçek uyarı için. Tek rozette
+                birleştirilseydi normal aktif vardiya da uyarı rengi alırdı. */}
+            <span className="flex items-center gap-1.5">
+              {rows.length > 0 && (
+                <span className="nums rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                  {rows.length}
+                </span>
+              )}
+              {overCount > 0 && (
+                <span className="nums rounded-full bg-accent-claret/12 px-2 py-0.5 text-[11px] font-semibold text-accent-claret-text">
+                  {t("activeShiftsOverBadge", { count: overCount })}
+                </span>
+              )}
+            </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-1 flex-col">
           {rows.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
               <CheckCircle2 className="size-7 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">{t("openShiftsEmpty")}</p>
+              <p className="text-sm text-muted-foreground">{t("activeShiftsEmpty")}</p>
             </div>
           ) : (
             <>
@@ -109,7 +127,7 @@ export function OpenShiftsCard({
                   >
                     <span
                       className={
-                        r.stale
+                        r.overLimit
                           ? "flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent-claret/12 text-accent-claret-text"
                           : "flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent-sky/15 text-accent-sky"
                       }
@@ -133,11 +151,23 @@ export function OpenShiftsCard({
                         </span>
                         <span
                           className={
-                            r.stale ? "font-semibold text-accent-claret-text" : ""
+                            r.overLimit
+                              ? "font-semibold text-accent-claret-text"
+                              : ""
                           }
                         >
                           · {formatDurationShort(r.elapsedMs, locale)}
                         </span>
+                        {/* Uyarının GEREKÇESİ satırda yazılı: yönetici hangi
+                            tavanın aşıldığını görmeden karar veremez — gece
+                            vardiyasında tavan 10 saate iner. */}
+                        {r.overLimit && (
+                          <span className="rounded bg-accent-claret/12 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-claret-text">
+                            {t("activeShiftsOverTag", {
+                              hours: Math.round(r.capMs / 3_600_000),
+                            })}
+                          </span>
+                        )}
                       </div>
                     </div>
                     {!readOnly && (
@@ -150,7 +180,7 @@ export function OpenShiftsCard({
                       >
                         <Square className="size-4" />
                         <span className="hidden sm:inline">
-                          {t("openShiftClose")}
+                          {t("activeShiftClose")}
                         </span>
                       </Button>
                     )}
@@ -160,7 +190,7 @@ export function OpenShiftsCard({
               {/* Kapanış anının "şimdi" olmadığını yönetici bilmeli — yoksa
                   kapattığı vardiyanın süresini yanlış okur. */}
               <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">
-                {t("openShiftsNote")}
+                {t("activeShiftsNote")}
               </p>
             </>
           )}
@@ -172,10 +202,10 @@ export function OpenShiftsCard({
       <Dialog open={!!closing} onOpenChange={(o) => !o && setClosing(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("openShiftCloseTitle")}</DialogTitle>
+            <DialogTitle>{t("activeShiftCloseTitle")}</DialogTitle>
             <DialogDescription>
               {closing
-                ? t("openShiftCloseDesc", {
+                ? t("activeShiftCloseDesc", {
                     name: closing.worker_name,
                     plate: closing.plate ?? "—",
                   })
@@ -188,7 +218,7 @@ export function OpenShiftsCard({
             </Button>
             <Button variant="destructive" onClick={confirmClose} disabled={pending}>
               {pending && <Loader2 className="size-4 animate-spin" />}
-              {t("openShiftClose")}
+              {t("activeShiftClose")}
             </Button>
           </DialogFooter>
         </DialogContent>

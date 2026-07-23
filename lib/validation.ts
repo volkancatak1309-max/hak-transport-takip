@@ -1,10 +1,18 @@
 import { z } from "zod";
+import { sanitizePhone } from "@/lib/phone";
 
+// Uzunluk ölçümü SANITIZE SONRASI yapılır: görünmez yön işaretleriyle sarılı
+// bir numara ("‪+43…‬") aksi halde 2 karakter uzun sayılırdı ve 20
+// sınırına dayanan uzun numaralarda "errPhone" verirdi. Şema temizlenmiş
+// değeri döndürmez — çağıran taraf canonicalPhone() uygular — burada amaç
+// yalnızca doğrulamanın görünmez karakterlerden etkilenmemesi.
 export const phoneSchema = z
   .string()
   .trim()
-  .min(6, "errPhone")
-  .max(20, "errPhone");
+  .refine((v) => {
+    const n = sanitizePhone(v).length;
+    return n >= 6 && n <= 20;
+  }, "errPhone");
 
 // Trivially guessable 6-digit PINs, rejected at creation/change time only.
 // Covered: all-same-digit (000000…999999), ascending/descending runs

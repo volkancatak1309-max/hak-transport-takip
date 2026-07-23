@@ -11,12 +11,12 @@ import {
   adminSetPinSchema,
   DEFAULT_TEMP_PIN,
 } from "@/lib/validation";
+import { canonicalPhone, phoneVariants } from "@/lib/phone";
 
 export type WorkerResult = { ok: boolean; error?: string };
 
-function normalizePhone(raw: string): string {
-  return raw.replace(/[\s\-()]/g, "");
-}
+// Telefon normalizasyonu lib/phone.ts'te — tek kaynak. Panelden yapıştırılan
+// numara Unicode yön işaretleri taşıyabiliyor; kanonik biçim onları da düşürür.
 
 /** Next free 4-digit Personalnummer (0001, 0002, …) based on the current max. */
 async function nextEmployeeNumber(): Promise<string> {
@@ -67,7 +67,7 @@ export async function createWorkerAction(formData: FormData): Promise<WorkerResu
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Geçersiz veri" };
   }
 
-  const phone = normalizePhone(parsed.data.phone);
+  const phone = canonicalPhone(parsed.data.phone);
 
   const { data: existing } = await supabaseAdmin
     .from("workers")
@@ -218,13 +218,13 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Geçersiz veri" };
   }
   const d = parsed.data;
-  const phone = normalizePhone(d.phone);
+  const phone = canonicalPhone(d.phone);
 
   // Telefon benzersizliği — kendisi hariç.
   const { data: dupe } = await supabaseAdmin
     .from("workers")
     .select("id")
-    .eq("phone", phone)
+    .in("phone", phoneVariants(phone))
     .neq("id", id)
     .maybeSingle();
   if (dupe) return { ok: false, error: "Bu telefon zaten kayıtlı" };

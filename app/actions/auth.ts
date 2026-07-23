@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getSession } from "@/lib/session";
 import { loginSchema, changePinSchema } from "@/lib/validation";
+import { canonicalPhone, phoneVariants } from "@/lib/phone";
 
 export type LoginState = {
   error?: "invalid" | "inactive" | "db" | "validation" | "locked";
@@ -35,9 +36,9 @@ function lockMs(failures: number): number {
   return steps[Math.min(Math.max(failures - MAX_FAILURES, 0), steps.length - 1)];
 }
 
-function normalizePhone(raw: string): string {
-  return raw.replace(/[\s\-()]/g, "");
-}
+// Telefon normalizasyonu lib/phone.ts'te — tek kaynak. Buradaki eski sürüm
+// yalnız boşluk/tire/parantez siliyordu; kişi listesinden yapıştırılan Unicode
+// yön işaretlerini (U+202A/U+202C) bırakıyordu ve iki şoför giriş yapamıyordu.
 
 async function clientIp(): Promise<string> {
   const h = await headers();
@@ -88,7 +89,9 @@ export async function loginAction(
     pin: formData.get("pin"),
   });
   if (!parsed.success) return { error: "validation" };
-  const phone = normalizePhone(parsed.data.phone);
+  // Kilit sayacı kanonik numaraya bağlanır: aynı şoförün "+43660…" ve
+  // "+430660…" yazımları tek bir sayaçta toplanır, ayrı ayrı 5 hak kazanmaz.
+  const phone = canonicalPhone(parsed.data.phone);
   const identifier = `${await clientIp()}|${phone}`;
 
   // Locked out? Reject before any DB lookup or bcrypt work.
@@ -104,13 +107,19 @@ export async function loginAction(
     }
   }
 
-  const { data: worker, error } = await supabaseAdmin
+  // Tek bir `eq` yerine varyant listesi: workers.phone alanında Avusturya
+  // ulusal trunk sıfırı bazı kayıtlarda var ("+430660…"), bazılarında yok
+  // ("+43660…"). Şoför hangisini yazarsa yazsın kaydı bulmalı. Varyantlar
+  // birbirini dışlar (aynı numaranın iki yazımı), bu yüzden en fazla bir
+  // kayıt döner; yine de savunmacı biçimde ilki alınır.
+  const { data: matches, error } = await supabaseAdmin
     .from("workers")
     .select("id, name, phone, pin_hash, plate, is_admin, is_active, must_change_pin")
-    .eq("phone", phone)
-    .maybeSingle();
+    .in("phone", phoneVariants(parsed.data.phone))
+    .limit(2);
 
   if (error) return { error: "db" };
+  const worker = matches?.[0] ?? null;
 
   // Always run exactly one bcrypt compare — against the real hash, or a dummy
   // when the phone is unknown — so timing doesn't reveal whether the phone

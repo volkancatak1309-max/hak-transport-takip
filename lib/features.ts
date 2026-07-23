@@ -26,3 +26,11 @@
 export const FUEL_ENABLED = false;
 export const EXPENSE_ENABLED = false;
 export const MAINTENANCE_ENABLED = false;
+
+/**
+ * İZİN TAKVİMİ (Modül 1, 23.07.2026) AÇIK. Kill-switch olarak durur: menü
+ * öğesini (/admin/izinler) ve Günün Panosu "İzinli" entegrasyonunu bir satırla
+ * kapatır. ⚠️ AÇMADAN ÖNCE migration 031 Supabase'de çalıştırılmış olmalı —
+ * tablo yoksa sayfa yüklenir (okuma boş) ama izin YAZMA hata verir.
+ */
+export const LEAVES_ENABLED = true;

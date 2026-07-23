@@ -23,6 +23,8 @@ import {
   dailyCapMs,
 } from "@/lib/azg-rules";
 import type { TimeEntry, Worker, VehicleLiveStatus } from "@/lib/types";
+import { LEAVES_ENABLED } from "@/lib/features";
+import { todayYmdVienna } from "@/lib/leaves";
 
 /**
  * 9 SAAT ARTIK "İHLAL" DEĞİL (22.07.2026). Eşikler lib/azg-rules.ts'te:
@@ -52,6 +54,9 @@ const LICENSE_DUE_WINDOW_DAYS = 30;
  * cihaz/bağlantı arızasıdır. (Volkan onayı, 21.07.2026.)
  */
 const TELEMETRY_SILENT_HOURS = 24;
+/** Araç bu tazelikte kontak-açık telemetriyle "hareket halinde" sayılır
+ *  (movingNoShift Dikkat kalemi). Bayat fix "şu an sürüyor" demek değildir. */
+const MOVING_FRESH_MS = 15 * 60 * 1000;
 
 /** Live snapshot of "where are we right now / today" — independent of the
  *  range/worker/status filters that drive the shift table below. */
@@ -143,6 +148,15 @@ export type AttentionItem =
       id: string;
       plate: string;
       hours: number; // son kayıttan bu yana geçen saat
+    }
+  | {
+      // Araç ŞU AN kontak açık/taze ama o araçta AÇIK vardiya YOK (Modül 1).
+      // İzinli/ayrılan şoförün aracını başkası kullanınca auto-shift bilinçli
+      // olarak vardiya AÇMAZ (yanlış isme yazmamak için); bu boşluğu yönetici
+      // görsün ki gerçek sürücü kendi adına vardiya başlatsın.
+      kind: "movingNoShift";
+      id: string;
+      plate: string;
     };
 
 /** Per-driver / per-vehicle breakdown behind each OpsSummary tile, for the
@@ -184,7 +198,12 @@ export type FleetDtcRow = {
  * BAŞKA bir araçla vardiya açtıysa (`usedPlate`) bu ayrıca gösterilir — sessiz
  * düzeltmek yerine farkı görünür kılıyoruz.
  */
-export type RosterStatus = "not_started" | "in_field" | "on_break" | "closed";
+export type RosterStatus =
+  | "not_started"
+  | "in_field"
+  | "on_break"
+  | "closed"
+  | "on_leave";
 
 export type TodayRosterRow = {
   workerId: string;
@@ -288,6 +307,7 @@ export async function getDashboardData(
     penaltyRes,
     positions,
     dtcRows,
+    leavesRes,
   ] = await Promise.all([
     onlyFleet(
       withoutTestRows(
@@ -407,6 +427,27 @@ export async function getDashboardData(
     listLatestVehiclePositions(fleetScope),
     // Filo geneli aktif arıza kodları (migration 021 yoksa boş liste).
     listFleetActiveDtc(),
+    // BUGÜN ONAYLI izinli şoförler (Modül 1) → Günün Panosu "İzinli" durumu.
+    // Roster ile AYNI eksende (test + filo) daraltılır. Tablo yoksa error →
+    // data null → boş Set → özellik sessizce devre dışı, pano bozulmaz.
+    // PENDING talepler DAHİL DEĞİL — yalnız 'approved' gerçek izindir.
+    LEAVES_ENABLED
+      ? onlyFleet(
+          withoutTestRows(
+            supabaseAdmin
+              .from("worker_leaves")
+              .select("worker_id")
+              .eq("status", "approved")
+              .lte("start_date", todayYmdVienna())
+              .gte("end_date", todayYmdVienna()),
+            "worker_id",
+            scope.workerIds
+          ),
+          "worker_id",
+          fleetScope.workerIds,
+          fleetScope
+        )
+      : Promise.resolve({ data: [] as { worker_id: string }[] }),
   ]);
 
   const todayEntries = (todayRes.data ?? []) as LiteEntry[];
@@ -433,6 +474,14 @@ export async function getDashboardData(
     name: string;
     license_expiry: string;
   }[];
+  // Bugün ONAYLI izinli şoförler → roster "İzinli" durumu (Modül 1).
+  const leaveWorkerIds = new Set(
+    ((leavesRes.data ?? []) as { worker_id: string }[]).map((r) => r.worker_id)
+  );
+  // Şu an AÇIK vardiyası olan araçlar → movingNoShift Dikkat kalemi için.
+  const openVehicleIds = new Set(
+    activeShifts.map((s) => s.vehicle_id).filter(Boolean) as string[]
+  );
 
   const fleet = buildFleet(vehicles);
   const todayOps = buildTodayOps(todayEntries);
@@ -463,7 +512,13 @@ export async function getDashboardData(
     ),
     performanceWindowDays: PERF_WINDOW_DAYS,
     dtc,
-    roster: buildTodayRoster(workerRows, vehicles, todayEntries, positions),
+    roster: buildTodayRoster(
+      workerRows,
+      vehicles,
+      todayEntries,
+      positions,
+      leaveWorkerIds
+    ),
     attention: buildAttention(
       rangeEntries,
       todayEntries,
@@ -472,7 +527,8 @@ export async function getDashboardData(
       todayStart,
       unpaidPenalties,
       licenses,
-      positions
+      positions,
+      openVehicleIds
     ),
   };
 }
@@ -601,7 +657,9 @@ function buildTodayRoster(
     assigned_worker_id: string | null;
   }[],
   todayEntries: LiteEntry[],
-  positions: { vehicle_id: string; recorded_at: string }[]
+  positions: { vehicle_id: string; recorded_at: string }[],
+  /** ONAYLI izni bugünü kapsayan şoförler → "İzinli" durumu (Modül 1). */
+  leaveWorkerIds: Set<string>
 ): TodayRosterRow[] {
   const nowMs = Date.now();
 
@@ -647,6 +705,10 @@ function buildTodayRoster(
       if (entry.ended_at !== null) status = "closed";
       else if (entry.break_started_at) status = "on_break";
       else status = "in_field";
+    } else if (leaveWorkerIds.has(w.id)) {
+      // İzin YALNIZ "vardiya açmadı"yı bastırır; vardiya AÇMIŞ izinli
+      // (izinliyken çalışan) gerçek durumuyla görünür, maskelenmez.
+      status = "on_leave";
     }
 
     // Telemetri yaşı ATANMIŞ araçtan okunur: "şoförün aracından veri geliyor mu"
@@ -686,6 +748,7 @@ function buildTodayRoster(
     in_field: 1,
     on_break: 1, // molada = sahada sayılır, ayrı grup açmaz
     closed: 2,
+    on_leave: 3, // izinli = en altta, nötr (eylem gerektirmez)
   };
   rows.sort((a, b) => {
     const r = rank[a.status] - rank[b.status];
@@ -899,7 +962,14 @@ function buildAttention(
   todayStart: Date,
   unpaidPenalties: { vehicle_id: string; amount: number | null }[],
   licenses: { id: string; name: string; license_expiry: string }[],
-  positions: { vehicle_id: string; recorded_at: string }[]
+  positions: {
+    vehicle_id: string;
+    recorded_at: string;
+    ignition_on?: boolean | null;
+    speed_kmh?: number | null;
+  }[],
+  /** Şu an AÇIK vardiyası olan araç id'leri (movingNoShift için). */
+  openVehicleIds: Set<string>
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
 
@@ -1044,6 +1114,20 @@ function buildAttention(
     });
   }
 
+  // 7) Araç ŞU AN kontak açık + taze telemetri ama o araçta AÇIK vardiya YOK.
+  //    Kritik güvenlik ağı (Modül 1): izinli/ayrılan şoförün aracını başkası
+  //    kullanınca auto-shift bilinçli olarak vardiya AÇMAZ (yanlış isme
+  //    yazmamak için) — bu boşluk yöneticiye görünmeli ki gerçek sürücü kendi
+  //    adına vardiya başlatsın. Bayat fix "sürüyor" sayılmaz (MOVING_FRESH_MS).
+  for (const p of positions) {
+    if (openVehicleIds.has(p.vehicle_id)) continue; // açık vardiya var → sorun yok
+    const plate = activePlate.get(p.vehicle_id);
+    if (!plate) continue; // pasif/silinmiş/cihazsız araç
+    if (p.ignition_on !== true) continue; // kontak kapalı → hareket yok
+    if (nowMs - new Date(p.recorded_at).getTime() > MOVING_FRESH_MS) continue;
+    items.push({ kind: "movingNoShift", id: `${p.vehicle_id}-moving`, plate });
+  }
+
   // Most urgent first: overdue/soonest docs, then biggest overruns/backlogs.
   const weight = (i: AttentionItem): number => {
     switch (i.kind) {
@@ -1056,6 +1140,8 @@ function buildAttention(
         return i.days; // overdue (negative) and soonest first
       case "silent":
         return 50 - i.hours / 24; // belgelerden sonra; en uzun sessizlik önce
+      case "movingNoShift":
+        return 90; // kayıt dışı sürüş uyarısı — cezayla aynı bantta, gold
       case "penalty":
         return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "overLimit":

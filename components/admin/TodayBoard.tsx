@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { AlertTriangle, Truck, UserX } from "lucide-react";
+import { AlertTriangle, CalendarOff, Truck, UserX } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusChip } from "@/components/ui-v2";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -22,12 +22,13 @@ import type { TodayRosterRow, RosterStatus } from "@/lib/admin-dashboard";
  * sabah eylem gerektiren satırlar diğer iki sekmededir.
  */
 
-type Tab = "not_started" | "in_field" | "closed";
+type Tab = "not_started" | "in_field" | "closed" | "on_leave";
 
 /** Molada olan şoför "sahada" sayılır — ayrı sekme açmaz, rozetle ayrılır. */
 function tabOf(s: RosterStatus): Tab {
   if (s === "not_started") return "not_started";
   if (s === "closed") return "closed";
+  if (s === "on_leave") return "on_leave";
   return "in_field";
 }
 
@@ -47,12 +48,22 @@ export function TodayBoard({ rows }: { rows: TodayRosterRow[] }) {
   // hiçbir filo şefinin kapsamına girmez. Bu satırlar yalnız patrona ulaşır —
   // şef için sunucu tarafında zaten elenmişlerdir. Panoda ana listeye karışıp
   // "kimse ilgilenmiyor" durumuna düşmesinler diye kendi grubunda gösterilir.
-  const fleetless = useMemo(() => rows.filter((r) => r.plate === null), [rows]);
+  const fleetless = useMemo(
+    () => rows.filter((r) => r.plate === null && r.status !== "on_leave"),
+    [rows]
+  );
 
   const groups = useMemo(() => {
-    const g: Record<Tab, TodayRosterRow[]> = { not_started: [], in_field: [], closed: [] };
+    const g: Record<Tab, TodayRosterRow[]> = {
+      not_started: [],
+      in_field: [],
+      closed: [],
+      on_leave: [],
+    };
     for (const r of rows) {
-      if (r.plate === null) continue; // filosuz personel: aşağıda ayrı grup
+      // İzinli daima "İzinli" sekmesinde — filosuz-izinli de buraya, aşağıdaki
+      // filosuz grubuna değil (nötr izin durumu kaybolmasın).
+      if (r.plate === null && r.status !== "on_leave") continue;
       g[tabOf(r.status)].push(r);
     }
     return g;
@@ -67,6 +78,7 @@ export function TodayBoard({ rows }: { rows: TodayRosterRow[] }) {
     { key: "not_started", label: t("boardTabNotStarted"), count: groups.not_started.length },
     { key: "in_field", label: t("boardTabInField"), count: groups.in_field.length },
     { key: "closed", label: t("boardTabClosed"), count: groups.closed.length },
+    { key: "on_leave", label: t("boardTabOnLeave"), count: groups.on_leave.length },
   ];
 
   const shown = groups[tab];
@@ -301,6 +313,15 @@ function StatusCell({ row, t }: { row: TodayRosterRow; t: TFn }) {
       <span className="inline-flex items-center gap-1 text-xs font-medium text-accent-gold">
         <UserX className="size-3.5 shrink-0" aria-hidden />
         {t("boardStatusNotStarted")}
+      </span>
+    );
+  }
+  if (row.status === "on_leave") {
+    // NÖTR: gold "Açmadı" sinyali DEĞİL. İzinli personel eylem gerektirmez.
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+        <CalendarOff className="size-3.5 shrink-0" aria-hidden />
+        {t("boardStatusOnLeave")}
       </span>
     );
   }

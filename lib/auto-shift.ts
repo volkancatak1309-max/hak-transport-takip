@@ -11,6 +11,7 @@ import {
 } from "@/lib/telegram-messages";
 import { workedMs, formatDurationShort, formatTime } from "@/lib/format";
 import { workersWithShiftToday } from "@/lib/shift-day";
+import { approvedLeaveWorkerIdsForDay } from "@/lib/leaves";
 
 /**
  * Otomatik vardiya motoru (Şoför Paneli v2 — İş 1).
@@ -370,6 +371,14 @@ export async function processAutoShifts(
     // bile) kontak ikinci vardiyayı açmaz. Otomatik BİTİRME bu kümeden
     // etkilenmez — açık vardiya her hâlükârda kapatılabilmelidir.
     const startedToday = await workersWithShiftToday();
+    // İZİNLİ ŞOFÖRE OTOMATİK VARDİYA AÇMA (Modül 1 — kritik). assigned_worker_id
+    // izinde olan bir aracın kontağı açılırsa (aracı büyük olasılıkla BAŞKASI
+    // kullanıyordur) motor, vardiyayı İZİNLİ şoförün adına açardı → izinli
+    // "çalışıyor" görünür ve AZG raporuna yanlış veri girer. Onaylı izni BUGÜNÜ
+    // kapsayan şoförleri baştan eler. Tablo yoksa boş küme → davranış değişmez.
+    // (İşten ÇIKAN şoför ayrıca aşağıda `w.is_active !== true` ile elenir —
+    // termination is_active=false yazar; iki kapı bilinçli olarak üst üste.)
+    const onLeaveToday = await approvedLeaveWorkerIdsForDay();
     const openByVehicle = new Map(
       open.filter((s) => s.vehicle_id).map((s) => [s.vehicle_id as string, s])
     );
@@ -393,7 +402,8 @@ export async function processAutoShifts(
           latest.ignition_on === true &&
           now - latestMs <= START_FRESH_MS &&
           !openByWorker.has(v.assigned_worker_id) &&
-          !startedToday.has(v.assigned_worker_id)
+          !startedToday.has(v.assigned_worker_id) &&
+          !onLeaveToday.has(v.assigned_worker_id)
         ) {
           const { data: w } = await supabaseAdmin
             .from("workers")

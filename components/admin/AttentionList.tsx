@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   IdCard,
   SatelliteDish,
+  Navigation,
   Pencil,
   type LucideIcon,
 } from "lucide-react";
@@ -92,6 +93,13 @@ export function AttentionList({
           overdue: item.hours >= 48,
         };
       }
+      case "movingNoShift":
+        return {
+          icon: Navigation,
+          text: t("dash.attn_moving_no_shift", { plate: item.plate }),
+          meta: t("dash.attn_moving_no_shift_meta"),
+          overdue: false,
+        };
       case "inspection":
       case "insurance": {
         const overdue = item.days < 0;

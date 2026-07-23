@@ -18,6 +18,7 @@ import {
   Siren,
   BarChart3,
   FileBarChart,
+  CalendarOff,
   LogOut,
   Menu,
   X,
@@ -35,7 +36,7 @@ import { HelpToggle } from "@/components/help/HelpToggle";
 import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/app/actions/auth";
 import { setLocaleAction } from "@/app/actions/preferences";
-import { FUEL_ENABLED, EXPENSE_ENABLED } from "@/lib/features";
+import { FUEL_ENABLED, EXPENSE_ENABLED, LEAVES_ENABLED } from "@/lib/features";
 
 export type HeaderUser = {
   id: string;
@@ -101,6 +102,12 @@ export function DashboardShell({
     ? [
         { href: "/admin", label: t("admin"), icon: LayoutDashboard },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
+        // İzinler: şef kendi filosunun izin TALEBİNİ açar (onay patronda).
+        // /admin ve /admin/harita'dan sonra şefe açılan ÜÇÜNCÜ sayfa —
+        // bilinçli; yazma sunucuda scope.isFleetWorker ile korunuyor.
+        ...(LEAVES_ENABLED
+          ? [{ href: "/admin/izinler", label: t("leaves"), icon: CalendarOff }]
+          : []),
         { href: "/panel", label: t("backToPanel"), icon: ArrowLeft },
       ]
     : user.isAdmin
@@ -118,6 +125,9 @@ export function DashboardShell({
           ? [{ href: "/admin/masraflar", label: t("expenses"), icon: Receipt }]
           : []),
         { href: "/admin/workers", label: t("workers"), icon: Users },
+        ...(LEAVES_ENABLED
+          ? [{ href: "/admin/izinler", label: t("leaves"), icon: CalendarOff }]
+          : []),
         { href: "/admin/telegram", label: t("telegram"), icon: Send },
       ]
     : [

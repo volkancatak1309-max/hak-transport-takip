@@ -157,6 +157,15 @@ export type AttentionItem =
       kind: "movingNoShift";
       id: string;
       plate: string;
+    }
+  | {
+      // AKTİF aracın atanmış şoförü İŞTEN AYRILDI (is_active=false/terminated)
+      // → araç şoförsüz kaldı; patron yeniden atamalı (Modül 2). assigned_worker_id
+      // bilinçli boşaltılmadığı için bu kalem "atama bekliyor" sinyalidir.
+      kind: "driverless";
+      id: string;
+      plate: string;
+      worker_name: string;
     };
 
 /** Per-driver / per-vehicle breakdown behind each OpsSummary tile, for the
@@ -482,6 +491,11 @@ export async function getDashboardData(
   const openVehicleIds = new Set(
     activeShifts.map((s) => s.vehicle_id).filter(Boolean) as string[]
   );
+  // İşten ayrılan/pasif personel → "şoförsüz araç" Dikkat kalemi için (Modül 2).
+  // workerRows is_active taşır (filtresiz sorgu, roster in-memory eler).
+  const inactiveWorkerIds = new Set(
+    workerRows.filter((w) => w.is_active === false).map((w) => w.id)
+  );
 
   const fleet = buildFleet(vehicles);
   const todayOps = buildTodayOps(todayEntries);
@@ -528,7 +542,8 @@ export async function getDashboardData(
       unpaidPenalties,
       licenses,
       positions,
-      openVehicleIds
+      openVehicleIds,
+      inactiveWorkerIds
     ),
   };
 }
@@ -955,6 +970,7 @@ function buildAttention(
     id: string;
     plate: string;
     status: string;
+    assigned_worker_id: string | null;
     inspection_due: string | null;
     insurance_due: string | null;
   }[],
@@ -969,7 +985,9 @@ function buildAttention(
     speed_kmh?: number | null;
   }[],
   /** Şu an AÇIK vardiyası olan araç id'leri (movingNoShift için). */
-  openVehicleIds: Set<string>
+  openVehicleIds: Set<string>,
+  /** İşten ayrılan/pasif personel id'leri → "şoförsüz araç" (Modül 2). */
+  inactiveWorkerIds: Set<string>
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
 
@@ -1128,6 +1146,21 @@ function buildAttention(
     items.push({ kind: "movingNoShift", id: `${p.vehicle_id}-moving`, plate });
   }
 
+  // 8) AKTİF aracın atanmış şoförü İŞTEN AYRILDI → araç şoförsüz (Modül 2).
+  //    assigned_worker_id bilinçli boşaltılmadığı için bu kalem patronu yeniden
+  //    atamaya iter. Pasif araç (status inactive) kapsam dışı.
+  for (const v of vehicles) {
+    if (v.status === "inactive") continue;
+    const wid = v.assigned_worker_id;
+    if (!wid || !inactiveWorkerIds.has(wid)) continue;
+    items.push({
+      kind: "driverless",
+      id: `${v.id}-driverless`,
+      plate: v.plate,
+      worker_name: names.get(wid) ?? "—",
+    });
+  }
+
   // Most urgent first: overdue/soonest docs, then biggest overruns/backlogs.
   const weight = (i: AttentionItem): number => {
     switch (i.kind) {
@@ -1142,6 +1175,8 @@ function buildAttention(
         return 50 - i.hours / 24; // belgelerden sonra; en uzun sessizlik önce
       case "movingNoShift":
         return 90; // kayıt dışı sürüş uyarısı — cezayla aynı bantta, gold
+      case "driverless":
+        return 95; // şoförsüz araç (atama bekliyor) — movingNoShift'ten hemen sonra
       case "penalty":
         return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "overLimit":

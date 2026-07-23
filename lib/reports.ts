@@ -551,7 +551,10 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     supabaseAdmin
       .from("vehicles")
       .select("id, plate, assigned_worker_id, tank_capacity_l"),
-    supabaseAdmin.from("workers").select("id, name").eq("is_active", true),
+    // is_active FİLTRESİ YOK (Modül 2): geçmiş yakıt raporu ayrılan personelin
+    // adını göstermeye devam etmeli — isim evreni TÜM personel olmalı, yoksa
+    // terminated şoförün adı "—"e döner (7 yıl arşiv zorunluluğu).
+    supabaseAdmin.from("workers").select("id, name"),
   ]);
   const vehicles = dropTestRows(
     (vData ?? []) as {

@@ -12,6 +12,7 @@ import {
   IdCard,
   SatelliteDish,
   Navigation,
+  UserX,
   Pencil,
   type LucideIcon,
 } from "lucide-react";
@@ -98,6 +99,13 @@ export function AttentionList({
           icon: Navigation,
           text: t("dash.attn_moving_no_shift", { plate: item.plate }),
           meta: t("dash.attn_moving_no_shift_meta"),
+          overdue: false,
+        };
+      case "driverless":
+        return {
+          icon: UserX,
+          text: t("dash.attn_driverless", { plate: item.plate }),
+          meta: t("dash.attn_driverless_meta"),
           overdue: false,
         };
       case "inspection":

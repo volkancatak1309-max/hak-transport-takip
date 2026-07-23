@@ -37,9 +37,8 @@ export default async function IzinlerPage({
     : todayYmdVienna().slice(0, 7);
   const { start, end } = monthBounds(month);
 
-  const [workersRes, leavesRes] = await Promise.all([
-    // Aktif, yönetici-olmayan personel (M2 terminated_at gelince "ayrılan gri"
-    // kuralı buraya eklenecek). test + filo daraltması roster ile aynı eksende.
+  const [activeRes, formerRes, leavesRes] = await Promise.all([
+    // Aktif kadro (terminated_at'ten BAĞIMSIZ — migration 032 gelmeden de çalışır).
     onlyFleet(
       withoutTestRows(
         supabaseAdmin
@@ -47,6 +46,26 @@ export default async function IzinlerPage({
           .select("id, name")
           .eq("is_active", true)
           .eq("is_admin", false)
+          .order("name"),
+        "id",
+        scope.workerIds
+      ),
+      "id",
+      fleetScope.workerIds,
+      fleetScope
+    ),
+    // Görüntülenen ayda HÂLÂ görünmesi gereken AYRILAN personel: çıkışı ay
+    // başından sonra olanlar (çıkış ayına kadar gri, sonraki aylarda düşer).
+    // Best-effort: migration 032 gelmeden terminated_at kolonu yok → error →
+    // boş; aktif kadro yine görünür (M1↔M2 birleşimi).
+    onlyFleet(
+      withoutTestRows(
+        supabaseAdmin
+          .from("workers")
+          .select("id, name, terminated_at")
+          .eq("is_admin", false)
+          .not("terminated_at", "is", null)
+          .gte("terminated_at", start)
           .order("name"),
         "id",
         scope.workerIds
@@ -73,7 +92,15 @@ export default async function IzinlerPage({
     ),
   ]);
 
-  const workers = (workersRes.data ?? []) as { id: string; name: string }[];
+  const active = ((activeRes.data ?? []) as { id: string; name: string }[]).map(
+    (w) => ({ id: w.id, name: w.name, terminated: false })
+  );
+  const former = (
+    (formerRes.data ?? []) as { id: string; name: string; terminated_at: string | null }[]
+  ).map((w) => ({ id: w.id, name: w.name, terminated: true }));
+  const workers = [...active, ...former].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
   const leaves: CalLeave[] = ((leavesRes.data ?? []) as LeaveRow[]).map((l) => ({
     id: l.id,
     worker_id: l.worker_id,

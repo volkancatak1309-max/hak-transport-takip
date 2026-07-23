@@ -14,6 +14,12 @@ export type Worker = {
   telegram_locale: string | null;
   is_admin: boolean;
   is_active: boolean;
+  /**
+   * İşten çıkış tarihi (son çalışma günü, migration 032). null = çalışıyor.
+   * Set edilirken is_active=false de yazılır → canlı yüzeyler kendiliğinden düşürür;
+   * geçmiş raporlarda adı KALIR (7 yıl arşiv, § 132 BAO).
+   */
+  terminated_at: string | null;
   // Set true for temp PINs (admin create / reset); login forces a change at
   // /pin and changePinAction clears it (migration 019).
   must_change_pin: boolean;
@@ -44,7 +50,7 @@ export type WorkerPublic = Omit<Worker, "pin_hash">;
  * worker data. Server-only flows that need the hash (login) select it explicitly.
  */
 export const WORKER_PUBLIC_COLUMNS =
-  "id, name, phone, plate, employee_number, telegram_chat_id, telegram_username, telegram_linked_at, telegram_locale, is_admin, is_active, created_at, birth_date, email, address, social_security_no, employment_start, employment_type, license_no, license_expiry, emergency_contact_name, emergency_contact_relation, emergency_contact_phone";
+  "id, name, phone, plate, employee_number, telegram_chat_id, telegram_username, telegram_linked_at, telegram_locale, is_admin, is_active, terminated_at, created_at, birth_date, email, address, social_security_no, employment_start, employment_type, license_no, license_expiry, emergency_contact_name, emergency_contact_relation, emergency_contact_phone";
 
 /**
  * Shift-start confirmation (migration 020): 'pending' = auto-started, waiting

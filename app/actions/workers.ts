@@ -309,6 +309,52 @@ export async function toggleActiveAction(workerId: string): Promise<WorkerResult
 }
 
 /**
+ * İŞTEN ÇIKIŞ (Modül 2). Personeli "ayrıldı" olarak işaretler: terminated_at
+ * (son çalışma günü) + is_active=false (canlı yüzeyler is_active ile kendiliğinden
+ * düşürür) + Telegram bağını temizler (artık bildirim gitmesin).
+ *
+ * KASITLI olarak `vehicles.assigned_worker_id` BOŞALTILMAZ: araç "şoförsüz kaldı"
+ * Dikkat/Aksiyon kalemiyle patronu bilinçli yeniden atamaya iter (kullanıcı
+ * kararı). Geçmiş raporlar SİLİNMEZ — ayrılan personelin adı eski AZG/vardiya/
+ * yakıt raporlarında görünmeye devam eder (7 yıl arşiv).
+ */
+export async function terminateWorkerAction(
+  workerId: string,
+  lastDay: string
+): Promise<WorkerResult> {
+  await requireAdmin();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(lastDay)) {
+    return { ok: false, error: "Geçersiz tarih" };
+  }
+  const { data: worker } = await supabaseAdmin
+    .from("workers")
+    .select("is_admin")
+    .eq("id", workerId)
+    .maybeSingle();
+  if (!worker) return { ok: false, error: "Çalışan bulunamadı" };
+  if (worker.is_admin === true) {
+    return { ok: false, error: "Yönetici hesabı işten çıkarılamaz" };
+  }
+
+  const { error } = await supabaseAdmin
+    .from("workers")
+    .update({
+      terminated_at: lastDay,
+      is_active: false,
+      telegram_chat_id: null,
+      telegram_linked_at: null,
+    })
+    .eq("id", workerId);
+  if (error) return { ok: false, error: "Güncelleme başarısız" };
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/workers");
+  revalidatePath("/admin/araclar");
+  revalidatePath("/panel");
+  return { ok: true };
+}
+
+/**
  * Yönetici bir şoföre YENİ PIN ATAR (21.07.2026 — eskiden sistem rastgele
  * üretiyordu; artık yönetici kendisi yazıyor, çünkü PIN'i şoföre sözlü olarak
  * o iletiyor).

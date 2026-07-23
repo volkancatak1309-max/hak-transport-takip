@@ -29,7 +29,7 @@ import {
   type LeaveActionResult,
 } from "@/app/actions/leaves";
 
-export type CalWorker = { id: string; name: string };
+export type CalWorker = { id: string; name: string; terminated?: boolean };
 export type CalLeave = {
   id: string;
   worker_id: string;
@@ -157,7 +157,7 @@ export function LeaveCalendar({
             onClick={() =>
               setDrawer({
                 mode: "add",
-                workerId: workers[0]?.id ?? "",
+                workerId: (workers.find((w) => !w.terminated) ?? workers[0])?.id ?? "",
                 date: ymd(year, mon, 1),
               })
             }
@@ -267,12 +267,30 @@ export function LeaveCalendar({
                         key={w.id}
                         className="border-b border-border/50 last:border-0"
                       >
-                        <td className="sticky left-0 z-10 min-w-[9rem] bg-card px-3 py-1.5 font-medium">
+                        <td
+                          className={`sticky left-0 z-10 min-w-[9rem] bg-card px-3 py-1.5 font-medium ${
+                            w.terminated ? "text-muted-foreground" : ""
+                          }`}
+                        >
                           {w.name}
+                          {w.terminated && (
+                            <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                              ({t("terminated")})
+                            </span>
+                          )}
                         </td>
                         {days.map((d) => {
                           const l = inner?.get(d);
                           if (!l) {
+                            // Ayrılan personel: boş hücre etkileşimsiz (yeni izin yok).
+                            if (w.terminated) {
+                              return (
+                                <td
+                                  key={d}
+                                  className={isWeekend(d) ? "bg-surface-2/30" : ""}
+                                />
+                              );
+                            }
                             return (
                               <td
                                 key={d}

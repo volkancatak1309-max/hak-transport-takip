@@ -134,7 +134,11 @@ export async function listVehiclesAndWorkers(): Promise<{
   // raporlarının ORTAK araç/şoför evreni (lib/reports.ts loadBase buradan okur).
   const [{ data: vData }, { data: wData }] = await Promise.all([
     supabaseAdmin.from("vehicles").select("id, plate, assigned_worker_id"),
-    supabaseAdmin.from("workers").select("id, name").eq("is_active", true),
+    // is_active FİLTRESİ YOK (Modül 2): Hız/Mesafe/Performans ve Analiz'in ORTAK
+    // isim evreni TÜM personel olmalı ki geçmiş raporlarda ayrılan şoförün adı
+    // görünsün (aksi halde "—" olur / Performans satırı düşer). Aktif/ayrıldı
+    // ayrımı yalnız CANLI yüzeylerde (roster/harita/seçiciler) uygulanır.
+    supabaseAdmin.from("workers").select("id, name"),
   ]);
   return {
     vehicles: dropTestRows(

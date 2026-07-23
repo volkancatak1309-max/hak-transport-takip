@@ -5,7 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { KeyRound, UserPlus, MoreHorizontal, Pencil, Power } from "lucide-react";
+import {
+  KeyRound,
+  UserPlus,
+  MoreHorizontal,
+  Pencil,
+  Power,
+  UserMinus,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { RevealFilterRow } from "@/components/ui-v2";
 import { Button } from "@/components/ui/button";
@@ -31,6 +38,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { AddWorkerDialog } from "@/components/admin/AddWorkerDialog";
 import { EditWorkerDialog } from "@/components/admin/EditWorkerDialog";
 import { SetPinDialog } from "@/components/admin/SetPinDialog";
+import { TerminateWorkerDialog } from "@/components/admin/TerminateWorkerDialog";
 import type { WorkerWithStats } from "./page";
 
 type Props = { workers: WorkerWithStats[] };
@@ -45,12 +53,18 @@ export function WorkersClient({ workers }: Props) {
   // PIN'i YÖNETİCİ belirler (SetPinDialog). Mevcut PIN hiçbir yerde gösterilmez.
   const [pinFor, setPinFor] = useState<WorkerWithStats | null>(null);
   const [editing, setEditing] = useState<WorkerWithStats | null>(null);
+  const [terminating, setTerminating] = useState<WorkerWithStats | null>(null);
   // Client-side status filter. Default "active" so the passive roster doesn't
   // clutter the list; passive workers are only hidden, never deleted — their
   // shift history stays intact. The dataset is one company's staff (already
   // fully fetched with stats), so filtering here beats a server round-trip.
   const [status, setStatus] = useState<"active" | "passive" | "all">("active");
-  const visible = workers.filter((w) =>
+  // İşten AYRILANLAR (terminated_at dolu) ana listeden çıkar → aşağıda "Eski
+  // Personeller" bölümünde. Ana tablo yalnız hâlâ kadrodakileri gösterir;
+  // pasif = geçici durdurulmuş (ayrılmış değil).
+  const roster = workers.filter((w) => !w.terminated_at);
+  const former = workers.filter((w) => w.terminated_at);
+  const visible = roster.filter((w) =>
     status === "all" ? true : status === "active" ? w.is_active : !w.is_active
   );
 
@@ -210,6 +224,9 @@ export function WorkersClient({ workers }: Props) {
                               <Power className="size-4" />{" "}
                               {w.is_active ? t("deactivate") : t("activate")}
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setTerminating(w)}>
+                              <UserMinus className="size-4" /> {t("terminate")}
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -222,8 +239,54 @@ export function WorkersClient({ workers }: Props) {
         </CardContent>
       </Card>
 
+      {/* ── ESKİ PERSONELLER ── işten ayrılanlar (terminated_at). Kayıtlar
+          silinmez; adları geçmiş raporlarda kalır (7 yıl arşiv). */}
+      {former.length > 0 && (
+        <details className="mt-5 rounded-2xl border border-border/60 bg-card">
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold">
+            {t("formerTitle", { n: former.length })}
+          </summary>
+          <div className="border-t border-border/60 px-4 py-3">
+            <p className="mb-3 text-xs text-muted-foreground">{t("formerNote")}</p>
+            <ul className="divide-y divide-border/50">
+              {former.map((w) => (
+                <li
+                  key={w.id}
+                  className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+                >
+                  <span className="flex items-center gap-2">
+                    <UserAvatar name={w.name} size="xs" />
+                    <span className="font-medium">{w.name}</span>
+                  </span>
+                  <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <span className="nums">
+                      {t("formerPeriod")}:{" "}
+                      {w.employment_start
+                        ? formatDate(w.employment_start, locale)
+                        : "—"}
+                      {" → "}
+                      {w.terminated_at ? formatDate(w.terminated_at, locale) : "—"}
+                    </span>
+                    <Link
+                      href={`/admin/workers/${w.id}`}
+                      className="font-medium text-accent-sky hover:underline"
+                    >
+                      {t("formerReport")}
+                    </Link>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
+      )}
+
       <EditWorkerDialog worker={editing} onClose={() => setEditing(null)} />
       <SetPinDialog worker={pinFor} onClose={() => setPinFor(null)} />
+      <TerminateWorkerDialog
+        worker={terminating ? { id: terminating.id, name: terminating.name } : null}
+        onClose={() => setTerminating(null)}
+      />
     </>
   );
 }

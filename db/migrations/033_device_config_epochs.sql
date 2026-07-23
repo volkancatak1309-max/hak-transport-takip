@@ -8,9 +8,10 @@
 -- EPOCH satırı ekler; raporlar bu sınırı aşan trendleri gizler / not düşer
 -- (lib/config-epoch.ts). Guard: 11104 için zaten epoch varsa tekrar EKLEMEZ.
 --
--- ⚠️ Bu INSERT'i, cihazlara `setparam 11104:131` komutunu GÖNDERDİĞİN anda
--- çalıştır — changed_at=now() o anı işaretler. Önce/sonra çalıştırırsan sınır
--- gerçek değişim anıyla birkaç dakika kayar (kritik değil, ama isabetli olsun).
+-- Komut GÖNDERİLDİ: 28 cihaza `setparam 11104:131` + DO-505GS kuyruk düzeltmesi,
+-- gönderim anı UTC 2026-07-23T21:38:09Z (flespi commands-queue). Epoch changed_at
+-- bu ana SABİTLENDİ — migration'ı ne zaman çalıştırırsan çalıştır sınır doğru
+-- kalır (raporlar bu sınırı aşan trendleri gizler / not düşer).
 
 create table if not exists public.device_config_epochs (
   id         uuid primary key default gen_random_uuid(),
@@ -20,8 +21,10 @@ create table if not exists public.device_config_epochs (
 );
 alter table public.device_config_epochs disable row level security;
 
-insert into public.device_config_epochs (params, note)
-select '11104: 120->131', 'Asiri hiz uyari esigi 120->131 km/s (28 cihaz)'
+insert into public.device_config_epochs (changed_at, params, note)
+select timestamptz '2026-07-23T21:38:09.579Z',
+       '11104: 120->131',
+       'Asiri hiz uyari esigi 120->131 km/s (28 cihaz + DO-505GS kuyruk; gonderim UTC 2026-07-23T21:38)'
 where not exists (
   select 1 from public.device_config_epochs where params like '%11104%'
 );

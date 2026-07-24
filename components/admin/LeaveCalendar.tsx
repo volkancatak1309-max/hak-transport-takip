@@ -108,6 +108,12 @@ export function LeaveCalendar({
   const pendingLeaves = leaves.filter((l) => l.status === "pending");
   const nameById = new Map(workers.map((w) => [w.id, w.name]));
 
+  // AYRILAN personel ana ızgaradan ÇIKAR → aşağıda katlanır "Ayrılan personel"
+  // bölümünde salt okunur gösterilir (Çalışanlar sayfasındaki "Eski Personeller"
+  // deseniyle tutarlı). 20 kişi ayrılınca ana liste kullanılmaz hâle gelmesin.
+  const activeWorkers = workers.filter((w) => !w.terminated);
+  const formerWorkers = workers.filter((w) => w.terminated);
+
   function isWeekend(d: number): boolean {
     const dow = new Date(Date.UTC(year, mon - 1, d)).getUTCDay();
     return dow === 0 || dow === 6;
@@ -125,6 +131,110 @@ export function LeaveCalendar({
       if (res.ok) router.refresh();
     });
   }
+
+  // Gün numarası başlığı — hem aktif ızgara hem ayrılan-personel bölümü kullanır.
+  const dayHeader = (
+    <thead>
+      <tr>
+        <th className="sticky left-0 z-10 min-w-[9rem] border-b border-border bg-card px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {t("colWorker")}
+        </th>
+        {days.map((d) => (
+          <th
+            key={d}
+            className={[
+              "nums border-b border-border py-2 text-center text-[11px] font-medium text-muted-foreground",
+              isWeekend(d) ? "bg-surface-2/50" : "",
+            ].join(" ")}
+            style={{ minWidth: 26 }}
+          >
+            {d}
+          </th>
+        ))}
+      </tr>
+    </thead>
+  );
+
+  // Tek satır. readOnly=true (ayrılan personel): isim gri + "(ayrıldı)", boş
+  // hücre etkileşimsiz, izin hücreleri tıklanamaz (yeni izin yok, düzenleme yok).
+  const renderRow = (w: CalWorker, readOnly: boolean) => {
+    const inner = byWorkerDay.get(w.id);
+    return (
+      <tr key={w.id} className="border-b border-border/50 last:border-0">
+        <td
+          className={`sticky left-0 z-10 min-w-[9rem] bg-card px-3 py-1.5 font-medium ${
+            readOnly ? "text-muted-foreground" : ""
+          }`}
+        >
+          {w.name}
+          {readOnly && (
+            <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+              ({t("terminated")})
+            </span>
+          )}
+        </td>
+        {days.map((d) => {
+          const l = inner?.get(d);
+          if (!l) {
+            // Boş hücre: aktif personelde tıklanır (izin ekle), ayrılanda değil.
+            if (readOnly) {
+              return (
+                <td key={d} className={isWeekend(d) ? "bg-surface-2/30" : ""} />
+              );
+            }
+            return (
+              <td key={d} className={isWeekend(d) ? "bg-surface-2/30" : ""}>
+                <button
+                  type="button"
+                  aria-label={t("addForDay", { day: d })}
+                  className="h-7 w-full min-w-[26px] transition-colors hover:bg-surface-2"
+                  onClick={() =>
+                    setDrawer({
+                      mode: "add",
+                      workerId: w.id,
+                      date: ymd(year, mon, d),
+                    })
+                  }
+                />
+              </td>
+            );
+          }
+          const def = leaveTypeDef(l.leave_type);
+          const isPending = l.status === "pending";
+          const title = `${nameById.get(l.worker_id) ?? ""} · ${def.tr} · ${l.start_date} → ${l.end_date}${
+            isPending ? ` · ${t("statusPending")}` : ""
+          }${l.note ? ` · ${l.note}` : ""}`;
+          // Ayrılan personelde izin GÖRÜNÜR ama tıklanamaz (salt okunur).
+          if (readOnly) {
+            return (
+              <td key={d} className="p-0">
+                <span
+                  title={title}
+                  className="flex h-7 w-full min-w-[26px] cursor-default items-center justify-center text-[10px] font-semibold text-white opacity-60"
+                  style={{ backgroundColor: def.color }}
+                >
+                  {def.short}
+                </span>
+              </td>
+            );
+          }
+          return (
+            <td key={d} className="p-0">
+              <button
+                type="button"
+                title={title}
+                onClick={() => setDrawer({ mode: "edit", leave: l })}
+                className="flex h-7 w-full min-w-[26px] items-center justify-center text-[10px] font-semibold text-white"
+                style={{ backgroundColor: def.color, opacity: isPending ? 0.45 : 1 }}
+              >
+                {def.short}
+              </button>
+            </td>
+          );
+        })}
+      </tr>
+    );
+  };
 
   return (
     <div className="space-y-5">
@@ -225,32 +335,14 @@ export function LeaveCalendar({
         </Card>
       )}
 
-      {/* Izgara */}
+      {/* Izgara — YALNIZ aktif kadro. Ayrılanlar aşağıdaki katlanır bölümde. */}
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>
-                  <th className="sticky left-0 z-10 min-w-[9rem] border-b border-border bg-card px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {t("colWorker")}
-                  </th>
-                  {days.map((d) => (
-                    <th
-                      key={d}
-                      className={[
-                        "nums border-b border-border py-2 text-center text-[11px] font-medium text-muted-foreground",
-                        isWeekend(d) ? "bg-surface-2/50" : "",
-                      ].join(" ")}
-                      style={{ minWidth: 26 }}
-                    >
-                      {d}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
+              {dayHeader}
               <tbody>
-                {workers.length === 0 ? (
+                {activeWorkers.length === 0 ? (
                   <tr>
                     <td
                       colSpan={days.length + 1}
@@ -260,87 +352,35 @@ export function LeaveCalendar({
                     </td>
                   </tr>
                 ) : (
-                  workers.map((w) => {
-                    const inner = byWorkerDay.get(w.id);
-                    return (
-                      <tr
-                        key={w.id}
-                        className="border-b border-border/50 last:border-0"
-                      >
-                        <td
-                          className={`sticky left-0 z-10 min-w-[9rem] bg-card px-3 py-1.5 font-medium ${
-                            w.terminated ? "text-muted-foreground" : ""
-                          }`}
-                        >
-                          {w.name}
-                          {w.terminated && (
-                            <span className="ml-1 text-[10px] font-normal text-muted-foreground">
-                              ({t("terminated")})
-                            </span>
-                          )}
-                        </td>
-                        {days.map((d) => {
-                          const l = inner?.get(d);
-                          if (!l) {
-                            // Ayrılan personel: boş hücre etkileşimsiz (yeni izin yok).
-                            if (w.terminated) {
-                              return (
-                                <td
-                                  key={d}
-                                  className={isWeekend(d) ? "bg-surface-2/30" : ""}
-                                />
-                              );
-                            }
-                            return (
-                              <td
-                                key={d}
-                                className={isWeekend(d) ? "bg-surface-2/30" : ""}
-                              >
-                                <button
-                                  type="button"
-                                  aria-label={t("addForDay", { day: d })}
-                                  className="h-7 w-full min-w-[26px] transition-colors hover:bg-surface-2"
-                                  onClick={() =>
-                                    setDrawer({
-                                      mode: "add",
-                                      workerId: w.id,
-                                      date: ymd(year, mon, d),
-                                    })
-                                  }
-                                />
-                              </td>
-                            );
-                          }
-                          const def = leaveTypeDef(l.leave_type);
-                          const isPending = l.status === "pending";
-                          return (
-                            <td key={d} className="p-0">
-                              <button
-                                type="button"
-                                title={`${nameById.get(l.worker_id) ?? ""} · ${def.tr} · ${l.start_date} → ${l.end_date}${
-                                  isPending ? ` · ${t("statusPending")}` : ""
-                                }${l.note ? ` · ${l.note}` : ""}`}
-                                onClick={() => setDrawer({ mode: "edit", leave: l })}
-                                className="flex h-7 w-full min-w-[26px] items-center justify-center text-[10px] font-semibold text-white"
-                                style={{
-                                  backgroundColor: def.color,
-                                  opacity: isPending ? 0.45 : 1,
-                                }}
-                              >
-                                {def.short}
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })
+                  activeWorkers.map((w) => renderRow(w, false))
                 )}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
+
+      {/* ── AYRILAN PERSONEL ── varsayılan GİZLİ, katlanır. Salt okunur: geçmiş
+          izinleri gri tonda görünür, yeni izin girilemez. Çalışanlar sayfasındaki
+          "Eski Personeller" (details/summary) deseniyle tutarlı. */}
+      {formerWorkers.length > 0 && (
+        <details className="rounded-2xl border border-border/60 bg-card">
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold">
+            {t("formerTitle", { n: formerWorkers.length })}
+          </summary>
+          <div className="border-t border-border/60">
+            <p className="px-4 pt-3 text-xs text-muted-foreground">
+              {t("formerNote")}
+            </p>
+            <div className="overflow-x-auto p-1 opacity-90">
+              <table className="w-full border-collapse text-sm">
+                {dayHeader}
+                <tbody>{formerWorkers.map((w) => renderRow(w, true))}</tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+      )}
 
       {/* Lejant (renk tek taşıyıcı değil — kod + renk + isim) */}
       <div className="flex flex-wrap gap-x-4 gap-y-2">
@@ -390,6 +430,7 @@ function errorMessage(
     case "scope":
     case "forbidden":
     case "admin_target":
+    case "terminated_target":
       return t("errForbidden");
     case "no_worker":
       return t("errRequired");
@@ -514,11 +555,14 @@ function LeaveDrawer({
                 className="w-full rounded-[10px] border border-border bg-background px-3 py-2 text-sm disabled:opacity-60"
               >
                 <option value="">—</option>
-                {workers.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
+                {/* Ayrılan personele yeni izin girilemez → seçenekten çıkar. */}
+                {workers
+                  .filter((w) => !w.terminated)
+                  .map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
               </select>
             </label>
 

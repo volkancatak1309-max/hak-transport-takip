@@ -100,11 +100,15 @@ export async function submitLeaveAction(
   // Hedef personel geçerli mi (yönetici hesabına / var olmayan kişiye izin yok).
   const { data: target } = await supabaseAdmin
     .from("workers")
-    .select("id, is_admin, is_active")
+    .select("id, is_admin, is_active, terminated_at")
     .eq("id", data.worker_id)
     .maybeSingle();
   if (!target) return { ok: false, error: "no_worker" };
   if (target.is_admin === true) return { ok: false, error: "admin_target" };
+  // AYRILAN personel salt okunur: yeni izin girilemez, mevcut düzenlenemez.
+  // Takvimde UI yolu zaten yok; bu sunucu kapısı boşluğu kapatır (fail-closed).
+  // terminated_at yoksa (migration 032 gelmeden) alan undefined → kapı sessiz açık.
+  if (target.terminated_at) return { ok: false, error: "terminated_target" };
 
   // Filo şefi: yalnız KENDİ filosunun personeline + düzenlemede yalnız kendi
   // PENDING talebine dokunabilir (fail-closed).

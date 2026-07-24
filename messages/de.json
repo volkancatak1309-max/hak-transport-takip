@@ -68,6 +68,8 @@
     "addForDay": "Abwesenheit am {day}. hinzufügen",
     "statusPending": "Wartet auf Genehmigung",
     "terminated": "ausgetreten",
+    "formerTitle": "Ausgetretene Mitarbeiter ({n})",
+    "formerNote": "Schreibgeschützt — vergangene Abwesenheiten sichtbar, keine neuen Einträge.",
     "legendPending": "Zu genehmigen (blass)",
     "chiefLocked": "Eine genehmigte Abwesenheit kann nur der Chef bearbeiten.",
     "leaveType": "Art",

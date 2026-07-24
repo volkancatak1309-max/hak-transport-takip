@@ -68,6 +68,8 @@
     "addForDay": "{day}. güne izin ekle",
     "statusPending": "Onay bekliyor",
     "terminated": "ayrıldı",
+    "formerTitle": "Ayrılan personel ({n})",
+    "formerNote": "Salt okunur — geçmiş izinler görünür, yeni izin girilemez.",
     "legendPending": "Onay bekleyen (silik)",
     "chiefLocked": "Onaylanmış bir izni yalnız patron düzenleyebilir.",
     "leaveType": "İzin türü",

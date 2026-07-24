@@ -401,6 +401,8 @@ export type SessionData = {
 };
 
 export type GeofenceRuleKind = "forbidden" | "allowed_only";
+/** Bölgenin amacı (migration 034). 'depot' → panelde "mesaiyi başlat?" önerisi. */
+export type GeofencePurpose = "rule" | "depot";
 
 /** A circular geofence zone (db/migrations/015_geofences.sql). */
 export type Geofence = {
@@ -411,6 +413,7 @@ export type Geofence = {
   center_lng: number;
   radius_m: number;
   rule_kind: GeofenceRuleKind;
+  purpose: GeofencePurpose;
   active: boolean;
   created_at: string;
 };

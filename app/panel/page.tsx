@@ -5,6 +5,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { PanelClient } from "./PanelClient";
 import { startOfTodayVienna, startOfWeekVienna } from "@/lib/format";
 import { needsSummarySignature } from "@/lib/shift-summary";
+import { getDepotSuggestion } from "@/lib/depot";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -88,6 +89,14 @@ export default async function PanelPage() {
     (e) => new Date(e.started_at).getTime() >= weekStart.getTime()
   );
 
+  // DEPO-GİRİŞ ÖNERİSİ (Modül 3): yalnız bekleme ekranı koşullarında (aracı
+  // atanmış + aktif vardiya YOK + bugün vardiya açılmamış) hesaplanır — boşuna
+  // telemetri sorgusu atmayalım. Depo bölgesi yoksa/kolon yoksa null (best-effort).
+  const depotArrival =
+    assignedVehicle && !active && todayEntries.length === 0
+      ? await getDepotSuggestion(assignedVehicle.id)
+      : null;
+
   function sumWorkedMs(arr: TimeEntry[]) {
     let total = 0;
     for (const e of arr) {
@@ -137,6 +146,7 @@ export default async function PanelPage() {
             weekShifts: weekEntries.length,
           }}
           assignedVehicle={assignedVehicle}
+          depotArrival={depotArrival}
         />
       </div>
     </DashboardShell>

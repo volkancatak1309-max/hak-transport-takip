@@ -8,28 +8,44 @@ import type { Geofence } from "@/lib/types";
 
 export type GeofenceResultAction = { ok: boolean; error?: string; id?: string };
 
-const COLS = "id, name, type, center_lat, center_lng, radius_m, rule_kind, active, created_at";
+const COLS_BASE =
+  "id, name, type, center_lat, center_lng, radius_m, rule_kind, active, created_at";
+const COLS = COLS_BASE + ", purpose";
+
+/**
+ * Bölgeleri okur. `purpose` kolonu yoksa (migration 034 öncesi) base kolonlarla
+ * DÜŞER ve purpose='rule' varsayar — Bölgeler sayfası ve metrics-geofence
+ * kolon gelene kadar boşalmaz (migration-öncesi dayanıklılık deseni).
+ */
+async function selectZones(activeOnly: boolean): Promise<Geofence[]> {
+  const q1 = supabaseAdmin.from("geofences").select(COLS);
+  const { data, error } = await (activeOnly ? q1.eq("active", true) : q1).order(
+    "created_at",
+    { ascending: false }
+  );
+  if (!error && data) return data as unknown as Geofence[];
+  const q2 = supabaseAdmin.from("geofences").select(COLS_BASE);
+  const { data: d2 } = await (activeOnly ? q2.eq("active", true) : q2).order(
+    "created_at",
+    { ascending: false }
+  );
+  return ((d2 ?? []) as unknown as Omit<Geofence, "purpose">[]).map((z) => ({
+    ...z,
+    purpose: "rule" as const,
+  }));
+}
 
 /** All zones (admin management list). */
 export async function getGeofences(): Promise<Geofence[]> {
   await requireAdmin();
-  const { data } = await supabaseAdmin
-    .from("geofences")
-    .select(COLS)
-    .order("created_at", { ascending: false });
-  return (data ?? []) as Geofence[];
+  return selectZones(false);
 }
 
 /** Active zones only — the set fed to computeGeofenceEvents. Degrades to an empty
  *  list if the table doesn't exist yet (migration 015 not run). */
 export async function getActiveGeofences(): Promise<Geofence[]> {
   await requireAdmin();
-  const { data } = await supabaseAdmin
-    .from("geofences")
-    .select(COLS)
-    .eq("active", true)
-    .order("created_at", { ascending: false });
-  return (data ?? []) as Geofence[];
+  return selectZones(true);
 }
 
 function parse(formData: FormData) {
@@ -39,6 +55,7 @@ function parse(formData: FormData) {
     center_lng: formData.get("center_lng"),
     radius_m: formData.get("radius_m"),
     rule_kind: formData.get("rule_kind"),
+    purpose: formData.get("purpose") ?? undefined,
   });
 }
 
@@ -59,6 +76,7 @@ export async function createGeofence(
       center_lng: parsed.data.center_lng,
       radius_m: parsed.data.radius_m,
       rule_kind: parsed.data.rule_kind,
+      purpose: parsed.data.purpose,
       active: true,
     })
     .select("id")
@@ -86,6 +104,7 @@ export async function updateGeofence(
       center_lng: parsed.data.center_lng,
       radius_m: parsed.data.radius_m,
       rule_kind: parsed.data.rule_kind,
+      purpose: parsed.data.purpose,
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };

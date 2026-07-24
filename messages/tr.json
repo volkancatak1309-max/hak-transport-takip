@@ -244,6 +244,11 @@
       "forbidden": "Yasak (girilmemeli)",
       "allowed_only": "Sadece burada (çıkılmamalı)"
     },
+    "purpose_label": "Amaç",
+    "purpose": {
+      "rule": "Kural bölgesi",
+      "depot": "Depo (vardiya önerisi)"
+    },
     "passive": "Pasif",
     "activate": "Aktifleştir",
     "deactivate": "Pasifleştir",
@@ -894,6 +899,9 @@
     "v2ReportErr": "Bildirim gönderilemedi",
     "v2StartShift": "VARDİYAYI BAŞLAT",
     "v2StartHint": "Beklemek istemiyorsan elle başlat.",
+    "v2DepotArrived": "Depoya {time}'de vardın — mesaiyi başlat?",
+    "v2DepotStartHint": "Aşağıdaki butonla tek dokunuşta başlat. Mesai depoda başlar.",
+    "v2DepotDismiss": "Daha sonra",
     "v2StartOffline": "Vardiya başlatmak için internet gerekli",
     "v2StartNetworkErr": "Bağlantı koptu. Vardiyan açılmış olabilir — ekranı kontrol et.",
     "v2StartVehicleMaintenance": "Aracın şu an bakımda. Yöneticinle görüş.",

@@ -26,7 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import type { Geofence, GeofenceRuleKind } from "@/lib/types";
+import type { Geofence, GeofenceRuleKind, GeofencePurpose } from "@/lib/types";
 import {
   createGeofence,
   updateGeofence,
@@ -40,6 +40,7 @@ const GeofencePickerMap = dynamic(
 );
 
 const RULE_KINDS: GeofenceRuleKind[] = ["forbidden", "allowed_only"];
+const PURPOSES: GeofencePurpose[] = ["rule", "depot"];
 
 /** Filtre bandı seçenekleri (REVEAL-CLONE-SPEC H). */
 type RuleFilter = "all" | GeofenceRuleKind;
@@ -67,6 +68,7 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
   const [center, setCenter] = useState<[number, number] | null>(null);
   const [radius, setRadius] = useState("200");
   const [ruleKind, setRuleKind] = useState<GeofenceRuleKind>("forbidden");
+  const [purpose, setPurpose] = useState<GeofencePurpose>("rule");
   const [busy, setBusy] = useState(false);
 
   function openNew() {
@@ -75,6 +77,7 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
     setCenter(null);
     setRadius("200");
     setRuleKind("forbidden");
+    setPurpose("rule");
     setOpen(true);
   }
   function openEdit(z: Geofence) {
@@ -83,6 +86,7 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
     setCenter([z.center_lat, z.center_lng]);
     setRadius(String(Math.round(z.radius_m)));
     setRuleKind(z.rule_kind);
+    setPurpose(z.purpose ?? "rule");
     setOpen(true);
   }
 
@@ -108,6 +112,7 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
     fd.set("center_lng", String(center[1]));
     fd.set("radius_m", String(Math.round(r)));
     fd.set("rule_kind", ruleKind);
+    fd.set("purpose", purpose);
 
     setBusy(true);
     try {
@@ -337,6 +342,23 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
                     {RULE_KINDS.map((rk) => (
                       <SelectItem key={rk} value={rk}>
                         {t(`rule.${rk}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("purpose_label")}</Label>
+                <Select value={purpose} onValueChange={(v) => v && setPurpose(v as GeofencePurpose)}>
+                  <SelectTrigger className="h-11">
+                    <SelectValue>
+                      {((v: unknown) => t(`purpose.${String(v)}`)) as never}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PURPOSES.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {t(`purpose.${p}`)}
                       </SelectItem>
                     ))}
                   </SelectContent>

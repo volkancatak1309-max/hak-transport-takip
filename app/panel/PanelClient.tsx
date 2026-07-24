@@ -18,6 +18,7 @@ import {
   Pause,
   PlayCircle,
   Square,
+  MapPin,
 } from "lucide-react";
 import {
   endShiftAction,
@@ -85,6 +86,8 @@ type Props = {
   assignedVehicle: AssignedVehicle | null;
   /** Bugün (Viyana günü) bir vardiya açılmış mı — günde tek vardiya kuralı. */
   shiftDoneToday: boolean;
+  /** Araç ≥3 dk depo bölgesinde ise giriş anı — "mesaiyi başlat?" önerisi (Modül 3). */
+  depotArrival: { enteredAt: string; zoneName: string } | null;
 };
 
 export function PanelClient({
@@ -94,6 +97,7 @@ export function PanelClient({
   totals,
   assignedVehicle,
   shiftDoneToday,
+  depotArrival,
 }: Props) {
   const t = useTranslations("panel");
   const tc = useTranslations("common");
@@ -131,6 +135,8 @@ export function PanelClient({
   /** Sıra dışı sayı girildiğinde gösterilen teyit adımı (engel değil). */
   const [confirmNeeded, setConfirmNeeded] = useState(false);
 
+  // Depo-giriş önerisini şoför kapatabilir (oturum-yerel); manuel başlatma açık kalır.
+  const [depotDismissed, setDepotDismissed] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!active) return;
@@ -709,6 +715,34 @@ export function PanelClient({
                 {t("v2WaitNoVehicle")}
               </div>
             )}
+
+            {/* DEPO-GİRİŞ ÖNERİSİ (Modül 3): araç ≥3 dk depoda → mesai başlatma
+                önerisi. OTOMATİK DEĞİL — aşağıdaki büyük buton tek dokunuşla
+                başlatır (mesai depoda başlar, ev→depo yolu sayılmaz). Şoför
+                kapatabilir; manuel başlatma her zaman açık. */}
+            {depotArrival &&
+              !depotDismissed &&
+              assignedVehicle &&
+              assignedVehicle.status === "active" && (
+                <div className="mx-auto max-w-xs rounded-2xl border-2 border-accent-sky/50 bg-accent-sky/10 p-4 text-left">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-accent-sky">
+                    <MapPin className="size-4 shrink-0" aria-hidden />
+                    {t("v2DepotArrived", {
+                      time: formatTime(depotArrival.enteredAt, locale),
+                    })}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t("v2DepotStartHint")}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setDepotDismissed(true)}
+                    className="mt-2 text-xs text-muted-foreground underline underline-offset-2"
+                  >
+                    {t("v2DepotDismiss")}
+                  </button>
+                </div>
+              )}
 
             {/* Aracı atanmamış şoförde buton çıkmaz — yukarıdaki uyarı kalır.
                 Aracı bakımdaysa buton yerine SEBEBİ yazılır; yoksa şoför

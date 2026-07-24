@@ -295,6 +295,8 @@ export const geofenceSchema = z.object({
   // realistically trigger — reject it instead of silently never firing.
   radius_m: z.coerce.number().int().min(50, "errRadius").max(100_000, "errRadius"),
   rule_kind: z.enum(["forbidden", "allowed_only"]),
+  // Amaç (migration 034). 'depot' → panelde vardiya-başlatma önerisi tetikler.
+  purpose: z.enum(["rule", "depot"]).optional().default("rule"),
 });
 
 // Vehicle create/edit. Only plate is truly required (DB: plate unique not null;

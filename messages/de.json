@@ -244,6 +244,11 @@
       "forbidden": "Verboten (nicht betreten)",
       "allowed_only": "Nur hier (nicht verlassen)"
     },
+    "purpose_label": "Zweck",
+    "purpose": {
+      "rule": "Regelzone",
+      "depot": "Depot (Schichtvorschlag)"
+    },
     "passive": "Inaktiv",
     "activate": "Aktivieren",
     "deactivate": "Deaktivieren",
@@ -894,6 +899,9 @@
     "v2ReportErr": "Meldung fehlgeschlagen",
     "v2StartShift": "SCHICHT STARTEN",
     "v2StartHint": "Wenn du nicht warten willst, starte sie manuell.",
+    "v2DepotArrived": "Am Depot angekommen um {time} — Schicht starten?",
+    "v2DepotStartHint": "Mit dem Button unten in einem Tipp starten. Die Arbeitszeit beginnt am Depot.",
+    "v2DepotDismiss": "Später",
     "v2StartOffline": "Zum Starten der Schicht ist Internet erforderlich",
     "v2StartNetworkErr": "Verbindung unterbrochen. Deine Schicht läuft möglicherweise schon — prüfe den Bildschirm.",
     "v2StartVehicleMaintenance": "Dein Fahrzeug ist in Wartung. Bitte wende dich an die Verwaltung.",

@@ -29,6 +29,7 @@ import {
 } from "../actions/shift";
 import { formatDuration, formatTime, workedMs } from "@/lib/format";
 import { listPickableVehiclesAction } from "@/app/actions/driver-panel";
+import { pingPanelAction } from "@/app/actions/depot";
 import type { PickableVehicle } from "@/lib/vehicles";
 import { breakTargetMin, AZG_BREAK_AFTER_6H_MIN } from "@/lib/break-rules";
 import { classifyUndelivered } from "@/lib/package-limits";
@@ -117,6 +118,15 @@ export function PanelClient({
     const id = setInterval(() => router.refresh(), 30_000);
     return () => clearInterval(id);
   }, [router]);
+
+  // PANEL YOKLAMASI (Modül 7): panel açıkken workers.panel_seen_at güncellenir →
+  // "auto vardiya açıldı ama şoför 2 saattir panele girmemiş" Dikkat kalemi bunu
+  // kullanır (belki o araçta değil). Best-effort, hata yutulur.
+  useEffect(() => {
+    pingPanelAction();
+    const id = setInterval(() => pingPanelAction(), 5 * 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Tam ekran katmanların "Daha sonra" durumu (oturum-yerel; sunucu durumu
   // değişmediği sürece bir sonraki girişte tekrar çıkarlar).
@@ -575,6 +585,14 @@ export function PanelClient({
                         <span className="nums uppercase text-foreground">
                           {active.plate}
                         </span>
+                      </>
+                    )}
+                    {/* Depo-tetikli otomatik açıldıysa şoför bilgilensin (Modül 7):
+                        onay istemiyoruz, sadece "vardiyan depoya girişte başladı". */}
+                    {active.auto_started && (
+                      <>
+                        {" · "}
+                        <span className="text-accent-sky">{t("v2AutoDepotStart")}</span>
                       </>
                     )}
                     {/* Bugüne kadar yapılan toplam mola — molayı erken bitiren

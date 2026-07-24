@@ -2,8 +2,27 @@
 
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requireAdmin } from "@/lib/session";
+import { requireAdmin, getSession } from "@/lib/session";
 import { todayYmdVienna } from "@/lib/leaves";
+
+/**
+ * PANEL YOKLAMASI (Modül 7). Şoför paneli açıkken workers.panel_seen_at'i günceller.
+ * "Auto vardiya açıldı ama şoför 2 saattir panele girmemiş → belki o araçta değil"
+ * Dikkat kalemi bunu kullanır (G-riski post-hoc yakalama). Best-effort: kolon yoksa
+ * / oturum yoksa sessiz geç. Yönlendirme YOK (getSession), yalnız günceller.
+ */
+export async function pingPanelAction(): Promise<void> {
+  try {
+    const session = await getSession();
+    if (!session.worker_id) return;
+    await supabaseAdmin
+      .from("workers")
+      .update({ panel_seen_at: new Date().toISOString() })
+      .eq("id", session.worker_id);
+  } catch {
+    // kolon yok / oturum yok / hata → sessiz
+  }
+}
 
 /**
  * DEPO MUAFİYETİ (Modül 6) — yönetici bir şoför için BUGÜNLÜK depo şartını

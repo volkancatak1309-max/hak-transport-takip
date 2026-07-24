@@ -173,6 +173,13 @@ export type AttentionItem =
       kind: "locationUnverified";
       id: string;
       worker_name: string;
+    }
+  | {
+      // Auto vardiya ≥2h açık ama şoför panele hiç girmemiş → belki o araçta
+      // değil (paylaşılan araç, G-riski post-hoc yakalama). (Modül 7)
+      kind: "coldPanel";
+      id: string;
+      worker_name: string;
     };
 
 /** Per-driver / per-vehicle breakdown behind each OpsSummary tile, for the
@@ -384,7 +391,7 @@ export async function getDashboardData(
       withoutTestRows(
         supabaseAdmin
           .from("time_entries")
-          .select("id, worker_id, vehicle_id, started_at, break_started_at")
+          .select("id, worker_id, vehicle_id, started_at, break_started_at, auto_started")
           .is("ended_at", null),
         "worker_id",
         scope.workerIds
@@ -492,6 +499,7 @@ export async function getDashboardData(
     vehicle_id: string | null;
     started_at: string;
     break_started_at: string | null;
+    auto_started: boolean;
   }[];
   const workerRows = (workersRes.data ?? []) as (Pick<Worker, "id" | "name"> & {
     is_active?: boolean | null;
@@ -527,6 +535,44 @@ export async function getDashboardData(
     id: r.id,
     worker_name: r.worker_id ? names.get(r.worker_id) ?? "—" : "—",
   }));
+  // 2h-SOĞUK AUTO VARDİYA (Modül 7, G post-hoc): açık auto vardiya ≥2h önce
+  // başlamış ve atanmış şoför o süre panele hiç girmemiş → belki o araçta değil
+  // (paylaşılan araç). panel_seen_at yoksa (036 öncesi) sessiz atlanır.
+  const COLD_PANEL_MS = 2 * 60 * 60 * 1000;
+  const coldNowMs = Date.now();
+  let coldPanel: { id: string; worker_name: string }[] = [];
+  const autoOldOpen = activeShifts.filter(
+    (s) =>
+      s.auto_started &&
+      s.worker_id &&
+      coldNowMs - new Date(s.started_at).getTime() >= COLD_PANEL_MS
+  );
+  if (autoOldOpen.length > 0) {
+    try {
+      const cwIds = [...new Set(autoOldOpen.map((s) => s.worker_id as string))];
+      const { data: pw } = await supabaseAdmin
+        .from("workers")
+        .select("id, panel_seen_at")
+        .in("id", cwIds);
+      const seen = new Map(
+        ((pw ?? []) as { id: string; panel_seen_at: string | null }[]).map((w) => [
+          w.id,
+          w.panel_seen_at,
+        ])
+      );
+      coldPanel = autoOldOpen
+        .filter((s) => {
+          const ps = seen.get(s.worker_id as string);
+          return !ps || coldNowMs - new Date(ps).getTime() >= COLD_PANEL_MS;
+        })
+        .map((s) => ({
+          id: s.id,
+          worker_name: names.get(s.worker_id as string) ?? "—",
+        }));
+    } catch {
+      coldPanel = [];
+    }
+  }
 
   const fleet = buildFleet(vehicles);
   const todayOps = buildTodayOps(todayEntries);
@@ -575,7 +621,8 @@ export async function getDashboardData(
       positions,
       openVehicleIds,
       inactiveWorkerIds,
-      locationUnverified
+      locationUnverified,
+      coldPanel
     ),
   };
 }
@@ -1021,7 +1068,9 @@ function buildAttention(
   /** İşten ayrılan/pasif personel id'leri → "şoförsüz araç" (Modül 2). */
   inactiveWorkerIds: Set<string>,
   /** Bugün "konum doğrulanamadı" ile açılmış vardiyalar (Modül 6). */
-  locationUnverified: { id: string; worker_name: string }[]
+  locationUnverified: { id: string; worker_name: string }[],
+  /** 2h-soğuk auto vardiya (Modül 7) — şoför panele girmemiş. */
+  coldPanel: { id: string; worker_name: string }[]
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
 
@@ -1205,6 +1254,11 @@ function buildAttention(
     });
   }
 
+  // 10) 2h-soğuk auto vardiya (Modül 7) — auto açıldı ama şoför panele girmedi.
+  for (const c of coldPanel) {
+    items.push({ kind: "coldPanel", id: `${c.id}-cold`, worker_name: c.worker_name });
+  }
+
   // Most urgent first: overdue/soonest docs, then biggest overruns/backlogs.
   const weight = (i: AttentionItem): number => {
     switch (i.kind) {
@@ -1223,6 +1277,8 @@ function buildAttention(
         return 95; // şoförsüz araç (atama bekliyor) — movingNoShift'ten hemen sonra
       case "locationUnverified":
         return 85; // konum doğrulanmadan başlatılan vardiya — gold, orta öncelik
+      case "coldPanel":
+        return 80; // auto vardiya + şoför panele girmemiş — orta öncelik
       case "penalty":
         return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "overLimit":

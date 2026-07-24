@@ -14,6 +14,7 @@ import {
   Navigation,
   UserX,
   MapPinOff,
+  PhoneOff,
   Pencil,
   type LucideIcon,
 } from "lucide-react";
@@ -114,6 +115,13 @@ export function AttentionList({
           icon: MapPinOff,
           text: t("dash.attn_location_unverified", { name: item.worker_name }),
           meta: t("dash.attn_location_unverified_meta"),
+          overdue: false,
+        };
+      case "coldPanel":
+        return {
+          icon: PhoneOff,
+          text: t("dash.attn_cold_panel", { name: item.worker_name }),
+          meta: t("dash.attn_cold_panel_meta"),
           overdue: false,
         };
       case "inspection":

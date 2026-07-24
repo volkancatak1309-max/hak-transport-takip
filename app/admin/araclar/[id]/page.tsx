@@ -43,7 +43,12 @@ export default async function VehicleDetailPage({
   const engineHours = computeEngineHours(track);
   const distance = computeDistanceKm(track);
   const idle = computeIdleTime(track);
-  const geofence = computeGeofenceEvents(track, zones);
+  // Depo bölgeleri (purpose='depot') KURAL değerlendirmesine GİRMEZ — yoksa araç
+  // her depodan çıkışta sahte "ihlal" olayı üretirdi (Modül 3).
+  const geofence = computeGeofenceEvents(
+    track,
+    zones.filter((z) => z.purpose !== "depot")
+  );
 
   // DTC zenginleştirme SUNUCUDA: sözlük (lib/dtc-codes) client bundle'a girmez;
   // yalnız aktif kodların (~0-5 satır) yerelleştirilmiş 4 alanı prop'la iner.

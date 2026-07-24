@@ -17,12 +17,10 @@ import { approvedLeaveWorkerIdsForDay } from "@/lib/leaves";
  * Otomatik vardiya motoru (Şoför Paneli v2 — İş 1).
  *
  * Araç telemetrisi (device_telemetry.ignition_on) üzerinden:
- *  - BAŞLAT: atanmış şoförü (vehicles.assigned_worker_id) olan bir araçta
- *    kontak açılınca, o şoförün açık vardiyası yoksa VE o gün hiç vardiyası
- *    olmadıysa vardiya otomatik açılır (auto_started=true,
- *    confirmation_status='pending'). Şoför panelden tek dokunuşla onaylar;
- *    onaylamasa da veri akmaya devam eder. Günde tek vardiya kuralı için bkz.
- *    lib/shift-day.ts — kontak açılıp kapandıkça ikinci vardiya AÇILMAZ.
+ *  - BAŞLAT: KALDIRILDI (24.07.2026, AUTO_START_ENABLED=false). Vardiyayı
+ *    yalnızca PERSONEL başlatır; sistem kontaktan vardiya AÇMAZ. Eski davranış
+ *    (kontak açılınca auto_started=true açma) kodda kill-switch ardında duruyor.
+ *    Mesai artık depoya bağlı — geri istenirse depo kapısıyla açılmalı.
  *  - BİTİR: KALDIRILDI (22.07.2026, AUTO_END_ENABLED=false). Vardiyayı
  *    yalnızca personel kapatır; sistem hiçbir koşulda kapatmaz. Eski davranış
  *    (kontak kapalı + AUTO_SHIFT_IDLE_END_MINUTES hareketsizlik → auto_idle)
@@ -47,6 +45,22 @@ const DEFAULT_IDLE_END_MINUTES = 30;
  * Kural geri istenirse tek yapılacak bunu `true` yapmaktır.
  */
 const AUTO_END_ENABLED: boolean = false;
+
+/**
+ * OTOMATİK BAŞLATMA ANA ŞALTERİ — KAPALI (Volkan, 24.07.2026).
+ *
+ * KURAL: VARDİYAYI SADECE PERSONEL BAŞLATIR VE BİTİRİR. Sistem hiçbir koşulda
+ * kendiliğinden vardiya AÇMAZ.
+ *
+ * 22.07.2026'da otomatik KAPATMA kaldırılırken (AUTO_END_ENABLED=false) başlatma
+ * yanlışlıkla açık bırakılmıştı: her kontak açılışı yeni bir vardiya ekliyor,
+ * üstelik şoförler evde kamyonu ısıtırken mesai evde başlamış görünüyordu
+ * (24.07 sabahı 12 vardiyanın 9'u böyle otomatik açılmıştı). Tip açıkça
+ * `boolean`: literal `false`'a daraltılsaydı aşağıdaki blok statik erişilemez
+ * sayılırdı. Kural geri istenirse tek yapılacak bunu `true` yapmaktır — ama
+ * mesai artık depoya bağlı, geri açılırsa depo kapısıyla açılmalı.
+ */
+const AUTO_START_ENABLED: boolean = false;
 
 /** Config: kontak kapalı + hareketsizlik eşiği (dk). Env ile ayarlanabilir. */
 export function autoEndIdleMinutes(): number {
@@ -394,8 +408,12 @@ export async function processAutoShifts(
         const latestMs = new Date(latest.recorded_at).getTime();
         const vehicleShift = openByVehicle.get(v.id) ?? null;
 
-        // ── OTOMATİK BAŞLAT ─────────────────────────────────────────────
+        // ── OTOMATİK BAŞLAT — KAPALI (Volkan, 24.07.2026) ───────────────
+        // KURAL: vardiyayı yalnızca personel başlatır. AUTO_START_ENABLED=false
+        // olduğu için aşağıdaki blok hiç girmez; kod, kural bir gün depo-kapılı
+        // geri istenirse diye korunur (silinmedi).
         if (
+          AUTO_START_ENABLED &&
           !vehicleShift &&
           v.assigned_worker_id &&
           v.status === "active" &&

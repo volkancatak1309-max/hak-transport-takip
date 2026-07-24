@@ -196,16 +196,18 @@ export function AttentionList({
               return (
                 <li
                   key={item.id}
-                  className="flex items-center gap-3 rounded-lg px-1.5 py-2 transition-colors hover:bg-surface-2/60"
+                  className="flex items-start gap-3 rounded-lg px-1.5 py-2 transition-colors hover:bg-surface-2/60"
                 >
                   <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${bg} ${tone}`}>
                     <Icon className="size-4" />
                   </span>
-                  {/* Uyarı metni mobilde SARAR. Masaüstünde tek satırda kırpılır
-                      ama burada `title` bile yoktu — dar ekranda kesilen kısım
+                  {/* Uyarı metni HER ZAMAN sarar (24.07.2026). Eskiden masaüstünde
+                      `sm:truncate` ile tek satıra kırpılıyordu ve kesilen kısım
                       hiçbir etkileşimle okunamıyordu (satır tıklanabilir değil,
-                      çekmece yok). Panonun kritik uyarıları burada yaşıyor. */}
-                  <span className="flex-1 text-sm sm:truncate">{r.text}</span>
+                      çekmece yok, title yok). Panonun kritik uyarıları burada
+                      yaşıyor — kırpmak yerine satır kaydır. `break-words` uzun
+                      kelimeleri (plaka/isim) de sardırır. */}
+                  <span className="flex-1 text-sm break-words">{r.text}</span>
                   {/* DÜZELTME KISAYOLU (22.07.2026) — yanlış paket sayısı
                       uyarısından doğrudan düzenleme dialoguna. Yönetici uyarıyı
                       görüp kaydı arşivde aramak zorunda kalmasın. */}

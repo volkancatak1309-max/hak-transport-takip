@@ -12,6 +12,7 @@ import {
 import { workedMs, formatDurationShort, formatTime } from "@/lib/format";
 import { workersWithShiftToday } from "@/lib/shift-day";
 import { approvedLeaveWorkerIdsForDay } from "@/lib/leaves";
+import { activeDepotZones, depotArrivalTrigger } from "@/lib/depot";
 
 /**
  * Otomatik vardiya motoru (Şoför Paneli v2 — İş 1).
@@ -47,20 +48,19 @@ const DEFAULT_IDLE_END_MINUTES = 30;
 const AUTO_END_ENABLED: boolean = false;
 
 /**
- * OTOMATİK BAŞLATMA ANA ŞALTERİ — KAPALI (Volkan, 24.07.2026).
+ * OTOMATİK BAŞLATMA ANA ŞALTERİ — DEPO-KAPILI AÇIK (Volkan, 24.07.2026, Modül 7).
  *
- * KURAL: VARDİYAYI SADECE PERSONEL BAŞLATIR VE BİTİRİR. Sistem hiçbir koşulda
- * kendiliğinden vardiya AÇMAZ.
+ * Motor artık KONTAKTA değil, aracın DEPOYA GİRİŞİNDE vardiya açar: bugünün ilk
+ * "depo-içi + kontak açık" fix'i mesai başlangıcıdır (bkz. depotArrivalTrigger).
+ * Evde kontak açılınca AÇMAZ — mesai depoda başlar.
  *
- * 22.07.2026'da otomatik KAPATMA kaldırılırken (AUTO_END_ENABLED=false) başlatma
- * yanlışlıkla açık bırakılmıştı: her kontak açılışı yeni bir vardiya ekliyor,
- * üstelik şoförler evde kamyonu ısıtırken mesai evde başlamış görünüyordu
- * (24.07 sabahı 12 vardiyanın 9'u böyle otomatik açılmıştı). Tip açıkça
- * `boolean`: literal `false`'a daraltılsaydı aşağıdaki blok statik erişilemez
- * sayılırdı. Kural geri istenirse tek yapılacak bunu `true` yapmaktır — ama
- * mesai artık depoya bağlı, geri açılırsa depo kapısıyla açılmalı.
+ * Geçmiş: 22.07'de otomatik KAPATMA kaldırılırken başlatma yanlışlıkla kontağa
+ * bağlı kalmıştı; her kontak açılışı yeni vardiya ekliyor, mesai evde başlamış
+ * görünüyordu (24.07 sabahı 12 vardiyanın 9'u). Kill-switch'le kapatıldı, sonra
+ * depo-kapılı geri açıldı. `false` yaparsan hiç otomatik açılmaz (yalnız elle).
+ * Tip açıkça `boolean` — literal daraltması engellensin.
  */
-const AUTO_START_ENABLED: boolean = false;
+const AUTO_START_ENABLED: boolean = true;
 
 /** Config: kontak kapalı + hareketsizlik eşiği (dk). Env ile ayarlanabilir. */
 export function autoEndIdleMinutes(): number {
@@ -69,8 +69,6 @@ export function autoEndIdleMinutes(): number {
   return DEFAULT_IDLE_END_MINUTES;
 }
 
-/** Otomatik BAŞLATMA için telemetri bu kadar taze olmalı. */
-const START_FRESH_MS = 10 * 60 * 1000;
 /** Bu hızın üstü "hareket" sayılır (GPS jitter'ı elemek için). */
 const MOVE_SPEED_KMH = 5;
 /**
@@ -79,8 +77,6 @@ const MOVE_SPEED_KMH = 5;
  * metrics-engine-hours'daki MAX_ON_GAP_MS ile aynı mantık.
  */
 const SILENT_GRACE_MS = 15 * 60 * 1000;
-/** Vardiya başlangıcı kontak-açılma anına en fazla bu kadar geri yazılır. */
-const MAX_BACKDATE_MS = 2 * 60 * 60 * 1000;
 
 export type AutoShiftSummary = {
   checked: number;
@@ -110,6 +106,8 @@ type VehicleRow = {
   assigned_worker_id: string | null;
   flespi_device_id: number | null;
   imei: string | null;
+  /** Depo-tetikli otomatik vardiya bu araçta açık mı (Modül 7). null=açık. */
+  auto_start_enabled: boolean | null;
 };
 
 /**
@@ -151,44 +149,6 @@ async function newestTime(
     return typeof v === "string" ? v : null;
   } catch {
     return null;
-  }
-}
-
-/** Kontağın açıldığı anı bulur (son OFF noktasından sonraki ilk ON). */
-async function detectIgnitionOnAt(
-  vehicleId: string,
-  latestRecordedAt: string
-): Promise<string> {
-  const lastOff = await newestTime("recorded_at", () =>
-    supabaseAdmin
-      .from("device_telemetry")
-      .select("recorded_at")
-      .eq("vehicle_id", vehicleId)
-      .eq("ignition_on", false)
-      .order("recorded_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-  );
-  if (!lastOff) return latestRecordedAt;
-
-  try {
-    const { data } = await supabaseAdmin
-      .from("device_telemetry")
-      .select("recorded_at")
-      .eq("vehicle_id", vehicleId)
-      .eq("ignition_on", true)
-      .gt("recorded_at", lastOff)
-      .order("recorded_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    const cand = data?.recorded_at ?? latestRecordedAt;
-    // Bayat/garip veriyle saatlerce geriye vardiya açma.
-    if (Date.now() - new Date(cand).getTime() > MAX_BACKDATE_MS) {
-      return latestRecordedAt;
-    }
-    return cand;
-  } catch {
-    return latestRecordedAt;
   }
 }
 
@@ -351,7 +311,9 @@ export async function processAutoShifts(
     // `.or(flespi_device_id/imei not null)` cihazsız test aracını zaten eler.
     let vq = supabaseAdmin
       .from("vehicles")
-      .select("id, plate, status, assigned_worker_id, flespi_device_id, imei")
+      .select(
+        "id, plate, status, assigned_worker_id, flespi_device_id, imei, auto_start_enabled"
+      )
       .or("flespi_device_id.not.is.null,imei.not.is.null");
     if (vehicleIds && vehicleIds.length > 0) vq = vq.in("id", vehicleIds);
     const { data: vehData, error: vehErr } = await vq;
@@ -393,6 +355,9 @@ export async function processAutoShifts(
     // (İşten ÇIKAN şoför ayrıca aşağıda `w.is_active !== true` ile elenir —
     // termination is_active=false yazar; iki kapı bilinçli olarak üst üste.)
     const onLeaveToday = await approvedLeaveWorkerIdsForDay();
+    // Depo bölgeleri (Modül 7). Boşsa depo-tetikli auto devre dışı — hiçbir araç
+    // otomatik açılmaz (depo tanımlı değil). Tek sorgu, döngü dışında.
+    const depotZones = await activeDepotZones();
     const openByVehicle = new Map(
       open.filter((s) => s.vehicle_id).map((s) => [s.vehicle_id as string, s])
     );
@@ -408,17 +373,17 @@ export async function processAutoShifts(
         const latestMs = new Date(latest.recorded_at).getTime();
         const vehicleShift = openByVehicle.get(v.id) ?? null;
 
-        // ── OTOMATİK BAŞLAT — KAPALI (Volkan, 24.07.2026) ───────────────
-        // KURAL: vardiyayı yalnızca personel başlatır. AUTO_START_ENABLED=false
-        // olduğu için aşağıdaki blok hiç girmez; kod, kural bir gün depo-kapılı
-        // geri istenirse diye korunur (silinmedi).
+        // ── OTOMATİK BAŞLAT — DEPO TETİĞİ (Modül 7) ─────────────────────
+        // Kontak değil, DEPOYA GİRİŞ tetikler. Ucuz guard'lar önce (track sorgusu
+        // atmadan eleme): atanmış + aktif araç + auto_start_enabled + şoför
+        // izinli/ayrılmış/bugün-başlamış DEĞİL. Sonra depotArrivalTrigger.
         if (
           AUTO_START_ENABLED &&
+          depotZones.length > 0 &&
           !vehicleShift &&
           v.assigned_worker_id &&
           v.status === "active" &&
-          latest.ignition_on === true &&
-          now - latestMs <= START_FRESH_MS &&
+          v.auto_start_enabled !== false &&
           !openByWorker.has(v.assigned_worker_id) &&
           !startedToday.has(v.assigned_worker_id) &&
           !onLeaveToday.has(v.assigned_worker_id)
@@ -430,7 +395,11 @@ export async function processAutoShifts(
             .maybeSingle();
           if (!w || w.is_active !== true) continue;
 
-          const startedAt = await detectIgnitionOnAt(v.id, latest.recorded_at);
+          // DEPO TETİĞİ: bugün depoya girip ≥3dk kaldı mı? Başlangıç = VARIŞ anı
+          // (kontak-açılma DEĞİL — commute sayılmaz). Girmemiş/dwell yoksa geç.
+          const trig = await depotArrivalTrigger(v.id);
+          if (!trig) continue;
+          const startedAt = trig.startAt;
           const startKm = await resolveStartKm(v.id, latest.odometer_km);
 
           const { data: ins, error: insErr } = await supabaseAdmin
@@ -443,7 +412,10 @@ export async function processAutoShifts(
               start_km: startKm,
               break_minutes: 0,
               auto_started: true,
-              confirmation_status: "pending",
+              // PENDING YOK (Volkan 24.07): şoför onayı beklemez, doğrudan açılır;
+              // panel bilgi gösterir, yanlış açılırsa yönetici düzeltir.
+              confirmation_status: "confirmed",
+              confirmed_at: startedAt,
             })
             .select("id")
             .maybeSingle();
@@ -469,8 +441,8 @@ export async function processAutoShifts(
               break_minutes: 0,
               break_started_at: null,
               auto_started: true,
-              confirmation_status: "pending",
-              confirmed_at: null,
+              confirmation_status: "confirmed",
+              confirmed_at: startedAt,
               plate: v.plate,
             });
 

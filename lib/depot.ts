@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { listVehicleTrack, latestVehicleTelemetry } from "@/lib/telemetry";
 import { pointInCircleM } from "@/lib/geo";
 import { todayYmdVienna } from "@/lib/leaves";
+import { startOfTodayVienna } from "@/lib/format";
 
 /**
  * DEPO-GİRİŞ VARDİYA ÖNERİSİ (Modül 3).
@@ -46,7 +47,7 @@ type DepotZone = {
 };
 
 /** Aktif depo bölgeleri (worker-safe: requireAdmin YOK, hassas veri değil). */
-async function activeDepotZones(): Promise<DepotZone[]> {
+export async function activeDepotZones(): Promise<DepotZone[]> {
   try {
     const { data, error } = await supabaseAdmin
       .from("geofences")
@@ -221,4 +222,77 @@ export async function getDepotPanel(
     }
   }
   return { locked, state, enteredAt, zoneName };
+}
+
+// ───────────────── DEPO-TETİKLİ OTOMATİK VARDİYA (Modül 7) ─────────────────
+
+/**
+ * Araç BUGÜN depoya girip mesaiye başladı mı? Otomatik vardiya TETİĞİ.
+ *
+ * Başlangıç anı = bugünün İLK "depo içi + kontak açık" fix'i. Bu, iki durumu da
+ * doğru çözer:
+ *   • Evden gelen kamyon: kontak evde açık gelir; depo dışı fixler sayılmaz;
+ *     ilk depo-içi fix = VARIŞ anı.
+ *   • Depoda park etmiş kamyon: gece kontak kapalı (depo içi ama sayılmaz);
+ *     şoför sabah kontağı açınca ilk "depo-içi + kontak açık" = MESAİ başlangıcı.
+ * Böylece gece boyu depoda duran araç 00:00'da tetiklenmez.
+ *
+ * Histerezis: o fix'ten sonra depoda ≥3 dk KESİNTİSİZ kalınmış olmalı (depo
+ * yanından/içinden geçiş elenir). Araç sonradan çıkmış olsa da (kaçırılan giriş
+ * / dağıtıma çıkmış) tetik geçerlidir — bugün depoya girip çalıştığı kesin.
+ *
+ * Best-effort: depo yoksa / telemetri yoksa null.
+ */
+export async function depotArrivalTrigger(
+  vehicleId: string
+): Promise<{ startAt: string } | null> {
+  const zones = await activeDepotZones();
+  if (zones.length === 0) return null;
+  let rows;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("device_telemetry")
+      .select("latitude, longitude, ignition_on, recorded_at")
+      .eq("vehicle_id", vehicleId)
+      .gte("recorded_at", startOfTodayVienna().toISOString())
+      .order("recorded_at", { ascending: true })
+      .limit(3000);
+    if (error || !data) return null;
+    rows = data.filter(
+      (t) => t.latitude != null && t.longitude != null
+    ) as {
+      latitude: number;
+      longitude: number;
+      ignition_on: boolean | null;
+      recorded_at: string;
+    }[];
+  } catch {
+    return null;
+  }
+  if (rows.length === 0) return null;
+
+  const inZone = (lat: number, lng: number) =>
+    zones.some((z) => pointInCircleM(lat, lng, z.center_lat, z.center_lng, z.radius_m));
+
+  // Bugünün ilk "depo içi + kontak açık" fix'i = mesai başlangıcı.
+  let startIdx = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].ignition_on === true && inZone(rows[i].latitude, rows[i].longitude)) {
+      startIdx = i;
+      break;
+    }
+  }
+  if (startIdx === -1) return null;
+
+  // Histerezis: o andan itibaren depoda ≥3 dk kesintisiz kalınmış mı?
+  const startMs = new Date(rows[startIdx].recorded_at).getTime();
+  let lastInZoneMs = startMs;
+  for (let i = startIdx; i < rows.length; i++) {
+    if (inZone(rows[i].latitude, rows[i].longitude)) {
+      lastInZoneMs = new Date(rows[i].recorded_at).getTime();
+    } else break;
+  }
+  if (lastInZoneMs - startMs < DWELL_MS) return null;
+
+  return { startAt: rows[startIdx].recorded_at };
 }

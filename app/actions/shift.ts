@@ -18,6 +18,7 @@ import {
 } from "@/lib/format";
 import { checkUndelivered } from "@/lib/package-limits";
 import { logShiftEdit, listShiftEdits } from "@/lib/shift-edit-log";
+import { evaluateDepotGate } from "@/lib/depot";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { resolveStartKm, resolveEndKm } from "@/lib/auto-shift";
 import { hasShiftToday } from "@/lib/shift-day";
@@ -229,23 +230,35 @@ export async function startShiftManualAction(
     return { ok: true, reopened: true };
   }
 
+  // DEPO KAPISI (Modül 6) — YALNIZ yeni vardiya için (yeniden-açma yukarıda döndü;
+  // yolda olan şoför devam ederken depoda olması beklenmez). Mesai depoda başlar:
+  // araç KESİN depo dışında + muafiyet yoksa vardiya AÇILMAZ. Belirsiz/cihaz-ölü/
+  // muafiyet → izin ver ama "konum doğrulanamadı" işaretle. Sunucu son sözü söyler:
+  // buton pasif olsa da action doğrudan çağrılıp kilit aşılamasın (fail-closed).
+  const depotGate = await evaluateDepotGate(veh.id, session.worker_id!);
+  if (depotGate.blocked) return { ok: false, error: "outside_depot" };
+
   // 3) Başlangıç km: odometre → aracın son biten vardiyası → 0. Şoför
   //    "Ayarlar → Başlangıç KM"den düzeltebilir.
   const latest = await latestVehicleTelemetry(veh.id as string);
   const startKm = await resolveStartKm(veh.id as string, latest?.odometer_km);
 
   const startedIso = new Date().toISOString();
-  const { error } = await supabaseAdmin.from("time_entries").insert({
-    worker_id: session.worker_id!,
-    vehicle_id: veh.id,
-    plate: veh.plate,
-    started_at: startedIso,
-    start_km: startKm,
-    break_minutes: 0,
-    auto_started: false,
-    confirmation_status: "confirmed",
-    confirmed_at: startedIso,
-  });
+  const { data: ins, error } = await supabaseAdmin
+    .from("time_entries")
+    .insert({
+      worker_id: session.worker_id!,
+      vehicle_id: veh.id,
+      plate: veh.plate,
+      started_at: startedIso,
+      start_km: startKm,
+      break_minutes: 0,
+      auto_started: false,
+      confirmation_status: "confirmed",
+      confirmed_at: startedIso,
+    })
+    .select("id")
+    .maybeSingle();
   if (error) {
     // 23505 = uq_time_entries_one_open. Şoför butona bastığı saniyede cron
     // kontaktan açtıysa bu bir hata değil, "zaten aktif" durumudur.
@@ -253,6 +266,20 @@ export async function startShiftManualAction(
       return { ok: false, error: "active" };
     }
     return { ok: false, error: error.message };
+  }
+
+  // Konum doğrulanamadıysa (cihaz-ölü/belirsiz ya da yönetici muafiyeti) işaretle
+  // → Dikkat panosunda görünsün. Best-effort: kolon yoksa (migration 035 öncesi)
+  // sessiz geç; manuel başlatma ASLA kolon eksikliğiyle kırılmamalı.
+  if (depotGate.unverified && ins?.id) {
+    try {
+      await supabaseAdmin
+        .from("time_entries")
+        .update({ location_unverified: true })
+        .eq("id", ins.id as string);
+    } catch {
+      // kolon yok / hata → işaret düşmez, vardiya sağlam
+    }
   }
 
   await notifyAdminsShiftStarted(

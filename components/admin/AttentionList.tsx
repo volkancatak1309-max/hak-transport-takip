@@ -13,6 +13,7 @@ import {
   SatelliteDish,
   Navigation,
   UserX,
+  MapPinOff,
   Pencil,
   type LucideIcon,
 } from "lucide-react";
@@ -106,6 +107,13 @@ export function AttentionList({
           icon: UserX,
           text: t("dash.attn_driverless", { plate: item.plate }),
           meta: t("dash.attn_driverless_meta"),
+          overdue: false,
+        };
+      case "locationUnverified":
+        return {
+          icon: MapPinOff,
+          text: t("dash.attn_location_unverified", { name: item.worker_name }),
+          meta: t("dash.attn_location_unverified_meta"),
           overdue: false,
         };
       case "inspection":

@@ -12,6 +12,7 @@ import {
   Pencil,
   Power,
   UserMinus,
+  MapPinOff,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { RevealFilterRow } from "@/components/ui-v2";
@@ -32,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toggleActiveAction } from "../../actions/workers";
+import { setDepotExemptionAction } from "@/app/actions/depot";
 import { formatDate, formatDurationShort } from "@/lib/format";
 import { licenseState, LICENSE_BADGE } from "@/lib/worker-ui";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -89,6 +91,17 @@ export function WorkersClient({ workers }: Props) {
     });
   }
 
+  function handleDepotExempt(w: WorkerWithStats) {
+    startTransition(async () => {
+      const res = await setDepotExemptionAction(w.id);
+      if (res.ok) {
+        toast.success(tc("save"));
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "Error");
+      }
+    });
+  }
 
   return (
     <>
@@ -226,6 +239,9 @@ export function WorkersClient({ workers }: Props) {
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => setTerminating(w)}>
                               <UserMinus className="size-4" /> {t("terminate")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDepotExempt(w)}>
+                              <MapPinOff className="size-4" /> {t("depotExempt")}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

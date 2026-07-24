@@ -87,7 +87,12 @@ type Props = {
   /** Bugün (Viyana günü) bir vardiya açılmış mı — günde tek vardiya kuralı. */
   shiftDoneToday: boolean;
   /** Araç ≥3 dk depo bölgesinde ise giriş anı — "mesaiyi başlat?" önerisi (Modül 3). */
-  depotArrival: { enteredAt: string; zoneName: string } | null;
+  depotPanel: {
+    locked: boolean;
+    state: string;
+    enteredAt: string | null;
+    zoneName: string | null;
+  } | null;
 };
 
 export function PanelClient({
@@ -97,7 +102,7 @@ export function PanelClient({
   totals,
   assignedVehicle,
   shiftDoneToday,
-  depotArrival,
+  depotPanel,
 }: Props) {
   const t = useTranslations("panel");
   const tc = useTranslations("common");
@@ -720,7 +725,7 @@ export function PanelClient({
                 önerisi. OTOMATİK DEĞİL — aşağıdaki büyük buton tek dokunuşla
                 başlatır (mesai depoda başlar, ev→depo yolu sayılmaz). Şoför
                 kapatabilir; manuel başlatma her zaman açık. */}
-            {depotArrival &&
+            {depotPanel?.enteredAt &&
               !depotDismissed &&
               assignedVehicle &&
               assignedVehicle.status === "active" && (
@@ -728,7 +733,7 @@ export function PanelClient({
                   <p className="flex items-center gap-2 text-sm font-semibold text-accent-sky">
                     <MapPin className="size-4 shrink-0" aria-hidden />
                     {t("v2DepotArrived", {
-                      time: formatTime(depotArrival.enteredAt, locale),
+                      time: formatTime(depotPanel.enteredAt, locale),
                     })}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
@@ -755,11 +760,27 @@ export function PanelClient({
             )}
             {assignedVehicle && assignedVehicle.status === "active" && (
               <div className="space-y-2">
+                {/* DEPO KİLİDİ (Modül 6): araç depo DIŞINDAYKEN buton pasif görünür
+                    ve basınca neden çalışmadığını söyler — gizlenmez ki şoför anlasın.
+                    Belirsiz/cihaz-ölü/muafiyette locked=false → normal çalışır. */}
+                {depotPanel?.locked && (
+                  <div className="mx-auto flex max-w-xs items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-left text-sm text-accent-gold">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    {t("v2DepotLocked")}
+                  </div>
+                )}
                 <button
                   type="button"
-                  onClick={() => handleManualStart()}
+                  onClick={() =>
+                    depotPanel?.locked
+                      ? toast.warning(t("v2DepotLocked"))
+                      : handleManualStart()
+                  }
                   disabled={pending}
-                  className="btn-primary flex h-24 w-full items-center justify-center gap-4 rounded-2xl text-xl font-bold tracking-wide text-primary-foreground shadow-lg transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.98] disabled:opacity-60"
+                  aria-disabled={depotPanel?.locked || undefined}
+                  className={`btn-primary flex h-24 w-full items-center justify-center gap-4 rounded-2xl text-xl font-bold tracking-wide text-primary-foreground shadow-lg transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.98] disabled:opacity-60 ${
+                    depotPanel?.locked ? "opacity-50" : ""
+                  }`}
                 >
                   {pending ? (
                     <Loader2 className="size-8 animate-spin" aria-hidden />

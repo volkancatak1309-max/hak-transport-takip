@@ -1,7 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
-import { listVehicleTrack } from "@/lib/telemetry";
+import { listVehicleTrack, latestVehicleTelemetry } from "@/lib/telemetry";
 import { pointInCircleM } from "@/lib/geo";
+import { todayYmdVienna } from "@/lib/leaves";
 
 /**
  * DEPO-GİRİŞ VARDİYA ÖNERİSİ (Modül 3).
@@ -19,7 +20,15 @@ import { pointInCircleM } from "@/lib/geo";
  * öneri sessizce çıkmaz, mevcut bekleme ekranı aynen çalışır.
  */
 
-/** Depoda "şu an içeride" saymak için son fix bu kadar taze olmalı. */
+/**
+ * KİLİT için "güncel" eşiği: 90 dk (Modül 6). Park eden sağlıklı cihaz saatlik
+ * heartbeat atar → son fix ≤~60 dk. 90 dk içinde fix varsa cihaz CANLI kabul
+ * edilir (konum güvenilir). Aşarsa cihaz sessiz → konum DOĞRULANAMAZ ('unknown':
+ * "evde park (engelle)" ile "cihaz ölü (izin ver+işaretle)" ayrımının anahtarı).
+ */
+const FRESH_STATE_MS = 90 * 60 * 1000;
+
+/** Depoda "şu an içeride" saymak için son fix bu kadar taze olmalı (öneri). */
 const FRESH_MS = 10 * 60 * 1000;
 /** Histerezis: depoda en az bu kadar süre kalınmış olmalı (yoldan geçiş elenir). */
 const DWELL_MS = 3 * 60 * 1000;
@@ -100,4 +109,116 @@ export async function getDepotSuggestion(
   if (now - new Date(enteredAt).getTime() < DWELL_MS) return null;
 
   return { enteredAt, zoneName: latestZone.name };
+}
+
+// ───────────────────────── DEPO KİLİDİ (Modül 6) ─────────────────────────
+//
+// KURAL: mesai depoda başlar. Aracın konumu depo dışındaysa (canlı telemetriyle
+// KESİN dışarıda) yeni vardiya AÇILMAZ. Belirsiz/cihaz-ölü ya da yönetici
+// muafiyetinde izin verilir ama "konum doğrulanamadı" işareti düşer. ASLA
+// kilitlenme: yalnız kesin-dışarıda engelle, belirsiz her durumda izin ver.
+
+export type DepotStateKind = "in" | "out" | "unknown" | "no_depot";
+
+/** Aracın son fix'ine göre depo durumu (kilit için). Depo yoksa 'no_depot'. */
+async function depotLocationState(
+  vehicleId: string,
+  zones: DepotZone[]
+): Promise<DepotStateKind> {
+  if (zones.length === 0) return "no_depot";
+  let latest;
+  try {
+    latest = await latestVehicleTelemetry(vehicleId);
+  } catch {
+    return "unknown";
+  }
+  if (!latest || latest.latitude == null || latest.longitude == null) return "unknown";
+  if (Date.now() - new Date(latest.recorded_at).getTime() > FRESH_STATE_MS) {
+    return "unknown"; // cihaz sessiz → konum doğrulanamaz
+  }
+  const inZone = zones.some((z) =>
+    pointInCircleM(latest.latitude, latest.longitude, z.center_lat, z.center_lng, z.radius_m)
+  );
+  return inZone ? "in" : "out";
+}
+
+/** Yönetici bu şoför için BUGÜN depo şartını kaldırmış mı? Best-effort. */
+export async function hasDepotExemption(
+  workerId: string,
+  dayYmd: string = todayYmdVienna()
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("depot_exemptions")
+      .select("id")
+      .eq("worker_id", workerId)
+      .eq("exempt_date", dayYmd)
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export type DepotGate = {
+  /** true → vardiya AÇILMAZ (kesin depo dışı + muafiyet yok). */
+  blocked: boolean;
+  /** true → açıldı ama konum doğrulanamadı (unknown / muafiyet) → işaretle. */
+  unverified: boolean;
+  state: DepotStateKind;
+};
+
+/**
+ * SUNUCU KAPISI (startShiftManualAction bunu çağırır — buton UX yeterli değil,
+ * action fail-closed olmalı). Depo yoksa kilit yok. Kesin dışarı + muafiyet yok
+ * → blocked. İçeride → temiz. Belirsiz ya da muafiyet → izin + unverified.
+ */
+export async function evaluateDepotGate(
+  vehicleId: string,
+  workerId: string
+): Promise<DepotGate> {
+  const zones = await activeDepotZones();
+  if (zones.length === 0) return { blocked: false, unverified: false, state: "no_depot" };
+  const state = await depotLocationState(vehicleId, zones);
+  if (state === "in") return { blocked: false, unverified: false, state };
+  const exempt = await hasDepotExemption(workerId);
+  if (state === "out") {
+    return exempt
+      ? { blocked: false, unverified: true, state }
+      : { blocked: true, unverified: false, state };
+  }
+  // unknown → izin ver + işaretle (cihaz ölü/sinyal yok meşru şoförü kilitlemesin)
+  return { blocked: false, unverified: true, state };
+}
+
+/** Panelin butonu kilitlemesi + öneri banner'ı için birleşik durum. */
+export type DepotPanel = {
+  locked: boolean;
+  state: DepotStateKind;
+  enteredAt: string | null;
+  zoneName: string | null;
+};
+
+export async function getDepotPanel(
+  vehicleId: string,
+  workerId: string
+): Promise<DepotPanel> {
+  const zones = await activeDepotZones();
+  if (zones.length === 0)
+    return { locked: false, state: "no_depot", enteredAt: null, zoneName: null };
+  const state = await depotLocationState(vehicleId, zones);
+  const exempt = state === "in" ? false : await hasDepotExemption(workerId);
+  const locked = state === "out" && !exempt;
+  let enteredAt: string | null = null;
+  let zoneName: string | null = null;
+  if (state === "in") {
+    const s = await getDepotSuggestion(vehicleId);
+    if (s) {
+      enteredAt = s.enteredAt;
+      zoneName = s.zoneName;
+    }
+  }
+  return { locked, state, enteredAt, zoneName };
 }

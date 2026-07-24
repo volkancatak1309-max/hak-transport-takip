@@ -166,6 +166,13 @@ export type AttentionItem =
       id: string;
       plate: string;
       worker_name: string;
+    }
+  | {
+      // Vardiya konum KESİN doğrulanamadan açıldı (cihaz-ölü/belirsiz ya da
+      // yönetici depo muafiyeti) — depo dışında başlamış olabilir (Modül 6).
+      kind: "locationUnverified";
+      id: string;
+      worker_name: string;
     };
 
 /** Per-driver / per-vehicle breakdown behind each OpsSummary tile, for the
@@ -317,6 +324,7 @@ export async function getDashboardData(
     positions,
     dtcRows,
     leavesRes,
+    unverifiedRes,
   ] = await Promise.all([
     onlyFleet(
       withoutTestRows(
@@ -457,6 +465,22 @@ export async function getDashboardData(
           fleetScope
         )
       : Promise.resolve({ data: [] as { worker_id: string }[] }),
+    // Bugün "konum doğrulanamadı" ile açılmış vardiyalar (Modül 6). Kolon yoksa
+    // (migration 035 öncesi) error → data null → boş → kalem çıkmaz (best-effort).
+    onlyFleet(
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select("id, worker_id")
+          .eq("location_unverified", true)
+          .gte("started_at", todayStart.toISOString()),
+        "worker_id",
+        scope.workerIds
+      ),
+      "worker_id",
+      fleetScope.workerIds,
+      fleetScope
+    ),
   ]);
 
   const todayEntries = (todayRes.data ?? []) as LiteEntry[];
@@ -496,6 +520,13 @@ export async function getDashboardData(
   const inactiveWorkerIds = new Set(
     workerRows.filter((w) => w.is_active === false).map((w) => w.id)
   );
+  // Bugün "konum doğrulanamadı" ile açılmış vardiyalar (Modül 6) → Dikkat kalemi.
+  const locationUnverified = (
+    (unverifiedRes.data ?? []) as { id: string; worker_id: string | null }[]
+  ).map((r) => ({
+    id: r.id,
+    worker_name: r.worker_id ? names.get(r.worker_id) ?? "—" : "—",
+  }));
 
   const fleet = buildFleet(vehicles);
   const todayOps = buildTodayOps(todayEntries);
@@ -543,7 +574,8 @@ export async function getDashboardData(
       licenses,
       positions,
       openVehicleIds,
-      inactiveWorkerIds
+      inactiveWorkerIds,
+      locationUnverified
     ),
   };
 }
@@ -987,7 +1019,9 @@ function buildAttention(
   /** Şu an AÇIK vardiyası olan araç id'leri (movingNoShift için). */
   openVehicleIds: Set<string>,
   /** İşten ayrılan/pasif personel id'leri → "şoförsüz araç" (Modül 2). */
-  inactiveWorkerIds: Set<string>
+  inactiveWorkerIds: Set<string>,
+  /** Bugün "konum doğrulanamadı" ile açılmış vardiyalar (Modül 6). */
+  locationUnverified: { id: string; worker_name: string }[]
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
 
@@ -1161,6 +1195,16 @@ function buildAttention(
     });
   }
 
+  // 9) Konum doğrulanamadan başlatılmış bugünkü vardiyalar (Modül 6) — depo
+  //    dışında ya da cihaz-ölü/muafiyetle açılmış olabilir, yönetici görsün.
+  for (const u of locationUnverified) {
+    items.push({
+      kind: "locationUnverified",
+      id: `${u.id}-unverloc`,
+      worker_name: u.worker_name,
+    });
+  }
+
   // Most urgent first: overdue/soonest docs, then biggest overruns/backlogs.
   const weight = (i: AttentionItem): number => {
     switch (i.kind) {
@@ -1177,6 +1221,8 @@ function buildAttention(
         return 90; // kayıt dışı sürüş uyarısı — cezayla aynı bantta, gold
       case "driverless":
         return 95; // şoförsüz araç (atama bekliyor) — movingNoShift'ten hemen sonra
+      case "locationUnverified":
+        return 85; // konum doğrulanmadan başlatılan vardiya — gold, orta öncelik
       case "penalty":
         return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "overLimit":

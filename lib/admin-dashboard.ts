@@ -175,9 +175,10 @@ export type AttentionItem =
       worker_name: string;
     }
   | {
-      // Auto vardiya ≥2h açık ama şoför panele hiç girmemiş → belki o araçta
-      // değil (paylaşılan araç, G-riski post-hoc yakalama). (Modül 7)
-      kind: "coldPanel";
+      // Auto vardiya ≥3h açık ama ARAÇ hiç hareket etmemiş (kontak kapalı, hız
+      // yok, odometre sabit) ve paket de girilmemiş → vardiya boşuna açılmış
+      // olabilir. (Modül 7 — 25.07.2026'da "panele girmedi" kuralının yerine.)
+      kind: "vehicleIdle";
       id: string;
       worker_name: string;
     }
@@ -562,49 +563,61 @@ export async function getDashboardData(
     id: r.id,
     worker_name: r.worker_id ? names.get(r.worker_id) ?? "—" : "—",
   }));
-  // 2h-SOĞUK AUTO VARDİYA (Modül 7, G post-hoc): açık auto vardiya ≥2h önce
-  // başlamış ve atanmış şoför o süre panele hiç girmemiş → belki o araçta değil
-  // (paylaşılan araç). panel_seen_at yoksa (036 öncesi) sessiz atlanır.
-  const COLD_PANEL_MS = 2 * 60 * 60 * 1000;
-  const coldNowMs = Date.now();
-  let coldPanel: { id: string; worker_name: string }[] = [];
-  const autoOldOpen = activeShifts.filter(
+  // HAREKETSİZ ARAÇ (Modül 7 — 25.07.2026, eski "2h-soğuk panel" kuralının yerine).
+  //
+  // ESKİ KURAL KALDIRILDI: "auto vardiya ≥2h açık + şoför panele girmemiş →
+  // araçta olmayabilir". Panel dokunuşu bu filoda varlık sinyali DEĞİL: şoförler
+  // paneli sabah paket girmek, akşam kapatmak için açıyor, aradaki 8-10 saat
+  // boyunca hiç dokunmuyorlar. 25.07'de kural üç vardiyanın ÜÇÜNDE de yanlış
+  // alarm verdi; oysa araçlar 20-43 km yol yapmış, iki şoför 358 ve 230 paket
+  // teslim edip vardiyayı kendi eliyle kapatmıştı.
+  //
+  // YENİ KURAL — soru "şoför panele dokundu mu" değil, "ARAÇ çalıştı mı":
+  // auto vardiya ≥3 saattir açık AMA araçtan hiçbir hareket kanıtı yok → vardiya
+  // boşuna açılmış olabilir. Kanıtlardan HERHANGİ biri varsa uyarı çıkmaz.
+  //
+  // 3 saat: depoda yükleme 1-2 saati bulabiliyor (25.07'de bir şoförün molası
+  // 259 dk), 2 saatlik eşik yükleme yapan aracı "ölü" sayardı.
+  //
+  // FAIL-QUIET: telemetri hiç yoksa ya da sorgu hata verirse uyarı ÇIKMAZ.
+  // Sessiz cihazın kendi kalemi zaten var ("24 saattir konum göndermiyor");
+  // aynı araç için iki alarm basmayız.
+  const IDLE_VEHICLE_MS = 3 * 60 * 60 * 1000;
+  const idleNowMs = Date.now();
+  const idleCandidates = activeShifts.filter(
     (s) =>
       s.auto_started &&
       s.worker_id &&
-      coldNowMs - new Date(s.started_at).getTime() >= COLD_PANEL_MS
+      s.vehicle_id &&
+      idleNowMs - new Date(s.started_at).getTime() >= IDLE_VEHICLE_MS
   );
-  if (autoOldOpen.length > 0) {
-    try {
-      const cwIds = [...new Set(autoOldOpen.map((s) => s.worker_id as string))];
-      const { data: pw } = await supabaseAdmin
-        .from("workers")
-        .select("id, panel_seen_at")
-        .in("id", cwIds);
-      const seen = new Map(
-        ((pw ?? []) as { id: string; panel_seen_at: string | null }[]).map((w) => [
-          w.id,
-          w.panel_seen_at,
-        ])
-      );
-      coldPanel = autoOldOpen
-        .filter((s) => {
-          const ps = seen.get(s.worker_id as string);
-          return !ps || coldNowMs - new Date(ps).getTime() >= COLD_PANEL_MS;
-        })
-        .map((s) => ({
-          id: s.id,
-          worker_name: names.get(s.worker_id as string) ?? "—",
-        }));
-    } catch {
-      coldPanel = [];
-    }
-  }
+  const vehicleIdle = (
+    await Promise.all(
+      idleCandidates.map(async (s) => {
+        try {
+          // ④ Paket girildiyse şoför araçtadır — telemetriye bakmaya gerek yok.
+          if (await shiftHasPackages(s.id)) return null;
+          const moved = await vehicleMovedSince(
+            s.vehicle_id as string,
+            s.started_at
+          );
+          // true = hareket var, null = bilinmiyor (fail-quiet) → uyarı yok.
+          if (moved !== false) return null;
+          return {
+            id: s.id,
+            worker_name: names.get(s.worker_id as string) ?? "—",
+          };
+        } catch {
+          return null;
+        }
+      })
+    )
+  ).filter((r): r is { id: string; worker_name: string } => r !== null);
 
   // FİLO ŞEFİ MANUEL BAŞLATMALARI (037) → Dikkat panosu bildirimi. started_by
   // (şef) çoğu zaman kendi filo aracına atanmış değildir, dolayısıyla `names`
-  // haritasında olmayabilir; eksik isimler ayrı bir sorguyla çözülür (coldPanel
-  // deseninin aynısı). worker_name hedef şoför (kapsamda → names'te vardır).
+  // haritasında olmayabilir; eksik isimler ayrı bir sorguyla çözülür (best-effort:
+  // isim çözülemezse '—'). worker_name hedef şoför (kapsamda → names'te vardır).
   let manualStarts: {
     id: string;
     worker_name: string;
@@ -693,10 +706,95 @@ export async function getDashboardData(
       openVehicleIds,
       inactiveWorkerIds,
       locationUnverified,
-      coldPanel,
+      vehicleIdle,
       manualStarts
     ),
   };
+}
+
+/**
+ * Bu hızın üstü "hareket" sayılır (GPS jitter'ı elemek için) — auto-shift
+ * motorundaki MOVE_SPEED_KMH ile aynı eşik, bilinçli olarak aynı sayı.
+ */
+const IDLE_MOVE_SPEED_KMH = 5;
+/** Odometrenin bu kadar artması "araç yol yaptı" demektir (yuvarlama payı). */
+const IDLE_MIN_ODOMETER_DELTA_KM = 1;
+
+/** O vardiyada paket girilmiş mi (şoförün araçta olduğunun en sağlam kanıtı). */
+async function shiftHasPackages(timeEntryId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("shift_packages")
+      .select("id")
+      .eq("time_entry_id", timeEntryId)
+      .limit(1);
+    if (error) return false;
+    return (data ?? []).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Verilen andan bu yana araçtan HAREKET kanıtı var mı?
+ *
+ *   true  → kontak açılmış / hız > 5 km/h / odometre ≥1 km artmış
+ *   false → telemetri VAR ama üçü de yok (araç gerçekten kıpırdamamış)
+ *   null  → bilinmiyor: hiç fix yok (cihaz sessiz) ya da sorgu hata verdi
+ *
+ * null ile false'ın ayrılması kritik: "cihaz susuyor" ile "araç durdu" aynı şey
+ * değildir ve YALNIZ ikincisi uyarı üretir (fail-quiet).
+ *
+ * Satır çekmez, VARLIK sorar (.limit(1)) — bu yüzden PostgREST'in 1000 satır
+ * tavanına takılmaz; yoğun bir araçta 10 saatlik pencere 1000 fix'i aşıyor.
+ */
+async function vehicleMovedSince(
+  vehicleId: string,
+  sinceIso: string
+): Promise<boolean | null> {
+  try {
+    // ①+② Kontak açık ya da hız eşiğin üstünde tek bir fix yeterli.
+    const { data: moving, error: movErr } = await supabaseAdmin
+      .from("device_telemetry")
+      .select("id")
+      .eq("vehicle_id", vehicleId)
+      .gte("recorded_at", sinceIso)
+      .or(`ignition_on.is.true,speed_kmh.gt.${IDLE_MOVE_SPEED_KMH}`)
+      .limit(1);
+    if (movErr) return null;
+    if ((moving ?? []).length > 0) return true;
+
+    // Hareket yok — peki cihaz konuşuyor mu? Hiç fix yoksa "araç durdu"
+    // DEMEYİZ (cihaz ölü olabilir), bilinmiyor deriz.
+    const { data: any_, error: anyErr } = await supabaseAdmin
+      .from("device_telemetry")
+      .select("id")
+      .eq("vehicle_id", vehicleId)
+      .gte("recorded_at", sinceIso)
+      .limit(1);
+    if (anyErr) return null;
+    if ((any_ ?? []).length === 0) return null;
+
+    // ③ Odometre artışı. Kolon yoksa/boşsa bu kanıt sessizce atlanır.
+    const odoQuery = (ascending: boolean) =>
+      supabaseAdmin
+        .from("device_telemetry")
+        .select("odometer_km")
+        .eq("vehicle_id", vehicleId)
+        .gte("recorded_at", sinceIso)
+        .not("odometer_km", "is", null)
+        .order("recorded_at", { ascending })
+        .limit(1)
+        .maybeSingle();
+    const [first, last] = await Promise.all([odoQuery(true), odoQuery(false)]);
+    const a = first.data?.odometer_km as number | null | undefined;
+    const b = last.data?.odometer_km as number | null | undefined;
+    if (a != null && b != null && b - a >= IDLE_MIN_ODOMETER_DELTA_KM) return true;
+
+    return false;
+  } catch {
+    return null;
+  }
 }
 
 function buildTodayOps(entries: LiteEntry[]): TodayOps {
@@ -1141,8 +1239,8 @@ function buildAttention(
   inactiveWorkerIds: Set<string>,
   /** Bugün "konum doğrulanamadı" ile açılmış vardiyalar (Modül 6). */
   locationUnverified: { id: string; worker_name: string }[],
-  /** 2h-soğuk auto vardiya (Modül 7) — şoför panele girmemiş. */
-  coldPanel: { id: string; worker_name: string }[],
+  /** ≥3h açık auto vardiya, araçtan hiç hareket yok (Modül 7). */
+  vehicleIdle: { id: string; worker_name: string }[],
   /** Filo şefinin bugün elle başlattığı vardiyalar (037) — panel bildirimi. */
   manualStarts: {
     id: string;
@@ -1333,9 +1431,9 @@ function buildAttention(
     });
   }
 
-  // 10) 2h-soğuk auto vardiya (Modül 7) — auto açıldı ama şoför panele girmedi.
-  for (const c of coldPanel) {
-    items.push({ kind: "coldPanel", id: `${c.id}-cold`, worker_name: c.worker_name });
+  // 10) Hareketsiz araç (Modül 7) — auto vardiya açık ama araç hiç kıpırdamamış.
+  for (const c of vehicleIdle) {
+    items.push({ kind: "vehicleIdle", id: `${c.id}-idle`, worker_name: c.worker_name });
   }
 
   // 11) Filo şefi manuel başlatması (037) — şef bir personelin mesaisini elle
@@ -1368,10 +1466,10 @@ function buildAttention(
         return 95; // şoförsüz araç (atama bekliyor) — movingNoShift'ten hemen sonra
       case "locationUnverified":
         return 85; // konum doğrulanmadan başlatılan vardiya — gold, orta öncelik
-      case "coldPanel":
-        return 80; // auto vardiya + şoför panele girmemiş — orta öncelik
+      case "vehicleIdle":
+        return 80; // auto vardiya + araç hiç hareket etmemiş — orta öncelik
       case "manualStart":
-        return 78; // şef manuel başlattı — bilgi bildirimi, coldPanel'in hemen ardında
+        return 78; // şef manuel başlattı — bilgi bildirimi, vehicleIdle'ın hemen ardında
       case "penalty":
         return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "overLimit":

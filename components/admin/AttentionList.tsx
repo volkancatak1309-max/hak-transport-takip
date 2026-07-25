@@ -14,7 +14,7 @@ import {
   Navigation,
   UserX,
   MapPinOff,
-  PhoneOff,
+  CircleParking,
   Pencil,
   PlayCircle,
   type LucideIcon,
@@ -118,11 +118,11 @@ export function AttentionList({
           meta: t("dash.attn_location_unverified_meta"),
           overdue: false,
         };
-      case "coldPanel":
+      case "vehicleIdle":
         return {
-          icon: PhoneOff,
-          text: t("dash.attn_cold_panel", { name: item.worker_name }),
-          meta: t("dash.attn_cold_panel_meta"),
+          icon: CircleParking,
+          text: t("dash.attn_vehicle_idle", { name: item.worker_name }),
+          meta: t("dash.attn_vehicle_idle_meta"),
           overdue: false,
         };
       case "manualStart":

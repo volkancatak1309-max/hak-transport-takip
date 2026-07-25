@@ -402,23 +402,38 @@ export async function processAutoShifts(
           const startedAt = trig.startAt;
           const startKm = await resolveStartKm(v.id, latest.odometer_km);
 
-          const { data: ins, error: insErr } = await supabaseAdmin
+          // BAŞLATMA YOLU İZİ (037): start_source='auto'. 25.07.2026'ya kadar bu
+          // alan HİÇ yazılmıyordu ve kolonun `default 'self'` değeri düşüyordu —
+          // yani motorun açtığı her vardiya "şoför kendi başlattı" olarak
+          // kaydediliyordu (25.07 sabahı 9 vardiya). auto_started zaten gerçeği
+          // taşıyor, ama iki alan birbiriyle çelişemez.
+          const baseRow = {
+            worker_id: v.assigned_worker_id,
+            vehicle_id: v.id,
+            plate: v.plate,
+            started_at: startedAt,
+            start_km: startKm,
+            break_minutes: 0,
+            auto_started: true,
+            // PENDING YOK (Volkan 24.07): şoför onayı beklemez, doğrudan açılır;
+            // panel bilgi gösterir, yanlış açılırsa yönetici düzeltir.
+            confirmation_status: "confirmed",
+            confirmed_at: startedAt,
+          };
+          let { data: ins, error: insErr } = await supabaseAdmin
             .from("time_entries")
-            .insert({
-              worker_id: v.assigned_worker_id,
-              vehicle_id: v.id,
-              plate: v.plate,
-              started_at: startedAt,
-              start_km: startKm,
-              break_minutes: 0,
-              auto_started: true,
-              // PENDING YOK (Volkan 24.07): şoför onayı beklemez, doğrudan açılır;
-              // panel bilgi gösterir, yanlış açılırsa yönetici düzeltir.
-              confirmation_status: "confirmed",
-              confirmed_at: startedAt,
-            })
+            .insert({ ...baseRow, start_source: "auto" })
             .select("id")
             .maybeSingle();
+          // 037 uygulanmamış ortam: kolon yok → izsiz tekrar dene. Vardiya ASLA
+          // iz kolonu yüzünden açılmadan kalmaz (shift.ts:448 deseninin aynısı).
+          if (insErr && /start_source|column/i.test(insErr.message)) {
+            ({ data: ins, error: insErr } = await supabaseAdmin
+              .from("time_entries")
+              .insert(baseRow)
+              .select("id")
+              .maybeSingle());
+          }
 
           if (insErr) {
             // 23505 = uq_time_entries_one_open (eşzamanlı sync/ingest yarışı) —

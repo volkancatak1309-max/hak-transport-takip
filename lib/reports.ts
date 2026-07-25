@@ -1,5 +1,5 @@
 import "server-only";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
 import {
   computeSafetyScores,
@@ -265,16 +265,26 @@ export async function buildPerformanceReport(
 
   // Aralıktaki vardiyalar — admin panosuyla aynı alanlar, aynı türetmeler.
   const scope = await getTestScope();
-  const { data: entryData } = await withoutTestRows(
-    supabaseAdmin
-      .from("time_entries")
-      .select(
-        "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count"
-      )
-      .gte("started_at", base.startISO)
-      .lte("started_at", base.endISO),
-    "worker_id",
-    scope.workerIds
+  // SAYFALI (25.07.2026): PostgREST 1000 satırda kesiyor ve `.limit()` bunu
+  // aşamıyor. ~29 şoför × 1 vardiya/gün ile tavan ~34 günde doluyordu; "son 3 ay"
+  // ya da yıllık performans raporu sessizce eksik satırla hesaplanırdı.
+  const { data: entryData } = await fetchAllRows<TimeEntry>(
+    (from, to) =>
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select(
+            "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count"
+          )
+          .gte("started_at", base.startISO)
+          .lte("started_at", base.endISO)
+          .order("started_at", { ascending: true })
+          .order("id")
+          .range(from, to),
+        "worker_id",
+        scope.workerIds
+      ),
+    "buildPerformanceReport/time_entries"
   );
   const entries = (entryData ?? []) as TimeEntry[];
 

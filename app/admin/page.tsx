@@ -175,11 +175,20 @@ export default async function AdminPage({
       .is("resolved_at", null)
       .order("created_at", { ascending: false })
       .limit(50),
+    // SAYFALI (25.07.2026): chunk BAŞINA da 1000 satır tavanı işliyor. 100
+    // vardiyalık bir chunk'ta ortalama 10 fotoğraf tavanı doldurur ve fazlası
+    // sessizce düşerdi → bazı vardiyalar "fotoğrafı yok" görünürdü.
     ...chunkIds(entryIds).map((ids) =>
-      supabaseAdmin
-        .from("shift_photos")
-        .select("time_entry_id")
-        .in("time_entry_id", ids)
+      fetchAllRows<{ time_entry_id: string }>(
+        (from, to) =>
+          supabaseAdmin
+            .from("shift_photos")
+            .select("time_entry_id")
+            .in("time_entry_id", ids)
+            .order("id")
+            .range(from, to),
+        "admin/shift_photos"
+      )
     ),
   ]);
   const photosRes = {

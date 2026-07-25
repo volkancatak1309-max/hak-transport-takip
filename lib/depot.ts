@@ -1,5 +1,5 @@
 import "server-only";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchPagesUntil } from "@/lib/supabase";
 import { listVehicleTrack, latestVehicleTelemetry } from "@/lib/telemetry";
 import { pointInCircleM } from "@/lib/geo";
 import { todayYmdVienna } from "@/lib/leaves";
@@ -252,24 +252,61 @@ export async function depotArrivalTrigger(
 ): Promise<{ startAt: string } | null> {
   const zones = await activeDepotZones();
   if (zones.length === 0) return null;
-  let rows;
+  const todayStart = startOfTodayVienna();
+  const startAt = await firstDepotEntryInRange(
+    vehicleId,
+    todayStart.toISOString(),
+    // Üst sınır YOK demek yerine gün sonunu veriyoruz: aralık ne kadar darsa
+    // indeks taraması o kadar ucuz.
+    addCalendarDaysVienna(todayStart, 1).toISOString(),
+    zones
+  );
+  return startAt ? { startAt } : null;
+}
+
+/**
+ * Bir aracın verilen aralıktaki "depoya ilk geliş" anı — TEK sorgu değil,
+ * SAYFALI okuma (25.07.2026).
+ *
+ * Neden: PostgREST sorgu başına 1000 satır döndürüyor ve `.limit(3000)` bunu
+ * aşmıyordu; fazlası SESSİZCE kırpılıyordu. Yoğun bir araçta günlük fix sayısı
+ * 1930–3127, yani bir GÜN bile tek sayfaya sığmıyor. Artan sıralama sayesinde
+ * kırpılan kısım günün sonuydu ve tetik sabahı gördüğü için hata bugüne dek
+ * patlamadı — ama öğleden sonra çağrıldığında kör kalırdı.
+ *
+ * Erken çıkış: geliş anı tipik olarak ilk sayfada bulunur ve kalan sayfalar hiç
+ * okunmaz; bulunamazsa aralığın SONUNA kadar taranır. `probe` birikmiş satırların
+ * tamamını alır, çünkü 3 dakikalık histerezis sayfa sınırına denk gelebilir.
+ */
+async function firstDepotEntryInRange(
+  vehicleId: string,
+  fromIso: string,
+  toIso: string,
+  zones: DepotZone[]
+): Promise<string | null> {
   try {
-    const { data, error } = await supabaseAdmin
-      .from("device_telemetry")
-      .select("latitude, longitude, ignition_on, recorded_at")
-      .eq("vehicle_id", vehicleId)
-      .gte("recorded_at", startOfTodayVienna().toISOString())
-      .order("recorded_at", { ascending: true })
-      .limit(3000);
-    if (error || !data) return null;
-    rows = data.filter(
-      (t) => t.latitude != null && t.longitude != null
-    ) as TelemetryFix[];
+    const { result } = await fetchPagesUntil<TelemetryFix, string>(
+      (from, to) =>
+        supabaseAdmin
+          .from("device_telemetry")
+          .select("latitude, longitude, ignition_on, recorded_at")
+          .eq("vehicle_id", vehicleId)
+          .gte("recorded_at", fromIso)
+          .lt("recorded_at", toIso)
+          .order("recorded_at", { ascending: true })
+          .order("id")
+          .range(from, to),
+      (rows) =>
+        firstDepotEntryIn(
+          rows.filter((t) => t.latitude != null && t.longitude != null),
+          zones
+        ),
+      `depotArrival(${fromIso.slice(0, 10)})`
+    );
+    return result;
   } catch {
     return null;
   }
-  const startAt = firstDepotEntryIn(rows, zones);
-  return startAt ? { startAt } : null;
 }
 
 type TelemetryFix = {
@@ -365,39 +402,26 @@ async function averageDepotArrivalMinute(
   zones: DepotZone[]
 ): Promise<number | null> {
   const todayStart = startOfTodayVienna();
-  const from = addCalendarDaysVienna(todayStart, -AVG_LOOKBACK_DAYS);
 
-  let rows: TelemetryFix[];
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("device_telemetry")
-      .select("latitude, longitude, ignition_on, recorded_at")
-      .eq("vehicle_id", vehicleId)
-      .gte("recorded_at", from.toISOString())
-      .lt("recorded_at", todayStart.toISOString())
-      .order("recorded_at", { ascending: true })
-      .limit(40000);
-    if (error || !data) return null;
-    rows = data.filter((t) => t.latitude != null && t.longitude != null) as TelemetryFix[];
-  } catch {
-    return null;
-  }
-  if (rows.length === 0) return null;
-
-  // Viyana gününe göre grupla (satırlar zaten artan sıralı → gruplar da sıralı).
-  const byDay = new Map<string, TelemetryFix[]>();
-  for (const r of rows) {
-    const ymd = new Date(r.recorded_at).toLocaleDateString("en-CA", {
-      timeZone: "Europe/Vienna",
-    });
-    const bucket = byDay.get(ymd);
-    if (bucket) bucket.push(r);
-    else byDay.set(ymd, [r]);
-  }
-
+  // GÜN GÜN sorgulanır — 14 günü TEK sorguda çekmek 25.07.2026'ya kadar bu
+  // fonksiyonu sessizce çürütüyordu: `.limit(40000)` isteniyor, PostgREST 1000
+  // satır döndürüyordu (canlıda ölçüldü: gerçek 23.217 satırın %4'ü) ve dönen
+  // dilim tek bir günün 4 saatiydi. Yani "14 günün ortalaması" fiilen tek kısmi
+  // günden hesaplanıyordu — hata yok, ekranda belirti yok, sonuç yanlış.
+  //
+  // Her gün ayrı ve SAYFALI okunur; aranan şey günün başındaki ilk geliş olduğu
+  // için erken çıkış tipik olarak günde tek sorguyla bitirir. 14 küçük sorgu,
+  // bir büyük kırık sorgudan iyidir.
   const minutes: number[] = [];
-  for (const dayRows of byDay.values()) {
-    const entry = firstDepotEntryIn(dayRows, zones);
+  for (let d = AVG_LOOKBACK_DAYS; d >= 1; d--) {
+    const dayStart = addCalendarDaysVienna(todayStart, -d);
+    const dayEnd = addCalendarDaysVienna(todayStart, -d + 1);
+    const entry = await firstDepotEntryInRange(
+      vehicleId,
+      dayStart.toISOString(),
+      dayEnd.toISOString(),
+      zones
+    );
     if (!entry) continue; // o gün depoya gelinmemiş (izin/tatil) → ortalamaya girmez
     const min = viennaMinuteOfDay(entry);
     if (min !== null) minutes.push(min);

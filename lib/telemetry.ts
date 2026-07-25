@@ -432,12 +432,21 @@ export async function reconcileIdleEpisodes(
   nowMs: number = Date.now()
 ): Promise<number> {
   const cutoff = new Date(nowMs - MAX_GAP_MS).toISOString();
-  const { data } = await supabaseAdmin
-    .from("idle_episodes")
-    .select("id, last_seen_at")
-    .is("ended_at", null)
-    .lt("last_seen_at", cutoff);
-  const rows = (data ?? []) as { id: string; last_seen_at: string }[];
+  // SAYFALI (25.07.2026): limitsiz sorgu 1000 satırda sessizce kesiliyordu.
+  // Bekçi her turda çalıştığı için fazlası bir sonraki turda kapanırdı, ama
+  // "kaç epizod açık kaldı" sayısı yanlış raporlanırdı.
+  const { data } = await fetchAllRows<{ id: string; last_seen_at: string }>(
+    (from, to) =>
+      supabaseAdmin
+        .from("idle_episodes")
+        .select("id, last_seen_at")
+        .is("ended_at", null)
+        .lt("last_seen_at", cutoff)
+        .order("id")
+        .range(from, to),
+    "reconcileIdleEpisodes"
+  );
+  const rows = data;
   for (const e of rows) {
     await supabaseAdmin
       .from("idle_episodes")

@@ -224,7 +224,9 @@ body {
   /* Nav rayı koyuda daha da koyu — zeminden ayrışsın. */
   --nav-surface: #0e0e0f;
   --nav-foreground: #f2f3f5;
-  --nav-muted: #6a6b6f;
+  /* Pasif menü metni. #6A6B6F (koyu temanın genel üçüncül tonu) neredeyse siyah
+     ray üstünde 3.1:1 kalıyordu — AA değil. Bu ton yalnız ray için açıldı: 7:1. */
+  --nav-muted: #9c9ca0;
 
   /* Cam yüzey — koyu karşılıklar. Aurora gitti; artık düz koyu zemin üstünde
      yarı saydam panel (harita overlay'i, glass-pop deseni). */
@@ -418,16 +420,9 @@ body {
   .card-kpi:hover::after {
     opacity: 1;
   }
-  /* Active sidebar item: bordo→mavi translucent wash (pairs with the left bordo
-     accent bar + mavi icon). Subtle — contrast comes from the bar + light text,
-     not a loud fill. */
-  .nav-active {
-    background-image: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--accent-claret) 24%, transparent),
-      color-mix(in srgb, var(--accent-sky) 16%, transparent)
-    );
-  }
+  /* .nav-active KALDIRILDI (26.07.2026): aktif menü öğesi bordo→mavi gradyandı;
+     tasarım kilidi gradyanı reddediyor ve aktif durumu mercan zemin + mercan
+     çizgiye bağlıyor (DESIGN.md §5). Kural artık DashboardShell'de, tek yerde. */
   /* Primary button fill — bordo diagonal gradient. Hover lift + subtle bordo
      shadow and active scale live on the button variant (Tailwind utilities) so
      focus rings and transitions stay intact. */

@@ -154,6 +154,13 @@ export function DashboardShell({
     .sort((a, b) => b.href.length - a.href.length)[0]?.label;
   const pageTitle = title ?? activeLabel ?? "";
 
+  /**
+   * Nav bağlantıları — HER ZAMAN koyu ray üstünde çizilir (açık temada da).
+   * Bu yüzden renkler tema token'larından (foreground/surface-2) değil, NAV
+   * token'larından gelir; aksi halde açık temada koyu ray üstüne koyu metin düşerdi.
+   * Aktif durum: mercan metin + mercan %12 zemin + sol mercan çizgi
+   * (DESIGN.md §5). Eski `nav-active` bordo→mavi gradyanı kilit gereği kalktı.
+   */
   const NavLinks = ({ onNavigate }: { onNavigate?: () => void }) => (
     <nav className="flex flex-col gap-0.5 px-3">
       {navItems.map((item) => {
@@ -169,14 +176,14 @@ export function DashboardShell({
               "group relative flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-sm font-medium",
               "transition-colors duration-150",
               active
-                ? "nav-active text-foreground"
-                : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+                ? "bg-accent-coral-soft text-accent-coral"
+                : "text-nav-muted hover:bg-white/[0.06] hover:text-nav-foreground"
             )}
           >
             {active && (
-              <span className="absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-accent-claret" />
+              <span className="absolute left-0 top-1/2 h-5 w-[2px] -translate-y-1/2 rounded-full bg-accent-coral" />
             )}
-            <Icon className={cn("size-[18px] shrink-0", active && "text-accent-sky")} />
+            <Icon className="size-[18px] shrink-0" />
             <span className="truncate">{item.label}</span>
           </Link>
         );
@@ -194,8 +201,16 @@ export function DashboardShell({
   return (
     <HelpProvider>
     <div className="flex min-h-screen bg-background text-foreground">
-      {/* Desktop sidebar */}
-      <aside className="glass sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col lg:flex">
+      {/* YÜZEN NAV RAYI (DESIGN.md §5 — birincil referans Runey'in imza öğesi).
+          Kenara yapışık değil: her yanından 12px içeride, 20px köşeli, koyu yüzey.
+          AÇIK TEMADA DA KOYU kalır — imza budur, tema ile değişmez.
+          Yükseklik = ekran - 24px (üst+alt boşluk), sticky. */}
+      <aside
+        className={cn(
+          "sticky top-3 my-3 ml-3 hidden h-[calc(100vh-1.5rem)] w-[248px] shrink-0 flex-col",
+          "rounded-[20px] bg-nav-surface text-nav-foreground lg:flex"
+        )}
+      >
         <div className="flex h-16 items-center px-5">
           <Link href={user.isAdmin || isChief ? "/admin" : "/panel"} className="flex items-center">
             <BrandLogo height={38} />
@@ -204,12 +219,13 @@ export function DashboardShell({
         <div className="flex-1 overflow-y-auto py-3">
           <NavLinks />
         </div>
-        <div className="border-t border-border p-3">
+        {/* Ayraç ray içinde: tema kenarlığı değil, beyazın düşük opaklığı. */}
+        <div className="border-t border-white/[0.08] p-3">
           <div className="flex items-center gap-3 rounded-[10px] px-2 py-2">
             <UserAvatar name={user.name} size="sm" />
             <div className="flex min-w-0 flex-col">
               <span className="truncate text-sm font-medium leading-tight">{user.name}</span>
-              <span className="nums truncate text-xs leading-tight text-text-tertiary">
+              <span className="nums truncate text-xs leading-tight text-nav-muted">
                 {user.phone}
               </span>
             </div>
@@ -226,22 +242,34 @@ export function DashboardShell({
             className="absolute inset-0 bg-black/50"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="glass absolute left-0 top-0 flex h-full w-[260px] flex-col page-enter">
+          {/* Mobil çekmece — masaüstü rayının aynı dili: koyu yüzey, aynı nav
+              token'ları. Sağ köşeleri yuvarlak (sol kenara yaslı çekmece). */}
+          <div
+            className={cn(
+              "absolute left-0 top-0 flex h-full w-[260px] flex-col page-enter",
+              "rounded-r-[20px] bg-nav-surface text-nav-foreground"
+            )}
+          >
             <div className="flex h-16 items-center justify-between px-5">
               <BrandLogo height={38} />
-              <Button variant="ghost" size="icon-sm" onClick={() => setMobileOpen(false)}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-nav-muted hover:bg-white/[0.06] hover:text-nav-foreground"
+                onClick={() => setMobileOpen(false)}
+              >
                 <X className="size-5" />
               </Button>
             </div>
             <div className="flex-1 overflow-y-auto py-3">
               <NavLinks onNavigate={() => setMobileOpen(false)} />
             </div>
-            <div className="border-t border-border p-3">
+            <div className="border-t border-white/[0.08] p-3">
               <div className="flex items-center gap-3 px-2 py-2">
                 <UserAvatar name={user.name} size="sm" />
                 <div className="flex min-w-0 flex-col">
                   <span className="truncate text-sm font-medium leading-tight">{user.name}</span>
-                  <span className="nums truncate text-xs leading-tight text-text-tertiary">
+                  <span className="nums truncate text-xs leading-tight text-nav-muted">
                     {user.phone}
                   </span>
                 </div>

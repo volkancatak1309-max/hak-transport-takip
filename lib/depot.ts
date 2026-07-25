@@ -3,7 +3,11 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { listVehicleTrack, latestVehicleTelemetry } from "@/lib/telemetry";
 import { pointInCircleM } from "@/lib/geo";
 import { todayYmdVienna } from "@/lib/leaves";
-import { startOfTodayVienna } from "@/lib/format";
+import {
+  startOfTodayVienna,
+  startOfDayVienna,
+  addCalendarDaysVienna,
+} from "@/lib/format";
 
 /**
  * DEPO-GİRİŞ VARDİYA ÖNERİSİ (Modül 3).
@@ -260,21 +264,37 @@ export async function depotArrivalTrigger(
     if (error || !data) return null;
     rows = data.filter(
       (t) => t.latitude != null && t.longitude != null
-    ) as {
-      latitude: number;
-      longitude: number;
-      ignition_on: boolean | null;
-      recorded_at: string;
-    }[];
+    ) as TelemetryFix[];
   } catch {
     return null;
   }
+  const startAt = firstDepotEntryIn(rows, zones);
+  return startAt ? { startAt } : null;
+}
+
+type TelemetryFix = {
+  latitude: number;
+  longitude: number;
+  ignition_on: boolean | null;
+  recorded_at: string;
+};
+
+/**
+ * ORTAK ÇEKİRDEK: verilen (zamana göre ARTAN sıralı, tek güne ait) fix dizisinde
+ * "depoya ilk geliş" anını bulur. depotArrivalTrigger (bugün) ile geçmiş-gün
+ * ortalaması AYNI tanımı kullansın diye ayrıldı — iki yerde çatallanan bir
+ * "geliş anı" tanımı, ortalamayı bugünle kıyaslanamaz hâle getirirdi.
+ *
+ * Tanım (değişmedi): ilk "depo içi + KONTAK AÇIK" fix + o andan itibaren ≥3 dk
+ * kesintisiz depoda kalma. Kontak şartı bilinçli: depoda geceleyen aracın
+ * gece heartbeat'leri aksi hâlde geliş anını 00:00'a çekerdi.
+ */
+function firstDepotEntryIn(rows: TelemetryFix[], zones: DepotZone[]): string | null {
   if (rows.length === 0) return null;
 
   const inZone = (lat: number, lng: number) =>
     zones.some((z) => pointInCircleM(lat, lng, z.center_lat, z.center_lng, z.radius_m));
 
-  // Bugünün ilk "depo içi + kontak açık" fix'i = mesai başlangıcı.
   let startIdx = -1;
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].ignition_on === true && inZone(rows[i].latitude, rows[i].longitude)) {
@@ -294,5 +314,130 @@ export async function depotArrivalTrigger(
   }
   if (lastInZoneMs - startMs < DWELL_MS) return null;
 
-  return { startAt: rows[startIdx].recorded_at };
+  return rows[startIdx].recorded_at;
+}
+
+// ─────────── MANUEL BAŞLATMADA BAŞLANGIÇ ANI (25.07.2026, Volkan) ───────────
+//
+// KURAL: manuel başlatmada started_at ARTIK "şimdi" DEĞİL. Şoför butona basma
+// anını değil, aracın DEPOYA GELDİĞİ anı yazarız — mesai depoda başlar ve
+// şoför çoğu zaman depoya vardıktan bir süre sonra panele dokunuyor.
+//
+// KESİN YASAK: kontak-açılma anı ve "günün ilk telemetrisi" başlangıç olarak
+// KULLANILAMAZ. Kontağı evde açıp 1-2 saat sonra depoya gelen şoförler var;
+// o an mesai başlangıcı değil, commute'un başıdır.
+//
+// Kademeler: (1) bugünkü depo girişi → (2) son 14 günün ortalama geliş saati →
+// (3) now. 2 ve 3 "doğrulanmadı"dır → location_unverified işareti düşer.
+
+/** Ortalama hesabında geriye bakılan Viyana günü sayısı. */
+const AVG_LOOKBACK_DAYS = 14;
+
+export type ResolvedShiftStart = {
+  at: string;
+  source: "depot_entry" | "avg_arrival" | "now";
+  /** false → çağıran location_unverified=true yazar. */
+  verified: boolean;
+};
+
+/** Bir ISO anın Viyana duvar-saatini gün-içi dakikaya çevirir (0–1439). */
+function viennaMinuteOfDay(iso: string): number | null {
+  const hm = new Date(iso).toLocaleTimeString("en-GB", {
+    timeZone: "Europe/Vienna",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const [h, m] = hm.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+/**
+ * Son 14 Viyana gününde aracın depoya İLK GELİŞ saatlerinin ortalaması
+ * (gün-içi dakika). Hiç geliş bulunamazsa null.
+ *
+ * Tek sorgu: 14 günlük aralık bir kerede çekilir, sonra bellekte güne bölünür
+ * (14 ayrı sorgu manuel başlatmanın gecikmesini görünür ölçüde artırırdı).
+ */
+async function averageDepotArrivalMinute(
+  vehicleId: string,
+  zones: DepotZone[]
+): Promise<number | null> {
+  const todayStart = startOfTodayVienna();
+  const from = addCalendarDaysVienna(todayStart, -AVG_LOOKBACK_DAYS);
+
+  let rows: TelemetryFix[];
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("device_telemetry")
+      .select("latitude, longitude, ignition_on, recorded_at")
+      .eq("vehicle_id", vehicleId)
+      .gte("recorded_at", from.toISOString())
+      .lt("recorded_at", todayStart.toISOString())
+      .order("recorded_at", { ascending: true })
+      .limit(40000);
+    if (error || !data) return null;
+    rows = data.filter((t) => t.latitude != null && t.longitude != null) as TelemetryFix[];
+  } catch {
+    return null;
+  }
+  if (rows.length === 0) return null;
+
+  // Viyana gününe göre grupla (satırlar zaten artan sıralı → gruplar da sıralı).
+  const byDay = new Map<string, TelemetryFix[]>();
+  for (const r of rows) {
+    const ymd = new Date(r.recorded_at).toLocaleDateString("en-CA", {
+      timeZone: "Europe/Vienna",
+    });
+    const bucket = byDay.get(ymd);
+    if (bucket) bucket.push(r);
+    else byDay.set(ymd, [r]);
+  }
+
+  const minutes: number[] = [];
+  for (const dayRows of byDay.values()) {
+    const entry = firstDepotEntryIn(dayRows, zones);
+    if (!entry) continue; // o gün depoya gelinmemiş (izin/tatil) → ortalamaya girmez
+    const min = viennaMinuteOfDay(entry);
+    if (min !== null) minutes.push(min);
+  }
+  if (minutes.length === 0) return null;
+
+  return Math.round(minutes.reduce((a, b) => a + b, 0) / minutes.length);
+}
+
+/**
+ * MANUEL BAŞLATMANIN başlangıç anı. Asla throw etmez — her hata yolu `now`'a
+ * düşer (kademe 3), yani başlatma hiçbir koşulda kırılmaz.
+ */
+export async function resolveShiftStartAt(
+  vehicleId: string
+): Promise<ResolvedShiftStart> {
+  const nowIso = new Date().toISOString();
+  try {
+    const zones = await activeDepotZones();
+    if (zones.length === 0) return { at: nowIso, source: "now", verified: false };
+
+    // 1) Bugün depoya girildiyse: geliş anı.
+    const trig = await depotArrivalTrigger(vehicleId);
+    if (trig) return { at: trig.startAt, source: "depot_entry", verified: true };
+
+    // 2) Bugün giriş yok → son 14 günün ortalama geliş saati, BUGÜNÜN tarihiyle.
+    const avgMin = await averageDepotArrivalMinute(vehicleId, zones);
+    if (avgMin !== null) {
+      // Viyana gün başlangıcı + dakika. Yaz/kış saati geçiş gününde bu bir saat
+      // kayabilir; kestirilmiş bir ortalama için kabul edilebilir sapma.
+      const at = new Date(startOfDayVienna().getTime() + avgMin * 60_000);
+      // Savunmacı: ortalama geleceği gösteriyorsa (gece yarısı sonrası başlatma)
+      // gelecek bir başlangıç yazma — now'a düş.
+      if (at.getTime() <= Date.now()) {
+        return { at: at.toISOString(), source: "avg_arrival", verified: false };
+      }
+    }
+  } catch {
+    // yut → now
+  }
+  // 3) Hiç veri yok (yeni araç/cihaz) ya da hata.
+  return { at: nowIso, source: "now", verified: false };
 }

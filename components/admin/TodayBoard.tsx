@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { AlertTriangle, CalendarOff, Truck, UserX } from "lucide-react";
+import { AlertTriangle, CalendarOff, PlayCircle, Truck, UserX } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/ui-v2";
 import { UserAvatar } from "@/components/UserAvatar";
 import { formatTime, formatDurationShort } from "@/lib/format";
@@ -38,7 +39,15 @@ function useAgeLabel() {
   return (ms: number | null) => (ms === null ? null : formatDurationShort(ms, locale));
 }
 
-export function TodayBoard({ rows }: { rows: TodayRosterRow[] }) {
+export function TodayBoard({
+  rows,
+  onStart,
+}: {
+  rows: TodayRosterRow[];
+  /** Verilirse "Başlamadı" satırlarında "Vardiya Başlat" butonu çıkar (patron+şef).
+   *  Yetki server action'da denetlenir; buton yalnız kısayol. */
+  onStart?: (row: TodayRosterRow) => void;
+}) {
   const t = useTranslations("admin");
   const locale = useLocale();
   const ageLabel = useAgeLabel();
@@ -146,6 +155,7 @@ export function TodayBoard({ rows }: { rows: TodayRosterRow[] }) {
                     <th className="py-2 pr-3 font-medium">{t("boardColStart")}</th>
                     <th className="py-2 pr-3 text-right font-medium">{t("boardColPackages")}</th>
                     <th className="py-2 text-right font-medium">{t("boardColSignal")}</th>
+                    {onStart && <th className="py-2 pl-3 text-right font-medium" aria-label={t("boardStartShift")} />}
                   </tr>
                 </thead>
                 <tbody>
@@ -178,6 +188,21 @@ export function TodayBoard({ rows }: { rows: TodayRosterRow[] }) {
                       <td className="py-2 text-right">
                         <SignalCell row={r} t={t} ageLabel={ageLabel} />
                       </td>
+                      {onStart && (
+                        <td className="py-2 pl-3 text-right">
+                          {r.status === "not_started" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => onStart(r)}
+                            >
+                              <PlayCircle className="size-3.5" />
+                              <span className="hidden lg:inline">{t("boardStartShift")}</span>
+                            </Button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -215,6 +240,17 @@ export function TodayBoard({ rows }: { rows: TodayRosterRow[] }) {
                       <SignalCell row={r} t={t} ageLabel={ageLabel} />
                     </Field>
                   </dl>
+                  {onStart && r.status === "not_started" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-3 w-full"
+                      onClick={() => onStart(r)}
+                    >
+                      <PlayCircle className="size-4" />
+                      {t("boardStartShift")}
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>

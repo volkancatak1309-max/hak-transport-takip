@@ -2,7 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requireWorker, requireAdmin } from "@/lib/session";
+import {
+  requireWorker,
+  requireAdmin,
+  getSession,
+  requireManualStartAuth,
+} from "@/lib/session";
+import {
+  getManagedFleet,
+  getFleetScope,
+  UNRESTRICTED,
+  type FleetScope,
+} from "@/lib/fleet-scope";
 import {
   endShiftSchema,
   editEntrySchema,
@@ -18,7 +29,7 @@ import {
 } from "@/lib/format";
 import { checkUndelivered } from "@/lib/package-limits";
 import { logShiftEdit, listShiftEdits } from "@/lib/shift-edit-log";
-import { evaluateDepotGate } from "@/lib/depot";
+import { evaluateDepotGate, resolveShiftStartAt } from "@/lib/depot";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { resolveStartKm, resolveEndKm } from "@/lib/auto-shift";
 import { hasShiftToday } from "@/lib/shift-day";
@@ -243,7 +254,15 @@ export async function startShiftManualAction(
   const latest = await latestVehicleTelemetry(veh.id as string);
   const startKm = await resolveStartKm(veh.id as string, latest?.odometer_km);
 
-  const startedIso = new Date().toISOString();
+  // 3a) BAŞLANGIÇ ANI — "şimdi" DEĞİL (25.07.2026). Mesai depoda başlar, şoför
+  //     ise depoya vardıktan bir süre sonra butona basıyor; butona basma anını
+  //     yazmak mesaiyi sistematik olarak kısa gösteriyordu. Sıra (lib/depot.ts):
+  //     bugünkü depo girişi → son 14 günün ortalama geliş saati → now.
+  //     Şoför saat SEÇEMEZ, girmez; hesap tamamen sunucuda.
+  //     confirmed_at bilinçli olarak AYRI ve "şimdi": onay anı gerçekten şimdi.
+  const resolvedStart = await resolveShiftStartAt(veh.id as string);
+  const startedIso = resolvedStart.at;
+  const confirmedIso = new Date().toISOString();
   const { data: ins, error } = await supabaseAdmin
     .from("time_entries")
     .insert({
@@ -255,7 +274,7 @@ export async function startShiftManualAction(
       break_minutes: 0,
       auto_started: false,
       confirmation_status: "confirmed",
-      confirmed_at: startedIso,
+      confirmed_at: confirmedIso,
     })
     .select("id")
     .maybeSingle();
@@ -271,7 +290,9 @@ export async function startShiftManualAction(
   // Konum doğrulanamadıysa (cihaz-ölü/belirsiz ya da yönetici muafiyeti) işaretle
   // → Dikkat panosunda görünsün. Best-effort: kolon yoksa (migration 035 öncesi)
   // sessiz geç; manuel başlatma ASLA kolon eksikliğiyle kırılmamalı.
-  if (depotGate.unverified && ins?.id) {
+  // Başlangıç anı depo girişinden türetilemediyse (ortalama ya da now) aynı
+  // işaret düşer: started_at kestirimdir, yönetici gözden geçirsin.
+  if ((depotGate.unverified || !resolvedStart.verified) && ins?.id) {
     try {
       await supabaseAdmin
         .from("time_entries")
@@ -292,6 +313,238 @@ export async function startShiftManualAction(
   revalidatePath("/panel");
   revalidatePath("/admin");
   return { ok: true };
+}
+
+/**
+ * YÖNETİCİ / FİLO ŞEFİ, bir personelin vardiyasını ELLE başlatır (Modül 7 telafi).
+ *
+ * Depo-tetikli otomatik vardiya telemetri düştüğünde açılmaz (bkz. lib/depot.ts);
+ * o boşlukta mesaiyi insan eliyle başlatmanın yolu budur. startShiftManualAction'dan
+ * FARKI: o requireWorker() ile YALNIZ kendisi için açar; bu ise BAŞKASI adına açar
+ * ve yetkiyi requireManualStartAuth ile denetler (patron=herkes, şef=yalnız kendi
+ * filosu, fail-closed). İçini (resolveStartKm, insert kolon seti, one-open guard,
+ * günde-tek-vardiya + yeniden-açma) startShiftManualAction ile paylaşır.
+ *
+ * Bilinçli farklar:
+ *   • started_at ÇAĞIRANDAN gelir (geri-tarihlenebilir: "mesaiye 06:30'da başladı").
+ *     Bugünün Viyana günü içinde ve gelecekte olmayan bir an olmalı.
+ *   • DEPO KİLİDİ UYGULANMAZ: araç şu an sahada olabilir (telemetri düştüğü için
+ *     zaten buradayız); yönetici/şef bilerek override ediyor. Kilit koysaydık
+ *     "araç depo dışında" diye başlatmayı engellerdi — telafinin amacına aykırı.
+ *   • start_source = rol ('admin'|'chief'), started_by = eylemi yapan → iz + panel
+ *     Dikkat kalemi (yalnız 'chief' bildirimi gösterir). Bildirim = PANEL (Volkan
+ *     kararı): push yok, start_source kalıcı olduğu için Dikkat panosu türetir.
+ */
+export async function startShiftForWorkerAction(input: {
+  workerId: string;
+  /** ISO — çağıran (tarayıcı) Viyana duvar-saatinden türetir. */
+  startedAt: string;
+  /** Verilmezse şoförün atanmış aracı. */
+  vehicleId?: string;
+}): Promise<ShiftResult> {
+  const auth = await requireManualStartAuth(input.workerId);
+  if (!auth.ok) return { ok: false, error: auth.error };
+
+  // Hedef şoför hâlâ kadroda mı?
+  const { data: target } = await supabaseAdmin
+    .from("workers")
+    .select("id, is_active")
+    .eq("id", input.workerId)
+    .maybeSingle();
+  if (!target || target.is_active !== true) {
+    return { ok: false, error: "inactive_worker" };
+  }
+
+  // Araç: verilen (override) ya da atanmış. active + test-değil şartı iki yolda da.
+  let veh: { id: string; plate: string } | null = null;
+  if (input.vehicleId) {
+    const { data } = await supabaseAdmin
+      .from("vehicles")
+      .select("id, plate, status, is_test, assigned_worker_id")
+      .eq("id", input.vehicleId)
+      .maybeSingle();
+    if (!data || data.is_test === true) return { ok: false, error: "no_vehicle" };
+    if ((data.status as string) !== "active") {
+      return { ok: false, error: "vehicle_unavailable" };
+    }
+    // Şef YALNIZ kendi filosundaki aracı VEYA şoförün atanmış aracını seçebilir.
+    if (auth.role === "chief") {
+      const inScope =
+        auth.scope.isFleetVehicle(data.id as string) ||
+        (data.assigned_worker_id as string | null) === input.workerId;
+      if (!inScope) return { ok: false, error: "vehicle_out_of_scope" };
+    }
+    veh = { id: data.id as string, plate: data.plate as string };
+  } else {
+    const { data } = await supabaseAdmin
+      .from("vehicles")
+      .select("id, plate, status")
+      .eq("assigned_worker_id", input.workerId)
+      .neq("status", "inactive")
+      .order("plate")
+      .limit(1)
+      .maybeSingle();
+    if (!data) return { ok: false, error: "no_vehicle" };
+    if ((data.status as string) !== "active") {
+      return { ok: false, error: "vehicle_unavailable" };
+    }
+    veh = { id: data.id as string, plate: data.plate as string };
+  }
+
+  // Başlangıç anı: bugünün Viyana günü içinde + gelecekte değil (60 sn tolerans).
+  const startedMs = new Date(input.startedAt).getTime();
+  if (!Number.isFinite(startedMs)) return { ok: false, error: "invalid_time" };
+  if (startedMs > Date.now() + 60_000) return { ok: false, error: "future_time" };
+  if (startedMs < startOfTodayVienna().getTime()) {
+    return { ok: false, error: "not_today" };
+  }
+  const startedIso = new Date(startedMs).toISOString();
+
+  // Çift açık vardiya guard'ı (DB'de uq_time_entries_one_open son sözü söyler).
+  const { data: active } = await supabaseAdmin
+    .from("time_entries")
+    .select("id")
+    .eq("worker_id", input.workerId)
+    .is("ended_at", null)
+    .maybeSingle();
+  if (active) return { ok: false, error: "active" };
+
+  // GÜNDE TEK VARDİYA: bugün kapanmış vardiya varsa YENİDEN AÇ (yeni satır üretme).
+  if (await hasShiftToday(input.workerId)) {
+    const { data: todays } = await supabaseAdmin
+      .from("time_entries")
+      .select("id")
+      .eq("worker_id", input.workerId)
+      .gte("started_at", startOfTodayVienna().toISOString())
+      .not("ended_at", "is", null)
+      .order("ended_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!todays) return { ok: false, error: "day_done" };
+
+    const reopenBase: Record<string, unknown> = {
+      ended_at: null,
+      end_km: null,
+      end_reason: null,
+      auto_ended: false,
+      summary_notified_at: null,
+      summary_confirmed_at: null,
+      summary_confirmed_by: null,
+      still_active_asked_at: null,
+      undelivered_count: null,
+      started_at: startedIso,
+      vehicle_id: veh.id,
+      plate: veh.plate,
+      updated_at: new Date().toISOString(),
+      updated_by: auth.actorId,
+    };
+    const reopen = { ...reopenBase, started_by: auth.actorId, start_source: auth.role };
+    let up = await supabaseAdmin
+      .from("time_entries")
+      .update(reopen)
+      .eq("id", todays.id as string)
+      .eq("worker_id", input.workerId)
+      .not("ended_at", "is", null);
+    if (up.error && /start_source|started_by|column/i.test(up.error.message)) {
+      // 037 öncesi: iz kolonları yok → kolonsuz yeniden dene (iz eksik, vardiya açık).
+      up = await supabaseAdmin
+        .from("time_entries")
+        .update(reopenBase)
+        .eq("id", todays.id as string)
+        .eq("worker_id", input.workerId)
+        .not("ended_at", "is", null);
+    }
+    if (up.error) {
+      if (/duplicate key|23505/i.test(up.error.message)) {
+        return { ok: false, error: "active" };
+      }
+      return { ok: false, error: up.error.message };
+    }
+    revalidatePath("/panel");
+    revalidatePath("/admin");
+    revalidatePath("/admin/workers");
+    return { ok: true, reopened: true };
+  }
+
+  // Yeni satır. km: odometre → aracın son biten vardiyası → 0 (resolveStartKm).
+  const latest = await latestVehicleTelemetry(veh.id);
+  const startKm = await resolveStartKm(veh.id, latest?.odometer_km);
+
+  const insertBase: Record<string, unknown> = {
+    worker_id: input.workerId,
+    vehicle_id: veh.id,
+    plate: veh.plate,
+    started_at: startedIso,
+    start_km: startKm,
+    break_minutes: 0,
+    // auto_started=false → auto-shift bu vardiyayı ASLA otomatik kapatmaz.
+    auto_started: false,
+    // Yetkili bir eylem; şoför onayı beklemez.
+    confirmation_status: "confirmed",
+    confirmed_at: startedIso,
+  };
+  const insertAudit = { ...insertBase, started_by: auth.actorId, start_source: auth.role };
+
+  let res = await supabaseAdmin
+    .from("time_entries")
+    .insert(insertAudit)
+    .select("id")
+    .maybeSingle();
+  if (res.error && /start_source|started_by|column/i.test(res.error.message)) {
+    res = await supabaseAdmin
+      .from("time_entries")
+      .insert(insertBase)
+      .select("id")
+      .maybeSingle();
+  }
+  if (res.error) {
+    if (/duplicate key|23505/i.test(res.error.message)) {
+      return { ok: false, error: "active" };
+    }
+    return { ok: false, error: res.error.message };
+  }
+
+  revalidatePath("/panel");
+  revalidatePath("/admin");
+  revalidatePath("/admin/workers");
+  return { ok: true };
+}
+
+/**
+ * Manuel başlatma dialogu için seçilebilir araçlar (aktif, test-değil). Kapsam:
+ * patron → tüm filo; filo şefi → yalnız kendi filosunun araçları (fail-closed:
+ * kapsam çözülemezse boş liste). assigned_worker_id de döner ki dialog şoförün
+ * atanmış aracını varsayılan seçebilsin.
+ */
+export async function listStartableVehiclesAction(): Promise<
+  { id: string; plate: string; assigned_worker_id: string | null }[]
+> {
+  const session = await getSession();
+  if (!session.worker_id) return [];
+
+  let scope: FleetScope = UNRESTRICTED;
+  if (!session.is_admin) {
+    const fleet = await getManagedFleet(session.worker_id);
+    if (!fleet) return [];
+    scope = await getFleetScope(fleet);
+  }
+
+  // test-visible: test araçları .not("is_test","is",true) ile zaten elenir; liste
+  // kapsam-farkında (patron=tümü, şef=kendi filosu) ama test-değil şartı iki
+  // yolda da sabittir. Manuel başlatma seçicisine test aracı gelmez.
+  const { data } = await supabaseAdmin
+    .from("vehicles")
+    .select("id, plate, assigned_worker_id")
+    .eq("status", "active")
+    .not("is_test", "is", true)
+    .order("plate");
+  let rows = (data ?? []) as {
+    id: string;
+    plate: string;
+    assigned_worker_id: string | null;
+  }[];
+  if (scope.restricted) rows = rows.filter((v) => scope.isFleetVehicle(v.id));
+  return rows;
 }
 
 export async function endShiftAction(formData: FormData): Promise<ShiftResult> {

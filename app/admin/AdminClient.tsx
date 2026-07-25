@@ -62,6 +62,7 @@ import {
   type ActiveShiftRow,
 } from "@/components/admin/ActiveShiftsCard";
 import { TodayBoard, TodayStrip, rosterCounts } from "@/components/admin/TodayBoard";
+import { StartShiftForWorkerDialog } from "@/components/admin/StartShiftForWorkerDialog";
 import { classifyUndelivered } from "@/lib/package-limits";
 import { ShiftEditHistory } from "@/components/admin/ShiftEditHistory";
 import { ShiftPhotosButton } from "@/components/admin/ShiftPhotosButton";
@@ -148,6 +149,9 @@ export function AdminClient({
   const params = useSearchParams();
 
   const [editOpen, setEditOpen] = useState<TimeEntryWithWorker | null>(null);
+  // Manuel vardiya başlatma (patron + filo şefi). Roster'daki "Başlamadı"
+  // satırından açılır; yetki server action'da denetlenir (fail-closed).
+  const [startWorker, setStartWorker] = useState<{ id: string; name: string } | null>(null);
   // Paket alanları kontrollü: "teslim edilen" canlı hesaplanıyor ve uyarılar
   // şoför tarafıyla aynı kuraldan (lib/package-limits.ts) türüyor.
   const [editTaken, setEditTaken] = useState("");
@@ -564,8 +568,13 @@ export function AdminClient({
       />
 
       {/* GÜNÜN PANOSU — sayfanın merkezi. Vardiya açmayan şoför dahil, her
-          aktif şoför için bir satır. */}
-      <TodayBoard rows={dashboard.roster} />
+          aktif şoför için bir satır. "Başlamadı" satırlarında manuel başlatma
+          kısayolu (patron + filo şefi; şef readOnly olsa da bu eylem açık —
+          yetki server action'da kendi filosuyla sınırlanır). */}
+      <TodayBoard
+        rows={dashboard.roster}
+        onStart={(row) => setStartWorker({ id: row.workerId, name: row.name })}
+      />
 
       {/* ARAÇ ARIZALARI (DTC) BURADAN KALDIRILDI (22.07.2026) → /admin/araclar.
           Ölçtük: masaüstünde sayfanın ilk bloğuydu (420px), mobilde en tepedeki
@@ -1072,6 +1081,13 @@ export function AdminClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Manuel vardiya başlatma — Günün Panosu "Başlamadı" satırından. */}
+      <StartShiftForWorkerDialog
+        worker={startWorker}
+        onClose={() => setStartWorker(null)}
+        onDone={() => router.refresh()}
+      />
     </div>
   );
 }

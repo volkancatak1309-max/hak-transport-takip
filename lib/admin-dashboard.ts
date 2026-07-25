@@ -180,6 +180,15 @@ export type AttentionItem =
       kind: "coldPanel";
       id: string;
       worker_name: string;
+    }
+  | {
+      // Filo şefi bir personelin mesaisini ELLE başlattı (037) → panelde bildirim.
+      // YALNIZ start_source='chief'; patron kendi başlattığını zaten bilir.
+      kind: "manualStart";
+      id: string;
+      worker_name: string;
+      by_name: string;
+      started_at: string;
     };
 
 /** Per-driver / per-vehicle breakdown behind each OpsSummary tile, for the
@@ -332,6 +341,7 @@ export async function getDashboardData(
     dtcRows,
     leavesRes,
     unverifiedRes,
+    manualStartRes,
   ] = await Promise.all([
     onlyFleet(
       withoutTestRows(
@@ -488,6 +498,23 @@ export async function getDashboardData(
       fleetScope.workerIds,
       fleetScope
     ),
+    // Bugün FİLO ŞEFİNİN elle başlattığı vardiyalar (037) → panelde Dikkat
+    // bildirimi. start_source kolonu yoksa (037 öncesi) error → data null → boş
+    // → kalem çıkmaz (best-effort). Patron başlatmaları ('admin') gösterilmez.
+    onlyFleet(
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select("id, worker_id, started_by, started_at")
+          .eq("start_source", "chief")
+          .gte("started_at", todayStart.toISOString()),
+        "worker_id",
+        scope.workerIds
+      ),
+      "worker_id",
+      fleetScope.workerIds,
+      fleetScope
+    ),
   ]);
 
   const todayEntries = (todayRes.data ?? []) as LiteEntry[];
@@ -574,6 +601,50 @@ export async function getDashboardData(
     }
   }
 
+  // FİLO ŞEFİ MANUEL BAŞLATMALARI (037) → Dikkat panosu bildirimi. started_by
+  // (şef) çoğu zaman kendi filo aracına atanmış değildir, dolayısıyla `names`
+  // haritasında olmayabilir; eksik isimler ayrı bir sorguyla çözülür (coldPanel
+  // deseninin aynısı). worker_name hedef şoför (kapsamda → names'te vardır).
+  let manualStarts: {
+    id: string;
+    worker_name: string;
+    by_name: string;
+    started_at: string;
+  }[] = [];
+  const msRows = (manualStartRes.data ?? []) as {
+    id: string;
+    worker_id: string | null;
+    started_by: string | null;
+    started_at: string;
+  }[];
+  if (msRows.length > 0) {
+    const byName = new Map<string, string>();
+    const missing = [
+      ...new Set(msRows.map((r) => r.started_by).filter(Boolean) as string[]),
+    ].filter((id) => !names.has(id));
+    if (missing.length > 0) {
+      try {
+        const { data: bw } = await supabaseAdmin
+          .from("workers")
+          .select("id, name")
+          .in("id", missing);
+        for (const w of (bw ?? []) as { id: string; name: string }[]) {
+          byName.set(w.id, w.name);
+        }
+      } catch {
+        // isim çözülemezse '—' basılır — bildirimi düşürmeyiz.
+      }
+    }
+    manualStarts = msRows.map((r) => ({
+      id: r.id,
+      worker_name: r.worker_id ? names.get(r.worker_id) ?? "—" : "—",
+      by_name: r.started_by
+        ? names.get(r.started_by) ?? byName.get(r.started_by) ?? "—"
+        : "—",
+      started_at: r.started_at,
+    }));
+  }
+
   const fleet = buildFleet(vehicles);
   const todayOps = buildTodayOps(todayEntries);
   // Live status counts come from the global active-shift set, NOT today's
@@ -622,7 +693,8 @@ export async function getDashboardData(
       openVehicleIds,
       inactiveWorkerIds,
       locationUnverified,
-      coldPanel
+      coldPanel,
+      manualStarts
     ),
   };
 }
@@ -1070,7 +1142,14 @@ function buildAttention(
   /** Bugün "konum doğrulanamadı" ile açılmış vardiyalar (Modül 6). */
   locationUnverified: { id: string; worker_name: string }[],
   /** 2h-soğuk auto vardiya (Modül 7) — şoför panele girmemiş. */
-  coldPanel: { id: string; worker_name: string }[]
+  coldPanel: { id: string; worker_name: string }[],
+  /** Filo şefinin bugün elle başlattığı vardiyalar (037) — panel bildirimi. */
+  manualStarts: {
+    id: string;
+    worker_name: string;
+    by_name: string;
+    started_at: string;
+  }[]
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
 
@@ -1259,6 +1338,18 @@ function buildAttention(
     items.push({ kind: "coldPanel", id: `${c.id}-cold`, worker_name: c.worker_name });
   }
 
+  // 11) Filo şefi manuel başlatması (037) — şef bir personelin mesaisini elle
+  //     başlattı. Panelde "bildirim" olarak burada görünür (push yok, karar).
+  for (const m of manualStarts) {
+    items.push({
+      kind: "manualStart",
+      id: `${m.id}-manualstart`,
+      worker_name: m.worker_name,
+      by_name: m.by_name,
+      started_at: m.started_at,
+    });
+  }
+
   // Most urgent first: overdue/soonest docs, then biggest overruns/backlogs.
   const weight = (i: AttentionItem): number => {
     switch (i.kind) {
@@ -1279,6 +1370,8 @@ function buildAttention(
         return 85; // konum doğrulanmadan başlatılan vardiya — gold, orta öncelik
       case "coldPanel":
         return 80; // auto vardiya + şoför panele girmemiş — orta öncelik
+      case "manualStart":
+        return 78; // şef manuel başlattı — bilgi bildirimi, coldPanel'in hemen ardında
       case "penalty":
         return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "overLimit":

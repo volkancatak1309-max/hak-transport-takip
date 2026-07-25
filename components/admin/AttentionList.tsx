@@ -16,12 +16,13 @@ import {
   MapPinOff,
   PhoneOff,
   Pencil,
+  PlayCircle,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HelpTip } from "@/components/help/HelpTip";
-import { formatDate, formatDurationShort } from "@/lib/format";
+import { formatDate, formatTime, formatDurationShort } from "@/lib/format";
 import type { AttentionItem } from "@/lib/admin-dashboard";
 
 export function AttentionList({
@@ -122,6 +123,16 @@ export function AttentionList({
           icon: PhoneOff,
           text: t("dash.attn_cold_panel", { name: item.worker_name }),
           meta: t("dash.attn_cold_panel_meta"),
+          overdue: false,
+        };
+      case "manualStart":
+        return {
+          icon: PlayCircle,
+          text: t("dash.attn_manual_start", {
+            by: item.by_name,
+            name: item.worker_name,
+          }),
+          meta: formatTime(item.started_at, locale),
           overdue: false,
         };
       case "inspection":

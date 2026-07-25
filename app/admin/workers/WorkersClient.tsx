@@ -13,6 +13,7 @@ import {
   Power,
   UserMinus,
   MapPinOff,
+  PlayCircle,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { RevealFilterRow } from "@/components/ui-v2";
@@ -41,6 +42,7 @@ import { AddWorkerDialog } from "@/components/admin/AddWorkerDialog";
 import { EditWorkerDialog } from "@/components/admin/EditWorkerDialog";
 import { SetPinDialog } from "@/components/admin/SetPinDialog";
 import { TerminateWorkerDialog } from "@/components/admin/TerminateWorkerDialog";
+import { StartShiftForWorkerDialog } from "@/components/admin/StartShiftForWorkerDialog";
 import type { WorkerWithStats } from "./page";
 
 type Props = { workers: WorkerWithStats[] };
@@ -56,6 +58,8 @@ export function WorkersClient({ workers }: Props) {
   const [pinFor, setPinFor] = useState<WorkerWithStats | null>(null);
   const [editing, setEditing] = useState<WorkerWithStats | null>(null);
   const [terminating, setTerminating] = useState<WorkerWithStats | null>(null);
+  // Manuel vardiya başlatma (yönetici) — otomatik açılmayan personel için.
+  const [startingShift, setStartingShift] = useState<WorkerWithStats | null>(null);
   // Client-side status filter. Default "active" so the passive roster doesn't
   // clutter the list; passive workers are only hidden, never deleted — their
   // shift history stays intact. The dataset is one company's staff (already
@@ -227,6 +231,14 @@ export function WorkersClient({ workers }: Props) {
                             <MoreHorizontal className="size-4 text-text-tertiary" />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            {/* Manuel vardiya başlatma — otomatik açılmayan
+                                personel için (telemetri düştüğünde). Yalnız
+                                AKTİF şoförde anlamlı. */}
+                            {w.is_active && (
+                              <DropdownMenuItem onClick={() => setStartingShift(w)}>
+                                <PlayCircle className="size-4" /> {t("startShift")}
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem onClick={() => setEditing(w)}>
                               <Pencil className="size-4" /> {tc("edit")}
                             </DropdownMenuItem>
@@ -297,6 +309,11 @@ export function WorkersClient({ workers }: Props) {
         </details>
       )}
 
+      <StartShiftForWorkerDialog
+        worker={startingShift ? { id: startingShift.id, name: startingShift.name } : null}
+        onClose={() => setStartingShift(null)}
+        onDone={() => router.refresh()}
+      />
       <EditWorkerDialog worker={editing} onClose={() => setEditing(null)} />
       <SetPinDialog worker={pinFor} onClose={() => setPinFor(null)} />
       <TerminateWorkerDialog

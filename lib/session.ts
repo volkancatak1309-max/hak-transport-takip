@@ -3,7 +3,12 @@ import { cookies } from "next/headers";
 import { getIronSession, type SessionOptions } from "iron-session";
 import { redirect } from "next/navigation";
 import type { SessionData, VehicleFleet } from "./types";
-import { getManagedFleet } from "./fleet-scope";
+import {
+  getManagedFleet,
+  getFleetScope,
+  UNRESTRICTED,
+  type FleetScope,
+} from "./fleet-scope";
 
 const password = process.env.SESSION_PASSWORD;
 if (!password || password.length < 32) {
@@ -70,6 +75,66 @@ export async function requireFleetView() {
   // Ne patron ne şef → kendi paneline.
   if (!fleet) redirect("/panel");
   return { session, fleet, isChief: true };
+}
+
+/**
+ * MANUEL VARDİYA BAŞLATMA YETKİSİ (037) — YÖNETİCİ + FİLO ŞEFİ.
+ *
+ * Şef bir personelin mesaisini elle başlatabilsin diye açtığımız TEK yazma
+ * yeteneği. Fail-closed'u DELMEDEN güvenli kılan kurallar:
+ *
+ *  1) Rol + filo HER ÇAĞRIDA DB'den okunur (getManagedFleet), çerezden DEĞİL:
+ *     oturum çerezi 30 gün yaşıyor, yetki kaldırılınca hemen etkisiz olmalı.
+ *  2) Şef YALNIZ kendi filosundaki hedef şoför için yetkili: kapsam dışıysa red.
+ *  3) Kapsam çözülemezse (DB hatası / migration öncesi) getFleetScope BOŞ küme
+ *     döner → isFleetWorker=false → red. Yani hata = KAPALI.
+ *  4) Patron (is_admin) kısıtsız (herkes) — kapsamı UNRESTRICTED.
+ *
+ * Bu guard yalnız startShiftForWorkerAction'da kullanılır; başka hiçbir sayfa
+ * ya da action'ı açmaz. UI'da butonu göstermek/gizlemek yalnız kozmetik; son
+ * sözü BU kapı söyler (buton doğrudan çağrılıp yetki aşılamasın).
+ */
+export type ManualStartAuth =
+  | {
+      ok: true;
+      actorId: string;
+      actorName: string;
+      role: "admin" | "chief";
+      scope: FleetScope;
+    }
+  | { ok: false; error: "unauthorized" | "out_of_scope" };
+
+export async function requireManualStartAuth(
+  targetWorkerId: string
+): Promise<ManualStartAuth> {
+  const session = await getSession();
+  if (!session.worker_id) return { ok: false, error: "unauthorized" };
+
+  if (session.is_admin) {
+    return {
+      ok: true,
+      actorId: session.worker_id,
+      actorName: session.name ?? "—",
+      role: "admin",
+      scope: UNRESTRICTED,
+    };
+  }
+
+  const fleet = await getManagedFleet(session.worker_id);
+  if (!fleet) return { ok: false, error: "unauthorized" };
+
+  const scope = await getFleetScope(fleet);
+  // Hedef şoför şefin kapsamında değilse (ya da kapsam boş kaldıysa) → red.
+  if (!scope.isFleetWorker(targetWorkerId)) {
+    return { ok: false, error: "out_of_scope" };
+  }
+  return {
+    ok: true,
+    actorId: session.worker_id,
+    actorName: session.name ?? "—",
+    role: "chief",
+    scope,
+  };
 }
 
 /**

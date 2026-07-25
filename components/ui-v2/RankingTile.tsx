@@ -43,7 +43,11 @@ export function RankingTile({
 }) {
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
-    <div className={cn("surface-card flex h-[260px] flex-col rounded-[16px] p-5", className)}>
+    // YÜKSEKLİK İÇERİKTEN (26.07.2026). Eskiden h-[230px] sabitti: 10 satırlık
+    // bir kartta son satır yarım kalıyor ve iç kaydırma çubuğu çıkıyordu —
+    // "Top-10" diyen bir kartta 10'uncuyu görmek için kaydırmak tasarım hatası.
+    // Kartlar ızgarada zaten birbirine hizalanıyor (grid stretch).
+    <div className={cn("surface-card flex flex-col rounded-[16px] p-5", className)}>
       {/* h2: tile ızgarası sayfanın ilk içerik bölümü — h1'den sonra gelir.
           h3 olduğunda başlık sırası h1'den h3'e atlıyordu (Lighthouse
           heading-order). Kardeş bölümler (OpsSummary, FleetDtcCard) da h2. */}
@@ -57,7 +61,7 @@ export function RankingTile({
           {emptyLabel}
         </div>
       ) : (
-        <ul className="-mx-1 flex-1 space-y-0.5 overflow-y-auto px-1">
+        <ul className="-mx-1 flex-1 space-y-0.5 px-1">
           {rows.map((r) => {
             const pct = Math.round((r.value / max) * 100);
             const secPct = r.secondary ? Math.round((r.secondary / max) * 100) : 0;

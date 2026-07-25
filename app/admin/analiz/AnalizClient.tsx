@@ -18,9 +18,11 @@ import {
   DataTable,
   EmptyState,
   PageHeader,
+  MiniTrend,
   useUrlFilters,
   type Column,
   type RankRow,
+  type TrendBucket,
 } from "@/components/ui-v2";
 import { Input } from "@/components/ui/input";
 import { EpochWarning } from "@/components/admin/EpochWarning";
@@ -236,6 +238,33 @@ export function AnalizClient({
       ? Math.round(((idleWaste.totalMs - prevIdleWaste.totalMs) / prevIdleWaste.totalMs) * 100)
       : null;
 
+  const idleDelta =
+    idleDeltaPct !== null
+      ? `${idleDeltaPct > 0 ? "▲" : idleDeltaPct < 0 ? "▼" : "→"} ${Math.abs(idleDeltaPct)}%`
+      : undefined;
+
+  /* GRAFİK VERİSİ — olay tipine göre toplam (DESIGN.md §0: Runey dizilimindeki
+     "tam genişlik grafik kartı"). Yeni sunucu sorgusu YOK: zaten sayfada olan
+     topByType toplamları kullanılıyor.
+     Bu bir ZAMAN SERİSİ DEĞİL, tip karşılaştırmasıdır — kart başlığı da öyle
+     diyor. Zaman serisi için analytics tarafında kova bazlı toplama gerekir;
+     uydurma bir eksen çizmektense var olan veriyi dürüstçe göstermek doğru. */
+  const typeBuckets: TrendBucket[] = useMemo(
+    () =>
+      TOP10_EVENT_TYPES.map((ty) => ({
+        key: ty,
+        label: t(`event.${ty}`),
+        value: topByType[ty]?.total ?? 0,
+      })),
+    [t, topByType]
+  );
+
+  const totalEvents = useMemo(
+    () => typeBuckets.reduce((a, b) => a + b.value, 0),
+    [typeBuckets]
+  );
+  const driverCount = safetyRows.length;
+
   return (
     <div className="space-y-6">
       <PageHeader title={t("title")} description={t("subtitle")} />
@@ -282,6 +311,52 @@ export function AnalizClient({
             : "space-y-6 transition-opacity"
         }
       >
+
+      {/* ── KPI ŞERİDİ ── Runey dizilimi (DESIGN.md §0): başlık+kontrol → 4'lü
+          KPI → tam genişlik grafik → detay kartları → tablo. Rölanti sayıları
+          eskiden sayfanın 3. bölümünde gömülüydü; sayfanın ÖZETİ üstte olmalı.
+          Dördü de mevcut veriden türer, yeni sunucu sorgusu yok. */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard
+          label={t("kpi_events")}
+          value={formatNumber(totalEvents, locale)}
+          scope={t(`range_${rangeKey}`)}
+        />
+        <StatCard
+          label={t("stat_idle_hours")}
+          value={`${formatNumber(idleWaste.totalMs / 3_600_000, locale, 1)} ${t("unit_hour")}`}
+          scope={t(`range_${rangeKey}`)}
+          delta={idleDelta}
+        />
+        <StatCard
+          label={t("stat_idle_euro")}
+          value={formatEur(idleWaste.totalEuro, locale)}
+          scope={t(`range_${rangeKey}`)}
+          tone="warning"
+          delta={idleDelta}
+        />
+        <StatCard
+          label={t("kpi_drivers")}
+          value={formatNumber(driverCount, locale)}
+          scope={t(`range_${rangeKey}`)}
+        />
+      </div>
+
+      {/* ── TAM GENİŞLİK GRAFİK KARTI ── */}
+      <div className="surface-card rounded-[16px] p-5">
+        <div className="mb-1 flex items-baseline justify-between gap-3">
+          <h2 className="text-[16px] font-semibold">{t("chart_title")}</h2>
+          <span className="font-mono text-[12px] tabular-nums text-muted-foreground">
+            {formatNumber(totalEvents, locale)}
+          </span>
+        </div>
+        <p className="mb-4 text-[13px] text-muted-foreground">{t("chart_hint")}</p>
+        {totalEvents === 0 ? (
+          <EmptyState kind="none" title={t("tile_empty")} />
+        ) : (
+          <MiniTrend data={typeBuckets} height={180} />
+        )}
+      </div>
 
       {/* Bölüm 1 — olay tipi bazında top-10 personel */}
       <div>
@@ -388,26 +463,11 @@ export function AnalizClient({
           <h2 className="text-[15px] font-semibold">{t("section3_title")}</h2>
           <HelpTip tkey="anl_idle" />
         </div>
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <StatCard
-            label={t("stat_idle_hours")}
-            // BİRİM (22.07.2026): değer çıplak "8" olarak basılıyordu — 8 saat
-            // mi, 8 epizod mu, 8 dakika mı ayırt edilemiyordu. Birimsiz sayı
-            // yanlış sayıdan beterdir: yanlış sayı sorgulanır, birimsiz sayı
-            // herkes kendi birimini uydurarak okur. (StatCard'da ⓘ yasak —
-            // DESIGN-SYSTEM §7 — bu yüzden birim değerin yanına yazılır.)
-            value={`${formatNumber(idleWaste.totalMs / 3_600_000, locale, 1)} ${t("unit_hour")}`}
-            scope={t(`range_${rangeKey}`)}
-            delta={idleDeltaPct !== null ? `${idleDeltaPct > 0 ? "▲" : idleDeltaPct < 0 ? "▼" : "→"} ${Math.abs(idleDeltaPct)}%` : undefined}
-          />
-          <StatCard
-            label={t("stat_idle_euro")}
-            value={formatEur(idleWaste.totalEuro, locale)}
-            scope={t(`range_${rangeKey}`)}
-            tone="warning"
-            delta={idleDeltaPct !== null ? `${idleDeltaPct > 0 ? "▲" : idleDeltaPct < 0 ? "▼" : "→"} ${Math.abs(idleDeltaPct)}%` : undefined}
-          />
-        </div>
+        {/* Rölanti KPI kartları YUKARI, sayfa başındaki şeride taşındı
+            (26.07.2026). Birim değerin yanında kalıyor: "8" tek başına 8 saat mi
+            8 epizod mu belli değildi ve birimsiz sayı yanlış sayıdan beterdir —
+            yanlış sayı sorgulanır, birimsiz sayı herkes kendi birimini uydurarak
+            okur. StatCard'da ⓘ yasak (DESIGN-SYSTEM §7), o yüzden birim metinde. */}
         <p className="mb-2.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Fuel className="size-3.5 shrink-0" />
           {t("idle_estimate_note")}

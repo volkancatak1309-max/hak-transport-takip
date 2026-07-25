@@ -47,7 +47,10 @@ export function StatCard({
         <span className="text-[12px] sm:text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
           {label}
         </span>
-        <span className="text-[12px] sm:text-[11px] text-muted-foreground/80">{scope}</span>
+        {/* Kapsam etiketi tam opaklıkta (26.07.2026). /80 ile zaten soluk olan
+            ikincil metin 11px'te AA sınırının altına düşüyordu — bu etiket
+            "hangi aralık" sorusunun tek cevabı, okunmazsa sayı da anlamsız. */}
+        <span className="text-[12px] sm:text-[11px] text-muted-foreground">{scope}</span>
       </div>
       {/* DEĞER = ÖLÇÜM → mono (DESIGN.md §3 "mono font ROLÜ"). Rakamlar kartlar
           arasında dikey hizalanır; 24–28px, 700 (Runey KPI ölçüsü). */}

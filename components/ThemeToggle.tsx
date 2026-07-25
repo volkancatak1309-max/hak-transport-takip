@@ -14,13 +14,16 @@ export function ThemeToggle() {
   const isDark = mounted && resolvedTheme === "dark";
 
   return (
+    // Üst bardaki diğer ikon düğmeleriyle AYNI ölçü (icon-sm + 18px ikon);
+    // Yardım/dil/çıkış ile yan yana duruyor, biri küçük kalırsa ritim bozulur.
     <Button
       variant="ghost"
-      size="sm"
+      size="icon-sm"
       aria-label={t("theme")}
+      title={t("theme")}
       onClick={() => setTheme(isDark ? "light" : "dark")}
     >
-      {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+      {isDark ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
     </Button>
   );
 }

@@ -33,6 +33,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { OfflineBadge } from "@/components/OfflineBadge";
 import { HelpProvider } from "@/components/help/HelpProvider";
 import { HelpToggle } from "@/components/help/HelpToggle";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/app/actions/auth";
 import { setLocaleAction } from "@/app/actions/preferences";
@@ -318,6 +319,12 @@ export function DashboardShell({
             <Clock />
             <OfflineBadge />
             <HelpToggle />
+            {/* TEMA DÜĞMESİ (26.07.2026): bileşen 21.07'den beri vardı ama YALNIZ
+                giriş ve PIN sayfalarında render ediliyordu — panelin tamamı
+                (yönetici + şoför) kabuğu buradan aldığı için tema değiştirilemiyordu.
+                Koyu tema zorunluyken (forcedTheme) fark edilmemişti; açık tema
+                varsayılan olunca eksiklik görünür hale geldi. */}
+            <ThemeToggle />
             <Button
               variant="ghost"
               size="icon-sm"

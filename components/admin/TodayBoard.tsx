@@ -135,10 +135,14 @@ export function TodayBoard({
                 {tb.label}
                 <span
                   className={[
-                    "nums rounded-full px-1.5 py-0.5 text-[11px] font-semibold",
+                    // Sayaç rozeti (26.07.2026 kontrast düzeltmesi): acil rozet
+                    // gold/15 zemin + gold metinle 11px'te 2.8:1 kalıyordu.
+                    // Artık DOLU gold + koyu metin (~8:1) — hem okunur hem daha
+                    // güçlü sinyal. Nötr rozet de tam kontrast metne geçti.
+                    "font-mono tabular-nums rounded-full px-1.5 py-0.5 text-[11px] font-semibold",
                     urgent
-                      ? "bg-accent-gold/15 text-accent-gold"
-                      : "bg-surface-2 text-muted-foreground",
+                      ? "bg-accent-gold text-[#181818]"
+                      : "bg-surface-2 text-foreground",
                   ].join(" ")}
                 >
                   {tb.count}
@@ -158,21 +162,28 @@ export function TodayBoard({
             <div className="hidden overflow-x-auto sm:block">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                    <th className="py-2 pr-3 font-medium">{t("boardColDriver")}</th>
-                    <th className="py-2 pr-3 font-medium">{t("boardColVehicle")}</th>
-                    <th className="py-2 pr-3 font-medium">{t("boardColStatus")}</th>
-                    <th className="py-2 pr-3 font-medium">{t("boardColStart")}</th>
-                    <th className="py-2 pr-3 text-right font-medium">{t("boardColPackages")}</th>
-                    <th className="py-2 text-right font-medium">{t("boardColSignal")}</th>
-                    {onStart && <th className="py-2 pl-3 text-right font-medium" aria-label={t("boardStartShift")} />}
+                  {/* Başlık satırı — Stripe "Revenue recognition" yoğunluğu:
+                      12px, 500, uppercase, +0.04em, üçüncül ton. */}
+                  <tr className="border-b border-border text-left text-[12px] uppercase tracking-[0.04em] text-muted-foreground">
+                    <th className="py-2.5 pr-3 font-medium">{t("boardColDriver")}</th>
+                    <th className="py-2.5 pr-3 font-medium">{t("boardColVehicle")}</th>
+                    <th className="py-2.5 pr-3 font-medium">{t("boardColStatus")}</th>
+                    <th className="py-2.5 pr-3 font-medium">{t("boardColStart")}</th>
+                    <th className="py-2.5 pr-3 text-right font-medium">{t("boardColPackages")}</th>
+                    <th className="py-2.5 text-right font-medium">{t("boardColSignal")}</th>
+                    {onStart && <th className="py-2.5 pl-3 text-right font-medium" aria-label={t("boardStartShift")} />}
                   </tr>
                 </thead>
                 <tbody>
                   {shown.map((r) => (
-                    <tr key={r.workerId} className="border-b border-border/50 last:border-0">
-                      <td className="py-2 pr-3">
-                        <span className="flex items-center gap-2">
+                    <tr
+                      key={r.workerId}
+                      className="border-b border-border/50 transition-colors last:border-0 hover:bg-surface-2"
+                    >
+                      {/* İsim KIRPILMAZ (26.07.2026): truncate kalktı — panonun
+                          tek işi kimin ne durumda olduğunu söylemek. */}
+                      <td className="py-2.5 pr-3">
+                        <span className="flex items-center gap-2.5">
                           <UserAvatar name={r.name} size="xs" />
                           <span className="font-medium">{r.name}</span>
                         </span>
@@ -229,7 +240,7 @@ export function TodayBoard({
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-2">
                       <UserAvatar name={r.name} size="sm" />
-                      <span className="truncate font-medium">{r.name}</span>
+                      <span className="font-medium">{r.name}</span>
                     </span>
                     <StatusCell row={r} t={t} />
                   </div>
@@ -274,8 +285,8 @@ export function TodayBoard({
         {fleetless.length > 0 && (
           <div className="mt-5 border-t border-border pt-4">
             <div className="mb-2 flex items-center gap-2">
-              <AlertTriangle className="size-3.5 text-accent-gold" aria-hidden />
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-accent-gold">
+              <AlertTriangle className="size-3.5 text-accent-gold-text" aria-hidden />
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-accent-gold-text">
                 {t("boardFleetlessTitle", { n: fleetless.length })}
               </h3>
             </div>
@@ -303,7 +314,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return (
     <div className="min-w-0">
       <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 truncate">{children}</dd>
+      <dd className="mt-0.5">{children}</dd>
     </div>
   );
 }
@@ -314,7 +325,7 @@ type TFn = (key: string, values?: Record<string, string | number>) => string;
 function VehicleCell({ row, t }: { row: TodayRosterRow; t: TFn }) {
   if (!row.plate) {
     return (
-      <span className="inline-flex items-center gap-1 text-accent-gold">
+      <span className="inline-flex items-center gap-1 text-accent-gold-text">
         <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
         {t("boardNoVehicle")}
       </span>
@@ -334,7 +345,7 @@ function VehicleCell({ row, t }: { row: TodayRosterRow; t: TFn }) {
           <span className="nums text-[11px] text-muted-foreground">
             → {row.usedPlate}
           </span>
-          <span className="rounded-full bg-accent-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-gold">
+          <span className="rounded-full bg-accent-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-gold-text">
             {t("boardTempVehicle")}
           </span>
         </span>
@@ -344,7 +355,7 @@ function VehicleCell({ row, t }: { row: TodayRosterRow; t: TFn }) {
           sayıyı bozmuyoruz, yöneticiye görünür kılıyoruz. */}
       {row.sharedVehicle && (
         <span
-          className="rounded-full bg-accent-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-gold"
+          className="rounded-full bg-accent-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-gold-text"
           title={t("boardSharedVehicleHint")}
         >
           {t("boardSharedVehicle")}
@@ -357,7 +368,7 @@ function VehicleCell({ row, t }: { row: TodayRosterRow; t: TFn }) {
 function StatusCell({ row, t }: { row: TodayRosterRow; t: TFn }) {
   if (row.status === "not_started") {
     return (
-      <span className="inline-flex items-center gap-1 text-xs font-medium text-accent-gold">
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-accent-gold-text">
         <UserX className="size-3.5 shrink-0" aria-hidden />
         {t("boardStatusNotStarted")}
       </span>
@@ -406,7 +417,7 @@ function SignalCell({
   }
   if (row.telemetryStale) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs font-semibold text-accent-claret-text">
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-status-critical">
         <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
         {label}
       </span>
@@ -511,25 +522,30 @@ export function TodayStrip({
     },
   ];
 
+  // KPI şeridi StatCard ile AYNI ölçüde (DESIGN.md §5): etiket üstte (11px
+  // uppercase, üçüncül ton), değer altta 26px MONO. Eskiden değer üstte 24px
+  // ve etiket altındaydı; sayfada iki farklı KPI dili olmasın diye hizalandı.
+  // Kritik ton bordo yerine KRİTİK token'ı: bordo artık filo rengi, olay
+  // şiddeti değil (DESIGN.md §2.3/§2.4).
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
       {items.map((it) => (
         <Card key={it.key}>
-          <CardContent className="px-4 py-3">
+          <CardContent className="px-5 py-4">
+            <div className="text-[12px] font-medium uppercase tracking-[0.04em] text-muted-foreground sm:text-[11px]">
+              {it.label}
+            </div>
             <div
               className={[
-                "nums text-2xl font-bold",
+                "mt-2 font-mono text-[26px] font-bold leading-none tabular-nums tracking-[-0.01em]",
                 it.critical
-                  ? "text-accent-claret-text"
+                  ? "text-status-critical"
                   : it.urgent
-                    ? "text-accent-gold"
+                    ? "text-accent-gold-text"
                     : "text-foreground",
               ].join(" ")}
             >
               {it.value}
-            </div>
-            <div className="mt-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-              {it.label}
             </div>
           </CardContent>
         </Card>

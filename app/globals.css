@@ -39,7 +39,9 @@ body {
   --color-accent-claret: var(--accent-claret);
   --color-accent-claret-text: var(--accent-claret-text);
   --color-accent-sky: var(--accent-sky);
+  --color-accent-sky-text: var(--accent-sky-text);
   --color-accent-gold: var(--accent-gold);
+  --color-accent-gold-text: var(--accent-gold-text);
   --color-accent-green: var(--accent-green);
   --color-status-active: var(--status-active);
   --color-status-break: var(--status-break);
@@ -142,8 +144,15 @@ body {
   --accent-claret-text: var(--accent-claret);
   --accent-sky: oklch(0.58 0.085 240);
   --accent-sky-soft: oklch(0.58 0.085 240 / 14%);
+  /* MAVİ METİN TONU (26.07.2026): --accent-sky beyaz üstünde 4.0:1 — nokta ve
+     dolgu için doğru, METİN için AA değil. claret/gold ile aynı desen. */
+  --accent-sky-text: oklch(0.48 0.09 240);
   --accent-gold: oklch(0.68 0.1 78);
   --accent-gold-soft: oklch(0.68 0.1 78 / 16%);
+  /* GOLD METİN TONU (26.07.2026): --accent-gold beyaz üstünde 2.9:1 kalıyor,
+     yani 11-12px uyarı metni için AA değil. Dolgu/nokta olarak doğru ama METİN
+     olarak kullanılamaz — claret'teki --accent-claret-text deseninin aynısı. */
+  --accent-gold-text: oklch(0.52 0.1 78);
   /* Green — reserved for hardware-signal state (device ignition ON). Not used
      for shift/operational status, which stays sky/claret/gold by design. */
   --accent-green: oklch(0.6 0.13 155);
@@ -155,7 +164,10 @@ body {
 
   /* Semantik olay şiddeti (DESIGN-SYSTEM §2.4) — kritik, bordodan ayrışır.
      Açık tema değerleri; .dark bloğu koyu zemine göre remap eder. */
-  --status-critical: oklch(0.55 0.2 27);
+  /* METİN tonu 0.55 → 0.50 (26.07.2026): kendi %12 tinti üstünde 4.49:1 ile
+     AA'yı kıl payı kaçırıyordu (11px "tavan aşımı" rozeti). DOLGU tonu
+     değişmedi — beyaz metin onun üstünde duruyor. */
+  --status-critical: oklch(0.5 0.2 27);
   --status-critical-fill: oklch(0.55 0.2 27);
   --status-critical-soft: oklch(0.55 0.2 27 / 12%);
   --surface-3: oklch(0.955 0.004 256);
@@ -168,7 +180,7 @@ body {
   --secondary: #f4f4f5;
   --secondary-foreground: #181818;
   --muted: #f4f4f5;
-  --muted-foreground: #747474;
+  --muted-foreground: #6b6b6b;
   --text-tertiary: #919191;
   --accent: #f4f4f5;
   --accent-foreground: #181818;
@@ -247,8 +259,10 @@ body {
   --accent-claret-text: oklch(0.78 0.1 12);
   --accent-sky: #5b93cf;
   --accent-sky-soft: color-mix(in srgb, #5b93cf 18%, transparent);
+  --accent-sky-text: #7fb0e0;
   --accent-gold: oklch(0.76 0.105 78);
   --accent-gold-soft: oklch(0.76 0.105 78 / 18%);
+  --accent-gold-text: oklch(0.82 0.1 78);
   /* Lightened for the dark base, hue locked to the light-theme green. */
   --accent-green: oklch(0.72 0.13 155);
 

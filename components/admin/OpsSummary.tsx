@@ -24,12 +24,16 @@ import { HelpTip } from "@/components/help/HelpTip";
 import { formatDurationShort } from "@/lib/format";
 import type { TodayOps, OpsDetail } from "@/lib/admin-dashboard";
 
-type Tone = "sky" | "claret" | "gold" | "neutral";
+// "claret" (mola) DURUM rengidir ve kilitte öyle kalır (DESIGN.md §2.4:
+// aktif=mavi, mola=bordo, rölanti=altın). "critical" ise ŞİDDET: yasal tavan
+// aşımı 26.07.2026'da bordodan buraya alındı — bordo aynı ekranda hem "mola"
+// hem "ihlal" demek olamaz.
+type Tone = "sky" | "claret" | "gold" | "critical" | "neutral";
 
 const TONE: Record<Tone, { text: string; icon: string; ring: string }> = {
   sky: {
-    text: "text-accent-sky",
-    icon: "bg-accent-sky/12 text-accent-sky",
+    text: "text-accent-sky-text",
+    icon: "bg-accent-sky/12 text-accent-sky-text",
     ring: "ring-accent-sky/20",
   },
   claret: {
@@ -38,9 +42,14 @@ const TONE: Record<Tone, { text: string; icon: string; ring: string }> = {
     ring: "ring-accent-claret/20",
   },
   gold: {
-    text: "text-accent-gold",
-    icon: "bg-accent-gold/15 text-accent-gold",
+    text: "text-accent-gold-text",
+    icon: "bg-accent-gold/15 text-accent-gold-text",
     ring: "ring-accent-gold/25",
+  },
+  critical: {
+    text: "text-status-critical",
+    icon: "bg-status-critical-soft text-status-critical",
+    ring: "ring-status-critical/25",
   },
   neutral: {
     text: "text-foreground",
@@ -89,7 +98,7 @@ export function OpsSummary({ ops, detail }: { ops: TodayOps; detail: OpsDetail }
     // 9 saat ihlal gibi görünüyordu; 20 şoför kırmızıya düşüyordu.
     //   • overLimit → § 9 Abs. 1 (gece: § 14 Abs. 2) yasal tavan → claret
     //   • break45   → § 13c Abs. 1 mola kademesi → gold (uyarı, ihlal değil)
-    { key: "overLimit", label: t("dash.ops_over_limit"), help: "ops_over_limit", value: num(ops.overLimit), icon: AlertTriangle, tone: ops.overLimit > 0 ? "claret" : "neutral" },
+    { key: "overLimit", label: t("dash.ops_over_limit"), help: "ops_over_limit", value: num(ops.overLimit), icon: AlertTriangle, tone: ops.overLimit > 0 ? "critical" : "neutral" },
     { key: "break45", label: t("dash.ops_break45"), help: "ops_break45", value: num(ops.needsBreak45), icon: Coffee, tone: ops.needsBreak45 > 0 ? "gold" : "neutral" },
   ];
 
@@ -141,7 +150,7 @@ export function OpsSummary({ ops, detail }: { ops: TodayOps; detail: OpsDetail }
             {t("dash.ops_title")}
             <HelpTip tkey="ops_title" />
           </h2>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-sky/12 px-2.5 py-1 text-[12px] sm:text-[10px] font-semibold uppercase tracking-[0.08em] text-accent-sky">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-sky/12 px-2.5 py-1 text-[12px] sm:text-[10px] font-semibold uppercase tracking-[0.08em] text-accent-sky-text">
             <span className="live-dot" />
             {t("dash.live")}
           </span>
@@ -212,7 +221,7 @@ export function OpsSummary({ ops, detail }: { ops: TodayOps; detail: OpsDetail }
             <ul className="max-h-[60vh] divide-y divide-border overflow-y-auto">
               {rows.map((r, i) => (
                 <li key={`${r.left}-${i}`} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                  <span className="truncate">{r.left}</span>
+                  <span className="min-w-0">{r.left}</span>
                   <span className="nums shrink-0 font-medium text-muted-foreground">{r.right}</span>
                 </li>
               ))}

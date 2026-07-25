@@ -185,7 +185,7 @@ export function AttentionList({
             <HelpTip tkey="attention" />
           </span>
           {items.length > 0 && (
-            <span className="nums rounded-full bg-accent-gold/15 px-2 py-0.5 text-[11px] font-semibold text-accent-gold">
+            <span className="nums rounded-full bg-accent-gold/15 px-2 py-0.5 text-[11px] font-semibold text-accent-gold-text">
               {items.length}
             </span>
           )}
@@ -202,8 +202,11 @@ export function AttentionList({
             {items.map((item) => {
               const r = render(item);
               const Icon = r.icon;
-              const tone = r.overdue ? "text-accent-claret-text" : "text-accent-gold";
-              const bg = r.overdue ? "bg-accent-claret/12" : "bg-accent-gold/15";
+              // ŞİDDET RENGİ (26.07.2026): gecikmiş kalem bordoydu; bordo artık FİLO
+              // rengi (DESIGN.md §2.3). Şiddet için kritik token'ı — bordo/mavi
+              // yalnız filo ayrımında anlam taşır.
+              const tone = r.overdue ? "text-status-critical" : "text-accent-gold-text";
+              const bg = r.overdue ? "bg-status-critical-soft" : "bg-accent-gold/15";
               return (
                 <li
                   key={item.id}

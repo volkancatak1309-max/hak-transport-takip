@@ -104,7 +104,7 @@ export function ActiveShiftsCard({
                 </span>
               )}
               {overCount > 0 && (
-                <span className="nums rounded-full bg-accent-claret/12 px-2 py-0.5 text-[11px] font-semibold text-accent-claret-text">
+                <span className="font-mono tabular-nums rounded-full bg-status-critical-soft px-2 py-0.5 text-[11px] font-semibold text-status-critical">
                   {t("activeShiftsOverBadge", { count: overCount })}
                 </span>
               )}
@@ -128,14 +128,14 @@ export function ActiveShiftsCard({
                     <span
                       className={
                         r.overLimit
-                          ? "flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent-claret/12 text-accent-claret-text"
-                          : "flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent-sky/15 text-accent-sky"
+                          ? "flex size-7 shrink-0 items-center justify-center rounded-lg bg-status-critical-soft text-status-critical"
+                          : "flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent-sky/15 text-accent-sky-text"
                       }
                     >
                       <Clock className="size-4" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm">
+                      <div className="text-sm">
                         <span className="font-medium">{r.worker_name}</span>
                         {r.plate && (
                           <span className="nums uppercase text-muted-foreground">
@@ -152,7 +152,7 @@ export function ActiveShiftsCard({
                         <span
                           className={
                             r.overLimit
-                              ? "font-semibold text-accent-claret-text"
+                              ? "font-semibold text-status-critical"
                               : ""
                           }
                         >
@@ -162,7 +162,7 @@ export function ActiveShiftsCard({
                             tavanın aşıldığını görmeden karar veremez — gece
                             vardiyasında tavan 10 saate iner. */}
                         {r.overLimit && (
-                          <span className="rounded bg-accent-claret/12 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-claret-text">
+                          <span className="rounded bg-status-critical-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-critical">
                             {t("activeShiftsOverTag", {
                               hours: Math.round(r.capMs / 3_600_000),
                             })}

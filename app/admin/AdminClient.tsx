@@ -782,7 +782,7 @@ export function AdminClient({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex min-w-0 items-center gap-2">
                           <UserAvatar name={e.workers?.name ?? "?"} size="sm" />
-                          <span className="truncate font-medium">{e.workers?.name ?? "—"}</span>
+                          <span className="font-medium">{e.workers?.name ?? "—"}</span>
                         </div>
                         {onBreak ? (
                           <StatusChip tone="break" dot>{t("dash.ops_on_break")}</StatusChip>
@@ -1098,7 +1098,7 @@ function MobileField({ label, value }: { label: string; value: React.ReactNode }
   return (
     <div className="min-w-0">
       <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="nums mt-0.5 truncate">{value}</dd>
+      <dd className="nums mt-0.5">{value}</dd>
     </div>
   );
 }

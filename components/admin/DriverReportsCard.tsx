@@ -73,7 +73,7 @@ export function DriverReportsCard({ reports }: { reports: AdminDriverReport[] })
             {t("reportsTitle")}
           </span>
           {reports.length > 0 && (
-            <span className="nums rounded-full bg-accent-gold/15 px-2 py-0.5 text-[11px] font-semibold text-accent-gold">
+            <span className="nums rounded-full bg-accent-gold/15 px-2 py-0.5 text-[11px] font-semibold text-accent-gold-text">
               {reports.length}
             </span>
           )}
@@ -97,11 +97,11 @@ export function DriverReportsCard({ reports }: { reports: AdminDriverReport[] })
                   key={r.id}
                   className="flex items-center gap-3 rounded-lg px-1.5 py-2 transition-colors hover:bg-surface-2/60"
                 >
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent-gold/15 text-accent-gold">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent-gold/15 text-accent-gold-text">
                     <Icon className="size-4" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm">
+                    <div className="text-sm">
                       <span className="font-medium">{r.worker_name}</span>{" "}
                       <span className="text-muted-foreground">· {t(meta.tkey)}</span>
                     </div>

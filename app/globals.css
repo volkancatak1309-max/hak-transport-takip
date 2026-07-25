@@ -26,6 +26,16 @@ body {
 
 @theme inline {
   --font-heading: var(--font-sans);
+  /* TEK AKSAN — mercan (DESIGN.md §2.2). bg-accent-coral / text-accent-coral … */
+  --color-accent-coral: var(--accent-coral);
+  --color-accent-coral-hover: var(--accent-coral-hover);
+  --color-accent-coral-soft: var(--accent-coral-soft);
+  --color-accent-coral-fg: var(--accent-coral-fg);
+  /* Yüzen nav rayı (DESIGN.md §5) — iki temada da koyu yüzey. */
+  --color-nav-surface: var(--nav-surface);
+  --color-nav-foreground: var(--nav-foreground);
+  --color-nav-muted: var(--nav-muted);
+  --color-ground: var(--ground);
   --color-accent-claret: var(--accent-claret);
   --color-accent-claret-text: var(--accent-claret-text);
   --color-accent-sky: var(--accent-sky);
@@ -86,14 +96,41 @@ body {
    ============================================================================ */
 
 :root {
-  /* Light theme (neutral, slightly cool) */
-  --background: oklch(0.985 0.002 256);
-  --foreground: oklch(0.235 0.02 262);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.235 0.02 262);
-  --surface-2: oklch(0.975 0.003 256);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.235 0.02 262);
+  /* AÇIK TEMA — VARSAYILAN (DESIGN.md §1/§2.1).
+     Taban SICAK gri, soğuk gri-mavi DEĞİL: birincil referans Runey'in zemini
+     #FBFBFB, üstünde saf beyaz kartlar. Kart zeminden ayrışsın diye ikisi de
+     ayrı token; "beyaz üstüne beyaz" olmaz. */
+  --background: #fbfbfb;
+  --foreground: #181818;
+  --card: #ffffff;
+  --card-foreground: #181818;
+  --surface-2: #f4f4f5;
+  --popover: #ffffff;
+  --popover-foreground: #181818;
+
+  /* Sayfa TABANI (html). Tema-farkında: eskiden #0a0d16 sabit yazılıydı ve açık
+     temada da koyu zemin veriyordu (aurora katmanının kalıntısı). */
+  --ground: #fbfbfb;
+
+  /* Cam yüzey — harita gibi zemin üstü paneller (.glass / .glass-field /
+     .glass-pop). Açık temada da TANIMLI olmak zorunda: eskiden yalnız .dark
+     bloğunda vardı ve koyu tema zorlandığı için sorun çıkmıyordu. */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-solid: #ffffff;
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+
+  /* TEK AKSAN — mercan (Runey #F15857). Birincil vurgu, grafik ana serisi,
+     aktif navigasyon. Boyalı alanın %10'unu geçemez (DESIGN.md §2.2). */
+  --accent-coral: #f15857;
+  --accent-coral-hover: #d94746;
+  --accent-coral-soft: color-mix(in srgb, #f15857 12%, transparent);
+  --accent-coral-fg: #ffffff;
+
+  /* YÜZEN NAV RAYI — imza öğe. Açık temada DA koyu kalır (DESIGN.md §5). */
+  --nav-surface: #181818;
+  --nav-foreground: #f2f3f5;
+  --nav-muted: #919191;
 
   /* Brand accents — HAK61 GmbH.
      claret #750d02 · sky #699ec3 · gold #ce9f51 (computed OKLCH, tuned per theme). */
@@ -123,56 +160,76 @@ body {
   --status-critical-soft: oklch(0.55 0.2 27 / 12%);
   --surface-3: oklch(0.955 0.004 256);
 
-  --primary: var(--accent-claret);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.965 0.003 256);
-  --secondary-foreground: oklch(0.235 0.02 262);
-  --muted: oklch(0.965 0.003 256);
-  --muted-foreground: oklch(0.5 0.016 262);
-  --text-tertiary: oklch(0.62 0.012 262);
-  --accent: oklch(0.965 0.003 256);
-  --accent-foreground: oklch(0.235 0.02 262);
+  /* BİRİNCİL EYLEM = koyu dolu, mercan DEĞİL (DESIGN.md §5). Mercan yalnız
+     "vurgulu eylem" ve vurgu değeri için ayrılmıştır; her butonu mercan yapmak
+     tek-aksan disiplinini ilk günden bozardı. */
+  --primary: #181818;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #181818;
+  --muted: #f4f4f5;
+  --muted-foreground: #747474;
+  --text-tertiary: #919191;
+  --accent: #f4f4f5;
+  --accent-foreground: #181818;
   --destructive: oklch(0.55 0.21 25);
-  --border: oklch(0.915 0.004 256);
-  --input: oklch(0.915 0.004 256);
-  --ring: var(--accent-claret);
+  --border: #e6e9eb;
+  --input: #e6e9eb;
+  /* Odak halkası mercan: nötr zeminde en görünür ve tek aksanla tutarlı. */
+  --ring: var(--accent-coral);
 
-  --chart-1: var(--accent-claret);
-  --chart-2: var(--accent-sky);
-  --chart-3: oklch(0.6 0.13 160);
-  --chart-4: oklch(0.6 0.14 280);
-  --chart-5: oklch(0.65 0.15 50);
+  /* GRAFİK SERİLERİ (DESIGN.md §2.5): 1 = ana seri (mercan), 2 = ikincil nötr.
+     3/4 YALNIZ filo kırılımında (bordo/mavi — anlam taşır, dekor değil).
+     5 = altın, yalnız rölanti/uyarı serisi. 5 renkli kategorik palet YASAK. */
+  --chart-1: var(--accent-coral);
+  --chart-2: #919191;
+  --chart-3: var(--accent-claret);
+  --chart-4: var(--accent-sky);
+  --chart-5: var(--accent-gold);
 
-  --radius: 0.875rem;
+  --radius: 1rem; /* 16px — Runey'in yumuşak kart dili (DESIGN.md §4) */
 
-  --sidebar: oklch(0.985 0.002 256);
-  --sidebar-foreground: oklch(0.235 0.02 262);
-  --sidebar-primary: var(--accent-claret);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: var(--accent-claret-soft);
-  --sidebar-accent-foreground: var(--accent-claret);
-  --sidebar-border: oklch(0.915 0.004 256);
-  --sidebar-ring: var(--accent-claret);
+  /* Nav rayı iki temada da KOYU; sidebar token'ları nav token'larına bağlanır. */
+  --sidebar: var(--nav-surface);
+  --sidebar-foreground: var(--nav-foreground);
+  --sidebar-primary: var(--accent-coral);
+  --sidebar-primary-foreground: var(--accent-coral-fg);
+  --sidebar-accent: var(--accent-coral-soft);
+  --sidebar-accent-foreground: var(--accent-coral);
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: var(--accent-coral);
 }
 
 .dark {
-  /* Aurora Glass — DARK-ONLY (theme is forced dark). The ground colour lives on
-     html (#0a0d16); --background is transparent so every bg-background container
-     lets the fixed aurora layer (body::before) show through. Surfaces keep their
-     own solid tokens for now (glassified per-surface in later phases). */
-  --background: transparent;
-  --foreground: oklch(0.975 0.003 256);
-  --card: oklch(0.205 0.007 256);
-  --card-foreground: oklch(0.975 0.003 256);
-  --surface-2: oklch(0.245 0.008 256);
-  --popover: oklch(0.205 0.007 256);
-  --popover-foreground: oklch(0.975 0.003 256);
+  /* KOYU TEMA — açık temanın AYNI DNA'sından türer (DESIGN.md §1): aynı mizanpaj,
+     aynı ritim, aynı aksan rolü; yalnız zemin/yüzey/metin remap edilir.
+     AURORA KALDIRILDI (25.07.2026): kilit gradient/glow/aurora'yı reddediyor ve
+     --background:transparent hilesi açık temayı da kırıyordu. Zemin artık düz. */
+  --background: #121213;
+  --foreground: #f2f3f5;
+  --card: #18181a;
+  --card-foreground: #f2f3f5;
+  --surface-2: #1f1f22;
+  --popover: #18181a;
+  --popover-foreground: #f2f3f5;
 
-  /* Aurora accent tones (raw, for the ground wash) + glass surface tokens. */
-  --aurora-bordo: #8a1538;
-  --aurora-mavi: #3a6ea5;
-  --glass-bg: rgba(20, 24, 36, 0.55);
-  --glass-bg-solid: rgb(20, 24, 36);
+  --ground: #121213;
+
+  /* Mercan koyu zeminde bir tık açılır (kart üstünde AA). */
+  --accent-coral: #ff6f6e;
+  --accent-coral-hover: #ff8a89;
+  --accent-coral-soft: color-mix(in srgb, #ff6f6e 18%, transparent);
+  --accent-coral-fg: #121213;
+
+  /* Nav rayı koyuda daha da koyu — zeminden ayrışsın. */
+  --nav-surface: #0e0e0f;
+  --nav-foreground: #f2f3f5;
+  --nav-muted: #6a6b6f;
+
+  /* Cam yüzey — koyu karşılıklar. Aurora gitti; artık düz koyu zemin üstünde
+     yarı saydam panel (harita overlay'i, glass-pop deseni). */
+  --glass-bg: rgba(24, 24, 26, 0.72);
+  --glass-bg-solid: #18181a;
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-highlight: rgba(255, 255, 255, 0.06);
 
@@ -205,39 +262,41 @@ body {
   /* Active/pressed katmanı — hover(--surface-2)'nin bir üstü (Geist modeli). */
   --surface-3: oklch(0.285 0.009 256);
 
-  --primary: var(--accent-claret);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.245 0.008 256);
-  --secondary-foreground: oklch(0.975 0.003 256);
-  --muted: oklch(0.245 0.008 256);
-  --muted-foreground: oklch(0.72 0.012 256);
+  /* Koyuda "koyu dolu buton" görünmez olurdu → ters çevrilir: AÇIK dolu + koyu
+     metin (Polar deseni). Rol aynı kalır: birincil eylem, mercan değil. */
+  --primary: #f2f3f5;
+  --primary-foreground: #121213;
+  --secondary: #1f1f22;
+  --secondary-foreground: #f2f3f5;
+  --muted: #1f1f22;
+  --muted-foreground: #a0a0a3;
   /* FAZ 5 QA: 0.55 -> 0.60. Eski değer koyu zeminde ölçülen 4.09:1 idi ve 12px
      normal metin için AA'yı (4.5:1) geçmiyordu (Lighthouse color-contrast).
      0.60 = 5.04:1 ✓ — tondan ödün vermeden pay bırakır. */
-  --text-tertiary: oklch(0.6 0.012 256);
-  --accent: oklch(0.245 0.008 256);
-  --accent-foreground: oklch(0.975 0.003 256);
+  --text-tertiary: #6a6b6f;
+  --accent: #1f1f22;
+  --accent-foreground: #f2f3f5;
   --destructive: oklch(0.62 0.2 25);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 13%);
-  /* Focus rings = mavi (accent-sky) for a high-contrast WCAG-AA focus cue on the
-     dark ground; propagates to buttons, inputs and select triggers. */
-  --ring: var(--accent-sky);
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.13);
+  /* Odak halkası açık temayla AYNI rol: mercan. Koyu tonu kart üstünde AA. */
+  --ring: var(--accent-coral);
 
-  --chart-1: var(--accent-claret);
-  --chart-2: var(--accent-sky);
-  --chart-3: oklch(0.68 0.13 160);
-  --chart-4: oklch(0.66 0.14 280);
-  --chart-5: oklch(0.72 0.15 50);
+  /* Açık temayla aynı seri rolleri (bkz. :root) — yalnız tonlar koyuya uyarlandı. */
+  --chart-1: var(--accent-coral);
+  --chart-2: #6a6b6f;
+  --chart-3: var(--accent-claret-text);
+  --chart-4: var(--accent-sky);
+  --chart-5: var(--accent-gold);
 
-  --sidebar: oklch(0.185 0.006 256);
-  --sidebar-foreground: oklch(0.975 0.003 256);
-  --sidebar-primary: var(--accent-claret);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: var(--accent-claret-soft);
-  --sidebar-accent-foreground: oklch(0.78 0.15 16);
-  --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: var(--accent-claret);
+  --sidebar: var(--nav-surface);
+  --sidebar-foreground: var(--nav-foreground);
+  --sidebar-primary: var(--accent-coral);
+  --sidebar-primary-foreground: var(--accent-coral-fg);
+  --sidebar-accent: var(--accent-coral-soft);
+  --sidebar-accent-foreground: var(--accent-coral);
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: var(--accent-coral);
 }
 
 @layer base {
@@ -251,23 +310,15 @@ body {
   }
   html {
     @apply font-sans;
-    /* Ground colour for the whole app; the aurora layer tints over this and
-       every bg-background container is transparent above it. */
-    background-color: #0a0d16;
+    /* Sayfa tabanı artık TEMA-FARKINDA (DESIGN.md §2.1). Eskiden burada sabit
+       #0a0d16 yazıyordu: koyu tema zorlandığı sürece sorun değildi, ama açık
+       tema açılınca sayfanın altı koyu kalırdı. */
+    background-color: var(--ground);
+    transition: background-color 240ms cubic-bezier(0.25, 0.1, 0.25, 1);
   }
-  /* Fixed aurora wash — bordo top-left, mavi top-right, very subtle. Sits behind
-     all content (z-index:-1) and never scrolls, so there is no blur/repaint on
-     scroll. Rendered on every page (login / pin / splash / panel). */
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background:
-      radial-gradient(75% 60% at 0% 0%, color-mix(in srgb, var(--aurora-bordo) 20%, transparent), transparent 60%),
-      radial-gradient(75% 60% at 100% 0%, color-mix(in srgb, var(--aurora-mavi) 16%, transparent), transparent 62%);
-  }
+  /* AURORA KATMANI KALDIRILDI (25.07.2026) — tasarım kilidi gradient/glow/aurora'yı
+     reddediyor (DESIGN.md §0 "Reddedilenler"). Zemin artık düz renk; derinlik 1px
+     kenarlık + yüzey kontrastıyla kuruluyor. */
   button, a {
     transition: background-color 140ms cubic-bezier(0.25, 0.1, 0.25, 1),
                 color 140ms cubic-bezier(0.25, 0.1, 0.25, 1),

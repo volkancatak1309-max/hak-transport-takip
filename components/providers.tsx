@@ -12,11 +12,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // TEMA (DESIGN.md §1, 25.07.2026): AÇIK varsayılan, koyu tam desteklenir.
+  // forcedTheme KALDIRILDI — daha önce koyu tema zorlanıyordu ve ThemeToggle
+  // çalışsa da etkisizdi. enableSystem kapalı kalıyor: varsayılanı işletim
+  // sisteminin değil, tasarım kilidinin belirlemesi bilinçli (şoförler gece
+  // modundaki telefonla panele girince arayüz dili değişmesin).
   return (
     <ThemeProvider
       attribute="class"
-      defaultTheme="dark"
-      forcedTheme="dark"
+      defaultTheme="light"
       enableSystem={false}
       disableTransitionOnChange={false}
     >

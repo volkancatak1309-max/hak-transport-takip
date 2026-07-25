@@ -1,116 +1,243 @@
-# HAK61 — Design System
+# HAK61 — TASARIM KİLİDİ
 
-Hedef: Linear / Vercel / Stripe dashboard seviyesi. Elit, minimal, premium.
-AI-template estetiği yok. Sadece görsel katman — çalışan mantık (auth, GPS, harita,
-vardiya, sefer, raporlar, Supabase, Telegram) aynen korunur.
+**Durum:** kilitli · **Tarih:** 25.07.2026 · **Karar:** Volkan
+**Yöntem:** Refero referans araştırması (`refero-design`). Bu belgedeki hiçbir değer
+"iyi görünür" diye seçilmedi; her biri aşağıdaki üç gerçek üründen ölçülerek alındı.
 
----
-
-## 1. Felsefe
-
-- **Nötr taban, minimal vurgu.** Arayüzün %95'i nötr gri/koyu tonlardır. Renk
-  sadece anlam taşıdığı yerde kullanılır (aktif menü, canlı durum, birincil eylem).
-- **Sessiz lüks.** Gradient yok, neon yok, glow yok, gölge bombardımanı yok.
-  Derinlik; ince 1px kenarlık + hafif yüzey kontrastı ile kurulur.
-- **İçerik kahramandır.** Veri (saat, km, konum) okunaklı; kromu görünmezdir.
-- **Saha-önce.** Şoförler vanda, güneş altında, tek elle kullanıyor. Büyük dokunma
-  alanları (min 44px), yüksek kontrast, hızlı tepki.
+> Bu dosya 25.07.2026'da baştan yazıldı. Önceki sürüm (koyu-öncelikli Linear/Vercel
+> yönü) git geçmişinde `8393f6c` commit'inde duruyor. `docs/DESIGN-SYSTEM.md` hâlâ
+> mevcut ve bazı bölümleri bu kilitle ÇELİŞİYOR — çelişkide **bu dosya** kazanır.
 
 ---
 
-## 2. Renk Token'ları (OKLCH)
+## 0. Referans kilidi
 
-Tek merkezi kaynak: `app/globals.css`. Tüm renkler semantik token üzerinden gider —
-hiçbir component'te ham hex/oklch yazılmaz.
-
-### Nötr taban
-
-| Token | Koyu (varsayılan) | Açık | Kullanım |
+| Rol | Kaynak | Refero ID | Önizleme |
 |---|---|---|---|
-| `--background` | `oklch(0.165 0.006 256)` | `oklch(0.985 0.002 256)` | Sayfa zemini |
-| `--card` (yüzey) | `oklch(0.205 0.007 256)` | `oklch(1 0 0)` | Kart, panel |
-| `--surface-2` (yüksek) | `oklch(0.245 0.008 256)` | `oklch(0.975 0.003 256)` | Hover, popover, seçili |
-| `--border` | `oklch(1 0 0 / 9%)` | `oklch(0.915 0.004 256)` | 1px hatlar |
-| `--foreground` (metin-1) | `oklch(0.975 0.003 256)` | `oklch(0.235 0.02 262)` | Başlık, değer |
-| `--muted-foreground` (metin-2) | `oklch(0.72 0.012 256)` | `oklch(0.5 0.016 262)` | İkincil metin |
-| `--text-tertiary` (metin-3) | `oklch(0.55 0.012 256)` | `oklch(0.62 0.012 262)` | Etiket, ipucu |
+| **BİRİNCİL** — mizanpaj, kart dili, boşluk ritmi, tek-aksan disiplini | **Runey** · Expenses panosu | `bf9b7ee2-ab71-4ce1-98e4-85f119754add` | `https://images.refero.design/screenshots/runey.app/desktop/bf9b7ee2-ab71-4ce1-98e4-85f119754add_preview.jpg` |
+| **DESTEK A** — tablo-içi bar, rapor yoğunluğu, indirme/sayfalama | **Stripe** · Revenue recognition | `5f9b93d3-6315-4656-8f74-cd26b07f1069` | `https://images.refero.design/screenshots/stripe.com/desktop/00d07674-325b-44e8-af0c-f2f5df70dbee_preview.jpg` |
+| **DESTEK B** — mono font rolü, 8px ızgara, KPI çipi → grafik → tablo dizilimi | **Fingerprint** · Bot detection | `fa27b73e-e27a-4249-b08e-8af912b3ad26` | `https://images.refero.design/screenshots/fingerprint.com/desktop/fa27b73e-e27a-4249-b08e-8af912b3ad26_preview.jpg` |
 
-### Marka aksanı (MİNİMAL — asla baskın değil)
+### Korunacak imza özellikler (Runey'den — bunlar pazarlık dışı)
 
-| Token | Değer | Hex ~ | Nerede |
+1. **Yüzen siyah nav rayı** — kenara yapışık değil, yuvarlatılmış, koyu panel.
+2. **Sıcak açık zemin** (`#FBFBFB` ailesi) + üstünde **beyaz kartlar** — soğuk gri-mavi değil.
+3. **Tek aksan rengi.** Mercan. Başka hiçbir dekoratif renk yok.
+4. **Cömert boşluk + büyük köşe yarıçapı** (16–20px kart).
+5. **Dizilim:** başlık satırı → 4'lü KPI şeridi → tam genişlik grafik kartı → gruplanmış liste/tablo.
+
+### Ödünç alınan dar detaylar (rol dışına ÇIKARILAMAZ)
+
+- **Stripe:** tablo hücresi içine gömülü soluk oran bar'ı — *yalnız* sayısal kolonlarda,
+  *yalnız* aynı satırdaki değerin oranını göstermek için. Dekoratif kullanım yasak.
+- **Fingerprint:** mono font — *yalnız* alfanumerik kimlik ve ölçüm (plaka, IMEI,
+  request-id, saat, km, koordinat). Gövde metninde mono yasak. 8px temel ızgara.
+
+### Reddedilenler
+
+Koyu-öncelikli varsayılan · çok renkli grafik paleti · gradient/glow/aurora ·
+neon aksan · "calm editorial" krem+terrakota · dekoratif serif başlık ·
+her kartın farklı renkte olduğu KPI ızgarası.
+
+---
+
+## 1. Tema
+
+**Açık tema VARSAYILAN.** Koyu tema tam desteklenir ve aynı DNA'dan türetilir:
+aynı mizanpaj, aynı ritim, aynı aksan rolü — yalnız zemin/yüzey/metin remap edilir.
+
+Altyapı hazır: `next-themes`, `attribute="class"`, `.dark` bloğu `app/globals.css`'te
+zaten tanımlı, `components/ThemeToggle.tsx` çalışır durumda.
+⚠️ Şu an `components/providers.tsx` içinde `forcedTheme="dark"` var — kilit gereği
+kaldırılacak, `defaultTheme="light"` olacak.
+
+Geçiş: zemin + metin renkleri 240ms yumuşak; layout HİÇ değişmez.
+
+---
+
+## 2. Renk
+
+### 2.1 Nötr taban
+
+| Rol | Açık (varsayılan) | Koyu | Not |
 |---|---|---|---|
-| `--accent-claret` (bordo) | `oklch(0.52 0.19 16)` | `#a01a33` | Birincil buton, aktif menü, marka |
-| `--accent-sky` (gök mavisi) | `oklch(0.72 0.13 233)` | `#33b1e1` | Canlı/durum göstergesi, link, vurgu |
+| Sayfa zemini | `#FBFBFB` — sıcak, hafif gri | `#121213` | Runey / Polar ölçümü |
+| Kart yüzeyi | `#FFFFFF` | `#18181A` | Kart zeminden AYRIŞIR |
+| Yükseltilmiş yüzey (hover, popover) | `#F4F4F5` | `#1F1F22` | |
+| Nav rayı | `#181818` (her iki temada da KOYU) | `#0E0E0F` | İmza öğe — açık temada da siyah |
+| Birincil metin | `#181818` | `#F2F3F5` | |
+| İkincil metin | `#747474` | `#A0A0A3` | |
+| Üçüncül metin / etiket | `#919191` | `#6A6B6F` | |
+| Kenarlık / ayraç | `#E6E9EB` | `rgba(255,255,255,0.08)` | 1px, Fingerprint ölçümü |
 
-- `--primary` = **claret**. Birincil eylem ve aktif navigasyon.
-- Canlı nokta / "aktif vardiya" pulse = **sky**.
-- `--destructive` (9 saat aşımı, sil) ayrı bir uyarı kırmızısı `oklch(0.58 0.21 25)` —
-  claret'ten ayrışır, çakışmaz.
+### 2.2 Tek aksan — mercan
 
-Aksanlar yüzey alanının **>%10'unu kaplamaz**. Büyük dolu renk bloğu yasak.
+| Token | Açık | Koyu | Kullanım |
+|---|---|---|---|
+| `--accent-coral` | `#F15857` | `#FF6F6E` | Birincil buton, aktif nav, grafik ana serisi, vurgu değeri |
+| `--accent-coral-soft` | `#F15857` @ 12% | `#FF6F6E` @ 18% | Rozet zemini, seçili satır |
+
+**Disiplin:** aksan, ekranın boyalı alanının **%10'unu geçemez**. Büyük dolu mercan
+blok yok. İki mercan öğe yan yana gelmez — sayfada bir "en önemli şey" vardır.
+
+### 2.3 İSTİSNA — filo renkleri bilgi taşır
+
+Bordo ve mavi **süs değil, veridir**; kilidin tek-aksan kuralının dışındadır.
+Yalnız şu yerlerde yaşar:
+
+- filo rozeti / çipi (bordo filo · mavi filo)
+- harita pin'i ve rota çizgisi
+- filo kırılımı gösteren grafik serisi ve tablo satır işareti
+
+| Token | Açık | Koyu | Not |
+|---|---|---|---|
+| `--accent-claret` (bordo) | `#8A1538` | `#8A1538` | Koyuda metin olarak KULLANILAMAZ |
+| `--accent-claret-text` | = bordo | `oklch(0.78 0.1 12)` | Koyuda çip metni bu açık tonu kullanır (kart üstünde 8.6:1) |
+| `--accent-sky` (mavi) | `oklch(0.58 0.085 240)` | `#5B93CF` | |
+
+Mevcut `lib/vehicle-ui.ts` → `FLEET_STYLE` tek kaynak olarak KALIR.
+
+### 2.4 Durum renkleri
+
+Operasyonel durum renkleri değişmiyor (mevcut sistem doğru): aktif = mavi,
+mola = bordo, rölanti = altın, kritik = `oklch(0.55 0.2 27)`. Yeşil YALNIZ donanım
+sinyali (kontak açık). Renk hiçbir zaman tek anlam taşıyıcısı değil — ikon/etiket eşlik eder.
+
+### 2.5 Grafik renkleri
+
+- Ana seri: **mercan**. İkincil seri: nötr gri (`#919191` / `#6A6B6F`).
+- Filo kırılımında: bordo + mavi (2.3 gereği anlamlı).
+- Izgara çizgileri: kenarlık renginin %40'ı. Eksen etiketleri üçüncül metin, 11–12px.
+- **Yasak:** 5 renkli kategorik palet, gradient dolgu, 3B, gölgeli bar.
 
 ---
 
 ## 3. Tipografi
 
-- Aile: **Geist** (Inter ailesi karakterinde, temiz grotesk). Mono: Geist Mono (sayılar).
-- Ağırlık: yalnız **400** (gövde) ve **500–600** (başlık/vurgu). 700 yalnız büyük KPI değerleri.
-- Sayısal veri `nums` (tabular-nums + mono): saat, km, plaka, telefon hizalı kalır.
-- Ölçek: 12 / 13 / 14 (gövde) / 16 / 20 / 24 / 30 (KPI). Satır yüksekliği rahat (1.4–1.5).
-- Harf aralığı: başlıklarda hafif negatif (-0.01em), etiketlerde uppercase + +0.04em.
+| Rol | Değer |
+|---|---|
+| Gövde ailesi | **Geist** (mevcut) — Inter/SF karakterinde grotesk |
+| Mono ailesi | **Geist Mono** — Fingerprint'in JetBrains Mono rolünün karşılığı |
+| Ağırlıklar | 400 gövde · 500 etiket/kontrol · 600 başlık · **700 yalnız büyük KPI değeri** |
+
+**Ölçek** (Runey + Fingerprint ölçümlerinden):
+
+| Kullanım | Boyut | Ağırlık |
+|---|---|---|
+| Sayfa başlığı | 28–32px | 600 |
+| Sayfa alt başlığı | 13–14px | 400, ikincil renk |
+| Kart/bölüm başlığı | 16–18px | 600 |
+| Büyük KPI değeri | 24–28px | 700 |
+| Gövde / tablo hücresi | 13–14px | 400 |
+| Etiket, kontrol, çip | 12–13px | 500 |
+| Eksen etiketi, meta | 11–12px | 400, üçüncül renk |
+
+**Mono font ROLÜ (katı):** plaka · IMEI · request/kayıt id · saat ve süre · km ·
+koordinat · para. Bunlar `tabular-nums` ile hizalanır. Gövde cümlesinde, başlıkta,
+buton metninde mono YASAK.
+
+Harf aralığı: başlıkta `-0.01em`, uppercase etikette `+0.04em`. Satır yüksekliği
+başlıkta 1.2–1.3, gövdede 1.4–1.5.
 
 ---
 
-## 4. Boşluk & Form
+## 4. Boşluk ve form
 
-- 4px grid. Bileşen iç boşluğu 12–16–24. Bölüm arası 24.
-- **Radius:** kartlar 14px (`--radius`), iç öğeler 10–12px, pill/rozet tam yuvarlak.
-- **Kenarlık:** 1px, `--border`. Gölge minimal — sadece popover/dialog/dropdown'da
-  yumuşak `0 1px 2px / 0 8px 24px` çift katman.
-- Boşluk cömert. Sıkışıklık yok; nefes alan layout.
+**Temel ızgara: 8px** (Fingerprint). 4px yalnız ikon-metin gibi mikro aralıklarda.
 
----
+| Ölçü | Değer |
+|---|---|
+| Sayfa dış boşluğu | 24px (mobil 16px) |
+| Kart iç boşluğu | 20–24px |
+| Kart arası dikey boşluk | 16–24px |
+| Bölüm arası | 32px |
+| KPI kartları arası | 16px |
+| Tablo satır yüksekliği | 48–56px |
+| Nav rayı genişliği | 240–260px (masaüstü) |
+| İçerik azami genişliği | 1100–1200px |
 
-## 5. Mikro Etkileşim
+**Köşe yarıçapı** (Runey'in yumuşak dili):
 
-- Süre 150–250ms. Easing **Apple** `cubic-bezier(0.25, 0.1, 0.25, 1)`.
-- Sadece: opacity, background-color, border-color, hafif `translateY(1px)` (buton basışı),
-  `scale(1.02)` (harita pin hover).
-- **Yasak:** bounce, spring, neon, glow, gradient animasyonu, aurora, parallax.
-- Sayfa girişi: 240ms ince fade + 4px yukarı kayma (`page-enter`).
-- Canlı durum: 2.4s yumuşak opacity pulse (sky), keskin yanıp sönme yok.
+| Öğe | Yarıçap |
+|---|---|
+| Büyük kart / panel | **16–20px** |
+| Grafik ve tablo konteyneri | 16px |
+| KPI kartı | 16px |
+| Buton, input, dropdown | 10–12px |
+| Çip / rozet / pill | tam yuvarlak |
+| Nav rayı | 20px (yüzen panel) |
 
----
-
-## 6. Component Kuralları
-
-- **Sidebar (sol menü):** sabit 240px (masaüstü), ikon+etiket. Aktif öğe: claret
-  metin + claret/12% zemin + sol 2px claret çizgi. Mobilde gizlenir → topbar hamburger.
-- **Topbar (üst bar):** 56–64px, yarı saydam + backdrop-blur, alt 1px hat. Sol: sayfa
-  başlığı. Sağ: canlı saat, tema toggle, dil, kullanıcı menüsü.
-- **KPI kart:** etiket (uppercase, metin-3) + büyük değer (nums). Vurgu yalnız anlamlıysa
-  (aktif > 0 → sky, aşım > 0 → destructive). Aksi halde nötr.
-- **Harita:** kart içinde, üst köşeleri kesik, 1px çerçeve. Pin = claret daire + ak
-  kenar. Rota çizgisi claret %60 opacity.
-- **Şoför listesi:** harita yanında/altında satır listesi — avatar, ad, plaka, "X dk
-  aktif", canlı sky nokta. Satır hover → surface-2.
-- **Buton:** birincil = claret dolu; ikincil = outline 1px; ghost = sadece hover zemin.
-  Yükseklik 36–44px (mobil dokunma).
-- **Rozet/Badge:** ince, düşük doygunluk, ilgili aksanın %12 zemini + tam renk metni.
+**Kenarlık ve gölge:** 1px kenarlık ana ayraçtır. Gölge YUMUŞAK ve nadir —
+kartlarda `0 1px 2px rgba(0,0,0,0.04)`, yalnız popover/dialog/dropdown'da
+`0 8px 24px rgba(0,0,0,0.10)`. Koyu temada gölge yerine kenarlık kontrastı artar.
 
 ---
 
-## 7. Tema Davranışı
+## 5. Bileşen dili
 
-- **Koyu varsayılan.** Açık/koyu toggle kullanıcıda; tercih `localStorage`'da saklanır
-  (`next-themes`, `attribute="class"`). İlk yüklemede FOUC yok (`suppressHydrationWarning`).
-- Tüm token'lar hem koyuda hem açıkta tanımlı; hiçbir component tema-özel hex yazmaz.
-- Geçiş: zemin + metin renkleri 240ms yumuşak geçer.
+### Nav rayı (imza öğe)
+Yüzen, koyu (`#181818`), 20px köşeli, sayfa kenarından 12–16px içeride. Üstte marka
+işareti, altta kullanıcı. Aktif öğe: mercan metin + mercan %12 zemin. Mobilde alt
+çekmeceye iner. **Açık temada da siyah kalır** — Runey imzası budur.
+
+### KPI kartı
+Beyaz kart, 16px köşe, 20–24px iç boşluk. İçerik: küçük etiket (12px, üçüncül renk)
+→ büyük değer (24–28px, 700, mono/nums) → küçük betimleyici (12px). Değişim rozeti
+sağ üstte, yalnız anlamlıysa mercan. **KPI kartları renkli DEĞİL** — hepsi beyaz,
+ayrım tipografiyle kurulur.
+
+### Grafik kartı
+Tam genişlik, başlık + alt başlık sol üstte, kontroller sağ üstte. Bar'lar yuvarlatılmış
+uçlu, ana seri mercan. Hover'da dikey kesik çizgi + yumuşak gölgeli tooltip
+(120–200ms fade). Boş veri → sönük ızgara + tek satır açıklama, asla boş beyazlık.
+
+### Tablo
+Başlık satırı: 12px, 500, üçüncül renk, uppercase, `+0.04em`. Satır 48–56px,
+1px alt ayraç, hover'da `#F4F4F5`. Sayısal kolonlar sağa hizalı ve mono.
+**Stripe kuralı:** sayısal kolonda hücre arka planına gömülü soluk oran bar'ı
+(mercan %15) — sayı okunur kalır, bar sıralamayı görünür kılar.
+Gruplama başlığı (ay, filo) satır arasında küçük yapışkan etiket.
+
+### Buton
+Birincil: koyu dolu (`#181818`) beyaz metin, 10–12px köşe, 36–44px yükseklik.
+Yıkıcı olmayan vurgulu eylem: mercan dolu. İkincil: 1px kenarlıklı, şeffaf zemin.
+Ghost: yalnız hover zemini. Basışta `translateY(1px)`.
+
+### Çip / rozet
+İnce, düşük doygunluk: ilgili rengin %12 zemini + tam renk metni, tam yuvarlak,
+11–12px, 500. Filo çipleri bordo/mavi (2.3), durum çipleri durum rengi.
+
+### Boş durum
+Kartın içinde, ortalanmış, tek satır başlık + tek satır açıklama + varsa tek aksiyon.
+İllüstrasyon yok. (Missive dersi: veri sıfırken de ekran ayakta kalır.)
 
 ---
 
-## 8. Erişilebilirlik
+## 6. Mikro etkileşim
 
-- Metin/zemin kontrastı AA (gövde ≥ 4.5:1, büyük ≥ 3:1).
-- Odak halkası her etkileşimli öğede görünür (`ring` token).
-- Dokunma hedefi ≥ 44px. Renk tek anlam taşıyıcısı değil (ikon/etiket eşlik eder).
+- Süre **150–250ms**, easing `cubic-bezier(0.25, 0.1, 0.25, 1)`.
+- Tooltip fade 120–200ms · sekme geçişi 160–200ms · grafik çizimi 600–900ms
+  (`cubic-bezier(.22,.9,.32,1)`, yalnız ilk yüklemede).
+- İzin verilen: opacity, background-color, border-color, `translateY(1px)`.
+- **Yasak:** bounce, spring, glow, gradient animasyonu, parallax, sürekli pulse.
+- `prefers-reduced-motion` → tüm süreler 0.
+
+---
+
+## 7. Erişilebilirlik ve saha koşulu
+
+- Kontrast AA: gövde ≥ 4.5:1, büyük metin ≥ 3:1. Koyu temada bordo metin YASAK (2.3).
+- Odak halkası her etkileşimli öğede görünür.
+- Dokunma hedefi ≥ 44px — şoförler vanda, tek elle, güneş altında kullanıyor.
+- Renk tek anlam taşıyıcısı değil: her renkli duruma ikon veya metin eşlik eder.
+- Geniş içerik (tablo, grafik) KENDİ kutusunda yatay kayar; sayfa gövdesi kaymaz.
+
+---
+
+## 8. Uygulama kuralları
+
+1. Hiçbir bileşende ham hex/oklch yazılmaz — her renk `app/globals.css` token'ından gelir.
+2. Yeni token eklenmeden önce bu belgede rolü tanımlanır.
+3. Bir referansın token'ı rolü dışına taşınamaz (mercan CTA'dır, zemin olamaz;
+   mono ölçümdür, gövde olamaz; bordo/mavi filodur, dekor olamaz).
+4. Her iki tema da her PR'da kontrol edilir — biri kırıksa iş bitmemiştir.

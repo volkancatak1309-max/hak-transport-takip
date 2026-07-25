@@ -4,11 +4,22 @@ import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { LeaveCalendar, type CalLeave } from "@/components/admin/LeaveCalendar";
+import {
+  LeaveCalendar,
+  type CalLeave,
+  type ArchiveLeave,
+} from "@/components/admin/LeaveCalendar";
 import { LEAVES_ENABLED } from "@/lib/features";
 import { LEAVE_COLS, todayYmdVienna, type LeaveRow } from "@/lib/leaves";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Arşiv tavanı. Canlıda toplam izin sayısı iki haneli; 200 satır yıllarca yeter
+ * ve tek sayfada (PostgREST 1000 tavanının altında) kalır. Dolarsa UI bunu
+ * söyler — sessizce kırpmayız.
+ */
+const ARCHIVE_LIMIT = 200;
 
 /** month = "YYYY-MM" → o ayın ilk/son günü (YYYY-MM-DD). */
 function monthBounds(month: string): { start: string; end: string } {
@@ -37,7 +48,7 @@ export default async function IzinlerPage({
     : todayYmdVienna().slice(0, 7);
   const { start, end } = monthBounds(month);
 
-  const [activeRes, formerRes, leavesRes] = await Promise.all([
+  const [activeRes, formerRes, leavesRes, archiveRes] = await Promise.all([
     // Aktif kadro (terminated_at'ten BAĞIMSIZ — migration 032 gelmeden de çalışır).
     onlyFleet(
       withoutTestRows(
@@ -90,6 +101,27 @@ export default async function IzinlerPage({
       fleetScope.workerIds,
       fleetScope
     ),
+    // ARŞİV (25.07.2026): karara BAĞLANMIŞ izinler — aya bağlı DEĞİL, tüm geçmiş.
+    // Takvim ızgarası yalnız görüntülenen ayı ve reddedilmeyenleri gösteriyor;
+    // "kim neyi ne zaman onayladı/reddetti" sorusunun cevabı hiçbir yerde
+    // görünmüyordu. Reddedilenler de burada: kayıt iz için DURUYOR (silinmiyor).
+    // ARCHIVE_LIMIT satırla sınırlı — dolarsa UI dipnot basar.
+    onlyFleet(
+      withoutTestRows(
+        supabaseAdmin
+          .from("worker_leaves")
+          .select(LEAVE_COLS)
+          .in("status", ["approved", "rejected"])
+          .order("decided_at", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false })
+          .limit(ARCHIVE_LIMIT),
+        "worker_id",
+        scope.workerIds
+      ),
+      "worker_id",
+      fleetScope.workerIds,
+      fleetScope
+    ),
   ]);
 
   const active = ((activeRes.data ?? []) as { id: string; name: string }[]).map(
@@ -111,6 +143,43 @@ export default async function IzinlerPage({
     note: l.note,
   }));
 
+  // ── ARŞİV SATIRLARI ────────────────────────────────────────────────────────
+  // Kararı VEREN kişi çoğu zaman patrondur, yukarıdaki `workers` sorgusu ise
+  // `is_admin=false` filtreliyor → o isimler haritada YOK. Eksik id'ler tek ek
+  // sorguyla çözülür (manuel-başlatma bildiriminin deseni); çözülemezse '—'
+  // basılır, satır DÜŞMEZ.
+  const archiveRows = (archiveRes.data ?? []) as LeaveRow[];
+  const nameById = new Map(workers.map((w) => [w.id, w.name]));
+  const missingIds = [
+    ...new Set(
+      archiveRows
+        .flatMap((l) => [l.approved_by, l.created_by])
+        .filter((id): id is string => !!id && !nameById.has(id))
+    ),
+  ];
+  if (missingIds.length > 0) {
+    const { data: extra } = await supabaseAdmin
+      .from("workers")
+      .select("id, name")
+      .in("id", missingIds);
+    for (const w of (extra ?? []) as { id: string; name: string }[]) {
+      nameById.set(w.id, w.name);
+    }
+  }
+  const archive: ArchiveLeave[] = archiveRows.map((l) => ({
+    id: l.id,
+    worker_name: nameById.get(l.worker_id) ?? "—",
+    leave_type: l.leave_type,
+    start_date: l.start_date,
+    end_date: l.end_date,
+    status: l.status as "approved" | "rejected",
+    // Karar verilmemiş eski kayıtlarda (patron doğrudan girdiyse decided_at
+    // dolu; 031 öncesi veri yok) tarih null kalır → UI '—' gösterir.
+    decided_by: l.approved_by ? nameById.get(l.approved_by) ?? "—" : "—",
+    decided_at: l.decided_at,
+    note: l.note,
+  }));
+
   return (
     <DashboardShell
       user={{
@@ -127,6 +196,8 @@ export default async function IzinlerPage({
           leaves={leaves}
           month={month}
           isChief={isChief}
+          archive={archive}
+          archiveCapped={archiveRows.length >= ARCHIVE_LIMIT}
         />
       </div>
     </DashboardShell>

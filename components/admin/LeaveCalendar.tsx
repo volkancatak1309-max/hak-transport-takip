@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { formatDate, formatDateTime } from "@/lib/format";
 import {
   LEAVE_TYPES,
   leaveTypeDef,
@@ -30,6 +31,23 @@ import {
 } from "@/app/actions/leaves";
 
 export type CalWorker = { id: string; name: string; terminated?: boolean };
+/**
+ * Arşiv satırı (25.07.2026). Takvim ızgarasının aksine AYA BAĞLI DEĞİL ve
+ * reddedilenleri de taşır: "kim neyi ne zaman onayladı/reddetti" izi.
+ * İsimler sunucuda çözülür (karar veren çoğu zaman patrondur ve takvimin
+ * personel listesinde bulunmaz).
+ */
+export type ArchiveLeave = {
+  id: string;
+  worker_name: string;
+  leave_type: LeaveTypeKey;
+  start_date: string;
+  end_date: string;
+  status: "approved" | "rejected";
+  decided_by: string;
+  decided_at: string | null;
+  note: string | null;
+};
 export type CalLeave = {
   id: string;
   worker_id: string;
@@ -60,11 +78,17 @@ export function LeaveCalendar({
   leaves,
   month,
   isChief,
+  archive = [],
+  archiveCapped = false,
 }: {
   workers: CalWorker[];
   leaves: CalLeave[];
   month: string; // YYYY-MM
   isChief: boolean;
+  /** Karara bağlanmış izinler (onaylı + reddedilmiş), en yeni önce. */
+  archive?: ArchiveLeave[];
+  /** Arşiv tavana dayandı mı → dipnot basılır (sessiz kırpma yok). */
+  archiveCapped?: boolean;
 }) {
   const t = useTranslations("izinler");
   const locale = useLocale();
@@ -382,6 +406,30 @@ export function LeaveCalendar({
         </details>
       )}
 
+      {/* ── ARŞİV ── karara bağlanmış izinler. "Ayrılan personel" ile aynı
+          details/summary deseni, varsayılan KAPALI. Takvim yalnız bir ayı ve
+          reddedilmeyenleri gösterdiği için "kim onayladı/reddetti" izi başka
+          hiçbir ekranda görünmüyordu (25.07.2026). */}
+      <LeaveArchive
+        rows={archive.filter((a) => a.status === "approved")}
+        title={t("archiveApprovedTitle", {
+          n: archive.filter((a) => a.status === "approved").length,
+        })}
+        decidedLabel={t("archiveApprovedBy")}
+        locale={locale}
+        capped={archiveCapped}
+      />
+      <LeaveArchive
+        rows={archive.filter((a) => a.status === "rejected")}
+        title={t("archiveRejectedTitle", {
+          n: archive.filter((a) => a.status === "rejected").length,
+        })}
+        decidedLabel={t("archiveRejectedBy")}
+        locale={locale}
+        capped={archiveCapped}
+        muted
+      />
+
       {/* Lejant (renk tek taşıyıcı değil — kod + renk + isim) */}
       <div className="flex flex-wrap gap-x-4 gap-y-2">
         {LEAVE_TYPES.filter((d) => d.common).map((d) => (
@@ -395,10 +443,15 @@ export function LeaveCalendar({
             {d.tr}
           </span>
         ))}
-        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="inline-block size-4 rounded-sm bg-muted-foreground/40" />
-          {t("legendPending")}
-        </span>
+        {/* Bekleyen talep YOKKEN bu satır karşılığı olmayan bir açıklamaydı:
+            ekranda tek bir silik hücre bile olmadan "silik = onay bekliyor"
+            diyordu. Artık yalnız gerçekten silik hücre varsa görünür. */}
+        {pendingLeaves.length > 0 && (
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="inline-block size-4 rounded-sm bg-muted-foreground/40" />
+            {t("legendPending")}
+          </span>
+        )}
       </div>
 
       {drawer && (
@@ -417,6 +470,85 @@ export function LeaveCalendar({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Katlanır arşiv tablosu — onaylananlar ve reddedilenler için TEK bileşen.
+ * Boş liste hiç render edilmez (kapalı bir "(0)" başlığı gürültüdür).
+ * `muted` = reddedilenler: karar olumsuz, satırlar sönük tonda.
+ */
+function LeaveArchive({
+  rows,
+  title,
+  decidedLabel,
+  locale,
+  capped,
+  muted = false,
+}: {
+  rows: ArchiveLeave[];
+  title: string;
+  decidedLabel: string;
+  locale: string;
+  capped: boolean;
+  muted?: boolean;
+}) {
+  const t = useTranslations("izinler");
+  if (rows.length === 0) return null;
+  return (
+    <details className="rounded-2xl border border-border/60 bg-card">
+      <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold">
+        {title}
+      </summary>
+      <div className="border-t border-border/60">
+        {/* Geniş tablo KENDİ kutusunda kayar — sayfa gövdesi yatay kaymaz. */}
+        <div className="overflow-x-auto p-1">
+          <table className={`w-full border-collapse text-sm ${muted ? "opacity-75" : ""}`}>
+            <thead>
+              <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="px-3 py-2 font-medium">{t("archiveColWorker")}</th>
+                <th className="px-3 py-2 font-medium">{t("archiveColType")}</th>
+                <th className="px-3 py-2 font-medium">{t("archiveColRange")}</th>
+                <th className="px-3 py-2 font-medium">{decidedLabel}</th>
+                <th className="px-3 py-2 font-medium">{t("archiveColWhen")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const def = leaveTypeDef(r.leave_type);
+                return (
+                  <tr key={r.id} className="border-b border-border/50 last:border-0">
+                    <td className="px-3 py-2 font-medium">{r.worker_name}</td>
+                    <td className="px-3 py-2">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span
+                          className="inline-block size-3 rounded-sm"
+                          style={{ backgroundColor: def.color }}
+                          aria-hidden
+                        />
+                        {locale === "de" ? def.de : def.tr}
+                      </span>
+                    </td>
+                    <td className="nums px-3 py-2 text-muted-foreground">
+                      {formatDate(r.start_date, locale)} → {formatDate(r.end_date, locale)}
+                    </td>
+                    <td className="px-3 py-2">{r.decided_by}</td>
+                    <td className="nums px-3 py-2 text-muted-foreground">
+                      {r.decided_at ? formatDateTime(r.decided_at, locale) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {capped && (
+          <p className="px-4 pb-3 pt-1 text-xs text-muted-foreground">
+            {t("archiveCapped")}
+          </p>
+        )}
+      </div>
+    </details>
   );
 }
 

@@ -11,10 +11,12 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * Alarm trend bar grafiği (REVEAL-GAP §3.5 — Resend ff328c72 zengin-tooltip +
- * Exa ccc4661c bar-hover + Reveal Alert Summary bar deseni). Seçili aralıkta
- * kova/kova olay sayısı; bar'a hover → tam değer; bar'a tıkla → o kovaya
- * filtre. "Koyu temaya boyanmış tablo" itirazının doğrudan panzehiri.
+ * Trend bar grafiği — TEK SERİ, tek aksan (DESIGN.md §2.5).
+ *
+ * 26.07.2026: ana seri mavi → MERCAN. Kritik kovalar kritik renginde kalır;
+ * o renk süs değil, olay şiddeti taşır (kilidin "renk anlam taşır" kuralı).
+ * Izgara/eksen etiketi üçüncül metin tonunda, bar üstü yuvarlatılmış.
+ * Hover → tam değer; tıkla → o kovaya filtre.
  */
 export type TrendBucket = {
   key: string;
@@ -37,7 +39,7 @@ function TrendTooltip({ active, payload, criticalLabel, totalLabel }: {
     <div className="glass-pop rounded-[10px] px-3 py-2 text-xs">
       <div className="mb-1 font-medium">{b.label}</div>
       <div className="flex items-center gap-2">
-        <span className="size-2 rounded-full" style={{ background: "var(--accent-sky)" }} />
+        <span className="size-2 rounded-full" style={{ background: "var(--accent-coral)" }} />
         <span className="text-muted-foreground">{totalLabel}</span>
         <span className="nums ml-auto font-medium">{b.value}</span>
       </div>
@@ -78,7 +80,7 @@ export function MiniTrend({
             tickLine={false}
             axisLine={false}
             interval="preserveStartEnd"
-            tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
+            tick={{ fill: "var(--text-tertiary)", fontSize: 11 }}
             minTickGap={24}
           />
           <Tooltip
@@ -87,7 +89,7 @@ export function MiniTrend({
           />
           <Bar
             dataKey="value"
-            radius={[3, 3, 0, 0]}
+            radius={[4, 4, 0, 0]}
             isAnimationActive={false}
             onClick={onBucketClick ? (d) => onBucketClick(d as unknown as TrendBucket) : undefined}
             cursor={onBucketClick ? "pointer" : undefined}
@@ -98,7 +100,7 @@ export function MiniTrend({
                 fill={
                   b.critical && b.critical > 0
                     ? "var(--status-critical)"
-                    : "var(--accent-sky)"
+                    : "var(--accent-coral)"
                 }
                 fillOpacity={activeKey && activeKey !== b.key ? 0.35 : 0.9}
               />

@@ -36,16 +36,10 @@ import type {
 } from "@/lib/analytics-shared";
 import { TOP10_EVENT_TYPES } from "@/lib/analytics-shared";
 
-// Reveal ranking-tile paleti: 6 kart için sabit döngü, ham renk yok (yalnız
-// mevcut token'lar). overspeeding/jamming kritik ton, diğerleri sky/gold.
-const TILE_COLOR: Record<Top10EventType, string> = {
-  harsh_acceleration: "var(--accent-sky)",
-  harsh_cornering: "var(--accent-sky)",
-  harsh_braking: "var(--accent-sky)",
-  overspeeding: "var(--accent-gold)",
-  idling: "var(--accent-gold)",
-  jamming: "var(--status-critical)",
-};
+// TILE_COLOR KALDIRILDI (26.07.2026 — DESIGN.md §2.2/§2.5). Her kartın barı
+// olay TÜRÜNE göre mavi/altın/kritik boyanıyordu; ama kartın başlığı zaten o
+// türü yazıyor, yani renk bilgi taşımıyordu ve tek-aksan disiplinini kırıyordu.
+// Bar rengi artık RankingTile'ın kilitli varsayılanı: tek aksan mercan.
 
 export function AnalizClient({
   rangeKey,
@@ -317,7 +311,6 @@ export function AnalizClient({
                   : ty === "idling"
                     ? `${d.count} · ${formatIdleShort(d.idleMs ?? 0, locale)}`
                     : String(d.count),
-              color: TILE_COLOR[ty],
             }));
             return (
               <RankingTile

@@ -49,19 +49,26 @@ export function StatCard({
         </span>
         <span className="text-[12px] sm:text-[11px] text-muted-foreground/80">{scope}</span>
       </div>
-      <div className="mt-1.5 flex items-baseline gap-2">
-        <span className={cn("nums text-[28px] font-bold leading-none", VALUE_TONE[tone])}>
+      {/* DEĞER = ÖLÇÜM → mono (DESIGN.md §3 "mono font ROLÜ"). Rakamlar kartlar
+          arasında dikey hizalanır; 24–28px, 700 (Runey KPI ölçüsü). */}
+      <div className="mt-2 flex items-baseline gap-2">
+        <span
+          className={cn(
+            "font-mono tabular-nums text-[26px] font-bold leading-none tracking-[-0.01em]",
+            VALUE_TONE[tone]
+          )}
+        >
           {value}
         </span>
         {delta && (
-          <span className="nums text-xs text-muted-foreground">{delta}</span>
+          <span className="font-mono tabular-nums text-xs text-muted-foreground">{delta}</span>
         )}
       </div>
     </>
   );
 
   const surface = cn(
-    "glass card-kpi block rounded-[16px] p-4",
+    "surface-card card-kpi block rounded-[16px] p-5",
     href && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     className
   );

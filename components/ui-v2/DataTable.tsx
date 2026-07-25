@@ -170,7 +170,7 @@ export function DataTable<T>({
     ));
 
   return (
-    <div className={cn("glass overflow-hidden rounded-[16px]", className)}>
+    <div className={cn("surface-card overflow-hidden rounded-[16px]", className)}>
       <div className="max-h-[70vh] overflow-auto">
         <table className="w-full border-collapse">
           <thead className="sticky top-0 z-10 bg-card">

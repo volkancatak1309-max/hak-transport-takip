@@ -1,10 +1,17 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Reveal dashboard ranking-tile klonu (REVEAL-CLONE-SPEC B2). Yatay bar
- * leaderboard: her satır etiket + oransal bar + değer. Reveal'ın 6-tile
- * ızgarasının yapı taşı. Bar renkleri Reveal'ın yeşil/kırmızısı yerine bizim
- * palet (sky / iki-tonlu sky+gold / kritik).
+ * Sıralama kartı — STRIPE HÜCRE-İÇİ BAR dili (DESIGN.md §0/§5, destek referans
+ * Stripe "Revenue recognition": sayısal satırda barın METNİN ARKASINDA olması).
+ *
+ * 26.07.2026'da yeniden örüldü. Eski desen etiketi 78px'lik sabit bir sütuna
+ * sıkıştırıp `truncate` ile kesiyordu — "Mohamed İbr…" gibi okunamayan isimler
+ * çıkıyordu ve sıralama kartının tek işi zaten İSİM göstermek. Yeni desende bar
+ * satırın tamamını kaplayan zemindir; isim onun üstünde, KIRPILMADAN, gerekirse
+ * iki satıra sararak durur. Değer sağda mono ile hizalı.
+ *
+ * Renk: tek aksan mercan (DESIGN.md §2.2). İki-tonlu satırda ikincil (aşan)
+ * kısım nötr gri kalır — iki güçlü renk yan yana gelmez.
  */
 export type RankRow = {
   key: string;
@@ -36,12 +43,12 @@ export function RankingTile({
 }) {
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
-    <div className={cn("glass flex h-[230px] flex-col rounded-[10px] p-3.5", className)}>
+    <div className={cn("surface-card flex h-[260px] flex-col rounded-[16px] p-5", className)}>
       {/* h2: tile ızgarası sayfanın ilk içerik bölümü — h1'den sonra gelir.
           h3 olduğunda başlık sırası h1'den h3'e atlıyordu (Lighthouse
           heading-order). Kardeş bölümler (OpsSummary, FleetDtcCard) da h2. */}
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-[15px] font-semibold leading-none">{title}</h2>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-[16px] font-semibold leading-none">{title}</h2>
         {icon && <span className="text-muted-foreground">{icon}</span>}
       </div>
 
@@ -50,35 +57,47 @@ export function RankingTile({
           {emptyLabel}
         </div>
       ) : (
-        <ul className="flex-1 space-y-1 overflow-y-auto pr-1">
+        <ul className="-mx-1 flex-1 space-y-0.5 overflow-y-auto px-1">
           {rows.map((r) => {
             const pct = Math.round((r.value / max) * 100);
             const secPct = r.secondary ? Math.round((r.secondary / max) * 100) : 0;
             const basePct = Math.max(0, pct - secPct);
             return (
-              <li key={r.key} className="flex items-center gap-2 text-[12px] sm:text-[11px]">
-                <span className="w-[78px] shrink-0 truncate text-right text-muted-foreground">
-                  {r.label}
-                </span>
-                <span className="relative h-3.5 flex-1 overflow-hidden rounded-[2px] bg-surface-2">
+              <li
+                key={r.key}
+                className="relative overflow-hidden rounded-[8px]"
+              >
+                {/* HÜCRE-İÇİ BAR: satırın arkasında, metni okunur bırakacak
+                    düşük yoğunlukta. Sıralamayı gözle görünür kılar ama sayının
+                    kendisiyle yarışmaz (Stripe deseni). */}
+                <span
+                  aria-hidden
+                  className="absolute inset-y-0 left-0 rounded-[8px]"
+                  style={{
+                    width: `${basePct}%`,
+                    background: r.color ?? "var(--accent-coral)",
+                    opacity: 0.16,
+                  }}
+                />
+                {secPct > 0 && (
                   <span
-                    className="absolute inset-y-0 left-0 rounded-l-[2px]"
-                    style={{ width: `${basePct}%`, background: r.color ?? "var(--accent-sky)" }}
+                    aria-hidden
+                    className="absolute inset-y-0"
+                    style={{
+                      left: `${basePct}%`,
+                      width: `${secPct}%`,
+                      background: r.secondaryColor ?? "var(--muted-foreground)",
+                      opacity: 0.22,
+                    }}
                   />
-                  {secPct > 0 && (
-                    <span
-                      className="absolute inset-y-0"
-                      style={{
-                        left: `${basePct}%`,
-                        width: `${secPct}%`,
-                        background: r.secondaryColor ?? "var(--accent-gold)",
-                      }}
-                    />
-                  )}
-                </span>
-                <span className="nums w-[62px] shrink-0 text-right font-semibold tabular-nums">
-                  {r.display ?? r.value.toLocaleString("tr-TR")}
-                </span>
+                )}
+                <div className="relative flex items-center justify-between gap-3 px-2 py-[7px]">
+                  {/* KIRPMA YOK: uzun isim ikinci satıra sarar, kesilmez. */}
+                  <span className="min-w-0 flex-1 text-[13px] leading-tight">{r.label}</span>
+                  <span className="shrink-0 font-mono text-[13px] font-semibold tabular-nums">
+                    {r.display ?? r.value.toLocaleString("tr-TR")}
+                  </span>
+                </div>
               </li>
             );
           })}
@@ -86,7 +105,7 @@ export function RankingTile({
       )}
 
       {scope && (
-        <div className="mt-2 border-t border-border/60 pt-1.5 text-[12px] sm:text-[11px] text-muted-foreground">
+        <div className="mt-3 border-t border-border pt-2 text-[12px] text-muted-foreground">
           {scope}
         </div>
       )}

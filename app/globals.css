@@ -399,26 +399,23 @@ body {
   /* KPI/stat tiles: a 2px bordo→mavi top line fades in on hover and the tile
      lifts 3px. Subtle depth only — no glow. Easing is the app-wide Apple curve;
      reduced-motion collapses both to instant. */
+  /* KART YÜZEYİ (DESIGN.md §4/§5) — birincil referans Runey'in dili: düz beyaz
+     (koyuda düz koyu) yüzey, 1px kenarlık, ÇOK yumuşak gölge. Derinlik gölge
+     bombardımanıyla değil, zemin↔kart kontrastıyla kurulur. `.glass`ın yerini
+     alır: cam/bulanıklık artık yalnız harita gibi zemin üstü panellerde. */
+  .surface-card {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+  /* .card-kpi'nin bordo→mavi gradyan üst çizgisi ve -3px sıçraması KALDIRILDI
+     (26.07.2026): kilit gradyanı ve dikkat çeken hareketi reddediyor. Tıklanabilir
+     KPI kartı artık yalnız kenarlığını koyultur. */
   .card-kpi {
-    position: relative;
-    transition: transform 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+    transition: border-color 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
   }
-  .card-kpi::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, var(--accent-claret-hover), var(--accent-sky));
-    opacity: 0;
-    transition: opacity 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
-  }
-  .card-kpi:hover {
-    transform: translateY(-3px);
-  }
-  .card-kpi:hover::after {
-    opacity: 1;
+  a.card-kpi:hover {
+    border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
   }
   /* .nav-active KALDIRILDI (26.07.2026): aktif menü öğesi bordo→mavi gradyandı;
      tasarım kilidi gradyanı reddediyor ve aktif durumu mercan zemin + mercan

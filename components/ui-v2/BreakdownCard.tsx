@@ -4,11 +4,14 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Sekmeli ranked-breakdown kartı (REVEAL-GAP §3.3 — Dub analytics eb41f99a
- * breakdown cards + Reveal Alert Summary "Rank" deseni). Üstte sekmeler
- * ("Araca göre / Tipe göre"), gövdede sıralı liste: her satır arkasında
- * max'a göre yatay bar + sağda sayı. Satıra tıkla → drill (o değere filtrele).
- * Volkan #3-4'ün kalbi: ölü özet kartı → interaktif giriş kapısı.
+ * Dağılım kartı — MISSIVE ÜÇ-KOLON kalıbı (DESIGN.md §0, "Missive Analytics":
+ * alt bölümde üç kolonluk döküm; her kolon bir ölçütün kova kova dağılımı).
+ *
+ * 26.07.2026'da yeniden örüldü. Yapı korundu (sekmeler + sıralı satırlar,
+ * satıra tıkla → filtrele), iki şey değişti:
+ *   1) Satırlar geniş ekranda ÇOK KOLONA akar (`columns`, varsayılan 3). Tek
+ *      uzun liste yerine üç kısa kolon: 12 kovalı bir dağılım tek ekranda okunur.
+ *   2) Bar rengi tek aksan mercan; kırpma yerine sarma.
  */
 export type BreakdownRow = {
   key: string;
@@ -29,14 +32,23 @@ export type BreakdownTab = {
   unit?: string;
 };
 
+const COLUMN_CLASS: Record<1 | 2 | 3, string> = {
+  1: "",
+  2: "sm:columns-2",
+  3: "sm:columns-2 lg:columns-3",
+};
+
 export function BreakdownCard({
   title,
   tabs,
+  columns = 3,
   emptyLabel = "Veri yok",
   className,
 }: {
   title?: string;
   tabs: BreakdownTab[];
+  /** Geniş ekranda kaç kolona aksın (Missive kalıbı). Dar ekran daima tek kolon. */
+  columns?: 1 | 2 | 3;
   emptyLabel?: string;
   className?: string;
 }) {
@@ -45,7 +57,7 @@ export function BreakdownCard({
   const max = Math.max(1, ...(tab?.rows.map((r) => r.value) ?? [1]));
 
   return (
-    <div className={cn("glass flex flex-col rounded-[16px] p-4", className)}>
+    <div className={cn("surface-card flex flex-col rounded-[16px] p-5", className)}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-1 rounded-[10px] border border-border/60 p-0.5">
           {tabs.map((t) => (
@@ -81,12 +93,13 @@ export function BreakdownCard({
       {!tab || tab.rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">{emptyLabel}</p>
       ) : (
-        <ul className="space-y-1">
+        <ul className={cn("gap-x-6 [column-fill:balance]", COLUMN_CLASS[columns])}>
           {tab.rows.map((r) => {
             const pct = Math.round((r.value / max) * 100);
             const Row = r.onClick ? "button" : "div";
             return (
-              <li key={r.key}>
+              // break-inside-avoid: satır iki kolona bölünmesin (çok kolonlu akış).
+              <li key={r.key} className="mb-0.5 break-inside-avoid">
                 <Row
                   {...(r.onClick ? { type: "button", onClick: r.onClick } : {})}
                   className={cn(
@@ -95,14 +108,15 @@ export function BreakdownCard({
                     r.active && "bg-surface-2 ring-1 ring-ring/50"
                   )}
                 >
-                  {/* Arka bar — Dub deseni: satırın arkasında değeri gösteren dolgu. */}
+                  {/* Hücre-içi bar — Stripe deseni, tek aksan mercan. */}
                   <span
                     aria-hidden
-                    className="absolute inset-y-0 left-0 rounded-[8px] opacity-[0.18]"
-                    style={{ width: `${pct}%`, background: r.color ?? "var(--accent-sky)" }}
+                    className="absolute inset-y-0 left-0 rounded-[8px] opacity-[0.16]"
+                    style={{ width: `${pct}%`, background: r.color ?? "var(--accent-coral)" }}
                   />
-                  <span className="relative z-10 min-w-0 truncate">{r.label}</span>
-                  <span className="nums relative z-10 shrink-0 font-medium tabular-nums">
+                  {/* Etiket KIRPILMAZ — kova adları ("30dk–2sa") kesilirse kart işlevsiz. */}
+                  <span className="relative z-10 min-w-0 flex-1 leading-tight">{r.label}</span>
+                  <span className="relative z-10 shrink-0 font-mono font-medium tabular-nums">
                     {r.value.toLocaleString("tr-TR")}
                   </span>
                 </Row>

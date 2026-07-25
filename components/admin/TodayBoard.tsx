@@ -33,6 +33,27 @@ function tabOf(s: RosterStatus): Tab {
   return "in_field";
 }
 
+/**
+ * Satırları sekme kovalarına ayırır — ŞERİDİN ve PANONUN TEK ortak kaynağı.
+ *
+ * Burada HİÇBİR satır elenmez; her aktif şoför tam olarak bir kovaya girer,
+ * dolayısıyla kovaların toplamı daima rows.length'tir (= başlıktaki sayı).
+ * Filosuz (atanmış aracı olmayan) personel de kendi durum kovasına girer:
+ * "vardiya açmadı" gerçeği aracının olup olmamasından bağımsızdır ve yönetici
+ * sabah o kişiyi de görmek zorundadır (25.07.2026). Aşağıdaki FİLOSUZ PERSONEL
+ * bölümü bu satırları ayrıca listeler — eleme değil, ek vurgudur.
+ */
+function groupRows(rows: TodayRosterRow[]): Record<Tab, TodayRosterRow[]> {
+  const g: Record<Tab, TodayRosterRow[]> = {
+    not_started: [],
+    in_field: [],
+    closed: [],
+    on_leave: [],
+  };
+  for (const r of rows) g[tabOf(r.status)].push(r);
+  return g;
+}
+
 /** Telemetri yaşını insan diline çevirir; veri yoksa null (tire basılır). */
 function useAgeLabel() {
   const locale = useLocale();
@@ -52,31 +73,20 @@ export function TodayBoard({
   const locale = useLocale();
   const ageLabel = useAgeLabel();
 
-  // FİLOSUZ PERSONEL ayrı tutulur (22.07.2026). Filo, aracın filosundan
+  // FİLOSUZ PERSONEL ayrıca vurgulanır (22.07.2026). Filo, aracın filosundan
   // türüyor (lib/fleet-scope.ts); atanmış aracı olmayan kişinin filosu YOK ve
   // hiçbir filo şefinin kapsamına girmez. Bu satırlar yalnız patrona ulaşır —
-  // şef için sunucu tarafında zaten elenmişlerdir. Panoda ana listeye karışıp
-  // "kimse ilgilenmiyor" durumuna düşmesinler diye kendi grubunda gösterilir.
+  // şef için sunucu tarafında zaten elenmişlerdir. Listenin altındaki kendi
+  // başlığında tekrar gösterilirler; sekmelerden ÇIKARILMAZLAR (25.07.2026 —
+  // eskiden çıkarılıyordu ve "Başlamadı" sekmesi şeritten eksik sayıyordu).
   const fleetless = useMemo(
     () => rows.filter((r) => r.plate === null && r.status !== "on_leave"),
     [rows]
   );
 
-  const groups = useMemo(() => {
-    const g: Record<Tab, TodayRosterRow[]> = {
-      not_started: [],
-      in_field: [],
-      closed: [],
-      on_leave: [],
-    };
-    for (const r of rows) {
-      // İzinli daima "İzinli" sekmesinde — filosuz-izinli de buraya, aşağıdaki
-      // filosuz grubuna değil (nötr izin durumu kaybolmasın).
-      if (r.plate === null && r.status !== "on_leave") continue;
-      g[tabOf(r.status)].push(r);
-    }
-    return g;
-  }, [rows]);
+  // Sekme kovaları: şeridin kullandığı rosterCounts ile AYNI fonksiyondan —
+  // iki yüzeyin farklı rakam göstermesi artık yapısal olarak mümkün değil.
+  const groups = useMemo(() => groupRows(rows), [rows]);
 
   // Varsayılan sekme: eylem gerektiren grup doluysa oraya, değilse sahadakiler.
   const [tab, setTab] = useState<Tab>(() =>
@@ -258,8 +268,9 @@ export function TodayBoard({
         )}
 
         {/* ── FİLOSUZ PERSONEL ── atanmış aracı olmadığı için hiçbir filoya
-            bağlanamayan çalışanlar. Sekmelere karışmaz; kaybolmasın diye
-            listenin altında kendi başlığıyla durur. */}
+            bağlanamayan çalışanlar. Durum sekmesinde zaten sayılırlar; burası
+            ek vurgu: araç ataması yapılmadan bu kişiler hiçbir şefin
+            kapsamında olmaz, o eksik listenin altında görünür kalsın. */}
         {fleetless.length > 0 && (
           <div className="mt-5 border-t border-border pt-4">
             <div className="mb-2 flex items-center gap-2">
@@ -404,22 +415,32 @@ function SignalCell({
   return <span className="nums text-xs text-muted-foreground">{label}</span>;
 }
 
-/** Şerit için sayılar — panoyla AYNI satırlardan türer, ikinci kaynak yok. */
+/**
+ * Şerit için sayılar — panonun sekmeleriyle AYNI groupRows'tan türer, ikinci
+ * hesap kaynağı yok. Kovalar sekmelerin birebir karşılığıdır; total = kovaların
+ * toplamı = başlıktaki aktif şoför sayısı.
+ *
+ * İZİNLİ ayrı kovadır (25.07.2026). Eskiden üçlü bir if/else zinciri vardı ve
+ * on_leave son else'e, yani KAPANDI'ya düşüyordu: izinli personel "vardiyasını
+ * kapattı" gibi sayılıyordu (şeritte 6 fazla).
+ */
 export function rosterCounts(rows: TodayRosterRow[]) {
-  let notStarted = 0;
-  let inField = 0;
-  let closed = 0;
+  const g = groupRows(rows);
   let loaded = 0;
   let staleVehicles = 0;
   for (const r of rows) {
-    const tb = tabOf(r.status);
-    if (tb === "not_started") notStarted++;
-    else if (tb === "in_field") inField++;
-    else closed++;
     if (r.loadedPackages != null) loaded += r.loadedPackages;
     if (r.telemetryStale) staleVehicles++;
   }
-  return { total: rows.length, notStarted, inField, closed, loaded, staleVehicles };
+  return {
+    total: rows.length,
+    notStarted: g.not_started.length,
+    inField: g.in_field.length,
+    closed: g.closed.length,
+    onLeave: g.on_leave.length,
+    loaded,
+    staleVehicles,
+  };
 }
 
 /**

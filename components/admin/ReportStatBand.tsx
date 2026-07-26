@@ -22,6 +22,8 @@ export type ReportStat = {
   value: React.ReactNode;
   scope: string;
   tone?: StatTone;
+  /** Etiketin solunda nabız — "bu sayı şu anda akıyor" (canlı harita). */
+  live?: boolean;
 };
 
 const VALUE_TONE: Record<StatTone, string> = {
@@ -49,7 +51,8 @@ export function ReportStatBand({
       >
         {stats.map((s) => (
           <div key={s.label} className="min-w-0 bg-card px-6 py-5">
-            <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              {s.live && <span className="live-dot" aria-hidden />}
               {s.label}
             </span>
             {/* DEĞER = ÖLÇÜM → mono. Resend'de KPI rakamı sayfanın en büyük

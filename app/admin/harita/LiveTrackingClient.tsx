@@ -9,7 +9,8 @@ import { MapPinned, ChevronRight, Truck } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/UserAvatar";
 import { HelpTip } from "@/components/help/HelpTip";
-import { SubTabs } from "@/components/ui-v2";
+import { SubTabs, PageHeader } from "@/components/ui-v2";
+import { ReportStatBand } from "@/components/admin/ReportStatBand";
 import { formatRelative, formatTime, formatDurationShort } from "@/lib/format";
 import { FLEET_STYLE } from "@/lib/vehicle-ui";
 import { cn } from "@/lib/utils";
@@ -96,42 +97,57 @@ export function LiveTrackingClient({
   });
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-5 px-4 py-6 sm:px-6">
-      {/* Başlık bloğu — klon A2 ölçüsü */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-[28px] font-semibold leading-tight">{t("live_title")}</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
-        </div>
-        <HelpTip tkey="map" />
-      </div>
+    <div className="mx-auto max-w-[1400px] space-y-6 px-4 py-6 sm:px-6">
+      {/* h1 DashboardShell topbar'ında — burada h2 (çift h1 kapandı). */}
+      <PageHeader
+        title={t("live_title")}
+        description={t("subtitle")}
+        action={<HelpTip tkey="map" />}
+      />
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label={t("kpi_active")} value={String(summary.activeShifts)} accent="sky" live={summary.activeShifts > 0} />
-        <Kpi
-          label={t("kpi_on_map")}
-          value={String(vehicles.length)}
-          sub={t("kpi_live_count", { count: liveCount })}
-        />
-        <Kpi
-          label={t("kpi_longest")}
-          value={summary.longestMs > 0 ? formatDurationShort(summary.longestMs, locale) : "—"}
-        />
-        <Kpi
-          label={tAdmin("overLimit")}
-          value={String(summary.overLimit)}
-          accent={summary.overLimit > 0 ? "gold" : undefined}
-        />
-      </div>
+      {/* ÖLÇÜM BANDI — dört ayrı KPI kutusu tek yüzeye indi (rapor sayfalarıyla
+          aynı bileşen). Bu dört sayı aynı ANIN parçaları; ayrı kartlar onları
+          bağımsız ölçümler gibi gösteriyordu. */}
+      <ReportStatBand
+        stats={[
+          {
+            label: t("kpi_active"),
+            value: String(summary.activeShifts),
+            scope: t("scope_now"),
+            tone: "info",
+            live: summary.activeShifts > 0,
+          },
+          {
+            label: t("kpi_on_map"),
+            value: String(vehicles.length),
+            scope: t("kpi_live_count", { count: liveCount }),
+          },
+          {
+            label: t("kpi_longest"),
+            value:
+              summary.longestMs > 0 ? formatDurationShort(summary.longestMs, locale) : "—",
+            scope: t("scope_now"),
+          },
+          {
+            label: tAdmin("overLimit"),
+            value: String(summary.overLimit),
+            scope: t("scope_now"),
+            tone: summary.overLimit > 0 ? "warning" : "neutral",
+          },
+        ]}
+      />
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_360px]">
-        {/* Map */}
-        <section className="surface-card overflow-hidden rounded-[14px]">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        {/* HARİTA KARTI — bilinçli olarak CAM DEĞİL: taban katman opak vektör
+            kanvası, arkasından hiçbir şey görünmez. Blur burada yalnız GPU
+            harcar ve cam bütçesini (max 3) boşa yer. */}
+        <section className="surface-card overflow-hidden rounded-[16px]">
+          <div className="flex items-center justify-between border-b border-border/60 px-5 py-3.5">
             <div className="flex items-center gap-2">
-              <MapPinned className="size-[18px] text-accent-claret-text" />
-              <span className="text-sm font-medium">{t("title")}</span>
+              <MapPinned className="size-[18px] text-accent-claret-text" aria-hidden />
+              <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-text-tertiary">
+                {t("title")}
+              </span>
               <HelpTip tkey="map" />
             </div>
             <span className="nums text-xs text-text-tertiary">
@@ -147,7 +163,9 @@ export function LiveTrackingClient({
             />
             {drivers.length === 0 && vehicles.length === 0 && (
               <div className="pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center">
-                <span className="rounded-[10px] border border-border bg-background/90 px-4 py-2 text-sm text-muted-foreground elevate">
+                {/* Haritanın ÜSTÜNDE yüzen katman — cam burada yerinde: altında
+                    gerçekten harita var ve derinliği o gösteriyor. */}
+                <span className="glass-pop rounded-full px-4 py-2 text-sm text-muted-foreground">
                   {t("no_active")}
                 </span>
               </div>
@@ -156,7 +174,7 @@ export function LiveTrackingClient({
         </section>
 
         {/* Yan panel — Reveal canlı-harita paneli: sekme şeridi + liste */}
-        <section className="surface-card flex flex-col overflow-hidden rounded-[14px]">
+        <section className="glass-panel flex flex-col overflow-hidden rounded-[16px]">
           <SubTabs
             className="px-4 pt-2"
             tabs={[
@@ -173,7 +191,7 @@ export function LiveTrackingClient({
                 {t("no_vehicles")}
               </div>
             ) : (
-              <ul className="divide-y divide-border">
+              <ul className="p-2">
                 {sortedVehicles.map((v) => {
                   const fresh = isFresh(v);
                   const isHi = hovered === v.vehicle_id;
@@ -186,8 +204,8 @@ export function LiveTrackingClient({
                         onFocus={() => setHovered(v.vehicle_id)}
                         onBlur={() => setHovered(null)}
                         className={cn(
-                          "group flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-surface-2",
-                          isHi && "bg-surface-2",
+                          "group flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-colors duration-150 hover:bg-surface-panel",
+                          isHi && "bg-surface-hover",
                           !fresh && (isHi ? "opacity-100" : "opacity-60 hover:opacity-100")
                         )}
                         style={isHi ? { boxShadow: `inset 3px 0 0 ${FLEET_VAR[v.fleet]}` } : undefined}
@@ -196,8 +214,12 @@ export function LiveTrackingClient({
                           <Truck className="size-[18px]" />
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="nums truncate text-sm font-semibold uppercase tracking-wide">
+                          {/* SARMALI SATIR (mobilde ölçüldü): 390px'te plaka +
+                              filo rozeti + kontak metni tek satıra sığmıyor ve
+                              plaka üç noktaya düşüyordu — plaka aracın kimliği,
+                              kırpılamaz. Dar ekranda kontak metni alt satıra iner. */}
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span className="nums text-sm font-semibold uppercase tracking-wide">
                               {v.plate}
                             </span>
                             {/* Filo rozeti (migration 023) — metinli, /admin/araclar
@@ -219,7 +241,7 @@ export function LiveTrackingClient({
                               )}
                               aria-hidden
                             />
-                            <span className="truncate text-xs text-text-tertiary">
+                            <span className="text-xs text-text-tertiary">
                               {/* Bayatken kontak durumu bilinmiyor — gri noktayla
                                   çelişen son-bilinen "açık" yerine "—". */}
                               {fresh
@@ -253,7 +275,7 @@ export function LiveTrackingClient({
               {t("no_active")}
             </div>
           ) : (
-            <ul className="divide-y divide-border">
+            <ul className="p-2">
               {drivers.map((d) => {
                 const activeMs = Math.max(0, now - new Date(d.shift_started_at).getTime());
                 const over =
@@ -262,7 +284,7 @@ export function LiveTrackingClient({
                   <li key={d.worker_id}>
                     <Link
                       href={`/admin/workers/${d.worker_id}`}
-                      className="group flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-surface-2"
+                      className="group flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-colors duration-150 hover:bg-surface-panel"
                     >
                       <div className="relative">
                         <UserAvatar name={d.name} size="sm" />
@@ -280,8 +302,9 @@ export function LiveTrackingClient({
                         />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-sm font-medium">{d.name}</span>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          {/* Şoför adı da kırpılmaz — aynı gerekçe (kimlik). */}
+                          <span className="text-sm font-medium">{d.name}</span>
                           <span className="nums text-xs text-text-tertiary">{d.plate ?? "—"}</span>
                         </div>
                         <div className="mt-0.5 flex items-center gap-2 text-xs">
@@ -308,46 +331,6 @@ export function LiveTrackingClient({
             </ul>
           )}
         </section>
-      </div>
-    </div>
-  );
-}
-
-function Kpi({
-  label,
-  value,
-  sub,
-  accent,
-  live,
-}: {
-  label: string;
-  value: string;
-  /** Small freshness breakdown next to the value, e.g. "16 canlı". */
-  sub?: string;
-  accent?: "sky" | "gold";
-  live?: boolean;
-}) {
-  const valueColor =
-    accent === "sky"
-      ? "text-accent-sky-text"
-      : accent === "gold"
-      ? "text-accent-gold-text"
-      : "text-foreground";
-  return (
-    <div className="surface-card card-kpi rounded-[14px] px-4 py-3.5">
-      <div className="flex items-center gap-1.5">
-        {live && <span className="live-dot" />}
-        <span className="text-[12px] sm:text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
-          {label}
-        </span>
-      </div>
-      <div className="mt-1.5 flex items-baseline gap-1.5">
-        <span className={`nums text-[28px] font-semibold leading-none ${valueColor}`}>
-          {value}
-        </span>
-        {sub && (
-          <span className="nums text-[12px] font-medium text-text-tertiary">{sub}</span>
-        )}
       </div>
     </div>
   );

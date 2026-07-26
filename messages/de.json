@@ -608,7 +608,8 @@
     "last_seen": "Zuletzt gesehen: {ago}",
     "kpi_live_count": "{count} live",
     "last_known": "Zuletzt bekannt: {time}",
-    "awaiting_location": "Warte auf Position"
+    "awaiting_location": "Warte auf Position",
+    "scope_now": "jetzt"
   },
   "route": {
     "title": "Routenverlauf",

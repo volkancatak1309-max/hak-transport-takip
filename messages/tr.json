@@ -608,7 +608,8 @@
     "last_seen": "Son görülme: {ago}",
     "kpi_live_count": "{count} canlı",
     "last_known": "Son bilinen: {time}",
-    "awaiting_location": "Konum bekleniyor"
+    "awaiting_location": "Konum bekleniyor",
+    "scope_now": "şu an"
   },
   "route": {
     "title": "Rota Geçmişi",

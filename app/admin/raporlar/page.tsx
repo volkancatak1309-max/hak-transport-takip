@@ -31,6 +31,23 @@ export const dynamic = "force-dynamic";
  *  • Eski erişimler kırılmadı: buradaki kartlar mevcut sayfalara götürür,
  *    araç detayındaki rota/metrik girişleri yerinde durur.
  */
+/**
+ * Kategori etiketi. Eskiden 15px yarı-kalın bir başlıktı ve kartların içindeki
+ * rapor adıyla (aynı 15px, aynı ağırlık) aynı seviyede okunuyordu — bölüm mü
+ * kart mı belli olmuyordu. Resend'in bölüm etiketi gibi mikro ve harf aralıklı:
+ * kart başlığından KÜÇÜK olduğu için hiyerarşide üstte durur.
+ */
+function CategoryLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-4 flex items-center gap-3">
+      <h2 className="shrink-0 text-[11px] font-medium uppercase tracking-[0.1em] text-text-tertiary">
+        {children}
+      </h2>
+      <hr className="divider-glow flex-1" />
+    </div>
+  );
+}
+
 export default async function ReportsPage() {
   const session = await requireAdmin();
   const t = await getTranslations("reports");
@@ -67,20 +84,22 @@ export default async function ReportsPage() {
       }}
       title={t("title")}
     >
-      <div className="mx-auto max-w-6xl space-y-8 px-4 py-6 sm:px-6">
+      <div className="mx-auto max-w-6xl space-y-12 px-4 py-6 sm:px-6">
         <PageHeader title={t("title")} description={t("subtitle")} />
 
         <section>
-          <h2 className="mb-3 text-[15px] font-semibold">{t("cat_vehicle")}</h2>
+          <CategoryLabel>{t("cat_vehicle")}</CategoryLabel>
           {/* Mobilde tek sütun (kartlar dikey), tablette 2, masaüstünde 3. */}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <ReportCard
               href="/admin/araclar"
               icon={Route}
               title={t("route_title")}
               description={t("route_desc")}
               contains={[t("route_c1"), t("route_c2"), t("route_c3")]}
-              meta={t("route_meta", { n: n(vehicles.count) })}
+              metaValue={n(vehicles.count)}
+              metaLabel={t("unit_vehicles")}
+              hint={t("route_hint")}
             />
             <ReportCard
               href="/admin/araclar"
@@ -88,7 +107,9 @@ export default async function ReportsPage() {
               title={t("distance_title")}
               description={t("distance_desc")}
               contains={[t("distance_c1"), t("distance_c2"), t("distance_c3")]}
-              meta={t("distance_meta", { n: n(vehicles.count) })}
+              metaValue={n(vehicles.count)}
+              metaLabel={t("unit_vehicles")}
+              hint={t("distance_hint")}
             />
             <ReportCard
               href="/admin/raporlar/mesafe"
@@ -96,7 +117,8 @@ export default async function ReportsPage() {
               title={t("fleet_distance_title")}
               description={t("fleet_distance_desc")}
               contains={[t("fd_c1"), t("fd_c2"), t("fd_c3")]}
-              meta={t("fd_meta", { n: n(vehicles.count) })}
+              metaValue={n(vehicles.count)}
+              metaLabel={t("unit_vehicles")}
             />
             <ReportCard
               href="/admin/raporlar/hiz"
@@ -104,7 +126,8 @@ export default async function ReportsPage() {
               title={t("speed_title")}
               description={t("speed_desc")}
               contains={[t("speed_c1"), t("speed_c2"), t("speed_c3")]}
-              meta={t("speed_meta", { n: n(events.count) })}
+              metaValue={n(events.count)}
+              metaLabel={t("unit_events")}
             />
             <ReportCard
               href="/admin/raporlar/yakit"
@@ -112,7 +135,9 @@ export default async function ReportsPage() {
               title={t("fuel_title")}
               description={t("fuel_desc")}
               contains={[t("fuel_c1"), t("fuel_c2"), t("fuel_c3")]}
-              meta={t("fuel_meta", { n: n(vehicles.count) })}
+              metaValue={n(vehicles.count)}
+              metaLabel={t("unit_vehicles")}
+              hint={t("fuel_hint")}
             />
             <ReportCard
               href="/admin/analiz"
@@ -120,7 +145,8 @@ export default async function ReportsPage() {
               title={t("idle_title")}
               description={t("idle_desc")}
               contains={[t("idle_c1"), t("idle_c2"), t("idle_c3")]}
-              meta={t("idle_meta", { n: n(idle.count) })}
+              metaValue={n(idle.count)}
+              metaLabel={t("unit_idle")}
             />
             <ReportCard
               href="/admin/alarmlar"
@@ -128,21 +154,24 @@ export default async function ReportsPage() {
               title={t("events_title")}
               description={t("events_desc")}
               contains={[t("events_c1"), t("events_c2"), t("events_c3")]}
-              meta={t("events_meta", { n: n(events.count) })}
+              metaValue={n(events.count)}
+              metaLabel={t("unit_events")}
             />
           </div>
         </section>
 
         <section>
-          <h2 className="mb-3 text-[15px] font-semibold">{t("cat_driver")}</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <CategoryLabel>{t("cat_driver")}</CategoryLabel>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <ReportCard
               href="/admin/raporlar/performans"
               icon={TrendingUp}
               title={t("perf_title")}
               description={t("perf_desc")}
               contains={[t("perf_c1"), t("perf_c2"), t("perf_c3")]}
-              meta={t("perf_meta", { n: n(shifts.count) })}
+              metaValue={n(shifts.count)}
+              metaLabel={t("unit_shifts")}
+              hint={t("calc_hint")}
             />
             <ReportCard
               href="/admin"
@@ -150,21 +179,25 @@ export default async function ReportsPage() {
               title={t("shift_title")}
               description={t("shift_desc")}
               contains={[t("shift_c1"), t("shift_c2"), t("shift_c3")]}
-              meta={t("shift_meta", { n: n(shifts.count) })}
+              metaValue={n(shifts.count)}
+              metaLabel={t("unit_shifts")}
+              hint={t("shift_hint")}
             />
           </div>
         </section>
 
         <section>
-          <h2 className="mb-3 text-[15px] font-semibold">{t("cat_analysis")}</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <CategoryLabel>{t("cat_analysis")}</CategoryLabel>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <ReportCard
               href="/admin/analiz"
               icon={BarChart3}
               title={t("analysis_title")}
               description={t("analysis_desc")}
               contains={[t("analysis_c1"), t("analysis_c2"), t("analysis_c3")]}
-              meta={t("analysis_meta", { n: n(events.count) })}
+              metaValue={n(events.count)}
+              metaLabel={t("unit_events")}
+              hint={t("calc_hint")}
             />
           </div>
         </section>

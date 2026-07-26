@@ -1,8 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { PageHeader } from "@/components/ui-v2";
-import { ReportRangeFilter } from "@/components/admin/ReportRangeFilter";
+import { ReportPageShell } from "@/components/admin/ReportPageShell";
 import { computeAnalyticsRange } from "@/lib/analytics";
 import { buildDistanceReport } from "@/lib/reports";
 import type { AnalyticsRangeKey } from "@/lib/analytics-shared";
@@ -38,15 +37,16 @@ export default async function DistanceReportPage({
       }}
       title={t("distance_title")}
     >
-      <div className="mx-auto max-w-6xl space-y-4 px-4 py-6 sm:px-6">
-        <PageHeader title={t("distance_title")} description={t("distance_page_desc")} />
-        <ReportRangeFilter
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+        <ReportPageShell
+          title={t("distance_title")}
+          description={t("distance_page_desc")}
           rangeKey={rangeKey}
           customFrom={sp.baslangic ?? null}
           customTo={sp.bitis ?? null}
         >
           <DistanceClient report={report} />
-        </ReportRangeFilter>
+        </ReportPageShell>
       </div>
     </DashboardShell>
   );

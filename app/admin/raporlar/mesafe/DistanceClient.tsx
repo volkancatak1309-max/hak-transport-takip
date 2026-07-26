@@ -3,8 +3,9 @@
 import { useLocale, useTranslations } from "next-intl";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DataTable, StatCard, EmptyState, type Column } from "@/components/ui-v2";
-import { HelpTip } from "@/components/help/HelpTip";
+import { DataTable, EmptyState, type Column } from "@/components/ui-v2";
+import { ReportStatBand } from "@/components/admin/ReportStatBand";
+import { ReportTableHeader } from "@/components/admin/ReportTableHeader";
 import type { DistanceReport, DistanceRow } from "@/lib/reports";
 
 /**
@@ -87,46 +88,48 @@ export function DistanceClient({ report }: { report: DistanceReport }) {
   ];
 
   return (
-    <div className="space-y-4 pt-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <StatCard
-          label={t("stat_total_km")}
-          value={`${num(report.totalKm)} km`}
-          scope={t("scope_range")}
-        />
-        <StatCard
-          label={t("stat_avg_day")}
-          value={`${num(report.totalKm / report.days)} km`}
-          scope={t("stat_days", { n: report.days })}
-        />
-        <StatCard
-          label={t("stat_measured")}
-          value={`${report.measured}/${report.vehicleCount}`}
-          scope={t("stat_measured_scope")}
-        />
-      </div>
+    <div className="space-y-6">
+      <ReportStatBand
+        stats={[
+          {
+            label: t("stat_total_km"),
+            value: `${num(report.totalKm)} km`,
+            scope: t("scope_range"),
+          },
+          {
+            label: t("stat_avg_day"),
+            value: `${num(report.totalKm / report.days)} km`,
+            scope: t("stat_days", { n: report.days }),
+          },
+          {
+            label: t("stat_measured"),
+            value: `${report.measured}/${report.vehicleCount}`,
+            scope: t("stat_measured_scope"),
+          },
+        ]}
+      />
 
       {report.rows.length === 0 ? (
         <EmptyState kind="none" title={t("empty_title")} hint={t("empty_hint")} />
       ) : (
-        <>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[13px] font-medium">{t("distance_table_title")}</span>
-              <HelpTip tkey="rep_distance_table" />
-            </div>
-            <Button variant="outline" size="sm" onClick={exportCsv}>
-              <Download className="size-4" />
-              {t("export_csv")}
-            </Button>
-          </div>
+        <div className="space-y-3">
+          <ReportTableHeader
+            label={t("distance_table_title")}
+            tkey="rep_distance_table"
+            actions={
+              <Button variant="outline" size="sm" onClick={exportCsv}>
+                <Download className="size-4" />
+                {t("export_csv")}
+              </Button>
+            }
+          />
           <DataTable
             rows={report.rows}
             columns={columns}
             rowKey={(r) => r.vehicleId}
             totalLabel={t("total_vehicles")}
           />
-        </>
+        </div>
       )}
     </div>
   );

@@ -1,8 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { PageHeader } from "@/components/ui-v2";
-import { ReportRangeFilter } from "@/components/admin/ReportRangeFilter";
+import { ReportPageShell } from "@/components/admin/ReportPageShell";
 import { EpochWarning } from "@/components/admin/EpochWarning";
 import { getLatestConfigEpoch, rangeStartsBeforeEpoch } from "@/lib/config-epoch";
 import { computeAnalyticsRange } from "@/lib/analytics";
@@ -43,19 +42,22 @@ export default async function SpeedReportPage({
       }}
       title={t("speed_title")}
     >
-      <div className="mx-auto max-w-6xl space-y-4 px-4 py-6 sm:px-6">
-        <PageHeader title={t("speed_title")} description={t("speed_page_desc")} />
-        <EpochWarning
-          epochISO={epoch ? epoch.changedAt.toISOString() : null}
-          show={rangeStartsBeforeEpoch(range.start, epoch)}
-        />
-        <ReportRangeFilter
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+        <ReportPageShell
+          title={t("speed_title")}
+          description={t("speed_page_desc")}
+          notice={
+            <EpochWarning
+              epochISO={epoch ? epoch.changedAt.toISOString() : null}
+              show={rangeStartsBeforeEpoch(range.start, epoch)}
+            />
+          }
           rangeKey={rangeKey}
           customFrom={sp.baslangic ?? null}
           customTo={sp.bitis ?? null}
         >
           <SpeedClient report={report} />
-        </ReportRangeFilter>
+        </ReportPageShell>
       </div>
     </DashboardShell>
   );

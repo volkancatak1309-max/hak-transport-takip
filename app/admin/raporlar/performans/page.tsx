@@ -1,8 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { PageHeader } from "@/components/ui-v2";
-import { ReportRangeFilter } from "@/components/admin/ReportRangeFilter";
+import { ReportPageShell } from "@/components/admin/ReportPageShell";
 import { computeAnalyticsRange } from "@/lib/analytics";
 import { buildPerformanceReport, rangeLabel } from "@/lib/reports";
 import type { AnalyticsRangeKey } from "@/lib/analytics-shared";
@@ -36,15 +35,16 @@ export default async function PerformanceReportPage({
       }}
       title={t("perf_title")}
     >
-      <div className="mx-auto max-w-6xl space-y-4 px-4 py-6 sm:px-6">
-        <PageHeader title={t("perf_title")} description={t("perf_page_desc")} />
-        <ReportRangeFilter
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+        <ReportPageShell
+          title={t("perf_title")}
+          description={t("perf_page_desc")}
           rangeKey={rangeKey}
           customFrom={sp.baslangic ?? null}
           customTo={sp.bitis ?? null}
         >
           <PerformanceClient report={report} period={rangeLabel(range)} />
-        </ReportRangeFilter>
+        </ReportPageShell>
       </div>
     </DashboardShell>
   );

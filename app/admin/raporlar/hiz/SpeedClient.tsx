@@ -1,8 +1,9 @@
 "use client";
 
 import { useLocale, useTranslations } from "next-intl";
-import { DataTable, StatCard, EmptyState, type Column } from "@/components/ui-v2";
-import { HelpTip } from "@/components/help/HelpTip";
+import { DataTable, EmptyState, type Column } from "@/components/ui-v2";
+import { ReportStatBand } from "@/components/admin/ReportStatBand";
+import { ReportTableHeader } from "@/components/admin/ReportTableHeader";
 import { SPEED_MIN_KM } from "@/lib/metric-thresholds";
 import type { SpeedReport, SpeedRow } from "@/lib/reports";
 
@@ -96,41 +97,40 @@ export function SpeedClient({ report }: { report: SpeedReport }) {
   ];
 
   return (
-    <div className="space-y-4 pt-4">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <StatCard
-          label={t("stat_violations")}
-          value={report.totalViolations}
-          scope={t("scope_range")}
-          tone={report.totalViolations > 0 ? "warning" : "neutral"}
-        />
-        <StatCard
-          label={t("stat_max_speed")}
-          value={report.maxSpeedKmh === null ? "—" : `${report.maxSpeedKmh} km/s`}
-          scope={t("scope_range")}
-        />
-        <StatCard
-          label={t("stat_vehicles_flagged")}
-          value={`${report.vehiclesWithViolations}/${report.vehicleCount}`}
-          scope={t("stat_vehicles_flagged_scope")}
-        />
-      </div>
+    <div className="space-y-6">
+      <ReportStatBand
+        stats={[
+          {
+            label: t("stat_violations"),
+            value: report.totalViolations,
+            scope: t("scope_range"),
+            tone: report.totalViolations > 0 ? "warning" : "neutral",
+          },
+          {
+            label: t("stat_max_speed"),
+            value: report.maxSpeedKmh === null ? "—" : `${report.maxSpeedKmh} km/s`,
+            scope: t("scope_range"),
+          },
+          {
+            label: t("stat_vehicles_flagged"),
+            value: `${report.vehiclesWithViolations}/${report.vehicleCount}`,
+            scope: t("stat_vehicles_flagged_scope"),
+          },
+        ]}
+      />
 
       {report.rows.length === 0 ? (
         <EmptyState kind="none" title={t("empty_title")} hint={t("empty_hint")} />
       ) : (
-        <>
-          <div className="flex items-center gap-1">
-            <span className="text-[13px] font-medium">{t("speed_table_title")}</span>
-            <HelpTip tkey="rep_speed_table" />
-          </div>
+        <div className="space-y-3">
+          <ReportTableHeader label={t("speed_table_title")} tkey="rep_speed_table" />
           <DataTable
             rows={report.rows}
             columns={columns}
             rowKey={(r) => r.vehicleId}
             totalLabel={t("total_vehicles")}
           />
-        </>
+        </div>
       )}
 
       <p className="text-xs text-muted-foreground">

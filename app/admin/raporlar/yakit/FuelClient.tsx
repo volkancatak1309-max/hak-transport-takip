@@ -4,14 +4,9 @@ import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Download, FileText, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DataTable,
-  StatCard,
-  StatusChip,
-  EmptyState,
-  type Column,
-} from "@/components/ui-v2";
-import { HelpTip } from "@/components/help/HelpTip";
+import { DataTable, StatusChip, EmptyState, type Column } from "@/components/ui-v2";
+import { ReportStatBand } from "@/components/admin/ReportStatBand";
+import { ReportTableHeader } from "@/components/admin/ReportTableHeader";
 import {
   FUEL_L100_MIN_DAYS,
   FUEL_MIN_CONSUMED_PCT,
@@ -48,7 +43,7 @@ export function FuelClient({
   if (!report.available) {
     const timedOut = report.unavailableReason === "timeout";
     return (
-      <div className="pt-4">
+      <div>
         <EmptyState
           kind="none"
           title={timedOut ? t("fuel_timeout_title") : t("fuel_unavailable_title")}
@@ -332,50 +327,53 @@ export function FuelClient({
   const top = report.rows.find((r) => r.hasData && !r.dataUnreliable);
 
   return (
-    <div className="space-y-4 pt-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label={t("stat_total_fuel")}
-          value={`${num(report.totalConsumedLiters)} L`}
-          scope={t("scope_range")}
-        />
-        {/* FİLO ORTALAMASI — yalnız üç kapıyı geçen araçlardan (22.07.2026).
-            Eskiden satırda gizlediğimiz saçma değerlerin km'si ve litresi yine
-            de bu toplamın içindeydi. Kapsam etiketi artık kaç araçtan
-            hesaplandığını söylüyor: ortalama filonun tamamı değildir. */}
-        <StatCard
-          label={t("stat_fleet_l100")}
-          value={report.fleetLPer100Km === null ? "—" : num(report.fleetLPer100Km, 1)}
-          scope={
-            !report.l100Available
+    <div className="space-y-6">
+      <ReportStatBand
+        stats={[
+          {
+            label: t("stat_total_fuel"),
+            value: `${num(report.totalConsumedLiters)} L`,
+            scope: t("scope_range"),
+          },
+          // FİLO ORTALAMASI — yalnız üç kapıyı geçen araçlardan (22.07.2026).
+          // Eskiden satırda gizlediğimiz saçma değerlerin km'si ve litresi yine
+          // de bu toplamın içindeydi. Kapsam etiketi artık kaç araçtan
+          // hesaplandığını söylüyor: ortalama filonun tamamı değildir.
+          {
+            label: t("stat_fleet_l100"),
+            value: report.fleetLPer100Km === null ? "—" : num(report.fleetLPer100Km, 1),
+            scope: !report.l100Available
               ? t("l100_needs_days", { days: FUEL_L100_MIN_DAYS })
               : report.fleetLPer100Km === null
                 ? t("l100_no_vehicle")
                 : t("stat_fleet_l100_scope", {
                     n: report.l100VehicleCount,
                     total: report.vehicleCount,
-                  })
-          }
-        />
-        <StatCard
-          label={t("stat_thirstiest")}
-          value={top ? top.plate : "—"}
-          scope={
-            top && top.lPer100Km !== null
-              ? t("stat_thirstiest_scope", { n: num(top.lPer100Km, 1) })
-              : top && top.consumedLiters !== null
-                ? `${num(top.consumedLiters)} L`
-                : t("no_data")
-          }
-        />
-        <StatCard
-          label={t("stat_leak_vehicles")}
-          value={report.suspiciousVehicles}
-          scope={t("stat_leak_scope")}
-          tone={report.suspiciousVehicles > 0 ? "critical" : "neutral"}
-        />
-      </div>
+                  }),
+          },
+          {
+            label: t("stat_thirstiest"),
+            value: top ? top.plate : "—",
+            scope:
+              top && top.lPer100Km !== null
+                ? t("stat_thirstiest_scope", { n: num(top.lPer100Km, 1) })
+                : top && top.consumedLiters !== null
+                  ? `${num(top.consumedLiters)} L`
+                  : t("no_data"),
+          },
+          {
+            label: t("stat_leak_vehicles"),
+            value: report.suspiciousVehicles,
+            scope: t("stat_leak_scope"),
+            tone: report.suspiciousVehicles > 0 ? "critical" : "neutral",
+          },
+        ]}
+      />
 
+      {/* UYARILAR TEK KÜMEDE: üçü de "eksik sayının sebebi" ailesindendir ve
+          band ile tablo arasındaki aynı boşluğu paylaşır; ayrı ayrı 24px arayla
+          dizilince üç bağımsız duyuru gibi okunuyorlardı. */}
+      <div className="space-y-2">
       {/* Kapasitesi girilmemiş araçlar %-bazlı gösterilir — yönetici forma girip
           litre metriklerini açabilir. Uydurma litre üretilmez. */}
       {report.capacityMissing > 0 && (
@@ -405,34 +403,35 @@ export function FuelClient({
           })}
         </p>
       )}
+      </div>
 
       {report.rows.length === 0 ? (
         <EmptyState kind="none" title={t("empty_title")} hint={t("empty_hint")} />
       ) : (
-        <>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[13px] font-medium">{t("fuel_table_title")}</span>
-              <HelpTip tkey="rep_fuel_table" />
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={exportCsv}>
-                <Download className="size-4" />
-                {t("export_csv")}
-              </Button>
-              <Button variant="outline" size="sm" onClick={exportPdf}>
-                <FileText className="size-4" />
-                {t("export_pdf")}
-              </Button>
-            </div>
-          </div>
+        <div className="space-y-3">
+          <ReportTableHeader
+            label={t("fuel_table_title")}
+            tkey="rep_fuel_table"
+            actions={
+              <>
+                <Button variant="outline" size="sm" onClick={exportCsv}>
+                  <Download className="size-4" />
+                  {t("export_csv")}
+                </Button>
+                <Button variant="outline" size="sm" onClick={exportPdf}>
+                  <FileText className="size-4" />
+                  {t("export_pdf")}
+                </Button>
+              </>
+            }
+          />
           <DataTable
             rows={report.rows}
             columns={columns}
             rowKey={(r) => r.vehicleId}
             totalLabel={t("total_vehicles")}
           />
-        </>
+        </div>
       )}
 
       {/* Tüketim = dolumlar + net düşüş (ilk − son), kapasiteyle litreye çevrilir

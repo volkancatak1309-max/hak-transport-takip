@@ -4,8 +4,9 @@ import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DataTable, StatCard, EmptyState, type Column } from "@/components/ui-v2";
-import { HelpTip } from "@/components/help/HelpTip";
+import { DataTable, EmptyState, type Column } from "@/components/ui-v2";
+import { ReportStatBand, type ReportStat } from "@/components/admin/ReportStatBand";
+import { ReportTableHeader } from "@/components/admin/ReportTableHeader";
 import { formatDurationShort } from "@/lib/format";
 import type { PerformanceReport, PerformanceRow } from "@/lib/reports";
 import {
@@ -183,8 +184,37 @@ export function PerformanceClient({
       ? scored[0]
       : null;
 
+  // Ölçüm bandı — skor kalibre değilse ortalama-skor ve "en iyi şoför" hücreleri
+  // hiç girmez; band kolon sayısını kalan hücrelere göre kendi ayarlar.
+  const stats: ReportStat[] = [
+    ...(SAFETY_SCORE_CALIBRATED
+      ? [
+          {
+            label: t("stat_avg_score"),
+            value: report.avgScore === null ? "—" : report.avgScore,
+            scope: t("stat_scored", { n: report.scoredCount }),
+          },
+        ]
+      : []),
+    ...(best
+      ? [
+          {
+            label: t("stat_top_driver"),
+            value: best.name,
+            scope: t("stat_top_scope", { n: best.safetyScore }),
+          },
+        ]
+      : []),
+    { label: t("stat_shifts"), value: report.totalShifts, scope: t("scope_range") },
+    {
+      label: t("stat_worked"),
+      value: formatDurationShort(report.totalWorkedMs, locale),
+      scope: t("scope_range"),
+    },
+  ];
+
   return (
-    <div className="space-y-4 pt-4">
+    <div className="space-y-6">
       {/* Skor kalibrasyon notu — kolonun NEDEN olmadığı ekranda yazar. Boş bir
           kolon ya da "—" yöneticiye "panel bozuk" dedirtir; sebep ona bilgi verir. */}
       {!SAFETY_SCORE_CALIBRATED && (
@@ -193,54 +223,29 @@ export function PerformanceClient({
         </p>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {SAFETY_SCORE_CALIBRATED && (
-          <StatCard
-            label={t("stat_avg_score")}
-            value={report.avgScore === null ? "—" : report.avgScore}
-            scope={t("stat_scored", { n: report.scoredCount })}
-          />
-        )}
-        {best && (
-          <StatCard
-            label={t("stat_top_driver")}
-            value={best.name}
-            scope={t("stat_top_scope", { n: best.safetyScore })}
-          />
-        )}
-        <StatCard
-          label={t("stat_shifts")}
-          value={report.totalShifts}
-          scope={t("scope_range")}
-        />
-        <StatCard
-          label={t("stat_worked")}
-          value={formatDurationShort(report.totalWorkedMs, locale)}
-          scope={t("scope_range")}
-        />
-      </div>
+      <ReportStatBand stats={stats} />
 
       {report.rows.length === 0 ? (
         <EmptyState kind="none" title={t("empty_title")} hint={t("empty_hint")} />
       ) : (
-        <>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1">
-              <span className="text-[13px] font-medium">{t("perf_table_title")}</span>
-              <HelpTip tkey="rep_perf_table" />
-            </div>
-            <Button variant="outline" size="sm" onClick={exportPdf}>
-              <FileText className="size-4" />
-              {t("export_pdf")}
-            </Button>
-          </div>
+        <div className="space-y-3">
+          <ReportTableHeader
+            label={t("perf_table_title")}
+            tkey="rep_perf_table"
+            actions={
+              <Button variant="outline" size="sm" onClick={exportPdf}>
+                <FileText className="size-4" />
+                {t("export_pdf")}
+              </Button>
+            }
+          />
           <DataTable
             rows={report.rows}
             columns={columns}
             rowKey={(r) => r.workerId}
             totalLabel={t("total_drivers")}
           />
-        </>
+        </div>
       )}
 
       {/* Olay kolonunun kısaltması ve skorun anlamı — tablo altında tek satır. */}

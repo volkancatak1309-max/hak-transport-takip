@@ -1089,7 +1089,7 @@ export function AdminClient({
                   </p>
                 )}
                 {editPkgCheck.level === "confirm" && (
-                  <p className="flex items-start gap-1.5 text-xs text-accent-gold">
+                  <p className="flex items-start gap-1.5 text-xs text-accent-gold-text">
                     <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                     {t(
                       editPkgCheck.code === "all_returned"
@@ -1224,7 +1224,7 @@ function ShiftDetail({
       <div className="flex flex-wrap items-center gap-3 pt-1">
         <Link
           href={`/admin/workers/${entry.worker_id}`}
-          className="inline-flex items-center gap-2 text-sm text-accent-sky hover:underline"
+          className="inline-flex items-center gap-2 text-sm text-accent-sky-text hover:underline"
         >
           <UserAvatar name={entry.workers?.name ?? "?"} size="xs" />
           {entry.workers?.name}

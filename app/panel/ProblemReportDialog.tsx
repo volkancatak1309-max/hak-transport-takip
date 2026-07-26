@@ -86,9 +86,9 @@ export function ProblemReportDialog({ open, onOpenChange }: Props) {
                 className="glass-field flex h-32 flex-col items-center justify-center gap-3 rounded-2xl text-center transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] hover:bg-white/[0.06] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.98] disabled:opacity-60"
               >
                 {busy ? (
-                  <Loader2 className="size-9 animate-spin text-accent-sky" aria-hidden />
+                  <Loader2 className="size-9 animate-spin text-accent-sky-text" aria-hidden />
                 ) : (
-                  <Icon className="size-9 text-accent-sky" aria-hidden />
+                  <Icon className="size-9 text-accent-sky-text" aria-hidden />
                 )}
                 <span className="px-2 text-sm font-semibold leading-tight text-foreground">
                   {t(o.tkey)}

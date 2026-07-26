@@ -38,7 +38,7 @@ export function EpochWarning({
   return (
     <div
       role="status"
-      className={`flex items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-xs text-accent-gold ${className}`}
+      className={`flex items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-xs text-accent-gold-text ${className}`}
     >
       <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
       <p>{t("epoch_warning", { date: formatDate(epochISO, locale) })}</p>

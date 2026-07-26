@@ -104,7 +104,7 @@ export function TelegramAdminClient({ connected, myStatus, webhook }: Props) {
                   {webhook.lastErrorMessage}
                 </p>
               ) : (
-                <p className="flex items-center gap-2 text-accent-sky">
+                <p className="flex items-center gap-2 text-accent-sky-text">
                   <CheckCircle2 className="size-4" /> {t("webhook_ok")}
                 </p>
               )}

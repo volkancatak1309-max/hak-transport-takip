@@ -20,17 +20,38 @@
 | **DESTEK C** (26.07) — katmanlı gri merdiveni + operasyon konsolu İSKELETİ | **Stellate** · Operations metrics | `e8b04517-1949-47d0-9faa-23a79f651802` | `https://images.refero.design/screenshots/stellate.co/desktop/8dd79423-3320-4e4d-bc46-2a6b696c3f65_preview.jpg` |
 | **DESTEK D** (26.07) — DETAY ekranı künye satırı: etiket sol / değer sağ, mikro bölüm etiketi, yoğun ayraçlı liste | **Enode** · Vehicle capabilities konsolu | `77cf19d7-fb3d-41bd-bc69-3e1bddb42f1a` (açık) · `5b7b3988-96d1-4f94-8c3f-f6a91505bde3` (koyu) | `https://images.refero.design/screenshots/enode.com/desktop/76385a20-10d3-41c0-9101-f5d447ec4715_preview.jpg` |
 | **DESTEK E** (26.07) — üç kolon anatomisi (nav · orta içerik · sağ özellik/olay rayı) + rayda mini harita bandı | **Clay** · kişi detayı | `754179d7-6fe2-4e21-9edc-bbaf45bd9ff1` | `https://images.refero.design/screenshots/clay.earth/desktop/b66ec900-61f4-4022-83c2-730061a0009d_preview.jpg` |
+| **DESTEK F** (27.07) — YÜZEY hassasiyeti: halka-yükselti, 14px kart / 10px kontrol yarıçapı, sıkı başlık aralığı | **Ui** · shadcn/ui | `c14c0a94-1037-449e-bf5b-4cb972656ac7` | `https://images.refero.design/styles/ui.shadcn.com/c14c0a94-1037-449e-bf5b-4cb972656ac7/preview_0.jpg` |
 
 ### Korunacak imza özellikler (Runey'den — bunlar pazarlık dışı)
 
 1. **Yüzen siyah nav rayı** — kenara yapışık değil, yuvarlatılmış, koyu panel.
-2. **Sıcak açık zemin** + üstünde **beyaz kartlar** — soğuk gri-mavi değil.
-   ⚠️ 26.07 güncellemesi: zemin artık `#F5F5F7`, yani karttan BELİRGİN ayrışır
-   (§2.1 katmanlı gri merdiveni). Runey'in tek-katman sadeliği yerini Stellate'in
-   kademeli gri mantığına bıraktı — hue Runey'de kaldı.
+2. **Beyaz zemin + beyaz kart, halkayla ayrılmış.**
+   ⚠️ 27.07 güncellemesi: 26.07'de zemin `#F5F5F7`'ye çekilmişti; geri alındı.
+   Zemin ve kart aynı beyaz, ayrım Ui'nin 1px halkası (§2.1). Runey'in
+   tek-katman sadeliği geri döndü; Stellate'in kademe mantığı kartın İÇİNE
+   (tablo başlığı, zebra, hover) çekildi.
 3. **Tek aksan rengi.** Mercan — ama artık CÖMERT (§2.2, %10 sınırı kalktı).
-4. **Cömert boşluk + büyük köşe yarıçapı** (16–20px kart).
+4. **Cömert boşluk** (kart içi 20–24px — Ui'nin 16px'i ALINMADI) + yumuşak köşe (14px kart).
 5. **Dizilim:** başlık satırı → 4'lü KPI şeridi → tam genişlik grafik kartı → gruplanmış liste/tablo.
+
+### Ui'den (DESTEK F) ALINANLAR — ve ALINMAYANLAR
+
+Ui bir **style** referansı (ui.shadcn.com), ekran değil. Yüzey ve form
+hassasiyeti için alındı; karakteri için DEĞİL.
+
+**Alındı:** halka-yükselti (`0 0 0 1px`) · 14px kart / 10px kontrol yarıçapı ·
+sıkı başlık harf aralığı (−0.025em@18px) · kanvas = kart beyaz kararı.
+
+**Alınmadı — ve nedeni:**
+- **83px bölüm arası.** Ui bir pazarlama sayfası; bizimki operasyon konsolu.
+  Bölüm arası 32px kalır.
+- **48px display başlık.** Hero ölçüsü. Sayfa başlığımız 28–32px kalır.
+- **16px kart içi boşluk.** Ui "compact"; biz ferah kalıyoruz — 20–24px (§4).
+- **Aksan yokluğu / siyah CTA.** Ui'nin marka aksanı yok, birincil eylemi siyah.
+  Bizde mercan var ve birincil eylem MERCAN (§5). Ui'nin kırmızısı
+  (`#c22b10`, rolü "destructive/error") aksan olarak ALINMAZ: mercan + Ui
+  kırmızısı + `--status-critical` üç ayrı kırmızı eder; kullanıcı "marka
+  kırmızısı" ile "hata kırmızısı"nı ayırt edemez hâle gelir.
 
 ### Ödünç alınan dar detaylar (rol dışına ÇIKARILAMAZ)
 
@@ -54,8 +75,7 @@ aynı mizanpaj, aynı ritim, aynı aksan rolü — yalnız zemin/yüzey/metin re
 
 Altyapı hazır: `next-themes`, `attribute="class"`, `.dark` bloğu `app/globals.css`'te
 zaten tanımlı, `components/ThemeToggle.tsx` çalışır durumda.
-⚠️ Şu an `components/providers.tsx` içinde `forcedTheme="dark"` var — kilit gereği
-kaldırılacak, `defaultTheme="light"` olacak.
+✅ `forcedTheme` kaldırıldı, `defaultTheme="light"` uygulandı (doğrulandı 27.07).
 
 Geçiş: zemin + metin renkleri 240ms yumuşak; layout HİÇ değişmez.
 
@@ -65,26 +85,33 @@ Geçiş: zemin + metin renkleri 240ms yumuşak; layout HİÇ değişmez.
 
 ### 2.1 Nötr taban — KATMANLI GRİ MERDİVENİ (26.07.2026 güncellemesi)
 
-**Karar (Volkan):** sayfa düz beyaz olmayacak; **katmanlı gri** hissi verecek.
-Referans: Stellate operations konsolu (`e8b04517`) — zemin `#F8FAFC`, beyaz kart,
-şerit satır `#F1F5F9`, ayraç `#E2E8F0`, ikincil metin `#687285`, üçüncül `#959EAE`.
-Stellate'in **kademe mantığı** alındı, hue'su değil: bizim nötrler Runey'in sıcak
-tarafında kalır, ama basamaklar arası fark artık **görünür**.
+**Karar (Volkan, 27.07.2026 — GÜNCELLENDİ):** **kanvas = kart = beyaz.**
+Zemin basamağı (`#F5F5F7`) KALKTI. Kartı sayfadan ayıran şey artık ton farkı
+değil, Ui'nin (DESTEK F) **1px halkası**.
+
+Gri basamaklar SİLİNMEDİ — rolleri daraldı: artık **etkileşim yüzeyi**
+olarak yaşıyorlar (tablo başlığı, zebra satır, filtre paneli, hover). Yani
+"katmanlı gri" bir ZEMİN dili olmaktan çıkıp bir ETKİLEŞİM dili oldu.
+
+Önceki karar (26.07) Stellate'in kademe mantığını zemine taşımıştı; 27.07'de
+zemin tarafı geri alındı, etkileşim tarafı korundu.
 
 | # | Rol | Açık (varsayılan) | Koyu | Not |
 |---|---|---|---|---|
-| 1 | Sayfa zemini (ground) | `#F5F5F7` | `#0F0F10` | Karttan belirgin daha koyu — katman hissi buradan başlar |
+| 1 | Sayfa zemini (ground) | `#FFFFFF` | `#18181A` | Kart ile AYNI — ayrım halkadan gelir |
 | 2 | Kart yüzeyi | `#FFFFFF` | `#18181A` | İçeriğin yaşadığı yer |
-| 3 | Panel / inset (filtre paneli, tablo başlığı, zebra satır) | `#F1F1F3` | `#1F1F22` | Stellate'in `#F1F5F9` karşılığı |
+| — | **Halka** (`--ring-hairline`) | `rgba(0,0,0,0.10)` | `rgba(255,255,255,0.10)` | Kenarlık + yükselti TEK öğede; layout'a girmez |
+| 3 | ETKİLEŞİM: panel / inset (filtre paneli, tablo başlığı, zebra satır) | `#F1F1F3` | `#1F1F22` | Zemin değil — içerik yüzeyi |
 | 4 | Hover / seçili | `#EAEAEC` | `#26262A` | 3'ten bir tık daha koyu, tıklanabilirlik hissi |
-| 5 | Kenarlık / ayraç | `#E3E3E6` | `rgba(255,255,255,0.10)` | Eski `#E6E9EB`'ten koyu — ayraçlar görünür olacak |
+| 5 | Kenarlık / ayraç (satır içi) | `#E3E3E6` | `rgba(255,255,255,0.10)` | Tablo/liste satır ayracı. KART sınırı için halka kullanılır |
 | — | Nav rayı | `#181818` (her iki temada da KOYU) | `#0E0E0F` | İmza öğe |
 | — | Birincil metin (ink) | `#181818` | `#F2F3F5` | |
 | — | İkincil metin | `#6B6B6B` | `#A0A0A3` | AA ölçüldü |
 | — | Üçüncül metin / etiket | `#6E6E73` | `#9A9AA0` | 26.07: AA için koyultuldu (12px alt-satır) |
 
-**Kural:** üst üste gelen iki yüzey ASLA aynı tonda olmaz. Kart zeminin üstünde,
-panel kartın içinde, hover panelin üstünde — her katman bir basamak koyulaşır.
+**Kural (27.07 revizyonu):** zemin ve kart AYNI tondadır; ayrım halkadan gelir.
+Kartın İÇİNDE ise merdiven aynen işler: panel kartın üstünde, hover panelin
+üstünde — her etkileşim katmanı bir basamak koyulaşır.
 
 ### 2.2 Aksan — mercan, ZARİF CÖMERTLİK (26.07.2026 güncellemesi)
 
@@ -219,16 +246,48 @@ başlıkta 1.2–1.3, gövdede 1.4–1.5.
 
 | Öğe | Yarıçap |
 |---|---|
-| Büyük kart / panel | **16–20px** |
-| Grafik ve tablo konteyneri | 16px |
-| KPI kartı | 16px |
-| Buton, input, dropdown | 10–12px |
+| Büyük kart / panel | **14px** (27.07: Ui) |
+| Grafik ve tablo konteyneri | 14px |
+| KPI kartı | 14px |
+| Buton, input, dropdown | **10px** (27.07: Ui — aralık kapandı) |
 | Çip / rozet / pill | tam yuvarlak |
 | Nav rayı | 20px (yüzen panel) |
 
-**Kenarlık ve gölge:** 1px kenarlık ana ayraçtır. Gölge YUMUŞAK ve nadir —
-kartlarda `0 1px 2px rgba(0,0,0,0.04)`, yalnız popover/dialog/dropdown'da
-`0 8px 24px rgba(0,0,0,0.10)`. Koyu temada gölge yerine kenarlık kontrastı artar.
+**HALKA — kart sınırının tek yolu (27.07, Ui/DESTEK F):**
+`box-shadow: 0 0 0 1px var(--ring-hairline)`. Kenarlık + yükselti tek öğede
+birleşir. `border` + `box-shadow` ikilisi KULLANILMAZ: ikisi birlikte çift
+çizgi verir ve `border` layout'u 1px büyütür — halka layout'a girmez.
+
+| Bağlam | Değer |
+|---|---|
+| Kart / panel halkası | `0 0 0 1px rgba(0,0,0,0.10)` · koyu `rgba(255,255,255,0.10)` |
+| Tablo/liste satır ayracı | 1px `--border` (halka değil, gerçek kenarlık) |
+| Popover / dialog / dropdown | halka + `0 8px 28px rgba(0,0,0,0.28)` |
+
+Gölge yalnız YÜZEN katmanda vardır. Kart gölgesi YOK.
+
+### 4.1 BUZLU CAM — yalnız yüzen katman (27.07.2026)
+
+Cam bir **malzeme** değil, bir **katman işareti**dir: bulanıklık görünce göz
+"bu şey içeriğin ÜSTÜNDE yüzüyor" diye okur. Her yerde kullanılırsa bu anlam
+ölür — ve düşük uçlu telefonlarda kaydırma takılır.
+
+**İZİN VERİLEN (tamamı bu kadar):** kaydırmada üst bar · DetailDrawer ve
+çekmeceler · dialog'lar · harita üstü paneller (lejant, araç kartı).
+
+**YASAK:** kart · tablo · KPI kutusu · sayfa zemini · form alanı grubu.
+Bunlar `.surface-card` halkasını kullanır.
+
+| Ölçü | Değer |
+|---|---|
+| Bulanıklık | 12–16px (token: `--glass-blur`, varsayılan 14px) |
+| Yüzey | beyaz %75 · koyuda `#18181A` %75 |
+| Sınır | 1px halka (`--glass-border`) — camda da halka dili sürer |
+| Ekranda azami cam katman | **2** |
+
+**Geri düşüş:** `prefers-reduced-transparency` ve `backdrop-filter`
+desteklenmeyen tarayıcıda düz `--glass-bg-solid` yüzeye düşer; bulanıklık
+kaybolur, okunurluk değişmez.
 
 ---
 
@@ -257,10 +316,24 @@ Başlık satırı: 12px, 500, üçüncül renk, uppercase, `+0.04em`. Satır 48�
 (mercan %15) — sayı okunur kalır, bar sıralamayı görünür kılar.
 Gruplama başlığı (ay, filo) satır arasında küçük yapışkan etiket.
 
-### Buton
-Birincil: koyu dolu (`#181818`) beyaz metin, 10–12px köşe, 36–44px yükseklik.
-Yıkıcı olmayan vurgulu eylem: mercan dolu. İkincil: 1px kenarlıklı, şeffaf zemin.
-Ghost: yalnız hover zemini. Basışta `translateY(1px)`.
+### Buton (27.07.2026 — İÇ ÇELİŞKİ KAPATILDI)
+
+Kilit iki yerde çelişiyordu: burası "birincil eylem koyu dolu" diyordu, §2.2 ise
+"birincil eylem"i mercanın meşru rolleri arasında sayıyordu. **Çelişki mercan
+lehine kapatıldı.**
+
+| Rol | Dil |
+|---|---|
+| **Birincil** | **Mercan dolu** (`--accent-coral`) + `--accent-coral-fg` mürekkep, 10px köşe, 36–44px yükseklik |
+| İkincil | 1px kenarlıklı, şeffaf zemin, nötr metin |
+| Ghost | yalnız hover zemini |
+| Yıkıcı | `--destructive` metin + soft zemin |
+
+**Mercan buton üstündeki metin BEYAZ DEĞİLDİR** — beyaz `#F15857` üstünde
+3.35:1 kalır (§2.2 ölçümü). `--accent-coral-fg` koyu mürekkep 6.27:1 verir.
+
+Basışta `translateY(1px)`. Ekranda **tek** dolu mercan buton olur (§2.2):
+ikinci bir vurgulu eylem gerekiyorsa ikincil dilde kalır.
 
 ### Çip / rozet
 İnce, düşük doygunluk: ilgili rengin %12 zemini + tam renk metni, tam yuvarlak,

@@ -28,7 +28,7 @@ export function ReportCard({
   return (
     <Link
       href={href}
-      className="group glass flex flex-col gap-3 rounded-[10px] p-4 transition-colors hover:bg-surface-2/60 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="group surface-card flex flex-col gap-3 rounded-[14px] p-4 transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <div className="flex items-start gap-3">
         {/* Bordo ikon kutusu — OpsSummary/AttentionList ile AYNI çift:

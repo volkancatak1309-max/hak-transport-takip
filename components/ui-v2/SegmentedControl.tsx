@@ -54,7 +54,7 @@ export function SegmentedControl({
           >
             {o.label}
             {o.count !== undefined && o.count > 0 && (
-              <span className="nums rounded-full bg-accent-sky/15 px-1.5 text-[10px] text-accent-sky">
+              <span className="nums rounded-full bg-accent-sky/15 px-1.5 text-[10px] text-accent-sky-text">
                 {o.count}
               </span>
             )}

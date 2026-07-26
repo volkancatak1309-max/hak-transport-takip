@@ -95,9 +95,9 @@ export function DriverPerformance({
     if (key === "score") {
       const tone =
         r.score >= 80
-          ? "text-accent-sky"
+          ? "text-accent-sky-text"
           : r.score >= 50
-          ? "text-accent-gold"
+          ? "text-accent-gold-text"
           : "text-accent-claret-text";
       return (
         <td key={key} className={`${base} font-semibold ${tone}`}>
@@ -110,7 +110,7 @@ export function DriverPerformance({
         r.azgViol > 0
           ? "text-accent-claret-text"
           : r.azgWarn > 0
-          ? "text-accent-gold"
+          ? "text-accent-gold-text"
           : "text-muted-foreground";
       return (
         <td
@@ -199,7 +199,7 @@ export function DriverPerformance({
                     <td className="py-2 pr-2 text-left">
                       <span
                         className={`nums text-xs font-semibold ${
-                          i === 0 ? "text-accent-sky" : "text-muted-foreground"
+                          i === 0 ? "text-accent-sky-text" : "text-muted-foreground"
                         }`}
                       >
                         {i + 1}

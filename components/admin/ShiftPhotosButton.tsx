@@ -50,7 +50,7 @@ export function ShiftPhotosButton({ entryId }: { entryId: string }) {
         onClick={() => onOpenChange(true)}
         aria-label={t("viewPhotos")}
         title={t("viewPhotos")}
-        className="text-accent-sky hover:text-accent-sky"
+        className="text-accent-sky-text hover:text-accent-sky-text"
       >
         <Camera className="size-4" />
       </Button>
@@ -58,7 +58,7 @@ export function ShiftPhotosButton({ entryId }: { entryId: string }) {
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Camera className="size-5 text-accent-sky" />
+              <Camera className="size-5 text-accent-sky-text" />
               {t("photosTitle")}
             </DialogTitle>
           </DialogHeader>
@@ -92,7 +92,7 @@ export function ShiftPhotosButton({ entryId }: { entryId: string }) {
                         href={`https://www.google.com/maps?q=${p.latitude},${p.longitude}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-0.5 text-accent-sky hover:underline"
+                        className="inline-flex items-center gap-0.5 text-accent-sky-text hover:underline"
                         aria-label={t("reportMap")}
                       >
                         <MapPin className="size-3" />

@@ -14,8 +14,8 @@ export type StatTone = "neutral" | "critical" | "warning" | "info";
 const VALUE_TONE: Record<StatTone, string> = {
   neutral: "text-foreground",
   critical: "text-status-critical",
-  warning: "text-accent-gold",
-  info: "text-accent-sky",
+  warning: "text-accent-gold-text",
+  info: "text-accent-sky-text",
 };
 
 export function StatCard({
@@ -71,7 +71,7 @@ export function StatCard({
   );
 
   const surface = cn(
-    "surface-card card-kpi block rounded-[16px] p-5",
+    "surface-card card-kpi block rounded-[14px] p-5",
     href && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     className
   );

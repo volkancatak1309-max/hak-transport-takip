@@ -57,7 +57,7 @@ export function BreakdownCard({
   const max = Math.max(1, ...(tab?.rows.map((r) => r.value) ?? [1]));
 
   return (
-    <div className={cn("surface-card flex flex-col rounded-[16px] p-5", className)}>
+    <div className={cn("surface-card flex flex-col rounded-[14px] p-5", className)}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-1 rounded-[10px] border border-border/60 p-0.5">
           {tabs.map((t) => (

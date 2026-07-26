@@ -161,7 +161,7 @@ export function StartShiftForWorkerDialog({
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <PlayCircle className="size-5 text-accent-sky" />
+            <PlayCircle className="size-5 text-accent-sky-text" />
             {t("title")}
           </DialogTitle>
           <DialogDescription>

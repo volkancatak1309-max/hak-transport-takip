@@ -49,7 +49,7 @@ export function SpeedClient({ report }: { report: SpeedReport }) {
         r.violations === 0 ? (
           <span className="text-muted-foreground">0</span>
         ) : (
-          <span className="font-semibold text-accent-gold">{r.violations}</span>
+          <span className="font-semibold text-accent-gold-text">{r.violations}</span>
         ),
       sortable: true,
       sortValue: (r) => r.violations,

@@ -307,7 +307,7 @@ export function LeaveCalendar({
       {canApprove && pendingLeaves.length > 0 && (
         <Card className="border-accent-gold/40">
           <CardContent className="p-4">
-            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-accent-gold">
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-accent-gold-text">
               <CalendarOff className="size-4" />
               {t("pendingTitle", { n: pendingLeaves.length })}
             </h2>
@@ -762,7 +762,7 @@ function LeaveDrawer({
             </label>
 
             {isChief && !editing && (
-              <p className="rounded-lg bg-accent-gold/10 p-2.5 text-xs text-accent-gold">
+              <p className="rounded-lg bg-accent-gold/10 p-2.5 text-xs text-accent-gold-text">
                 {t("chiefRequestHint")}
               </p>
             )}
@@ -771,7 +771,7 @@ function LeaveDrawer({
 
             {confirmShift !== null ? (
               <div className="space-y-2 rounded-lg bg-accent-gold/10 p-3">
-                <p className="text-sm text-accent-gold">
+                <p className="text-sm text-accent-gold-text">
                   {t("shiftConflict", { n: confirmShift })}
                 </p>
                 <div className="flex gap-2">

@@ -117,7 +117,7 @@ export function TodayBoard({
       <CardContent>
         {/* Sekmeler yapışkan: mobilde 20+ satır kaydırılırken hangi grupta
             olunduğu kaybolmasın. */}
-        <div className="sticky top-0 z-10 -mx-1 mb-3 flex gap-1.5 overflow-x-auto bg-card/95 px-1 py-1 backdrop-blur">
+        <div className="sticky top-0 z-10 -mx-1 mb-3 flex gap-1.5 overflow-x-auto bg-card px-1 py-1">
           {TABS.map((tb) => {
             const on = tb.key === tab;
             const urgent = tb.key === "not_started" && tb.count > 0;

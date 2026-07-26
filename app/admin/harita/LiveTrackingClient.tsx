@@ -127,7 +127,7 @@ export function LiveTrackingClient({
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_360px]">
         {/* Map */}
-        <section className="glass overflow-hidden rounded-[16px]">
+        <section className="surface-card overflow-hidden rounded-[14px]">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
               <MapPinned className="size-[18px] text-accent-claret-text" />
@@ -156,7 +156,7 @@ export function LiveTrackingClient({
         </section>
 
         {/* Yan panel — Reveal canlı-harita paneli: sekme şeridi + liste */}
-        <section className="glass flex flex-col overflow-hidden rounded-[16px]">
+        <section className="surface-card flex flex-col overflow-hidden rounded-[14px]">
           <SubTabs
             className="px-4 pt-2"
             tabs={[
@@ -285,7 +285,7 @@ export function LiveTrackingClient({
                           <span className="nums text-xs text-text-tertiary">{d.plate ?? "—"}</span>
                         </div>
                         <div className="mt-0.5 flex items-center gap-2 text-xs">
-                          <span className={over ? "nums text-accent-gold" : "nums text-muted-foreground"}>
+                          <span className={over ? "nums text-accent-gold-text" : "nums text-muted-foreground"}>
                             {formatDurationShort(activeMs, locale)}
                           </span>
                           <span className="text-text-tertiary">·</span>
@@ -329,12 +329,12 @@ function Kpi({
 }) {
   const valueColor =
     accent === "sky"
-      ? "text-accent-sky"
+      ? "text-accent-sky-text"
       : accent === "gold"
-      ? "text-accent-gold"
+      ? "text-accent-gold-text"
       : "text-foreground";
   return (
-    <div className="glass card-kpi rounded-[16px] px-4 py-3.5">
+    <div className="surface-card card-kpi rounded-[14px] px-4 py-3.5">
       <div className="flex items-center gap-1.5">
         {live && <span className="live-dot" />}
         <span className="text-[12px] sm:text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">

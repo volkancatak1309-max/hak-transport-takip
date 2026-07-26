@@ -297,7 +297,7 @@ export function WorkersClient({ workers }: Props) {
                     </span>
                     <Link
                       href={`/admin/workers/${w.id}`}
-                      className="font-medium text-accent-sky hover:underline"
+                      className="font-medium text-accent-sky-text hover:underline"
                     >
                       {t("formerReport")}
                     </Link>

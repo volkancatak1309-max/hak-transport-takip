@@ -103,7 +103,7 @@ export function TelegramLink({ linked, username }: Props) {
         {linked ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="flex items-center gap-2 text-sm">
-              <Check className="size-4 text-accent-sky" />
+              <Check className="size-4 text-accent-sky-text" />
               {t("linked")}
               {username ? ` (@${username})` : ""}
             </span>

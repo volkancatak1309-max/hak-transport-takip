@@ -34,7 +34,7 @@ export function OpsConsole({
       <aside
         className={cn(
           "w-full shrink-0 lg:sticky lg:top-4 lg:w-[240px]",
-          "rounded-[16px] border border-border bg-surface-panel p-4"
+          "rounded-[14px] border border-border bg-surface-panel p-4"
         )}
       >
         {filters}
@@ -91,7 +91,7 @@ export function OpsGroup({
   className?: string;
 }) {
   return (
-    <section className={cn("surface-card flex flex-col rounded-[16px] p-5", className)}>
+    <section className={cn("surface-card flex flex-col rounded-[14px] p-5", className)}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-[15px] font-semibold">
           {icon}
@@ -176,7 +176,7 @@ export function OpsStatGrid({
   return (
     <div
       className={cn(
-        "surface-card grid grid-cols-2 gap-px overflow-hidden rounded-[16px] bg-border sm:grid-cols-3",
+        "surface-card grid grid-cols-2 gap-px overflow-hidden rounded-[14px] bg-border sm:grid-cols-3",
         className
       )}
     >

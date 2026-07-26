@@ -133,8 +133,8 @@ function SummaryStat({
   label: string;
 }) {
   return (
-    <div className="glass flex items-center gap-4 rounded-2xl px-5 py-4">
-      <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-accent-sky/12 text-accent-sky">
+    <div className="surface-card flex items-center gap-4 rounded-[14px] px-5 py-4">
+      <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-accent-sky/12 text-accent-sky-text">
         {icon}
       </div>
       <div className="min-w-0">

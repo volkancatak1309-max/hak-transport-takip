@@ -107,7 +107,7 @@ export function PenaltiesSection({
     .reduce((s, p) => s + (p.amount ?? 0), 0);
 
   return (
-    <section className="glass rounded-[16px] p-5">
+    <section className="surface-card rounded-[14px] p-5">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-2 text-sm font-medium">
           <Receipt className="size-[18px] text-text-tertiary" />
@@ -138,7 +138,7 @@ export function PenaltiesSection({
                     className={cn(
                       "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
                       p.paid
-                        ? "bg-accent-sky/12 text-accent-sky"
+                        ? "bg-accent-sky/12 text-accent-sky-text"
                         : "bg-accent-claret/12 text-accent-claret-text"
                     )}
                   >

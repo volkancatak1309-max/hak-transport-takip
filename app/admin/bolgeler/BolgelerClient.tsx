@@ -211,14 +211,14 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
           {visibleZones.map((z) => (
             <li
               key={z.id}
-              className="glass flex flex-wrap items-center gap-3 rounded-[16px] p-4"
+              className="surface-card flex flex-wrap items-center gap-3 rounded-[14px] p-4"
             >
               <span
                 className={cn(
                   "flex size-9 shrink-0 items-center justify-center rounded-[10px]",
                   z.rule_kind === "forbidden"
                     ? "bg-destructive/10 text-destructive"
-                    : "bg-accent-sky/15 text-accent-sky"
+                    : "bg-accent-sky/15 text-accent-sky-text"
                 )}
               >
                 {z.rule_kind === "forbidden" ? (

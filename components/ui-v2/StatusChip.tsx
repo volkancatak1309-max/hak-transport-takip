@@ -17,12 +17,12 @@ export type ChipTone =
 
 const TONE: Record<ChipTone, string> = {
   critical: "bg-status-critical-soft text-status-critical",
-  warning: "bg-accent-gold/15 text-accent-gold",
-  info: "bg-accent-sky/15 text-accent-sky",
+  warning: "bg-accent-gold/15 text-accent-gold-text",
+  info: "bg-accent-sky/15 text-accent-sky-text",
   neutral: "bg-muted text-muted-foreground",
-  active: "bg-accent-sky/15 text-accent-sky",
+  active: "bg-accent-sky/15 text-accent-sky-text",
   break: "bg-accent-claret/20 text-accent-claret-text",
-  idle: "bg-accent-gold/15 text-accent-gold",
+  idle: "bg-accent-gold/15 text-accent-gold-text",
   maintenance: "bg-muted text-muted-foreground",
 };
 

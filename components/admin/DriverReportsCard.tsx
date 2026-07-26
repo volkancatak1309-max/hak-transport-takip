@@ -114,7 +114,7 @@ export function DriverReportsCard({ reports }: { reports: AdminDriverReport[] })
                           href={`https://www.google.com/maps?q=${r.latitude},${r.longitude}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-0.5 text-accent-sky hover:underline"
+                          className="inline-flex items-center gap-0.5 text-accent-sky-text hover:underline"
                         >
                           <MapPin className="size-3" />
                           {t("reportMap")}

@@ -80,7 +80,7 @@ export function SpecGroup({
   className?: string;
 }) {
   return (
-    <section className={cn("surface-card overflow-hidden rounded-[16px]", className)}>
+    <section className={cn("surface-card overflow-hidden rounded-[14px]", className)}>
       <header className="flex items-center gap-2 px-5 pb-1 pt-4">
         <span
           aria-hidden

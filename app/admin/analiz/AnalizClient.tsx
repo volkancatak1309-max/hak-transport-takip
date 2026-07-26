@@ -343,7 +343,7 @@ export function AnalizClient({
       </div>
 
       {/* ── TAM GENİŞLİK GRAFİK KARTI ── */}
-      <div className="surface-card rounded-[16px] p-5">
+      <div className="surface-card rounded-[14px] p-5">
         <div className="mb-1 flex items-baseline justify-between gap-3">
           <h2 className="text-[16px] font-semibold">{t("chart_title")}</h2>
           <span className="font-mono text-[12px] tabular-nums text-muted-foreground">
@@ -494,7 +494,7 @@ export function AnalizClient({
           görmemesi demekti. Bu not ise güvenlik skoru TRENDİNE ait, yerinde
           kalıyor. */}
       {configEpochISO && trendBlocked && (
-        <div className="flex items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-xs text-accent-gold">
+        <div className="flex items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-xs text-accent-gold-text">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <p>{t("epoch_trend_blocked", { date: formatDate(configEpochISO, locale) })}</p>
         </div>

@@ -21,7 +21,7 @@ export default function NotFound() {
         <div className="mb-8 flex justify-center">
           <BrandLogo height={52} />
         </div>
-        <div className="glass rounded-[var(--radius)] p-6 text-center sm:p-7">
+        <div className="surface-card rounded-[14px] p-6 text-center sm:p-7">
           <p className="font-mono text-sm text-text-tertiary">404</p>
           <h1 className="mt-1 text-xl font-semibold tracking-[-0.01em]">
             {t("notfound_title")}

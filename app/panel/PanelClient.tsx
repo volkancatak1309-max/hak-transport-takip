@@ -551,10 +551,10 @@ export function PanelClient({
                   bir sayaçtı. */}
               {onBreak ? (
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-accent-gold">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-accent-gold-text">
                     {t("v2OnBreakLabel")}
                   </div>
-                  <div className="nums mt-1 text-6xl font-bold text-accent-gold">
+                  <div className="nums mt-1 text-6xl font-bold text-accent-gold-text">
                     {formatDuration(breakElapsedMs)}
                   </div>
                   <div className="mt-2 text-xs text-muted-foreground">
@@ -592,7 +592,7 @@ export function PanelClient({
                     {active.auto_started && (
                       <>
                         {" · "}
-                        <span className="text-accent-sky">{t("v2AutoDepotStart")}</span>
+                        <span className="text-accent-sky-text">{t("v2AutoDepotStart")}</span>
                       </>
                     )}
                     {/* Bugüne kadar yapılan toplam mola — molayı erken bitiren
@@ -607,7 +607,7 @@ export function PanelClient({
                 </div>
               )}
               <div className="flex items-center justify-center gap-3 border-t border-white/[0.06] pt-4">
-                <Package className="size-6 text-accent-sky" aria-hidden />
+                <Package className="size-6 text-accent-sky-text" aria-hidden />
                 <span className="text-sm text-muted-foreground">
                   {t("v2TotalPackages")}
                 </span>
@@ -715,7 +715,7 @@ export function PanelClient({
            şoför beklemek istemezse elle de başlatabilir. */
         <Card>
           <CardContent className="space-y-5 py-10 text-center">
-            <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-accent-sky/12 text-accent-sky pulse-soft">
+            <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-accent-sky/12 text-accent-sky-text pulse-soft">
               <KeyRound className="size-10" aria-hidden />
             </div>
             <div className="space-y-2">
@@ -727,13 +727,13 @@ export function PanelClient({
               </p>
             </div>
             {assignedVehicle ? (
-              <div className="inline-flex items-center gap-2 rounded-full bg-accent-sky/15 px-4 py-2 text-sm font-medium text-accent-sky">
+              <div className="inline-flex items-center gap-2 rounded-full bg-accent-sky/15 px-4 py-2 text-sm font-medium text-accent-sky-text">
                 <span className="live-dot" aria-hidden />
                 {t("v2YourVehicle")}:{" "}
                 <span className="nums uppercase">{assignedVehicle.plate}</span>
               </div>
             ) : (
-              <div className="mx-auto flex max-w-xs items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-left text-sm text-accent-gold">
+              <div className="mx-auto flex max-w-xs items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-left text-sm text-accent-gold-text">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                 {t("v2WaitNoVehicle")}
               </div>
@@ -748,7 +748,7 @@ export function PanelClient({
               assignedVehicle &&
               assignedVehicle.status === "active" && (
                 <div className="mx-auto max-w-xs rounded-2xl border-2 border-accent-sky/50 bg-accent-sky/10 p-4 text-left">
-                  <p className="flex items-center gap-2 text-sm font-semibold text-accent-sky">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-accent-sky-text">
                     <MapPin className="size-4 shrink-0" aria-hidden />
                     {t("v2DepotArrived", {
                       time: formatTime(depotPanel.enteredAt, locale),
@@ -771,7 +771,7 @@ export function PanelClient({
                 Aracı bakımdaysa buton yerine SEBEBİ yazılır; yoksa şoför
                 "ekran bozuk" sanıp bekler. */}
             {assignedVehicle && assignedVehicle.status !== "active" && (
-              <div className="mx-auto flex max-w-xs items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-left text-sm text-accent-gold">
+              <div className="mx-auto flex max-w-xs items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-left text-sm text-accent-gold-text">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                 {t("v2StartVehicleMaintenance")}
               </div>
@@ -782,7 +782,7 @@ export function PanelClient({
                     ve basınca neden çalışmadığını söyler — gizlenmez ki şoför anlasın.
                     Belirsiz/cihaz-ölü/muafiyette locked=false → normal çalışır. */}
                 {depotPanel?.locked && (
-                  <div className="mx-auto flex max-w-xs items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-left text-sm text-accent-gold">
+                  <div className="mx-auto flex max-w-xs items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-left text-sm text-accent-gold-text">
                     <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                     {t("v2DepotLocked")}
                   </div>
@@ -1006,7 +1006,7 @@ export function PanelClient({
               {/* ONAY — mümkün ama sıra dışı. Engel değil, soru. */}
               {confirmNeeded && (
                 <div className="space-y-2 rounded-xl bg-accent-gold/12 px-4 py-3">
-                  <p className="flex items-start gap-2 text-sm text-accent-gold">
+                  <p className="flex items-start gap-2 text-sm text-accent-gold-text">
                     <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                     {t(
                       undelCheck.level === "confirm" && undelCheck.code === "all_returned"
@@ -1078,7 +1078,7 @@ export function PanelClient({
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="size-5 text-accent-gold" aria-hidden />
+              <AlertTriangle className="size-5 text-accent-gold-text" aria-hidden />
               {t("v2ConfirmEndTitle")}
             </DialogTitle>
             <DialogDescription>{t("v2ConfirmEndDesc")}</DialogDescription>
@@ -1169,7 +1169,7 @@ export function PanelClient({
                     </span>
                   </span>
                   {v.inUseBy.length > 0 && (
-                    <span className="shrink-0 rounded-full bg-accent-gold/15 px-2 py-0.5 text-[11px] font-medium text-accent-gold">
+                    <span className="shrink-0 rounded-full bg-accent-gold/15 px-2 py-0.5 text-[11px] font-medium text-accent-gold-text">
                       {t("v2VehicleInUse")}
                     </span>
                   )}

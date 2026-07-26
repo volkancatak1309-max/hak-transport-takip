@@ -19,8 +19,8 @@ export default async function Loading() {
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
         <StatCardsSkeleton count={4} />
         <div className="grid gap-6 lg:grid-cols-2">
-          <Skeleton className="h-48 rounded-[16px]" />
-          <Skeleton className="h-48 rounded-[16px]" />
+          <Skeleton className="h-48 rounded-[14px]" />
+          <Skeleton className="h-48 rounded-[14px]" />
         </div>
         <StatCardsSkeleton count={4} />
         <TableSkeleton rows={6} />

@@ -158,8 +158,8 @@ export function LenkzeitWarning({
     min >= WARN_MIN
       ? "text-destructive"
       : min >= 180
-      ? "text-accent-gold"
-      : "text-accent-sky";
+      ? "text-accent-gold-text"
+      : "text-accent-sky-text";
   const pulse = min >= WARN_MIN && !isOnBreak;
 
   function handleSnooze() {

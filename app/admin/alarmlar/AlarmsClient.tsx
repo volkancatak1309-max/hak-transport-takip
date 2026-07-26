@@ -261,7 +261,7 @@ export function AlarmsClient({
                     key={tile.type}
                     type="button"
                     onClick={() => openType(tile.type)}
-                    className="glass group flex min-h-[120px] flex-col rounded-[8px] border border-border/70 p-[18px] text-left transition-colors hover:bg-surface-2"
+                    className="surface-card group flex min-h-[120px] flex-col rounded-[14px] p-[18px] text-left transition-colors hover:bg-surface-hover"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -387,11 +387,11 @@ export function AlarmsClient({
             <div className="flex flex-col gap-2 pt-1">
               {selected.latitude !== null && selected.longitude !== null && (
                 <a href={`https://www.google.com/maps?q=${selected.latitude},${selected.longitude}`} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm text-accent-sky hover:underline">
+                  className="inline-flex items-center gap-2 text-sm text-accent-sky-text hover:underline">
                   <MapPin className="size-4" />{t("open_maps")}<ExternalLink className="size-3" />
                 </a>
               )}
-              <Link href={`/admin/araclar/${selected.vehicle_id}`} className="inline-flex items-center gap-2 text-sm text-accent-sky hover:underline">
+              <Link href={`/admin/araclar/${selected.vehicle_id}`} className="inline-flex items-center gap-2 text-sm text-accent-sky-text hover:underline">
                 <Truck className="size-4" />{t("go_vehicle")}
               </Link>
             </div>

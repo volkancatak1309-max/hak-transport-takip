@@ -10,7 +10,7 @@ export function StatCardsSkeleton({ count = 4 }: { count?: number }) {
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="surface-card rounded-[16px] p-5">
+        <div key={i} className="surface-card rounded-[14px] p-5">
           <Skeleton className="h-3 w-24" />
           <Skeleton className="mt-3 h-7 w-16" />
         </div>
@@ -21,7 +21,7 @@ export function StatCardsSkeleton({ count = 4 }: { count?: number }) {
 
 export function TableSkeleton({ rows = 8, className }: { rows?: number; className?: string }) {
   return (
-    <div className={cn("surface-card overflow-hidden rounded-[16px]", className)}>
+    <div className={cn("surface-card overflow-hidden rounded-[14px]", className)}>
       <div className="border-b border-border/60 px-4 py-3">
         <Skeleton className="h-3 w-48" />
       </div>

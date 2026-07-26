@@ -77,12 +77,12 @@ export function ShiftPhotoButton() {
       >
         {busy ? (
           <>
-            <Loader2 className="size-8 animate-spin text-accent-sky" aria-hidden />
+            <Loader2 className="size-8 animate-spin text-accent-sky-text" aria-hidden />
             {t("v2PhotoSaving")}
           </>
         ) : (
           <>
-            <Camera className="size-8 text-accent-sky" aria-hidden />
+            <Camera className="size-8 text-accent-sky-text" aria-hidden />
             {t("v2TakePhoto")}
           </>
         )}

@@ -40,7 +40,7 @@ export function ConfirmShiftCard({ plate, startedAt, onLater }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-8 bg-[#0a0d16]/90 px-6 backdrop-blur-md page-enter">
-      <div className="flex size-20 items-center justify-center rounded-full bg-accent-sky/15 text-accent-sky pulse-soft">
+      <div className="flex size-20 items-center justify-center rounded-full bg-accent-sky/15 text-accent-sky-text pulse-soft">
         <Truck className="size-10" aria-hidden />
       </div>
 
@@ -53,7 +53,7 @@ export function ConfirmShiftCard({ plate, startedAt, onLater }: Props) {
         </p>
         <div className="flex items-center justify-center gap-3 text-sm">
           {plate && (
-            <span className="nums rounded-full bg-accent-sky/15 px-3 py-1 font-medium uppercase text-accent-sky">
+            <span className="nums rounded-full bg-accent-sky/15 px-3 py-1 font-medium uppercase text-accent-sky-text">
               {plate}
             </span>
           )}

@@ -265,7 +265,7 @@ export function AraclarClient({
       {/* TABLO (Aboard anatomisi): cok kolonlu, ince yatay ayrac, dikey cizgi
           yok. Ilk hucrede ikon + plaka (Aboard'in avatar + isim hucresi).
           Olcum kolonlari mono ve saga hizali; satir sonunda uc-nokta menu. */}
-      <div className="surface-card overflow-hidden rounded-[16px]">
+      <div className="surface-card overflow-hidden rounded-[14px]">
         {filtered.length === 0 ? (
           <div className="p-10 text-center text-sm text-muted-foreground">{t("none")}</div>
         ) : (

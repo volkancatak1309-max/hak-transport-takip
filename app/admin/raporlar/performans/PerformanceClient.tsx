@@ -70,7 +70,7 @@ export function PerformanceClient({
       r.safetyScore >= 80
         ? "text-accent-green"
         : r.safetyScore >= 50
-          ? "text-accent-gold"
+          ? "text-accent-gold-text"
           : "text-status-critical";
     return <span className={`font-semibold ${tone}`}>{r.safetyScore}</span>;
   };

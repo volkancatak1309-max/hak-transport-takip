@@ -47,7 +47,7 @@ export function RankingTile({
     // bir kartta son satır yarım kalıyor ve iç kaydırma çubuğu çıkıyordu —
     // "Top-10" diyen bir kartta 10'uncuyu görmek için kaydırmak tasarım hatası.
     // Kartlar ızgarada zaten birbirine hizalanıyor (grid stretch).
-    <div className={cn("surface-card flex flex-col rounded-[16px] p-5", className)}>
+    <div className={cn("surface-card flex flex-col rounded-[14px] p-5", className)}>
       {/* h2: tile ızgarası sayfanın ilk içerik bölümü — h1'den sonra gelir.
           h3 olduğunda başlık sırası h1'den h3'e atlıyordu (Lighthouse
           heading-order). Kardeş bölümler (OpsSummary, FleetDtcCard) da h2. */}

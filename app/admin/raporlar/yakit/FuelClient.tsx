@@ -166,7 +166,7 @@ export function FuelClient({
           {r.dataUnreliable && (
             <span title={t("fuel_unreliable_tooltip", { pct: Math.round(r.zeroRatio * 100) })}>
               <AlertTriangle
-                className="size-3.5 shrink-0 text-accent-gold"
+                className="size-3.5 shrink-0 text-accent-gold-text"
                 aria-label={t("fuel_unreliable_badge")}
               />
             </span>
@@ -380,7 +380,7 @@ export function FuelClient({
           litre metriklerini açabilir. Uydurma litre üretilmez. */}
       {report.capacityMissing > 0 && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <AlertTriangle className="size-3.5 shrink-0 text-accent-gold" />
+          <AlertTriangle className="size-3.5 shrink-0 text-accent-gold-text" />
           {t("fuel_capacity_note", { n: report.capacityMissing })}
         </p>
       )}
@@ -389,7 +389,7 @@ export function FuelClient({
           hem filo toplamlarında YOK — yönetici eksikliğin sebebini bilmeli. */}
       {report.unreliableVehicles > 0 && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <AlertTriangle className="size-3.5 shrink-0 text-accent-gold" />
+          <AlertTriangle className="size-3.5 shrink-0 text-accent-gold-text" />
           {t("fuel_unreliable_note", { n: report.unreliableVehicles })}
         </p>
       )}
@@ -398,7 +398,7 @@ export function FuelClient({
           arar. Tam sayı yüzde sensörüyle günlük araç bazlı tüketim ölçülemez. */}
       {!report.l100Available && (
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <AlertTriangle className="size-3.5 shrink-0 text-accent-gold" />
+          <AlertTriangle className="size-3.5 shrink-0 text-accent-gold-text" />
           {t("fuel_l100_hidden_note", {
             days: FUEL_L100_MIN_DAYS,
             current: report.rangeDays,

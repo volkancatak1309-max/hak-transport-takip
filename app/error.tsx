@@ -37,7 +37,7 @@ export default function ErrorPage({
         <div className="mb-8 flex justify-center">
           <BrandLogo height={52} />
         </div>
-        <div className="glass rounded-[var(--radius)] p-6 text-center sm:p-7">
+        <div className="surface-card rounded-[14px] p-6 text-center sm:p-7">
           <h1 className="text-xl font-semibold tracking-[-0.01em]">
             {t("error_title")}
           </h1>

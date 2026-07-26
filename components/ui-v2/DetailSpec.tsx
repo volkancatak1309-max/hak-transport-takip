@@ -80,7 +80,7 @@ export function SpecGroup({
   className?: string;
 }) {
   return (
-    <section className={cn("surface-card overflow-hidden rounded-[14px]", className)}>
+    <section className={cn(accent ? "glass-panel" : "surface-card", "overflow-hidden rounded-[16px]", className)}>
       <header className="flex items-center gap-2 px-5 pb-1 pt-4">
         <span
           aria-hidden
@@ -204,7 +204,7 @@ export type RailTone = "neutral" | "critical" | "warning" | "info";
 
 const RAIL_TONE: Record<RailTone, string> = {
   neutral: "bg-surface-panel text-text-tertiary",
-  critical: "bg-status-critical-soft text-status-critical",
+  critical: "bg-status-critical-soft text-status-critical-text",
   warning: "bg-accent-gold/15 text-accent-gold-text",
   info: "bg-accent-sky/15 text-accent-sky-text",
 };

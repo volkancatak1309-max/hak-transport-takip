@@ -13,7 +13,7 @@ export type StatTone = "neutral" | "critical" | "warning" | "info";
 
 const VALUE_TONE: Record<StatTone, string> = {
   neutral: "text-foreground",
-  critical: "text-status-critical",
+  critical: "text-status-critical-text",
   warning: "text-accent-gold-text",
   info: "text-accent-sky-text",
 };

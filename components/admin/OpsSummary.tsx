@@ -47,8 +47,8 @@ const TONE: Record<Tone, { text: string; icon: string; ring: string }> = {
     ring: "ring-accent-gold/25",
   },
   critical: {
-    text: "text-status-critical",
-    icon: "bg-status-critical-soft text-status-critical",
+    text: "text-status-critical-text",
+    icon: "bg-status-critical-soft text-status-critical-text",
     ring: "ring-status-critical/25",
   },
   neutral: {

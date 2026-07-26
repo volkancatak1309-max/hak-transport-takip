@@ -16,7 +16,7 @@ export type ChipTone =
   | "maintenance"; // bakımda (nötr)
 
 const TONE: Record<ChipTone, string> = {
-  critical: "bg-status-critical-soft text-status-critical",
+  critical: "bg-status-critical-soft text-status-critical-text",
   warning: "bg-accent-gold/15 text-accent-gold-text",
   info: "bg-accent-sky/15 text-accent-sky-text",
   neutral: "bg-muted text-muted-foreground",

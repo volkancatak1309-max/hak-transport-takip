@@ -265,7 +265,7 @@ export function AraclarClient({
       {/* TABLO (Aboard anatomisi): cok kolonlu, ince yatay ayrac, dikey cizgi
           yok. Ilk hucrede ikon + plaka (Aboard'in avatar + isim hucresi).
           Olcum kolonlari mono ve saga hizali; satir sonunda uc-nokta menu. */}
-      <div className="surface-card overflow-hidden rounded-[14px]">
+      <div className="glass-panel overflow-hidden rounded-[16px]">
         {filtered.length === 0 ? (
           <div className="p-10 text-center text-sm text-muted-foreground">{t("none")}</div>
         ) : (
@@ -364,7 +364,7 @@ export function AraclarClient({
                               className={cn(
                                 "font-mono text-[12px] tabular-nums",
                                 silent
-                                  ? "font-semibold text-status-critical"
+                                  ? "font-semibold text-status-critical-text"
                                   : "text-muted-foreground"
                               )}
                             >
@@ -385,7 +385,7 @@ export function AraclarClient({
                               {t("fleet." + v.fleet)}
                             </span>
                             {dtcCount > 0 && (
-                              <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-status-critical">
+                              <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-status-critical-text">
                                 {t("dtc_badge", { n: dtcCount })}
                               </span>
                             )}
@@ -430,7 +430,7 @@ export function AraclarClient({
                           {t("fleet." + v.fleet)}
                         </span>
                         {dtcCount > 0 && (
-                          <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[10px] font-semibold text-status-critical">
+                          <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[10px] font-semibold text-status-critical-text">
                             {t("dtc_badge", { n: dtcCount })}
                           </span>
                         )}

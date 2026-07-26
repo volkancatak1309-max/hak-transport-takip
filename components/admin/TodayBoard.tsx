@@ -105,7 +105,7 @@ export function TodayBoard({
   const maxLoaded = Math.max(1, ...rows.map((r) => r.loadedPackages ?? 0));
 
   return (
-    <Card>
+    <Card className="glass-panel rounded-[16px]">
       <CardHeader className="pb-2">
         <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm font-semibold">
           <span>{t("boardTitle")}</span>
@@ -446,7 +446,7 @@ function SignalCell({
   }
   if (row.telemetryStale) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs font-semibold text-status-critical">
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-status-critical-text">
         <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
         {label}
       </span>

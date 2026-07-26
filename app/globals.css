@@ -50,6 +50,7 @@ body {
   --color-status-critical: var(--status-critical);
   --color-status-critical-fill: var(--status-critical-fill);
   --color-status-critical-soft: var(--status-critical-soft);
+  --color-status-critical-text: var(--status-critical-text);
   --color-surface-3: var(--surface-3);
   --color-surface-panel: var(--surface-panel);
   --color-surface-hover: var(--surface-hover);
@@ -107,33 +108,32 @@ body {
      ayıran şey artık ton farkı değil, Ui'nin (DESTEK F) 1px HALKASI.
      Gri basamaklar YAŞAMAYA DEVAM EDER ama yalnız ETKİLEŞİM yüzeyi olarak:
      tablo başlığı, zebra satır, filtre paneli, hover. */
-  --background: #ffffff;
-  --foreground: #181818;
+  /* AÇIK TEMA — Authkit DNA'sının AYNADAKİ hâli (DESIGN.md §1 ışık yasası).
+     Zemin SAF BEYAZ DEĞİL: camın bulanıklaştıracak bir alanı olmalı. */
+  --background: #eef0f5;
+  --foreground: #14151c;
   --card: #ffffff;
-  --card-foreground: #181818;
-  /* ETKİLEŞİM YÜZEYİ — filtre sütunu, tablo başlığı, zebra satır. */
-  --surface-panel: #f1f1f3;
-  /* ETKİLEŞİM YÜZEYİ — hover/seçili: panelden bir basamak koyu. */
-  --surface-hover: #eaeaec;
-  /* Geriye dönük adlar: mevcut bileşenler bg-surface-2 / surface-3 kullanıyor. */
+  --card-foreground: #14151c;
+  --surface-panel: rgba(20, 20, 35, 0.035);
+  --surface-hover: rgba(20, 20, 35, 0.06);
   --surface-2: var(--surface-panel);
   --popover: #ffffff;
-  --popover-foreground: #181818;
+  --popover-foreground: #14151c;
 
-  /* Sayfa TABANI (html). Kanvas ile aynı — beyaz. */
-  --ground: #ffffff;
+  --ground: #eef0f5;
 
-  /* HALKA (Ui / DESTEK F) — kenarlık + yükseltiyi TEK öğede birleştirir.
-     Kart artık `border` + `box-shadow` ikilisi taşımaz; tek bir iç-halka
-     hem sınırı çizer hem 1px'lik yükselti hissini verir. */
-  --ring-hairline: rgba(0, 0, 0, 0.10);
-
-  /* BUZLU CAM — YALNIZ YÜZEN KATMAN (DESIGN.md §4.1). Kart/tablo/zemin ASLA.
-     Yüzey opaklığı %75: altındaki içerik sezilir ama metin okunur kalır. */
-  --glass-bg: rgba(255, 255, 255, 0.75);
-  --glass-bg-solid: #ffffff;
-  --glass-border: rgba(0, 0, 0, 0.10);
+  /* CAM (DESIGN.md §3) — açıkta yarı saydam BEYAZ. */
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-solid: #f7f8fb;
   --glass-blur: 14px;
+
+  /* ÜÇ KATMANLI IŞIK (DESIGN.md §1). Açıkta cam gölge DÜŞÜRÜR:
+     üst kenar çizgisi kalır, içerideki hale yerini yumuşak iç gölgeye bırakır. */
+  --glow-edge: inset 0 1px 1px rgba(255, 255, 255, 0.9);
+  --glow-inner: inset 0 24px 48px rgba(20, 20, 35, 0.035);
+  --glow-drop: 0 16px 32px rgba(20, 20, 35, 0.10);
+  /* Authkit'in outline dili — kenarlık değil İÇ HALKA. */
+  --ring-inset: inset 0 0 0 1px rgba(20, 20, 35, 0.10);
 
   /* TEK AKSAN — mercan (Runey #F15857). Birincil vurgu, grafik ana serisi,
      aktif navigasyon. Boyalı alanın %10'unu geçemez (DESIGN.md §2.2). */
@@ -194,6 +194,7 @@ body {
   --status-critical: oklch(0.5 0.2 27);
   --status-critical-fill: oklch(0.55 0.2 27);
   --status-critical-soft: oklch(0.55 0.2 27 / 12%);
+  --status-critical-text: oklch(0.5 0.2 27);
   --surface-3: var(--surface-hover);
 
   /* BİRİNCİL EYLEM = koyu dolu, mercan DEĞİL (DESIGN.md §5). Mercan yalnız
@@ -204,10 +205,10 @@ body {
   --secondary: var(--surface-panel);
   --secondary-foreground: #181818;
   --muted: var(--surface-panel);
-  --muted-foreground: #6b6b6b;
+  --muted-foreground: #4f5361;
   /* 26.07.2026: #909096 beyaz üstünde 3.2:1 idi — 12px alt-satır metinleri
      (marka/model, "· Atanmış") AA'yı geçmiyordu. Ton koyultuldu: ~5:1. */
-  --text-tertiary: #6e6e73;
+  --text-tertiary: #6b6f7d;
   --accent: var(--surface-panel);
   --accent-foreground: #181818;
   /* 27.07.2026: 0.55 → 0.53. Beyaz kart üstünde METİN olarak 4.43:1 kalıyordu
@@ -248,20 +249,29 @@ body {
   /* 27.07.2026 — YÜZEY KARARI koyuda AYNADAN uygulanır: kanvas = kart.
      Açıkta #FFF/#FFF neyse, koyuda #18181A/#18181A odur; ayrım yine halkadan
      gelir. Gri basamaklar (panel/hover) etkileşim yüzeyi olarak korunur. */
-  --background: #18181a;
-  --foreground: #f2f3f5;
-  --card: #18181a;
-  --card-foreground: #f2f3f5;
-  --surface-panel: #1f1f22;
-  --surface-hover: #26262a;
+  /* KOYU TEMA — VARSAYILAN. Authkit'in gece zemini (DESIGN.md §2.1). */
+  --background: #05060f;
+  --foreground: #ffffff;
+  --card: #0a0b14;
+  --card-foreground: #ffffff;
+  --surface-panel: rgba(186, 214, 247, 0.05);
+  --surface-hover: rgba(186, 214, 247, 0.08);
   --surface-2: var(--surface-panel);
-  --popover: #18181a;
-  --popover-foreground: #f2f3f5;
+  --popover: #0a0b14;
+  --popover-foreground: #ffffff;
 
-  --ground: #18181a;
+  --ground: #05060f;
 
-  /* Halka koyuda beyaz %10 — açıktaki siyah %10'un aynadaki karşılığı. */
-  --ring-hairline: rgba(255, 255, 255, 0.10);
+  /* CAM — koyuda Authkit'in kendi değeri: neredeyse görünmez mavi film. */
+  --glass-bg: rgba(186, 214, 247, 0.03);
+  --glass-solid: #0a0b14;
+  --glass-blur: 14px;
+
+  /* Koyuda cam ışığı YAKALAR: üst kenarda beyaz çizgi + içeride yayılan hale. */
+  --glow-edge: inset 0 1px 1px rgba(199, 211, 234, 0.12);
+  --glow-inner: inset 0 24px 48px rgba(199, 211, 234, 0.05);
+  --glow-drop: 0 24px 32px rgba(6, 6, 14, 0.7);
+  --ring-inset: inset 0 0 0 1px rgba(186, 215, 247, 0.12);
 
   /* Mercan koyu zeminde bir tık açılır (kart üstünde AA). */
   --accent-coral: #ff6f6e;
@@ -277,13 +287,6 @@ body {
      ray üstünde 3.1:1 kalıyordu — AA değil. Bu ton yalnız ray için açıldı: 7:1. */
   --nav-muted: #9c9ca0;
 
-  /* Cam yüzey — koyu karşılıklar. Aurora gitti; artık düz koyu zemin üstünde
-     yarı saydam panel (harita overlay'i, glass-pop deseni). */
-  --glass-bg: rgba(24, 24, 26, 0.75);
-  --glass-bg-solid: #18181a;
-  --glass-border: rgba(255, 255, 255, 0.10);
-  --glass-blur: 14px;
-
   /* Trabzonspor bordo + mavi accents. Bordo base = brand hex (white text on top);
      mavi base uses the lighter tone so it stays legible on the dark ground.
      --primary, --ring, and the chart/status tokens all inherit these below, so
@@ -294,12 +297,12 @@ body {
   /* Bordo koyuda metin rengi OLAMAZ (kart üstünde 1.9:1). Chip/rozet metni bu
      açık tonu kullanır — kart üstünde 8.6:1 (DESIGN-SYSTEM §2.3, ölçülmüş). */
   --accent-claret-text: oklch(0.78 0.1 12);
-  --accent-sky: #5b93cf;
+  --accent-sky: #8fb8e8;
   --accent-sky-soft: color-mix(in srgb, #5b93cf 18%, transparent);
   --accent-sky-text: #7fb0e0;
   --accent-gold: oklch(0.76 0.105 78);
   --accent-gold-soft: oklch(0.76 0.105 78 / 18%);
-  --accent-gold-text: oklch(0.82 0.1 78);
+  --accent-gold-text: oklch(0.88 0.11 82);
   /* Lightened for the dark base, hue locked to the light-theme green. */
   --accent-green: oklch(0.72 0.13 155);
 
@@ -309,9 +312,13 @@ body {
 
   /* Semantik olay şiddeti (DESIGN-SYSTEM §2.4; kontrastlar ölçülmüş):
      metin/ikon tonu kart üstünde 6.2:1, dolgu üstünde beyaz 5.4:1. */
-  --status-critical: oklch(0.7 0.18 28);
+  /* 27.07 ÖLÇÜM: mercan ile ΔE2000 = 4.1 idi (karışıyordu) -> 13.5.
+     Koyu cam üstünde kontrast 4.77. Bordo'ya dokunulmadı (ΔE 12.8, güvenli). */
+  --status-critical: oklch(0.62 0.24 26);
   --status-critical-fill: oklch(0.55 0.2 27);
   --status-critical-soft: oklch(0.7 0.18 28 / 15%);
+  /* DOLGU ≠ METİN: yeni dolgu (0.62) metin olarak 4.0 kaldı; metin tonu açılır. */
+  --status-critical-text: oklch(0.80 0.16 26);
   /* Active/pressed katmanı — hover(--surface-2)'nin bir üstü (Geist modeli). */
   --surface-3: var(--surface-hover);
 
@@ -322,16 +329,16 @@ body {
   --secondary: var(--surface-panel);
   --secondary-foreground: #f2f3f5;
   --muted: var(--surface-panel);
-  --muted-foreground: #a0a0a3;
+  --muted-foreground: #c7d3ea;
   /* FAZ 5 QA: 0.55 -> 0.60. Eski değer koyu zeminde ölçülen 4.09:1 idi ve 12px
      normal metin için AA'yı (4.5:1) geçmiyordu (Lighthouse color-contrast).
      0.60 = 5.04:1 ✓ — tondan ödün vermeden pay bırakır. */
-  --text-tertiary: #9a9aa0;
+  --text-tertiary: #9da7ba;
   --accent: var(--surface-panel);
   --accent-foreground: #f2f3f5;
   /* 27.07.2026: 0.62 → 0.66. Koyu kart (#18181A) üstünde 12.8px metin olarak
      4.43:1 kalıyordu (AZG rozeti) — açıktakiyle aynı kusurun aynadaki hali. */
-  --destructive: oklch(0.66 0.2 25);
+  --destructive: oklch(0.62 0.24 26);
   --border: rgba(255, 255, 255, 0.10);
   --input: rgba(255, 255, 255, 0.14);
   /* Odak halkası açık temayla AYNI rol: mercan. Koyu tonu kart üstünde AA. */
@@ -438,18 +445,22 @@ body {
      Cam bir MALZEME değil bir KATMAN işaretidir: bulanıklık görünce
      "bu şey içeriğin ÜSTÜNDE yüzüyor" diye okunur. Her yerde kullanılırsa
      bu anlam ölür — ve düşük uçlu telefonlarda kaydırma takılır. */
-  .glass {
+  /* CAM PANEL (DESIGN.md §3) — Authkit'in üç katmanlı ışığı.
+     YALNIZ bölüm panelinde: KPI şeridi, grafik kartı, tablo konteyneri,
+     çekmece, üst bar, harita paneli. Panelin İÇİ cam olmaz (§3.2).
+     Ekranda azami 3 bulanık katman (§3.3). */
+  .glass,
+  .glass-panel {
     background-color: var(--glass-bg);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
     backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-    /* Halka camda da sınırı çizer — kartla aynı dil. */
-    box-shadow: 0 0 0 1px var(--glass-border);
+    box-shadow: var(--glow-edge), var(--glow-inner), var(--glow-drop), var(--ring-inset);
   }
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .glass,
-    .glass-field,
+    .glass-panel,
     .glass-pop {
-      background-color: var(--glass-bg-solid);
+      background-color: var(--glass-solid);
     }
   }
   /* KPI/stat tiles: a 2px bordo→mavi top line fades in on hover and the tile
@@ -463,9 +474,11 @@ body {
      kartı sayfadan ayıran tek şey bu 1px iç-halka. `border` + `box-shadow`
      ikilisi kaldırıldı: ikisi birlikte çift çizgi veriyordu ve kenarlık
      layout'u 1px büyütüyordu. Halka layout'a girmez. */
+  /* İÇ KART (DESIGN.md §3.2) — camın ÜSTÜNDE yaşar, kendisi cam DEĞİLDİR.
+     Aynı ışık yönü: üst kenarda ince çizgi + iç halka. backdrop-filter YOK. */
   .surface-card {
     background-color: var(--card);
-    box-shadow: 0 0 0 1px var(--ring-hairline);
+    box-shadow: var(--glow-edge), var(--ring-inset);
   }
   /* .card-kpi'nin bordo→mavi gradyan üst çizgisi ve -3px sıçraması KALDIRILDI
      (26.07.2026): kilit gradyanı ve dikkat çeken hareketi reddediyor. Tıklanabilir
@@ -474,7 +487,7 @@ body {
     transition: box-shadow 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
   }
   a.card-kpi:hover {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 22%, transparent);
+    box-shadow: var(--glow-edge), inset 0 0 0 1px color-mix(in srgb, var(--foreground) 24%, transparent);
   }
   /* .nav-active KALDIRILDI (26.07.2026): aktif menü öğesi bordo→mavi gradyandı;
      tasarım kilidi gradyanı reddediyor ve aktif durumu mercan zemin + mercan
@@ -495,6 +508,17 @@ body {
   .btn-primary:hover {
     background-color: var(--accent-coral-hover);
   }
+  /* İKİNCİL BUTON (Authkit outline) — kenarlık değil İÇ HALKA. */
+  .btn-outline-ring {
+    box-shadow: var(--ring-inset);
+  }
+  /* AYRAÇ — Authkit'in gradyan çizgisi. Kilidin gradyan yasağının TEK
+     istisnası (DESIGN.md §6): ayraçtır, dolgu değil. */
+  .divider-glow {
+    height: 1px;
+    border: 0;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+  }
   /* FORM ALANI (27.07.2026) — CAM DEĞİL. §4.1 form alanını cam yasağına
      aldı: input/select kartın İÇİNDE yaşar, yüzen katman değildir; camla
      çizilince hem "yüzen" yalanı söyler hem ekrandaki bulanık katman sayısını
@@ -507,13 +531,10 @@ body {
   /* Glass for floating popups (dialog / select menu): denser fill for legible
      lists + a soft drop shadow for elevation + inset highlight. */
   .glass-pop {
-    background-color: color-mix(in srgb, var(--glass-bg-solid) 86%, transparent);
-    border: 1px solid var(--glass-border);
+    background-color: color-mix(in srgb, var(--glass-solid) 88%, transparent);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
     backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-    box-shadow:
-      0 1px 2px oklch(0 0 0 / 0.2),
-      0 8px 28px oklch(0 0 0 / 0.28);
+    box-shadow: var(--glow-edge), var(--ring-inset), 0 16px 40px rgba(0, 0, 0, 0.35);
   }
 }
 
@@ -524,11 +545,24 @@ body {
 /* BUZLU CAM GERİ DÜŞÜŞÜ (DESIGN.md §4.1) — kullanıcı saydamlığı azaltmayı
    istediyse bulanıklık tamamen kalkar ve yüzey düz opak olur. Okunurluk
    değişmez; yalnız "yüzen katman" işareti tondan gelir. */
+/* ŞOFÖR PANELİ — HAFİF VARYANT (DESIGN.md §3.3).
+   Telefon kamyonette, çoğu 5 yıllık Android. backdrop-filter orada kaydırmayı
+   takıyor. Cam KALKMAZ, BULANIKLIK kalkar: aynı üç katmanlı ışık, aynı yüzey
+   tonu, sıfır GPU maliyeti. Okunurluk değişmez.
+   Kapsam: /panel altındaki her şey (layout .driver-surface taşır). */
+.driver-surface .glass,
+.driver-surface .glass-panel,
+.driver-surface .glass-pop {
+  background-color: var(--glass-solid);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .glass,
-  .glass-field,
+  .glass-panel,
   .glass-pop {
-    background-color: var(--glass-bg-solid);
+    background-color: var(--glass-solid);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

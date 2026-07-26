@@ -63,7 +63,7 @@ export function SpeedClient({ report }: { report: SpeedReport }) {
         r.maxSpeedKmh === null ? (
           "—"
         ) : (
-          <span className={r.maxSpeedKmh >= 131 ? "font-semibold text-status-critical" : ""}>
+          <span className={r.maxSpeedKmh >= 131 ? "font-semibold text-status-critical-text" : ""}>
             {r.maxSpeedKmh} km/s
           </span>
         ),

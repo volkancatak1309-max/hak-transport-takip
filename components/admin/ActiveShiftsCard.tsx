@@ -96,7 +96,7 @@ export function ActiveShiftsCard({
         icon={<Clock className="size-4 text-accent-coral" />}
         action={
           overCount > 0 ? (
-            <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-status-critical">
+            <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-status-critical-text">
               {t("activeShiftsOverBadge", { count: overCount })}
             </span>
           ) : null
@@ -119,7 +119,7 @@ export function ActiveShiftsCard({
                     <span
                       className={
                         r.overLimit
-                          ? "flex size-7 shrink-0 items-center justify-center rounded-lg bg-status-critical-soft text-status-critical"
+                          ? "flex size-7 shrink-0 items-center justify-center rounded-lg bg-status-critical-soft text-status-critical-text"
                           : "flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent-sky/15 text-accent-sky-text"
                       }
                     >
@@ -143,7 +143,7 @@ export function ActiveShiftsCard({
                         <span
                           className={
                             r.overLimit
-                              ? "font-semibold text-status-critical"
+                              ? "font-semibold text-status-critical-text"
                               : ""
                           }
                         >
@@ -153,7 +153,7 @@ export function ActiveShiftsCard({
                             tavanın aşıldığını görmeden karar veremez — gece
                             vardiyasında tavan 10 saate iner. */}
                         {r.overLimit && (
-                          <span className="rounded bg-status-critical-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-critical">
+                          <span className="rounded bg-status-critical-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-critical-text">
                             {t("activeShiftsOverTag", {
                               hours: Math.round(r.capMs / 3_600_000),
                             })}

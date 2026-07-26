@@ -91,7 +91,7 @@ export function OpsGroup({
   className?: string;
 }) {
   return (
-    <section className={cn("surface-card flex flex-col rounded-[14px] p-5", className)}>
+    <section className={cn("surface-card flex flex-col rounded-[12px] p-5", className)}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-[15px] font-semibold">
           {icon}
@@ -131,7 +131,7 @@ export function OpsGroupRow({
 }) {
   const TONE = {
     neutral: "text-foreground",
-    critical: "text-status-critical",
+    critical: "text-status-critical-text",
     warning: "text-accent-gold-text",
   } as const;
   return (
@@ -176,7 +176,7 @@ export function OpsStatGrid({
   return (
     <div
       className={cn(
-        "surface-card grid grid-cols-2 gap-px overflow-hidden rounded-[14px] bg-border sm:grid-cols-3",
+        "glass-panel grid grid-cols-2 gap-px overflow-hidden rounded-[16px] sm:grid-cols-3",
         className
       )}
     >

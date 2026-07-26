@@ -199,7 +199,7 @@ export function AttentionList({
               // ŞİDDET RENGİ (26.07.2026): gecikmiş kalem bordoydu; bordo artık FİLO
               // rengi (DESIGN.md §2.3). Şiddet için kritik token'ı — bordo/mavi
               // yalnız filo ayrımında anlam taşır.
-              const tone = r.overdue ? "text-status-critical" : "text-accent-gold-text";
+              const tone = r.overdue ? "text-status-critical-text" : "text-accent-gold-text";
               const bg = r.overdue ? "bg-status-critical-soft" : "bg-accent-gold/15";
               return (
                 <li

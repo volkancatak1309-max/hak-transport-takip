@@ -50,6 +50,8 @@ body {
   --color-status-critical-fill: var(--status-critical-fill);
   --color-status-critical-soft: var(--status-critical-soft);
   --color-surface-3: var(--surface-3);
+  --color-surface-panel: var(--surface-panel);
+  --color-surface-hover: var(--surface-hover);
   --color-surface: var(--card);
   --color-text-secondary: var(--muted-foreground);
   --color-text-tertiary: var(--text-tertiary);
@@ -102,17 +104,22 @@ body {
      Taban SICAK gri, soğuk gri-mavi DEĞİL: birincil referans Runey'in zemini
      #FBFBFB, üstünde saf beyaz kartlar. Kart zeminden ayrışsın diye ikisi de
      ayrı token; "beyaz üstüne beyaz" olmaz. */
-  --background: #fbfbfb;
+  --background: #f5f5f7;
   --foreground: #181818;
   --card: #ffffff;
   --card-foreground: #181818;
-  --surface-2: #f4f4f5;
+  /* KATMAN 3 — panel/inset: filtre sütunu, tablo başlığı, zebra satır. */
+  --surface-panel: #f1f1f3;
+  /* KATMAN 4 — hover/seçili: panelden bir basamak koyu. */
+  --surface-hover: #eaeaec;
+  /* Geriye dönük adlar: mevcut bileşenler bg-surface-2 / surface-3 kullanıyor. */
+  --surface-2: var(--surface-panel);
   --popover: #ffffff;
   --popover-foreground: #181818;
 
   /* Sayfa TABANI (html). Tema-farkında: eskiden #0a0d16 sabit yazılıydı ve açık
      temada da koyu zemin veriyordu (aurora katmanının kalıntısı). */
-  --ground: #fbfbfb;
+  --ground: #f5f5f7;
 
   /* Cam yüzey — harita gibi zemin üstü paneller (.glass / .glass-field /
      .glass-pop). Açık temada da TANIMLI olmak zorunda: eskiden yalnız .dark
@@ -170,23 +177,23 @@ body {
   --status-critical: oklch(0.5 0.2 27);
   --status-critical-fill: oklch(0.55 0.2 27);
   --status-critical-soft: oklch(0.55 0.2 27 / 12%);
-  --surface-3: oklch(0.955 0.004 256);
+  --surface-3: var(--surface-hover);
 
   /* BİRİNCİL EYLEM = koyu dolu, mercan DEĞİL (DESIGN.md §5). Mercan yalnız
      "vurgulu eylem" ve vurgu değeri için ayrılmıştır; her butonu mercan yapmak
      tek-aksan disiplinini ilk günden bozardı. */
   --primary: #181818;
   --primary-foreground: #ffffff;
-  --secondary: #f4f4f5;
+  --secondary: var(--surface-panel);
   --secondary-foreground: #181818;
-  --muted: #f4f4f5;
+  --muted: var(--surface-panel);
   --muted-foreground: #6b6b6b;
-  --text-tertiary: #919191;
-  --accent: #f4f4f5;
+  --text-tertiary: #909096;
+  --accent: var(--surface-panel);
   --accent-foreground: #181818;
   --destructive: oklch(0.55 0.21 25);
-  --border: #e6e9eb;
-  --input: #e6e9eb;
+  --border: #e3e3e6;
+  --input: #e3e3e6;
   /* Odak halkası mercan: nötr zeminde en görünür ve tek aksanla tutarlı. */
   --ring: var(--accent-coral);
 
@@ -217,15 +224,17 @@ body {
      aynı ritim, aynı aksan rolü; yalnız zemin/yüzey/metin remap edilir.
      AURORA KALDIRILDI (25.07.2026): kilit gradient/glow/aurora'yı reddediyor ve
      --background:transparent hilesi açık temayı da kırıyordu. Zemin artık düz. */
-  --background: #121213;
+  --background: #0f0f10;
   --foreground: #f2f3f5;
   --card: #18181a;
   --card-foreground: #f2f3f5;
-  --surface-2: #1f1f22;
+  --surface-panel: #1f1f22;
+  --surface-hover: #26262a;
+  --surface-2: var(--surface-panel);
   --popover: #18181a;
   --popover-foreground: #f2f3f5;
 
-  --ground: #121213;
+  --ground: #0f0f10;
 
   /* Mercan koyu zeminde bir tık açılır (kart üstünde AA). */
   --accent-coral: #ff6f6e;
@@ -276,25 +285,25 @@ body {
   --status-critical-fill: oklch(0.55 0.2 27);
   --status-critical-soft: oklch(0.7 0.18 28 / 15%);
   /* Active/pressed katmanı — hover(--surface-2)'nin bir üstü (Geist modeli). */
-  --surface-3: oklch(0.285 0.009 256);
+  --surface-3: var(--surface-hover);
 
   /* Koyuda "koyu dolu buton" görünmez olurdu → ters çevrilir: AÇIK dolu + koyu
      metin (Polar deseni). Rol aynı kalır: birincil eylem, mercan değil. */
   --primary: #f2f3f5;
   --primary-foreground: #121213;
-  --secondary: #1f1f22;
+  --secondary: var(--surface-panel);
   --secondary-foreground: #f2f3f5;
-  --muted: #1f1f22;
+  --muted: var(--surface-panel);
   --muted-foreground: #a0a0a3;
   /* FAZ 5 QA: 0.55 -> 0.60. Eski değer koyu zeminde ölçülen 4.09:1 idi ve 12px
      normal metin için AA'yı (4.5:1) geçmiyordu (Lighthouse color-contrast).
      0.60 = 5.04:1 ✓ — tondan ödün vermeden pay bırakır. */
-  --text-tertiary: #6a6b6f;
-  --accent: #1f1f22;
+  --text-tertiary: #7a7a80;
+  --accent: var(--surface-panel);
   --accent-foreground: #f2f3f5;
   --destructive: oklch(0.62 0.2 25);
-  --border: rgba(255, 255, 255, 0.08);
-  --input: rgba(255, 255, 255, 0.13);
+  --border: rgba(255, 255, 255, 0.10);
+  --input: rgba(255, 255, 255, 0.14);
   /* Odak halkası açık temayla AYNI rol: mercan. Koyu tonu kart üstünde AA. */
   --ring: var(--accent-coral);
 

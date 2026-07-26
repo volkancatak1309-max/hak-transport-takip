@@ -11,6 +11,8 @@ export { BreakdownCard, type BreakdownRow, type BreakdownTab } from "./Breakdown
 export { MiniTrend, type TrendBucket } from "./MiniTrend";
 export { SubTabs, type SubTab } from "./SubTabs";
 export { RankingTile, type RankRow } from "./RankingTile";
+// Operasyon konsolu iskeleti (Stellate klonu — DESIGN.md §0 DESTEK C).
+export { OpsConsole, OpsFilter, OpsStatGrid } from "./OpsConsole";
 export { RevealFilterRow, type RevealFilter } from "./RevealFilterRow";
 export {
   DataTable,

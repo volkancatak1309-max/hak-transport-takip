@@ -61,7 +61,7 @@ import {
   ActiveShiftsCard,
   type ActiveShiftRow,
 } from "@/components/admin/ActiveShiftsCard";
-import { TodayBoard, TodayStrip, rosterCounts } from "@/components/admin/TodayBoard";
+import { TodayBoard, rosterCounts } from "@/components/admin/TodayBoard";
 import { StartShiftForWorkerDialog } from "@/components/admin/StartShiftForWorkerDialog";
 import { classifyUndelivered } from "@/lib/package-limits";
 import { ShiftEditHistory } from "@/components/admin/ShiftEditHistory";
@@ -69,6 +69,8 @@ import { ShiftPhotosButton } from "@/components/admin/ShiftPhotosButton";
 import {
   PageHeader,
   StatCard,
+  OpsConsole,
+  OpsStatGrid,
   StatusChip,
   DataTable,
   DetailDrawer,
@@ -561,20 +563,63 @@ export function AdminClient({
         }
       />
 
-      <TodayStrip
-        counts={boardCounts}
-        overLimitShifts={overLimitShifts}
-        silentVehicles={silentVehicleCount}
-      />
+      {/* ── OPERASYON KONSOLU (Stellate klonu, DESIGN.md §0 DESTEK C) ──
+          TodayStrip (5'li KPI şeridi) SİLİNDİ; beş sayının hepsi aşağıdaki
+          sayı ızgarasına taşındı — bilgi kaybı yok, ayrı bir bileşen daha az.
+          Sol sütun ADIM 3'te gerçek filtrelere kavuşacak; şu an kapsamı ve
+          durum dağılımını gösteriyor (okunur, tıklanabilir değil). */}
+      <OpsConsole
+        filters={
+          <div className="space-y-4">
+            <div>
+              <span className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
+                {t("dash.ops_title")}
+              </span>
+              <span className="font-mono text-[15px] font-semibold tabular-nums">
+                {scopeLabel}
+              </span>
+            </div>
+            <div className="border-t border-border pt-3">
+              <span className="mb-2 block text-[12px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
+                {t("boardTitle")}
+              </span>
+              <ul className="space-y-1.5">
+                {[
+                  { k: "not_started", label: t("boardTabNotStarted"), n: boardCounts.notStarted },
+                  { k: "in_field", label: t("boardTabInField"), n: boardCounts.inField },
+                  { k: "closed", label: t("boardTabClosed"), n: boardCounts.closed },
+                  { k: "on_leave", label: t("boardTabOnLeave"), n: boardCounts.onLeave },
+                ].map((r) => (
+                  <li key={r.k} className="flex items-baseline justify-between gap-3 text-[13px]">
+                    <span className="text-muted-foreground">{r.label}</span>
+                    <span className="font-mono font-semibold tabular-nums">{r.n}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        }
+      >
+        <OpsStatGrid
+          items={[
+            { key: "field", label: t("stripInField"), value: `${boardCounts.inField} / ${boardCounts.total}` },
+            { key: "notStarted", label: t("stripNotStarted"), value: boardCounts.notStarted, accent: boardCounts.notStarted > 0 },
+            { key: "closed", label: t("boardTabClosed"), value: boardCounts.closed },
+            { key: "overLimit", label: t("stripOverLimit"), value: overLimitShifts },
+            { key: "silent", label: t("stripSilentVehicles"), value: silentVehicleCount },
+            { key: "loaded", label: t("stripLoaded"), value: boardCounts.loaded > 0 ? boardCounts.loaded : "—" },
+          ]}
+        />
 
-      {/* GÜNÜN PANOSU — sayfanın merkezi. Vardiya açmayan şoför dahil, her
-          aktif şoför için bir satır. "Başlamadı" satırlarında manuel başlatma
-          kısayolu (patron + filo şefi; şef readOnly olsa da bu eylem açık —
-          yetki server action'da kendi filosuyla sınırlanır). */}
-      <TodayBoard
-        rows={dashboard.roster}
-        onStart={(row) => setStartWorker({ id: row.workerId, name: row.name })}
-      />
+        {/* GÜNÜN PANOSU — sayfanın merkezi. Vardiya açmayan şoför dahil, her
+            aktif şoför için bir satır. "Başlamadı" satırlarında manuel başlatma
+            kısayolu (patron + filo şefi; şef readOnly olsa da bu eylem açık —
+            yetki server action'da kendi filosuyla sınırlanır). */}
+        <TodayBoard
+          rows={dashboard.roster}
+          onStart={(row) => setStartWorker({ id: row.workerId, name: row.name })}
+        />
+      </OpsConsole>
 
       {/* ARAÇ ARIZALARI (DTC) BURADAN KALDIRILDI (22.07.2026) → /admin/araclar.
           Ölçtük: masaüstünde sayfanın ilk bloğuydu (420px), mobilde en tepedeki

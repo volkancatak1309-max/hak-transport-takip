@@ -17,12 +17,16 @@
 | **BİRİNCİL** — mizanpaj, kart dili, boşluk ritmi, tek-aksan disiplini | **Runey** · Expenses panosu | `bf9b7ee2-ab71-4ce1-98e4-85f119754add` | `https://images.refero.design/screenshots/runey.app/desktop/bf9b7ee2-ab71-4ce1-98e4-85f119754add_preview.jpg` |
 | **DESTEK A** — tablo-içi bar, rapor yoğunluğu, indirme/sayfalama | **Stripe** · Revenue recognition | `5f9b93d3-6315-4656-8f74-cd26b07f1069` | `https://images.refero.design/screenshots/stripe.com/desktop/00d07674-325b-44e8-af0c-f2f5df70dbee_preview.jpg` |
 | **DESTEK B** — mono font rolü, 8px ızgara, KPI çipi → grafik → tablo dizilimi | **Fingerprint** · Bot detection | `fa27b73e-e27a-4249-b08e-8af912b3ad26` | `https://images.refero.design/screenshots/fingerprint.com/desktop/fa27b73e-e27a-4249-b08e-8af912b3ad26_preview.jpg` |
+| **DESTEK C** (26.07) — katmanlı gri merdiveni + operasyon konsolu İSKELETİ | **Stellate** · Operations metrics | `e8b04517-1949-47d0-9faa-23a79f651802` | `https://images.refero.design/screenshots/stellate.co/desktop/8dd79423-3320-4e4d-bc46-2a6b696c3f65_preview.jpg` |
 
 ### Korunacak imza özellikler (Runey'den — bunlar pazarlık dışı)
 
 1. **Yüzen siyah nav rayı** — kenara yapışık değil, yuvarlatılmış, koyu panel.
-2. **Sıcak açık zemin** (`#FBFBFB` ailesi) + üstünde **beyaz kartlar** — soğuk gri-mavi değil.
-3. **Tek aksan rengi.** Mercan. Başka hiçbir dekoratif renk yok.
+2. **Sıcak açık zemin** + üstünde **beyaz kartlar** — soğuk gri-mavi değil.
+   ⚠️ 26.07 güncellemesi: zemin artık `#F5F5F7`, yani karttan BELİRGİN ayrışır
+   (§2.1 katmanlı gri merdiveni). Runey'in tek-katman sadeliği yerini Stellate'in
+   kademeli gri mantığına bıraktı — hue Runey'de kaldı.
+3. **Tek aksan rengi.** Mercan — ama artık CÖMERT (§2.2, %10 sınırı kalktı).
 4. **Cömert boşluk + büyük köşe yarıçapı** (16–20px kart).
 5. **Dizilim:** başlık satırı → 4'lü KPI şeridi → tam genişlik grafik kartı → gruplanmış liste/tablo.
 
@@ -57,28 +61,55 @@ Geçiş: zemin + metin renkleri 240ms yumuşak; layout HİÇ değişmez.
 
 ## 2. Renk
 
-### 2.1 Nötr taban
+### 2.1 Nötr taban — KATMANLI GRİ MERDİVENİ (26.07.2026 güncellemesi)
 
-| Rol | Açık (varsayılan) | Koyu | Not |
-|---|---|---|---|
-| Sayfa zemini | `#FBFBFB` — sıcak, hafif gri | `#121213` | Runey / Polar ölçümü |
-| Kart yüzeyi | `#FFFFFF` | `#18181A` | Kart zeminden AYRIŞIR |
-| Yükseltilmiş yüzey (hover, popover) | `#F4F4F5` | `#1F1F22` | |
-| Nav rayı | `#181818` (her iki temada da KOYU) | `#0E0E0F` | İmza öğe — açık temada da siyah |
-| Birincil metin | `#181818` | `#F2F3F5` | |
-| İkincil metin | `#747474` | `#A0A0A3` | |
-| Üçüncül metin / etiket | `#919191` | `#6A6B6F` | |
-| Kenarlık / ayraç | `#E6E9EB` | `rgba(255,255,255,0.08)` | 1px, Fingerprint ölçümü |
+**Karar (Volkan):** sayfa düz beyaz olmayacak; **katmanlı gri** hissi verecek.
+Referans: Stellate operations konsolu (`e8b04517`) — zemin `#F8FAFC`, beyaz kart,
+şerit satır `#F1F5F9`, ayraç `#E2E8F0`, ikincil metin `#687285`, üçüncül `#959EAE`.
+Stellate'in **kademe mantığı** alındı, hue'su değil: bizim nötrler Runey'in sıcak
+tarafında kalır, ama basamaklar arası fark artık **görünür**.
 
-### 2.2 Tek aksan — mercan
+| # | Rol | Açık (varsayılan) | Koyu | Not |
+|---|---|---|---|---|
+| 1 | Sayfa zemini (ground) | `#F5F5F7` | `#0F0F10` | Karttan belirgin daha koyu — katman hissi buradan başlar |
+| 2 | Kart yüzeyi | `#FFFFFF` | `#18181A` | İçeriğin yaşadığı yer |
+| 3 | Panel / inset (filtre paneli, tablo başlığı, zebra satır) | `#F1F1F3` | `#1F1F22` | Stellate'in `#F1F5F9` karşılığı |
+| 4 | Hover / seçili | `#EAEAEC` | `#26262A` | 3'ten bir tık daha koyu, tıklanabilirlik hissi |
+| 5 | Kenarlık / ayraç | `#E3E3E6` | `rgba(255,255,255,0.10)` | Eski `#E6E9EB`'ten koyu — ayraçlar görünür olacak |
+| — | Nav rayı | `#181818` (her iki temada da KOYU) | `#0E0E0F` | İmza öğe |
+| — | Birincil metin (ink) | `#181818` | `#F2F3F5` | |
+| — | İkincil metin | `#6B6B6B` | `#A0A0A3` | AA ölçüldü |
+| — | Üçüncül metin / etiket | `#909096` | `#7A7A80` | Yalnız ≥12px etiket |
+
+**Kural:** üst üste gelen iki yüzey ASLA aynı tonda olmaz. Kart zeminin üstünde,
+panel kartın içinde, hover panelin üstünde — her katman bir basamak koyulaşır.
+
+### 2.2 Aksan — mercan, ZARİF CÖMERTLİK (26.07.2026 güncellemesi)
+
+**Karar (Volkan):** eski **%10 alan sınırı KALDIRILDI.** Mercan artık yalnız
+odak/aktif rengi değil; beyaz + gri + mercan üçlüsü **sayfanın karakteri**.
 
 | Token | Açık | Koyu | Kullanım |
 |---|---|---|---|
-| `--accent-coral` | `#F15857` | `#FF6F6E` | Birincil buton, aktif nav, grafik ana serisi, vurgu değeri |
-| `--accent-coral-soft` | `#F15857` @ 12% | `#FF6F6E` @ 18% | Rozet zemini, seçili satır |
+| `--accent-coral` | `#F15857` | `#FF6F6E` | Aşağıdaki rollerin tamamı |
+| `--accent-coral-soft` | `#F15857` @ 12% | `#FF6F6E` @ 18% | Rozet/şerit zemini, seçili satır, hücre-içi bar |
+| `--accent-coral-hover` | `#D94746` | `#FF8A89` | Basış/hover koyulaşması |
 
-**Disiplin:** aksan, ekranın boyalı alanının **%10'unu geçemez**. Büyük dolu mercan
-blok yok. İki mercan öğe yan yana gelmez — sayfada bir "en önemli şey" vardır.
+**Mercanın MEŞRU rolleri** (hepsi serbest):
+bölüm başlığı vurgusu · önemli sayı · grafik ana serisi · hover durumu ·
+ikon vurgusu · ilerleme/oran barı · aktif sekme ve nav · birincil eylem ·
+seçili satır zemini · sıralama barı · canlı/aktif göstergesi.
+
+**Ölçü — "göz her ekranda mercanla 3-5 kez buluşsun":**
+- Bir ekranda **en az 3**, **en çok 5-6** ayrı mercan dokunuşu olsun. 1 tanesi
+  cimri, 10 tanesi gürültü.
+- **Aynı karar için iki mercan yarışmaz:** bir bölümde birincil eylem mercansa,
+  o bölümdeki ikinci vurgu nötr kalır.
+- **Gövde metni asla mercan değildir.** Mercan sayıya, etikete, bara, ikona gider.
+- Büyük dolu mercan zemin yalnız **tek** öğede olabilir (birincil eylem ya da
+  tek bir vurgu şeridi) — kart zemini mercan olmaz.
+- Kontrast kuralı değişmedi: mercan METİN olarak kullanılacaksa AA ölçülür
+  (açık temada `#F15857` beyaz üstünde 3.6:1 → yalnız ≥18.66px kalın metin).
 
 ### 2.3 İSTİSNA — filo renkleri bilgi taşır
 
@@ -99,13 +130,21 @@ Mevcut `lib/vehicle-ui.ts` → `FLEET_STYLE` tek kaynak olarak KALIR.
 
 ### 2.4 Durum renkleri
 
-Operasyonel durum renkleri değişmiyor (mevcut sistem doğru): aktif = mavi,
-mola = bordo, rölanti = altın, kritik = `oklch(0.55 0.2 27)`. Yeşil YALNIZ donanım
-sinyali (kontak açık). Renk hiçbir zaman tek anlam taşıyıcısı değil — ikon/etiket eşlik eder.
+Operasyonel durum renkleri değişmiyor: aktif = mavi, mola = bordo, rölanti = altın,
+kritik = kendi token'ı. Yeşil YALNIZ donanım sinyali (kontak açık). Renk hiçbir
+zaman tek anlam taşıyıcısı değil — ikon/etiket eşlik eder.
+
+⚠️ **Bilinen çelişki:** bordo hem §2.3'te "filo kimliği" hem burada "mola durumu".
+İkisi bugün aynı ekranda yan yana gelmediği için sorun çıkmıyor; bir gün gelirse
+mola için ayrı bir ton açılacak. Bu not bilinçli — sessizce taşınan bir borç değil.
+
+**Metin tonları:** aksan renkleri METİN olarak kullanılacaksa ayrı token gerekir —
+`--accent-gold-text`, `--accent-sky-text`, `--accent-claret-text`. Dolgu tonu ile
+metin tonu aynı değildir; gold/mavi beyaz üstünde 2.9:1 ve 4.0:1 ile AA'yı geçmez.
 
 ### 2.5 Grafik renkleri
 
-- Ana seri: **mercan**. İkincil seri: nötr gri (`#919191` / `#6A6B6F`).
+- Ana seri: **mercan**. İkincil seri: nötr gri (`#909096` / `#7A7A80`).
 - Filo kırılımında: bordo + mavi (2.3 gereği anlamlı).
 - Izgara çizgileri: kenarlık renginin %40'ı. Eksen etiketleri üçüncül metin, 11–12px.
 - **Yasak:** 5 renkli kategorik palet, gradient dolgu, 3B, gölgeli bar.

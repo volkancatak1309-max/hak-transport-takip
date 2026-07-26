@@ -101,6 +101,8 @@ export function TodayBoard({
   ];
 
   const shown = groups[tab];
+  // Hücre-içi bar için ölçek: en çok yüklenen şoför %100.
+  const maxLoaded = Math.max(1, ...rows.map((r) => r.loadedPackages ?? 0));
 
   return (
     <Card>
@@ -164,7 +166,10 @@ export function TodayBoard({
                 <thead>
                   {/* Başlık satırı — Stripe "Revenue recognition" yoğunluğu:
                       12px, 500, uppercase, +0.04em, üçüncül ton. */}
-                  <tr className="border-b border-border text-left text-[12px] uppercase tracking-[0.04em] text-muted-foreground">
+                  {/* STICKY başlık (Adım 6): 28 satırlık listede kolon adları
+                      kaydırınca kaybolmasın. Zemin panel grisi — Stellate'in
+                      tablo başlığı da içerikten bir basamak koyu. */}
+                  <tr className="sticky top-0 z-10 border-b border-border bg-surface-panel text-left text-[12px] uppercase tracking-[0.04em] text-muted-foreground">
                     <th className="py-2.5 pr-3 font-medium">{t("boardColDriver")}</th>
                     <th className="py-2.5 pr-3 font-medium">{t("boardColVehicle")}</th>
                     <th className="py-2.5 pr-3 font-medium">{t("boardColStatus")}</th>
@@ -178,7 +183,7 @@ export function TodayBoard({
                   {shown.map((r) => (
                     <tr
                       key={r.workerId}
-                      className="border-b border-border/50 transition-colors last:border-0 hover:bg-surface-2"
+                      className="border-b border-border/50 transition-colors last:border-0 odd:bg-surface-panel/50 hover:bg-surface-hover"
                     >
                       {/* İsim KIRPILMAZ (26.07.2026): truncate kalktı — panonun
                           tek işi kimin ne durumda olduğunu söylemek. */}
@@ -203,8 +208,23 @@ export function TodayBoard({
                           </span>
                         )}
                       </td>
-                      <td className="nums py-2 pr-3 text-right">
-                        {r.loadedPackages ?? <span className="text-muted-foreground">—</span>}
+                      {/* HÜCRE-İÇİ BAR: paket sayısı hem rakam hem oran olarak
+                          okunur. Oran, o gün en çok yüklenen şoföre göre. */}
+                      <td className="relative py-2 pr-3 text-right">
+                        {r.loadedPackages == null ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          <>
+                            <span
+                              aria-hidden
+                              className="absolute inset-y-1 right-0 rounded-[4px] bg-accent-coral opacity-[0.14]"
+                              style={{ width: `${Math.round((r.loadedPackages / maxLoaded) * 100)}%` }}
+                            />
+                            <span className="relative font-mono text-[13px] font-semibold tabular-nums">
+                              {r.loadedPackages}
+                            </span>
+                          </>
+                        )}
                       </td>
                       <td className="py-2 text-right">
                         <SignalCell row={r} t={t} ageLabel={ageLabel} />
@@ -365,12 +385,21 @@ function VehicleCell({ row, t }: { row: TodayRosterRow; t: TFn }) {
   );
 }
 
+/**
+ * Durum hücresi — KISA etiket + ikon (26.07.2026, Volkan onayı).
+ * Konsol iskeletinde içerik sütunu daraldı ve "Vardiya başlamadı" iki satıra
+ * sarıyordu. Uzun metin `title` içinde durur: ikon + kısa etiket ekranda,
+ * tam cümle hover'da. Renk tek taşıyıcı değil — ikon her durumda eşlik eder.
+ */
 function StatusCell({ row, t }: { row: TodayRosterRow; t: TFn }) {
   if (row.status === "not_started") {
     return (
-      <span className="inline-flex items-center gap-1 text-xs font-medium text-accent-gold-text">
+      <span
+        title={t("boardStatusNotStarted")}
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-accent-gold-text"
+      >
         <UserX className="size-3.5 shrink-0" aria-hidden />
-        {t("boardStatusNotStarted")}
+        {t("boardStatusNotStartedShort")}
       </span>
     );
   }

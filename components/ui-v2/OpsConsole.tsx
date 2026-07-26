@@ -54,11 +54,110 @@ export function OpsFilter({
 }) {
   return (
     <label className="mb-3 block last:mb-0">
-      <span className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
+      {/* Etiket ikincil tonda: üçüncül ton (#909096) panel grisi üstünde
+          2.8:1 kalıyordu — filtre etiketi okunmazsa filtre de yok demektir. */}
+      <span className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
         {label}
       </span>
       {children}
     </label>
+  );
+}
+
+/**
+ * GRUPLU METRİK LİSTESİ — Stellate'in "Most Used / Highest latency / Highest
+ * error rate" blokları. Başlık + satırlar; satırda etiket, opsiyonel yatay
+ * mercan bar ve sağda mono değer.
+ *
+ * Referansta bar YALNIZ homojen sıralamada var (istek sayısı). Bizde de öyle:
+ * `pct` verilmeyen satır barsız çizilir — karışık birimli metrikleri (km, adet,
+ * saat) bar ile göstermek yanıltıcı olurdu.
+ */
+export function OpsGroup({
+  title,
+  count,
+  icon,
+  action,
+  children,
+  className,
+}: {
+  title: string;
+  /** Başlığın yanındaki sayaç rozeti. */
+  count?: number;
+  icon?: React.ReactNode;
+  /** Sağ üstte küçük eylem/etiket. */
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={cn("surface-card flex flex-col rounded-[16px] p-5", className)}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold">
+          {icon}
+          {title}
+          {count !== undefined && count > 0 && (
+            <span className="rounded-full bg-accent-coral-soft px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-accent-coral-text">
+              {count}
+            </span>
+          )}
+        </h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** Gruplu listede tek satır. `pct` verilirse arkasına mercan oran barı çizilir. */
+export function OpsGroupRow({
+  label,
+  value,
+  meta,
+  pct,
+  tone = "neutral",
+  icon,
+  className,
+}: {
+  label: React.ReactNode;
+  value: React.ReactNode;
+  /** Değerin altındaki küçük açıklama. */
+  meta?: React.ReactNode;
+  /** 0-100. Verilirse hücre-içi oran barı çizilir (Stripe deseni). */
+  pct?: number;
+  tone?: "neutral" | "critical" | "warning";
+  icon?: React.ReactNode;
+  className?: string;
+}) {
+  const TONE = {
+    neutral: "text-foreground",
+    critical: "text-status-critical",
+    warning: "text-accent-gold-text",
+  } as const;
+  return (
+    <li className={cn("relative overflow-hidden rounded-[8px]", className)}>
+      {pct !== undefined && (
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 rounded-[8px] bg-accent-coral opacity-[0.14]"
+          style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+        />
+      )}
+      <div className="relative flex items-start justify-between gap-3 px-2 py-2">
+        <span className="flex min-w-0 flex-1 items-start gap-2 text-[13px] leading-tight">
+          {icon}
+          <span className="min-w-0">{label}</span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className={cn("font-mono text-[13px] font-semibold tabular-nums", TONE[tone])}>
+            {value}
+          </span>
+          {meta && (
+            <span className="mt-0.5 block text-[11px] text-text-tertiary">{meta}</span>
+          )}
+        </span>
+      </div>
+    </li>
   );
 }
 

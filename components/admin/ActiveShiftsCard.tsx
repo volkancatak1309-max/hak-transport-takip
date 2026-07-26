@@ -5,7 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CheckCircle2, Clock, Loader2, Square } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { OpsGroup } from "@/components/ui-v2";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -87,31 +87,22 @@ export function ActiveShiftsCard({
 
   return (
     <>
-      <Card className="flex flex-col">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center justify-between gap-2 text-sm font-semibold">
-            <span className="flex items-center gap-2">
-              <Clock className="size-4 text-muted-foreground" />
-              {t("activeShiftsTitle")}
+      {/* Stellate gruplu blok gövdesi. Sayaç rozeti OpsGroup'ta (mercan);
+          tavan aşımı rozeti AYRI kalır — biri "kaç kişi sahada", diğeri gerçek
+          uyarı. Tek rozette birleşseydi normal vardiya da uyarı rengi alırdı. */}
+      <OpsGroup
+        title={t("activeShiftsTitle")}
+        count={rows.length}
+        icon={<Clock className="size-4 text-accent-coral" />}
+        action={
+          overCount > 0 ? (
+            <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-status-critical">
+              {t("activeShiftsOverBadge", { count: overCount })}
             </span>
-            {/* İki ayrı rozet, iki ayrı iş: soldaki NÖTR sayaç ("kaç kişi
-                sahada"), sağdaki yalnız gerçek uyarı için. Tek rozette
-                birleştirilseydi normal aktif vardiya da uyarı rengi alırdı. */}
-            <span className="flex items-center gap-1.5">
-              {rows.length > 0 && (
-                <span className="nums rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-                  {rows.length}
-                </span>
-              )}
-              {overCount > 0 && (
-                <span className="font-mono tabular-nums rounded-full bg-status-critical-soft px-2 py-0.5 text-[11px] font-semibold text-status-critical">
-                  {t("activeShiftsOverBadge", { count: overCount })}
-                </span>
-              )}
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-1 flex-col">
+          ) : null
+        }
+      >
+        <div className="flex flex-1 flex-col">
           {rows.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
               <CheckCircle2 className="size-7 text-muted-foreground/50" />
@@ -194,8 +185,8 @@ export function ActiveShiftsCard({
               </p>
             </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </OpsGroup>
 
       {/* Kapatma geri alınabilir bir işlem değil (yalnız vardiya düzenlemeden
           elle düzeltilir) — onay katmanı şart. */}

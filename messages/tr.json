@@ -1011,6 +1011,7 @@
     "boardColStart": "Giriş",
     "boardColPackages": "Dağıtılacak Paket",
     "boardColSignal": "Araç sinyali",
+    "boardStatusNotStartedShort": "Başlamadı",
     "boardStatusNotStarted": "Vardiya başlamadı",
     "boardStartShift": "Vardiya Başlat",
     "boardStatusInField": "Sahada",

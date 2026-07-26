@@ -1011,6 +1011,7 @@
     "boardColStart": "Beginn",
     "boardColPackages": "Zu liefernde Pakete",
     "boardColSignal": "Fahrzeugsignal",
+    "boardStatusNotStartedShort": "Offen",
     "boardStatusNotStarted": "Schicht nicht begonnen",
     "boardStartShift": "Schicht starten",
     "boardStatusInField": "Im Einsatz",

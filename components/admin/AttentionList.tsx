@@ -20,7 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { OpsGroup } from "@/components/ui-v2";
 import { HelpTip } from "@/components/help/HelpTip";
 import { formatDate, formatTime, formatDurationShort } from "@/lib/format";
 import type { AttentionItem } from "@/lib/admin-dashboard";
@@ -176,22 +176,16 @@ export function AttentionList({
   }
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center justify-between gap-2 text-sm font-semibold">
-          <span className="flex items-center gap-2">
-            <AlertTriangle className="size-4 text-muted-foreground" />
-            {t("dash.attn_title")}
-            <HelpTip tkey="attention" />
-          </span>
-          {items.length > 0 && (
-            <span className="nums rounded-full bg-accent-gold/15 px-2 py-0.5 text-[11px] font-semibold text-accent-gold-text">
-              {items.length}
-            </span>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col">
+    // Stellate gruplu blok gövdesi (OpsGroup): başlık + sayaç rozeti + satırlar.
+    // Kart kabuğu (CardHeader/CardTitle) kaldırıldı — üç blok da aynı iskeleti
+    // paylaşsın diye tek gövde var.
+    <OpsGroup
+      title={t("dash.attn_title")}
+      count={items.length}
+      icon={<AlertTriangle className="size-4 text-accent-coral" />}
+      action={<HelpTip tkey="attention" />}
+    >
+      <div className="flex flex-1 flex-col">
         {items.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
             <CheckCircle2 className="size-7 text-muted-foreground/50" />
@@ -244,7 +238,7 @@ export function AttentionList({
             })}
           </ul>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </OpsGroup>
   );
 }

@@ -30,6 +30,7 @@ body {
   --color-accent-coral: var(--accent-coral);
   --color-accent-coral-hover: var(--accent-coral-hover);
   --color-accent-coral-soft: var(--accent-coral-soft);
+  --color-accent-coral-text: var(--accent-coral-text);
   --color-accent-coral-fg: var(--accent-coral-fg);
   /* Yüzen nav rayı (DESIGN.md §5) — iki temada da koyu yüzey. */
   --color-nav-surface: var(--nav-surface);
@@ -135,6 +136,9 @@ body {
   --accent-coral-hover: #d94746;
   --accent-coral-soft: color-mix(in srgb, #f15857 12%, transparent);
   --accent-coral-fg: #ffffff;
+  /* MERCAN METİN TONU: #F15857 kendi %12 tinti üstünde 2.9:1 — 11px rozet
+     metni için AA değil. gold/sky/claret ile aynı desen: dolgu ≠ metin. */
+  --accent-coral-text: #b23130;
 
   /* YÜZEN NAV RAYI — imza öğe. Açık temada DA koyu kalır (DESIGN.md §5). */
   --nav-surface: #181818;
@@ -241,6 +245,7 @@ body {
   --accent-coral-hover: #ff8a89;
   --accent-coral-soft: color-mix(in srgb, #ff6f6e 18%, transparent);
   --accent-coral-fg: #121213;
+  --accent-coral-text: #ff8a89;
 
   /* Nav rayı koyuda daha da koyu — zeminden ayrışsın. */
   --nav-surface: #0e0e0f;
@@ -446,8 +451,13 @@ body {
   /* Primary button fill — bordo diagonal gradient. Hover lift + subtle bordo
      shadow and active scale live on the button variant (Tailwind utilities) so
      focus rings and transitions stay intact. */
+  /* BİRİNCİL BUTON (26.07.2026): bordo→bordo GRADYAN kaldırıldı. Kilit
+     gradyanı reddediyor (DESIGN.md §0) ve bordo artık filo rengi; birincil
+     eylem nötr-koyu dolgudur (§5). Koyu temada --primary açık tona döner,
+     metin --primary-foreground ile birlikte otomatik ters çevrilir. */
   .btn-primary {
-    background-image: linear-gradient(135deg, var(--accent-claret), var(--accent-claret-hover));
+    background-color: var(--primary);
+    color: var(--primary-foreground);
   }
   /* Glass for form fields (input / select trigger): translucent + blur, but NO
      box-shadow so the mavi focus ring is never suppressed. */

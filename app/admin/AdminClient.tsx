@@ -5,7 +5,6 @@ import { useState, useTransition, useEffect, useMemo } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import Link from "next/link";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,14 +39,13 @@ import {
 import {
   formatDate,
   formatTime,
-  formatDuration,
   formatDurationShort,
+  formatNumber,
   workedMs,
   kmDiff,
 } from "@/lib/format";
 import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
 import { UserAvatar } from "@/components/UserAvatar";
-import { OpsSummary } from "@/components/admin/OpsSummary";
 import { AttentionList } from "@/components/admin/AttentionList";
 import { LiveWorked } from "@/components/admin/LiveWorked";
 import { FleetDtcCard } from "@/components/admin/FleetDtcCard";
@@ -70,7 +68,10 @@ import {
   PageHeader,
   StatCard,
   OpsConsole,
+  OpsFilter,
   OpsStatGrid,
+  OpsGroup,
+  OpsGroupRow,
   StatusChip,
   DataTable,
   DetailDrawer,
@@ -553,7 +554,7 @@ export function AdminClient({
               <span className="hidden xl:inline">AZG</span>
             </Button>
             <AddWorkerDialog>
-              <Button size="sm" className="btn-primary text-white" title={t("addWorker")}>
+              <Button size="sm" className="btn-primary" title={t("addWorker")}>
                 <UserPlus className="size-4" />
                 <span className="hidden xl:inline">{t("addWorker")}</span>
               </Button>
@@ -571,32 +572,97 @@ export function AdminClient({
       <OpsConsole
         filters={
           <div className="space-y-4">
-            <div>
-              <span className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
-                {t("dash.ops_title")}
-              </span>
-              <span className="font-mono text-[15px] font-semibold tabular-nums">
-                {scopeLabel}
-              </span>
-            </div>
-            <div className="border-t border-border pt-3">
-              <span className="mb-2 block text-[12px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
-                {t("boardTitle")}
-              </span>
-              <ul className="space-y-1.5">
-                {[
-                  { k: "not_started", label: t("boardTabNotStarted"), n: boardCounts.notStarted },
-                  { k: "in_field", label: t("boardTabInField"), n: boardCounts.inField },
-                  { k: "closed", label: t("boardTabClosed"), n: boardCounts.closed },
-                  { k: "on_leave", label: t("boardTabOnLeave"), n: boardCounts.onLeave },
-                ].map((r) => (
-                  <li key={r.k} className="flex items-baseline justify-between gap-3 text-[13px]">
-                    <span className="text-muted-foreground">{r.label}</span>
-                    <span className="font-mono font-semibold tabular-nums">{r.n}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {/* KAPSAM — tarih aralığı. Sayfanın TAMAMINI etkiler: hem dikkat
+                kalemleri hem arşiv bu aralıktan beslenir. */}
+            <OpsFilter label={t("dateRange")}>
+              <Select value={range} onValueChange={(v) => setParam("range", v ?? "today")}>
+                <SelectTrigger className="h-9 w-full" aria-label={t("dateRange")}>
+                  <SelectValue>{scopeLabel}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">{t("rangeToday")}</SelectItem>
+                  <SelectItem value="week">{t("rangeWeek")}</SelectItem>
+                  <SelectItem value="month">{t("rangeMonth")}</SelectItem>
+                  <SelectItem value="custom">{t("rangeCustom")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </OpsFilter>
+
+            {range === "custom" && (
+              <>
+                <OpsFilter label={t("from")}>
+                  <Input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setParam("from", e.target.value)}
+                    className="nums h-9 w-full"
+                  />
+                </OpsFilter>
+                <OpsFilter label={t("to")}>
+                  <Input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setParam("to", e.target.value)}
+                    className="nums h-9 w-full"
+                  />
+                </OpsFilter>
+              </>
+            )}
+
+            {/* ARŞİV EKSENİ — bu ikisi YALNIZ vardiya kayıtları tablosunu
+                daraltır, panoyu değil. Grup başlığı bunu açıkça söyler;
+                filtrenin neyi filtrelediğini gizlemek en pahalı hatadır. */}
+            {!readOnly && (
+              <div className="border-t border-border pt-4">
+                <span className="mb-3 block text-[12px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+                  {t("dash.shifts_title")}
+                </span>
+                <OpsFilter label={t("worker")}>
+                  <Select value={workerFilter} onValueChange={(v) => setParam("worker", v ?? "all")}>
+                    <SelectTrigger className="h-9 w-full" aria-label={t("worker")}>
+                      <SelectValue>
+                        {workerFilter === "all"
+                          ? t("statusAll")
+                          : workers.find((w) => w.id === workerFilter)?.name ?? t("statusAll")}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("statusAll")}</SelectItem>
+                      {workers.map((w) => (
+                        <SelectItem key={w.id} value={w.id}>
+                          <UserAvatar name={w.name} size="xs" />
+                          <span>{w.name}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </OpsFilter>
+                <OpsFilter label={t("status")}>
+                  <Select value={statusFilter} onValueChange={(v) => setParam("status", v ?? "all")}>
+                    <SelectTrigger className="h-9 w-full" aria-label={t("status")}>
+                      <SelectValue>
+                        {statusFilter === "active"
+                          ? t("statusActive")
+                          : statusFilter === "completed"
+                            ? t("statusCompleted")
+                            : statusFilter === "over"
+                              ? t("statusOver")
+                              : t("statusAll")}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("statusAll")}</SelectItem>
+                      <SelectItem value="active">{t("statusActive")}</SelectItem>
+                      <SelectItem value="completed">{t("statusCompleted")}</SelectItem>
+                      <SelectItem value="over">{t("statusOver")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </OpsFilter>
+                <div className="pt-1">
+                  <DensityToggle />
+                </div>
+              </div>
+            )}
           </div>
         }
       >
@@ -621,48 +687,84 @@ export function AdminClient({
         />
       </OpsConsole>
 
-      {/* ARAÇ ARIZALARI (DTC) BURADAN KALDIRILDI (22.07.2026) → /admin/araclar.
-          Ölçtük: masaüstünde sayfanın ilk bloğuydu (420px), mobilde en tepedeki
-          içerikti — operasyon özetinden de dikkat panosundan da önce geliyordu.
-          Arıza aracın özelliğidir, günün operasyon panosunun konusu değil. */}
+      {/* ── GRUPLU METRİK BLOKLARI (Stellate Adım 5) ──
+          Referansın "Most Used / Highest latency / Highest error rate" üçlüsü.
+          Üç blok da aynı gövdeyi paylaşır: başlık + sayaç + satır listesi.
 
-      {/* KARAR KATMANI — şerit + pano yukarıda kurulur (bkz. yukarıdaki blok).
-          Sıra bilinçli: önce "bugün ne oluyor / kim eksik", sonra dikkat
-          kalemleri, sonra ölçüm (operasyon özeti), en sonda arşiv. */}
-
-      {/* Dikkat kalemleri + şoför bildirimleri.
-          Dikkat panosu HER ZAMAN render edilir — kardeş kartların (DTC, şoför
-          bildirimi) boş-durum ekonomisinden bilinçli ayrılır: bu pano yalnız
-          "iş var mı" değil, "kontrol edildi mi" sorusunu da yanıtlar. Kartın
-          hiç görünmemesi ile hiç uyarı olmaması yönetici için ayırt edilemez;
-          "şu an dikkat gerektiren bir şey yok" satırı bilgidir. */}
-      <div className="grid gap-6 lg:grid-cols-2">
+          OpsSummary SİLİNDİ. Sekiz metriği kayboldu değil, dağıtıldı:
+            • sahadaki şoför / tavan aşımı  → sayı ızgarası (yukarıda)
+            • molada, sevkiyatta, km, yüklenen, teslim, teslim edilemeyen,
+              45 dk mola                     → "Bugünün ölçümü" bloğu (altta)
+          Böylece 9 kutuluk ızgara ile 5'li şerit arasındaki tekrar da bitti. */}
+      <div className="grid gap-5 lg:grid-cols-3">
         <AttentionList
           items={dashboard.attention}
-          /* Hatalı paket uyarısından doğrudan düzenlemeye. Kayıt seçili
-             aralıkta yüklü değilse (worker/status filtresi) kısayol sessizce
-             hiçbir şey yapmaz — yanlış kaydı açmaktansa hiç açmamak doğru. */
-          onEditEntry={
-            readOnly
-              ? undefined
-              : (entryId) => {
-                  const e = entries.find((x) => x.id === entryId);
-                  if (e) setEditOpen(e);
-                }
-          }
+          onEditEntry={(id) => {
+            const row = entries.find((e) => e.id === id);
+            if (row) setEditOpen(row);
+          }}
         />
-        {/* Aktif vardiyalar HER ZAMAN render edilir — dikkat panosuyla aynı
-            gerekçe: "liste boş" ile "kart yok" yönetici için ayırt edilemez,
-            oysa "şu an açık vardiya yok" bilgidir. Kart bir uyarı değil durum
-            listesidir; uyarıyı yalnız yasal tavanı aşan satırlar üretir. */}
+
         <ActiveShiftsCard rows={activeShifts} readOnly={readOnly} />
-        {!readOnly && reports.length > 0 && (
-          <DriverReportsCard reports={reports} />
-        )}
+
+        {/* BUGÜNÜN ÖLÇÜMÜ — OpsSummary'nin devamı, gruplu liste biçiminde.
+            Bar YOK: birimler karışık (kişi, km, adet). Stellate'te de bar yalnız
+            homojen sıralamada var. */}
+        <OpsGroup title={t("dash.ops_title")}>
+          <ul className="-mx-1 space-y-0.5 px-1">
+            <OpsGroupRow
+              label={t("dash.ops_on_break")}
+              value={formatNumber(dashboard.todayOps.onBreak, locale)}
+            />
+            <OpsGroupRow
+              label={t("dash.ops_vehicles_delivering")}
+              value={formatNumber(dashboard.todayOps.vehiclesDelivering, locale)}
+            />
+            <OpsGroupRow
+              label={t("dash.ops_km_today")}
+              value={
+                dashboard.todayOps.totalKmToday === null
+                  ? "—"
+                  : `${formatNumber(dashboard.todayOps.totalKmToday, locale)} km`
+              }
+            />
+            <OpsGroupRow
+              label={t("dash.ops_loaded")}
+              value={
+                dashboard.todayOps.loaded === null
+                  ? "—"
+                  : formatNumber(dashboard.todayOps.loaded, locale)
+              }
+            />
+            <OpsGroupRow
+              label={t("dash.ops_delivered")}
+              value={
+                dashboard.todayOps.delivered === null
+                  ? "—"
+                  : formatNumber(dashboard.todayOps.delivered, locale)
+              }
+            />
+            <OpsGroupRow
+              label={t("dash.ops_undelivered")}
+              value={
+                dashboard.todayOps.undelivered === null
+                  ? "—"
+                  : formatNumber(dashboard.todayOps.undelivered, locale)
+              }
+              tone={dashboard.todayOps.undelivered ? "warning" : "neutral"}
+            />
+            <OpsGroupRow
+              label={t("dash.ops_break45")}
+              value={formatNumber(dashboard.todayOps.needsBreak45, locale)}
+              tone={dashboard.todayOps.needsBreak45 > 0 ? "warning" : "neutral"}
+            />
+          </ul>
+        </OpsGroup>
       </div>
 
-      {/* Bugünün ÖLÇÜM katmanı — karar katmanının altında. */}
-      <OpsSummary ops={dashboard.todayOps} detail={dashboard.opsDetail} />
+      {!readOnly && reports.length > 0 && (
+        <DriverReportsCard reports={reports} />
+      )}
 
       {/* ARŞİV — vardiya kayıtları. VARSAYILAN KAPALI (22.07.2026): mobilde
           sayfa 21.389 px'ti ve bunun büyük kısmı bu tabloydu. Geçmiş kayıt
@@ -692,78 +794,10 @@ export function AdminClient({
 
         {archiveOpen && (
           <>
-        {/* Filtre çubuğu */}
-        <Card>
-          <CardContent className="flex flex-wrap items-end gap-3 p-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs">{t("dateRange")}</Label>
-              <Select value={range} onValueChange={(v) => setParam("range", v ?? "today")}>
-                <SelectTrigger className="h-9 w-[150px]" aria-label={t("dateRange")}>
-                  <SelectValue>
-                    {range === "week" ? t("rangeWeek") : range === "month" ? t("rangeMonth") : range === "custom" ? t("rangeCustom") : t("rangeToday")}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">{t("rangeToday")}</SelectItem>
-                  <SelectItem value="week">{t("rangeWeek")}</SelectItem>
-                  <SelectItem value="month">{t("rangeMonth")}</SelectItem>
-                  <SelectItem value="custom">{t("rangeCustom")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {range === "custom" && (
-              <>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">{t("from")}</Label>
-                  <Input type="date" value={from} onChange={(e) => setParam("from", e.target.value)} className="nums h-9" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">{t("to")}</Label>
-                  <Input type="date" value={to} onChange={(e) => setParam("to", e.target.value)} className="nums h-9" />
-                </div>
-              </>
-            )}
-            <div className="space-y-1.5">
-              <Label className="text-xs">{t("worker")}</Label>
-              <Select value={workerFilter} onValueChange={(v) => setParam("worker", v ?? "all")}>
-                <SelectTrigger className="h-9 w-[190px]" aria-label={t("worker")}>
-                  <SelectValue>
-                    {workerFilter === "all" ? t("statusAll") : workers.find((w) => w.id === workerFilter)?.name ?? t("statusAll")}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("statusAll")}</SelectItem>
-                  {workers.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>
-                      <UserAvatar name={w.name} size="xs" />
-                      <span>{w.name}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">{t("status")}</Label>
-              <Select value={statusFilter} onValueChange={(v) => setParam("status", v ?? "all")}>
-                <SelectTrigger className="h-9 w-[170px]" aria-label={t("status")}>
-                  <SelectValue>
-                    {statusFilter === "active" ? t("statusActive") : statusFilter === "completed" ? t("statusCompleted") : statusFilter === "over" ? t("statusOver") : t("statusAll")}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("statusAll")}</SelectItem>
-                  <SelectItem value="active">{t("statusActive")}</SelectItem>
-                  <SelectItem value="completed">{t("statusCompleted")}</SelectItem>
-                  <SelectItem value="over">{t("statusOver")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="ml-auto flex items-end">
-              <DensityToggle />
-            </div>
-          </CardContent>
-        </Card>
-
+        {/* FİLTRE ÇUBUĞU KALDIRILDI (26.07.2026 — Stellate iskeleti Adım 3).
+            Tarih/şoför/durum filtreleri sayfanın SOL KALICI sütununa taşındı;
+            arşiv artık kendi filtre kutusunu taşımıyor. Aynı setParam, aynı URL
+            parametreleri — yalnız yerleri değişti. */}
         {entries.length === 0 ? (
           <EmptyState kind="filtered" title={t("noEntries")} />
         ) : (

@@ -124,7 +124,19 @@ export default async function AlarmsPage({
           events={rows}
           density={density}
           stripDays={STRIP_DAYS}
-          vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, fleet: v.fleet }))}
+          /* ŞOFÖR ADI (27.07.2026): `driver_name` açık vardiyadaki şoför, yoksa
+             araca ATANMIŞ şoför — raporların kullandığı kaynağın AYNISI
+             (lib/reports.ts assigned_worker_id). Alarmlar ile raporlar aynı
+             kişiyi söylemek zorunda. Geçmişe dönük kusuru bilinçli kabul
+             edildi: araç el değiştirdiyse eski olay bugünkü şoförle
+             etiketlenir; tarihsel atama kaydı veritabanında YOK. Ekranda
+             adın yanındaki ipucu bunu yazıyor. */
+          vehicles={vehicles.map((v) => ({
+            id: v.id,
+            plate: v.plate,
+            fleet: v.fleet,
+            driverName: v.driver_name,
+          }))}
           range={range}
           /* Uyarı KOŞULU tek yerde: görüntülenen aralık sınırdan önce
              başlıyorsa. "epoch" aralığında start === sınır olduğu için uyarı

@@ -244,7 +244,17 @@
     "display_label": "Görünüm",
     "group_severity": "Öneme göre",
     "group_date": "Tarihe göre",
-    "go_route": "Rotada gör"
+    "go_route": "Rotada gör",
+    "group_vehicle": "Araç / Şoför",
+    "col_driver": "Şoför",
+    "no_driver": "şoför atanmamış",
+    "driver_source_hint": "Aracın açık vardiyadaki şoförü, yoksa atanmış şoförü. Araç el değiştirdiyse eski olaylar bugünkü şoförle etiketlenir.",
+    "events_n_short": "{n} olay",
+    "critical_band": "Kritik — hemen bakılmalı",
+    "critical_band_hint": "Bu olaylar gruplanmaz: her biri tek başına müdahale gerektirir.",
+    "repeat_n": "×{n}",
+    "group_all_collapsed": "Tümünü kapat",
+    "group_all_expanded": "Tümünü aç"
   },
   "approval": {
     "pending": "Onay Bekliyor",

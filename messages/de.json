@@ -244,7 +244,17 @@
     "display_label": "Ansicht",
     "group_severity": "Nach Schwere",
     "group_date": "Nach Datum",
-    "go_route": "Auf Route ansehen"
+    "go_route": "Auf Route ansehen",
+    "group_vehicle": "Fahrzeug / Fahrer",
+    "col_driver": "Fahrer",
+    "no_driver": "kein Fahrer zugewiesen",
+    "driver_source_hint": "Fahrer der offenen Schicht, sonst der zugewiesene Fahrer. Bei Fahrzeugwechsel werden ältere Ereignisse dem heutigen Fahrer zugeordnet.",
+    "events_n_short": "{n} Ereignisse",
+    "critical_band": "Kritisch — sofort prüfen",
+    "critical_band_hint": "Diese Ereignisse werden nicht gruppiert: jedes erfordert einzeln eine Reaktion.",
+    "repeat_n": "×{n}",
+    "group_all_collapsed": "Alle zuklappen",
+    "group_all_expanded": "Alle aufklappen"
   },
   "approval": {
     "pending": "Ausstehend",

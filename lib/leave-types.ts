@@ -8,10 +8,20 @@
  * arbeiterkammer.at). Gün sayıları KODA GÖMÜLMEZ: Dienstverhinderung günleri
  * nakliye Kollektivvertrag'ında belirlenir; takvim yalnız İŞARETLER.
  *
- * Renkler kullanıcı eşlemesi (yıllık=mavi, raporlu=yeşil, hasta bakım=turuncu,
- * ücretsiz=kırmızı, düğün=mor) + erişilebilir ek tonlar. Anlam renge TEK BAŞINA
- * yüklenmez: hücrede `short` kodu + tooltip + lejant birlikte kullanılır
- * (WCAG 1.4.1).
+ * GÖRSEL EKSEN — RENK DEĞİL, DESEN + TON (27.07.2026 kararı).
+ *
+ * Eski sürümde her türün kendi hex rengi vardı (10 renk). İki kuralı birden
+ * çiğniyordu: DESIGN.md §2.5 "5+ renkli kategorik palet yasak" ve §2.3 —
+ * yıllık izin `#2563EB` ile MAVİ FİLO kimliğine, ücretsiz izin `#DC2626` ile
+ * KRİTİK durum rengine biniyordu. Filo renkleri araç kimliği taşır; izin
+ * türü bir zaman aralığıdır, ikisi aynı palete giremez.
+ *
+ * Yeni eksen iki katmanlı:
+ *   • TON     — accent (mercan ailesi) / neutral (gri). İzin ÜCRETLİ çekirdek
+ *               mi yoksa diğer/ücretsiz mi, tek bakışta.
+ *   • DESEN   — solid / hatch / dots / dashed. Kategoriyi taşır.
+ * Kesin türü ise hücredeki `short` kodu + tooltip + lejant söyler (WCAG 1.4.1).
+ * Yani renk hiçbir zaman tek taşıyıcı değil — üç kanal var.
  */
 
 export type LeaveTypeKey =
@@ -29,6 +39,11 @@ export type LeaveTypeKey =
 /** Onay akışı durumu (migration 031). pending = şef talebi (silik). */
 export type LeaveStatus = "pending" | "approved" | "rejected";
 
+/** Hücre tonu — token'a bağlanır, hex yazılmaz (DESIGN.md §8/1). */
+export type LeaveTone = "accent" | "neutral";
+/** Hücre deseni — kategori taşıyıcısı. */
+export type LeavePattern = "solid" | "hatch" | "dots" | "dashed";
+
 /** Faz-2 AZG "Abwesenheiten" bölümü için kova. */
 export type AzgAbsenceCategory =
   | "Urlaub"
@@ -44,8 +59,10 @@ export type LeaveTypeDef = {
   tr: string;
   /** Izgara hücresi kısa kodu (renk tek taşıyıcı olmasın diye). */
   short: string;
-  /** Hücre zemin rengi (hex). Metin beyaz — tonlar yeterince koyu. */
-  color: string;
+  /** Ton — mercan ailesi mi nötr mü (DESIGN.md §2.2). Hex YOK: token'dan gelir. */
+  tone: LeaveTone;
+  /** Desen — kategoriyi taşır; renk tek taşıyıcı olmasın diye. */
+  pattern: LeavePattern;
   /** Ücretli mi (UI rozeti + Faz-2 rapor notu). */
   paid: boolean;
   /** Yasal dayanak kısa etiketi. */
@@ -59,16 +76,16 @@ export type LeaveTypeDef = {
 };
 
 export const LEAVE_TYPES: LeaveTypeDef[] = [
-  { key: "jahresurlaub",       de: "Urlaub",              tr: "Yıllık izin",        short: "U",  color: "#2563EB", paid: true,  legal: "UrlG §2/§4/§6",       azgCategory: "Urlaub",               common: true },
-  { key: "krankenstand",       de: "Krankenstand",        tr: "Raporlu / hasta",    short: "K",  color: "#16A34A", paid: true,  legal: "§8 AngG · EFZG",      azgCategory: "Krankenstand",         common: true },
-  { key: "pflegefreistellung", de: "Pflegefreistellung",  tr: "Hasta yakını bakımı",short: "P",  color: "#EA580C", paid: true,  legal: "UrlG §16",            azgCategory: "Pflegefreistellung",   common: true },
-  { key: "unbezahlt",          de: "Unbezahlter Urlaub",  tr: "Ücretsiz izin",      short: "UB", color: "#DC2626", paid: false, legal: "Vereinbarung",        azgCategory: "Sonstige Abwesenheit", common: true },
-  { key: "hochzeit",           de: "Eheschließung",       tr: "Düğün / evlilik",    short: "H",  color: "#7C3AED", paid: true,  legal: "§8/3 AngG · KV",      azgCategory: "Sonstige Abwesenheit", common: true },
-  { key: "sonderurlaub",       de: "Dienstverhinderung",  tr: "Mazeret izni",       short: "D",  color: "#0891B2", paid: true,  legal: "§8/3 AngG · §1154b ABGB", azgCategory: "Sonstige Abwesenheit", common: false },
-  { key: "todesfall",          de: "Todesfall",           tr: "Cenaze",             short: "T",  color: "#64748B", paid: true,  legal: "§8/3 AngG · KV",      azgCategory: "Sonstige Abwesenheit", common: false },
-  { key: "umzug",              de: "Wohnungswechsel",     tr: "Taşınma",            short: "UM", color: "#B45309", paid: true,  legal: "§8/3 AngG · KV",      azgCategory: "Sonstige Abwesenheit", common: false },
-  { key: "geburt",             de: "Geburt",              tr: "Eşin doğumu",        short: "G",  color: "#DB2777", paid: true,  legal: "§8/3 AngG · KV",      azgCategory: "Sonstige Abwesenheit", common: false },
-  { key: "karenz",             de: "Karenz / Familienzeit", tr: "Doğum/ebeveyn izni", short: "Ka", color: "#4338CA", paid: false, legal: "MSchG/VKG · FamZeitbG", azgCategory: "Sonstige Abwesenheit", common: false, longTerm: true },
+  { key: "jahresurlaub",       de: "Urlaub",              tr: "Yıllık izin",         short: "U",  tone: "accent",  pattern: "solid",  paid: true,  legal: "UrlG §2/§4/§6",           azgCategory: "Urlaub",               common: true },
+  { key: "krankenstand",       de: "Krankenstand",        tr: "Raporlu / hasta",     short: "K",  tone: "accent",  pattern: "hatch",  paid: true,  legal: "§8 AngG · EFZG",          azgCategory: "Krankenstand",         common: true },
+  { key: "pflegefreistellung", de: "Pflegefreistellung",  tr: "Hasta yakını bakımı", short: "P",  tone: "accent",  pattern: "dots",   paid: true,  legal: "UrlG §16",                azgCategory: "Pflegefreistellung",   common: true },
+  { key: "unbezahlt",          de: "Unbezahlter Urlaub",  tr: "Ücretsiz izin",       short: "UB", tone: "neutral", pattern: "dashed", paid: false, legal: "Vereinbarung",            azgCategory: "Sonstige Abwesenheit", common: true },
+  { key: "hochzeit",           de: "Eheschließung",       tr: "Düğün / evlilik",     short: "H",  tone: "neutral", pattern: "solid",  paid: true,  legal: "§8/3 AngG · KV",          azgCategory: "Sonstige Abwesenheit", common: true },
+  { key: "sonderurlaub",       de: "Dienstverhinderung",  tr: "Mazeret izni",        short: "D",  tone: "neutral", pattern: "solid",  paid: true,  legal: "§8/3 AngG · §1154b ABGB", azgCategory: "Sonstige Abwesenheit", common: false },
+  { key: "todesfall",          de: "Todesfall",           tr: "Cenaze",              short: "T",  tone: "neutral", pattern: "hatch",  paid: true,  legal: "§8/3 AngG · KV",          azgCategory: "Sonstige Abwesenheit", common: false },
+  { key: "umzug",              de: "Wohnungswechsel",     tr: "Taşınma",             short: "UM", tone: "neutral", pattern: "dots",   paid: true,  legal: "§8/3 AngG · KV",          azgCategory: "Sonstige Abwesenheit", common: false },
+  { key: "geburt",             de: "Geburt",              tr: "Eşin doğumu",         short: "G",  tone: "neutral", pattern: "solid",  paid: true,  legal: "§8/3 AngG · KV",          azgCategory: "Sonstige Abwesenheit", common: false },
+  { key: "karenz",             de: "Karenz / Familienzeit", tr: "Doğum/ebeveyn izni", short: "Ka", tone: "neutral", pattern: "dashed", paid: false, legal: "MSchG/VKG · FamZeitbG",  azgCategory: "Sonstige Abwesenheit", common: false, longTerm: true },
 ];
 
 export const LEAVE_TYPE_KEYS: LeaveTypeKey[] = LEAVE_TYPES.map((t) => t.key);
@@ -83,7 +100,8 @@ export function leaveTypeDef(key: string): LeaveTypeDef {
       de: key,
       tr: key,
       short: "?",
-      color: "#64748B",
+      tone: "neutral",
+      pattern: "solid",
       paid: false,
       legal: "",
       azgCategory: "Sonstige Abwesenheit",

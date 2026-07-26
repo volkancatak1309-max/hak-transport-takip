@@ -16,6 +16,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { leaveCellStyle, LeaveSwatch } from "@/components/admin/LeaveCell";
 import {
   LEAVE_TYPES,
   leaveTypeDef,
@@ -203,15 +204,15 @@ export function LeaveCalendar({
             // Boş hücre: aktif personelde tıklanır (izin ekle), ayrılanda değil.
             if (readOnly) {
               return (
-                <td key={d} className={isWeekend(d) ? "bg-surface-2/30" : ""} />
+                <td key={d} className={isWeekend(d) ? "bg-surface-panel/60" : ""} />
               );
             }
             return (
-              <td key={d} className={isWeekend(d) ? "bg-surface-2/30" : ""}>
+              <td key={d} className={isWeekend(d) ? "bg-surface-panel/60" : ""}>
                 <button
                   type="button"
                   aria-label={t("addForDay", { day: d })}
-                  className="h-7 w-full min-w-[26px] transition-colors hover:bg-surface-2"
+                  className="h-7 w-full min-w-[26px] rounded-[4px] transition-colors hover:bg-surface-hover"
                   onClick={() =>
                     setDrawer({
                       mode: "add",
@@ -234,8 +235,8 @@ export function LeaveCalendar({
               <td key={d} className="p-0">
                 <span
                   title={title}
-                  className="flex h-7 w-full min-w-[26px] cursor-default items-center justify-center text-[10px] font-semibold text-white opacity-60"
-                  style={{ backgroundColor: def.color }}
+                  className="flex h-7 w-full min-w-[26px] cursor-default items-center justify-center rounded-[4px] text-[10px] font-semibold opacity-60"
+                  style={leaveCellStyle(def, false)}
                 >
                   {def.short}
                 </span>
@@ -248,8 +249,8 @@ export function LeaveCalendar({
                 type="button"
                 title={title}
                 onClick={() => setDrawer({ mode: "edit", leave: l })}
-                className="flex h-7 w-full min-w-[26px] items-center justify-center text-[10px] font-semibold text-white"
-                style={{ backgroundColor: def.color, opacity: isPending ? 0.45 : 1 }}
+                className="flex h-7 w-full min-w-[26px] items-center justify-center rounded-[4px] text-[10px] font-semibold transition-opacity hover:opacity-80"
+                style={leaveCellStyle(def, isPending)}
               >
                 {def.short}
               </button>
@@ -271,7 +272,7 @@ export function LeaveCalendar({
         <div className="flex items-center gap-2">
           <Link
             href={`/admin/izinler?month=${prevMonth}`}
-            className="inline-flex size-9 items-center justify-center rounded-[10px] border border-border/60 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+            className="btn-outline-ring inline-flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
             aria-label={t("prevMonth")}
           >
             <ChevronLeft className="size-4" />
@@ -281,7 +282,7 @@ export function LeaveCalendar({
           </span>
           <Link
             href={`/admin/izinler?month=${nextMonth}`}
-            className="inline-flex size-9 items-center justify-center rounded-[10px] border border-border/60 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+            className="btn-outline-ring inline-flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-hover hover:text-foreground"
             aria-label={t("nextMonth")}
           >
             <ChevronRight className="size-4" />
@@ -305,9 +306,9 @@ export function LeaveCalendar({
 
       {/* Onay bekleyen talepler (yalnız patron) */}
       {canApprove && pendingLeaves.length > 0 && (
-        <Card className="border-accent-gold/40">
+        <Card className="surface-card rounded-[12px]">
           <CardContent className="p-4">
-            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-accent-gold-text">
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-accent-coral-text">
               <CalendarOff className="size-4" />
               {t("pendingTitle", { n: pendingLeaves.length })}
             </h2>
@@ -317,14 +318,10 @@ export function LeaveCalendar({
                 return (
                   <li
                     key={l.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2 text-sm"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-surface-panel px-3 py-2 text-sm"
                   >
                     <span className="flex items-center gap-2">
-                      <span
-                        className="inline-block size-3 rounded-sm"
-                        style={{ backgroundColor: def.color }}
-                        aria-hidden
-                      />
+                      <LeaveSwatch def={def} />
                       <span className="font-medium">
                         {nameById.get(l.worker_id) ?? "—"}
                       </span>
@@ -359,8 +356,9 @@ export function LeaveCalendar({
         </Card>
       )}
 
-      {/* Izgara — YALNIZ aktif kadro. Ayrılanlar aşağıdaki katlanır bölümde. */}
-      <Card>
+      {/* Izgara — YALNIZ aktif kadro. Ayrılanlar aşağıdaki katlanır bölümde.
+          Bölüm paneli = cam (DESIGN.md §3.1); içindeki hücreler cam DEĞİL. */}
+      <Card className="glass-panel rounded-[16px]">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
@@ -388,7 +386,7 @@ export function LeaveCalendar({
           izinleri gri tonda görünür, yeni izin girilemez. Çalışanlar sayfasındaki
           "Eski Personeller" (details/summary) deseniyle tutarlı. */}
       {formerWorkers.length > 0 && (
-        <details className="rounded-2xl border border-border/60 bg-card">
+        <details className="surface-card overflow-hidden rounded-[12px]">
           <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold">
             {t("formerTitle", { n: formerWorkers.length })}
           </summary>
@@ -430,13 +428,14 @@ export function LeaveCalendar({
         muted
       />
 
-      {/* Lejant (renk tek taşıyıcı değil — kod + renk + isim) */}
+      {/* LEJANT — üç kanal birden: desen örneği + kısa kod + isim.
+          Renk tek taşıyıcı değil; desen ve kod da anlamı taşıyor. */}
       <div className="flex flex-wrap gap-x-4 gap-y-2">
         {LEAVE_TYPES.filter((d) => d.common).map((d) => (
           <span key={d.key} className="inline-flex items-center gap-1.5 text-xs">
             <span
-              className="inline-flex size-4 items-center justify-center rounded-sm text-[9px] font-bold text-white"
-              style={{ backgroundColor: d.color }}
+              className="inline-flex size-4 items-center justify-center rounded-[4px] text-[9px] font-bold"
+              style={leaveCellStyle(d, false)}
             >
               {d.short}
             </span>
@@ -496,7 +495,7 @@ function LeaveArchive({
   const t = useTranslations("izinler");
   if (rows.length === 0) return null;
   return (
-    <details className="rounded-2xl border border-border/60 bg-card">
+    <details className="surface-card overflow-hidden rounded-[12px]">
       <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold">
         {title}
       </summary>
@@ -521,11 +520,7 @@ function LeaveArchive({
                     <td className="px-3 py-2 font-medium">{r.worker_name}</td>
                     <td className="px-3 py-2">
                       <span className="inline-flex items-center gap-1.5">
-                        <span
-                          className="inline-block size-3 rounded-sm"
-                          style={{ backgroundColor: def.color }}
-                          aria-hidden
-                        />
+                        <LeaveSwatch def={def} />
                         {locale === "de" ? def.de : def.tr}
                       </span>
                     </td>
@@ -684,7 +679,7 @@ function LeaveDrawer({
                 value={workerId}
                 onChange={(e) => setWorkerId(e.target.value)}
                 disabled={!!editing}
-                className="w-full rounded-[10px] border border-border bg-background px-3 py-2 text-sm disabled:opacity-60"
+                className="btn-outline-ring w-full rounded-[8px] border-0 bg-transparent px-3 py-2 text-sm disabled:opacity-60"
               >
                 <option value="">—</option>
                 {/* Ayrılan personele yeni izin girilemez → seçenekten çıkar. */}
@@ -705,7 +700,7 @@ function LeaveDrawer({
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value as LeaveTypeKey)}
-                className="w-full rounded-[10px] border border-border bg-background px-3 py-2 text-sm"
+                className="btn-outline-ring w-full rounded-[8px] border-0 bg-transparent px-3 py-2 text-sm"
               >
                 <optgroup label={t("groupCommon")}>
                   {common.map((d) => (
@@ -733,7 +728,7 @@ function LeaveDrawer({
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full rounded-[10px] border border-border bg-background px-3 py-2 text-sm"
+                  className="btn-outline-ring w-full rounded-[8px] border-0 bg-transparent px-3 py-2 text-sm"
                 />
               </label>
               <label className="block">
@@ -744,7 +739,7 @@ function LeaveDrawer({
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full rounded-[10px] border border-border bg-background px-3 py-2 text-sm"
+                  className="btn-outline-ring w-full rounded-[8px] border-0 bg-transparent px-3 py-2 text-sm"
                 />
               </label>
             </div>
@@ -757,7 +752,7 @@ function LeaveDrawer({
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={2}
-                className="w-full rounded-[10px] border border-border bg-background px-3 py-2 text-sm"
+                className="btn-outline-ring w-full rounded-[8px] border-0 bg-transparent px-3 py-2 text-sm"
               />
             </label>
 

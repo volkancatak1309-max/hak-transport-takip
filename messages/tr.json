@@ -1285,7 +1285,17 @@
     "pdfForWorker": "PDF Rapor (bu çalışan)",
     "subtitle": "Şoför kadrosu — durum, son vardiya ve aylık saat",
     "filter_status": "Durum",
-    "startShift": "Vardiya Başlat"
+    "startShift": "Vardiya Başlat",
+    "searchPlaceholder": "Ad, telefon veya plaka",
+    "dossierTitle": "Künye",
+    "employeeNumber": "Personel no",
+    "employmentStart": "İşe giriş",
+    "licenseExpiry": "Ehliyet bitiş",
+    "email": "E-posta",
+    "emergencyTitle": "Acil durum",
+    "emergencyName": "Ad",
+    "emergencyRelation": "Yakınlık",
+    "emergencyPhone": "Telefon"
   },
   "manualStart": {
     "title": "Vardiya Başlat",

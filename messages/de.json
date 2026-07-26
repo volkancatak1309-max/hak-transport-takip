@@ -1285,7 +1285,17 @@
     "pdfForWorker": "PDF-Bericht (dieser Mitarbeiter)",
     "subtitle": "Fahrerteam — Status, letzte Schicht und Monatsstunden",
     "filter_status": "Status",
-    "startShift": "Schicht starten"
+    "startShift": "Schicht starten",
+    "searchPlaceholder": "Name, Telefon oder Kennzeichen",
+    "dossierTitle": "Stammdaten",
+    "employeeNumber": "Personalnr.",
+    "employmentStart": "Eintritt",
+    "licenseExpiry": "Führerschein bis",
+    "email": "E-Mail",
+    "emergencyTitle": "Notfallkontakt",
+    "emergencyName": "Name",
+    "emergencyRelation": "Beziehung",
+    "emergencyPhone": "Telefon"
   },
   "manualStart": {
     "title": "Schicht starten",

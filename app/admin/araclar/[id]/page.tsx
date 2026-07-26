@@ -16,6 +16,8 @@ import { computeIdleTime } from "@/lib/metrics-idle";
 import { computeGeofenceEvents } from "@/lib/metrics-geofence";
 import { getActiveGeofences } from "@/app/actions/geofences";
 import { startOfTodayVienna } from "@/lib/format";
+import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { VehicleDetailClient } from "./VehicleDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -30,15 +32,31 @@ export default async function VehicleDetailPage({
   // Engine-hours window: Vienna local midnight → now (today's runtime).
   const dayStart = startOfTodayVienna();
   const now = new Date();
-  const [detail, telemetry, track, zones, events, dtc] = await Promise.all([
-    getVehicleDetail(id),
-    latestVehicleTelemetry(id),
-    listVehicleTrack(id, dayStart, now),
-    getActiveGeofences(),
-    listVehicleEvents(id, 10),
-    listActiveDtc(id),
-  ]);
+  // Künye satırındaki "Düzenle" araç kaydı formunu açıyor; formun "Atanmış
+  // şoför" seçimi bu listeyi ister. Liste sayfasındaki sorgunun aynısı:
+  // pasifler de gelir (filtrelenirse yönetici atamayı temizlediğini sanıp
+  // ex-çalışanı geri yazar).
+  const scope = await getTestScope();
+  const [detail, telemetry, track, zones, events, dtc, driversResult] =
+    await Promise.all([
+      getVehicleDetail(id),
+      latestVehicleTelemetry(id),
+      listVehicleTrack(id, dayStart, now),
+      getActiveGeofences(),
+      listVehicleEvents(id, 10),
+      listActiveDtc(id),
+      withoutTestRows(
+        supabaseAdmin.from("workers").select("id, name, is_active").order("name"),
+        "id",
+        scope.workerIds
+      ),
+    ]);
   if (!detail) notFound();
+  const drivers = (driversResult.data ?? []) as {
+    id: string;
+    name: string;
+    is_active: boolean;
+  }[];
   // Same track feeds all device-GPS metrics (one query, pure computations).
   const engineHours = computeEngineHours(track);
   const distance = computeDistanceKm(track);
@@ -75,6 +93,7 @@ export default async function VehicleDetailPage({
         geofence={geofence}
         events={events}
         dtc={dtcEnriched}
+        drivers={drivers}
       />
     </DashboardShell>
   );

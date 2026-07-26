@@ -135,7 +135,12 @@ body {
   --accent-coral: #f15857;
   --accent-coral-hover: #d94746;
   --accent-coral-soft: color-mix(in srgb, #f15857 12%, transparent);
-  --accent-coral-fg: #ffffff;
+  /* DOLU MERCAN ÜSTÜNDEKİ METİN. Beyaz DEĞİL: #ffffff, #F15857 üstünde
+     3.35:1 kalıyor ve 14px etiket için AA'yı geçmiyor (26.07.2026'da
+     ölçüldü). Koyu mürekkep aynı zeminde 6.27:1 verir. Token daha önce
+     tanımlıydı ama hiç kullanılmamıştı; ilk tüketicisi araç detayındaki
+     "Rota Geçmişi" eylemi. */
+  --accent-coral-fg: #181818;
   /* MERCAN METİN TONU: #F15857 kendi %12 tinti üstünde 2.9:1 — 11px rozet
      metni için AA değil. gold/sky/claret ile aynı desen: dolgu ≠ metin. */
   --accent-coral-text: #b23130;
@@ -162,8 +167,11 @@ body {
   --accent-gold-soft: oklch(0.68 0.1 78 / 16%);
   /* GOLD METİN TONU (26.07.2026): --accent-gold beyaz üstünde 2.9:1 kalıyor,
      yani 11-12px uyarı metni için AA değil. Dolgu/nokta olarak doğru ama METİN
-     olarak kullanılamaz — claret'teki --accent-claret-text deseninin aynısı. */
-  --accent-gold-text: oklch(0.52 0.1 78);
+     olarak kullanılamaz — claret'teki --accent-claret-text deseninin aynısı.
+     0.52 → 0.50 (26.07): "Boşta" çipi kendi %15 gold tinti ÜSTÜNDE 4.46:1
+     kalıyordu. Beyaz zeminde geçen ton, tintli çip zemininde geçmiyor —
+     ölçüm en kötü zeminle yapılır. 0.50 ile 4.87:1 (zemin) / 5.28:1 (kart). */
+  --accent-gold-text: oklch(0.5 0.1 78);
   /* Green — reserved for hardware-signal state (device ignition ON). Not used
      for shift/operational status, which stays sky/claret/gold by design. */
   --accent-green: oklch(0.6 0.13 155);

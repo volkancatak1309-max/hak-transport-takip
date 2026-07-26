@@ -21,6 +21,15 @@ export {
   OpsGroup,
   OpsGroupRow,
 } from "./OpsConsole";
+// Detay ekranı künye dili (Enode klonu — DESIGN.md §0 DESTEK D).
+export {
+  DetailColumns,
+  SpecGroup,
+  SpecRow,
+  RailSection,
+  RailCard,
+  type RailTone,
+} from "./DetailSpec";
 export { RevealFilterRow, type RevealFilter } from "./RevealFilterRow";
 export {
   DataTable,

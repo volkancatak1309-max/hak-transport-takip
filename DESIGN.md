@@ -18,6 +18,8 @@
 | **DESTEK A** — tablo-içi bar, rapor yoğunluğu, indirme/sayfalama | **Stripe** · Revenue recognition | `5f9b93d3-6315-4656-8f74-cd26b07f1069` | `https://images.refero.design/screenshots/stripe.com/desktop/00d07674-325b-44e8-af0c-f2f5df70dbee_preview.jpg` |
 | **DESTEK B** — mono font rolü, 8px ızgara, KPI çipi → grafik → tablo dizilimi | **Fingerprint** · Bot detection | `fa27b73e-e27a-4249-b08e-8af912b3ad26` | `https://images.refero.design/screenshots/fingerprint.com/desktop/fa27b73e-e27a-4249-b08e-8af912b3ad26_preview.jpg` |
 | **DESTEK C** (26.07) — katmanlı gri merdiveni + operasyon konsolu İSKELETİ | **Stellate** · Operations metrics | `e8b04517-1949-47d0-9faa-23a79f651802` | `https://images.refero.design/screenshots/stellate.co/desktop/8dd79423-3320-4e4d-bc46-2a6b696c3f65_preview.jpg` |
+| **DESTEK D** (26.07) — DETAY ekranı künye satırı: etiket sol / değer sağ, mikro bölüm etiketi, yoğun ayraçlı liste | **Enode** · Vehicle capabilities konsolu | `77cf19d7-fb3d-41bd-bc69-3e1bddb42f1a` (açık) · `5b7b3988-96d1-4f94-8c3f-f6a91505bde3` (koyu) | `https://images.refero.design/screenshots/enode.com/desktop/76385a20-10d3-41c0-9101-f5d447ec4715_preview.jpg` |
+| **DESTEK E** (26.07) — üç kolon anatomisi (nav · orta içerik · sağ özellik/olay rayı) + rayda mini harita bandı | **Clay** · kişi detayı | `754179d7-6fe2-4e21-9edc-bbaf45bd9ff1` | `https://images.refero.design/screenshots/clay.earth/desktop/b66ec900-61f4-4022-83c2-730061a0009d_preview.jpg` |
 
 ### Korunacak imza özellikler (Runey'den — bunlar pazarlık dışı)
 
@@ -110,6 +112,24 @@ seçili satır zemini · sıralama barı · canlı/aktif göstergesi.
   tek bir vurgu şeridi) — kart zemini mercan olmaz.
 - Kontrast kuralı değişmedi: mercan METİN olarak kullanılacaksa AA ölçülür
   (açık temada `#F15857` beyaz üstünde 3.6:1 → yalnız ≥18.66px kalın metin).
+- **Dolu mercan üstündeki metin BEYAZ DEĞİLDİR** (26.07 ölçümü): beyaz,
+  `#F15857` üstünde 3.35:1 kalıyor. Bu rol `--accent-coral-fg` token'ınındır;
+  açık temada koyu mürekkep (`#181818`, 6.27:1), koyuda `#121213`. Token daha
+  önce beyaz tanımlıydı ve hiç kullanılmamıştı — düzeltildi.
+
+### 2.2.1 Ölçüm kuralı — EN KÖTÜ ZEMİN (26.07.2026)
+
+Bir metin tonu "beyaz üstünde geçiyor" diye onaylanamaz. Çipler kendi renginin
+%12-16 tinti üstünde yaşar ve o zemin beyazdan koyudur. Ölçüm **öğenin gerçekte
+üstünde durduğu zeminle** yapılır; aynı çip sayfa zemininde (`#F5F5F7`) kart
+üstündekinden daha zor geçer.
+
+Bu kural iki kusuru ortaya çıkardı ve ikisi de düzeltildi:
+- `--accent-gold-text` `oklch(0.52)` → **`oklch(0.5)`**: "Boşta" çipi kendi gold
+  tinti üstünde 4.46:1 kalıyordu (beyazda geçiyordu). Artık 4.87:1.
+- `STATUS_STYLE` çip metinleri dolgu token'ı kullanıyordu
+  (`text-accent-gold` / `-sky` / `-claret`). §2.4'ün açıkça yasakladığı şey;
+  hepsi `*-text` türevine çevrildi. Nokta ve şerit dolgu tonunda KALDI.
 
 ### 2.3 İSTİSNA — filo renkleri bilgi taşır
 
@@ -245,6 +265,29 @@ Ghost: yalnız hover zemini. Basışta `translateY(1px)`.
 ### Çip / rozet
 İnce, düşük doygunluk: ilgili rengin %12 zemini + tam renk metni, tam yuvarlak,
 11–12px, 500. Filo çipleri bordo/mavi (2.3), durum çipleri durum rengi.
+
+### Detay ekranı — künye satırı ve olay rayı (Enode/Clay, §0 DESTEK D+E)
+
+Tek kaynak: `components/ui-v2/DetailSpec.tsx`. Sayfa-içi kopya yasak.
+
+- **Üç kolon:** nav (kabuk) · orta künye · sağ olay rayı. `xl` altında tek
+  kolona iner ve ray künyenin ALTINA geçer (üstüne değil — mobilde araç
+  kimliği önce gelir). Ray **yapışkan değildir**: olay sayısı önceden bilinmez,
+  uzun ray sticky'de viewport'a kilitlenir.
+- **Künye satırı:** etiket solda ikincil tonda (%38 genişlik), değer sağda
+  birincil tonda, satır 44px, aralarında yalnız ince ayraç. Dikey çizgi yok,
+  kutu içinde kutu yok. Kimlik/ölçüm değerleri mono (§3).
+- **Bölüm işareti:** başlığın solunda 3px çubuk. VARSAYILAN NÖTR; mercan yalnız
+  sayfanın "canlı" grubunda (`accent`) yanar. Dört grubun dördünde de mercan
+  olsaydı §2.2'nin 3-6 dokunuş bütçesi tek başına tükenirdi.
+- **Düzenlenebilir satır** sağında "Düzenle" taşır ve bu eylem GİZLENMEZ
+  (hover'da belirmez). Sessiz kalması için üçüncül tonda durur, hover'da mercan.
+- **Olay kartı:** ikon madalyonu + başlık + zaman + kendi eylemi. Olayın
+  ağırlığı yalnız madalyonda yaşar; kart kenarına renkli şerit ÇEKİLMEZ
+  (ne Enode ne Clay'de var, ve yan şerit üretilmiş-arayüz klişesidir).
+- **Mini harita** bir DEĞERdir, araç değil: Konum satırının altında dar bant,
+  tüm etkileşim kapalı (dar bantta tekerlek zumu kaydırma kapanı olur). Gerçek
+  gezinme Rota oynatıcıdadır.
 
 ### Boş durum
 Kartın içinde, ortalanmış, tek satır başlık + tek satır açıklama + varsa tek aksiyon.

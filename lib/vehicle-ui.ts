@@ -30,24 +30,33 @@ export type StatusStyle = {
   live: boolean;
 };
 
+/**
+ * ÇİP METNİ DOLGU TOKEN'I DEĞİL, `*-text` TÜREVİ KULLANIR (DESIGN.md §2.4).
+ *
+ * Saf --accent-gold / --accent-sky / --accent-claret, kendi %15 tinti üstünde
+ * 11-13px çip metni olarak AA'yı geçmiyor (açık temada "Boşta" 2.34:1 ölçüldü,
+ * 26.07.2026). Dolgu tonu ile metin tonu aynı değildir; FLEET_STYLE zaten bu
+ * ayrımı yapıyordu, durum çipleri geride kalmıştı. Nokta/şerit dolgu tonunda
+ * KALIR — onlar metin değil.
+ */
 export const STATUS_STYLE: Record<VehicleLiveStatus, StatusStyle> = {
   sevkiyatta: {
     labelKey: "sevkiyatta",
-    chip: "bg-accent-sky/15 text-accent-sky",
+    chip: "bg-accent-sky/15 text-accent-sky-text",
     stripe: "border-l-accent-sky",
     dot: "bg-accent-sky",
     live: true,
   },
   molada: {
     labelKey: "molada",
-    chip: "bg-accent-claret/15 text-accent-claret",
+    chip: "bg-accent-claret/15 text-accent-claret-text",
     stripe: "border-l-accent-claret",
     dot: "bg-accent-claret",
     live: true,
   },
   bosta: {
     labelKey: "bosta",
-    chip: "bg-accent-gold/15 text-accent-gold",
+    chip: "bg-accent-gold/15 text-accent-gold-text",
     stripe: "border-l-accent-gold",
     dot: "bg-accent-gold",
     live: false,

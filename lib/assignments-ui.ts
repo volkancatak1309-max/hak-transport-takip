@@ -10,6 +10,27 @@ export const STATUS_STRIPE: Record<AssignmentStatus, string> = {
   cancelled: "border-l-accent-claret",
 };
 
+/**
+ * StatusChip tonu — yönetici listesinin TEK durum taşıyıcısı (27.07.2026).
+ *
+ * Yönetici sefer listesinde sol 3px şerit KALDIRILDI: kilitteki kural, tonun
+ * satırın kenarında değil kendi rozetinde yaşaması. Şerit `STATUS_STRIPE` olarak
+ * duruyor çünkü şoför paneli ve takvim kartları hâlâ kullanıyor — orada satır
+ * değil kart var ve kenar şeridi kartın kimliği.
+ *
+ * Yeşil/kırmızı yok: assigned=bekleyen(gold), started=canlı(sky),
+ * completed=nötr, cancelled=bordo.
+ */
+export const STATUS_TONE: Record<
+  AssignmentStatus,
+  "warning" | "active" | "neutral" | "break"
+> = {
+  assigned: "warning",
+  started: "active",
+  completed: "neutral",
+  cancelled: "break",
+};
+
 export const STATUS_BADGE: Record<
   AssignmentStatus,
   "default" | "secondary" | "outline" | "destructive"

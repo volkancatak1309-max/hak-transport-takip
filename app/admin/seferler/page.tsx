@@ -1,3 +1,4 @@
+import { getTranslations } from "next-intl/server";
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
@@ -26,6 +27,7 @@ export default async function AssignmentsPage() {
     id: w.id as string,
     name: w.name as string,
   }));
+  const t = await getTranslations("assignments");
 
   return (
     <DashboardShell
@@ -35,8 +37,9 @@ export default async function AssignmentsPage() {
         phone: session.phone ?? "",
         isAdmin: true,
       }}
+      title={t("title")}
     >
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 space-y-4">
+      <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
         <AdminAssignmentsClient assignments={assignments} workers={workerOpts} />
       </div>
     </DashboardShell>

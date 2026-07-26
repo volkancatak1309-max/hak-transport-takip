@@ -4,10 +4,10 @@ import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, MoreVertical, Package, Loader2, MapPin } from "lucide-react";
+import { Plus, MoreHorizontal, Package, Loader2, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { RevealFilterRow } from "@/components/ui-v2";
+import { PageHeader, StatusChip, EmptyState, RevealFilterRow } from "@/components/ui-v2";
+import { SpecRow } from "@/components/ui-v2/DetailSpec";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -23,9 +23,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 import { formatDateTime, viennaDayKey } from "@/lib/format";
-import { STATUS_STRIPE, STATUS_BADGE, routeSummary } from "@/lib/assignments-ui";
+import { STATUS_TONE, routeSummary } from "@/lib/assignments-ui";
 import type { AssignmentWithWorker, AssignmentStatus } from "@/lib/types";
 import {
   createAssignment,
@@ -34,6 +33,23 @@ import {
   type AssignmentInput,
 } from "@/app/actions/assignments";
 import { AssignmentForm } from "./AssignmentForm";
+
+/**
+ * SEFER LİSTESİ — gün gruplu sakin liste.
+ *
+ * İskelet Alarmlar sayfasında kurulan Linear dilinin aynısı: kolon başlığı yok,
+ * zebra yok, satır ayırıcısı yok; grubu boşluk ve mikro etiket ayırır. Sefer
+ * verisi doğası gereği GÜNE bağlı olduğu için gruplama ekseni gündür — eskiden
+ * her sefer ayrı bir kutuydu ve aynı günün beş seferi beş bağımsız olay gibi
+ * duruyordu.
+ *
+ * Sol 3px durum şeridi kaldırıldı (bkz. lib/assignments-ui STATUS_TONE): ton
+ * satırın kenarında değil rozetinde yaşar. Şoför panelindeki KART görünümünde
+ * şerit yerinde duruyor.
+ *
+ * İşlev kaybı yok: Gösterilen/Durum filtreleri, yeni · düzenle · iptal · detay
+ * akışları ve iptal gerekçesi aynen korundu.
+ */
 
 type Tab = "today" | "tomorrow" | "week" | "all";
 type WorkerOpt = { id: string; name: string };
@@ -58,6 +74,7 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
   const t = useTranslations("assignments");
   const locale = useLocale();
   const router = useRouter();
+  const nf = locale === "de" ? "de-AT" : "tr-TR";
 
   const [tab, setTab] = useState<Tab>("today");
   const [statusFilter, setStatusFilter] = useState<"all" | AssignmentStatus>("all");
@@ -94,6 +111,26 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
       return k >= weekStart && k <= weekEnd; // week
     });
   }, [assignments, tab, statusFilter]);
+
+  /** Gün → o güne düşen seferler (sıra: en yeni gün üstte, gün içinde saat). */
+  const groups = useMemo(() => {
+    const m = new Map<string, AssignmentWithWorker[]>();
+    for (const a of filtered) {
+      const k = viennaDayKey(a.scheduled_at);
+      const arr = m.get(k);
+      if (arr) arr.push(a);
+      else m.set(k, [a]);
+    }
+    return [...m.entries()]
+      .sort((x, y) => y[0].localeCompare(x[0]))
+      .map(([day, rows]) => ({
+        day,
+        rows: rows.sort(
+          (x, y) =>
+            new Date(x.scheduled_at).getTime() - new Date(y.scheduled_at).getTime()
+        ),
+      }));
+  }, [filtered]);
 
   async function handleCreate(payload: AssignmentInput) {
     setBusy(true);
@@ -146,17 +183,29 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
     }
   }
 
+  const dayLabel = (key: string) =>
+    new Date(`${key}T12:00:00`).toLocaleDateString(nf, {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    });
+  const timeLabel = (iso: string) =>
+    new Date(iso).toLocaleTimeString(nf, { hour: "2-digit", minute: "2-digit" });
+
   return (
     <>
-      {/* Başlık bloğu — klon A2 ölçüsü */}
-      <div>
-        <h1 className="text-[28px] font-semibold leading-tight">{t("title")}</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
-      </div>
+      <PageHeader
+        title={t("title")}
+        description={t("subtitle")}
+        action={
+          <Button className="btn-primary h-9 rounded-full px-4" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" /> {t("new")}
+          </Button>
+        }
+      />
 
-      {/* Filtre bandı — A3 dili. Eski sekme şeridi (Bugün/Yarın/Hafta/Tümü)
-          buraya "Gösterilen" dropdown'ı olarak taşındı: Reveal tarih kapsamını
-          sekmeyle değil filtre bandındaki dropdown ile seçer. */}
+      {/* Filtre bandı — Gösterilen (gün kapsamı) + Durum. Eylem yuvası boş:
+          birincil eylem başlığa taşındı (ekran başına tek birincil eylem). */}
       <RevealFilterRow
         filters={[
           {
@@ -183,91 +232,104 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
             ],
           },
         ]}
-        right={
-          <Button className="h-9" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" /> {t("new")}
-          </Button>
-        }
       />
 
-      {filtered.length === 0 ? (
-        <p className="py-10 text-center text-sm text-muted-foreground">
-          {t("no_assignments")}
-        </p>
+      {groups.length === 0 ? (
+        <EmptyState kind="none" title={t("no_assignments")} />
       ) : (
-        <div className="space-y-3">
-          {filtered.map((a) => (
-            <div
-              key={a.id}
-              className={cn(
-                "rounded-lg border border-l-[3px] bg-card p-4",
-                STATUS_STRIPE[a.status]
-              )}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold">{a.worker_name}</span>
-                    {a.worker_plate && (
-                      <span className="text-sm text-muted-foreground">{a.worker_plate}</span>
-                    )}
-                    <span className="text-sm font-medium">
-                      {formatDateTime(a.scheduled_at, locale)}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline">{t(`category.${a.category}`)}</Badge>
-                    <Badge variant={STATUS_BADGE[a.status]}>{t(`status.${a.status}`)}</Badge>
-                  </div>
-                  <p className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <MapPin className="size-3.5 shrink-0" />
-                    {routeSummary(a.stops)}
-                  </p>
-                  <p className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Package className="size-3.5" /> {a.package_count ?? 0}
-                    </span>
-                    {a.start_km != null && a.end_km != null && (
-                      <span className="nums">
-                        {(a.end_km - a.start_km).toLocaleString(
-                          locale === "de" ? "de-AT" : "tr-TR"
-                        )}{" "}
-                        km
-                      </span>
-                    )}
-                  </p>
-                </div>
+        <div className="glass-panel space-y-8 rounded-[16px] p-6">
+          {groups.map((g) => (
+            <section key={g.day}>
+              <header className="mb-3 flex items-baseline gap-2">
+                <h3 className="text-[11px] font-medium uppercase tracking-[0.1em] text-text-tertiary">
+                  {dayLabel(g.day)}
+                </h3>
+                <span className="nums text-[11px] text-text-tertiary">{g.rows.length}</span>
+              </header>
 
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={<Button variant="ghost" size="icon" className="shrink-0" />}
-                  >
-                    <MoreVertical className="size-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setDetail(a)}>
-                      {t("detail")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={a.status === "completed" || a.status === "cancelled"}
-                      onClick={() => setEditing(a)}
-                    >
-                      {t("edit")}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={a.status === "completed" || a.status === "cancelled"}
-                      onClick={() => {
-                        setReason("");
-                        setCancelling(a);
-                      }}
-                      className="text-destructive"
-                    >
-                      {t("delete")}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
+              <ul>
+                {g.rows.map((a) => (
+                  <li key={a.id}>
+                    <div className="group flex items-start gap-3 rounded-[10px] px-2 py-2.5 transition-colors hover:bg-surface-panel">
+                      {/* Saat — satırın çapası, mono ve sabit genişlikte ki
+                          gün içindeki seferler dikey hizada okunsun. */}
+                      <span className="nums w-[44px] shrink-0 pt-0.5 text-[13px] text-muted-foreground">
+                        {timeLabel(a.scheduled_at)}
+                      </span>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="text-[14px] font-medium">{a.worker_name}</span>
+                          {a.worker_plate && (
+                            <span className="nums text-[12px] uppercase text-muted-foreground">
+                              {a.worker_plate}
+                            </span>
+                          )}
+                          <StatusChip tone={STATUS_TONE[a.status]}>
+                            {t(`status.${a.status}`)}
+                          </StatusChip>
+                          <span className="text-[12px] text-text-tertiary">
+                            {t(`category.${a.category}`)}
+                          </span>
+                        </div>
+                        {/* Güzergâh zaten routeSummary'de 60 karakterde "…" ile
+                            kesiliyor; üstüne CSS `truncate` koymak İKİNCİ bir
+                            kırpma olurdu ve dar ekranda adres tanınmaz hâle
+                            gelirdi. Sığmayan satır atlar. */}
+                        <p className="mt-1 flex items-start gap-1.5 text-[13px] text-muted-foreground">
+                          <MapPin className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                          <span className="min-w-0 break-words">{routeSummary(a.stops)}</span>
+                        </p>
+                        <p className="nums mt-1 flex items-center gap-3 text-[12px] text-text-tertiary">
+                          <span className="flex items-center gap-1">
+                            <Package className="size-3.5" aria-hidden /> {a.package_count ?? 0}
+                          </span>
+                          {a.start_km != null && a.end_km != null && (
+                            <span>{(a.end_km - a.start_km).toLocaleString(nf)} km</span>
+                          )}
+                        </p>
+                      </div>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                              aria-label={t("detail")}
+                            />
+                          }
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setDetail(a)}>
+                            {t("detail")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={a.status === "completed" || a.status === "cancelled"}
+                            onClick={() => setEditing(a)}
+                          >
+                            {t("edit")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={a.status === "completed" || a.status === "cancelled"}
+                            onClick={() => {
+                              setReason("");
+                              setCancelling(a);
+                            }}
+                            className="text-destructive"
+                          >
+                            {t("delete")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
         </div>
       )}
@@ -311,7 +373,8 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
           <DialogHeader>
             <DialogTitle>{t("delete")}</DialogTitle>
             <DialogDescription>
-              {cancelling?.worker_name} · {cancelling && formatDateTime(cancelling.scheduled_at, locale)}
+              {cancelling?.worker_name} ·{" "}
+              {cancelling && formatDateTime(cancelling.scheduled_at, locale)}
             </DialogDescription>
           </DialogHeader>
           <Textarea
@@ -332,7 +395,8 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
         </DialogContent>
       </Dialog>
 
-      {/* Detail */}
+      {/* Detail — künye satırları Enode/DetailSpec dilinde: etiket solda,
+          değer sağda; duraklar sıralı liste olarak kalır. */}
       <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -344,24 +408,31 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
             </DialogDescription>
           </DialogHeader>
           {detail && (
-            <div className="space-y-3 text-sm">
-              <ol className="space-y-1">
+            <div className="space-y-4 text-sm">
+              <div>
                 {detail.stops.map((s, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="text-muted-foreground">{s.label}:</span>
-                    <span>{s.address}</span>
-                  </li>
+                  <SpecRow key={i} label={s.label}>
+                    {s.address}
+                  </SpecRow>
                 ))}
-              </ol>
-              <p className="text-muted-foreground">
-                {t("packages")}: {detail.package_count ?? 0}
-                {detail.start_km != null && detail.end_km != null
-                  ? ` · ${detail.end_km - detail.start_km} km`
-                  : ""}
-              </p>
-              {detail.notes && <p className="border-l-2 border-border pl-3">{detail.notes}</p>}
+              </div>
+              <div>
+                <SpecRow label={t("packages")} mono>
+                  {detail.package_count ?? 0}
+                </SpecRow>
+                {detail.start_km != null && detail.end_km != null && (
+                  <SpecRow label="km" mono>
+                    {detail.end_km - detail.start_km} km
+                  </SpecRow>
+                )}
+              </div>
+              {detail.notes && (
+                <p className="rounded-[10px] bg-surface-panel px-3.5 py-2.5 text-[13px]">
+                  {detail.notes}
+                </p>
+              )}
               {detail.status === "cancelled" && detail.cancel_reason && (
-                <p className="border-l-2 border-destructive/40 pl-3 text-destructive">
+                <p className="rounded-[10px] bg-status-critical-soft px-3.5 py-2.5 text-[13px] text-status-critical-text">
                   {detail.cancel_reason}
                 </p>
               )}

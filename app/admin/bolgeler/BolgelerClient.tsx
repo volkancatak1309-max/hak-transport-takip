@@ -7,9 +7,13 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Loader2, Plus, Hexagon, Pencil, Trash2, Ban, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { RevealFilterRow } from "@/components/ui-v2";
+import {
+  RevealFilterRow,
+  PageHeader,
+  EmptyState,
+  StatusChip,
+} from "@/components/ui-v2";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -159,14 +163,20 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
   }
 
   return (
-    <div className="mx-auto max-w-[900px] space-y-5 px-4 py-6 sm:px-6">
-      {/* Başlık bloğu — klon A2 ölçüsü; eski serbest intro satırı açıklama oldu */}
-      <div>
-        <h1 className="text-[28px] font-semibold leading-tight">{t("title")}</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">{t("intro")}</p>
-      </div>
+    <div className="mx-auto max-w-[900px] space-y-6 px-4 py-6 sm:px-6">
+      {/* Başlık — h1 DashboardShell topbar'ında; burada h2 (çift h1 olmaz).
+          Birincil eylem başlığa taşındı: ekran başına tek birincil eylem. */}
+      <PageHeader
+        title={t("title")}
+        description={t("intro")}
+        action={
+          <Button className="btn-primary h-9 rounded-full px-4" onClick={openNew}>
+            <Plus className="size-4" /> {t("add")}
+          </Button>
+        }
+      />
 
-      {/* Filtre bandı — A3 dili: Kural + Durum dropdown'ları, ekleme sağda */}
+      {/* Filtre bandı — Kural + Durum. Eylem yuvası boş: ekleme başlıkta. */}
       <RevealFilterRow
         filters={[
           {
@@ -191,27 +201,21 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
             ],
           },
         ]}
-        right={
-          <Button className="h-9" onClick={openNew}>
-            <Plus className="size-4" /> {t("add")}
-          </Button>
-        }
       />
 
       {visibleZones.length === 0 ? (
-        <div className="rounded-[var(--radius)] border border-dashed border-border px-4 py-12 text-center">
-          <Hexagon className="mx-auto size-7 text-text-tertiary" />
-          {/* Hiç bölge yok ≠ filtre eşleşmedi — ikisini karıştırmıyoruz. */}
-          <p className="mt-2 text-sm text-text-tertiary">
-            {zones.length === 0 ? t("none") : t("no_match")}
-          </p>
-        </div>
+        // Hiç bölge yok ≠ filtre eşleşmedi — ikisini karıştırmıyoruz.
+        <EmptyState
+          kind={zones.length === 0 ? "none" : "filtered"}
+          icon={zones.length === 0 ? Hexagon : undefined}
+          title={zones.length === 0 ? t("none") : t("no_match")}
+        />
       ) : (
-        <ul className="space-y-2.5">
+        <ul className="glass-panel rounded-[16px] p-3">
           {visibleZones.map((z) => (
             <li
               key={z.id}
-              className="surface-card flex flex-wrap items-center gap-3 rounded-[14px] p-4"
+              className="flex flex-wrap items-center gap-3 rounded-[10px] px-3 py-3 transition-colors hover:bg-surface-panel"
             >
               <span
                 className={cn(
@@ -229,12 +233,12 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium">{z.name}</span>
-                  {!z.active && (
-                    <Badge variant="secondary" className="bg-muted text-muted-foreground">
-                      {t("passive")}
-                    </Badge>
-                  )}
+                  {/* TRUNCATE YOK (mobilde ölçüldü): "Depo — Bordo filo
+                      (güney)" gibi adlar 390px'te üç noktaya düşüyordu ve iki
+                      depo birbirinden ayırt edilemiyordu. Bölge adı kimliktir,
+                      sığmıyorsa satır atlar. */}
+                  <span className="min-w-0 break-words text-sm font-medium">{z.name}</span>
+                  {!z.active && <StatusChip tone="neutral">{t("passive")}</StatusChip>}
                 </div>
                 <p className="nums mt-0.5 text-xs text-text-tertiary">
                   {t(`rule.${z.rule_kind}`)} · {Math.round(z.radius_m)} m ·{" "}
@@ -276,14 +280,14 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t("name_placeholder")}
-                className="h-11"
+                className="btn-outline-ring h-11 rounded-[10px] border-0 bg-transparent"
               />
             </div>
 
             <div className="space-y-1.5">
               <Label>{t("center")}</Label>
               <p className="text-xs text-text-tertiary">{t("center_hint")}</p>
-              <div className="h-[280px] w-full overflow-hidden rounded-[10px] border border-border">
+              <div className="h-[280px] w-full overflow-hidden rounded-[12px] border border-border">
                 <GeofencePickerMap
                   key={editing?.id ?? "new"}
                   center={center}
@@ -302,7 +306,7 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
                   value={center ? String(center[0]) : ""}
                   onChange={(e) => setLat(e.target.value)}
                   placeholder="48.20000"
-                  className="h-11"
+                  className="btn-outline-ring h-11 rounded-[10px] border-0 bg-transparent"
                 />
               </div>
               <div className="space-y-1.5">
@@ -313,7 +317,7 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
                   value={center ? String(center[1]) : ""}
                   onChange={(e) => setLng(e.target.value)}
                   placeholder="16.37000"
-                  className="h-11"
+                  className="btn-outline-ring h-11 rounded-[10px] border-0 bg-transparent"
                 />
               </div>
             </div>
@@ -327,13 +331,13 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
                   min={50}
                   value={radius}
                   onChange={(e) => setRadius(e.target.value)}
-                  className="h-11"
+                  className="btn-outline-ring h-11 rounded-[10px] border-0 bg-transparent"
                 />
               </div>
               <div className="space-y-1.5">
                 <Label>{t("rule_label")}</Label>
                 <Select value={ruleKind} onValueChange={(v) => v && setRuleKind(v as GeofenceRuleKind)}>
-                  <SelectTrigger className="h-11">
+                  <SelectTrigger className="btn-outline-ring h-11 rounded-[10px] border-0 bg-transparent">
                     <SelectValue>
                       {((v: unknown) => t(`rule.${String(v)}`)) as never}
                     </SelectValue>
@@ -350,7 +354,7 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
               <div className="space-y-1.5">
                 <Label>{t("purpose_label")}</Label>
                 <Select value={purpose} onValueChange={(v) => v && setPurpose(v as GeofencePurpose)}>
-                  <SelectTrigger className="h-11">
+                  <SelectTrigger className="btn-outline-ring h-11 rounded-[10px] border-0 bg-transparent">
                     <SelectValue>
                       {((v: unknown) => t(`purpose.${String(v)}`)) as never}
                     </SelectValue>
@@ -366,7 +370,7 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
               </div>
             </div>
 
-            <Button type="submit" className="h-11 w-full" disabled={busy}>
+            <Button type="submit" className="btn-primary h-11 w-full rounded-full" disabled={busy}>
               {busy && <Loader2 className="size-4 animate-spin" />}
               {t("save")}
             </Button>

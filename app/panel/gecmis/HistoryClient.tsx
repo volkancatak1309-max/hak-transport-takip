@@ -58,7 +58,7 @@ export function HistoryClient({ entries, page, totalPages, from, to }: Props) {
               type="date"
               value={from}
               onChange={(e) => setParam("from", e.target.value)}
-              className="h-10 nums"
+              className="h-11 nums"
             />
           </div>
           <div className="space-y-1.5">
@@ -68,7 +68,7 @@ export function HistoryClient({ entries, page, totalPages, from, to }: Props) {
               type="date"
               value={to}
               onChange={(e) => setParam("to", e.target.value)}
-              className="h-10 nums"
+              className="h-11 nums"
             />
           </div>
         </div>
@@ -127,7 +127,7 @@ export function HistoryClient({ entries, page, totalPages, from, to }: Props) {
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  size="sm"
+                  className="min-h-[44px] rounded-full px-4"
                   disabled={page <= 1}
                   onClick={() => setParam("page", String(page - 1))}
                 >
@@ -136,7 +136,7 @@ export function HistoryClient({ entries, page, totalPages, from, to }: Props) {
                 </Button>
                 <Button
                   variant="outline"
-                  size="sm"
+                  className="min-h-[44px] rounded-full px-4"
                   disabled={page >= totalPages}
                   onClick={() => setParam("page", String(page + 1))}
                 >

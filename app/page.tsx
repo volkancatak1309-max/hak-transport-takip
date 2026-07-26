@@ -18,7 +18,11 @@ function LoginShell() {
         <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
 
-      <div className="rounded-[var(--radius)] border border-border bg-card p-6 elevate sm:p-7">
+      {/* AUTHKIT'İN İMZA ANI — DNA'nın adını aldığı ekran bu. Sayfadaki TEK
+          buzlu katman: altında ışık yıkaması var, cam derinliği oradan geliyor.
+          Şoför paneli hafifletilmiş varyantta (blur yok); giriş ekranı tek
+          statik karttır, en eski telefonda bile bir katman blur ucuzdur. */}
+      <div className="glass-panel rounded-[20px] p-6 sm:p-8">
         <LoginForm />
       </div>
 
@@ -37,13 +41,23 @@ export default async function LoginPage() {
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
-      {/* Subtle, single soft claret wash — minimal, never dominant. */}
+      {/* IŞIK YIKAMASI — iki katman: üstten bordo (filo kimliği), alttan mercan
+          (birincil aksan). Camın "içinden bakılan" hissi tek renkli düz bir
+          zeminde doğmaz; ışığın bir YÖNÜ olmalı (DESIGN.md §1). */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.5]"
+        className="pointer-events-none absolute inset-0 opacity-[0.55]"
         style={{
           background:
             "radial-gradient(60rem 30rem at 50% -10%, var(--accent-claret-soft), transparent 70%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.28]"
+        style={{
+          background:
+            "radial-gradient(40rem 24rem at 85% 110%, var(--accent-coral-soft), transparent 70%)",
         }}
       />
       <div className="absolute right-4 top-4 z-10 flex items-center gap-1">

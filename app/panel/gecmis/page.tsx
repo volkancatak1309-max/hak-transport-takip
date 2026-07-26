@@ -53,12 +53,16 @@ export default async function HistoryPage({
       }}
     >
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 space-y-4">
-        <div className="flex items-center gap-3">
-          <Link href="/panel">
-            <Button variant="ghost" size="sm" className="gap-1.5">
-              <ArrowLeft className="size-4" />
-              {tp("myPanel")}
-            </Button>
+        {/* Geri bağlantısı telefonda 28px idi — şoför ekranında dokunma hedefi
+            44px (aşağı inmez). Link'in kendisi hedeftir; iç içe Button
+            sarmalayıcısı kaldırıldı, yoksa hedef yine butonun boyu olurdu. */}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/panel"
+            className="btn-outline-ring inline-flex min-h-[44px] items-center gap-1.5 rounded-full px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-panel hover:text-foreground"
+          >
+            <ArrowLeft className="size-4" aria-hidden />
+            {tp("myPanel")}
           </Link>
           <h1 className="text-xl font-semibold">{t("title")}</h1>
         </div>

@@ -70,11 +70,11 @@ export function CalendarClient({ assignments }: Props) {
     <div className="space-y-4">
       {/* Month header */}
       <div className="flex items-center justify-between">
-        <Button variant="ghost" size="icon" onClick={() => shiftMonth(-1)} aria-label="prev">
+        <Button variant="ghost" size="icon" className="size-11 rounded-full" onClick={() => shiftMonth(-1)} aria-label="prev">
           <ChevronLeft className="size-5" />
         </Button>
         <span className="font-semibold capitalize">{monthLabel}</span>
-        <Button variant="ghost" size="icon" onClick={() => shiftMonth(1)} aria-label="next">
+        <Button variant="ghost" size="icon" className="size-11 rounded-full" onClick={() => shiftMonth(1)} aria-label="next">
           <ChevronRight className="size-5" />
         </Button>
       </div>

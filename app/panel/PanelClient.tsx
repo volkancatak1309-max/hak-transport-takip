@@ -835,17 +835,21 @@ export function PanelClient({
 
       {/* Sessiz alt bağlantılar: geçmiş / ayarlar. "Seferler" linki kaldırıldı
           (Volkan, 21.07.2026); /panel/seferler rotası ve sefer modülü DURUYOR. */}
-      <div className="flex items-center justify-center gap-6 pb-2 text-sm">
+      {/* DOKUNMA HEDEFİ (mobilde ölçüldü): bu iki bağlantı 20px yüksekliğindeydi
+          — WCAG 2.2 AA'nın 24px asgarisinin bile altında ve sarsılan bir aracın
+          içinde eldivenli parmakla ıskalanır. Görsel olarak yine "sessiz" ama
+          artık 44px'lik bir hap; şoför panelinin geri kalanıyla aynı ölçü. */}
+      <div className="flex items-center justify-center gap-3 pb-2 text-sm">
         <Link
           href="/panel/gecmis"
-          className="font-medium text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex min-h-[44px] items-center rounded-full px-4 font-medium text-muted-foreground transition-colors hover:bg-surface-panel hover:text-foreground"
         >
           {t("v2LinkHistory")}
         </Link>
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}
-          className="flex items-center gap-1 font-medium text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex min-h-[44px] items-center gap-1 rounded-full px-4 font-medium text-muted-foreground transition-colors hover:bg-surface-panel hover:text-foreground"
         >
           {t("v2LinkSettings")} <ArrowRight className="size-3" aria-hidden />
         </button>

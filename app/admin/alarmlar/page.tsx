@@ -3,8 +3,10 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import {
   listEventsInRange,
   listIdleEpisodesInRange,
+  listEventDensity,
   IDLE_TRIGGER_S,
 } from "@/lib/telemetry";
+import { listVehiclesWithStatus } from "@/lib/vehicles";
 import {
   startOfTodayVienna,
   endOfTodayVienna,
@@ -25,6 +27,9 @@ export const dynamic = "force-dynamic";
  * bu seçenek kendiliğinden yeni sınıra kayar.
  */
 export type AlarmRange = "epoch" | "today" | "7d" | "30d";
+
+/** Genel bakış şeridi penceresi (Zendesk 90 gün). */
+export const STRIP_DAYS = 90;
 
 const ALARM_RANGES: AlarmRange[] = ["epoch", "today", "7d", "30d"];
 
@@ -68,9 +73,15 @@ export default async function AlarmsPage({
   // Nokta-olaylar (vehicle_events — artık idling YOK) + rölanti EPİZODLARI
   // (idle_episodes, migration 024). İkisi tek listeye birleşir; idling satırları
   // epizoddan gelir (süre taşır), diğerleri olduğu gibi.
-  const [events, episodes] = await Promise.all([
+  // ŞERİT PENCERESİ aralıktan BAĞIMSIZ: genel bakış her zaman son 90 günü
+  // gösterir (Zendesk deseni). Aralık filtresi yalnız aşağıdaki listeyi keser —
+  // yoksa "bugün" seçildiğinde şerit tek sütuna düşer ve anlamını yitirirdi.
+  const stripStart = addCalendarDaysVienna(startOfTodayVienna(), -(STRIP_DAYS - 1));
+  const [events, episodes, density, vehicles] = await Promise.all([
     listEventsInRange(start.toISOString(), end.toISOString()),
     listIdleEpisodesInRange(start.toISOString(), end.toISOString()),
+    listEventDensity(stripStart.toISOString(), end.toISOString()),
+    listVehiclesWithStatus(),
   ]);
 
   // Epizod → alarm satırı. Süre = ham span (ended veya son görülme − başlangıç)
@@ -111,6 +122,9 @@ export default async function AlarmsPage({
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6">
         <AlarmsClient
           events={rows}
+          density={density}
+          stripDays={STRIP_DAYS}
+          vehicles={vehicles.map((v) => ({ id: v.id, plate: v.plate, fleet: v.fleet }))}
           range={range}
           /* Uyarı KOŞULU tek yerde: görüntülenen aralık sınırdan önce
              başlıyorsa. "epoch" aralığında start === sınır olduğu için uyarı

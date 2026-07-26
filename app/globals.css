@@ -208,7 +208,7 @@ body {
   --muted-foreground: #4f5361;
   /* 26.07.2026: #909096 beyaz üstünde 3.2:1 idi — 12px alt-satır metinleri
      (marka/model, "· Atanmış") AA'yı geçmiyordu. Ton koyultuldu: ~5:1. */
-  --text-tertiary: #6b6f7d;
+  --text-tertiary: #61657a;
   --accent: var(--surface-panel);
   --accent-foreground: #181818;
   /* 27.07.2026: 0.55 → 0.53. Beyaz kart üstünde METİN olarak 4.43:1 kalıyordu

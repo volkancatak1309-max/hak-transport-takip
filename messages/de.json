@@ -234,7 +234,17 @@
     "tile_last": "Zuletzt ausgelöst",
     "tile_alerts": "Alarme",
     "all": "Alle",
-    "range_epoch": "Seit den neuen Schwellen"
+    "range_epoch": "Seit den neuen Schwellen",
+    "strip_title": "Letzte {days} Tage — Fahrzeugdichte",
+    "strip_legend": "Wenig → viel · rot = kritisch",
+    "strip_all_clean": "In diesem Zeitraum keine Alarme.",
+    "strip_show_clean": "{n} unauffällige Fahrzeuge zeigen",
+    "strip_hide_clean": "Unauffällige ausblenden",
+    "filter_label": "Filter",
+    "display_label": "Ansicht",
+    "group_severity": "Nach Schwere",
+    "group_date": "Nach Datum",
+    "go_route": "Auf Route ansehen"
   },
   "approval": {
     "pending": "Ausstehend",

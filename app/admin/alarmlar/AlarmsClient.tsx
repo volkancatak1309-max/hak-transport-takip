@@ -5,29 +5,33 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { ExternalLink, MapPin, Truck } from "lucide-react";
 import {
-  SubTabs,
-  StatusChip,
-  RevealFilterRow,
-  DataTable,
-  DensityToggle,
-  DetailDrawer,
-  EmptyState,
-  type Column,
-  type RevealFilter,
-} from "@/components/ui-v2";
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  ListFilter,
+  MapPin,
+  Route,
+  SlidersHorizontal,
+  Truck,
+  X,
+} from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
+import { EmptyState, SpecRow } from "@/components/ui-v2";
 import { EpochWarning } from "@/components/admin/EpochWarning";
 import { HelpTip } from "@/components/help/HelpTip";
-import { eventTone, EVENT_STRIPE, EVENT_TONE_RANK } from "@/lib/event-ui";
-import { formatDateTime, formatIdleShort } from "@/lib/format";
-import type { VehicleEventWithPlate } from "@/lib/telemetry";
+import { AlarmStrip } from "./AlarmStrip";
+import { eventTone, EVENT_TONE_RANK } from "@/lib/event-ui";
+import { formatDateTime, formatDate, formatTime, formatIdleShort } from "@/lib/format";
+import type { VehicleEventWithPlate, EventDensityCell } from "@/lib/telemetry";
+import { cn } from "@/lib/utils";
 import type { AlarmRange } from "./page";
 
-/**
- * Alarm satırı = nokta-olay (vehicle_events) VEYA rölanti epizodu (idle_episodes,
- * migration 024). Epizod satırları süre taşır (duration_ms) ve açıksa ongoing.
- */
 export type AlarmRow = VehicleEventWithPlate & {
   duration_ms?: number | null;
   ongoing?: boolean;
@@ -35,23 +39,48 @@ export type AlarmRow = VehicleEventWithPlate & {
 
 const EventMiniMap = dynamic(() => import("@/components/admin/EventMiniMap"), {
   ssr: false,
-  loading: () => <div className="h-40 w-full animate-pulse rounded-[12px] bg-surface-2" />,
+  loading: () => <div className="h-40 w-full animate-pulse rounded-[12px] bg-surface-panel" />,
 });
 
-const STORM_WINDOW_MS = 10 * 60 * 1000;
-const SPEED_EVENTS = new Set(["overspeeding", "harsh_acceleration", "harsh_braking", "harsh_cornering", "crash"]);
+const SPEED_EVENTS = new Set([
+  "overspeeding",
+  "harsh_acceleration",
+  "harsh_braking",
+  "harsh_cornering",
+  "crash",
+]);
 
+/** Linear'ın Display menüsündeki gruplama ekseni. */
+type GroupBy = "severity" | "date";
+
+/**
+ * ALARMLAR — üç referansın birleşimi:
+ *   ① Zendesk `7957c520` → 90 günlük araç şeridi (AlarmStrip)
+ *   ② Linear  `2a0adcf3` → kolon başlığı/ayraç/zebra OLMAYAN gruplu liste
+ *   ③ Stripe  `4e3c7127` → satır YERİNDE açılır: künye + mini harita + eylem
+ *
+ * Eski iskeletten (SubTabs "Genel Bakış/Kayıt" + DataTable + DetailDrawer)
+ * parça kalmadı. İşlev korundu: aralık/epoch varsayılanı, eşik uyarısı,
+ * araç/tip/önem filtreleri, rölanti epizodu süresi, haritada aç, araca git.
+ *
+ * Gruplama VARSAYILANI ÖNEM: bu ekranın sorusu "şimdi neye müdahale edeyim",
+ * "salı günü ne oldu" değil. Tarih ekseni Display'de ikinci seçenek.
+ */
 export function AlarmsClient({
   events,
+  density,
+  stripDays,
+  vehicles,
   range,
   epochISO,
   showEpochWarning,
 }: {
   events: AlarmRow[];
+  density: EventDensityCell[];
+  stripDays: number;
+  vehicles: { id: string; plate: string; fleet: string }[];
   range: AlarmRange;
-  /** Alarm eşiklerinin değiştiği an (ISO); kayıt yoksa null. */
   epochISO: string | null;
-  /** Görüntülenen aralık sınırdan önce başlıyor → üstte uyarı. */
   showEpochWarning: boolean;
 }) {
   const t = useTranslations("alarms");
@@ -59,345 +88,336 @@ export function AlarmsClient({
   const router = useRouter();
   const [, startNav] = useTransition();
 
-  const [tab, setTab] = useState<"overview" | "log">("overview");
-  const [sort, setSort] = useState<"most" | "newest">("most");
-  // Alarm Kaydı filtreleri (basit dropdown — Reveal Alert Log bandı)
   const [fVehicle, setFVehicle] = useState("");
   const [fType, setFType] = useState("");
   const [fSev, setFSev] = useState("");
-  const [selected, setSelected] = useState<AlarmRow | null>(null);
+  const [groupBy, setGroupBy] = useState<GroupBy>("severity");
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  // Rölanti epizodu süresi rozeti (migration 024): "· 25 dk" / açıksa
-  // "· 12 dk (devam ediyor)". Süre epizoddan geliyor (ham gözlemlenen span);
-  // diğer olay tiplerinde gösterilmez.
   const idleBadge = (e: AlarmRow): string | null => {
     if (e.event_type !== "idling" || e.duration_ms == null) return null;
     const d = formatIdleShort(e.duration_ms, locale);
-    return e.ongoing ? `· ${d} (${t("ongoing")})` : `· ${d}`;
+    return e.ongoing ? `${d} · ${t("ongoing")}` : d;
   };
 
-  const toneCat = (ty: string) => {
-    const tone = eventTone(ty);
-    return tone === "critical" ? t("sev_critical") : tone === "warning" ? t("sev_warning") : t("sev_neutral");
-  };
-
-  // ── Genel Bakış: olay TİPİ tile'ları (Reveal Overview policy tile'ları) ───
-  const typeTiles = useMemo(() => {
-    const byType = new Map<string, { count: number; crit: number; last: string }>();
-    for (const e of events) {
-      const cur = byType.get(e.event_type) ?? { count: 0, crit: 0, last: e.occurred_at };
-      cur.count++;
-      if (eventTone(e.event_type) === "critical") cur.crit++;
-      if (e.occurred_at > cur.last) cur.last = e.occurred_at;
-      byType.set(e.event_type, cur);
-    }
-    const arr = [...byType.entries()].map(([ty, v]) => ({ type: ty, ...v }));
-    arr.sort((a, b) => (sort === "newest" ? b.last.localeCompare(a.last) : b.count - a.count));
-    return arr;
-  }, [events, sort]);
-
-  // ── Alarm Kaydı: filtreli + sıralı liste ─────────────────────────────────
-  const logRows = useMemo(() => {
-    let rows = events.filter((e) => {
+  const filtered = useMemo(() => {
+    const rows = events.filter((e) => {
       if (fVehicle && e.plate !== fVehicle) return false;
       if (fType && e.event_type !== fType) return false;
       if (fSev && eventTone(e.event_type) !== fSev) return false;
       return true;
     });
-    rows = [...rows].sort((a, b) => {
-      if (sort === "newest") return b.occurred_at.localeCompare(a.occurred_at);
-      const d = EVENT_TONE_RANK[eventTone(b.event_type)] - EVENT_TONE_RANK[eventTone(a.event_type)];
+    return [...rows].sort((a, b) => {
+      const d =
+        EVENT_TONE_RANK[eventTone(b.event_type)] - EVENT_TONE_RANK[eventTone(a.event_type)];
       return d !== 0 ? d : b.occurred_at.localeCompare(a.occurred_at);
     });
-    return rows;
-  }, [events, fVehicle, fType, fSev, sort]);
+  }, [events, fVehicle, fType, fSev]);
+
+  /** Gruplu liste — Linear'ın katlanır başlık + sayaç deseni. */
+  const groups = useMemo(() => {
+    const m = new Map<string, { label: string; rows: AlarmRow[] }>();
+    for (const e of filtered) {
+      let key: string;
+      let label: string;
+      if (groupBy === "severity") {
+        const tone = eventTone(e.event_type);
+        key = tone === "critical" ? "0-critical" : tone === "warning" ? "1-warning" : "2-neutral";
+        label =
+          tone === "critical"
+            ? t("sev_critical")
+            : tone === "warning"
+              ? t("sev_warning")
+              : t("sev_neutral");
+      } else {
+        key = e.occurred_at.slice(0, 10);
+        label = formatDate(e.occurred_at, locale);
+      }
+      const cur = m.get(key);
+      if (cur) cur.rows.push(e);
+      else m.set(key, { label, rows: [e] });
+    }
+    return [...m.entries()]
+      .sort((a, b) => (groupBy === "severity" ? a[0].localeCompare(b[0]) : b[0].localeCompare(a[0])))
+      .map(([key, v]) => ({ key, ...v }));
+  }, [filtered, groupBy, t, locale]);
 
   const plateOptions = useMemo(
-    () => [...new Set(events.map((e) => e.plate))].sort().map((p) => ({ value: p, label: p })),
+    () => [...new Set(events.map((e) => e.plate))].sort(),
     [events]
   );
   const typeOptions = useMemo(
-    () => [...new Set(events.map((e) => e.event_type))]
-      .map((ty) => ({ value: ty, label: t(`type.${ty}`) }))
-      .sort((a, b) => a.label.localeCompare(b.label, locale)),
+    () =>
+      [...new Set(events.map((e) => e.event_type))]
+        .map((ty) => ({ value: ty, label: t(`type.${ty}`) }))
+        .sort((a, b) => a.label.localeCompare(b.label, locale)),
     [events, t, locale]
   );
 
-  const overviewFilters: RevealFilter[] = [
-    {
-      label: t("filter_shown"),
-      value: range,
-      onChange: (v) => startNav(() => router.replace(`/admin/alarmlar?range=${v}`, { scroll: false })),
-      // "Yeni eşiklerden beri" EN ÜSTTE ve varsayılan (sunucu tarafında
-      // seçiliyor). Sınır kaydı yoksa seçenek hiç listelenmez — tıklanınca
-      // 7 güne düşen ölü bir seçenek göstermeyiz.
-      options: [
-        ...(epochISO ? [{ value: "epoch", label: t("range_epoch") }] : []),
-        { value: "today", label: t("range_today") },
-        { value: "7d", label: t("range_7d") },
-        { value: "30d", label: t("range_30d") },
-      ],
+  const activeChips = [
+    fVehicle && { k: "v", label: `${t("col_vehicle")}: ${fVehicle}`, clear: () => setFVehicle("") },
+    fType && { k: "t", label: `${t("filter_type")}: ${t(`type.${fType}`)}`, clear: () => setFType("") },
+    fSev && {
+      k: "s",
+      label: `${t("filter_severity")}: ${fSev === "critical" ? t("sev_critical") : fSev === "warning" ? t("sev_warning") : t("sev_neutral")}`,
+      clear: () => setFSev(""),
     },
-    {
-      label: t("filter_sort"),
-      value: sort,
-      onChange: (v) => setSort(v as "most" | "newest"),
-      options: [
-        { value: "most", label: t("sort_most") },
-        { value: "newest", label: t("sort_newest") },
-      ],
-    },
-  ];
+  ].filter(Boolean) as { k: string; label: string; clear: () => void }[];
 
-  const logFilters: RevealFilter[] = [
-    {
-      label: t("col_vehicle"),
-      value: fVehicle,
-      onChange: setFVehicle,
-      options: [{ value: "", label: t("all") }, ...plateOptions],
-    },
-    {
-      label: t("filter_type"),
-      value: fType,
-      onChange: setFType,
-      options: [{ value: "", label: t("all") }, ...typeOptions],
-    },
-    {
-      label: t("filter_severity"),
-      value: fSev,
-      onChange: setFSev,
-      options: [
-        { value: "", label: t("all") },
-        { value: "critical", label: t("sev_critical") },
-        { value: "warning", label: t("sev_warning") },
-        { value: "neutral", label: t("sev_neutral") },
-      ],
-    },
-  ];
-
-  const columns: Column<AlarmRow>[] = [
-    {
-      key: "plate",
-      header: t("col_vehicle"),
-      cell: (e) => (
-        <Link href={`/admin/araclar/${e.vehicle_id}`} onClick={(ev) => ev.stopPropagation()}
-          className="nums font-medium uppercase tracking-wide hover:underline">{e.plate}</Link>
-      ),
-      nums: true, sortable: true, sortValue: (e) => e.plate,
-    },
-    {
-      key: "type",
-      header: t("col_type"),
-      // Rozetin YANINDA süre (migration 024) — chip'in içine gömülmez.
-      cell: (e) => {
-        const badge = idleBadge(e);
-        return (
-          <span className="flex items-center gap-1.5">
-            <StatusChip tone={eventTone(e.event_type)}>{t(`type.${e.event_type}`)}</StatusChip>
-            {badge && <span className="nums text-xs text-muted-foreground">{badge}</span>}
-          </span>
-        );
-      },
-      sortable: true, sortValue: (e) => EVENT_TONE_RANK[eventTone(e.event_type)],
-    },
-    {
-      key: "time",
-      header: t("col_time"),
-      cell: (e) => formatDateTime(e.occurred_at, locale),
-      nums: true, sortable: true, sortValue: (e) => e.occurred_at,
-    },
-    {
-      key: "speed",
-      header: t("drawer_speed"),
-      cell: (e) => e.event_type === "idling"
-        ? <span className="text-muted-foreground">{t("context_idle")}</span>
-        : SPEED_EVENTS.has(e.event_type) && e.speed_kmh !== null ? `${Math.round(e.speed_kmh)} km/h` : "—",
-      align: "right", nums: true, hideBelow: "sm",
-    },
-  ];
-
-  const selIndex = selected ? logRows.findIndex((e) => e.id === selected.id) : -1;
-
-  function openType(ty: string) {
-    setFType(ty);
-    setTab("log");
-  }
+  const toneDot = (ty: string) => {
+    const tone = eventTone(ty);
+    return tone === "critical"
+      ? "bg-status-critical"
+      : tone === "warning"
+        ? "bg-accent-gold"
+        : "bg-muted-foreground";
+  };
 
   return (
-    <div className="space-y-5">
-      <SubTabs
-        tabs={[
-          { key: "overview", label: t("tab_overview") },
-          { key: "log", label: t("tab_log"), badge: undefined },
-        ]}
-        value={tab}
-        onChange={(k) => setTab(k as "overview" | "log")}
-      />
-
+    <div className="space-y-6">
       <div>
         <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+          <h1 className="text-[28px] font-semibold leading-tight">{t("title")}</h1>
           <HelpTip tkey="alarms_page" />
         </div>
-        <p className="mt-0.5 text-sm text-muted-foreground">{t("subtitle")}</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
 
-      {/* Eşik sınırı uyarısı — başlığın hemen altında, İKİ sekmede de görünür:
-          sayılar hem Genel Bakış tile'larında hem Alarm Kaydı'nda aynı karışık
-          veriden geliyor. */}
       <EpochWarning epochISO={epochISO} show={showEpochWarning} />
 
-      {tab === "overview" ? (
-        <>
-          <RevealFilterRow filters={overviewFilters} />
-          {typeTiles.length === 0 ? (
-            <EmptyState kind="none" title={t("empty_none")} hint={t("empty_hint_none")} />
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {typeTiles.map((tile) => {
-                const tone = eventTone(tile.type);
-                return (
-                  <button
-                    key={tile.type}
-                    type="button"
-                    onClick={() => openType(tile.type)}
-                    className="surface-card group flex min-h-[120px] flex-col rounded-[14px] p-[18px] text-left transition-colors hover:bg-surface-hover"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="size-2.5 shrink-0 rounded-full"
-                            style={{ background: EVENT_STRIPE[tone] }}
-                          />
-                          <span className="truncate text-base font-semibold">{t(`type.${tile.type}`)}</span>
-                        </div>
-                        <span className="mt-0.5 block text-[13px] text-muted-foreground">{toneCat(tile.type)}</span>
-                      </div>
-                      {tile.crit > 0 && (
-                        <span className="nums grid size-[22px] shrink-0 place-items-center rounded-full bg-status-critical-fill text-[11px] font-medium text-white">
-                          {tile.crit}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-auto flex items-end justify-between gap-3 pt-4">
-                      <div>
-                        <div className="text-xs text-muted-foreground">{t("tile_last")}</div>
-                        <div className="nums mt-0.5 text-[13px]">{formatDateTime(tile.last, locale)}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs text-muted-foreground">{t("tile_alerts")}</div>
-                        <div className="nums mt-0.5 text-sm font-semibold">{tile.count.toLocaleString(locale)}</div>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </>
-      ) : (
-        <>
-          <RevealFilterRow
-            filters={logFilters}
-            right={
-              <div className="flex items-center gap-2">
-                <DensityToggle />
-                <span className="nums text-xs text-muted-foreground">
-                  {logRows.length !== events.length ? `${logRows.length} / ${events.length}` : logRows.length} {t("count")}
-                </span>
-              </div>
-            }
-          />
-          {logRows.length === 0 ? (
-            <EmptyState
-              kind={events.length === 0 ? "none" : "filtered"}
-              title={events.length === 0 ? t("empty_none") : t("empty_filtered")}
-              hint={events.length === 0 ? t("empty_hint_none") : t("empty_hint_filtered")}
-            />
-          ) : (
-            <DataTable
-              rows={logRows}
-              columns={columns}
-              rowKey={(e) => e.id}
-              onRowClick={(e) => setSelected(e)}
-              stripe={(e) => EVENT_STRIPE[eventTone(e.event_type)]}
-              grouping={{
-                // idling ARTIK epizod (bir rölanti = tek satır + süre) → storm
-                // grouping'DEN HARİÇ: her idling satırına benzersiz anahtar ver,
-                // asla "×N" altında gruplanmasın. Diğer tipler burst'lerde aynen
-                // gruplanır (ani fren/aşırı hız vb. bozulmaz).
-                getKey: (e) =>
-                  e.event_type === "idling"
-                    ? `idle:${e.id}`
-                    : `${e.vehicle_id}:${e.event_type}`,
-                getTime: (e) => new Date(e.occurred_at).getTime(),
-                windowMs: STORM_WINDOW_MS,
-                renderLabel: (rows) => (
-                  <span className="flex items-center gap-2 text-sm">
-                    <span className="nums font-medium uppercase tracking-wide">{rows[0].plate}</span>
-                    <StatusChip tone={eventTone(rows[0].event_type)}>
-                      {t(`type.${rows[0].event_type}`)} ×{rows.length}
-                    </StatusChip>
-                  </span>
-                ),
-              }}
-              totalLabel={t("count")}
-            />
-          )}
-        </>
+      {/* ① ZENDESK ŞERİDİ — aralık filtresinden BAĞIMSIZ, hep son 90 gün. */}
+      <AlarmStrip
+        cells={density}
+        days={stripDays}
+        vehicles={vehicles}
+        onPick={setFVehicle}
+        activePlate={fVehicle}
+      />
+
+      {/* ② LINEAR ÇUBUĞU — solda Filter, sağda Display. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
+          <ListFilter className="size-3.5" aria-hidden />
+          {t("filter_label")}
+        </span>
+
+        <Select value={range} onValueChange={(v) => v && startNav(() => router.replace(`/admin/alarmlar?range=${v}`, { scroll: false }))}>
+          <SelectTrigger className="h-8 w-auto gap-1.5 rounded-full px-3 text-[13px]" aria-label={t("filter_shown")}>
+            <span>
+              {range === "epoch" ? t("range_epoch") : range === "today" ? t("range_today") : range === "7d" ? t("range_7d") : t("range_30d")}
+            </span>
+          </SelectTrigger>
+          <SelectContent>
+            {epochISO && <SelectItem value="epoch">{t("range_epoch")}</SelectItem>}
+            <SelectItem value="today">{t("range_today")}</SelectItem>
+            <SelectItem value="7d">{t("range_7d")}</SelectItem>
+            <SelectItem value="30d">{t("range_30d")}</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={fSev} onValueChange={(v) => setFSev(v === "__all" ? "" : String(v ?? ""))}>
+          <SelectTrigger className="h-8 w-auto gap-1.5 rounded-full px-3 text-[13px]" aria-label={t("filter_severity")}>
+            <span>{t("filter_severity")}</span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">{t("all")}</SelectItem>
+            <SelectItem value="critical">{t("sev_critical")}</SelectItem>
+            <SelectItem value="warning">{t("sev_warning")}</SelectItem>
+            <SelectItem value="neutral">{t("sev_neutral")}</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={fType} onValueChange={(v) => setFType(v === "__all" ? "" : String(v ?? ""))}>
+          <SelectTrigger className="h-8 w-auto gap-1.5 rounded-full px-3 text-[13px]" aria-label={t("filter_type")}>
+            <span>{t("filter_type")}</span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">{t("all")}</SelectItem>
+            {typeOptions.map((o) => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={fVehicle} onValueChange={(v) => setFVehicle(v === "__all" ? "" : String(v ?? ""))}>
+          <SelectTrigger className="h-8 w-auto gap-1.5 rounded-full px-3 text-[13px]" aria-label={t("col_vehicle")}>
+            <span>{t("col_vehicle")}</span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all">{t("all")}</SelectItem>
+            {plateOptions.map((p) => (
+              <SelectItem key={p} value={p}>{p}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <div className="ml-auto flex items-center gap-2">
+          <Select value={groupBy} onValueChange={(v) => v && setGroupBy(v as GroupBy)}>
+            <SelectTrigger className="h-8 w-auto gap-1.5 rounded-full px-3 text-[13px]" aria-label={t("display_label")}>
+              <SlidersHorizontal className="size-3.5" aria-hidden />
+              <span>{t("display_label")}</span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="severity">{t("group_severity")}</SelectItem>
+              <SelectItem value="date">{t("group_date")}</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="font-mono text-[12px] tabular-nums text-muted-foreground">
+            {filtered.length !== events.length ? `${filtered.length} / ${events.length}` : filtered.length}
+          </span>
+        </div>
+      </div>
+
+      {/* Aktif filtre çipleri — görünmeyen filtre en pahalı hatadır. */}
+      {activeChips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {activeChips.map((c) => (
+            <span key={c.k} className="surface-card inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px]">
+              {c.label}
+              <button type="button" onClick={c.clear} aria-label={c.label} className="rounded-full p-0.5 text-text-tertiary transition-colors hover:text-foreground">
+                <X className="size-3" />
+              </button>
+            </span>
+          ))}
+        </div>
       )}
 
-      <DetailDrawer
-        open={selected !== null}
-        onOpenChange={(v) => !v && setSelected(null)}
-        title={selected?.plate ?? ""}
-        subtitle={selected ? formatDateTime(selected.occurred_at, locale) : undefined}
-        onPrev={selIndex > 0 ? () => setSelected(logRows[selIndex - 1]) : null}
-        onNext={selIndex >= 0 && selIndex < logRows.length - 1 ? () => setSelected(logRows[selIndex + 1]) : null}
-      >
-        {selected && (
-          <div className="space-y-4 text-sm">
-            <div><StatusChip tone={eventTone(selected.event_type)}>{t(`type.${selected.event_type}`)}</StatusChip></div>
-            <dl className="grid grid-cols-2 gap-3">
-              {selected.event_type === "idling" && selected.duration_ms != null && (
-                <div>
-                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">{t("drawer_duration")}</dt>
-                  <dd className="nums mt-0.5">
-                    {formatIdleShort(selected.duration_ms, locale)}
-                    {selected.ongoing ? ` (${t("ongoing")})` : ""}
-                  </dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-muted-foreground">{t("drawer_speed")}</dt>
-                <dd className="nums mt-0.5">{SPEED_EVENTS.has(selected.event_type) && selected.speed_kmh !== null ? `${Math.round(selected.speed_kmh)} km/h` : "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-muted-foreground">{t("drawer_location")}</dt>
-                <dd className="nums mt-0.5">{selected.latitude !== null && selected.longitude !== null ? `${selected.latitude.toFixed(4)}, ${selected.longitude.toFixed(4)}` : t("no_location")}</dd>
-              </div>
-            </dl>
-            {selected.latitude !== null && selected.longitude !== null && (
-              <div>
-                <p className="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">{t("drawer_address")}</p>
-                <EventMiniMap lat={selected.latitude} lng={selected.longitude} />
-              </div>
-            )}
-            <div className="flex flex-col gap-2 pt-1">
-              {selected.latitude !== null && selected.longitude !== null && (
-                <a href={`https://www.google.com/maps?q=${selected.latitude},${selected.longitude}`} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm text-accent-sky-text hover:underline">
-                  <MapPin className="size-4" />{t("open_maps")}<ExternalLink className="size-3" />
-                </a>
-              )}
-              <Link href={`/admin/araclar/${selected.vehicle_id}`} className="inline-flex items-center gap-2 text-sm text-accent-sky-text hover:underline">
-                <Truck className="size-4" />{t("go_vehicle")}
-              </Link>
-            </div>
-          </div>
-        )}
-      </DetailDrawer>
+      {/* ② LINEAR LİSTESİ — kolon başlığı yok, ayraç yok, zebra yok. */}
+      {filtered.length === 0 ? (
+        <EmptyState
+          kind={events.length === 0 ? "none" : "filtered"}
+          title={events.length === 0 ? t("empty_none") : t("empty_filtered")}
+          hint={events.length === 0 ? t("empty_hint_none") : t("empty_hint_filtered")}
+        />
+      ) : (
+        <div className="glass-panel rounded-[16px] px-2 py-3 sm:px-4">
+          {groups.map((g) => {
+            const off = collapsed.has(g.key);
+            return (
+              <section key={g.key} className="mb-2 last:mb-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCollapsed((s) => {
+                      const n = new Set(s);
+                      if (n.has(g.key)) n.delete(g.key);
+                      else n.add(g.key);
+                      return n;
+                    })
+                  }
+                  aria-expanded={!off}
+                  className="flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-left transition-colors hover:bg-surface-panel"
+                >
+                  <ChevronRight className={cn("size-3.5 text-text-tertiary transition-transform", !off && "rotate-90")} aria-hidden />
+                  <span className="text-[13px] font-medium">{g.label}</span>
+                  <span className="font-mono text-[12px] tabular-nums text-muted-foreground">{g.rows.length}</span>
+                </button>
+
+                {!off && (
+                  <ul>
+                    {g.rows.map((e) => {
+                      const open = openId === e.id;
+                      const badge = idleBadge(e);
+                      return (
+                        <li key={e.id}>
+                          <button
+                            type="button"
+                            onClick={() => setOpenId(open ? null : e.id)}
+                            aria-expanded={open}
+                            className="flex w-full items-center gap-3 rounded-[8px] px-2 py-2 text-left transition-colors hover:bg-surface-panel"
+                          >
+                            <span className={cn("size-2 shrink-0 rounded-full", toneDot(e.event_type))} aria-hidden />
+                            <span className="min-w-0 flex-1 truncate text-[13px]">
+                              {t(`type.${e.event_type}`)}
+                              {badge && (
+                                <span className="ml-1.5 font-mono text-[12px] tabular-nums text-muted-foreground">
+                                  {badge}
+                                </span>
+                              )}
+                            </span>
+                            <span className="hidden shrink-0 font-mono text-[12px] font-medium uppercase tabular-nums sm:inline">
+                              {e.plate}
+                            </span>
+                            <span className="shrink-0 font-mono text-[12px] tabular-nums text-text-tertiary">
+                              {formatTime(e.occurred_at, locale)}
+                            </span>
+                            <ChevronDown className={cn("size-3.5 shrink-0 text-text-tertiary transition-transform", open && "rotate-180")} aria-hidden />
+                          </button>
+
+                          {/* ③ STRIPE AÇILIR SATIR — künye + mini harita + eylem.
+                              Ayrı çekmece YOK: bağlam satırın yerinde kalır. */}
+                          {open && (
+                            <div className="mb-2 grid gap-4 rounded-[12px] bg-surface-panel px-4 py-3 md:grid-cols-[1fr_280px]">
+                              <dl>
+                                <SpecRow label={t("col_vehicle")} mono>
+                                  <Link href={`/admin/araclar/${e.vehicle_id}`} className="hover:underline">
+                                    {e.plate}
+                                  </Link>
+                                </SpecRow>
+                                <SpecRow label={t("col_type")}>{t(`type.${e.event_type}`)}</SpecRow>
+                                <SpecRow label={t("col_time")} mono>
+                                  {formatDateTime(e.occurred_at, locale)}
+                                </SpecRow>
+                                {e.event_type === "idling" && e.duration_ms != null && (
+                                  <SpecRow label={t("drawer_duration")} mono>
+                                    {formatIdleShort(e.duration_ms, locale)}
+                                    {e.ongoing ? ` (${t("ongoing")})` : ""}
+                                  </SpecRow>
+                                )}
+                                <SpecRow label={t("drawer_speed")} mono muted={!SPEED_EVENTS.has(e.event_type) || e.speed_kmh === null}>
+                                  {SPEED_EVENTS.has(e.event_type) && e.speed_kmh !== null
+                                    ? `${Math.round(e.speed_kmh)} km/h`
+                                    : "—"}
+                                </SpecRow>
+                                <SpecRow label={t("drawer_location")} mono muted={e.latitude === null}>
+                                  {e.latitude !== null && e.longitude !== null
+                                    ? `${e.latitude.toFixed(5)}, ${e.longitude.toFixed(5)}`
+                                    : t("no_location")}
+                                </SpecRow>
+                              </dl>
+
+                              <div className="space-y-2">
+                                {e.latitude !== null && e.longitude !== null && (
+                                  <div className="overflow-hidden rounded-[12px]">
+                                    <EventMiniMap lat={e.latitude} lng={e.longitude} />
+                                  </div>
+                                )}
+                                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                  <Link href={`/admin/araclar/${e.vehicle_id}`} className="inline-flex items-center gap-1.5 text-[12px] font-medium text-accent-sky-text hover:underline">
+                                    <Truck className="size-3.5" aria-hidden />
+                                    {t("go_vehicle")}
+                                  </Link>
+                                  <Link href={`/admin/araclar/${e.vehicle_id}/rota`} className="inline-flex items-center gap-1.5 text-[12px] font-medium text-accent-sky-text hover:underline">
+                                    <Route className="size-3.5" aria-hidden />
+                                    {t("go_route")}
+                                  </Link>
+                                  {e.latitude !== null && e.longitude !== null && (
+                                    <a
+                                      href={`https://www.google.com/maps?q=${e.latitude},${e.longitude}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1.5 text-[12px] font-medium text-accent-sky-text hover:underline"
+                                    >
+                                      <MapPin className="size-3.5" aria-hidden />
+                                      {t("open_maps")}
+                                      <ExternalLink className="size-3" aria-hidden />
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

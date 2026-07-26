@@ -1,4 +1,6 @@
 import "server-only";
+import { viennaDayKey } from "@/lib/format";
+import { eventTone } from "@/lib/event-ui";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { fetchLastKnownDtc } from "@/lib/flespi";
 import type {
@@ -967,4 +969,63 @@ export async function maybeBackfillVin(
     .update({ vin })
     .eq("id", vehicleId)
     .is("vin", null);
+}
+
+/** 90 günlük şerit için tek gün-araç hücresi (DESIGN yapı turu: Zendesk şeridi). */
+export type EventDensityCell = {
+  vehicle_id: string;
+  /** Vienna gün anahtarı (YYYY-MM-DD). */
+  day: string;
+  count: number;
+  /** O günün en ağır olay tonu — hücre rengini bu belirler. */
+  worst: "critical" | "warning" | "neutral";
+};
+
+/**
+ * ARAÇ × GÜN ALARM YOĞUNLUĞU — genel bakış şeridinin tek kaynağı.
+ *
+ * Yalnız üç kolon çekilir (id/plaka JOIN'i YOK): şerit için gerekmiyor ve
+ * 90 günlük pencerede satır sayısı büyük. Sayfalama `fetchAllRows` ile —
+ * PostgREST'in 1000 satır tavanı bu projede daha önce sessizce ısırmıştı
+ * (bkz. 25.07 depo-geliş olayı), o yüzden ham `.limit()` KULLANILMAZ.
+ */
+export async function listEventDensity(
+  startISO: string,
+  endISO: string
+): Promise<EventDensityCell[]> {
+  const { data } = await fetchAllRows<{
+    vehicle_id: string;
+    event_type: string;
+    occurred_at: string;
+  }>(
+    (from, to) =>
+      supabaseAdmin
+        .from("vehicle_events")
+        .select("vehicle_id, event_type, occurred_at")
+        .gte("occurred_at", startISO)
+        .lte("occurred_at", endISO)
+        .order("occurred_at", { ascending: false })
+        .range(from, to),
+    "listEventDensity"
+  );
+  const scope = await getTestScope();
+  const rows = dropTestRows(data, (r) => ({ vehicle: r.vehicle_id }), scope);
+
+  const RANK = { critical: 3, warning: 2, neutral: 1 } as const;
+  const cells = new Map<string, EventDensityCell>();
+  for (const r of rows) {
+    const day = viennaDayKey(new Date(r.occurred_at));
+    const key = `${r.vehicle_id}|${day}`;
+    const tone = eventTone(r.event_type);
+    const worst: EventDensityCell["worst"] =
+      tone === "critical" ? "critical" : tone === "warning" ? "warning" : "neutral";
+    const cur = cells.get(key);
+    if (!cur) {
+      cells.set(key, { vehicle_id: r.vehicle_id, day, count: 1, worst });
+    } else {
+      cur.count++;
+      if (RANK[worst] > RANK[cur.worst]) cur.worst = worst;
+    }
+  }
+  return [...cells.values()];
 }

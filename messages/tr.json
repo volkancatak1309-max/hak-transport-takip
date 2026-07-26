@@ -234,7 +234,17 @@
     "tile_last": "Son tetiklenme",
     "tile_alerts": "Alarm",
     "all": "Tümü",
-    "range_epoch": "Yeni eşiklerden beri"
+    "range_epoch": "Yeni eşiklerden beri",
+    "strip_title": "Son {days} gün — araç yoğunluğu",
+    "strip_legend": "Az → çok · kırmızı = kritik",
+    "strip_all_clean": "Bu pencerede hiçbir araçta alarm yok.",
+    "strip_show_clean": "Sorunsuz {n} aracı göster",
+    "strip_hide_clean": "Sorunsuz araçları gizle",
+    "filter_label": "Filtre",
+    "display_label": "Görünüm",
+    "group_severity": "Öneme göre",
+    "group_date": "Tarihe göre",
+    "go_route": "Rotada gör"
   },
   "approval": {
     "pending": "Onay Bekliyor",

@@ -731,7 +731,15 @@
     "sort_plate": "Kennzeichen",
     "sort_driver": "Fahrer",
     "sort_status": "Status",
-    "shared_vehicle": "{n} Fahrer"
+    "shared_vehicle": "{n} Fahrer",
+    "col_last_seen": "Zuletzt gesehen",
+    "col_flags": "Merkmale",
+    "view_all": "Alle",
+    "view_silent": "Kein Signal",
+    "view_faulty": "Störung",
+    "view_no_driver": "Ohne Fahrer",
+    "dtc_badge": "{n} Fehler",
+    "no_signal": "kein Signal"
   },
   "offline": {
     "online": "Online",

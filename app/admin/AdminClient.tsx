@@ -48,7 +48,6 @@ import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AttentionList } from "@/components/admin/AttentionList";
 import { LiveWorked } from "@/components/admin/LiveWorked";
-import { FleetDtcCard } from "@/components/admin/FleetDtcCard";
 import type { DashboardData } from "@/lib/admin-dashboard";
 import { AddWorkerDialog } from "@/components/admin/AddWorkerDialog";
 import {

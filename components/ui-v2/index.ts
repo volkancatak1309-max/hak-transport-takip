@@ -11,6 +11,8 @@ export { BreakdownCard, type BreakdownRow, type BreakdownTab } from "./Breakdown
 export { MiniTrend, type TrendBucket } from "./MiniTrend";
 export { SubTabs, type SubTab } from "./SubTabs";
 export { RankingTile, type RankRow } from "./RankingTile";
+// Kayıtlı görünümler (Aboard klonu — DESIGN.md §0).
+export { SavedViews, type SavedView } from "./SavedViews";
 // Operasyon konsolu iskeleti (Stellate klonu — DESIGN.md §0 DESTEK C).
 export {
   OpsConsole,

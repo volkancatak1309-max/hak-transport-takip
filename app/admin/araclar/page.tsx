@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
+import { listLatestVehiclePositions } from "@/lib/telemetry";
 import { getFleetDtc } from "@/lib/admin-dashboard";
 import { AraclarClient } from "./AraclarClient";
 
@@ -17,7 +18,7 @@ export default async function AraclarPage() {
   // temizlemiyor, filtrelenirse o araç formda "Şoför yok" görünür ve yönetici
   // atamayı temizlediğini sanıp aslında ex-çalışanı geri yazar.
   const scope = await getTestScope();
-  const [vehicles, driversResult, dtc] = await Promise.all([
+  const [vehicles, driversResult, dtc, positions] = await Promise.all([
     listVehiclesWithStatus(),
     withoutTestRows(
       supabaseAdmin
@@ -30,7 +31,13 @@ export default async function AraclarPage() {
     // Filo arıza özeti — 22.07.2026'da yönetici panosundan buraya taşındı.
     // Arıza aracın özelliğidir; panoda sayfanın ilk 420 px'ini işgal ediyordu.
     getFleetDtc(),
+    // SON SİNYAL (26.07.2026 — Aboard klonu): tabloda "Son sinyal" kolonu ve
+    // "Sinyalsiz" kayıtlı görünümü bunu ister. Haritanın kullandığı sorgunun
+    // aynısı (araç başına indeksli limit-1).
+    listLatestVehiclePositions(),
   ]);
+  const lastSeen: Record<string, string> = {};
+  for (const p of positions) lastSeen[p.vehicle_id] = p.recorded_at;
   const drivers = (driversResult.data ?? []) as {
     id: string;
     name: string;
@@ -49,7 +56,7 @@ export default async function AraclarPage() {
         isAdmin: true,
       }}
     >
-      <AraclarClient vehicles={vehicles} drivers={drivers} dtc={dtc} />
+      <AraclarClient vehicles={vehicles} drivers={drivers} dtc={dtc} lastSeen={lastSeen} />
     </DashboardShell>
   );
 }

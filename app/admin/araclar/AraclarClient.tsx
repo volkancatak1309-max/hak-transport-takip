@@ -1,24 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import {
   Truck,
   Search,
-  ChevronRight,
-  UserRound,
   Plus,
   Pencil,
   Trash2,
   Loader2,
   MoreHorizontal,
+  X,
+  ArrowDownAZ,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { FleetDtcCard } from "@/components/admin/FleetDtcCard";
 import type { FleetDtcRow } from "@/lib/admin-dashboard";
 import { Label } from "@/components/ui/label";
 import {
@@ -41,7 +40,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { HelpTip } from "@/components/help/HelpTip";
-import { RevealFilterRow } from "@/components/ui-v2";
+import { SavedViews, type SavedView } from "@/components/ui-v2";
+import { formatDurationShort } from "@/lib/format";
 import { STATUS_STYLE, FLEET_STYLE } from "@/lib/vehicle-ui";
 import type { VehicleWithStatus, VehicleBaseStatus, VehicleFleet } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -63,15 +63,30 @@ type SortKey = "plate" | "driver" | "status";
 /** Select "şoför yok" seçeneği: Select boş string'i temizleme sayar. */
 const NO_DRIVER = "__none__";
 
+/** Kayıtlı görünüm anahtarları (Aboard deseni). */
+type ViewKey = "all" | "silent" | "faulty" | "no_driver" | "mavi" | "bordo";
+
+/** Sağlıklı cihaz saatlik heartbeat atar; 24 saat sessizlik "sinyalsiz"dir.
+ *  Aynı eşik Dikkat panosunda da kullanılıyor (TELEMETRY_SILENT_HOURS). */
+const SILENT_MS = 24 * 60 * 60 * 1000;
+function isSilent(iso: string | undefined): boolean {
+  if (!iso) return true;
+  return Date.now() - new Date(iso).getTime() >= SILENT_MS;
+}
+
 export function AraclarClient({
   vehicles,
   drivers,
   dtc,
+  lastSeen,
 }: {
   vehicles: VehicleWithStatus[];
   drivers: { id: string; name: string; is_active: boolean }[];
-  /** Aktif arıza kodu olan araçlar (yönetici panosundan taşındı). */
+  /** Aktif arıza kodu olan araçlar. Artık ayrı kart DEĞİL: "Arızalı" kayıtlı
+   *  görünümünü ve satır rozetini besler (26.07.2026). */
   dtc: FleetDtcRow[];
+  /** Araç id → son telemetri anı (ISO). "Sinyalsiz" görünümü ve kolon için. */
+  lastSeen: Record<string, string>;
 }) {
   const t = useTranslations("vehicles");
   const tm = useTranslations("vehicles.manage");
@@ -80,6 +95,25 @@ export function AraclarClient({
   const [liveFilter, setLiveFilter] = useState<LiveFilter>("all");
   const [fleetFilter, setFleetFilter] = useState<FleetFilter>("all");
   const [sort, setSort] = useState<SortKey>("plate");
+  /** Aktif kayıtlı görünüm (Aboard deseni). */
+  const [view, setView] = useState<ViewKey>("all");
+  const locale = useLocale();
+
+  // "Son sinyal" süreleri için tek zaman damgası: render sırasında Date.now()
+  // çağırmak saf-olmayan bir işlem (React Compiler kuralı) ve satırlar arası
+  // tutarsızlık üretir. State'e alınır, dakikada bir tazelenir — etiketler
+  // sayfa açık kaldıkça kendiliğinden ilerler.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  /** Araç başına aktif arıza sayısı — DTC kartının yerini alan tek kaynak. */
+  const dtcByVehicle = useMemo(
+    () => new Map(dtc.map((d) => [d.vehicle_id, d.count])),
+    [dtc]
+  );
 
   // Create/edit dialog state.
   const [open, setOpen] = useState(false);
@@ -111,15 +145,29 @@ export function AraclarClient({
     [drivers, tm]
   );
 
-  const counts = useMemo(() => {
-    const c = { total: vehicles.length, sevkiyatta: 0, molada: 0, bosta: 0, bakimda: 0 };
-    for (const v of vehicles) c[v.live_status]++;
-    return c;
-  }, [vehicles]);
+  /** Kayıtlı görünüm sayaçları — KPI şeridinin yerini alan sayılar. */
+  const views: SavedView[] = useMemo(() => {
+    const silent = vehicles.filter((v) => isSilent(lastSeen[v.id])).length;
+    const faulty = vehicles.filter((v) => (dtcByVehicle.get(v.id) ?? 0) > 0).length;
+    const noDriver = vehicles.filter((v) => !v.driver_name).length;
+    return [
+      { key: "all", label: t("view_all"), count: vehicles.length },
+      { key: "silent", label: t("view_silent"), count: silent, alert: true },
+      { key: "faulty", label: t("view_faulty"), count: faulty, alert: true },
+      { key: "no_driver", label: t("view_no_driver"), count: noDriver, alert: true },
+      { key: "mavi", label: t("fleet.mavi"), count: vehicles.filter((v) => v.fleet === "mavi").length },
+      { key: "bordo", label: t("fleet.bordo"), count: vehicles.filter((v) => v.fleet === "bordo").length },
+    ];
+  }, [vehicles, lastSeen, dtcByVehicle, t]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLocaleLowerCase("tr");
     let out = vehicles;
+    // KAYITLI GÖRÜNÜM önce uygulanır; çip filtreleri onun üstüne biner.
+    if (view === "silent") out = out.filter((v) => isSilent(lastSeen[v.id]));
+    else if (view === "faulty") out = out.filter((v) => (dtcByVehicle.get(v.id) ?? 0) > 0);
+    else if (view === "no_driver") out = out.filter((v) => !v.driver_name);
+    else if (view === "mavi" || view === "bordo") out = out.filter((v) => v.fleet === view);
     if (liveFilter !== "all") out = out.filter((v) => v.live_status === liveFilter);
     if (fleetFilter !== "all") out = out.filter((v) => v.fleet === fleetFilter);
     if (s) {
@@ -153,7 +201,7 @@ export function AraclarClient({
       }
       return coll.compare(a.plate, b.plate);
     });
-  }, [vehicles, q, liveFilter, fleetFilter, sort]);
+  }, [vehicles, q, liveFilter, fleetFilter, sort, view, lastSeen, dtcByVehicle]);
 
   function openNew() {
     setEditing(null);
@@ -279,144 +327,254 @@ export function AraclarClient({
         <HelpTip tkey="veh_list" />
       </div>
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label={t("kpi_total")} value={counts.total} />
-        <Kpi label={t("kpi_active")} value={counts.sevkiyatta} accent="sky" live={counts.sevkiyatta > 0} />
-        <Kpi label={t("kpi_break")} value={counts.molada} accent="claret" />
-        <Kpi label={t("kpi_idle")} value={counts.bosta} accent="gold" />
+      {/* KAYITLI GORUNUMLER (Aboard klonu) — KPI seridi (4 kutu) KALDIRILDI:
+          Aboard'da KPI yok, sayilar gorunum rozetlerinde yasiyor ve
+          tiklanabilir. FleetDtcCard da kaldirildi: ariza artik "Arizali"
+          gorunumu + satir rozeti. (26.07.2026, onayli) */}
+      <SavedViews views={views} active={view} onChange={(k) => setView(k as ViewKey)} />
+
+      {/* ARAC CUBUGU (Aboard): solda kaldirilabilir filtre CIPLERI + "filtre
+          ekle" dropdown'lari, sagda arama ve birincil eylem. Aboard'daki
+          "Archive date is not set x" satirinin ayni davranisi. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {liveFilter !== "all" && (
+          <FilterChip
+            label={t("filter_status") + ": " + t("status." + liveFilter)}
+            onClear={() => setLiveFilter("all")}
+          />
+        )}
+        {fleetFilter !== "all" && (
+          <FilterChip
+            label={t("filter_fleet") + ": " + t("fleet." + fleetFilter)}
+            onClear={() => setFleetFilter("all")}
+          />
+        )}
+        <Select value={liveFilter} onValueChange={(v) => setLiveFilter((v ?? "all") as LiveFilter)}>
+          <SelectTrigger
+            className="h-9 w-auto gap-1.5 border-dashed px-3 text-[13px]"
+            aria-label={t("filter_status")}
+          >
+            <Plus className="size-3.5" />
+            <span>{t("filter_status")}</span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t("filter_all")}</SelectItem>
+            <SelectItem value="sevkiyatta">{t("status.sevkiyatta")}</SelectItem>
+            <SelectItem value="molada">{t("status.molada")}</SelectItem>
+            <SelectItem value="bosta">{t("status.bosta")}</SelectItem>
+            <SelectItem value="bakimda">{t("status.bakimda")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={fleetFilter} onValueChange={(v) => setFleetFilter((v ?? "all") as FleetFilter)}>
+          <SelectTrigger
+            className="h-9 w-auto gap-1.5 border-dashed px-3 text-[13px]"
+            aria-label={t("filter_fleet")}
+          >
+            <Plus className="size-3.5" />
+            <span>{t("filter_fleet")}</span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t("filter_all")}</SelectItem>
+            <SelectItem value="bordo">{t("fleet.bordo")}</SelectItem>
+            <SelectItem value="mavi">{t("fleet.mavi")}</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <div className="ml-auto flex items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
+            <Input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={t("search")}
+              className="h-9 w-[190px] pl-9"
+              aria-label={t("search")}
+            />
+          </div>
+          <Button onClick={openNew} className="h-9 shrink-0">
+            <Plus className="size-4" /> {tm("add")}
+          </Button>
+        </div>
       </div>
 
-      {/* FİLO ARIZALARI (DTC) — 22.07.2026'da yönetici panosundan buraya
-          taşındı. Arıza aracın özelliğidir; panoda sayfanın ilk bloğuydu ve
-          mobilde operasyon özetinden de önce geliyordu. Yalnız aktif arızası
-          olan araç varsa render edilir (boş-durum ekonomisi). */}
-      {dtc.length > 0 && <FleetDtcCard rows={dtc} />}
-
-      {/* Filtre bandı — Reveal araç panelinin tek satır düzeni (A3 dili):
-          etiketli dropdown'lar solda, arama + eylem sağda. Çip yok. */}
-      <RevealFilterRow
-        filters={[
-          {
-            label: t("filter_status"),
-            value: liveFilter,
-            onChange: (v) => setLiveFilter(v as LiveFilter),
-            options: [
-              { value: "all", label: t("filter_all") },
-              { value: "sevkiyatta", label: t("status.sevkiyatta") },
-              { value: "molada", label: t("status.molada") },
-              { value: "bosta", label: t("status.bosta") },
-              { value: "bakimda", label: t("status.bakimda") },
-            ],
-          },
-          {
-            label: t("filter_fleet"),
-            value: fleetFilter,
-            onChange: (v) => setFleetFilter(v as FleetFilter),
-            options: [
-              { value: "all", label: t("filter_all") },
-              { value: "bordo", label: t("fleet.bordo") },
-              { value: "mavi", label: t("fleet.mavi") },
-            ],
-          },
-          {
-            label: t("filter_sort"),
-            value: sort,
-            onChange: (v) => setSort(v as SortKey),
-            options: [
-              { value: "plate", label: t("sort_plate") },
-              { value: "driver", label: t("sort_driver") },
-              { value: "status", label: t("sort_status") },
-            ],
-          },
-        ]}
-        right={
-          <>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-tertiary" />
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder={t("search")}
-                aria-label={t("search")}
-                className="h-9 w-[220px] pl-9"
-              />
-            </div>
-            <Button onClick={openNew} className="h-9 shrink-0">
-              <Plus className="size-4" /> {tm("add")}
-            </Button>
-          </>
-        }
-      />
-
-      {/* List */}
-      <div className="glass overflow-hidden rounded-[16px]">
+      {/* TABLO (Aboard anatomisi): cok kolonlu, ince yatay ayrac, dikey cizgi
+          yok. Ilk hucrede ikon + plaka (Aboard'in avatar + isim hucresi).
+          Olcum kolonlari mono ve saga hizali; satir sonunda uc-nokta menu. */}
+      <div className="surface-card overflow-hidden rounded-[16px]">
         {filtered.length === 0 ? (
           <div className="p-10 text-center text-sm text-muted-foreground">{t("none")}</div>
         ) : (
-          <ul className="divide-y divide-border">
-            {filtered.map((v) => {
-              const st = STATUS_STYLE[v.live_status];
-              return (
-                <li
-                  key={v.id}
-                  className={cn(
-                    "group flex items-center gap-3 border-l-[3px] px-4 py-3.5 transition-colors duration-150 hover:bg-surface-2",
-                    st.stripe
-                  )}
-                >
-                  <Link
-                    href={`/admin/araclar/${v.id}`}
-                    className="flex min-w-0 flex-1 items-center gap-3"
-                  >
-                    <span
-                      className={cn(
-                        "flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-surface-2",
-                        FLEET_STYLE[v.fleet].text
-                      )}
-                    >
-                      <Truck className="size-[18px]" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        {/* Plaka bu listenin EN kritik bilgisi — HİÇBİR ekranda
-                            kırpılmaz: truncate yok, whitespace-nowrap ile tek satır. */}
-                        <span className="nums whitespace-nowrap text-sm font-semibold uppercase tracking-wide">
+          <>
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-surface-panel text-left text-[12px] uppercase tracking-[0.04em] text-muted-foreground">
+                    {/* Sıralama kolon başlığından (Aboard): ayrı bir "sırala"
+                        dropdown'ı yok, başlığa tıklanır. */}
+                    <th className="px-4 py-2.5 font-medium">
+                      <SortHeader label={t("col_vehicle")} active={sort === "plate"} onClick={() => setSort("plate")} />
+                    </th>
+                    <th className="px-3 py-2.5 font-medium">
+                      <SortHeader label={t("col_driver")} active={sort === "driver"} onClick={() => setSort("driver")} />
+                    </th>
+                    <th className="px-3 py-2.5 font-medium">
+                      <SortHeader label={t("col_status")} active={sort === "status"} onClick={() => setSort("status")} />
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-medium">{t("col_last_seen")}</th>
+                    <th className="px-3 py-2.5 font-medium">{t("col_flags")}</th>
+                    <th className="px-2 py-2.5" aria-label={tm("actions")} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((v) => {
+                    const st = STATUS_STYLE[v.live_status];
+                    const dtcCount = dtcByVehicle.get(v.id) ?? 0;
+                    const seen = lastSeen[v.id];
+                    const silent = isSilent(seen);
+                    return (
+                      <tr
+                        key={v.id}
+                        className="border-b border-border/50 transition-colors last:border-0 hover:bg-surface-hover"
+                      >
+                        <td className="px-4 py-2.5">
+                          <Link href={"/admin/araclar/" + v.id} className="flex items-center gap-2.5">
+                            <span
+                              className={cn(
+                                "flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-surface-panel",
+                                FLEET_STYLE[v.fleet].text
+                              )}
+                            >
+                              <Truck className="size-4" />
+                            </span>
+                            <span className="min-w-0">
+                              {/* Plaka HICBIR ekranda kirpilmaz. */}
+                              <span className="block whitespace-nowrap font-mono text-[13px] font-semibold uppercase tabular-nums">
+                                {v.plate}
+                              </span>
+                              <span className="block text-[12px] text-text-tertiary">
+                                {[v.make, v.model].filter(Boolean).join(" ") || "-"}
+                              </span>
+                            </span>
+                          </Link>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {v.live_drivers.length > 1 ? (
+                            <span className="flex flex-wrap items-center gap-1.5">
+                              {v.live_drivers.join(", ")}
+                              <span className="rounded-full bg-accent-gold px-1.5 py-0.5 text-[10px] font-medium text-[#181818]">
+                                {t("shared_vehicle", { n: v.live_drivers.length })}
+                              </span>
+                            </span>
+                          ) : v.driver_name ? (
+                            <span>
+                              {v.driver_name}
+                              {!v.driver_is_live && (
+                                <span className="ml-1 text-[12px] text-text-tertiary">
+                                  {"· " + t("assigned_label")}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-text-tertiary">{t("no_driver")}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+                              st.chip
+                            )}
+                          >
+                            {st.live ? (
+                              <span className="live-dot" />
+                            ) : (
+                              <span className={cn("size-1.5 rounded-full", st.dot)} />
+                            )}
+                            {t("status." + st.labelKey)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          {seen ? (
+                            <span
+                              className={cn(
+                                "font-mono text-[12px] tabular-nums",
+                                silent
+                                  ? "font-semibold text-status-critical"
+                                  : "text-muted-foreground"
+                              )}
+                            >
+                              {formatDurationShort(nowMs - new Date(seen).getTime(), locale)}
+                            </span>
+                          ) : (
+                            <span className="text-[12px] text-text-tertiary">{t("no_signal")}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                                FLEET_STYLE[v.fleet].chip
+                              )}
+                            >
+                              {t("fleet." + v.fleet)}
+                            </span>
+                            {dtcCount > 0 && (
+                              <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-status-critical">
+                                {t("dtc_badge", { n: dtcCount })}
+                              </span>
+                            )}
+                            {v.imei && (
+                              <span className="rounded bg-surface-panel px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary">
+                                GPS
+                              </span>
+                            )}
+                          </span>
+                        </td>
+                        <td className="px-2 py-2.5 text-right">
+                          <RowMenu vehicle={v} onEdit={openEdit} onRemove={remove} label={tm("actions")} editLabel={tm("edit")} deleteLabel={tm("delete")} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobil kart listesi — tablo dar ekranda okunmaz. */}
+            <ul className="divide-y divide-border/60 sm:hidden">
+              {filtered.map((v) => {
+                const st = STATUS_STYLE[v.live_status];
+                const dtcCount = dtcByVehicle.get(v.id) ?? 0;
+                const seen = lastSeen[v.id];
+                return (
+                  <li key={v.id} className="flex items-start gap-3 px-4 py-3">
+                    <Link href={"/admin/araclar/" + v.id} className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-[13px] font-semibold uppercase tabular-nums">
                           {v.plate}
                         </span>
-                        {/* Filo rozeti masaüstünde plakayla aynı satırda; mobilde
-                            plakaya yer açmak için alttaki meta satırına iner. */}
                         <span
                           className={cn(
-                            "hidden shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium sm:inline",
+                            "rounded-full px-2 py-0.5 text-[10px] font-medium",
                             FLEET_STYLE[v.fleet].chip
                           )}
                         >
-                          {t(`fleet.${v.fleet}`)}
+                          {t("fleet." + v.fleet)}
                         </span>
-                        <span className="hidden truncate text-xs text-text-tertiary sm:inline">
-                          {[v.make, v.model].filter(Boolean).join(" ")}
-                        </span>
-                        {v.imei && (
-                          <span className="hidden shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-tertiary md:inline">
-                            GPS
+                        {dtcCount > 0 && (
+                          <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[10px] font-semibold text-status-critical">
+                            {t("dtc_badge", { n: dtcCount })}
                           </span>
                         )}
-                      </div>
-                      {/* Mobil meta satırı — filo + durum rozeti plakanın ALTINA
-                          iner; masaüstünde gizli (rozetler sağ kümede kalır). */}
-                      <div className="mt-1 flex flex-wrap items-center gap-2 sm:hidden">
+                      </span>
+                      <span className="mt-1 block text-[12px] text-muted-foreground">
+                        {v.driver_name ?? t("no_driver")}
+                      </span>
+                      <span className="mt-1.5 flex items-center gap-2">
                         <span
                           className={cn(
-                            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                            FLEET_STYLE[v.fleet].chip
-                          )}
-                        >
-                          {t(`fleet.${v.fleet}`)}
-                        </span>
-                        <span
-                          className={cn(
-                            "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+                            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
                             st.chip
                           )}
                         >
@@ -425,116 +583,21 @@ export function AraclarClient({
                           ) : (
                             <span className={cn("size-1.5 rounded-full", st.dot)} />
                           )}
-                          {t(`status.${st.labelKey}`)}
+                          {t("status." + st.labelKey)}
                         </span>
-                      </div>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <UserRound className="size-3.5 shrink-0 text-text-tertiary" />
-                        {v.live_drivers.length > 1 ? (
-                          /* AYNI ARAÇTA BİRDEN ÇOK ŞOFÖR (22.07.2026): geçici
-                             araç seçimi serbest bırakıldıktan sonra mümkün.
-                             Eskiden yalnız ilki gösteriliyordu — yönetici
-                             eksik bilgi görüyordu. */
-                          <span className="truncate">
-                            {v.live_drivers.join(", ")}
-                            <span className="ml-1 rounded-full bg-accent-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-gold">
-                              {t("shared_vehicle", { n: v.live_drivers.length })}
-                            </span>
+                        {seen && (
+                          <span className="font-mono text-[11px] tabular-nums text-text-tertiary">
+                            {formatDurationShort(nowMs - new Date(seen).getTime(), locale)}
                           </span>
-                        ) : v.driver_name ? (
-                          <span className="truncate">
-                            {v.driver_name}
-                            {!v.driver_is_live && (
-                              <span className="ml-1 text-text-tertiary">· {t("assigned_label")}</span>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-text-tertiary">{t("no_driver")}</span>
                         )}
-                      </div>
-                    </div>
-                  </Link>
-                  {/* Durum rozeti + düzenle/sil — masaüstüne özel. Mobilde satırdan
-                      kalkar: satır zaten detaya gidiyor (>), düzenleme/silme
-                      masaüstünden yapılır; böylece plakaya yer açılır. Sarmalayıcı
-                      gap-3 → masaüstü aralıkları BİREBİR korunur. */}
-                  <div className="hidden items-center gap-3 sm:flex">
-                    <span
-                      className={cn(
-                        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-                        st.chip
-                      )}
-                    >
-                      {st.live ? (
-                        <span className="live-dot" />
-                      ) : (
-                        <span className={cn("size-1.5 rounded-full", st.dot)} />
-                      )}
-                      {t(`status.${st.labelKey}`)}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={tm("edit")}
-                      onClick={() => openEdit(v)}
-                    >
-                      <Pencil className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={tm("delete")}
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={() => remove(v)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                  {/* Dokunma hedefi 24x24 (WCAG 2.2 AA 2.5.8) — ikon 16px kalıyor,
-                      tıklanabilir alan büyüyor. Mobilde yerini üç-nokta menüsü
-                      alır (aşağıda): satırın KENDİSİ zaten detaya gidiyor, yani
-                      chevron dar ekranda bilgi taşımıyor — o 24px'i düzenle/sil'e
-                      devrediyoruz. Aynı genişlik → plakanın alanı BİREBİR korunur
-                      (83caa88'in mobil plaka düzeni bozulmaz). */}
-                  <Link
-                    href={`/admin/araclar/${v.id}`}
-                    aria-label={v.plate}
-                    className="hidden size-6 shrink-0 items-center justify-center sm:flex"
-                  >
-                    <ChevronRight className="size-4 text-text-tertiary transition-colors group-hover:text-foreground" />
-                  </Link>
-                  {/* Mobil düzenle/sil. Masaüstünde kalem+çöp yukarıdaki
-                      `sm:flex` kümesinde duruyor, bu menü YALNIZ sm altında
-                      render edilir — masaüstü görünümü değişmez. */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="size-6 shrink-0 sm:hidden"
-                          aria-label={tm("actions")}
-                        />
-                      }
-                    >
-                      <MoreHorizontal className="size-4 text-text-tertiary" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEdit(v)}>
-                        <Pencil className="size-4" /> {tm("edit")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => remove(v)}
-                        className="text-destructive focus:text-destructive"
-                      >
-                        <Trash2 className="size-4" /> {tm("delete")}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </li>
-              );
-            })}
-          </ul>
+                      </span>
+                    </Link>
+                    <RowMenu vehicle={v} onEdit={openEdit} onRemove={remove} label={tm("actions")} editLabel={tm("edit")} deleteLabel={tm("delete")} />
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
       </div>
 
@@ -740,34 +803,83 @@ export function AraclarClient({
   );
 }
 
-function Kpi({
-  label,
-  value,
-  accent,
-  live,
-}: {
-  label: string;
-  value: number;
-  accent?: "sky" | "claret" | "gold";
-  live?: boolean;
-}) {
-  const color =
-    accent === "sky"
-      ? "text-accent-sky"
-      : accent === "claret"
-      ? "text-accent-claret-text"
-      : accent === "gold"
-      ? "text-accent-gold"
-      : "text-foreground";
+/** Tıklanabilir kolon başlığı — aktif sıralama mercanla işaretlenir. */
+function SortHeader({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <div className="glass card-kpi rounded-[16px] px-4 py-3.5">
-      <div className="flex items-center gap-1.5">
-        {live && <span className="live-dot" />}
-        <span className="text-[12px] sm:text-[11px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
-          {label}
-        </span>
-      </div>
-      <div className={`nums mt-1.5 text-[28px] font-semibold leading-none ${color}`}>{value}</div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1 uppercase tracking-[0.04em] transition-colors",
+        active ? "text-accent-coral-text" : "hover:text-foreground"
+      )}
+    >
+      {label}
+      {active && <ArrowDownAZ className="size-3.5" aria-hidden />}
+    </button>
+  );
+}
+
+/**
+ * FILTRE CIPI — Aboard'in "Archive date is not set x" satiri. Aktif filtre
+ * gorunur durur ve tek tikla kalkar; filtrenin gizli kalmasi en pahali hatadir.
+ */
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-[10px] border border-border bg-surface-panel px-2.5 py-1.5 text-[13px]">
+      {label}
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label={label}
+        className="rounded-full p-0.5 text-text-tertiary transition-colors hover:text-foreground"
+      >
+        <X className="size-3.5" />
+      </button>
+    </span>
+  );
+}
+
+/**
+ * SATIR MENUSU — duzenle/sil. Aboard'da satir eylemleri satirin sonunda tek
+ * menude toplanir; eskiden masaustunde iki ayri ikon butonu vardi ve tablo
+ * kolonu ile yarisiyordu. Mobil/masaustu ayni bilesen.
+ */
+function RowMenu({
+  vehicle,
+  onEdit,
+  onRemove,
+  label,
+  editLabel,
+  deleteLabel,
+}: {
+  vehicle: VehicleWithStatus;
+  onEdit: (v: VehicleWithStatus) => void;
+  onRemove: (v: VehicleWithStatus) => void;
+  label: string;
+  editLabel: string;
+  deleteLabel: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="ghost" size="icon-sm" className="size-7 shrink-0" aria-label={label} />
+        }
+      >
+        <MoreHorizontal className="size-4 text-text-tertiary" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onEdit(vehicle)}>
+          <Pencil className="size-4" /> {editLabel}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => onRemove(vehicle)}
+          className="text-destructive focus:text-destructive"
+        >
+          <Trash2 className="size-4" /> {deleteLabel}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

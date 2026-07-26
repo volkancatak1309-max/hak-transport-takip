@@ -192,7 +192,9 @@ body {
   --secondary-foreground: #181818;
   --muted: var(--surface-panel);
   --muted-foreground: #6b6b6b;
-  --text-tertiary: #909096;
+  /* 26.07.2026: #909096 beyaz üstünde 3.2:1 idi — 12px alt-satır metinleri
+     (marka/model, "· Atanmış") AA'yı geçmiyordu. Ton koyultuldu: ~5:1. */
+  --text-tertiary: #6e6e73;
   --accent: var(--surface-panel);
   --accent-foreground: #181818;
   --destructive: oklch(0.55 0.21 25);
@@ -303,7 +305,7 @@ body {
   /* FAZ 5 QA: 0.55 -> 0.60. Eski değer koyu zeminde ölçülen 4.09:1 idi ve 12px
      normal metin için AA'yı (4.5:1) geçmiyordu (Lighthouse color-contrast).
      0.60 = 5.04:1 ✓ — tondan ödün vermeden pay bırakır. */
-  --text-tertiary: #7a7a80;
+  --text-tertiary: #9a9aa0;
   --accent: var(--surface-panel);
   --accent-foreground: #f2f3f5;
   --destructive: oklch(0.62 0.2 25);

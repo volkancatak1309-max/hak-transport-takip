@@ -731,7 +731,15 @@
     "sort_plate": "Plaka",
     "sort_driver": "Şoför",
     "sort_status": "Durum",
-    "shared_vehicle": "{n} şoför"
+    "shared_vehicle": "{n} şoför",
+    "col_last_seen": "Son sinyal",
+    "col_flags": "Etiketler",
+    "view_all": "Tümü",
+    "view_silent": "Sinyalsiz",
+    "view_faulty": "Arızalı",
+    "view_no_driver": "Şoförsüz",
+    "dtc_badge": "{n} arıza",
+    "no_signal": "sinyal yok"
   },
   "offline": {
     "online": "Çevrimiçi",

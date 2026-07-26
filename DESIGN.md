@@ -79,7 +79,7 @@ tarafında kalır, ama basamaklar arası fark artık **görünür**.
 | — | Nav rayı | `#181818` (her iki temada da KOYU) | `#0E0E0F` | İmza öğe |
 | — | Birincil metin (ink) | `#181818` | `#F2F3F5` | |
 | — | İkincil metin | `#6B6B6B` | `#A0A0A3` | AA ölçüldü |
-| — | Üçüncül metin / etiket | `#909096` | `#7A7A80` | Yalnız ≥12px etiket |
+| — | Üçüncül metin / etiket | `#6E6E73` | `#9A9AA0` | 26.07: AA için koyultuldu (12px alt-satır) |
 
 **Kural:** üst üste gelen iki yüzey ASLA aynı tonda olmaz. Kart zeminin üstünde,
 panel kartın içinde, hover panelin üstünde — her katman bir basamak koyulaşır.

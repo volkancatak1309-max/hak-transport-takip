@@ -80,8 +80,10 @@ export const FLEET_STYLE: Record<VehicleFleet, FleetStyle> = {
     dot: "bg-accent-claret",
   },
   mavi: {
-    chip: "bg-accent-sky/15 text-accent-sky",
-    text: "text-accent-sky",
+    // Saf --accent-sky metin olarak 10-12px'te AA'yı geçmiyor (açıkta 3.6:1);
+    // metin rolü için okunur türev token kullanılır — bordo'daki desenin aynısı.
+    chip: "bg-accent-sky/15 text-accent-sky-text",
+    text: "text-accent-sky-text",
     dot: "bg-accent-sky",
   },
 };

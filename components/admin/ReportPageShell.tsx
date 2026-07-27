@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { SegmentedControl, useUrlFilters } from "@/components/ui-v2";
+import { HelpTip } from "@/components/help/HelpTip";
 import { Input } from "@/components/ui/input";
 import type { AnalyticsRangeKey } from "@/lib/analytics-shared";
 
@@ -78,13 +79,18 @@ export function ReportPageShell({
         {/* HAP FİLTRE — Resend'in sağ üst açılırları. Paylaşılan
             SegmentedControl'e dokunmadan (seferler/yakıt/masraf da kullanıyor)
             yalnız bu bağlamda yuvarlatılır. */}
-        <SegmentedControl
-          value={optimistic}
-          onChange={onChange}
-          options={options}
-          ariaLabel={t("range_label")}
-          className="rounded-full p-1 [&>button]:rounded-full [&>button]:px-3 [&>button]:py-1.5"
-        />
+        {/* Aralık seçicinin yanında (i): pencerenin KAYAN olduğunu (takvim
+            haftası/ayı olmadığını) yalnız etiket anlatamıyor. */}
+        <div className="flex items-center gap-1">
+          <SegmentedControl
+            value={optimistic}
+            onChange={onChange}
+            options={options}
+            ariaLabel={t("range_label")}
+            className="rounded-full p-1 [&>button]:rounded-full [&>button]:px-3 [&>button]:py-1.5"
+          />
+          <HelpTip tkey="range_window" />
+        </div>
       </div>
 
       {optimistic === "ozel" && (

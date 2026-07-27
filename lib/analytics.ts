@@ -4,10 +4,7 @@ import { getTestScope, dropTestRows } from "@/lib/test-data";
 import {
   startOfTodayVienna,
   endOfTodayVienna,
-  startOfWeekVienna,
-  endOfWeekVienna,
-  startOfMonthVienna,
-  endOfMonthVienna,
+  addCalendarDaysVienna,
   startOfDayViennaFromYmd,
   endOfDayViennaFromYmd,
   viennaDayKey,
@@ -84,6 +81,38 @@ export function scoreMinKmForRange(range: DateRange): number {
   return SCORE_MIN_KM_PER_DAY * spanDays;
 }
 
+/** Kayan pencere uzunlukları (gün). Etiketler i18n'de bu sayılarla yazılı. */
+export const SLIDING_WEEK_DAYS = 7;
+export const SLIDING_MONTH_DAYS = 30;
+
+/** Bugünün sonundan geriye `days` günlük KAYAN pencere (bugün dahil). */
+function slidingWindow(days: number): DateRange {
+  return {
+    start: addCalendarDaysVienna(startOfTodayVienna(), -(days - 1)),
+    end: endOfTodayVienna(),
+  };
+}
+
+/**
+ * Seçilen anahtardan tarih aralığı.
+ *
+ * ═══ KAYAN PENCERE (27.07.2026, Volkan kararı) ═══
+ * "hafta" ve "ay" artık TAKVİM haftası/ayı DEĞİL, son 7 / son 30 gün.
+ *
+ * Neden: takvim penceresi haftanın/ayın başında çöküyordu. Canlı ölçüm
+ * (27.07.2026 pazartesi, saat 13:00): takvim haftası = 0,56 gün. Sonuç:
+ *   • "Haftalık" ile "Günlük" AYNI sayıyı veriyordu
+ *   • Yakıt raporunda 12 araç "Veri yok" düşüyordu (kayan pencerede 6)
+ *   • L/100km kolonu HİÇ çıkmıyordu (aralık 1 gün < FUEL_L100_MIN_DAYS=7),
+ *     yani araçlar arası tüketim kıyası hiç çalışmıyordu (kayan: 19 araç)
+ * Aynı sorun ayın 1'inde "Aylık" için de geçerliydi.
+ *
+ * Kayan pencere her gün aynı uzunlukta kalır → dönem kıyası (previousPeriod)
+ * de anlamlı olur: 7 gün her zaman 7 günle karşılaştırılır.
+ *
+ * "gun" (bugün) ve "tumzaman" değişmedi; "ozel" kullanıcı tarihlerini kullanır,
+ * tarih verilmediğinde artık takvim haftasına değil son 7 güne düşer.
+ */
 export function computeAnalyticsRange(
   key: AnalyticsRangeKey,
   customFrom?: string | null,
@@ -93,17 +122,18 @@ export function computeAnalyticsRange(
     case "gun":
       return { start: startOfTodayVienna(), end: endOfTodayVienna() };
     case "ay":
-      return { start: startOfMonthVienna(), end: endOfMonthVienna() };
+      return slidingWindow(SLIDING_MONTH_DAYS);
     case "ozel": {
-      const start = (customFrom && startOfDayViennaFromYmd(customFrom)) || startOfWeekVienna();
-      const end = (customTo && endOfDayViennaFromYmd(customTo)) || endOfWeekVienna();
+      const fallback = slidingWindow(SLIDING_WEEK_DAYS);
+      const start = (customFrom && startOfDayViennaFromYmd(customFrom)) || fallback.start;
+      const end = (customTo && endOfDayViennaFromYmd(customTo)) || fallback.end;
       return start.getTime() <= end.getTime() ? { start, end } : { start: end, end: start };
     }
     case "tumzaman":
       return { start: FLEET_EPOCH, end: endOfTodayVienna() };
     case "hafta":
     default:
-      return { start: startOfWeekVienna(), end: endOfWeekVienna() };
+      return slidingWindow(SLIDING_WEEK_DAYS);
   }
 }
 

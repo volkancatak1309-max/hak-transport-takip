@@ -10,13 +10,11 @@ import {
   kmDiff,
   startOfTodayVienna,
   endOfTodayVienna,
-  startOfWeekVienna,
-  endOfWeekVienna,
-  startOfMonthVienna,
-  endOfMonthVienna,
+  addCalendarDaysVienna,
   startOfDayViennaFromYmd,
   endOfDayViennaFromYmd,
 } from "@/lib/format";
+import { SLIDING_WEEK_DAYS, SLIDING_MONTH_DAYS } from "@/lib/analytics";
 import { getDashboardData } from "@/lib/admin-dashboard";
 import type {
   TimeEntry,
@@ -36,16 +34,28 @@ type Range = "today" | "week" | "month" | "custom";
 // All boundaries are resolved against the Europe/Vienna calendar (see
 // lib/format helpers), so "today / week / month" stay correct regardless of the
 // server's own timezone (Vercel runs on UTC).
+//
+// KAYAN PENCERE (27.07.2026, Volkan kararı) — "week"/"month" artık TAKVİM
+// haftası/ayı DEĞİL, son 7 / son 30 gün. Gerekçe ve canlı ölçüm:
+// lib/analytics.ts computeAnalyticsRange. Yönetici panosu ile Analiz ve rapor
+// sayfaları aynı pencere dilini konuşmak zorunda — aksi hâlde aynı gün için
+// iki ekranda iki farklı sayı çıkar.
 function computeRange(
   range: Range,
   from?: string,
   to?: string
 ): { start: Date; end: Date } {
   if (range === "week") {
-    return { start: startOfWeekVienna(), end: endOfWeekVienna() };
+    return {
+      start: addCalendarDaysVienna(startOfTodayVienna(), -(SLIDING_WEEK_DAYS - 1)),
+      end: endOfTodayVienna(),
+    };
   }
   if (range === "month") {
-    return { start: startOfMonthVienna(), end: endOfMonthVienna() };
+    return {
+      start: addCalendarDaysVienna(startOfTodayVienna(), -(SLIDING_MONTH_DAYS - 1)),
+      end: endOfTodayVienna(),
+    };
   }
   if (range === "custom") {
     const start = (from && startOfDayViennaFromYmd(from)) || startOfTodayVienna();

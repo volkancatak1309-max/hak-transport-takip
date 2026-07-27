@@ -272,6 +272,9 @@ export function AnalizClient({
       {/* Ortak filtre çubuğu — tüm bölümleri yönetir, URL'e yazar (?aralik=) */}
       <div className="flex flex-wrap items-center gap-3 rounded-[12px] border border-border/60 px-3 py-2.5">
         <SegmentedControl value={optimisticRange} onChange={onRangeChange} options={rangeOptions} ariaLabel={t("range_label")} />
+        {/* Pencerenin KAYAN olduğunu (takvim haftası/ayı olmadığını) etiket tek
+            başına anlatamıyor — (i) burada. */}
+        <HelpTip tkey="range_window" />
         {optimisticRange === "ozel" && (
           <div className="flex items-center gap-2">
             <Input

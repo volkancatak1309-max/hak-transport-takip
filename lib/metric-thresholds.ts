@@ -29,26 +29,35 @@
  * (Analiz "Şoför Güvenlik Skoru" bölümü + Raporlar › Performans skor kolonu,
  * ortalama skor kartı, en iyi şoför kartı, PDF skor sütunu).
  *
- * NEDEN KAPALI (22.07.2026 kararı, Volkan onaylı):
- * Yürürlükteki formül `100 − ceza/(km/1000)` doğrusal ve tabana çakılıyor —
- * günde ~11 alarm × 12-25 ceza puanı ÷ ~100 km ⇒ ceza/1000km birkaç bin ⇒
- * `max(0, …)` ⇒ HERKES 0. Sıfır bir ölçüm değil, taban çarpmasıydı.
+ * ═══ AÇILDI — 27.07.2026 (Volkan kararı, ölçümle) ═══
  *
- * Onaylanan yeni formül `100 × K/(K + ceza)` bilinçli olarak HENÜZ YAZILMADI:
- * K'yi bugün seçmek imkânsız, çünkü elimizdeki tek referans ESKİ eşiklerle
- * üretilmiş 10,97 alarm/araç-gün. Alarm eşikleri 22.07'de gevşedi
- * (2.2/2.5/2.9 → 3.3/3.3/4.5 m/s², 90 → 120 km/h); eski gürültüye göre kalibre
- * edilmiş bir K yeni dünyada herkesi 95+ yapar — bu sefer TERS yönde yalan.
+ * Eski formül `100 − ceza/(km/1000)` doğrusaldı ve tabana çakılıyordu: canlı
+ * ölçümde ceza/1000km'nin EN İYİ şoförde bile 194 olduğu görüldü, yani
+ * `max(0, 100−194)` ⇒ 18 şoförün 18'i de 0. Sıfır bir ölçüm değil, taban
+ * çarpmasıydı — ve bu sayı bir İNSAN hakkında.
  *
- * Ve en önemlisi: bu sayı bir İNSAN hakkında. Yakıt rakamı yanlışsa araç yanlış
- * görünür; skor yanlışsa PERSONEL yanlış görünür. Geçici/uydurma bir K ile
- * açmak yerine kolon kapalı durur, sebebi ekranda yazar.
+ * Yeni formül: `100 × K / (K + ceza)` — hiperbolik, tabana çakılmaz, sıfıra
+ * asimptot yaklaşır. Ceza = 1000 km başına düşen ağırlıklı ceza puanı (km'ye
+ * bölme korundu: çok süren şoför doğal olarak çok olay üretir).
  *
- * AÇILIŞ ŞARTI: yeni eşiklerle en az 2 haftalık alarm verisi biriksin, K o
- * veriyle kalibre edilsin, formül `100 × K/(K + ceza)` olarak yazılsın —
- * SONRA bu bayrak true'ya çekilsin.
+ * K = 500: yeni eşik döneminin (23.07.2026 21:38 sonrası) canlı MEDYANI
+ * 496,1 ölçüldü, yuvarlandı. Anlamı: medyan şoför 50 puan alır; K arttıkça
+ * herkes yukarı, azaldıkça aşağı kayar. Ölçülen dağılımda skorlar 6–72
+ * aralığına yayılıyor — sıkışma yok.
+ *
+ * ⚠️ EŞİKLERE DOKUNULMADI (Volkan): alarm eşikleri 22.07'deki hâliyle duruyor.
+ * Ölçüm alarm/araç-gün'ü 6,24 buldu (hedef ~3,5 idi, ulaşılmadı) — yani skor
+ * MUTLAK bir kalite ölçüsü değil, aynı dönemde şoförleri KIYASLAYAN bir
+ * sıralamadır. Ekrandaki (i) balonu bunu açıkça söyler.
  */
-export const SAFETY_SCORE_CALIBRATED = false;
+export const SAFETY_SCORE_CALIBRATED = true;
+
+/**
+ * Skor eğrisinin yarılanma sabiti. `ceza = K` olan şoför 50 puan alır.
+ * 27.07.2026'da canlı medyandan (496,1) türetildi. Filo davranışı değişirse
+ * yeniden ölçülüp güncellenmeli — tek kaynak burası.
+ */
+export const SAFETY_SCORE_K = 500;
 
 /**
  * Güvenlik skoru için "yeterli sürüş" eşiği — GÜN BAŞINA minimum güvenilir km.

@@ -10,7 +10,7 @@ import {
   viennaDayKey,
 } from "@/lib/format";
 import { IDLE_TRIGGER_S } from "@/lib/telemetry";
-import { SCORE_MIN_KM_PER_DAY } from "@/lib/metric-thresholds";
+import { SCORE_MIN_KM_PER_DAY, SAFETY_SCORE_K } from "@/lib/metric-thresholds";
 import type { VehicleEventWithPlate, IdleEpisodeWithPlate } from "@/lib/telemetry";
 import {
   SAFETY_SCORE_WEIGHTS,
@@ -463,9 +463,17 @@ export function computeSafetyScores(
     // YOK → null ("Veri yok"). Ne yeşil 100 ne kırmızı 0. Skor SADECE eşiği geçen
     // şoför için, ihlal/1000km oranıyla hesaplanır — düşük skor artık yalnız
     // "yeterince sürüp çok ihlal yapan"a düşer, seyrek-veri gürültüsüne değil.
+    // FORMÜL (27.07.2026): 100 × K / (K + ceza) — ceza 1000 km başına düşen
+    // ağırlıklı puan. Eski doğrusal `100 − ceza` tabana çakılıyordu (canlı
+    // ölçümde en iyi şoför bile 194 ceza/1000km ⇒ herkes 0). Hiperbolik eğri
+    // sıfıra yaklaşır ama çarpmaz; sıralama en kötü uçta bile korunur.
     const qualifies = reliableKm != null && reliableKm >= minKm;
+    const penaltyPer1000 = qualifies ? penalty / (reliableKm! / 1000) : 0;
     const score = qualifies
-      ? Math.max(0, Math.min(100, Math.round(100 - penalty / (reliableKm! / 1000))))
+      ? Math.max(
+          0,
+          Math.min(100, Math.round((100 * SAFETY_SCORE_K) / (SAFETY_SCORE_K + penaltyPer1000)))
+        )
       : null;
 
     rows.push({

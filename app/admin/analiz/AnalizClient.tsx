@@ -27,7 +27,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { EpochWarning } from "@/components/admin/EpochWarning";
 import { HelpTip } from "@/components/help/HelpTip";
-import { SAFETY_SCORE_CALIBRATED } from "@/lib/metric-thresholds";
 import { formatDate, formatEur, formatIdleShort, formatNumber } from "@/lib/format";
 import type {
   AnalyticsRangeKey,
@@ -408,25 +407,16 @@ export function AnalizClient({
         </div>
       </div>
 
-      {/* Bölüm 2 — şoför güvenlik skor kartı.
-          22.07.2026: skor KALİBRE EDİLENE KADAR bu bölüm hiç hesap göstermez.
-          Yürürlükteki doğrusal formül (100 − ceza/(km/1000)) herkesi 0'a
-          çakıyordu; sıfır bir ölçüm değil taban çarpmasıydı ve bu sayı bir
-          İNSAN hakkında. Bölüm başlığı kalır, yerine SEBEP yazılır — sayfada
-          açıklanmadan kaybolan bir bölüm "panel bozuk" izlenimi verir. */}
+      {/* Bölüm 2 — şoför güvenlik skoru. 27.07.2026'da AÇILDI (Volkan): formül
+          100 × K/(K + ceza), K=500 canlı medyandan kalibre edildi. "Kalibrasyon
+          aşamasında" dipnotu kalktı; skorun neye dayandığı ve hangi dönemin
+          verisiyle hesaplandığı artık başlıktaki (i) balonunda. */}
       <div>
         <div className="mb-3 flex items-center gap-1">
           <h2 className="text-[15px] font-semibold">{t("section2_title")}</h2>
           <HelpTip tkey="anl_safety" />
         </div>
-        {!SAFETY_SCORE_CALIBRATED ? (
-          <div className="rounded-[12px] border border-border/60 px-3.5 py-3">
-            <div className="text-sm font-medium">{t("section2_calibrating_title")}</div>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              {t("section2_calibrating_hint")}
-            </p>
-          </div>
-        ) : safetyRows.length === 0 ? (
+        {safetyRows.length === 0 ? (
           <EmptyState kind="none" title={t("section2_empty")} hint={t("section2_empty_hint")} />
         ) : (
           <>

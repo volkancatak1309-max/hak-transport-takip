@@ -150,8 +150,6 @@
     },
     "insufficient_title": "{n} Fahrer · zu wenig Daten",
     "insufficient_hint": "In diesem Zeitraum nicht genug Fahrleistung (km) für eine faire Bewertung — neutral.",
-    "section2_calibrating_title": "Sicherheitsscore wird kalibriert",
-    "section2_calibrating_hint": "Die Alarmschwellen wurden am 22.07.2026 geändert (Beschleunigen/Bremsen 3,3 · Kurve 4,5 m/s² · Tempo 120 km/h). Die Score-Formel wird mit den unter den neuen Schwellen erfassten Daten kalibriert; bis dahin wird keine Zahl angezeigt — ein unzuverlässiger Score bedeutet eine falsche Beurteilung von Mitarbeitern.",
     "unit_hour": "Std",
     "idle_trigger_note": "Jeder Leerlauf-Episode ist die Auslöseschwelle des Geräts (5 Min.) hinzugerechnet."
   },
@@ -1410,7 +1408,7 @@
     "ops_over_limit": "Anzahl der heutigen Schichten über der gesetzlichen Tageshöchstarbeitszeit (§ 9 Abs. 1 AZG: 12 Stunden; an Tagen mit Nachtarbeit § 14 Abs. 2 AZG: 10 Stunden). Das ist eine echte Überschreitung.",
     "ops_break45": "Anzahl der Schichten über 9 Stunden, die daher 45 statt 30 Minuten Pause erfordern (§ 13c Abs. 1 AZG). Keine Überschreitung, sondern ein Pausenhinweis.",
     "anl_top10": "Jede Kachel zeigt die Mitarbeiter mit den meisten Ereignissen je Ereignistyp. Die Zahlen sind echte Gerätemeldungen und hängen vom Zeitraumfilter ab. Die Alarmschwellen wurden am 22.07.2026 gelockert — Zeiträume über dieses Datum hinweg mischen zwei Einstellungen; ein Hinweis erscheint oben.",
-    "anl_safety": "Teilt die Ereignisse eines Fahrers durch die gefahrenen Kilometer und ergibt eine Note von 0 bis 100. Derzeit in Kalibrierung: die alte Formel zeigte bei allen 0, deshalb ausgeblendet.",
+    "anl_safety": "Fahrsicherheitsnote von 0 bis 100. Jedes Ereignis erhält gewichtete Strafpunkte (Geschwindigkeit und Signalstörung 25, starkes Bremsen/Beschleunigen/harte Kurve 12, langer Leerlauf 5); die Summe wird durch die gefahrene Strecke geteilt — wer viel fährt, sammelt naturgemäß mehr Ereignisse, deshalb rechnen wir immer je 1.000 km. Die Note ergibt sich mit der Konstante 500 aus 100 × 500 ÷ (500 + Strafpunkte): bei 500 Strafpunkten sind es 50 Punkte; steigen sie weiter, nähert sich die Note der Null, erreicht sie aber nie. Die Konstante wurde aus echten Flottendaten nach den am 23.07.2026 gültigen neuen Alarmschwellen bestimmt; ältere Ereignisse stammen aus anderen Schwellen und sind nicht vergleichbar. Die Note ist KEIN absolutes Sicherheitsmaß, sondern VERGLEICHT die Fahrer desselben Zeitraums. Wer zu wenig gefahren ist, erhält keine Note und erscheint in einer eigenen Liste.",
     "anl_idle": "Zeit, in der das Fahrzeug bei laufendem Motor steht. Liter- und Euro-Werte sind KEINE Messung, sondern eine Schätzung (Faktoren 0,9 L/Std × 1,65 €/L). In der Dauer ist je Episode die 5-minütige Auslöseschwelle des Geräts enthalten.",
     "rep_fuel_table": "Verbrauch = Betankungen + Nettoabfall (erster − letzter Stand), über das Tankvolumen in Liter umgerechnet. Km = Differenz zwischen erstem und letztem Kilometerstand im Zeitraum. L/100km wird nur berechnet, wenn drei Bedingungen zugleich erfüllt sind: mindestens 50 km Strecke, mindestens 15 % Verbrauch und übereinstimmende Messzeiträume von Kilometerstand und Tankfüllstand. Andernfalls steht statt einer Zahl der Grund.",
     "rep_speed_table": "Die Verstöße sind Tempo-Ereignisse des Geräts; die Höchstgeschwindigkeit ist der zum Ereignis gemeldete Wert. \"Tempoverstöße / 100 km\" gleicht aus, dass Vielfahrer naturgemäß mehr Verstöße sammeln, und wird nur ab 50 km Fahrleistung berechnet.",

@@ -593,16 +593,13 @@ export function AlarmsClient({
 
       <EpochWarning epochISO={epochISO} show={showEpochWarning} />
 
-      {/* ① ZENDESK ŞERİDİ — aralık filtresinden BAĞIMSIZ, hep son 90 gün. */}
-      <AlarmStrip
-        cells={density}
-        days={stripDays}
-        vehicles={vehicles}
-        onPick={setFVehicle}
-        activePlate={fVehicle}
-      />
-
-      {/* ② LINEAR ÇUBUĞU — solda Filter, sağda Display. */}
+      {/* ① LINEAR ÇUBUĞU — solda Filter, sağda Display.
+          SIRA DEĞİŞTİ (27.07.2026, Volkan onayı): Zendesk şeridi eskiden burada,
+          filtrenin ÜSTÜNDEYDİ. 28 araçla 1.176 px yer kaplıyordu (1440×900'de
+          görünümün %131'i) ve asıl içerik — gruplu liste — ilk ekranda SIFIR
+          piksel görünüyordu; ona ulaşmak 1,58 ekran kaydırma istiyordu.
+          Genel bakış, işin kendisinin önüne geçemez: şerit artık listenin
+          ALTINDA ve varsayılan katlı (bkz. AlarmStrip). */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
           <ListFilter className="size-3.5" aria-hidden />
@@ -836,6 +833,18 @@ export function AlarmsClient({
           )}
         </div>
       )}
+
+      {/* ③ ZENDESK ŞERİDİ — aralık filtresinden BAĞIMSIZ, hep son 90 gün.
+          Listenin ALTINDA: bu bir genel bakış katmanı, giriş kapısı değil.
+          Boş liste durumunda da durur — "hiç olay yok" derken 90 günlük
+          geçmişe bakabilmek tam da o an işe yarar. */}
+      <AlarmStrip
+        cells={density}
+        days={stripDays}
+        vehicles={vehicles}
+        onPick={setFVehicle}
+        activePlate={fVehicle}
+      />
     </div>
   );
 }

@@ -5,29 +5,62 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
+import { ExternalLink, MapPin, Truck } from "lucide-react";
 import {
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  ListFilter,
-  MapPin,
-  Route,
-  SlidersHorizontal,
-  Truck,
-  X,
-} from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
-import { EmptyState, SpecRow } from "@/components/ui-v2";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
+import {
+  SubTabs,
+  StatusChip,
+  DataTable,
+  DensityToggle,
+  DetailDrawer,
+  EmptyState,
+  type Column,
+} from "@/components/ui-v2";
 import { EpochWarning } from "@/components/admin/EpochWarning";
 import { HelpTip } from "@/components/help/HelpTip";
-import { AlarmStrip } from "./AlarmStrip";
-import { eventTone, EVENT_TONE_RANK } from "@/lib/event-ui";
-import type { ChipTone } from "@/components/ui-v2";
-import { formatDateTime, formatDate, formatTime, formatIdleShort } from "@/lib/format";
-import type { VehicleEventWithPlate, EventDensityCell } from "@/lib/telemetry";
 import { cn } from "@/lib/utils";
+import { eventTone, EVENT_STRIPE, EVENT_TONE_RANK } from "@/lib/event-ui";
+import { formatDateTime, formatIdleShort } from "@/lib/format";
+import type { VehicleEventWithPlate } from "@/lib/telemetry";
 import type { AlarmRange } from "./page";
 
+/**
+ * ALARMLAR — Genel Bakış (olay tipi tile'ları) + Alarm Kaydı (tablo + çekmece).
+ *
+ * ═══ 27.07.2026 — YAPI TURU GERİ ALINDI (Volkan kararı) ═══
+ *
+ * Zendesk şeridi + Linear gruplu listesi + Stripe açılır satırı (f160074,
+ * a21e9eb, c5c206f) TAMAMEN İPTAL. Sayfa bu üç dönüşümden ÖNCEKİ yapısına
+ * döndü: alt sekmeler, tip tile'ları, filtreli DataTable, DetailDrawer.
+ * Eski hâl `d9aa92f`'ten çıkarıldı; iptal edilen dosyalar (AlarmStrip.tsx,
+ * gruplu liste) git geçmişinde duruyor, gerekirse oradan alınır.
+ *
+ * YAPI ESKİ, CİLT YENİ. `d9aa92f` aynı zamanda iptal edilmiş "Ui (shadcn)
+ * DESTEK F" cildini taşıyordu (beyaz kanvas + halka yüzey); o cilt fcf8e49'da
+ * Authkit DNA ile değiştirildi. Bu yüzden markup geri gelirken kabuk yeniden
+ * giydirildi: koyu cam bölüm paneli (tablo konteyneri), token'lı yüzey kartları,
+ * pill filtreler. Cam YALNIZ bölüm panelinde — tile ızgarası `surface-card`,
+ * çünkü 8-10 bulanık katman hem anlamı hem kaydırmayı öldürür (globals §3.3).
+ *
+ * YAPIDAN BAĞIMSIZ DÜZELTMELER KORUNDU (geri gitmedi):
+ *   • epoch varsayılan aralığı + eşik sınırı uyarısı (8bd6b81) — page.tsx
+ *   • fetchAllRows sayfalaması (lib/telemetry) — PostgREST 1000 satır tavanı
+ *   • rölanti EPİZOD modeli + süre rozeti (dec71d2 / migration 024)
+ *   • ŞOFÖR ADI — eski yapıda HİÇ yoktu, buraya EKLENDİ: plaka tek başına
+ *     kimlik değil. Tabloda plakanın altında, fırtına grubunda ve çekmecede.
+ *     Kaynak raporlarla aynı (vehicles.driver_name); araç el değiştirdiyse
+ *     geçmiş olay bugünkü şoförle etiketlenir — ipucu metni bunu söyler.
+ */
+
+/**
+ * Alarm satırı = nokta-olay (vehicle_events) VEYA rölanti epizodu (idle_episodes,
+ * migration 024). Epizod satırları süre taşır (duration_ms) ve açıksa ongoing.
+ */
 export type AlarmRow = VehicleEventWithPlate & {
   duration_ms?: number | null;
   ongoing?: boolean;
@@ -35,14 +68,10 @@ export type AlarmRow = VehicleEventWithPlate & {
 
 const EventMiniMap = dynamic(() => import("@/components/admin/EventMiniMap"), {
   ssr: false,
-  loading: () => (
-    <div className="h-40 w-full animate-pulse rounded-[12px] bg-surface-panel" />
-  ),
+  loading: () => <div className="h-40 w-full animate-pulse rounded-[12px] bg-surface-2" />,
 });
 
-/** Grup başlığı özetinde en fazla kaç tip kalemi yazılır (kalanı "+N"). */
-const SUMMARY_MAX = 4;
-
+const STORM_WINDOW_MS = 10 * 60 * 1000;
 const SPEED_EVENTS = new Set([
   "overspeeding",
   "harsh_acceleration",
@@ -51,97 +80,84 @@ const SPEED_EVENTS = new Set([
   "crash",
 ]);
 
-/** Gruplama ekseni — VARSAYILAN araç/şoför. */
-type GroupBy = "vehicle" | "severity" | "date";
-
 /**
- * Grup içindeki tekrar kümesi. Kova ekseni DAİMA grubun TAMAMLAYICISIDIR:
- *  • araç ekseninde araç sabittir → kova TİP olur   ("Rölanti ×8")
- *  • önem/tarih ekseninde tip/gün sabittir → kova ARAÇ olur
- *    ("DO-788GS · Sinan Şahinoğlu ×39")
- *
- * İlk denemede her eksende tipe göre katlıyordum; önem ekseninde "Aşırı Hız
- * ×223" çıkıyordu ve KİM sorusu bir seviye aşağı kaçıyordu — 223 ihlalin hangi
- * şoförlere ait olduğu kovayı açmadan görünmüyordu. Kural: gruplama ekseni ne
- * ise, kova öteki eksendir; böylece kimlik hiçbir seviyede kaybolmaz.
+ * Şoför adı — atanmamışsa SEBEBİ yazılır, boş bırakılmaz.
+ * MODÜL SEVİYESİNDE: render içinde tanımlanan bileşen her render'da yeniden
+ * yaratılır ve durumunu sıfırlar (react-hooks/static-components). Metinler
+ * prop olarak geçer, `t` çağıranda çözülür.
  */
-type Bucket = {
-  key: string;
-  /** Kova başlığı — tip adı ya da "plaka · şoför". */
-  type?: string;
-  plate?: string;
-  driver?: string | null;
-  tone: ChipTone;
-  rows: AlarmRow[];
-};
+function DriverName({
+  name,
+  hint,
+  fallback,
+  className,
+}: {
+  name: string | null;
+  hint: string;
+  fallback: string;
+  className?: string;
+}) {
+  return name ? (
+    <span className={cn("truncate", className)} title={hint}>
+      {name}
+    </span>
+  ) : (
+    <span className={cn("truncate text-text-tertiary", className)}>{fallback}</span>
+  );
+}
 
-type Group = {
-  key: string;
-  /** Başlığın birinci satırı — plaka ya da önem/tarih etiketi. */
+/** Authkit pill filtresi — etiketli Reveal bandının yerine (cilt kararı). */
+function PillSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
   label: string;
-  /** Yalnız araç ekseninde dolu. */
-  driver?: string | null;
-  vehicleId?: string;
-  rows: AlarmRow[];
-  buckets: Bucket[];
-  /** Başlıktaki "8 rölanti · 3 aşırı hız" özeti — her eksende TİP bazlıdır:
-   *  başlık NE olduğunu söyler, gövdedeki kovalar KİM olduğunu. */
-  typeSummary: string;
-  /** Gruptaki en ağır ton — sıralama ve nokta rengi. */
-  worst: ChipTone;
-};
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  const active = value !== "";
+  const current = options.find((o) => o.value === value)?.label;
+  return (
+    <Select value={value} onValueChange={(v) => v && onChange(String(v) === "__all" ? "" : String(v))}>
+      <SelectTrigger
+        className={cn(
+          "h-8 w-auto gap-1.5 rounded-full px-3 text-[13px]",
+          active && "border-accent-coral/60 text-foreground"
+        )}
+        aria-label={label}
+      >
+        {/* Etiket seçili değilken filtrenin ADINI, seçiliyken DEĞERİNİ taşır —
+            görünmeyen filtre en pahalı hatadır. */}
+        <span>{active && current ? current : label}</span>
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.value || "__all"} value={o.value || "__all"}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
 
-/**
- * ALARMLAR — üç referansın birleşimi:
- *   ① Zendesk `7957c520` → 90 günlük araç şeridi (AlarmStrip)
- *   ② Linear  `2a0adcf3` → kolon başlığı/ayraç/zebra OLMAYAN gruplu liste
- *   ③ Stripe  `4e3c7127` → satır YERİNDE açılır: künye + mini harita + eylem
- *
- * ═══ 27.07.2026 YENİDEN YAZIM — liste reddedildi, şerit kaldı ═══
- *
- * Volkan canlıda: "kimin ne yaptığı belli değil, hiçbir şey araç/sürücü
- * nezdinde kategorize edilmemiş." Üç kusur ve karşılıkları:
- *
- *  1. ŞOFÖR ADI HİÇ YOKTU — yalnız plaka vardı, o da sağda silik. Plaka tek
- *     başına kimlik değil: yönetici "DO-945HL" değil "Ümit" diye düşünür.
- *     Ad artık HER SEVİYEDE var (kritik bant · grup başlığı · olay satırı ·
- *     açılan künye).
- *  2. TEKRARLAR YIĞILIYORDU — aynı aracın 8 rölanti alarmı 8 satırdı, 76 uyarı
- *     okunmaz bir yığındı. Artık tip bazında katlanıyor: "Rölanti ×8" tek
- *     satır, açılınca tekil olaylar. Tek olaylı tipler ARA KATMAN ALMAZ —
- *     "×1" diye bir şey yok, o satır doğrudan olayın kendisidir.
- *  3. TEK EKSEN ÖNEMDİ — operasyonun sorusu "hangi araç/şoför sorunlu".
- *     Varsayılan eksen ARAÇ/ŞOFÖR oldu; önem ve tarih Display'de duruyor.
- *
- * KRİTİK BANT: kritik olaylar gruplamanın DIŞINDA, en üstte, tek tek durur.
- * Sinyal karıştırma bir "×3 tekrarı" değildir; katlanırsa kaybolur. Bant
- * grubun içinden ÇIKARILDIĞI için sayım çift olmaz — aşağıdaki grup özetinde
- * o olaylar yer almaz.
- *
- * VARSAYILAN KATLANMA: araç ekseninde gruplar KAPALI açılır (29 araç × ~n olay
- * yığın demek), önem/tarih ekseninde AÇIK. Eksene bağlı varsayılan + tek
- * "çevrilmişler" kümesi ile tutuluyor; effect içinde setState YOK.
- */
 export function AlarmsClient({
   events,
-  density,
-  stripDays,
   vehicles,
   range,
   epochISO,
   showEpochWarning,
 }: {
   events: AlarmRow[];
-  density: EventDensityCell[];
-  stripDays: number;
-  vehicles: {
-    id: string;
-    plate: string;
-    fleet: string;
-    driverName: string | null;
-  }[];
+  /** Şoför adı için araç künyesi (raporlarla aynı kaynak). */
+  vehicles: { id: string; plate: string; driverName: string | null }[];
   range: AlarmRange;
+  /** Alarm eşiklerinin değiştiği an (ISO); kayıt yoksa null. */
   epochISO: string | null;
+  /** Görüntülenen aralık sınırdan önce başlıyor → üstte uyarı. */
   showEpochWarning: boolean;
 }) {
   const t = useTranslations("alarms");
@@ -149,192 +165,74 @@ export function AlarmsClient({
   const router = useRouter();
   const [, startNav] = useTransition();
 
+  const [tab, setTab] = useState<"overview" | "log">("overview");
+  const [sort, setSort] = useState<"most" | "newest">("most");
+  // Alarm Kaydı filtreleri
   const [fVehicle, setFVehicle] = useState("");
   const [fType, setFType] = useState("");
   const [fSev, setFSev] = useState("");
-  const [groupBy, setGroupBy] = useState<GroupBy>("vehicle");
-  const [openId, setOpenId] = useState<string | null>(null);
-  /** Eksenin VARSAYILANINDAN sapmış grup/kümeler (açık↔kapalı çevrilmişler). */
-  const [toggled, setToggled] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<AlarmRow | null>(null);
 
-  const flip = (key: string) =>
-    setToggled((s) => {
-      const n = new Set(s);
-      if (n.has(key)) n.delete(key);
-      else n.add(key);
-      return n;
-    });
-
-  /** Araç → şoför adı. Plakayla da aranabilsin diye iki yönlü kurulur. */
   const driverByVehicleId = useMemo(
     () => new Map(vehicles.map((v) => [v.id, v.driverName])),
     [vehicles]
   );
   const driverOf = (e: AlarmRow) => driverByVehicleId.get(e.vehicle_id) ?? null;
+  /** DriverName'in metin proplarını tek yerden ver — üç kullanım yeri var. */
+  const driverText = { hint: t("driver_source_hint"), fallback: t("no_driver") };
 
+  // Rölanti epizodu süresi rozeti (migration 024): "· 25 dk" / açıksa
+  // "· 12 dk (devam ediyor)". Süre epizoddan geliyor (ham gözlemlenen span);
+  // diğer olay tiplerinde gösterilmez.
   const idleBadge = (e: AlarmRow): string | null => {
     if (e.event_type !== "idling" || e.duration_ms == null) return null;
     const d = formatIdleShort(e.duration_ms, locale);
-    return e.ongoing ? `${d} · ${t("ongoing")}` : d;
+    return e.ongoing ? `· ${d} (${t("ongoing")})` : `· ${d}`;
   };
 
-  const filtered = useMemo(() => {
-    const rows = events.filter((e) => {
+  const toneCat = (ty: string) => {
+    const tone = eventTone(ty);
+    return tone === "critical"
+      ? t("sev_critical")
+      : tone === "warning"
+        ? t("sev_warning")
+        : t("sev_neutral");
+  };
+
+  // ── Genel Bakış: olay TİPİ tile'ları ─────────────────────────────────────
+  const typeTiles = useMemo(() => {
+    const byType = new Map<string, { count: number; crit: number; last: string }>();
+    for (const e of events) {
+      const cur = byType.get(e.event_type) ?? { count: 0, crit: 0, last: e.occurred_at };
+      cur.count++;
+      if (eventTone(e.event_type) === "critical") cur.crit++;
+      if (e.occurred_at > cur.last) cur.last = e.occurred_at;
+      byType.set(e.event_type, cur);
+    }
+    const arr = [...byType.entries()].map(([ty, v]) => ({ type: ty, ...v }));
+    arr.sort((a, b) => (sort === "newest" ? b.last.localeCompare(a.last) : b.count - a.count));
+    return arr;
+  }, [events, sort]);
+
+  // ── Alarm Kaydı: filtreli + sıralı liste ─────────────────────────────────
+  const logRows = useMemo(() => {
+    let rows = events.filter((e) => {
       if (fVehicle && e.plate !== fVehicle) return false;
       if (fType && e.event_type !== fType) return false;
       if (fSev && eventTone(e.event_type) !== fSev) return false;
       return true;
     });
-    return [...rows].sort((a, b) => {
+    rows = [...rows].sort((a, b) => {
+      if (sort === "newest") return b.occurred_at.localeCompare(a.occurred_at);
       const d =
         EVENT_TONE_RANK[eventTone(b.event_type)] - EVENT_TONE_RANK[eventTone(a.event_type)];
       return d !== 0 ? d : b.occurred_at.localeCompare(a.occurred_at);
     });
-  }, [events, fVehicle, fType, fSev]);
-
-  /**
-   * KRİTİK BANT — gruplamadan önce ayrılır. Önem filtresi kritik-dışı bir
-   * değere kısıtlandıysa bant boş kalır (filtre bandı da susturur).
-   */
-  const criticals = useMemo(
-    () => filtered.filter((e) => eventTone(e.event_type) === "critical"),
-    [filtered]
-  );
-  const grouped = useMemo(
-    () => filtered.filter((e) => eventTone(e.event_type) !== "critical"),
-    [filtered]
-  );
-
-  // NOT: `bucketize` ve `typeSummaryOf` bilinçli olarak `groups` memo'sunun
-  // İÇİNDE yaşıyor. Dışarıda tanımlanırlarsa her render'da yeni referans
-  // olurlar; memo'nun bağımlılık listesine girince memo hiç tutmaz, girmezlerse
-  // lint haklı olarak "eksik bağımlılık" der. İkisi de yalnız burada kullanılıyor.
-  const groups = useMemo<Group[]>(() => {
-    /** Kovalama — tek olaylı kova ARA KATMAN ALMAZ ("×1" diye bir şey yok). */
-    const bucketize = (rows: AlarmRow[], by: "type" | "vehicle"): Bucket[] => {
-      const m = new Map<string, AlarmRow[]>();
-      for (const r of rows) {
-        const k = by === "type" ? r.event_type : r.vehicle_id;
-        const cur = m.get(k);
-        if (cur) cur.push(r);
-        else m.set(k, [r]);
-      }
-      return [...m.entries()]
-        .map(([k, rs]) => {
-          const worst = rs.reduce<ChipTone>(
-            (acc, r) =>
-              EVENT_TONE_RANK[eventTone(r.event_type)] > EVENT_TONE_RANK[acc]
-                ? eventTone(r.event_type)
-                : acc,
-            "neutral"
-          );
-          return by === "type"
-            ? { key: k, type: k, tone: eventTone(k), rows: rs }
-            : {
-                key: k,
-                plate: rs[0].plate,
-                driver: driverByVehicleId.get(k) ?? null,
-                tone: worst,
-                rows: rs,
-              };
-        })
-        .sort(
-          (a, b) =>
-            EVENT_TONE_RANK[b.tone] - EVENT_TONE_RANK[a.tone] ||
-            b.rows.length - a.rows.length
-        );
-    };
-
-    /**
-     * Tip bazlı özet cümlesi — "8 rölanti · 3 aşırı hız · 1 fren".
-     *
-     * En fazla SUMMARY_MAX kalem yazılır, kalanı "+N" ile SÖYLENİR (sessizce
-     * düşürülmez). Sebep ölçüm: 390px'te beş kalemlik özet satırı üç noktaya
-     * düşüyordu ve grubun asıl bilgisi — açmadan neyin sorunlu olduğu — tam da
-     * o satırdaydı. Kırpmak yerine kalem sayısı sınırlanır; satır ayrıca SARAR,
-     * hiçbir kelime yarıda kesilmez.
-     */
-    const typeSummaryOf = (rows: AlarmRow[]) => {
-      const m = new Map<string, number>();
-      for (const r of rows) m.set(r.event_type, (m.get(r.event_type) ?? 0) + 1);
-      const parts = [...m.entries()]
-        .sort(
-          (a, b) =>
-            EVENT_TONE_RANK[eventTone(b[0])] - EVENT_TONE_RANK[eventTone(a[0])] ||
-            b[1] - a[1]
-        )
-        .map(([ty, n]) => `${n} ${t(`type.${ty}`).toLocaleLowerCase(locale)}`);
-      const shown = parts.slice(0, SUMMARY_MAX);
-      const rest = parts.length - shown.length;
-      return rest > 0 ? `${shown.join(" · ")} · +${rest}` : shown.join(" · ");
-    };
-
-    const m = new Map<
-      string,
-      {
-        label: string;
-        driver?: string | null;
-        vehicleId?: string;
-        rows: AlarmRow[];
-      }
-    >();
-    for (const e of grouped) {
-      let key: string;
-      let label: string;
-      let driver: string | null | undefined;
-      let vehicleId: string | undefined;
-      if (groupBy === "vehicle") {
-        key = e.vehicle_id;
-        label = e.plate;
-        driver = driverByVehicleId.get(e.vehicle_id) ?? null;
-        vehicleId = e.vehicle_id;
-      } else if (groupBy === "severity") {
-        const tone = eventTone(e.event_type);
-        key = tone === "warning" ? "1-warning" : "2-neutral";
-        label = tone === "warning" ? t("sev_warning") : t("sev_neutral");
-      } else {
-        key = e.occurred_at.slice(0, 10);
-        label = formatDate(e.occurred_at, locale);
-      }
-      const cur = m.get(key);
-      if (cur) cur.rows.push(e);
-      else m.set(key, { label, driver, vehicleId, rows: [e] });
-    }
-
-    const out: Group[] = [...m.entries()].map(([key, v]) => {
-      const worst = v.rows.reduce(
-        (acc, r) =>
-          EVENT_TONE_RANK[eventTone(r.event_type)] > EVENT_TONE_RANK[acc]
-            ? eventTone(r.event_type)
-            : acc,
-        "neutral" as ChipTone
-      );
-      return {
-        key,
-        ...v,
-        buckets: bucketize(v.rows, groupBy === "vehicle" ? "type" : "vehicle"),
-        typeSummary: typeSummaryOf(v.rows),
-        worst,
-      };
-    });
-
-    // ARAÇ EKSENİ SIRASI: en ağır ton → en çok olay → plaka. Yönetici listenin
-    // başında en sorunlu aracı görür; alfabetik sıra burada bilgi taşımaz.
-    if (groupBy === "vehicle") {
-      return out.sort(
-        (a, b) =>
-          EVENT_TONE_RANK[b.worst] - EVENT_TONE_RANK[a.worst] ||
-          b.rows.length - a.rows.length ||
-          a.label.localeCompare(b.label)
-      );
-    }
-    return out.sort((a, b) =>
-      groupBy === "severity" ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key)
-    );
-  }, [grouped, groupBy, driverByVehicleId, t, locale]);
+    return rows;
+  }, [events, fVehicle, fType, fSev, sort]);
 
   const plateOptions = useMemo(
-    () => [...new Set(events.map((e) => e.plate))].sort(),
+    () => [...new Set(events.map((e) => e.plate))].sort().map((p) => ({ value: p, label: p })),
     [events]
   );
   const typeOptions = useMemo(
@@ -345,241 +243,79 @@ export function AlarmsClient({
     [events, t, locale]
   );
 
-  const activeChips = [
-    fVehicle && {
-      k: "v",
-      label: `${t("col_vehicle")}: ${fVehicle}`,
-      clear: () => setFVehicle(""),
-    },
-    fType && {
-      k: "t",
-      label: `${t("filter_type")}: ${t(`type.${fType}`)}`,
-      clear: () => setFType(""),
-    },
-    fSev && {
-      k: "s",
-      label: `${t("filter_severity")}: ${fSev === "critical" ? t("sev_critical") : fSev === "warning" ? t("sev_warning") : t("sev_neutral")}`,
-      clear: () => setFSev(""),
-    },
-  ].filter(Boolean) as { k: string; label: string; clear: () => void }[];
-
-  const toneDot = (tone: ChipTone) =>
-    tone === "critical"
-      ? "bg-status-critical"
-      : tone === "warning"
-        ? "bg-accent-gold"
-        : "bg-muted-foreground";
-
-  // ── Ortak parçalar ────────────────────────────────────────────────────────
-
-  /** Şoför adı — atanmamışsa SEBEBİ yazılır, boş bırakılmaz. */
-  const DriverName = ({ name, className }: { name: string | null; className?: string }) =>
-    name ? (
-      <span className={cn("truncate", className)} title={t("driver_source_hint")}>
-        {name}
-      </span>
-    ) : (
-      <span className={cn("truncate text-text-tertiary", className)}>{t("no_driver")}</span>
-    );
-
-  /** ③ STRIPE AÇILIR PANELİ — künye + mini harita + eylem. */
-  const EventDetail = ({ e }: { e: AlarmRow }) => (
-    <div className="mb-2 grid gap-4 rounded-[12px] bg-surface-panel px-4 py-3 md:grid-cols-[1fr_280px]">
-      <dl>
-        <SpecRow label={t("col_vehicle")} mono>
-          <Link href={`/admin/araclar/${e.vehicle_id}`} className="hover:underline">
-            {e.plate}
-          </Link>
-        </SpecRow>
-        {/* ŞOFÖR künyenin İKİNCİ satırı: olay bir araca değil, o aracı süren
-            kişiye sorulur. Eskiden künyede hiç yoktu. */}
-        <SpecRow label={t("col_driver")} muted={!driverOf(e)}>
-          {driverOf(e) ?? t("no_driver")}
-        </SpecRow>
-        <SpecRow label={t("col_type")}>{t(`type.${e.event_type}`)}</SpecRow>
-        <SpecRow label={t("col_time")} mono>
-          {formatDateTime(e.occurred_at, locale)}
-        </SpecRow>
-        {e.event_type === "idling" && e.duration_ms != null && (
-          <SpecRow label={t("drawer_duration")} mono>
-            {formatIdleShort(e.duration_ms, locale)}
-            {e.ongoing ? ` (${t("ongoing")})` : ""}
-          </SpecRow>
-        )}
-        <SpecRow
-          label={t("drawer_speed")}
-          mono
-          muted={!SPEED_EVENTS.has(e.event_type) || e.speed_kmh === null}
-        >
-          {SPEED_EVENTS.has(e.event_type) && e.speed_kmh !== null
-            ? `${Math.round(e.speed_kmh)} km/h`
-            : "—"}
-        </SpecRow>
-        <SpecRow label={t("drawer_location")} mono muted={e.latitude === null}>
-          {e.latitude !== null && e.longitude !== null
-            ? `${e.latitude.toFixed(5)}, ${e.longitude.toFixed(5)}`
-            : t("no_location")}
-        </SpecRow>
-      </dl>
-
-      <div className="space-y-2">
-        {e.latitude !== null && e.longitude !== null && (
-          <div className="overflow-hidden rounded-[12px]">
-            <EventMiniMap lat={e.latitude} lng={e.longitude} />
-          </div>
-        )}
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
+  const columns: Column<AlarmRow>[] = [
+    {
+      key: "plate",
+      header: t("col_vehicle"),
+      // KİMLİK: plaka + ŞOFÖR. Yönetici "DO-945HL" değil "Ümit" diye düşünür;
+      // ad ayrı kolon değil, plakanın altında — dar ekranda da kaybolmasın.
+      cell: (e) => (
+        <span className="block min-w-0">
           <Link
             href={`/admin/araclar/${e.vehicle_id}`}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium text-accent-sky-text hover:underline"
+            onClick={(ev) => ev.stopPropagation()}
+            className="nums font-medium uppercase tracking-wide hover:underline"
           >
-            <Truck className="size-3.5" aria-hidden />
-            {t("go_vehicle")}
+            {e.plate}
           </Link>
-          <Link
-            href={`/admin/araclar/${e.vehicle_id}/rota`}
-            className="inline-flex items-center gap-1.5 text-[12px] font-medium text-accent-sky-text hover:underline"
-          >
-            <Route className="size-3.5" aria-hidden />
-            {t("go_route")}
-          </Link>
-          {e.latitude !== null && e.longitude !== null && (
-            <a
-              href={`https://www.google.com/maps?q=${e.latitude},${e.longitude}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-[12px] font-medium text-accent-sky-text hover:underline"
-            >
-              <MapPin className="size-3.5" aria-hidden />
-              {t("open_maps")}
-              <ExternalLink className="size-3" aria-hidden />
-            </a>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  /**
-   * Tekil olay satırı. `showWho`: araç ekseninde kimlik başlıkta olduğu için
-   * satır tek satırdır; önem/tarih ekseninde plaka+şoför satıra iner — yoksa
-   * o eksenlerde "kim" sorusu yine cevapsız kalırdı.
-   */
-  const EventRow = ({ e, showWho }: { e: AlarmRow; showWho: boolean }) => {
-    const open = openId === e.id;
-    const badge = idleBadge(e);
-    return (
-      <li>
-        <button
-          type="button"
-          onClick={() => setOpenId(open ? null : e.id)}
-          aria-expanded={open}
-          className="flex w-full items-start gap-3 rounded-[8px] px-2 py-2 text-left transition-colors hover:bg-surface-panel"
-        >
-          <span
-            className={cn(
-              "mt-1.5 size-2 shrink-0 rounded-full",
-              toneDot(eventTone(e.event_type))
-            )}
-            aria-hidden
+          <DriverName
+            name={driverOf(e)}
+            {...driverText}
+            className="mt-0.5 block text-xs text-muted-foreground"
           />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[13px]">
-              {t(`type.${e.event_type}`)}
-              {badge && (
-                <span className="ml-1.5 font-mono text-[12px] tabular-nums text-muted-foreground">
-                  {badge}
-                </span>
-              )}
-            </span>
-            {showWho && (
-              <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-muted-foreground">
-                <span className="font-mono uppercase tabular-nums">{e.plate}</span>
-                <span aria-hidden>·</span>
-                <DriverName name={driverOf(e)} />
-              </span>
-            )}
-          </span>
-          <span className="shrink-0 pt-0.5 font-mono text-[12px] tabular-nums text-text-tertiary">
-            {formatTime(e.occurred_at, locale)}
-          </span>
-          <ChevronDown
-            className={cn(
-              "mt-0.5 size-3.5 shrink-0 text-text-tertiary transition-transform",
-              open && "rotate-180"
-            )}
-            aria-hidden
-          />
-        </button>
-        {open && <EventDetail e={e} />}
-      </li>
-    );
-  };
-
-  /** Bir grubun gövdesi: çok olaylı kovalar katlanır, tekler doğrudan satır. */
-  const GroupBody = ({ g, showWho }: { g: Group; showWho: boolean }) => (
-    <ul className="pl-4">
-      {g.buckets.map((b) => {
-        if (b.rows.length === 1)
-          return <EventRow key={b.rows[0].id} e={b.rows[0]} showWho={showWho} />;
-        const bkey = `${g.key}:${b.key}`;
-        // Kovalar VARSAYILAN KAPALI: "Rölanti ×8" satırının kendisi zaten
-        // bilgidir, altındaki 8 satır değil.
-        const bOpen = toggled.has(bkey);
+        </span>
+      ),
+      nums: true,
+      sortable: true,
+      sortValue: (e) => e.plate,
+    },
+    {
+      key: "type",
+      header: t("col_type"),
+      // Rozetin YANINDA süre (migration 024) — chip'in içine gömülmez.
+      cell: (e) => {
+        const badge = idleBadge(e);
         return (
-          <li key={bkey}>
-            <button
-              type="button"
-              onClick={() => flip(bkey)}
-              aria-expanded={bOpen}
-              className="flex w-full items-center gap-2 rounded-[8px] px-2 py-2 text-left transition-colors hover:bg-surface-panel"
-            >
-              <ChevronRight
-                className={cn(
-                  "size-3.5 shrink-0 text-text-tertiary transition-transform",
-                  bOpen && "rotate-90"
-                )}
-                aria-hidden
-              />
-              <span
-                className={cn("size-2 shrink-0 rounded-full", toneDot(b.tone))}
-                aria-hidden
-              />
-              {b.type ? (
-                <span className="min-w-0 flex-1 text-[13px]">{t(`type.${b.type}`)}</span>
-              ) : (
-                /* ARAÇ KOVASI — plaka ve şoför yan yana; önem/tarih ekseninde
-                   "kim" sorusunun cevabı bu satırdadır. */
-                <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <span className="font-mono text-[13px] uppercase tabular-nums">
-                    {b.plate}
-                  </span>
-                  <DriverName
-                    name={b.driver ?? null}
-                    className="text-[12px] text-muted-foreground"
-                  />
-                </span>
-              )}
-              <span className="shrink-0 font-mono text-[12px] font-medium tabular-nums text-muted-foreground">
-                {t("repeat_n", { n: b.rows.length })}
-              </span>
-            </button>
-            {bOpen && (
-              <ul className="pl-5">
-                {b.rows.map((e) => (
-                  /* Kova zaten aracı adlandırdıysa satır tekrar etmez. */
-                  <EventRow key={e.id} e={e} showWho={showWho && !b.plate} />
-                ))}
-              </ul>
-            )}
-          </li>
+          <span className="flex items-center gap-1.5">
+            <StatusChip tone={eventTone(e.event_type)}>{t(`type.${e.event_type}`)}</StatusChip>
+            {badge && <span className="nums text-xs text-muted-foreground">{badge}</span>}
+          </span>
         );
-      })}
-    </ul>
-  );
+      },
+      sortable: true,
+      sortValue: (e) => EVENT_TONE_RANK[eventTone(e.event_type)],
+    },
+    {
+      key: "time",
+      header: t("col_time"),
+      cell: (e) => formatDateTime(e.occurred_at, locale),
+      nums: true,
+      sortable: true,
+      sortValue: (e) => e.occurred_at,
+    },
+    {
+      key: "speed",
+      header: t("drawer_speed"),
+      cell: (e) =>
+        e.event_type === "idling" ? (
+          <span className="text-muted-foreground">{t("context_idle")}</span>
+        ) : SPEED_EVENTS.has(e.event_type) && e.speed_kmh !== null ? (
+          `${Math.round(e.speed_kmh)} km/h`
+        ) : (
+          "—"
+        ),
+      align: "right",
+      nums: true,
+      hideBelow: "sm",
+    },
+  ];
 
-  const byVehicle = groupBy === "vehicle";
-  const groupDefaultOpen = !byVehicle;
+  const selIndex = selected ? logRows.findIndex((e) => e.id === selected.id) : -1;
+
+  function openType(ty: string) {
+    setFType(ty);
+    setTab("log");
+  }
 
   return (
     <div className="space-y-6">
@@ -591,260 +327,286 @@ export function AlarmsClient({
         <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
 
+      <SubTabs
+        tabs={[
+          { key: "overview", label: t("tab_overview") },
+          { key: "log", label: t("tab_log") },
+        ]}
+        value={tab}
+        onChange={(k) => setTab(k as "overview" | "log")}
+      />
+
+      {/* Eşik sınırı uyarısı — İKİ sekmede de görünür: sayılar hem Genel Bakış
+          tile'larında hem Alarm Kaydı'nda aynı karışık veriden geliyor. */}
       <EpochWarning epochISO={epochISO} show={showEpochWarning} />
 
-      {/* ① LINEAR ÇUBUĞU — solda Filter, sağda Display.
-          SIRA DEĞİŞTİ (27.07.2026, Volkan onayı): Zendesk şeridi eskiden burada,
-          filtrenin ÜSTÜNDEYDİ. 28 araçla 1.176 px yer kaplıyordu (1440×900'de
-          görünümün %131'i) ve asıl içerik — gruplu liste — ilk ekranda SIFIR
-          piksel görünüyordu; ona ulaşmak 1,58 ekran kaydırma istiyordu.
-          Genel bakış, işin kendisinin önüne geçemez: şerit artık listenin
-          ALTINDA ve varsayılan katlı (bkz. AlarmStrip). */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground">
-          <ListFilter className="size-3.5" aria-hidden />
-          {t("filter_label")}
-        </span>
+      {tab === "overview" ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <PillSelect
+              label={t("filter_shown")}
+              value={range}
+              onChange={(v) =>
+                startNav(() =>
+                  router.replace(`/admin/alarmlar?range=${v}`, { scroll: false })
+                )
+              }
+              // "Yeni eşiklerden beri" EN ÜSTTE ve varsayılan (sunucuda seçilir).
+              // Sınır kaydı yoksa seçenek hiç listelenmez — tıklanınca 7 güne
+              // düşen ölü bir seçenek göstermeyiz.
+              options={[
+                ...(epochISO ? [{ value: "epoch", label: t("range_epoch") }] : []),
+                { value: "today", label: t("range_today") },
+                { value: "7d", label: t("range_7d") },
+                { value: "30d", label: t("range_30d") },
+              ]}
+            />
+            <PillSelect
+              label={t("filter_sort")}
+              value={sort}
+              onChange={(v) => setSort(v as "most" | "newest")}
+              options={[
+                { value: "most", label: t("sort_most") },
+                { value: "newest", label: t("sort_newest") },
+              ]}
+            />
+          </div>
 
-        <Select
-          value={range}
-          onValueChange={(v) =>
-            v &&
-            startNav(() => router.replace(`/admin/alarmlar?range=${v}`, { scroll: false }))
-          }
-        >
-          <SelectTrigger
-            className="h-8 w-auto gap-1.5 rounded-full px-3 text-[13px]"
-            aria-label={t("filter_shown")}
-          >
-            <span>
-              {range === "epoch"
-                ? t("range_epoch")
-                : range === "today"
-                  ? t("range_today")
-                  : range === "7d"
-                    ? t("range_7d")
-                    : t("range_30d")}
-            </span>
-          </SelectTrigger>
-          <SelectContent>
-            {epochISO && <SelectItem value="epoch">{t("range_epoch")}</SelectItem>}
-            <SelectItem value="today">{t("range_today")}</SelectItem>
-            <SelectItem value="7d">{t("range_7d")}</SelectItem>
-            <SelectItem value="30d">{t("range_30d")}</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={fSev}
-          onValueChange={(v) => setFSev(v === "__all" ? "" : String(v ?? ""))}
-        >
-          <SelectTrigger
-            className="h-8 w-auto gap-1.5 rounded-full px-3 text-[13px]"
-            aria-label={t("filter_severity")}
-          >
-            <span>{t("filter_severity")}</span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all">{t("all")}</SelectItem>
-            <SelectItem value="critical">{t("sev_critical")}</SelectItem>
-            <SelectItem value="warning">{t("sev_warning")}</SelectItem>
-            <SelectItem value="neutral">{t("sev_neutral")}</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={fType}
-          onValueChange={(v) => setFType(v === "__all" ? "" : String(v ?? ""))}
-        >
-          <SelectTrigger
-            className="h-8 w-auto gap-1.5 rounded-full px-3 text-[13px]"
-            aria-label={t("filter_type")}
-          >
-            <span>{t("filter_type")}</span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all">{t("all")}</SelectItem>
-            {typeOptions.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={fVehicle}
-          onValueChange={(v) => setFVehicle(v === "__all" ? "" : String(v ?? ""))}
-        >
-          <SelectTrigger
-            className="h-8 w-auto gap-1.5 rounded-full px-3 text-[13px]"
-            aria-label={t("col_vehicle")}
-          >
-            <span>{t("col_vehicle")}</span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all">{t("all")}</SelectItem>
-            {plateOptions.map((p) => (
-              <SelectItem key={p} value={p}>
-                {p}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <div className="ml-auto flex items-center gap-2">
-          <Select value={groupBy} onValueChange={(v) => v && setGroupBy(v as GroupBy)}>
-            <SelectTrigger
-              className="h-8 w-auto gap-1.5 rounded-full px-3 text-[13px]"
-              aria-label={t("display_label")}
-            >
-              <SlidersHorizontal className="size-3.5" aria-hidden />
-              <span>{t("display_label")}</span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="vehicle">{t("group_vehicle")}</SelectItem>
-              <SelectItem value="severity">{t("group_severity")}</SelectItem>
-              <SelectItem value="date">{t("group_date")}</SelectItem>
-            </SelectContent>
-          </Select>
-          <span className="font-mono text-[12px] tabular-nums text-muted-foreground">
-            {filtered.length !== events.length
-              ? `${filtered.length} / ${events.length}`
-              : filtered.length}
-          </span>
-        </div>
-      </div>
-
-      {/* Aktif filtre çipleri — görünmeyen filtre en pahalı hatadır. */}
-      {activeChips.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          {activeChips.map((c) => (
-            <span
-              key={c.k}
-              className="surface-card inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px]"
-            >
-              {c.label}
-              <button
-                type="button"
-                onClick={c.clear}
-                aria-label={c.label}
-                className="rounded-full p-0.5 text-text-tertiary transition-colors hover:text-foreground"
-              >
-                <X className="size-3" />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {filtered.length === 0 ? (
-        <EmptyState
-          kind={events.length === 0 ? "none" : "filtered"}
-          title={events.length === 0 ? t("empty_none") : t("empty_filtered")}
-          hint={events.length === 0 ? t("empty_hint_none") : t("empty_hint_filtered")}
-        />
-      ) : (
-        <div className="space-y-4">
-          {/* KRİTİK BANT — gruplamanın dışında, katlanmadan, en üstte. */}
-          {criticals.length > 0 && (
-            <section className="surface-card rounded-[16px] px-2 py-3 sm:px-4">
-              <header className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-2">
-                <h2 className="text-[11px] font-medium uppercase tracking-[0.1em] text-status-critical-text">
-                  {t("critical_band")}
-                </h2>
-                <span className="font-mono text-[12px] tabular-nums text-muted-foreground">
-                  {criticals.length}
-                </span>
-                <p className="w-full text-[12px] text-text-tertiary">
-                  {t("critical_band_hint")}
-                </p>
-              </header>
-              <ul>
-                {criticals.map((e) => (
-                  <EventRow key={e.id} e={e} showWho />
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {/* ② LINEAR LİSTESİ — kolon başlığı yok, ayraç yok, zebra yok. */}
-          {groups.length > 0 && (
-            <div className="glass-panel rounded-[16px] px-2 py-3 sm:px-4">
-              {groups.map((g) => {
-                const open = toggled.has(g.key) ? !groupDefaultOpen : groupDefaultOpen;
+          {typeTiles.length === 0 ? (
+            <EmptyState kind="none" title={t("empty_none")} hint={t("empty_hint_none")} />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {typeTiles.map((tile) => {
+                const tone = eventTone(tile.type);
                 return (
-                  <section key={g.key} className="mb-1 last:mb-0">
-                    <button
-                      type="button"
-                      onClick={() => flip(g.key)}
-                      aria-expanded={open}
-                      className="flex w-full items-start gap-2 rounded-[8px] px-2 py-2 text-left transition-colors hover:bg-surface-panel"
-                    >
-                      <ChevronRight
-                        className={cn(
-                          "mt-1 size-3.5 shrink-0 text-text-tertiary transition-transform",
-                          open && "rotate-90"
-                        )}
-                        aria-hidden
-                      />
-                      {byVehicle && (
-                        <span
-                          className={cn(
-                            "mt-1.5 size-2 shrink-0 rounded-full",
-                            toneDot(g.worst)
-                          )}
-                          aria-hidden
-                        />
-                      )}
-                      <span className="min-w-0 flex-1">
-                        {/* KİMLİK SATIRI: plaka + şoför. Araç ekseninde ikisi
-                            de başlıktadır; yönetici grubu açmadan kimin sorunlu
-                            olduğunu okur. */}
-                        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <button
+                    key={tile.type}
+                    type="button"
+                    onClick={() => openType(tile.type)}
+                    // CAM DEĞİL: tile ızgarası bölüm paneli değil, içeriktir
+                    // (globals §3.2/§3.3 — ekranda azami 3 bulanık katman).
+                    className="surface-card group flex min-h-[120px] flex-col rounded-[16px] p-5 text-left transition-colors hover:bg-surface-hover"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
                           <span
-                            className={cn(
-                              "text-[13px] font-medium",
-                              byVehicle && "font-mono uppercase tabular-nums"
-                            )}
-                          >
-                            {g.label}
+                            className="size-2.5 shrink-0 rounded-full"
+                            style={{ background: EVENT_STRIPE[tone] }}
+                          />
+                          <span className="truncate text-base font-semibold">
+                            {t(`type.${tile.type}`)}
                           </span>
-                          {byVehicle && (
-                            <DriverName name={g.driver ?? null} className="text-[13px]" />
-                          )}
-                          <span className="font-mono text-[12px] tabular-nums text-muted-foreground">
-                            {t("events_n_short", { n: g.rows.length })}
-                          </span>
+                        </div>
+                        <span className="mt-0.5 block text-[13px] text-muted-foreground">
+                          {toneCat(tile.type)}
                         </span>
-                        {/* ÖZET: tip bazında sayım. Grup kapalıyken bile "8
-                            rölanti · 3 aşırı hız" okunur — asıl kazanç bu. */}
-                        <span className="mt-0.5 block text-[12px] leading-snug text-text-tertiary">
-                          {g.typeSummary}
+                      </div>
+                      {tile.crit > 0 && (
+                        <span className="nums grid size-[22px] shrink-0 place-items-center rounded-full bg-status-critical-fill text-[11px] font-medium text-white">
+                          {tile.crit}
                         </span>
-                      </span>
-                    </button>
-
-                    {open && <GroupBody g={g} showWho={!byVehicle} />}
-                  </section>
+                      )}
+                    </div>
+                    <div className="mt-auto flex items-end justify-between gap-3 pt-4">
+                      <div>
+                        <div className="text-xs text-muted-foreground">{t("tile_last")}</div>
+                        <div className="nums mt-0.5 text-[13px]">
+                          {formatDateTime(tile.last, locale)}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-muted-foreground">{t("tile_alerts")}</div>
+                        <div className="nums mt-0.5 text-sm font-semibold">
+                          {tile.count.toLocaleString(locale)}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
                 );
               })}
             </div>
           )}
-        </div>
+        </>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <PillSelect
+              label={t("col_vehicle")}
+              value={fVehicle}
+              onChange={setFVehicle}
+              options={[{ value: "", label: t("all") }, ...plateOptions]}
+            />
+            <PillSelect
+              label={t("filter_type")}
+              value={fType}
+              onChange={setFType}
+              options={[{ value: "", label: t("all") }, ...typeOptions]}
+            />
+            <PillSelect
+              label={t("filter_severity")}
+              value={fSev}
+              onChange={setFSev}
+              options={[
+                { value: "", label: t("all") },
+                { value: "critical", label: t("sev_critical") },
+                { value: "warning", label: t("sev_warning") },
+                { value: "neutral", label: t("sev_neutral") },
+              ]}
+            />
+            <div className="ml-auto flex items-center gap-2">
+              <DensityToggle />
+              <span className="nums text-xs text-muted-foreground">
+                {logRows.length !== events.length
+                  ? `${logRows.length} / ${events.length}`
+                  : logRows.length}{" "}
+                {t("count")}
+              </span>
+            </div>
+          </div>
+
+          {logRows.length === 0 ? (
+            <EmptyState
+              kind={events.length === 0 ? "none" : "filtered"}
+              title={events.length === 0 ? t("empty_none") : t("empty_filtered")}
+              hint={events.length === 0 ? t("empty_hint_none") : t("empty_hint_filtered")}
+            />
+          ) : (
+            // KABUK YOK: DataTable'ın KENDİSİ zaten `glass-panel overflow-hidden
+            // rounded-[14px]` bölüm paneli (DataTable.tsx:173) + iç
+            // `overflow-auto`. Etrafına ikinci bir cam sarmak üst üste iki
+            // bulanık katman ve çift halka/köşe demekti (globals §3.2/§3.3) —
+            // ayrıca dış padding tablonun kendi yatay kaydırmasını bozuyordu.
+            <DataTable
+              rows={logRows}
+              columns={columns}
+              rowKey={(e) => e.id}
+              onRowClick={(e) => setSelected(e)}
+              stripe={(e) => EVENT_STRIPE[eventTone(e.event_type)]}
+              grouping={{
+                // idling ARTIK epizod (bir rölanti = tek satır + süre) → storm
+                // grouping'DEN HARİÇ: her idling satırına benzersiz anahtar ver,
+                // asla "×N" altında gruplanmasın. Diğer tipler burst'lerde aynen
+                // gruplanır (ani fren/aşırı hız vb. bozulmaz).
+                getKey: (e) =>
+                  e.event_type === "idling" ? `idle:${e.id}` : `${e.vehicle_id}:${e.event_type}`,
+                getTime: (e) => new Date(e.occurred_at).getTime(),
+                windowMs: STORM_WINDOW_MS,
+                renderLabel: (rows) => (
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+                    <span className="nums font-medium uppercase tracking-wide">
+                      {rows[0].plate}
+                    </span>
+                    <DriverName
+                      name={driverOf(rows[0])}
+                      {...driverText}
+                      className="text-xs text-muted-foreground"
+                    />
+                    <StatusChip tone={eventTone(rows[0].event_type)}>
+                      {t(`type.${rows[0].event_type}`)} ×{rows.length}
+                    </StatusChip>
+                  </span>
+                ),
+              }}
+              totalLabel={t("count")}
+            />
+          )}
+        </>
       )}
 
-      {/* ③ ZENDESK ŞERİDİ — aralık filtresinden BAĞIMSIZ, hep son 90 gün.
-          Listenin ALTINDA: bu bir genel bakış katmanı, giriş kapısı değil.
-          Boş liste durumunda da durur — "hiç olay yok" derken 90 günlük
-          geçmişe bakabilmek tam da o an işe yarar. */}
-      <AlarmStrip
-        cells={density}
-        days={stripDays}
-        vehicles={vehicles}
-        onPick={setFVehicle}
-        activePlate={fVehicle}
-      />
+      <DetailDrawer
+        open={selected !== null}
+        onOpenChange={(v) => !v && setSelected(null)}
+        title={selected?.plate ?? ""}
+        subtitle={selected ? formatDateTime(selected.occurred_at, locale) : undefined}
+        onPrev={selIndex > 0 ? () => setSelected(logRows[selIndex - 1]) : null}
+        onNext={
+          selIndex >= 0 && selIndex < logRows.length - 1
+            ? () => setSelected(logRows[selIndex + 1])
+            : null
+        }
+      >
+        {selected && (
+          <div className="space-y-4 text-sm">
+            <div>
+              <StatusChip tone={eventTone(selected.event_type)}>
+                {t(`type.${selected.event_type}`)}
+              </StatusChip>
+            </div>
+            <dl className="grid grid-cols-2 gap-3">
+              {/* ŞOFÖR — çekmecenin başlığı plaka, ama karar veren kişi adı arar. */}
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {t("col_driver")}
+                </dt>
+                <dd className="mt-0.5">
+                  <DriverName name={driverOf(selected)} {...driverText} />
+                </dd>
+              </div>
+              {selected.event_type === "idling" && selected.duration_ms != null && (
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {t("drawer_duration")}
+                  </dt>
+                  <dd className="nums mt-0.5">
+                    {formatIdleShort(selected.duration_ms, locale)}
+                    {selected.ongoing ? ` (${t("ongoing")})` : ""}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {t("drawer_speed")}
+                </dt>
+                <dd className="nums mt-0.5">
+                  {SPEED_EVENTS.has(selected.event_type) && selected.speed_kmh !== null
+                    ? `${Math.round(selected.speed_kmh)} km/h`
+                    : "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {t("drawer_location")}
+                </dt>
+                <dd className="nums mt-0.5">
+                  {selected.latitude !== null && selected.longitude !== null
+                    ? `${selected.latitude.toFixed(4)}, ${selected.longitude.toFixed(4)}`
+                    : t("no_location")}
+                </dd>
+              </div>
+            </dl>
+            {selected.latitude !== null && selected.longitude !== null && (
+              <div>
+                <p className="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">
+                  {t("drawer_address")}
+                </p>
+                <EventMiniMap lat={selected.latitude} lng={selected.longitude} />
+              </div>
+            )}
+            <div className="flex flex-col gap-2 pt-1">
+              {selected.latitude !== null && selected.longitude !== null && (
+                <a
+                  href={`https://www.google.com/maps?q=${selected.latitude},${selected.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm text-accent-sky-text hover:underline"
+                >
+                  <MapPin className="size-4" />
+                  {t("open_maps")}
+                  <ExternalLink className="size-3" />
+                </a>
+              )}
+              <Link
+                href={`/admin/araclar/${selected.vehicle_id}`}
+                className="inline-flex items-center gap-2 text-sm text-accent-sky-text hover:underline"
+              >
+                <Truck className="size-4" />
+                {t("go_vehicle")}
+              </Link>
+            </div>
+          </div>
+        )}
+      </DetailDrawer>
     </div>
   );
 }

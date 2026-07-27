@@ -3,7 +3,6 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import {
   listEventsInRange,
   listIdleEpisodesInRange,
-  listEventDensity,
   IDLE_TRIGGER_S,
 } from "@/lib/telemetry";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
@@ -27,9 +26,6 @@ export const dynamic = "force-dynamic";
  * bu seçenek kendiliğinden yeni sınıra kayar.
  */
 export type AlarmRange = "epoch" | "today" | "7d" | "30d";
-
-/** Genel bakış şeridi penceresi (Zendesk 90 gün). */
-export const STRIP_DAYS = 90;
 
 const ALARM_RANGES: AlarmRange[] = ["epoch", "today", "7d", "30d"];
 
@@ -73,14 +69,12 @@ export default async function AlarmsPage({
   // Nokta-olaylar (vehicle_events — artık idling YOK) + rölanti EPİZODLARI
   // (idle_episodes, migration 024). İkisi tek listeye birleşir; idling satırları
   // epizoddan gelir (süre taşır), diğerleri olduğu gibi.
-  // ŞERİT PENCERESİ aralıktan BAĞIMSIZ: genel bakış her zaman son 90 günü
-  // gösterir (Zendesk deseni). Aralık filtresi yalnız aşağıdaki listeyi keser —
-  // yoksa "bugün" seçildiğinde şerit tek sütuna düşer ve anlamını yitirirdi.
-  const stripStart = addCalendarDaysVienna(startOfTodayVienna(), -(STRIP_DAYS - 1));
-  const [events, episodes, density, vehicles] = await Promise.all([
+  // 90 günlük yoğunluk şeridi (Zendesk deseni) 27.07.2026'da İPTAL edildi —
+  // listEventDensity çağrısı ve stripStart penceresi buradan kalktı.
+  // Araç künyesi KALIYOR: alarm satırlarında şoför adı ondan geliyor.
+  const [events, episodes, vehicles] = await Promise.all([
     listEventsInRange(start.toISOString(), end.toISOString()),
     listIdleEpisodesInRange(start.toISOString(), end.toISOString()),
-    listEventDensity(stripStart.toISOString(), end.toISOString()),
     listVehiclesWithStatus(),
   ]);
 
@@ -122,8 +116,6 @@ export default async function AlarmsPage({
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6">
         <AlarmsClient
           events={rows}
-          density={density}
-          stripDays={STRIP_DAYS}
           /* ŞOFÖR ADI (27.07.2026): `driver_name` açık vardiyadaki şoför, yoksa
              araca ATANMIŞ şoför — raporların kullandığı kaynağın AYNISI
              (lib/reports.ts assigned_worker_id). Alarmlar ile raporlar aynı
@@ -134,7 +126,6 @@ export default async function AlarmsPage({
           vehicles={vehicles.map((v) => ({
             id: v.id,
             plate: v.plate,
-            fleet: v.fleet,
             driverName: v.driver_name,
           }))}
           range={range}

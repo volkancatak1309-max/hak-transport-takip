@@ -44,6 +44,7 @@ export function SpeedClient({ report }: { report: SpeedReport }) {
     {
       key: "violations",
       header: t("col_violations"),
+      help: "rep_speed_violations",
       align: "right",
       nums: true,
       cell: (r) =>
@@ -58,6 +59,7 @@ export function SpeedClient({ report }: { report: SpeedReport }) {
     {
       key: "max",
       header: t("col_max_speed"),
+      help: "rep_speed_max",
       align: "right",
       nums: true,
       cell: (r) =>
@@ -74,6 +76,7 @@ export function SpeedClient({ report }: { report: SpeedReport }) {
     {
       key: "per100",
       header: t("col_per_100km"),
+      help: "rep_speed_per100",
       align: "right",
       nums: true,
       hideBelow: "md",

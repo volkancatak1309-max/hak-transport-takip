@@ -247,6 +247,7 @@ export function AlarmsClient({
     {
       key: "plate",
       header: t("col_vehicle"),
+      help: "alarms_col_vehicle",
       // KİMLİK: plaka + ŞOFÖR. Yönetici "DO-945HL" değil "Ümit" diye düşünür;
       // ad ayrı kolon değil, plakanın altında — dar ekranda da kaybolmasın.
       cell: (e) => (
@@ -272,6 +273,7 @@ export function AlarmsClient({
     {
       key: "type",
       header: t("col_type"),
+      help: "alarms_col_type",
       // Rozetin YANINDA süre (migration 024) — chip'in içine gömülmez.
       cell: (e) => {
         const badge = idleBadge(e);
@@ -288,6 +290,7 @@ export function AlarmsClient({
     {
       key: "time",
       header: t("col_time"),
+      help: "alarms_col_time",
       cell: (e) => formatDateTime(e.occurred_at, locale),
       nums: true,
       sortable: true,
@@ -296,6 +299,7 @@ export function AlarmsClient({
     {
       key: "speed",
       header: t("drawer_speed"),
+      help: "alarms_col_speed",
       cell: (e) =>
         e.event_type === "idling" ? (
           <span className="text-muted-foreground">{t("context_idle")}</span>
@@ -327,14 +331,22 @@ export function AlarmsClient({
         <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
 
-      <SubTabs
-        tabs={[
-          { key: "overview", label: t("tab_overview") },
-          { key: "log", label: t("tab_log") },
-        ]}
-        value={tab}
-        onChange={(k) => setTab(k as "overview" | "log")}
-      />
+      {/* Sekmelerin yanında (i): "Genel Bakış" ile "Alarm Kaydı" farkı ilk
+          bakışta anlaşılmıyor — biri sayar, diğeri tek tek listeler. */}
+      <div className="flex items-end gap-1">
+        <SubTabs
+          className="min-w-0 flex-1"
+          tabs={[
+            { key: "overview", label: t("tab_overview") },
+            { key: "log", label: t("tab_log") },
+          ]}
+          value={tab}
+          onChange={(k) => setTab(k as "overview" | "log")}
+        />
+        <span className="pb-2">
+          <HelpTip tkey={tab === "overview" ? "alarms_tab_overview" : "alarms_tab_log"} />
+        </span>
+      </div>
 
       {/* Eşik sınırı uyarısı — İKİ sekmede de görünür: sayılar hem Genel Bakış
           tile'larında hem Alarm Kaydı'nda aynı karışık veriden geliyor. */}

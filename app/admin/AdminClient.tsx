@@ -531,6 +531,7 @@ export function AdminClient({
           alındı: yönetici bunları arşiv tablosunu açmadan da kullanır. */}
       <PageHeader
         title={t("title")}
+        help="page_dashboard"
         action={
           readOnly ? null : (
           <div className="flex flex-wrap items-center gap-1.5">

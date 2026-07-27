@@ -267,7 +267,7 @@ export function AnalizClient({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("title")} description={t("subtitle")} />
+      <PageHeader title={t("title")} description={t("subtitle")} help="page_analiz" />
 
       {/* Ortak filtre çubuğu — tüm bölümleri yönetir, URL'e yazar (?aralik=) */}
       <div className="flex flex-wrap items-center gap-3 rounded-[12px] border border-border/60 px-3 py-2.5">
@@ -324,12 +324,14 @@ export function AnalizClient({
           label={t("kpi_events")}
           value={formatNumber(totalEvents, locale)}
           scope={t(`range_${rangeKey}`)}
+          help="anl_kpi_events"
         />
         <StatCard
           label={t("stat_idle_hours")}
           value={`${formatNumber(idleWaste.totalMs / 3_600_000, locale, 1)} ${t("unit_hour")}`}
           scope={t(`range_${rangeKey}`)}
           delta={idleDelta}
+          help="anl_kpi_idle_hours"
         />
         <StatCard
           label={t("stat_idle_euro")}
@@ -337,11 +339,13 @@ export function AnalizClient({
           scope={t(`range_${rangeKey}`)}
           tone="warning"
           delta={idleDelta}
+          help="anl_kpi_idle_euro"
         />
         <StatCard
           label={t("kpi_drivers")}
           value={formatNumber(driverCount, locale)}
           scope={t(`range_${rangeKey}`)}
+          help="anl_kpi_drivers"
         />
       </div>
 

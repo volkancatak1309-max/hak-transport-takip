@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, ChevronUp, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { HelpTip } from "@/components/help/HelpTip";
 import { cn } from "@/lib/utils";
 import { useDensity } from "./useDensity";
 import { EmptyState } from "./EmptyState";
@@ -26,6 +27,12 @@ export type Column<T> = {
   sortValue?: (row: T) => number | string;
   /** Mobil kolon önceliklendirme: bu kırılımın ALTINDA gizlenir. */
   hideBelow?: "sm" | "md" | "lg";
+  /**
+   * "help" i18n uzayındaki anahtar. Verilirse kolon başlığının yanında (i)
+   * çıkar (27.07.2026 — info balonları seferi). Kolon adı tek başına yetmiyor:
+   * "Okuma", "Mesafe", "Bazis" gibi başlıkları ilk kez gören anlamıyor.
+   */
+  help?: string;
   className?: string;
 };
 
@@ -190,23 +197,34 @@ export function DataTable<T>({
                       col.hideBelow && HIDE[col.hideBelow]
                     )}
                   >
-                    {col.sortable ? (
-                      <button
-                        type="button"
-                        onClick={() => toggleSort(col)}
-                        className="inline-flex items-center gap-1 uppercase tracking-[0.04em] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-                      >
-                        {col.header}
-                        {isSorted &&
-                          (activeSort!.dir === "asc" ? (
-                            <ChevronUp aria-hidden className="size-3" />
-                          ) : (
-                            <ChevronDown aria-hidden className="size-3" />
-                          ))}
-                      </button>
-                    ) : (
-                      col.header
-                    )}
+                    {/* (i) sıralama BUTONUNUN DIŞINDA durur: içine konsaydı
+                        balona tıklamak kolonu sıralardı (iç içe buton da
+                        geçersiz HTML'dir). */}
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-0.5",
+                        col.align === "right" && "flex-row-reverse"
+                      )}
+                    >
+                      {col.sortable ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleSort(col)}
+                          className="inline-flex items-center gap-1 uppercase tracking-[0.04em] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                        >
+                          {col.header}
+                          {isSorted &&
+                            (activeSort!.dir === "asc" ? (
+                              <ChevronUp aria-hidden className="size-3" />
+                            ) : (
+                              <ChevronDown aria-hidden className="size-3" />
+                            ))}
+                        </button>
+                      ) : (
+                        col.header
+                      )}
+                      {col.help && <HelpTip tkey={col.help} />}
+                    </span>
                   </th>
                 );
               })}

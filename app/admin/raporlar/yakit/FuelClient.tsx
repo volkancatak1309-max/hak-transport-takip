@@ -182,6 +182,7 @@ export function FuelClient({
     {
       key: "tank",
       header: t("col_tank"),
+      help: "rep_fuel_tank",
       align: "right",
       nums: true,
       hideBelow: "md",
@@ -197,6 +198,7 @@ export function FuelClient({
     {
       key: "avg",
       header: t("col_avg_fuel"),
+      help: "rep_fuel_avg",
       align: "right",
       nums: true,
       hideBelow: "sm",
@@ -207,6 +209,7 @@ export function FuelClient({
     {
       key: "consumed",
       header: t("col_consumed"),
+      help: "rep_fuel_consumed",
       align: "right",
       nums: true,
       // Güvenilmez sensörde SAYI GÖSTERİLMEZ. Sıfır serisinin bitişi "dolum"
@@ -231,6 +234,7 @@ export function FuelClient({
     {
       key: "km",
       header: t("col_km"),
+      help: "rep_fuel_km",
       align: "right",
       nums: true,
       hideBelow: "md",
@@ -242,6 +246,7 @@ export function FuelClient({
     {
       key: "samples",
       header: t("col_samples"),
+      help: "rep_fuel_samples",
       align: "right",
       nums: true,
       hideBelow: "lg",
@@ -263,6 +268,7 @@ export function FuelClient({
           {
             key: "l100",
             header: t("col_l_100km"),
+      help: "rep_fuel_l100",
             align: "right" as const,
             nums: true,
             cell: (r: FuelRow) =>
@@ -284,6 +290,7 @@ export function FuelClient({
     {
       key: "refills",
       header: t("col_refills"),
+      help: "rep_fuel_refills",
       align: "right",
       nums: true,
       hideBelow: "md",
@@ -306,6 +313,7 @@ export function FuelClient({
     {
       key: "leak",
       header: t("col_leak"),
+      help: "rep_fuel_leak",
       align: "right",
       // Kaçak sinyali de gizlenir: %0'a düşüp geri dönen ölü bir sensör, "araç
       // hareketsizken yakıt düştü" desenini birebir taklit eder. Arızalı

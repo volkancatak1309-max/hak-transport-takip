@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { HelpTip } from "@/components/help/HelpTip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -6,8 +9,13 @@ import { cn } from "@/lib/utils";
  * inline Card'lar, WorkerDetail) yerini alır; FAZ 4'te sayfalar buna taşınır.
  *
  * Kurallar: kapsam etiketi ZORUNLU ("Bugün" / "Bu Ay" — '9 Saati Aşan' ikiliği
- * bir daha yaşanmasın); ⓘ ikonu yasak; tıklanabilirse filtrelenmiş listeye URL
- * ile gider; delta daima nötr renkte.
+ * bir daha yaşanmasın); tıklanabilirse filtrelenmiş listeye URL ile gider;
+ * delta daima nötr renkte.
+ *
+ * ⚠️ "ⓘ ikonu YASAK" kuralı KALDIRILDI (27.07.2026, Volkan): kartın etiketi
+ * neyin sayıldığını anlatmaya yetmiyordu ("Yüklenen" ile "Teslim" farkı, hangi
+ * aralık, hangi kişi kümesi). Yasak, ekranı okunur yapmak yerine öğrenilmesi
+ * imkânsız hâle getiriyordu. Artık `help` verilen kartta (i) çıkar.
  */
 export type StatTone = "neutral" | "critical" | "warning" | "info";
 
@@ -24,6 +32,7 @@ export function StatCard({
   scope,
   tone = "neutral",
   delta,
+  help,
   href,
   className,
 }: {
@@ -37,6 +46,8 @@ export function StatCard({
   tone?: StatTone;
   /** "▲ 4" / "▼ 12" — daima nötr renkte (trend rengi yanıltır). */
   delta?: string;
+  /** "help" i18n uzayındaki anahtar; verilirse etiketin yanında (i) çıkar. */
+  help?: string;
   /** Verilirse kart tıklanabilir → filtrelenmiş liste URL'i. */
   href?: string;
   className?: string;
@@ -44,8 +55,15 @@ export function StatCard({
   const body = (
     <>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[12px] sm:text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+        <span className="flex items-center gap-0.5 text-[12px] sm:text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
           {label}
+          {/* Tıklanabilir kartta gövde pointer-events-none; (i) geri açılır ki
+              balon çalışsın ama karta tıklamak yine linke gitsin. */}
+          {help && (
+            <span className="pointer-events-auto">
+              <HelpTip tkey={help} />
+            </span>
+          )}
         </span>
         {/* Kapsam etiketi tam opaklıkta (26.07.2026). /80 ile zaten soluk olan
             ikincil metin 11px'te AA sınırının altına düşüyordu — bu etiket
@@ -72,15 +90,25 @@ export function StatCard({
 
   const surface = cn(
     "surface-card card-kpi block rounded-[14px] p-5",
-    href && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    href && "relative cursor-pointer",
     className
   );
 
+  // TIKLANABİLİR KART + (i) BİRLİKTE (27.07.2026): eskiden kartın TAMAMI <Link>
+  // idi; içine (i) butonu koymak geçersiz HTML (a içinde button) olurdu ve
+  // balona dokunmak sayfayı değiştirirdi. Çözüm "gerilmiş bağlantı": link
+  // mutlak konumla kartı kaplar, gövde pointer-events-none, yalnız (i) tıklama
+  // alır. Kartın tıklanabilirliği ve odak halkası aynen korunur.
   if (href) {
     return (
-      <Link href={href} className={surface}>
-        {body}
-      </Link>
+      <div className={surface}>
+        <Link
+          href={href}
+          aria-label={label}
+          className="absolute inset-0 rounded-[14px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <div className="pointer-events-none relative">{body}</div>
+      </div>
     );
   }
   return <div className={surface}>{body}</div>;

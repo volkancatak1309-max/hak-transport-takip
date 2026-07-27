@@ -42,6 +42,7 @@ import { SetPinDialog } from "@/components/admin/SetPinDialog";
 import { TerminateWorkerDialog } from "@/components/admin/TerminateWorkerDialog";
 import { StartShiftForWorkerDialog } from "@/components/admin/StartShiftForWorkerDialog";
 import { cn } from "@/lib/utils";
+import { HelpTip } from "@/components/help/HelpTip";
 import type { WorkerWithStats } from "./page";
 
 type Props = { workers: WorkerWithStats[] };
@@ -130,7 +131,10 @@ export function WorkersClient({ workers }: Props) {
   return (
     <>
       <div>
-        <h1 className="text-[28px] font-semibold leading-tight">{t("title")}</h1>
+        <h1 className="flex items-center gap-1 text-[28px] font-semibold leading-tight">
+          {t("title")}
+          <HelpTip tkey="page_workers" />
+        </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
 

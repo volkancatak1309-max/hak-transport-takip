@@ -169,6 +169,7 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
       <PageHeader
         title={t("title")}
         description={t("intro")}
+        help="page_zones"
         action={
           <Button className="btn-primary h-9 rounded-full px-4" onClick={openNew}>
             <Plus className="size-4" /> {t("add")}

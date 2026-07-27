@@ -92,6 +92,7 @@ export function PerformanceClient({
           {
             key: "score",
             header: t("col_score"),
+      help: "rep_perf_score",
             align: "right" as const,
             nums: true,
             cell: scoreCell,
@@ -103,6 +104,7 @@ export function PerformanceClient({
     {
       key: "shifts",
       header: t("col_shifts"),
+      help: "rep_perf_shifts",
       align: "right",
       nums: true,
       cell: (r) => r.shifts,
@@ -112,6 +114,7 @@ export function PerformanceClient({
     {
       key: "worked",
       header: t("col_worked"),
+      help: "rep_perf_worked",
       align: "right",
       nums: true,
       hideBelow: "sm",
@@ -122,6 +125,7 @@ export function PerformanceClient({
     {
       key: "km",
       header: t("col_km"),
+      help: "rep_perf_km",
       align: "right",
       nums: true,
       hideBelow: "md",
@@ -133,6 +137,7 @@ export function PerformanceClient({
     {
       key: "delivered",
       header: t("col_delivered"),
+      help: "rep_perf_delivered",
       align: "right",
       nums: true,
       hideBelow: "md",
@@ -143,6 +148,7 @@ export function PerformanceClient({
     {
       key: "events",
       header: t("col_events"),
+      help: "rep_perf_events",
       align: "right",
       nums: true,
       cell: (r) => (

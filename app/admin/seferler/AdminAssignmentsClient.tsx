@@ -197,6 +197,7 @@ export function AdminAssignmentsClient({ assignments, workers }: Props) {
       <PageHeader
         title={t("title")}
         description={t("subtitle")}
+        help="page_trips"
         action={
           <Button className="btn-primary h-9 rounded-full px-4" onClick={() => setCreateOpen(true)}>
             <Plus className="size-4" /> {t("new")}

@@ -42,6 +42,7 @@ import {
   generatePayrollExpenseCSV,
 } from "@/app/actions/expenses";
 import { CATEGORY_ICON } from "@/app/panel/masraflar/ExpenseDriverClient";
+import { HelpTip } from "@/components/help/HelpTip";
 
 type Props = { entries: ExpenseEntryWithWorker[] };
 const eur = (n: number) => n.toFixed(2).replace(".", ",");
@@ -152,7 +153,10 @@ export function ExpenseAdminClient({ entries }: Props) {
     <>
       {/* Başlık bloğu — klon A2 ölçüsü */}
       <div>
-        <h1 className="text-[28px] font-semibold leading-tight">{t("admin_title")}</h1>
+        <h1 className="flex items-center gap-1 text-[28px] font-semibold leading-tight">
+          {t("admin_title")}
+          <HelpTip tkey="page_expenses" />
+        </h1>
         <p className="mt-1.5 text-sm text-muted-foreground">{t("subtitle")}</p>
       </div>
 

@@ -85,7 +85,7 @@ export default async function ReportsPage() {
       title={t("title")}
     >
       <div className="mx-auto max-w-6xl space-y-12 px-4 py-6 sm:px-6">
-        <PageHeader title={t("title")} description={t("subtitle")} />
+        <PageHeader title={t("title")} description={t("subtitle")} help="page_reports" />
 
         <section>
           <CategoryLabel>{t("cat_vehicle")}</CategoryLabel>

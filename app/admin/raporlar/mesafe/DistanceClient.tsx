@@ -65,6 +65,7 @@ export function DistanceClient({ report }: { report: DistanceReport }) {
     {
       key: "km",
       header: t("col_km"),
+      help: "rep_dist_km",
       align: "right",
       nums: true,
       cell: (r) =>
@@ -79,6 +80,7 @@ export function DistanceClient({ report }: { report: DistanceReport }) {
     {
       key: "kmDay",
       header: t("col_km_day"),
+      help: "rep_dist_kmday",
       align: "right",
       nums: true,
       cell: (r) => (r.kmPerDay === null ? "—" : `${num(r.kmPerDay)} km`),

@@ -240,7 +240,11 @@ export function HelpTip({
           // uyum, uyum sayılmaz: buton gerçekten 24x24 yapıldı. İkon 13px
           // kaldığı için görsel ağırlık aynı, yalnız hover dairesi büyüdü.
           "inline-flex size-6 items-center justify-center rounded-full",
-          "text-muted-foreground/60 transition-colors",
+          // OPAKLIK 60 → 85 (27.07.2026, ölçümle): /60 açık temada sayfa
+          // zeminine karşı 2,73:1 veriyordu — WCAG 1.4.11 (metin dışı öğe)
+          // eşiği 3,0. Balonları göze sokmak istenirken ikonun kendisi
+          // görünmezdi. Simge hâlâ ikincil ağırlıkta, artık ölçülebilir.
+          "text-muted-foreground/85 transition-colors",
           "hover:bg-surface-2 hover:text-foreground",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-sky/40",
           open && "bg-surface-2 text-foreground"

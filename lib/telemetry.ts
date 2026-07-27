@@ -71,6 +71,10 @@ export async function saveTelemetry(
       heading: p.heading,
       ignition_on: p.ignition_on,
       fuel_level_pct: p.fuel_level_pct,
+      // can.fuel.volume, HAM litre (migration 039). Kolon yoksa aşağıdaki
+      // fallback bu alanı düşürüp tekrar dener — telemetri ASLA yeni bir kolon
+      // yüzünden kaybolmaz.
+      fuel_volume_l: p.fuel_volume_l,
       odometer_km: p.odometer_km,
       // Extended CAN/OBD (migration 021) — null on frames without engine data.
       engine_rpm: p.engine_rpm,
@@ -87,13 +91,24 @@ export async function saveTelemetry(
     });
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("device_telemetry")
-    .upsert(rows, {
-      onConflict: "vehicle_id,recorded_at",
-      ignoreDuplicates: true,
-    })
-    .select("id");
+  const upsert = (r: Record<string, unknown>[]) =>
+    supabaseAdmin
+      .from("device_telemetry")
+      .upsert(r, { onConflict: "vehicle_id,recorded_at", ignoreDuplicates: true })
+      .select("id");
+
+  let { data, error } = await upsert(rows);
+  // 039 uygulanmamış ortam: fuel_volume_l kolonu yok → alanı düşürüp tekrar
+  // dene. GPS akışı yeni bir kolon yüzünden durmaz (037/auto-shift deseninin
+  // aynısı); yalnız hacim kaydedilmez, diğer her şey yazılır.
+  if (error && /fuel_volume_l|column/i.test(error.message)) {
+    const stripped = rows.map((r) => {
+      const copy: Record<string, unknown> = { ...r };
+      delete copy.fuel_volume_l;
+      return copy;
+    });
+    ({ data, error } = await upsert(stripped));
+  }
 
   if (error) throw new Error(error.message);
   return data?.length ?? 0;

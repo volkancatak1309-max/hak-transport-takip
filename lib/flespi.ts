@@ -35,6 +35,14 @@ export type FlespiPoint = {
   ignition_on: boolean | null;
   /** OBD/CAN fuel level in percent (0..100), or null if the device omits it. */
   fuel_level_pct: number | null;
+  /**
+   * can.fuel.volume — depodaki yakıt HACMİ (litre), HAM. 27.07.2026'da eklendi:
+   * filodaki 6 VW Crafter yüzdeyi HİÇ göndermiyor, yalnız hacmi gönderiyor ve
+   * o araçlarda sinyal temiz. Dönüştürme YOK — litre litre olarak saklanır;
+   * tank_capacity_l ile yüzdeye çevirmek YASAK, çünkü hem yüzde hem hacim
+   * gönderen araçlarda hacim çöp (bkz. db/migrations/039_fuel_volume.sql).
+   */
+  fuel_volume_l: number | null;
   /** OBD/CAN total vehicle odometer, or null if the device omits it. */
   odometer_km: number | null;
   // Extended CAN/OBD (migration 021). Present only while the engine ECU is on the
@@ -185,10 +193,18 @@ export function normalize(
   // sırayla dene, ilk DOLU değeri al; hiçbiri yoksa null bırak (kaydı reddetme).
   // odometer_km cihazın raporladığı değerdir — birimin km olduğu gerçek cihazda
   // doğrulanmalı (bazı kurulumlar metre gönderir).
+  // 27.07.2026 flespi doğrulaması: filoda GÖRÜLEN yakıt parametreleri yalnız
+  // üç tane — can.fuel.level (yüzde, 23 araç), can.fuel.volume (litre, 17 araç),
+  // can.fuel.consumption. `obd.fuel.level` ve `fuel.level` hiç görülmedi ama
+  // aday olarak duruyor (başka cihaz tipi eklenirse kırılmasın).
   const fuelLevel =
     num(pick(msg, "can.fuel.level")) ??
     num(pick(msg, "obd.fuel.level")) ??
     num(pick(msg, "fuel.level"));
+  // HACİM — ayrı alan, dönüştürülmeden. Yüzdenin yerine GEÇMEZ; ikisi birden
+  // gelen araçta ikisi de yazılır, hangisinin kullanılacağına rapor karar verir.
+  const fuelVolume =
+    num(pick(msg, "can.fuel.volume")) ?? num(pick(msg, "obd.fuel.volume"));
   const odometer =
     num(pick(msg, "can.vehicle.mileage")) ??
     num(pick(msg, "obd.mileage")) ??
@@ -211,6 +227,7 @@ export function normalize(
     heading: heading === null ? null : Math.round(heading),
     ignition_on: ignition,
     fuel_level_pct: fuelLevel,
+    fuel_volume_l: fuelVolume,
     odometer_km: odometer,
     engine_rpm: roundInt(num(pick(msg, "can.engine.rpm"))),
     engine_load_pct: num(pick(msg, "can.engine.load.level")),

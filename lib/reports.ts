@@ -516,6 +516,42 @@ type FuelStatRow = {
  */
 const UNRELIABLE_ZERO_RATIO = 0.1;
 
+/** report_fuel_volume_stats (migration 039) satırı — litre cinsinden. */
+type FuelVolumeStatRow = {
+  vehicle_id: string;
+  sample_count: number;
+  avg_l: number | null;
+  min_l: number | null;
+  max_l: number | null;
+  first_l: number | null;
+  last_l: number | null;
+  refill_count: number;
+  refill_l: number;
+  drop_count: number;
+  drop_l: number;
+  /** Ardışık iki okuma arasındaki en büyük MUTLAK sıçrama (gürültü muhafızı). */
+  max_step_l: number;
+};
+
+/**
+ * LİTRE GÜRÜLTÜ MUHAFIZI (27.07.2026). Ardışık adım bu eşiği aşıyorsa aracın
+ * hacim serisi güvenilmez sayılır ve rapora HİÇ girmez ("Veri yok").
+ *
+ * Ölçüm (canlı, 3 gün): temiz araçlarda en büyük adım 0,1–1,0 L
+ * (DO-776GS 0,1 · DO-753GS 0,3 · DO-945HL 0,5 · DO-775GS 1,0);
+ * çöp seride 30–79 L (DO-777GS 79 · DO-747GU 65 · DO-687GX 43).
+ * 5 L bu iki kümenin arasındaki geniş boşlukta durur.
+ */
+const FUEL_VOLUME_MAX_STEP_L = 5;
+
+/**
+ * Litre yolunda "ölçülebilir tüketim" eşiği — yüzdedeki %15'in karşılığı.
+ * Yüzde eşiği tam sayı sensörün belirsizliğinden doğuyordu; litre ondalıklı
+ * geliyor, yani DAHA hassas. 5 L, 60-80 L'lik depolarda %6-8'e denk gelir:
+ * yüzde yolundan düşük ama gürültünün üstünde.
+ */
+const FUEL_MIN_CONSUMED_L = 5;
+
 /**
  * RPC hatasını ayırt eder. Kritik ayrım (22.07.2026): "fonksiyon yok" yöneticiye
  * migration çalıştırtır, "zaman aşımı" ise aralık daralttırır. İkisini aynı
@@ -620,6 +656,26 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     ((statData ?? []) as FuelStatRow[]).map((s) => [s.vehicle_id, s])
   );
 
+  // LİTRE YOLU (039). Yüzdenin YERİNE değil, YOKLUĞUNDA devreye girer — hem
+  // yüzde hem hacim gönderen araçlarda hacim çöp olduğu için (bkz. migration
+  // 039 başlığı). RPC yoksa (039 uygulanmamış) sessizce boş: yüzde yolu
+  // etkilenmez, litre araçları eskisi gibi "Veri yok" kalır.
+  const volStats = new Map<string, FuelVolumeStatRow>();
+  {
+    const { data: volData, error: volErr } = await supabaseAdmin.rpc(
+      "report_fuel_volume_stats",
+      { p_from: startISO, p_to: endISO }
+    );
+    if (!volErr) {
+      for (const s of (volData ?? []) as FuelVolumeStatRow[]) {
+        // GÜRÜLTÜ MUHAFIZI: sıçraması eşiği aşan seri hiç kabul edilmez.
+        if (Number(s.max_step_l) > FUEL_VOLUME_MAX_STEP_L) continue;
+        if (Number(s.sample_count) === 0) continue;
+        volStats.set(s.vehicle_id, s);
+      }
+    }
+  }
+
   // L/100km için mesafe — mesafe raporuyla AYNI kaynak (odometre uç-noktaları +
   // km-guard). Araç başına iki indeksli sorgu, telemetri satırı taşımaz.
   // 22.07.2026: artık ölçüm PENCERESİ de geliyor (aşağıdaki 3. kapı için).
@@ -716,6 +772,58 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
       ? workerName.get(v.assigned_worker_id) ?? null
       : null;
     const s = stats.get(v.id);
+
+    // ── LİTRE YOLU (039) ── yüzde okuması YOKSA devreye girer.
+    // Depo kapasitesine İHTİYAÇ YOK: litre zaten litre. %15 tüketim eşiğinin
+    // yerini FUEL_MIN_CONSUMED_L alır. Gürültülü seriler volStats'a hiç
+    // girmediği için burada ayrıca elemeye gerek yok.
+    const vol = (!s || Number(s.sample_count) === 0) ? volStats.get(v.id) : undefined;
+    if (vol) {
+      const first = vol.first_l != null ? Number(vol.first_l) : 0;
+      const last = vol.last_l != null ? Number(vol.last_l) : 0;
+      const refillL = Number(vol.refill_l) || 0;
+      const consumedLiters = Math.max(0, refillL + (first - last));
+      const dropL = Number(vol.drop_l) || 0;
+      const gate = l100Gate(
+        km,
+        span.reason,
+        // Yüzde kapısı yerine litre kapısı: eşiği geçmişse "yeterli tüketim"
+        // say (kapı yüzde üzerinden bakıyor, litreyi oraya çeviremeyiz).
+        consumedLiters >= FUEL_MIN_CONSUMED_L ? FUEL_MIN_CONSUMED_PCT : 0,
+        false,
+        true, // kapasite ŞARTI YOK — litre yolunda gerekmiyor
+        fuelSpanByVehicle.get(v.id) ?? { firstAt: null, lastAt: null },
+        { firstAt: span.firstAt, lastAt: span.lastAt }
+      );
+      return {
+        vehicleId: v.id,
+        plate: v.plate,
+        driverName,
+        tankCapacityL: cap,
+        hasData: true,
+        sampleCount: Number(vol.sample_count),
+        // Ortalama SEVİYE yüzdesi litre yolunda bilinmiyor (depo hacmi
+        // olmadan yüzdeye çevrilemez) — uydurmak yerine null.
+        avgPct: null,
+        minPct: null,
+        maxPct: null,
+        refillCount: Number(vol.refill_count) || 0,
+        refillPct: 0,
+        refillLiters: refillL,
+        consumedPct: 0,
+        consumedLiters,
+        km,
+        lPer100Km: gate === null && km ? (consumedLiters / km) * 100 : null,
+        lPer100Reason: gate,
+        suspiciousDropCount: Number(vol.drop_count) || 0,
+        suspiciousDropPct: 0,
+        suspiciousDropLiters: dropL,
+        zeroCount: 0,
+        zeroRatio: 0,
+        dataUnreliable: false,
+      };
+    }
+
     if (!s || Number(s.sample_count) === 0) {
       return {
         vehicleId: v.id,

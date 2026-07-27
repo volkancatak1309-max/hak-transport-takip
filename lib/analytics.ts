@@ -27,6 +27,7 @@ import {
   type SafetyScoreRow,
   type IdleWasteRow,
   type IdleWasteSummary,
+  type MonthlyPivot,
 } from "@/lib/analytics-shared";
 
 // Client-safe sabitler/türler lib/analytics-shared.ts'te yaşar; burada
@@ -57,7 +58,7 @@ export {
 
 // Filo bu tarihten eskiye gitmiyor — "tüm zamanlar" alt sınırı, sonsuz sorgu
 // aralığından kaçınır (fetchAllRows'un tüm tabloyu taramasını sınırlar).
-const FLEET_EPOCH = new Date("2026-06-01T00:00:00.000Z");
+export const FLEET_EPOCH = new Date("2026-06-01T00:00:00.000Z");
 
 /**
  * Güvenlik skoru için "yeterli sürüş" eşiği — GÜN BAŞINA minimum güvenilir km.
@@ -500,6 +501,67 @@ export function computeSafetyScores(
     return a.name.localeCompare(b.name);
   });
   return rows;
+}
+
+// ── Bölüm 4: aylık pivot arşivi ──────────────────────────────────────────────
+
+/** Bir ISO anın Viyana AY anahtarı: "2026-07". */
+function viennaMonthKey(iso: string): string {
+  return new Date(iso).toLocaleDateString("sv-SE", {
+    timeZone: "Europe/Vienna",
+    year: "numeric",
+    month: "2-digit",
+  }).slice(0, 7);
+}
+
+/**
+ * AYLIK PİVOT ARŞİVİ — şoför × (ay × alarm tipi) sayım tablosu.
+ *
+ * Sayfanın aralık seçicisinden BAĞIMSIZ: çağıran TÜM geçmişi verir. Ay listesi
+ * veriden türetilir (boş ay hiç sütun açmaz), artan sıralı — soldan sağa
+ * kronolojik, en yeni ay en sağda.
+ *
+ * Şoför ekseni resolveDriver ile: atanmamış aracın olayları "Atanmamış · PLAKA"
+ * satırında toplanır, sessizce yutulmaz. İşten ayrılan personel de kalır —
+ * arşivin amacı geçmişi korumak (workers sorgusu is_active filtrelemiyor).
+ */
+export function computeMonthlyPivot(
+  events: VehicleEventWithPlate[],
+  idleEpisodes: IdleEpisodeWithPlate[],
+  vehiclesById: Map<string, VehicleLite>,
+  workersById: Map<string, WorkerLite>
+): MonthlyPivot {
+  const TYPES = new Set<string>(TOP10_EVENT_TYPES);
+  const months = new Set<string>();
+  const byDriver = new Map<
+    string,
+    { workerId: string | null; name: string; cells: Record<string, number>; total: number }
+  >();
+
+  const bump = (vehicleId: string, iso: string, type: string) => {
+    if (!TYPES.has(type)) return;
+    const month = viennaMonthKey(iso);
+    months.add(month);
+    const d = resolveDriver(vehicleId, vehiclesById, workersById);
+    let row = byDriver.get(d.key);
+    if (!row) {
+      row = { workerId: d.workerId, name: d.label, cells: {}, total: 0 };
+      byDriver.set(d.key, row);
+    }
+    const cell = `${month}|${type}`;
+    row.cells[cell] = (row.cells[cell] ?? 0) + 1;
+    row.total++;
+  };
+
+  for (const e of events) bump(e.vehicle_id, e.occurred_at, e.event_type);
+  // Rölanti EPİZOT olarak sayılır (bir uzun rölanti = 1), süre değil — tablo
+  // "kaç kez" sorusunu cevaplar, "ne kadar süre" Rölanti İsraf Panosu'nda.
+  for (const ep of idleEpisodes) bump(ep.vehicle_id, ep.started_at, "idling");
+
+  const rows = [...byDriver.values()].sort(
+    (a, b) => b.total - a.total || a.name.localeCompare(b.name)
+  );
+  return { months: [...months].sort(), types: TOP10_EVENT_TYPES, rows };
 }
 
 // ── Bölüm 3: rölanti israf panosu ────────────────────────────────────────────

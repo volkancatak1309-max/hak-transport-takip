@@ -151,7 +151,21 @@
     "insufficient_title": "{n} şoför · yetersiz veri",
     "insufficient_hint": "Bu aralıkta güvenilir skor için yeterli sürüş (km) yok — ne iyi ne kötü, nötr.",
     "unit_hour": "sa",
-    "idle_trigger_note": "Her rölanti epizoduna cihazın tetikleme eşiği (5 dk) eklenmiştir."
+    "idle_trigger_note": "Her rölanti epizoduna cihazın tetikleme eşiği (5 dk) eklenmiştir.",
+    "archive_title": "Aylık Alarm Arşivi",
+    "archive_subtitle": "Şoför başına, ay ay, alarm tipine göre sayılar. Yukarıdaki tarih aralığından bağımsızdır — her zaman tüm geçmişi gösterir ve aylar geçtikçe sağa doğru büyür.",
+    "archive_total": "Toplam",
+    "archive_empty": "Arşivde henüz kayıt yok",
+    "archive_empty_hint": "Alarm biriktikçe aylar burada satır satır oluşacak.",
+    "archive_epoch_note": "{date} tarihinde alarm eşikleri değişti. Bu tarihin öncesindeki ve sonrasındaki aylar aynı cetvelle ölçülmedi — doğrudan kıyaslama yanıltır.",
+    "archive_abbr": {
+      "harsh_acceleration": "HIZ",
+      "harsh_cornering": "VİR",
+      "harsh_braking": "FRN",
+      "overspeeding": "AŞR",
+      "idling": "RÖL",
+      "jamming": "SNY"
+    }
   },
   "alarms": {
     "title": "Alarmlar",
@@ -1408,6 +1422,7 @@
     "ops_over_limit": "Bugün günlük yasal çalışma süresi sınırını aşan vardiya sayısı (§ 9 Abs. 1 AZG: 12 saat; gece çalışması yapılan günde § 14 Abs. 2 AZG: 10 saat). Bu gerçek bir ihlaldir.",
     "ops_break45": "9 saati aşan ve bu yüzden 30 değil 45 dakika mola gerektiren vardiya sayısı (§ 13c Abs. 1 AZG). İhlal değil, mola uyarısıdır.",
     "anl_top10": "Her kutu bir olay tipinde en çok olay üreten personeli sıralar. Sayılar cihazın bildirdiği gerçek olaylardır; aralık filtresine bağlıdır. Alarm eşikleri 22.07.2026'da gevşetildi — o tarihi kesen aralıklarda iki farklı ayar karışır, uyarı üstte belirir.",
+    "anl_archive": "Kalıcı arşiv: her şoförün her aydaki alarm sayısı, tipine ayrılmış. Yukarıdaki tarih aralığı seçicisi bu tabloyu ETKİLEMEZ — arşiv her zaman filo başlangıcından bugüne kadar tüm ayları gösterir. Yeni bir ay başlayınca sağa yeni sütunlar eklenir, geçmiş aylar bir daha değişmez; böylece bir yıl sonra da “kim hangi ayda kaç alarm aldı” sorusu cevaplanabilir. Sütun kısaltmaları: HIZ ani hızlanma, VİR sert viraj, FRN ani fren, AŞR aşırı hız, RÖL uzun rölanti, SNY sinyal karıştırma. Boş hücre tire ile gösterilir. Uzun rölanti KAÇ KEZ olduğuyla sayılır, süresiyle değil — süre için Rölanti İsraf Panosu'na bak. Aracı olmayan olaylar “Atanmamış · PLAKA” satırında toplanır, işten ayrılan personel arşivde kalır.",
     "anl_safety": "0-100 arası sürüş güvenliği notu. Her olay ağırlıklı bir ceza puanı alır (aşırı hız ve sinyal karıştırma 25, ani fren/hızlanma/sert viraj 12, uzun rölanti 5), toplam ceza sürülen kilometreye bölünür — çok süren şoför doğal olarak çok olay ürettiği için ceza hep 1.000 km başına hesaplanır. Not, 500 sabitiyle 100 × 500 ÷ (500 + ceza) formülünden çıkar: cezası 500 olan şoför 50 alır, ceza arttıkça not sıfıra yaklaşır ama asla çakılmaz. Sabit, 23.07.2026'da yürürlüğe giren yeni alarm eşiklerinden sonraki gerçek filo verisiyle belirlendi; o tarihten önceki olaylar farklı eşiklerle üretildiği için kıyaslanabilir değildir. Bu not MUTLAK bir güvenlik ölçüsü değil, aynı dönemdeki şoförleri birbiriyle KIYASLAR. Yeterince yol yapmayan şoför not almaz, ayrı listede gösterilir.",
     "anl_idle": "Motor çalışırken aracın durduğu süre. Yakıt ve € değerleri ÖLÇÜM DEĞİL tahmindir (0,9 L/sa × 1,65 €/L katsayılarıyla). Süreye her epizod için cihazın 5 dakikalık tetikleme eşiği dahildir.",
     "rep_fuel_table": "Tüketim = dolumlar + net düşüş (ilk − son), depo hacmiyle litreye çevrilir. Km = odometrenin dönemdeki ilk/son okuma farkı. L/100km yalnız üç şart birden sağlanınca hesaplanır: en az 50 km yol, en az %15 tüketim, odometre ve yakıt okumalarının aynı zaman aralığını kapsaması. Sağlanmayan satırda sayı yerine sebebi yazar.",

@@ -7,12 +7,15 @@ import {
   computeTopDriversByType,
   computeSafetyScores,
   computeIdleWaste,
+  computeMonthlyPivot,
   getVehicleDistanceKm,
   listVehiclesAndWorkers,
   scoreMinKmForRange,
+  FLEET_EPOCH,
   type AnalyticsRangeKey,
   type SafetyScoreRow,
 } from "@/lib/analytics";
+import { endOfTodayVienna } from "@/lib/format";
 import {
   getLatestConfigEpoch,
   rangeStartsBeforeEpoch,
@@ -74,6 +77,23 @@ export default async function AnalizPage({
     scoreMinKmForRange(range)
   );
   const idleWaste = computeIdleWaste(current.idleEpisodes, vehiclesById, workersById);
+
+  // AYLIK PİVOT ARŞİVİ — aralık seçicisinden BAĞIMSIZ, filo başlangıcından
+  // bugüne TÜM geçmiş. Kendi sorgusu var çünkü sayfanın seçili aralığı
+  // (ör. "Bugün") arşivi tek sütuna düşürürdü; arşivin işi tam tersi.
+  // Mesafe sorgusu YOK: pivot yalnız sayar, km'ye ihtiyaç duymaz.
+  const archiveStartISO = FLEET_EPOCH.toISOString();
+  const archiveEndISO = endOfTodayVienna().toISOString();
+  const [archiveEvents, archiveIdle] = await Promise.all([
+    listEventsInRange(archiveStartISO, archiveEndISO),
+    listIdleEpisodesInRange(archiveStartISO, archiveEndISO),
+  ]);
+  const monthlyPivot = computeMonthlyPivot(
+    archiveEvents,
+    archiveIdle,
+    vehiclesById,
+    workersById
+  );
 
   let safetyRowsWithTrend: SafetyScoreRow[] = safetyRows.map((r) => ({
     ...r,
@@ -142,6 +162,7 @@ export default async function AnalizPage({
           safetyRows={safetyRowsWithTrend}
           idleWaste={idleWaste}
           prevIdleWaste={prevIdleWaste}
+          monthlyPivot={monthlyPivot}
           /* Eşik sınırı: not yalnız aralık sınırdan ÖNCE başlıyorsa çıkar;
              trend uyarısı ise karşılaştırma sınırı aştığında. */
           configEpochISO={configEpoch ? configEpoch.changedAt.toISOString() : null}

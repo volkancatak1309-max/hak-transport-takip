@@ -28,10 +28,12 @@ import { Input } from "@/components/ui/input";
 import { EpochWarning } from "@/components/admin/EpochWarning";
 import { HelpTip } from "@/components/help/HelpTip";
 import { formatDate, formatEur, formatIdleShort, formatNumber } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type {
   AnalyticsRangeKey,
   EventTypeAgg,
   IdleWasteSummary,
+  MonthlyPivot,
   SafetyScoreRow,
   Top10EventType,
 } from "@/lib/analytics-shared";
@@ -50,6 +52,7 @@ export function AnalizClient({
   safetyRows,
   idleWaste,
   prevIdleWaste,
+  monthlyPivot,
   configEpochISO,
   showEpochNote,
   trendBlocked,
@@ -61,6 +64,8 @@ export function AnalizClient({
   safetyRows: SafetyScoreRow[];
   idleWaste: IdleWasteSummary;
   prevIdleWaste: { totalMs: number; totalEuro: number } | null;
+  /** Aralıktan BAĞIMSIZ aylık arşiv (tüm geçmiş) — sayfanın en altındaki tablo. */
+  monthlyPivot: MonthlyPivot;
   /** Alarm eşiklerinin değiştiği an (ISO) — yoksa null. */
   configEpochISO: string | null;
   /** Görüntülenen aralık sınırdan önce başlıyor → açıklama notu göster. */
@@ -497,6 +502,171 @@ export function AnalizClient({
         </div>
       )}
       </div>
+
+      {/* ── Bölüm 4 — AYLIK PİVOT ARŞİVİ (27.07.2026) ──────────────────────
+          Sayfanın EN ALTINDA, mevcut bölümlere dokunmadan. Aralık seçicisinden
+          BAĞIMSIZ: her zaman filo başlangıcından bugüne tüm aylar. Aylar
+          biriktikçe yatay genişler; geçmiş ay sütunları bir daha değişmez. */}
+      <MonthlyPivotTable pivot={monthlyPivot} configEpochISO={configEpochISO} />
+    </div>
+  );
+}
+
+/** Ay anahtarını ("2026-07") yerel kısa ay adına çevirir: "Tem 26". */
+function monthLabel(key: string, locale: string): string {
+  const [y, m] = key.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1, 1));
+  const mon = d.toLocaleDateString(locale === "de" ? "de-AT" : "tr-TR", {
+    month: "short",
+    timeZone: "UTC",
+  });
+  return `${mon} ${String(y).slice(2)}`;
+}
+
+/**
+ * Şoför × (ay × alarm tipi) sayım arşivi.
+ *
+ * Neden DataTable DEĞİL: kolon sayısı veriye göre değişiyor (ay sayısı × 6 tip)
+ * ve iki KATLI başlık gerekiyor — üstte ay, altında tip. DataTable tek katlı
+ * başlık ve sabit kolon seti varsayıyor. Bu yüzden kendi tablosu, ama aynı
+ * token'lar ve aynı yoğunluk.
+ *
+ * Yatay kaydırma zorunlu: 12 ay × 6 tip = 72 sütun hiçbir ekrana sığmaz. Şoför
+ * adı sütunu STICKY — kaydırırken kimin satırına baktığın kaybolmasın.
+ */
+function MonthlyPivotTable({
+  pivot,
+  configEpochISO,
+}: {
+  pivot: MonthlyPivot;
+  configEpochISO: string | null;
+}) {
+  const t = useTranslations("analiz");
+  const locale = useLocale();
+
+  if (pivot.months.length === 0 || pivot.rows.length === 0) {
+    return (
+      <div>
+        <div className="mb-3 flex items-center gap-1">
+          <h2 className="text-[15px] font-semibold">{t("archive_title")}</h2>
+          <HelpTip tkey="anl_archive" />
+        </div>
+        <EmptyState kind="none" title={t("archive_empty")} hint={t("archive_empty_hint")} />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-1 flex items-center gap-1">
+        <h2 className="text-[15px] font-semibold">{t("archive_title")}</h2>
+        <HelpTip tkey="anl_archive" />
+      </div>
+      <p className="mb-3 text-xs text-muted-foreground">{t("archive_subtitle")}</p>
+
+      {/* `w-max min-w-full`: tablo İÇERİĞİ kadar genişler (w-full DEĞİL).
+          w-full ile 12 ay × 6 tip = 72 sütun kabuğa SIĞMAYA çalışıp okunmaz
+          hâle sıkışıyordu; şimdi taşıp yatay kayıyor. min-w-full tek aylık
+          hâlde tablonun dar kalıp sağda boşluk bırakmasını önler. */}
+      <div className="surface-card overflow-x-auto rounded-[12px]">
+        <table className="w-max min-w-full border-collapse text-[12px]">
+          <thead>
+            {/* 1. kat: AY — her ay tip sayısı kadar sütunu kapsar */}
+            <tr className="border-b border-border/60">
+              <th
+                scope="col"
+                rowSpan={2}
+                className="sticky left-0 z-10 bg-card px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground"
+              >
+                {t("col_driver")}
+              </th>
+              {pivot.months.map((m) => (
+                <th
+                  key={m}
+                  scope="colgroup"
+                  colSpan={pivot.types.length}
+                  className="border-l border-border/60 px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-[0.04em]"
+                >
+                  {monthLabel(m, locale)}
+                </th>
+              ))}
+              <th
+                scope="col"
+                rowSpan={2}
+                className="border-l border-border/60 px-3 py-2 text-right text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground"
+              >
+                {t("archive_total")}
+              </th>
+            </tr>
+            {/* 2. kat: ALARM TİPİ — dar sütunlar, tam adı title'da */}
+            <tr className="border-b border-border/60">
+              {pivot.months.flatMap((m) =>
+                pivot.types.map((ty, i) => (
+                  <th
+                    key={`${m}-${ty}`}
+                    scope="col"
+                    title={t(`type.${ty}`)}
+                    className={cn(
+                      "min-w-[2.75rem] px-1.5 py-1.5 text-center text-[10px] font-medium text-text-tertiary",
+                      i === 0 && "border-l border-border/60"
+                    )}
+                  >
+                    {t(`archive_abbr.${ty}`)}
+                  </th>
+                ))
+              )}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/60">
+            {pivot.rows.map((r) => (
+              <tr key={r.workerId ?? r.name} className="hover:bg-surface-panel">
+                <th
+                  scope="row"
+                    className="sticky left-0 z-10 whitespace-nowrap bg-card px-3 py-1.5 text-left text-[12px] font-medium"
+                >
+                  {r.name}
+                </th>
+                {pivot.months.flatMap((m) =>
+                  pivot.types.map((ty, i) => {
+                    const n = r.cells[`${m}|${ty}`] ?? 0;
+                    return (
+                      <td
+                        key={`${m}-${ty}`}
+                        className={cn(
+                          "px-1.5 py-1.5 text-center font-mono tabular-nums",
+                          i === 0 && "border-l border-border/60",
+                          // SIFIR SESSİZ ama GÖRÜNÜR: dolu hücreler öne çıksın
+                          // diye sıfır yerine tire ve soluk ton — 72 sütunluk
+                          // bir tabloda sıfır denizi asıl sayıyı gizler.
+                          // Opaklık /50 iken ölçülen kontrast 2,11'di (WCAG
+                          // 1.4.3 tabanının altı); tam tona çıkarıldı, sessizlik
+                          // artık renkle değil AĞIRLIKLA kuruluyor.
+                          n === 0 ? "text-text-tertiary" : "font-semibold"
+                        )}
+                      >
+                        {n === 0 ? "–" : n}
+                      </td>
+                    );
+                  })
+                )}
+                <td className="border-l border-border/60 px-3 py-1.5 text-right font-mono font-semibold tabular-nums">
+                  {r.total}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* EŞİK DEĞİŞİMİ DİPNOTU — korundu (Volkan şartı). Arşiv birden fazla ayı
+          yan yana koyduğu için bu not burada ZORUNLU: eşiğin değiştiği tarihin
+          iki yakasındaki aylar aynı cetvelle ölçülmemiştir. */}
+      {configEpochISO && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-accent-gold-text" aria-hidden />
+          {t("archive_epoch_note", { date: formatDate(configEpochISO, locale) })}
+        </p>
+      )}
     </div>
   );
 }

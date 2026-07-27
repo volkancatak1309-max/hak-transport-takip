@@ -41,6 +41,32 @@ export type Top10EventType = (typeof TOP10_EVENT_TYPES)[number];
 export type VehicleLite = { id: string; plate: string; assigned_worker_id: string | null };
 export type WorkerLite = { id: string; name: string };
 
+/**
+ * AYLIK PİVOT ARŞİVİ (27.07.2026) — Analiz sayfasının EN ALTINDAKİ kalıcı tablo.
+ *
+ * Satır = şoför, kolon = AY × alarm tipi, hücre = sayı. Sayfanın tarih aralığı
+ * seçicisinden BAĞIMSIZDIR: arşiv her zaman filo başlangıcından bugüne kadar
+ * TÜM ayları gösterir. Aylar biriktikçe tablo yatay genişler; geçmiş ay
+ * sütunları bir daha değişmez, çünkü o ayın olayları artık kapanmıştır.
+ *
+ * Amaç: "kim hangi ayda kaç alarm aldı" sorusunun bir yıl sonra da cevaplanması.
+ */
+export type MonthlyPivotRow = {
+  workerId: string | null;
+  name: string;
+  /** `${ayAnahtarı}|${olayTipi}` → sayı. Sıfır olan hücre HİÇ yazılmaz. */
+  cells: Record<string, number>;
+  /** Tüm aylar ve tipler toplamı — sıralama için. */
+  total: number;
+};
+
+export type MonthlyPivot = {
+  /** Artan sıralı Viyana ay anahtarları: "2026-06", "2026-07"… */
+  months: string[];
+  types: readonly Top10EventType[];
+  rows: MonthlyPivotRow[];
+};
+
 export type DriverTally = {
   key: string;
   label: string;

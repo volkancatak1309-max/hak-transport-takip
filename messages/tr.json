@@ -248,6 +248,9 @@
     "all": "Tümü",
     "range_epoch": "Yeni eşiklerden beri",
     "col_driver": "Şoför",
+    "trend_title": "Dönem trendi",
+    "trend_vs_prev": "{now} alarm · önceki dönem {prev} ({delta})",
+    "trend_blocked": "Eşikler değiştiği için önceki dönemle kıyaslanmıyor",
     "no_driver": "şoför atanmamış",
     "driver_source_hint": "Aracın açık vardiyadaki şoförü, yoksa atanmış şoförü. Araç el değiştirdiyse eski olaylar bugünkü şoförle etiketlenir."
   },
@@ -1353,6 +1356,7 @@
     "anl_kpi_drivers": "Bu dönemde puanlanabilecek kadar veri üreten şoför sayısı. Çok az yol yapan şoför haksız puan almasın diye listeye girmez.",
     "alarms_tab_overview": "Olay TÜRÜNE göre özet: her kutu bir alarm tipini, sayısını ve son ne zaman olduğunu gösterir. Bir kutuya tıklarsan o türün tekil kayıtlarına düşersin.",
     "alarms_tab_log": "Tek tek alarm kayıtları: hangi araç, hangi şoför, ne zaman, hangi hızda. Satıra tıklayınca konumu ve haritası açılır. Araç, tür ve önem derecesine göre süzebilirsin.",
+    "alarms_trend": "Seçili dönemdeki alarmların gün gün (bir günlük aralıkta saat saat) dağılımı. Çubuğun koyu kısmı kritik olayları gösterir. Yanındaki karşılaştırma, aynı uzunluktaki bir ÖNCEKİ dönemle yapılır — “son 7 gün” seçiliyse ondan önceki 7 günle. Yüzde farkı nötr renktedir: az alarm genelde iyidir ama araç sayısı ya da alarm eşikleri değiştiyse yanıltır, o yüzden yorumu sana bırakır. Eşiklerin değiştiği tarihi aşan bir karşılaştırma hiç yapılmaz; iki dönem aynı cetvelle ölçülmemiş olur.",
     "alarms_col_vehicle": "Olayın gerçekleştiği araç ve o aracın şoförü. Şoför adı, açık vardiyadaki kişiden gelir; yoksa araca atanmış kişiden. Araç el değiştirdiyse eski olaylar bugünkü şoförle etiketlenir.",
     "alarms_col_type": "Alarm türü. Renk önem derecesini gösterir: kırmızı kritik, sarı uyarı, gri bilgi. Uzun rölantide sürenin kendisi de yazar.",
     "alarms_col_time": "Olayın cihaz tarafından kaydedildiği tarih ve saat (Viyana saati).",

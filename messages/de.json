@@ -248,6 +248,9 @@
     "all": "Alle",
     "range_epoch": "Seit den neuen Schwellen",
     "col_driver": "Fahrer",
+    "trend_title": "Zeitraum-Trend",
+    "trend_vs_prev": "{now} Alarme · Vorzeitraum {prev} ({delta})",
+    "trend_blocked": "Wegen geänderter Schwellen kein Vergleich mit dem Vorzeitraum",
     "no_driver": "kein Fahrer zugewiesen",
     "driver_source_hint": "Fahrer der offenen Schicht, sonst der zugewiesene Fahrer. Bei Fahrzeugwechsel werden ältere Ereignisse dem heutigen Fahrer zugeordnet."
   },
@@ -1353,6 +1356,7 @@
     "anl_kpi_drivers": "Anzahl der Fahrer mit genug Daten für eine Bewertung im Zeitraum. Wer sehr wenig gefahren ist, bleibt außen vor, damit die Bewertung fair bleibt.",
     "alarms_tab_overview": "Zusammenfassung nach EREIGNISART: jede Kachel zeigt eine Alarmart, ihre Anzahl und wann sie zuletzt auftrat. Ein Klick führt zu den Einzeleinträgen dieser Art.",
     "alarms_tab_log": "Einzelne Alarmeinträge: welches Fahrzeug, welcher Fahrer, wann, bei welcher Geschwindigkeit. Ein Klick auf die Zeile öffnet Ort und Karte. Filterbar nach Fahrzeug, Art und Schweregrad.",
+    "alarms_trend": "Verteilung der Alarme im gewählten Zeitraum, Tag für Tag (bei einem Ein-Tages-Zeitraum stundenweise). Der dunkle Teil des Balkens zeigt kritische Ereignisse. Der Vergleich daneben bezieht sich auf den unmittelbar davor liegenden, gleich langen Zeitraum — bei „letzte 7 Tage“ also auf die 7 Tage davor. Die Prozentangabe ist neutral gefärbt: weniger Alarme sind meist gut, können aber täuschen, wenn sich Fahrzeuganzahl oder Alarmschwellen geändert haben — die Deutung bleibt bei dir. Ein Vergleich über den Stichtag der Schwellenänderung hinweg wird gar nicht angestellt, da beide Zeiträume dann nicht mit demselben Maßstab gemessen wurden.",
     "alarms_col_vehicle": "Fahrzeug des Ereignisses und dessen Fahrer. Der Name stammt aus der offenen Schicht, sonst aus der Fahrzeugzuweisung. Bei Fahrzeugwechsel werden ältere Ereignisse dem heutigen Fahrer zugeordnet.",
     "alarms_col_type": "Art des Alarms. Die Farbe zeigt den Schweregrad: rot kritisch, gelb Warnung, grau Information. Bei langem Leerlauf steht zusätzlich die Dauer.",
     "alarms_col_time": "Datum und Uhrzeit der Aufzeichnung durch das Gerät (Wiener Zeit).",

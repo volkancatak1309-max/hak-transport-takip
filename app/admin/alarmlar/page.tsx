@@ -14,8 +14,11 @@ import {
 import {
   getLatestConfigEpoch,
   rangeStartsBeforeEpoch,
+  comparisonCrossesEpoch,
   type ConfigEpoch,
 } from "@/lib/config-epoch";
+import { eventTone } from "@/lib/event-ui";
+import type { TrendBucket } from "@/components/ui-v2";
 import { AlarmsClient, type AlarmRow } from "./AlarmsClient";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +43,62 @@ function computeRange(
   if (range === "today") return { start: startOfTodayVienna(), end };
   const days = range === "30d" ? 29 : 6;
   return { start: addCalendarDaysVienna(startOfTodayVienna(), -days), end };
+}
+
+export type AlarmTrend = {
+  buckets: TrendBucket[];
+  /** Bu dönem toplamı / önceki dönem toplamı (yoksa null). */
+  total: number;
+  prevTotal: number | null;
+  /** Eşik sınırı aşıldığı için karşılaştırma yapılmadı. */
+  comparisonBlocked: boolean;
+};
+
+/**
+ * GÜN GÜN alarm sayısı + kritik kırılımı. Aralık 2 günden uzunsa GÜN, değilse
+ * SAAT kovaları kullanılır — "bugün" seçildiğinde tek çubuk anlamsız olurdu.
+ */
+function buildAlarmTrend(
+  cur: {
+    events: { occurred_at: string; event_type: string }[];
+    episodes: { started_at: string }[];
+    start: Date;
+    end: Date;
+  },
+  prev: {
+    events: { occurred_at: string; event_type: string }[];
+    episodes: { started_at: string }[];
+  } | null
+): AlarmTrend {
+  const spanMs = cur.end.getTime() - cur.start.getTime();
+  const byHour = spanMs <= 2 * 86_400_000;
+  const keyOf = (iso: string) => {
+    const d = new Date(iso);
+    return byHour
+      ? d.toLocaleString("sv-SE", { timeZone: "Europe/Vienna", hour: "2-digit", hour12: false }).slice(-2) + ":00"
+      : d.toLocaleDateString("sv-SE", { timeZone: "Europe/Vienna" });
+  };
+  const labelOf = (key: string) =>
+    byHour ? key : `${Number(key.slice(8, 10))}.${key.slice(5, 7)}`;
+
+  const acc = new Map<string, { value: number; critical: number }>();
+  const bump = (iso: string, critical: boolean) => {
+    const k = keyOf(iso);
+    const c = acc.get(k) ?? { value: 0, critical: 0 };
+    c.value++;
+    if (critical) c.critical++;
+    acc.set(k, c);
+  };
+  for (const e of cur.events) bump(e.occurred_at, eventTone(e.event_type) === "critical");
+  for (const e of cur.episodes) bump(e.started_at, false);
+
+  const buckets: TrendBucket[] = [...acc.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, v]) => ({ key, label: labelOf(key), value: v.value, critical: v.critical }));
+
+  const total = cur.events.length + cur.episodes.length;
+  const prevTotal = prev ? prev.events.length + prev.episodes.length : null;
+  return { buckets, total, prevTotal, comparisonBlocked: prev === null };
 }
 
 export default async function AlarmsPage({
@@ -104,6 +163,29 @@ export default async function AlarmsPage({
     b.occurred_at.localeCompare(a.occurred_at)
   );
 
+  // ── DÖNEM TRENDİ (27.07.2026, Volkan kararı) ────────────────────────────
+  // Analiz'deki tip-dağılımı grafiği KALDIRILMADI (Volkan: "Analiz'e dokunma").
+  // Trend BURAYA eklendi: Alarmlar'ın yapabildiği ama Analiz'in yapamadığı şey
+  // "zaman içinde ne oldu" — gün gün, önceki eşit uzunluktaki dönemle birlikte.
+  //
+  // Önceki dönem aynı UZUNLUKTA ve hemen öncesi. Eşik sınırını aşıyorsa
+  // karşılaştırma YAPILMAZ (aynı gerekçe: düzelen sürüş değil, cetvel).
+  const spanMs = end.getTime() - start.getTime();
+  const prevEnd = new Date(start.getTime() - 1);
+  const prevStart = new Date(prevEnd.getTime() - spanMs);
+  const trendCrossesEpoch = comparisonCrossesEpoch(start, end, prevStart, prevEnd, epoch);
+  const [prevEvents, prevEpisodes] = trendCrossesEpoch
+    ? [[], []]
+    : await Promise.all([
+        listEventsInRange(prevStart.toISOString(), prevEnd.toISOString()),
+        listIdleEpisodesInRange(prevStart.toISOString(), prevEnd.toISOString()),
+      ]);
+
+  const trend = buildAlarmTrend(
+    { events, episodes, start, end },
+    trendCrossesEpoch ? null : { events: prevEvents, episodes: prevEpisodes }
+  );
+
   return (
     <DashboardShell
       user={{
@@ -129,6 +211,7 @@ export default async function AlarmsPage({
             driverName: v.driver_name,
           }))}
           range={range}
+          trend={trend}
           /* Uyarı KOŞULU tek yerde: görüntülenen aralık sınırdan önce
              başlıyorsa. "epoch" aralığında start === sınır olduğu için uyarı
              hiç çıkmaz; "bugün" seçildiğinde ise gün sınırdan önce başladığı

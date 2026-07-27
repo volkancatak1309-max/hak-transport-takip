@@ -76,10 +76,50 @@ export { SCORE_MIN_KM_PER_DAY };
  * hafta/ay ortasında herkes haksızca "veri yok" düşmesin. En az 1 gün.
  */
 export function scoreMinKmForRange(range: DateRange): number {
+  return SCORE_MIN_KM_PER_DAY * rangeElapsedDays(range);
+}
+
+/** Aralığın ŞİMDİYE KADAR geçen gün sayısı (en az 1). */
+export function rangeElapsedDays(range: DateRange): number {
   const effectiveEnd = Math.min(Date.now(), range.end.getTime());
   const spanMs = Math.max(0, effectiveEnd - range.start.getTime());
-  const spanDays = Math.max(1, Math.round(spanMs / 86_400_000));
-  return SCORE_MIN_KM_PER_DAY * spanDays;
+  return Math.max(1, Math.round(spanMs / 86_400_000));
+}
+
+/**
+ * ŞOFÖRÜN KENDİ VERİ PENCERESİNE göre km eşiği (27.07.2026, Volkan onayı — B).
+ *
+ * SORUN: eşik aralık uzunluğuyla DOĞRUSAL büyüyordu (40 km/gün × 30 = 1.200 km)
+ * ama ölçülen km büyümüyordu — odometre telemetrisi 30 gün geriye ulaşmıyor.
+ * Canlı ölçüm: 30 günlük pencerede EN YÜKSEK şoför km'si 1.509, sonuç 33
+ * şoförün yalnız 1'i skor alıyordu (%3). 7 günde 12/33, 1 günde 16/33 —
+ * yani kapı, veri yokluğunu şoförün suçu gibi gösteriyordu.
+ *
+ * ÇÖZÜM: eşik, aracın odometre ölçümünün GERÇEKTEN kapsadığı gün sayısıyla
+ * ölçeklenir. Odometresi 5 günü kapsayan şoför 5 × 40 = 200 km'ye göre
+ * değerlendirilir, 1.200'e göre değil. Veri biriktikçe kapı kendiliğinden
+ * sıkılaşır; 30 günlük tam veri olunca eski davranışa döner.
+ *
+ * SCORE_MIN_KM_PER_DAY'e DOKUNULMADI — sabit aynı, ölçekleyen çarpan değişti.
+ */
+export function scoreMinKmForSpan(
+  range: DateRange,
+  spans: { firstAt: string | null; lastAt: string | null }[]
+): number {
+  const rangeDays = rangeElapsedDays(range);
+  let coveredMs = 0;
+  for (const s of spans) {
+    if (!s.firstAt || !s.lastAt) continue;
+    const a = Date.parse(s.firstAt);
+    const b = Date.parse(s.lastAt);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    // Şoförün birden çok aracı varsa EN GENİŞ pencere geçerli (union değil:
+    // araçlar aynı günlerde çalışıyor, toplamak günü ikiye katlardı).
+    coveredMs = Math.max(coveredMs, b - a);
+  }
+  // Hiç ölçüm penceresi yoksa aralığın kendisine düş (eski davranış).
+  const coveredDays = coveredMs > 0 ? Math.max(1, Math.round(coveredMs / 86_400_000)) : rangeDays;
+  return SCORE_MIN_KM_PER_DAY * Math.min(rangeDays, coveredDays);
 }
 
 /** Kayan pencere uzunlukları (gün). Etiketler i18n'de bu sayılarla yazılı. */
@@ -403,7 +443,13 @@ export function computeSafetyScores(
   vehiclesById: Map<string, VehicleLite>,
   workersById: Map<string, WorkerLite>,
   distanceByVehicle: Map<string, number | null>,
-  minKm: number
+  /**
+   * Şoför başına km eşiği. Sabit sayı yerine FONKSİYON (27.07.2026, B kararı):
+   * eşik artık aralık uzunluğuna değil, o şoförün araçlarının odometre
+   * ölçümünün gerçekten kapsadığı gün sayısına göre ölçekleniyor
+   * (bkz. scoreMinKmForSpan). Sayı verilirse eski davranış aynen korunur.
+   */
+  minKm: number | ((vehicleIds: string[]) => number)
 ): SafetyScoreRow[] {
   type Acc = { penalty: number; totalEvents: number; days: Set<string> };
   const acc = new Map<string, Acc>();
@@ -468,7 +514,10 @@ export function computeSafetyScores(
     // ağırlıklı puan. Eski doğrusal `100 − ceza` tabana çakılıyordu (canlı
     // ölçümde en iyi şoför bile 194 ceza/1000km ⇒ herkes 0). Hiperbolik eğri
     // sıfıra yaklaşır ama çarpmaz; sıralama en kötü uçta bile korunur.
-    const qualifies = reliableKm != null && reliableKm >= minKm;
+    const workerVehicleIds = vehiclesByWorker.get(w.id) ?? [];
+    const effectiveMinKm =
+      typeof minKm === "function" ? minKm(workerVehicleIds) : minKm;
+    const qualifies = reliableKm != null && reliableKm >= effectiveMinKm;
     const penaltyPer1000 = qualifies ? penalty / (reliableKm! / 1000) : 0;
     const score = qualifies
       ? Math.max(

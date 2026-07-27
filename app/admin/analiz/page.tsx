@@ -8,9 +8,9 @@ import {
   computeSafetyScores,
   computeIdleWaste,
   computeMonthlyPivot,
-  getVehicleDistanceKm,
+  getVehicleDistanceSpan,
   listVehiclesAndWorkers,
-  scoreMinKmForRange,
+  scoreMinKmForSpan,
   FLEET_EPOCH,
   type AnalyticsRangeKey,
   type SafetyScoreRow,
@@ -55,11 +55,29 @@ export default async function AnalizPage({
       listEventsInRange(startISO, endISO),
       listIdleEpisodesInRange(startISO, endISO),
     ]);
-    const distanceEntries = await Promise.all(
-      vehicles.map(async (v) => [v.id, await getVehicleDistanceKm(v.id, startISO, endISO)] as const)
+    // Span (km + ÖLÇÜM PENCERESİ). Pencere, skor kapısının şoför başına
+    // ölçeklenmesi için gerekli (B kararı, 27.07.2026 — scoreMinKmForSpan).
+    const spanEntries = await Promise.all(
+      vehicles.map(async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const)
     );
-    return { events, idleEpisodes, distanceByVehicle: new Map(distanceEntries) };
+    const spanByVehicle = new Map(spanEntries);
+    const distanceByVehicle = new Map(
+      [...spanByVehicle].map(([id, s]) => [id, s.km] as const)
+    );
+    return { events, idleEpisodes, distanceByVehicle, spanByVehicle };
   }
+
+  /** Şoförün araçlarının ölçüm pencerelerinden km eşiğini türeten kapı. */
+  const gateFor =
+    (
+      r: { start: Date; end: Date },
+      spanByVehicle: Map<string, { firstAt: string | null; lastAt: string | null }>
+    ) =>
+    (vehicleIds: string[]) =>
+      scoreMinKmForSpan(
+        r,
+        vehicleIds.map((id) => spanByVehicle.get(id) ?? { firstAt: null, lastAt: null })
+      );
 
   const current = await loadPeriod(range);
   const topByType = computeTopDriversByType(
@@ -74,7 +92,7 @@ export default async function AnalizPage({
     vehiclesById,
     workersById,
     current.distanceByVehicle,
-    scoreMinKmForRange(range)
+    gateFor(range, current.spanByVehicle)
   );
   const idleWaste = computeIdleWaste(current.idleEpisodes, vehiclesById, workersById);
 
@@ -124,7 +142,7 @@ export default async function AnalizPage({
       vehiclesById,
       workersById,
       prev.distanceByVehicle,
-      scoreMinKmForRange(prevRange)
+      gateFor(prevRange, prev.spanByVehicle)
     );
     const prevScoreByWorker = new Map(prevSafety.map((r) => [r.workerId, r.score]));
     safetyRowsWithTrend = safetyRows.map((r) => {

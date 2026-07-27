@@ -19,6 +19,7 @@ import {
   DensityToggle,
   DetailDrawer,
   EmptyState,
+  MiniTrend,
   type Column,
 } from "@/components/ui-v2";
 import { EpochWarning } from "@/components/admin/EpochWarning";
@@ -27,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { eventTone, EVENT_STRIPE, EVENT_TONE_RANK } from "@/lib/event-ui";
 import { formatDateTime, formatIdleShort } from "@/lib/format";
 import type { VehicleEventWithPlate } from "@/lib/telemetry";
-import type { AlarmRange } from "./page";
+import type { AlarmRange, AlarmTrend } from "./page";
 
 /**
  * ALARMLAR — Genel Bakış (olay tipi tile'ları) + Alarm Kaydı (tablo + çekmece).
@@ -148,6 +149,7 @@ export function AlarmsClient({
   events,
   vehicles,
   range,
+  trend,
   epochISO,
   showEpochWarning,
 }: {
@@ -155,6 +157,8 @@ export function AlarmsClient({
   /** Şoför adı için araç künyesi (raporlarla aynı kaynak). */
   vehicles: { id: string; plate: string; driverName: string | null }[];
   range: AlarmRange;
+  /** Gün gün alarm trendi + önceki dönem karşılaştırması. */
+  trend: AlarmTrend;
   /** Alarm eşiklerinin değiştiği an (ISO); kayıt yoksa null. */
   epochISO: string | null;
   /** Görüntülenen aralık sınırdan önce başlıyor → üstte uyarı. */
@@ -439,10 +443,72 @@ export function AlarmsClient({
               })}
             </div>
           )}
+
+          {/* ── DÖNEM TRENDİ (27.07.2026) — tile'ların ALTINDA ────────────
+              Analiz'in tip-dağılımı grafiğine DOKUNULMADI (Volkan kararı);
+              trend buraya kondu çünkü Alarmlar'ın yapabildiği ama Analiz'in
+              yapamadığı şey bu: "zaman içinde ne oldu". Tile'lar NE olduğunu
+              sayar, trend NE ZAMAN olduğunu gösterir. */}
+          {trend.buckets.length > 0 && (
+            <div className="glass-panel rounded-[16px] p-5">
+              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <h2 className="flex items-center gap-1 text-[15px] font-semibold">
+                  {t("trend_title")}
+                  <HelpTip tkey="alarms_trend" />
+                </h2>
+                {trend.comparisonBlocked ? (
+                  <span className="text-[12px] text-accent-gold-text">
+                    {t("trend_blocked")}
+                  </span>
+                ) : trend.prevTotal !== null ? (
+                  <span className="font-mono text-[12px] tabular-nums text-muted-foreground">
+                    {t("trend_vs_prev", {
+                      now: trend.total,
+                      prev: trend.prevTotal,
+                      // Delta NÖTR renkte: "az alarm iyi" sezgisi doğru ama
+                      // eşik/araç sayısı değiştiyse yanıltır. Sayıyı gösterir,
+                      // yorumu yöneticiye bırakırız.
+                      delta:
+                        trend.prevTotal === 0
+                          ? "—"
+                          : `${trend.total >= trend.prevTotal ? "+" : ""}${Math.round(
+                              ((trend.total - trend.prevTotal) / trend.prevTotal) * 100
+                            )}%`,
+                    })}
+                  </span>
+                ) : null}
+              </div>
+              <MiniTrend
+                data={trend.buckets}
+                height={150}
+                criticalLabel={t("sev_critical")}
+                totalLabel={t("count")}
+              />
+            </div>
+          )}
         </>
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
+            {/* ARALIK SEÇİCİ — Alarm Kaydı'na da eklendi (27.07.2026).
+                Eskiden yalnız Genel Bakış'ta vardı: kayıt tablosu sayfanın
+                yüklendiği aralığa bakıyordu ama bunu gösteren ya da
+                değiştiren hiçbir kontrol yoktu. */}
+            <PillSelect
+              label={t("filter_shown")}
+              value={range}
+              onChange={(v) =>
+                startNav(() =>
+                  router.replace(`/admin/alarmlar?range=${v}`, { scroll: false })
+                )
+              }
+              options={[
+                ...(epochISO ? [{ value: "epoch", label: t("range_epoch") }] : []),
+                { value: "today", label: t("range_today") },
+                { value: "7d", label: t("range_7d") },
+                { value: "30d", label: t("range_30d") },
+              ]}
+            />
             <PillSelect
               label={t("col_vehicle")}
               value={fVehicle}

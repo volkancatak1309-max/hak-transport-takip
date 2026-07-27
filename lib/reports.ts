@@ -6,7 +6,7 @@ import {
   getVehicleDistanceSpan,
   getVehicleFuelSpan,
   listVehiclesAndWorkers,
-  scoreMinKmForRange,
+  scoreMinKmForSpan,
   type DistanceUnavailableReason,
 } from "@/lib/analytics";
 import type { DateRange, SafetyScoreRow } from "@/lib/analytics-shared";
@@ -150,6 +150,10 @@ async function loadBase(range: DateRange) {
     /** km null ise sebebi — oran metrikleri "neden yok" diyebilsin diye. */
     distanceReasonByVehicle: new Map(
       spanEntries.map(([id, s]) => [id, s.reason] as const)
+    ),
+    /** Ölçüm PENCERESİ — güvenlik skoru kapısı buna göre ölçekleniyor (B). */
+    spanByVehicle: new Map(
+      spanEntries.map(([id, s]) => [id, { firstAt: s.firstAt, lastAt: s.lastAt }] as const)
     ),
   };
 }
@@ -295,7 +299,16 @@ export async function buildPerformanceReport(
       new Map(base.vehicles.map((v) => [v.id, v])),
       new Map(base.workers.map((w) => [w.id, w])),
       base.distanceByVehicle,
-      scoreMinKmForRange(range)
+      // ANALİZ SAYFASIYLA AYNI KAPI (B, 27.07.2026): eşik aralık uzunluğuna
+      // değil, şoförün araçlarının odometre penceresine göre ölçeklenir. İki
+      // ekran aynı şoför için farklı karar veremez.
+      (vehicleIds: string[]) =>
+        scoreMinKmForSpan(
+          range,
+          vehicleIds.map(
+            (id) => base.spanByVehicle.get(id) ?? { firstAt: null, lastAt: null }
+          )
+        )
     ).map((r) => [r.workerId, r])
   );
 

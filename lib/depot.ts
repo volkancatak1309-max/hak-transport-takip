@@ -325,6 +325,24 @@ type TelemetryFix = {
  * Tanım (değişmedi): ilk "depo içi + KONTAK AÇIK" fix + o andan itibaren ≥3 dk
  * kesintisiz depoda kalma. Kontak şartı bilinçli: depoda geceleyen aracın
  * gece heartbeat'leri aksi hâlde geliş anını 00:00'a çekerdi.
+ *
+ * ⚠️ TEĞET-GEÇME KÖRLÜĞÜ (düzeltildi 27.07.2026). Eski sürüm günün İLK adayını
+ * bulup histerezisi orada sınıyor, tutmazsa null dönüp PES EDİYORDU — sonraki
+ * adaylara hiç bakmıyordu. Depo çemberini yolda tek fix'lik teğet geçen araçta
+ * (500 m yarıçap ana yolu kesiyor) tetik BÜTÜN GÜN ölü kalıyordu. 27.07.2026
+ * canlı ölçümü, tek günde beş araç:
+ *   DO-623GL teğet 04:30:57 (1 fix) → gerçek duruş 04:58–07:30 (152 dk) kaçtı
+ *   DO-992GO teğet 05:53:28 (1 fix) → gerçek duruş 06:18–08:55 (157 dk) kaçtı
+ *   DO-753GS teğet 07:17:22 (1 fix) → gerçek duruş 07:19–09:02 (103 dk) kaçtı
+ *   DO-945HL teğet 07:59:32 (2 fix) → gerçek duruş 08:00–09:03  (63 dk) kaçtı
+ *   DO-775GS teğet 06:25:09 (2 fix) → gerçek duruş 06:37–07:53  (76 dk) kaçtı
+ * Sonuncusunun bedeli en ağırdı: otomatik vardiya açılmadı, şoför de elle
+ * açmadı, araç bütün gün kayıt DIŞI kaldı.
+ *
+ * Düzeltme: aday elenince tarama BİTMEZ — o depo-içi koşunun sonundan devam
+ * eder ve günün TÜM adayları denenir. İlk ≥3 dk tutan aday geliş anıdır.
+ * `averageDepotArrivalMinute` de aynı çekirdeği kullandığı için 14 günlük
+ * ortalama kademesi kendiliğinden düzelir.
  */
 function firstDepotEntryIn(rows: TelemetryFix[], zones: DepotZone[]): string | null {
   if (rows.length === 0) return null;
@@ -332,26 +350,30 @@ function firstDepotEntryIn(rows: TelemetryFix[], zones: DepotZone[]): string | n
   const inZone = (lat: number, lng: number) =>
     zones.some((z) => pointInCircleM(lat, lng, z.center_lat, z.center_lng, z.radius_m));
 
-  let startIdx = -1;
-  for (let i = 0; i < rows.length; i++) {
-    if (rows[i].ignition_on === true && inZone(rows[i].latitude, rows[i].longitude)) {
-      startIdx = i;
-      break;
+  let i = 0;
+  while (i < rows.length) {
+    // Aday: "depo içi + kontak açık" ilk fix.
+    if (!(rows[i].ignition_on === true && inZone(rows[i].latitude, rows[i].longitude))) {
+      i++;
+      continue;
     }
-  }
-  if (startIdx === -1) return null;
 
-  // Histerezis: o andan itibaren depoda ≥3 dk kesintisiz kalınmış mı?
-  const startMs = new Date(rows[startIdx].recorded_at).getTime();
-  let lastInZoneMs = startMs;
-  for (let i = startIdx; i < rows.length; i++) {
-    if (inZone(rows[i].latitude, rows[i].longitude)) {
-      lastInZoneMs = new Date(rows[i].recorded_at).getTime();
-    } else break;
-  }
-  if (lastInZoneMs - startMs < DWELL_MS) return null;
+    // Histerezis: bu andan itibaren depoda ≥3 dk KESİNTİSİZ kalınmış mı?
+    const startMs = new Date(rows[i].recorded_at).getTime();
+    let lastInZoneMs = startMs;
+    let j = i;
+    while (j < rows.length && inZone(rows[j].latitude, rows[j].longitude)) {
+      lastInZoneMs = new Date(rows[j].recorded_at).getTime();
+      j++;
+    }
+    if (lastInZoneMs - startMs >= DWELL_MS) return rows[i].recorded_at;
 
-  return rows[startIdx].recorded_at;
+    // Teğet geçiş: bu koşuyu TÜMDEN atla, sonraki adaya bak. `j > i` garanti
+    // (rows[i] depo içi olduğu için iç döngü en az bir adım ilerler) → sonsuz
+    // döngü olamaz.
+    i = j;
+  }
+  return null;
 }
 
 // ─────────── MANUEL BAŞLATMADA BAŞLANGIÇ ANI (25.07.2026, Volkan) ───────────

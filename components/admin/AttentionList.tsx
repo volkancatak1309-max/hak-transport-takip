@@ -14,6 +14,8 @@ import {
   Navigation,
   UserX,
   MapPinOff,
+  ClockAlert,
+  Link2Off,
   CircleParking,
   Pencil,
   PlayCircle,
@@ -111,11 +113,28 @@ export function AttentionList({
           meta: t("dash.attn_driverless_meta"),
           overdue: false,
         };
+      // Atamasız araç sahada — eylem "şoför ata", movingNoShift'ten farklı.
+      case "unassignedMoving":
+        return {
+          icon: Link2Off,
+          text: t("dash.attn_unassigned_moving", { plate: item.plate }),
+          meta: t("dash.attn_unassigned_moving_meta"),
+          overdue: false,
+        };
+      // Araçtan sinyal yok — konum GERÇEKTEN doğrulanamadı (cihaz sessiz/ölü).
       case "locationUnverified":
         return {
           icon: MapPinOff,
-          text: t("dash.attn_location_unverified", { name: item.worker_name }),
-          meta: t("dash.attn_location_unverified_meta"),
+          text: t("dash.attn_no_signal", { name: item.worker_name }),
+          meta: t("dash.attn_no_signal_meta"),
+          overdue: false,
+        };
+      // Saat tahmini — araç depodaydı, yalnız başlangıç anı kestirim (038).
+      case "startEstimated":
+        return {
+          icon: ClockAlert,
+          text: t("dash.attn_start_estimated", { name: item.worker_name }),
+          meta: t("dash.attn_start_estimated_meta"),
           overdue: false,
         };
       case "vehicleIdle":

@@ -159,6 +159,16 @@ export type AttentionItem =
       plate: string;
     }
   | {
+      // ATAMASIZ ARAÇ SAHADA (27.07.2026): assigned_worker_id NULL olduğu hâlde
+      // araç kontak açık ve taze telemetriyle yolda. `driverless` bunu YAKALAMAZ
+      // — o kalem "atanmış şoför işten ayrıldı" (alan DOLU, kişi pasif) demek.
+      // Alanın hiç doldurulmadığı araç panoda tamamen görünmezdi: 27.07'de
+      // DO-671GY bütün gün yol yaptı, depoya girdi, hiçbir kaleme düşmedi.
+      kind: "unassignedMoving";
+      id: string;
+      plate: string;
+    }
+  | {
       // AKTİF aracın atanmış şoförü İŞTEN AYRILDI (is_active=false/terminated)
       // → araç şoförsüz kaldı; patron yeniden atamalı (Modül 2). assigned_worker_id
       // bilinçli boşaltılmadığı için bu kalem "atama bekliyor" sinyalidir.
@@ -168,9 +178,19 @@ export type AttentionItem =
       worker_name: string;
     }
   | {
-      // Vardiya konum KESİN doğrulanamadan açıldı (cihaz-ölü/belirsiz ya da
-      // yönetici depo muafiyeti) — depo dışında başlamış olabilir (Modül 6).
+      // ARAÇTAN SİNYAL YOK: vardiya açılırken depo kapısı konumu doğrulayamadı
+      // (cihaz sessiz/ölü ya da yönetici muafiyeti) — Modül 6, bayrak 038'de
+      // ikiye ayrıldı. Artık YALNIZ gerçek doğrulanamama; "saat tahmini" ayrı
+      // kalem (startEstimated), yoksa bu satır her sabah yanlış alarm veriyordu.
       kind: "locationUnverified";
+      id: string;
+      worker_name: string;
+    }
+  | {
+      // SAAT TAHMİNİ: araç depodaydı (konum doğrulandı) ama started_at depo
+      // girişinden türetilemedi — 14 gün ortalaması ya da "şimdi" kullanıldı
+      // (038). Konum sorunu DEĞİL; yönetici yalnız saati gözden geçirsin.
+      kind: "startEstimated";
       id: string;
       worker_name: string;
     }
@@ -342,6 +362,7 @@ export async function getDashboardData(
     dtcRows,
     leavesRes,
     unverifiedRes,
+    estimatedRes,
     manualStartRes,
   ] = await Promise.all([
     onlyFleet(
@@ -483,7 +504,7 @@ export async function getDashboardData(
           fleetScope
         )
       : Promise.resolve({ data: [] as { worker_id: string }[] }),
-    // Bugün "konum doğrulanamadı" ile açılmış vardiyalar (Modül 6). Kolon yoksa
+    // Bugün ARAÇTAN SİNYAL ALINAMADAN açılmış vardiyalar (Modül 6). Kolon yoksa
     // (migration 035 öncesi) error → data null → boş → kalem çıkmaz (best-effort).
     onlyFleet(
       withoutTestRows(
@@ -491,6 +512,23 @@ export async function getDashboardData(
           .from("time_entries")
           .select("id, worker_id")
           .eq("location_unverified", true)
+          .gte("started_at", todayStart.toISOString()),
+        "worker_id",
+        scope.workerIds
+      ),
+      "worker_id",
+      fleetScope.workerIds,
+      fleetScope
+    ),
+    // Bugün başlangıç anı KESTİRİMLE yazılmış vardiyalar (038). Araç depodaydı,
+    // yalnız saat depo girişinden türetilemedi — konum sorunu değil. Kolon yoksa
+    // (038 öncesi) error → data null → boş → kalem çıkmaz (best-effort).
+    onlyFleet(
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select("id, worker_id")
+          .eq("start_time_estimated", true)
           .gte("started_at", todayStart.toISOString()),
         "worker_id",
         scope.workerIds
@@ -556,9 +594,18 @@ export async function getDashboardData(
   const inactiveWorkerIds = new Set(
     workerRows.filter((w) => w.is_active === false).map((w) => w.id)
   );
-  // Bugün "konum doğrulanamadı" ile açılmış vardiyalar (Modül 6) → Dikkat kalemi.
+  // Bugün ARAÇTAN SİNYAL ALINAMADAN açılmış vardiyalar (Modül 6) → Dikkat kalemi.
   const locationUnverified = (
     (unverifiedRes.data ?? []) as { id: string; worker_id: string | null }[]
+  ).map((r) => ({
+    id: r.id,
+    worker_name: r.worker_id ? names.get(r.worker_id) ?? "—" : "—",
+  }));
+  // Bugün başlangıç anı KESTİRİMLE yazılmış vardiyalar (038) → ayrı Dikkat kalemi.
+  // Sinyalsiz kayıt ikisine birden düşebilir; bu bilinçli — iki farklı eylem
+  // gerektirir (cihazı onart / saati gözden geçir).
+  const startEstimated = (
+    (estimatedRes.data ?? []) as { id: string; worker_id: string | null }[]
   ).map((r) => ({
     id: r.id,
     worker_name: r.worker_id ? names.get(r.worker_id) ?? "—" : "—",
@@ -706,6 +753,7 @@ export async function getDashboardData(
       openVehicleIds,
       inactiveWorkerIds,
       locationUnverified,
+      startEstimated,
       vehicleIdle,
       manualStarts
     ),
@@ -1237,8 +1285,10 @@ function buildAttention(
   openVehicleIds: Set<string>,
   /** İşten ayrılan/pasif personel id'leri → "şoförsüz araç" (Modül 2). */
   inactiveWorkerIds: Set<string>,
-  /** Bugün "konum doğrulanamadı" ile açılmış vardiyalar (Modül 6). */
+  /** Bugün ARAÇTAN SİNYAL ALINAMADAN açılmış vardiyalar (Modül 6). */
   locationUnverified: { id: string; worker_name: string }[],
+  /** Bugün başlangıç anı KESTİRİMLE yazılmış vardiyalar (038). */
+  startEstimated: { id: string; worker_name: string }[],
   /** ≥3h açık auto vardiya, araçtan hiç hareket yok (Modül 7). */
   vehicleIdle: { id: string; worker_name: string }[],
   /** Filo şefinin bugün elle başlattığı vardiyalar (037) — panel bildirimi. */
@@ -1375,8 +1425,13 @@ function buildAttention(
   //    Hiç veri göndermemiş araç burada yoktur (listLatestVehiclePositions onu
   //    zaten döndürmez) — "cihaz hiç kurulmamış" ile "cihaz sustu" ayrı şeyler,
   //    ikincisini uydurmayız.
+  // Aracın kendisi tutulur (yalnız plaka değil): "atamasız araç sahada" kalemi
+  // assigned_worker_id'ye de bakar.
+  const activeVehicle = new Map(
+    vehicles.filter((v) => v.status !== "inactive").map((v) => [v.id, v])
+  );
   const activePlate = new Map(
-    vehicles.filter((v) => v.status !== "inactive").map((v) => [v.id, v.plate])
+    [...activeVehicle].map(([id, v]) => [id, v.plate] as const)
   );
   const nowMs = Date.now();
   for (const p of positions) {
@@ -1397,13 +1452,25 @@ function buildAttention(
   //    kullanınca auto-shift bilinçli olarak vardiya AÇMAZ (yanlış isme
   //    yazmamak için) — bu boşluk yöneticiye görünmeli ki gerçek sürücü kendi
   //    adına vardiya başlatsın. Bayat fix "sürüyor" sayılmaz (MOVING_FRESH_MS).
+  //
+  //    7b) ATAMASIZ ARAÇ SAHADA (27.07.2026): aynı tarama, ama aracın hiç
+  //    atanmış şoförü yoksa kalem "atamasız araç" olarak çıkar — eylem farklı
+  //    (vardiya başlatmak değil, ŞOFÖR ATAMAK). Aynı araç için iki uyarı
+  //    basmamak adına movingNoShift'in YERİNE geçer. Kör noktaydı: `driverless`
+  //    yalnız "atanmış şoför işten ayrıldı" hâlini yakalıyor, alanın hiç
+  //    doldurulmadığı aracı hiçbir kalem görmüyordu (27.07: DO-671GY bütün gün
+  //    yol yaptı, depoya girdi, panoda hiç görünmedi).
   for (const p of positions) {
     if (openVehicleIds.has(p.vehicle_id)) continue; // açık vardiya var → sorun yok
-    const plate = activePlate.get(p.vehicle_id);
-    if (!plate) continue; // pasif/silinmiş/cihazsız araç
+    const v = activeVehicle.get(p.vehicle_id);
+    if (!v) continue; // pasif/silinmiş/cihazsız araç
     if (p.ignition_on !== true) continue; // kontak kapalı → hareket yok
     if (nowMs - new Date(p.recorded_at).getTime() > MOVING_FRESH_MS) continue;
-    items.push({ kind: "movingNoShift", id: `${p.vehicle_id}-moving`, plate });
+    items.push(
+      v.assigned_worker_id === null
+        ? { kind: "unassignedMoving", id: `${p.vehicle_id}-unassigned`, plate: v.plate }
+        : { kind: "movingNoShift", id: `${p.vehicle_id}-moving`, plate: v.plate }
+    );
   }
 
   // 8) AKTİF aracın atanmış şoförü İŞTEN AYRILDI → araç şoförsüz (Modül 2).
@@ -1421,13 +1488,23 @@ function buildAttention(
     });
   }
 
-  // 9) Konum doğrulanamadan başlatılmış bugünkü vardiyalar (Modül 6) — depo
-  //    dışında ya da cihaz-ölü/muafiyetle açılmış olabilir, yönetici görsün.
+  // 9) Araçtan sinyal alınamadan başlatılmış bugünkü vardiyalar (Modül 6) —
+  //    cihaz sessiz/ölü ya da muafiyetle açılmış, konum gerçekten bilinmiyor.
   for (const u of locationUnverified) {
     items.push({
       kind: "locationUnverified",
       id: `${u.id}-unverloc`,
       worker_name: u.worker_name,
+    });
+  }
+
+  // 9b) Başlangıç anı kestirim olan bugünkü vardiyalar (038) — araç depodaydı,
+  //     yalnız saat depo girişinden türetilemedi. Ayrı kalem, ayrı eylem.
+  for (const s of startEstimated) {
+    items.push({
+      kind: "startEstimated",
+      id: `${s.id}-eststart`,
+      worker_name: s.worker_name,
     });
   }
 
@@ -1462,10 +1539,14 @@ function buildAttention(
         return 50 - i.hours / 24; // belgelerden sonra; en uzun sessizlik önce
       case "movingNoShift":
         return 90; // kayıt dışı sürüş uyarısı — cezayla aynı bantta, gold
+      case "unassignedMoving":
+        return 92; // atamasız araç sahada — kayıt dışı sürüşün hemen ardında
       case "driverless":
         return 95; // şoförsüz araç (atama bekliyor) — movingNoShift'ten hemen sonra
       case "locationUnverified":
-        return 85; // konum doğrulanmadan başlatılan vardiya — gold, orta öncelik
+        return 85; // araçtan sinyal yok — gerçek doğrulanamama, gold
+      case "startEstimated":
+        return 86; // saat tahmini — sinyalsizin hemen ardında, daha düşük aciliyet
       case "vehicleIdle":
         return 80; // auto vardiya + araç hiç hareket etmemiş — orta öncelik
       case "manualStart":

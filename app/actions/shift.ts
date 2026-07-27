@@ -287,17 +287,39 @@ export async function startShiftManualAction(
     return { ok: false, error: error.message };
   }
 
-  // Konum doğrulanamadıysa (cihaz-ölü/belirsiz ya da yönetici muafiyeti) işaretle
-  // → Dikkat panosunda görünsün. Best-effort: kolon yoksa (migration 035 öncesi)
-  // sessiz geç; manuel başlatma ASLA kolon eksikliğiyle kırılmamalı.
-  // Başlangıç anı depo girişinden türetilemediyse (ortalama ya da now) aynı
-  // işaret düşer: started_at kestirimdir, yönetici gözden geçirsin.
+  // İKİ AYRI OLGU, İKİ AYRI BAYRAK (038, 27.07.2026). Eskiden ikisi de tek
+  // `location_unverified`e yığılıyordu ve pano "konum doğrulanmadı" derken
+  // vakaların çoğunda konum DOĞRULANMIŞTI (27.07: 8 kaydın 7'si depodaydı):
+  //   • location_unverified  → depo kapısı konumu doğrulayamadı: cihaz sessiz/
+  //     ölü ya da yönetici muafiyeti. ARAÇTAN SİNYAL YOK.
+  //   • start_time_estimated → araç depoda AMA started_at depo girişinden
+  //     türetilemedi (kademe 2 ortalama / kademe 3 "şimdi"). SAAT TAHMİNİ.
+  // İkisi aynı anda da düşebilir (cihaz ölü → hem konum hem saat bilinmez).
+  //
+  // Best-effort: kolon yoksa sessiz geç; manuel başlatma ASLA kolon eksikliğiyle
+  // kırılmamalı.
   if ((depotGate.unverified || !resolvedStart.verified) && ins?.id) {
+    const entryId = ins.id as string;
+    const flags: Record<string, boolean> = {};
+    if (depotGate.unverified) flags.location_unverified = true;
+    if (!resolvedStart.verified) flags.start_time_estimated = true;
     try {
-      await supabaseAdmin
+      const upd = await supabaseAdmin
         .from("time_entries")
-        .update({ location_unverified: true })
-        .eq("id", ins.id as string);
+        .update(flags)
+        .eq("id", entryId);
+      // 038 uygulanmamış ortam: yeni kolon yok → eski bayrağı tek başına yaz.
+      // (Yalnız saat tahminiyse yazacak bir şey yok; sessizce geçilir.)
+      if (
+        upd.error &&
+        /start_time_estimated|column/i.test(upd.error.message) &&
+        flags.location_unverified
+      ) {
+        await supabaseAdmin
+          .from("time_entries")
+          .update({ location_unverified: true })
+          .eq("id", entryId);
+      }
     } catch {
       // kolon yok / hata → işaret düşmez, vardiya sağlam
     }

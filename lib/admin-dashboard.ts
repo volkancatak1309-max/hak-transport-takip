@@ -2,8 +2,6 @@ import "server-only";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import {
   startOfTodayVienna,
-  endOfTodayVienna,
-  addCalendarDaysVienna,
   workedMs,
   kmDiff,
 } from "@/lib/format";
@@ -18,7 +16,6 @@ import {
 } from "@/lib/fleet-scope";
 import {
   BREAK45_THRESHOLD_MS,
-  AZG_BREAK_TIER1_MS,
   requiredBreakMin,
   touchesNightWindow,
   dailyCapMs,
@@ -34,13 +31,6 @@ import { todayYmdVienna } from "@/lib/leaves";
  * Panel bu ikisini AYRI gösteriyor; eskiden 9 saat ihlal gibi işaretlendiği
  * için 20 şoför kırmızı görünüyordu.
  */
-/**
- * Performans tile'ları vardiya tablosunun aralığından BAĞIMSIZ, sabit kayan bir
- * pencere kullanır (Volkan onayı, 17.07.2026). Gerekçe: tile'lar aralığa bağlıyken
- * "Bugün" seçilince hepsi boşalıyordu — Reveal de tile'larını sabit bir pencerede
- * ("Previous week") tutar. Tablo aralığı değişse de tile'lar hep son 7 günü gösterir.
- */
-const PERF_WINDOW_DAYS = 7;
 /** A shift with this many undelivered packages is surfaced as an action item. */
 const UNDELIVERED_THRESHOLD = 5;
 /** Inspection/insurance within this many days (or already overdue) is flagged. */
@@ -79,19 +69,6 @@ export type TodayOps = {
 export type FleetStatus = {
   total: number;
   counts: Record<VehicleLiveStatus, number>;
-};
-
-export type DriverPerf = {
-  worker_id: string;
-  name: string;
-  km: number;
-  ms: number; // worked time (break-excluded)
-  delivered: number; // cargo_count sum
-  shifts: number;
-  undelivered: number; // undelivered_count sum (for delivery success rate)
-  azgWarn: number; // per-shift §9 warnings (worked > 9h, <= 10h)
-  azgViol: number; // per-shift §9/§11 violations (> 10h, or break < 30min after 6h)
-  score: number; // 0..100 — see buildPerformance for the exact, real-data formula
 };
 
 export type AttentionItem =
@@ -213,22 +190,6 @@ export type AttentionItem =
       started_at: string;
     };
 
-/** Per-driver / per-vehicle breakdown behind each OpsSummary tile, for the
- *  click-to-expand detail dialog. Read-only — derived from the same data as
- *  TodayOps, never mutated. */
-export type OpsDetailRow = { name: string; value: number };
-export type OpsDetail = {
-  driversInField: { name: string; plate: string | null; since: string }[];
-  vehiclesDelivering: { plate: string; driver_name: string | null }[];
-  onBreak: { name: string; since: string | null }[];
-  km: OpsDetailRow[];
-  loaded: OpsDetailRow[];
-  delivered: OpsDetailRow[];
-  undelivered: OpsDetailRow[];
-  overLimit: { name: string; ms: number }[];
-  needsBreak45: { name: string; ms: number; breakMin: number }[];
-};
-
 /** Filo geneli arıza (DTC) özeti — plaka + aktif kod sayısı + en uzun süredir
  *  açık kod. Şiddet alanı YOK: ne `vehicle_dtc`'de ne de kod sözlüğünde
  *  karşılaştırılabilir bir severity verisi var (bkz. listFleetActiveDtc). */
@@ -288,11 +249,7 @@ export type TodayRosterRow = {
 
 export type DashboardData = {
   todayOps: TodayOps;
-  opsDetail: OpsDetail;
   fleet: FleetStatus;
-  performance: DriverPerf[];
-  /** Performans tile'larının kapsadığı sabit pencere (tile altyazısı bunu yazar). */
-  performanceWindowDays: number;
   dtc: FleetDtcRow[];
   attention: AttentionItem[];
   /** Günün panosu — her aktif şoför için bir satır. */
@@ -324,8 +281,8 @@ const ENTRY_COLS =
  * existing tables (time_entries, vehicles, workers). All sections degrade to
  * empty/"no data" states rather than throwing when a table is empty.
  *
- * Three reads run in parallel: today's shifts (live ops), the selected range's
- * shifts (performance + action items) and the fleet status snapshot.
+ * Two shift reads run in parallel: today's shifts (live ops) and the selected
+ * range's shifts (action items), alongside the fleet status snapshot.
  */
 export async function getDashboardData(
   rangeStart: string,
@@ -340,10 +297,6 @@ export async function getDashboardData(
   fleetScope: FleetScope = UNRESTRICTED
 ): Promise<DashboardData> {
   const todayStart = startOfTodayVienna();
-  // Sabit kayan performans penceresi: bugün dahil son PERF_WINDOW_DAYS gün.
-  // Tablo aralığından (rangeStart/rangeEnd) bilinçli olarak bağımsız.
-  const perfStart = addCalendarDaysVienna(todayStart, -(PERF_WINDOW_DAYS - 1));
-  const perfEnd = endOfTodayVienna();
 
   // Test kayıtları (migration 028) panonun HİÇBİR bölümünde görünmez: roster,
   // Operasyon Özeti, Dikkat/Aksiyon ve Kapanmamış Vardiyalar hepsi aşağıdaki
@@ -356,7 +309,6 @@ export async function getDashboardData(
   const [
     todayRes,
     rangeRes,
-    perfRes,
     activeRes,
     vehicles,
     workersRes,
@@ -371,8 +323,8 @@ export async function getDashboardData(
   ] = await Promise.all([
     // driver-scoped: yönetici hesabından açılmış vardiyalar panonun HİÇBİR
     // sayısına girmemeli. Roster zaten eleniyordu ama vardiya VERİSİ elenmiyordu:
-    // Operasyon Özeti, Toplam KM, performans sıralaması ve canlı durum kartı
-    // dördü de bu dizilerden türüyor. Canlıda iki demo satır 20.100 km taşıyordu.
+    // Operasyon Özeti, Toplam KM ve canlı durum kartı üçü de bu dizilerden
+    // türüyor. Canlıda iki demo satır 20.100 km taşıyordu.
     onlyDrivers(
       onlyFleet(
         withoutTestRows(
@@ -402,30 +354,6 @@ export async function getDashboardData(
               .select(ENTRY_COLS)
               .gte("started_at", rangeStart)
               .lte("started_at", rangeEnd)
-              .order("id"),
-            "worker_id",
-            scope.workerIds
-          ),
-          "worker_id",
-          fleetScope.workerIds,
-          fleetScope
-        ),
-        "worker_id",
-        driverScope
-      ).range(from, to)
-    ),
-    // Performans penceresi — tablo aralığından ayrı, sabit son 7 gün.
-    fetchAllRows<LiteEntry>((from, to) =>
-      // driver-scoped: "Şoför Performans Sıralaması"nın kaynağı — adı zaten
-      // şoför diyor, yönetici satırı oraya hiç girmemeli.
-      onlyDrivers(
-        onlyFleet(
-          withoutTestRows(
-            supabaseAdmin
-              .from("time_entries")
-              .select(ENTRY_COLS)
-              .gte("started_at", perfStart.toISOString())
-              .lte("started_at", perfEnd.toISOString())
               .order("id"),
             "worker_id",
             scope.workerIds
@@ -615,7 +543,6 @@ export async function getDashboardData(
 
   const todayEntries = (todayRes.data ?? []) as LiteEntry[];
   const rangeEntries = (rangeRes.data ?? []) as LiteEntry[];
-  const perfEntries = (perfRes.data ?? []) as LiteEntry[];
   const activeShifts = (activeRes.data ?? []) as {
     id: string;
     worker_id: string | null;
@@ -780,16 +707,7 @@ export async function getDashboardData(
 
   return {
     todayOps,
-    opsDetail: buildOpsDetail(todayEntries, activeShifts, vehicles, names),
     fleet,
-    // Tablo aralığı değil, sabit son-7-gün penceresi (PERF_WINDOW_DAYS).
-    performance: buildPerformance(
-      perfEntries,
-      names,
-      perfStart.toISOString(),
-      perfEnd.toISOString()
-    ),
-    performanceWindowDays: PERF_WINDOW_DAYS,
     dtc,
     roster: buildTodayRoster(
       workerRows,
@@ -1143,84 +1061,6 @@ function buildTodayRoster(
   return rows;
 }
 
-function buildOpsDetail(
-  todayEntries: LiteEntry[],
-  activeShifts: {
-    worker_id: string | null;
-    vehicle_id: string | null;
-    started_at: string;
-    break_started_at: string | null;
-  }[],
-  vehicles: {
-    id: string;
-    plate: string;
-    live_status: VehicleLiveStatus;
-    driver_name: string | null;
-  }[],
-  names: Map<string, string>
-): OpsDetail {
-  const plateById = new Map(vehicles.map((v) => [v.id, v.plate]));
-  const nameOf = (id: string | null) => (id ? names.get(id) ?? "—" : "—");
-
-  // Longest-running active shift first.
-  const driversInField = activeShifts
-    .map((s) => ({
-      name: nameOf(s.worker_id),
-      plate: s.vehicle_id ? plateById.get(s.vehicle_id) ?? null : null,
-      since: s.started_at,
-    }))
-    .sort((a, b) => new Date(a.since).getTime() - new Date(b.since).getTime());
-
-  const onBreak = activeShifts
-    .filter((s) => s.break_started_at)
-    .map((s) => ({ name: nameOf(s.worker_id), since: s.break_started_at }));
-
-  const vehiclesDelivering = vehicles
-    .filter((v) => v.live_status === "sevkiyatta")
-    .map((v) => ({ plate: v.plate, driver_name: v.driver_name }));
-
-  // Per-driver aggregates over today's shifts — identical rules to buildTodayOps.
-  const km = new Map<string, number>();
-  const loaded = new Map<string, number>();
-  const delivered = new Map<string, number>();
-  const undelivered = new Map<string, number>();
-  const overLimit: { name: string; ms: number }[] = [];
-  const needsBreak45: { name: string; ms: number; breakMin: number }[] = [];
-  for (const e of todayEntries) {
-    const name = nameOf(e.worker_id);
-    const d = kmDiff(e);
-    if (d !== null) km.set(name, (km.get(name) ?? 0) + d);
-    if (e.start_package_count !== null)
-      loaded.set(name, (loaded.get(name) ?? 0) + e.start_package_count);
-    if (e.ended_at !== null && e.cargo_count !== null)
-      delivered.set(name, (delivered.get(name) ?? 0) + e.cargo_count);
-    if ((e.undelivered_count ?? 0) > 0)
-      undelivered.set(name, (undelivered.get(name) ?? 0) + (e.undelivered_count ?? 0));
-    const w = workedMs(e);
-    if (w > dailyCapMs(touchesNightWindow(e.started_at, e.ended_at))) {
-      overLimit.push({ name, ms: w });
-    }
-    if (w > BREAK45_THRESHOLD_MS && (e.break_minutes ?? 0) < requiredBreakMin(w)) {
-      needsBreak45.push({ name, ms: w, breakMin: e.break_minutes ?? 0 });
-    }
-  }
-
-  const rows = (m: Map<string, number>): OpsDetailRow[] =>
-    [...m.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-
-  return {
-    driversInField,
-    vehiclesDelivering,
-    onBreak,
-    km: rows(km),
-    loaded: rows(loaded),
-    delivered: rows(delivered),
-    undelivered: rows(undelivered),
-    overLimit: overLimit.sort((a, b) => b.ms - a.ms),
-    needsBreak45: needsBreak45.sort((a, b) => b.ms - a.ms),
-  };
-}
-
 function buildFleet(vehicles: { live_status: VehicleLiveStatus }[]): FleetStatus {
   const counts: Record<VehicleLiveStatus, number> = {
     sevkiyatta: 0,
@@ -1230,104 +1070,6 @@ function buildFleet(vehicles: { live_status: VehicleLiveStatus }[]): FleetStatus
   };
   for (const v of vehicles) counts[v.live_status]++;
   return { total: vehicles.length, counts };
-}
-
-// Güvenlik/AZG puanı eşikleri — lib/azg-rules.ts'ten türetilir.
-
-function buildPerformance(
-  entries: LiteEntry[],
-  names: Map<string, string>,
-  rangeStart: string,
-  rangeEnd: string
-): DriverPerf[] {
-  const byWorker = new Map<string, DriverPerf>();
-  for (const e of entries) {
-    if (!e.worker_id) continue;
-    // Performance is measured on COMPLETED shifts only, so all columns describe
-    // the exact same set of shifts. Active shifts have no final km / delivered
-    // count yet, so they are excluded entirely here.
-    if (e.ended_at === null) continue;
-    let row = byWorker.get(e.worker_id);
-    if (!row) {
-      row = {
-        worker_id: e.worker_id,
-        name: names.get(e.worker_id) ?? "—",
-        km: 0,
-        ms: 0,
-        delivered: 0,
-        shifts: 0,
-        undelivered: 0,
-        azgWarn: 0,
-        azgViol: 0,
-        score: 0,
-      };
-      byWorker.set(e.worker_id, row);
-    }
-    row.shifts++;
-    const worked = workedMs(e);
-    row.ms += worked;
-    const d = kmDiff(e);
-    if (d !== null) row.km += d;
-    if (e.cargo_count !== null) row.delivered += e.cargo_count;
-    if (e.undelivered_count !== null) row.undelivered += e.undelivered_count;
-    // Vardiya bazlı AZG kontrolleri — AZG denetim raporuyla AYNI kurallar
-    // (§ 9 Abs. 1 tavan + § 13c Abs. 1 mola; çalışılan süre mola hariç).
-    // Vardiyalar arası kontroller (günlük toplam, haftalık, dinlenme) burada
-    // YOK; puanın AZG kısmı yalnız vardiya bazlı uyumdur ((i) ipucunda yazılı).
-    //
-    // 22.07.2026: ihlal eşiği 10 saatten § 9 Abs. 1'deki 12 saate çekildi,
-    // gece vardiyasında 10 saat (§ 14 Abs. 2). 9 saat artık ihlal değil,
-    // molası eksikse UYARI üretir (§ 13c Abs. 1 → 45 dk).
-    const breakMin = e.break_minutes ?? 0;
-    const cap = dailyCapMs(touchesNightWindow(e.started_at, e.ended_at));
-    const needBreak = requiredBreakMin(worked);
-    const isViolation =
-      worked > cap || (worked > AZG_BREAK_TIER1_MS && breakMin < needBreak);
-    if (isViolation) row.azgViol++;
-    else if (worked > BREAK45_THRESHOLD_MS) row.azgWarn++;
-  }
-
-  // Activity target scales with the selected range length (~5 shifts / week),
-  // so "activity" is judged against the period, not against other drivers.
-  const days = Math.max(
-    1,
-    Math.round((new Date(rangeEnd).getTime() - new Date(rangeStart).getTime()) / 86_400_000)
-  );
-  const activityTarget = Math.max(1, Math.round((days * 5) / 7));
-
-  for (const row of byWorker.values()) {
-    // TESLİM BAŞARI ORANI — delivered / (delivered + undelivered).
-    //
-    // 22.07.2026 DÜZELTMESİ: paket verisi hiç yokken oran 1.0 (=%100) sayılıyor
-    // ve şoför teslim bileşeninin 50 puanını TAM alıyordu. Sonuç, sistemin
-    // amacının tersiydi: paket girmeyen şoför, girenden yüksek skor alıyordu —
-    // yani veri girmemek ödüllendiriliyordu.
-    //
-    // Doğrusu: veri yoksa oran YOK (null). O bileşen skordan düşer ve skor
-    // KALAN AĞIRLIKLARA GÖRE YENİDEN NORMALİZE edilir; 50 puanı ne hediye
-    // ederiz ne ceza olarak sileriz — ölçemediğimiz şeyi hiç saymayız.
-    const handled = row.delivered + row.undelivered;
-    const deliveryRate: number | null = handled > 0 ? row.delivered / handled : null;
-    // AZG compliance: 1.0 with no issues; each violation costs more than a warning.
-    const azgCompliance = Math.max(0, 1 - (0.34 * row.azgViol + 0.1 * row.azgWarn));
-    // Activity: completed shifts vs the range's target (capped at 1.0).
-    const activity = Math.min(1, row.shifts / activityTarget);
-
-    // Ağırlıklar: teslim 50, AZG 35, aktiflik 15. Ölçülemeyen bileşen paydadan
-    // da düşer — kalan iki bileşen 50/(35+15) oranında büyür, skor yine 0..100.
-    const parts: { weight: number; value: number }[] = [
-      { weight: 35, value: azgCompliance },
-      { weight: 15, value: activity },
-    ];
-    if (deliveryRate !== null) parts.push({ weight: 50, value: deliveryRate });
-    const weightSum = parts.reduce((a, p) => a + p.weight, 0);
-    row.score = Math.round(
-      parts.reduce((a, p) => a + p.weight * p.value, 0) / weightSum * 100
-    );
-  }
-
-  // Default sort: highest score first (caller can re-sort client-side).
-  return [...byWorker.values()].sort((a, b) => b.score - a.score);
 }
 
 function buildAttention(

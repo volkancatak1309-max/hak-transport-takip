@@ -679,12 +679,12 @@ export function AdminClient({
       >
         <OpsStatGrid
           items={[
-            { key: "field", label: t("stripInField"), value: `${boardCounts.inField} / ${boardCounts.total}` },
-            { key: "notStarted", label: t("stripNotStarted"), value: boardCounts.notStarted, accent: boardCounts.notStarted > 0 },
-            { key: "closed", label: t("boardTabClosed"), value: boardCounts.closed },
-            { key: "overLimit", label: t("stripOverLimit"), value: overLimitShifts },
-            { key: "silent", label: t("stripSilentVehicles"), value: silentVehicleCount },
-            { key: "loaded", label: t("stripLoaded"), value: boardCounts.loaded > 0 ? boardCounts.loaded : "—" },
+            { key: "field", label: t("stripInField"), value: `${boardCounts.inField} / ${boardCounts.total}`, help: "strip_in_field" },
+            { key: "notStarted", label: t("stripNotStarted"), value: boardCounts.notStarted, accent: boardCounts.notStarted > 0, help: "strip_not_started" },
+            { key: "closed", label: t("boardTabClosed"), value: boardCounts.closed, help: "strip_closed" },
+            { key: "overLimit", label: t("stripOverLimit"), value: overLimitShifts, help: "ops_over_limit" },
+            { key: "silent", label: t("stripSilentVehicles"), value: silentVehicleCount, help: "strip_silent" },
+            { key: "loaded", label: t("stripLoaded"), value: boardCounts.loaded > 0 ? boardCounts.loaded : "—", help: "strip_loaded" },
           ]}
         />
 

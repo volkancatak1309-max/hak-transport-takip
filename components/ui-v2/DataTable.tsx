@@ -55,6 +55,16 @@ const HIDE: Record<string, string> = {
 
 type DisplayItem<T> = { type: "row"; row: T } | { type: "group"; key: string; rows: T[] };
 
+/**
+ * Görüntü öğelerinin TAŞIDIĞI kayıt sayısı. Katlanmış bir grup ("Sert Viraj ×3")
+ * tek satırdır ama ÜÇ kayıttır; alt sayaç kayıt sayar (bkz. sayaç yorumu).
+ */
+function countRecords<T>(items: DisplayItem<T>[]): number {
+  let n = 0;
+  for (const it of items) n += it.type === "group" ? it.rows.length : 1;
+  return n;
+}
+
 function buildItems<T>(rows: T[], grouping?: GroupingConfig<T>): DisplayItem<T>[] {
   if (!grouping) return rows.map((row) => ({ type: "row", row }));
   const items: DisplayItem<T>[] = [];
@@ -302,9 +312,17 @@ export function DataTable<T>({
           </tbody>
         </table>
       </div>
+      {/* SAYAÇ KAYITLARI SAYAR, SATIRLARI DEĞİL (28.07.2026, Volkan bildirimi).
+          Eskiden `items` (gruplanmış GÖRÜNTÜ satırları) sayılıyordu: olay
+          fırtınası "Sert Viraj ×3" olarak tek satıra katlandığı için tablo
+          "115 olay" derken üstündeki sekme sayacı aynı veriye "126 olay"
+          diyordu. İki sayaç, aynı ekran, aynı etiket, farklı şey. Etiket "olay"
+          (kayıt) olduğuna göre doğru olan KAYIT sayısıdır; katlama bir görüntü
+          tercihidir ve sayıyı değiştirmemelidir.
+          `shown` de aynı şekilde: görünen satırların TAŞIDIĞI kayıt sayısı. */}
       <div className="flex items-center justify-between border-t border-border/60 px-4 py-2.5">
         <span className="nums text-xs text-muted-foreground">
-          {Math.min(visible, items.length)} / {items.length} {totalLabel}
+          {countRecords(items.slice(0, visible))} / {countRecords(items)} {totalLabel}
         </span>
         {items.length > visible && (
           <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setVisible((v) => v + pageSize)}>

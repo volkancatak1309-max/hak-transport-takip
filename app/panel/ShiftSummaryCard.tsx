@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { confirmShiftSummaryAction } from "@/app/actions/driver-panel";
 import { formatDate, formatDurationShort, kmDiff, workedMs } from "@/lib/format";
 import type { TimeEntry } from "@/lib/types";
+import { HelpTip } from "@/components/help/HelpTip";
 
 type Props = {
   entry: TimeEntry;
@@ -63,8 +64,12 @@ export function ShiftSummaryCard({ entry, week, onLater }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-8 overflow-y-auto bg-[#0a0d16]/90 px-6 py-10 backdrop-blur-md page-enter">
       <div className="space-y-1 text-center">
-        <h1 className="text-2xl font-bold text-foreground">
+        {/* Balon başlığın YANINDA: imza anı, şoförün "bunu neden imzalıyorum"
+            diye durduğu tek yer. HelpTip portala çiziliyor (z-100) — bu tam
+            ekran katmanın (z-50) altında kalmaz. */}
+        <h1 className="flex items-center justify-center gap-1.5 text-2xl font-bold text-foreground">
           {t("v2SummaryTitle")}
+          <HelpTip tkey="drv_summary" />
         </h1>
         <p className="text-sm text-muted-foreground">
           {t("v2SummaryToday")} · {formatDate(entry.started_at, locale)}

@@ -198,7 +198,14 @@ export function OpsStatGrid({
   items,
   className,
 }: {
-  items: { key: string; label: string; value: React.ReactNode; accent?: boolean }[];
+  items: {
+    key: string;
+    label: string;
+    value: React.ReactNode;
+    accent?: boolean;
+    /** "help" i18n uzayındaki anahtar; verilirse etiketin yanında (i) çıkar. */
+    help?: string;
+  }[];
   className?: string;
 }) {
   return (
@@ -218,8 +225,11 @@ export function OpsStatGrid({
           >
             {it.value}
           </div>
-          <div className="mt-2 text-[12px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+          {/* (i) ETİKETİN yanında, SAYININ değil: ölçüm bandında sayı en büyük
+              görsel ağırlık ve yanına ikon koymak onu bozar. */}
+          <div className="mt-2 flex items-center gap-1 text-[12px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
             {it.label}
+            {it.help && <HelpTip tkey={it.help} />}
           </div>
         </div>
       ))}

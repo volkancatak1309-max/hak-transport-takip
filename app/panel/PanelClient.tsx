@@ -52,6 +52,12 @@ import { TelegramLink } from "@/components/TelegramLink";
 import { tryServerAction } from "@/lib/offline-aware";
 import { ConfirmShiftCard } from "./ConfirmShiftCard";
 import { ShiftSummaryCard } from "./ShiftSummaryCard";
+// YARDIM KATMANI ŞOFÖR PANELİNDE DE (28.07.2026, Volkan kararı). Sağlayıcı ve
+// açma/kapama düğmesi ZATEN vardı — panel de DashboardShell kullanıyor; eksik
+// olan yalnız balonlardı. HelpTip kapalıyken hiçbir şey render etmez ve balon
+// yalnız açıldığında portala çizilir, yani panelin blur'suz/hafif kuralına
+// dokunmaz (backdrop-filter kullanmaz).
+import { HelpTip } from "@/components/help/HelpTip";
 
 /**
  * Şoför Paneli v2 (Faz 1) — eğitimsiz, telefonla çalışan şoförler için:
@@ -631,9 +637,18 @@ export function PanelClient({
               <Package className="size-10" aria-hidden />
               {packagesTaken !== null ? t("v2EditPackages") : t("v2SetPackages")}
             </button>
+            <div className="flex justify-center">
+              <HelpTip tkey="drv_packages" />
+            </div>
           </div>
 
-          {/* İkincil: mola + vardiyayı bitir */}
+          {/* İkincil: mola + vardiyayı bitir. Balonlar butonların İÇİNE değil
+              üstlerine konuyor: butonlar dev ve tek dokunuşluk, içlerine (i)
+              koymak yanlış dokunma riski yaratır (eldivenli el, sarsan araç). */}
+          <div className="flex items-center justify-center gap-6 pb-0.5">
+            <HelpTip tkey="drv_break" />
+            <HelpTip tkey="drv_end" />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Button
               onClick={toggleBreak}
@@ -807,6 +822,7 @@ export function PanelClient({
                   )}
                   {t("v2StartShift")}
                 </button>
+                <HelpTip tkey="drv_start" className="mx-auto" />
                 {/* GEÇİCİ ARAÇ (22.07.2026): aracı bozulan / izinde olan
                     şoför başka araçla çıkar. Seçim YALNIZ bu vardiya için
                     geçerlidir — atanmış aracı değişmez, yarın yine kendi

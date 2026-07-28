@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { HelpTip } from "@/components/help/HelpTip";
 
 /**
  * OPERASYON KONSOLU İSKELETİ — Stellate "Operations metrics" klonu
@@ -47,18 +48,41 @@ export function OpsConsole({
 /** Filtre sütunu içinde tek bir alan — etiket + kontrol. */
 export function OpsFilter({
   label,
+  help,
   children,
 }: {
   label: string;
+  /** "help" i18n uzayındaki anahtar; verilirse etiketin yanında (i) çıkar. */
+  help?: string;
   children: React.ReactNode;
 }) {
+  // Etiket ikincil tonda: üçüncül ton (#909096) panel grisi üstünde 2.8:1
+  // kalıyordu — filtre etiketi okunmazsa filtre de yok demektir.
+  const labelSpan = (
+    <span className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+      {label}
+    </span>
+  );
+
+  // (i) VARSA <label> SARMALAYICISI KULLANILMAZ: HelpTip bir <button> render
+  // ediyor ve <label> içindeki butona tıklamak etiketin kontrolünü de tetikler
+  // (balonu açarken açılır menü de açılırdı). Bu dalda etiket ile alan
+  // görsel olarak aynı kalır; bağ, alanın kendi aria-label'ıyla kurulu.
+  if (help) {
+    return (
+      <div className="mb-3 last:mb-0">
+        <span className="mb-1.5 flex items-center gap-1">
+          {labelSpan}
+          <HelpTip tkey={help} className="mb-1.5" />
+        </span>
+        {children}
+      </div>
+    );
+  }
+
   return (
     <label className="mb-3 block last:mb-0">
-      {/* Etiket ikincil tonda: üçüncül ton (#909096) panel grisi üstünde
-          2.8:1 kalıyordu — filtre etiketi okunmazsa filtre de yok demektir. */}
-      <span className="mb-1.5 block text-[12px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
-        {label}
-      </span>
+      {labelSpan}
       {children}
     </label>
   );
@@ -112,6 +136,7 @@ export function OpsGroup({
 /** Gruplu listede tek satır. `pct` verilirse arkasına mercan oran barı çizilir. */
 export function OpsGroupRow({
   label,
+  help,
   value,
   meta,
   pct,
@@ -120,6 +145,8 @@ export function OpsGroupRow({
   className,
 }: {
   label: React.ReactNode;
+  /** "help" i18n uzayındaki anahtar; verilirse etiketin yanında (i) çıkar. */
+  help?: string;
   value: React.ReactNode;
   /** Değerin altındaki küçük açıklama. */
   meta?: React.ReactNode;
@@ -147,6 +174,7 @@ export function OpsGroupRow({
         <span className="flex min-w-0 flex-1 items-start gap-2 text-[13px] leading-tight">
           {icon}
           <span className="min-w-0">{label}</span>
+          {help && <HelpTip tkey={help} />}
         </span>
         <span className="shrink-0 text-right">
           <span className={cn("font-mono text-[13px] font-semibold tabular-nums", TONE[tone])}>

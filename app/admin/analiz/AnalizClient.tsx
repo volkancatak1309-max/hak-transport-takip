@@ -140,6 +140,7 @@ export function AnalizClient({
       {
         key: "score",
         header: t("col_score"),
+        help: "anl_col_score",
         cell: (r) => {
           // Ton MUTLAK skora bağlı, sıraya değil: yalnız gerçekten düşük skor
           // (<50) kırmızı; yüksek (≥85) yeşil-bilgi; arası nötr. Böylece "en
@@ -156,6 +157,7 @@ export function AnalizClient({
       {
         key: "events",
         header: t("col_events"),
+        help: "anl_col_events",
         cell: (r) => r.totalEvents,
         align: "right",
         nums: true,
@@ -166,6 +168,7 @@ export function AnalizClient({
       {
         key: "basis",
         header: t("col_basis"),
+        help: "anl_col_basis",
         cell: (r) => (
           <span className="text-xs text-muted-foreground">
             {r.basis === "km" ? `${formatNumber(r.distanceKm ?? 0, locale)} km` : t("basis_gun", { n: r.activeDays })}
@@ -176,6 +179,7 @@ export function AnalizClient({
       {
         key: "trend",
         header: t("col_trend"),
+        help: "anl_col_trend",
         cell: (r) => {
           if (r.trend === null) return <span className="text-muted-foreground">—</span>;
           const Icon = r.trend === "up" ? ArrowUp : r.trend === "down" ? ArrowDown : ArrowRight;
@@ -200,6 +204,7 @@ export function AnalizClient({
       {
         key: "duration",
         header: t("col_idle_duration"),
+        help: "anl_col_idle_duration",
         cell: (r) => formatIdleShort(r.totalMs, locale),
         align: "right",
         nums: true,
@@ -209,6 +214,7 @@ export function AnalizClient({
       {
         key: "episodes",
         header: t("col_idle_episodes"),
+        help: "anl_col_idle_count",
         cell: (r) => r.episodeCount,
         align: "right",
         nums: true,
@@ -219,6 +225,7 @@ export function AnalizClient({
       {
         key: "liters",
         header: t("col_idle_liters"),
+        help: "anl_col_idle_liters",
         cell: (r) => `${formatNumber(r.liters, locale, 1)} L`,
         align: "right",
         nums: true,
@@ -227,6 +234,7 @@ export function AnalizClient({
       {
         key: "euro",
         header: t("col_idle_euro"),
+        help: "anl_col_idle_euro",
         cell: (r) => <span className="font-semibold">{formatEur(r.euro, locale)}</span>,
         align: "right",
         nums: true,
@@ -542,6 +550,12 @@ function MonthlyPivotTable({
   configEpochISO: string | null;
 }) {
   const t = useTranslations("analiz");
+  // Alarm tipi ADLARI "alarms" uzayında yaşıyor, "analiz"de değil. Kısaltma
+  // başlıklarının title'ı önce t(`type.${ty}`) çağırıyordu — o anahtar analiz
+  // uzayında YOK, dolayısıyla ipucu "analiz.type.harsh_acceleration" gibi bir
+  // anahtar yolu basıyordu. Kısaltmayı anlamak isteyen kullanıcı tam da burada
+  // cevapsız kalıyordu (28.07.2026).
+  const tAlarm = useTranslations("alarms");
   const locale = useLocale();
 
   if (pivot.months.length === 0 || pivot.rows.length === 0) {
@@ -562,7 +576,26 @@ function MonthlyPivotTable({
         <h2 className="text-[15px] font-semibold">{t("archive_title")}</h2>
         <HelpTip tkey="anl_archive" />
       </div>
-      <p className="mb-3 text-xs text-muted-foreground">{t("archive_subtitle")}</p>
+      <p className="mb-2 text-xs text-muted-foreground">{t("archive_subtitle")}</p>
+
+      {/* KISALTMA LEJANTI (28.07.2026). Başlık satırındaki HIZ/VİR/FRN/AŞR/RÖL/SNY
+          her ay için tekrar ediyor: 12 ay × 6 tip = 72 başlık. Her birine (i)
+          koymak 72 ikon demekti — tablo okunmaz hâle gelirdi. Bunun yerine
+          kısaltmaların karşılığı BİR KEZ, kalıcı olarak yazılıyor.
+          Yardım düğmesine BAĞLI DEĞİL: kısaltma sözlüğü gizlenebilir bir ipucu
+          değil, tablonun okunması için ŞART. Tipler pivot.types'tan türetiliyor,
+          elle liste yok — yeni bir alarm tipi eklenirse lejant kendiliğinden
+          büyür. */}
+      <p className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-tertiary">
+        {pivot.types.map((ty) => (
+          <span key={ty}>
+            <span className="font-semibold text-muted-foreground">
+              {t(`archive_abbr.${ty}`)}
+            </span>{" "}
+            {tAlarm(`type.${ty}`)}
+          </span>
+        ))}
+      </p>
 
       {/* `w-max min-w-full`: tablo İÇERİĞİ kadar genişler (w-full DEĞİL).
           w-full ile 12 ay × 6 tip = 72 sütun kabuğa SIĞMAYA çalışıp okunmaz
@@ -605,7 +638,7 @@ function MonthlyPivotTable({
                   <th
                     key={`${m}-${ty}`}
                     scope="col"
-                    title={t(`type.${ty}`)}
+                    title={tAlarm(`type.${ty}`)}
                     className={cn(
                       "min-w-[2.75rem] px-1.5 py-1.5 text-center text-[10px] font-medium text-text-tertiary",
                       i === 0 && "border-l border-border/60"

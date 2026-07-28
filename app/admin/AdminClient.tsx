@@ -63,6 +63,7 @@ import { StartShiftForWorkerDialog } from "@/components/admin/StartShiftForWorke
 import { classifyUndelivered } from "@/lib/package-limits";
 import { ShiftEditHistory } from "@/components/admin/ShiftEditHistory";
 import { ShiftPhotosButton } from "@/components/admin/ShiftPhotosButton";
+import { HelpTip } from "@/components/help/HelpTip";
 import {
   PageHeader,
   StatCard,
@@ -447,6 +448,7 @@ export function AdminClient({
     {
       key: "start",
       header: t("tblStart"),
+      help: "col_start",
       cell: (e) => formatTime(e.started_at, locale),
       nums: true,
       hideBelow: "md",
@@ -454,6 +456,7 @@ export function AdminClient({
     {
       key: "end",
       header: t("tblEnd"),
+      help: "col_end",
       cell: (e) => {
         const { active, onBreak } = shiftState(e);
         if (onBreak) return <StatusChip tone="break" dot>{t("dash.ops_on_break")}</StatusChip>;
@@ -465,6 +468,7 @@ export function AdminClient({
     {
       key: "worked",
       header: t("tblWorked"),
+      help: "col_worked",
       cell: (e) => {
         const { active, over } = shiftState(e);
         return (
@@ -481,6 +485,7 @@ export function AdminClient({
     {
       key: "break",
       header: t("tblBreak"),
+      help: "col_break",
       cell: (e) => e.break_minutes ?? 0,
       align: "right",
       nums: true,
@@ -489,6 +494,7 @@ export function AdminClient({
     {
       key: "km",
       header: t("tblKm"),
+      help: "col_km",
       cell: (e) => {
         const km = kmDiff(e);
         return km !== null ? km.toLocaleString(nf) : "—";
@@ -501,6 +507,7 @@ export function AdminClient({
     {
       key: "loaded",
       header: t("tblLoaded"),
+      help: "col_loaded",
       cell: (e) => e.start_package_count ?? "—",
       align: "right",
       nums: true,
@@ -509,6 +516,7 @@ export function AdminClient({
     {
       key: "cargo",
       header: t("tblCargo"),
+      help: "col_delivered",
       cell: (e) => (shiftState(e).active ? "—" : e.cargo_count ?? "—"),
       align: "right",
       nums: true,
@@ -539,10 +547,12 @@ export function AdminClient({
               <FileSpreadsheet className="size-4" />
               <span className="hidden xl:inline">Excel</span>
             </Button>
+            <HelpTip tkey="report_excel" />
             <Button variant="outline" size="sm" onClick={exportPdf} disabled={!entries.length} title={t("exportPdf")}>
               <FileText className="size-4" />
               <span className="hidden xl:inline">PDF</span>
             </Button>
+            <HelpTip tkey="report_pdf" />
             <Button
               variant="outline"
               size="sm"
@@ -553,6 +563,7 @@ export function AdminClient({
               <Shield className="size-4" />
               <span className="hidden xl:inline">AZG</span>
             </Button>
+            <HelpTip tkey="report_azg" />
             <AddWorkerDialog>
               <Button size="sm" className="btn-primary" title={t("addWorker")}>
                 <UserPlus className="size-4" />
@@ -574,7 +585,7 @@ export function AdminClient({
           <div className="space-y-4">
             {/* KAPSAM — tarih aralığı. Sayfanın TAMAMINI etkiler: hem dikkat
                 kalemleri hem arşiv bu aralıktan beslenir. */}
-            <OpsFilter label={t("dateRange")}>
+            <OpsFilter label={t("dateRange")} help="filter_range">
               <Select value={range} onValueChange={(v) => setParam("range", v ?? "today")}>
                 <SelectTrigger className="h-9 w-full" aria-label={t("dateRange")}>
                   <SelectValue>{scopeLabel}</SelectValue>
@@ -617,7 +628,7 @@ export function AdminClient({
                 <span className="mb-3 block text-[12px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
                   {t("dash.shifts_title")}
                 </span>
-                <OpsFilter label={t("worker")}>
+                <OpsFilter label={t("worker")} help="filter_worker">
                   <Select value={workerFilter} onValueChange={(v) => setParam("worker", v ?? "all")}>
                     <SelectTrigger className="h-9 w-full" aria-label={t("worker")}>
                       <SelectValue>
@@ -637,7 +648,7 @@ export function AdminClient({
                     </SelectContent>
                   </Select>
                 </OpsFilter>
-                <OpsFilter label={t("status")}>
+                <OpsFilter label={t("status")} help="filter_status">
                   <Select value={statusFilter} onValueChange={(v) => setParam("status", v ?? "all")}>
                     <SelectTrigger className="h-9 w-full" aria-label={t("status")}>
                       <SelectValue>
@@ -714,14 +725,17 @@ export function AdminClient({
           <ul className="-mx-1 space-y-0.5 px-1">
             <OpsGroupRow
               label={t("dash.ops_on_break")}
+              help="ops_on_break"
               value={formatNumber(dashboard.todayOps.onBreak, locale)}
             />
             <OpsGroupRow
               label={t("dash.ops_vehicles_delivering")}
+              help="ops_vehicles_delivering"
               value={formatNumber(dashboard.todayOps.vehiclesDelivering, locale)}
             />
             <OpsGroupRow
               label={t("dash.ops_km_today")}
+              help="ops_km_today"
               value={
                 dashboard.todayOps.totalKmToday === null
                   ? "—"
@@ -730,6 +744,7 @@ export function AdminClient({
             />
             <OpsGroupRow
               label={t("dash.ops_loaded")}
+              help="ops_loaded"
               value={
                 dashboard.todayOps.loaded === null
                   ? "—"
@@ -738,6 +753,7 @@ export function AdminClient({
             />
             <OpsGroupRow
               label={t("dash.ops_delivered")}
+              help="ops_delivered"
               value={
                 dashboard.todayOps.delivered === null
                   ? "—"
@@ -746,6 +762,7 @@ export function AdminClient({
             />
             <OpsGroupRow
               label={t("dash.ops_undelivered")}
+              help="ops_undelivered"
               value={
                 dashboard.todayOps.undelivered === null
                   ? "—"
@@ -755,6 +772,7 @@ export function AdminClient({
             />
             <OpsGroupRow
               label={t("dash.ops_break45")}
+              help="ops_break45"
               value={formatNumber(dashboard.todayOps.needsBreak45, locale)}
               tone={dashboard.todayOps.needsBreak45 > 0 ? "warning" : "neutral"}
             />

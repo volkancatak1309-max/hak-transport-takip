@@ -297,21 +297,43 @@ export async function toggleActiveAction(workerId: string): Promise<WorkerResult
     .maybeSingle();
   if (!worker) return { ok: false, error: "Çalışan bulunamadı" };
 
+  const nextActive = !worker.is_active;
+
+  /**
+   * AKTİFLEŞTİRME, İŞTEN ÇIKIŞI DA GERİ ALIR (28.07.2026).
+   *
+   * Eskiden yalnız is_active çevriliyordu, terminated_at olduğu gibi kalıyordu.
+   * Sonuç bir HAYALET DURUM: "çalışıyor ama işten çıkmış". İzin Takvimi bu
+   * kaydı İKİ ayrı sorguyla birden yakalıyordu — aktif kadro (is_active=true)
+   * ve ayrılanlar (terminated_at dolu) — ve aynı kişi takvimde İKİ SATIR
+   * olarak, biri normal biri gri, yan yana çıkıyordu.
+   *
+   * terminated_at yalnız AKTİFLEŞTİRİRKEN temizlenir. Pasifleştirme ona
+   * DOKUNMAZ: "işten çıkar" akışı (terminateWorkerAction) ayrı bir karardır ve
+   * çıkış tarihini oraya yazar; buradaki basit aç/kapa onu ezmemeli.
+   */
+  const patch: Record<string, unknown> = { is_active: nextActive };
+  if (nextActive) patch.terminated_at = null;
+
   const { error } = await supabaseAdmin
     .from("workers")
-    .update({ is_active: !worker.is_active })
+    .update(patch)
     .eq("id", workerId);
 
   if (error) return { ok: false, error: "Güncelleme başarısız" };
 
   revalidatePath("/admin/workers");
+  // İzin Takvimi kadro listesini bu iki alandan kuruyor — çift satır hatasının
+  // düzeldiği anında görünmesi için o sayfa da tazelenir.
+  revalidatePath("/admin/izinler");
   return { ok: true };
 }
 
 /**
  * İŞTEN ÇIKIŞ (Modül 2). Personeli "ayrıldı" olarak işaretler: terminated_at
  * (son çalışma günü) + is_active=false (canlı yüzeyler is_active ile kendiliğinden
- * düşürür) + Telegram bağını temizler (artık bildirim gitmesin).
+ * düşürür) + Telegram bağını temizler (artık bildirim gitmesin) + filo şefliğini
+ * bırakır (managed_fleet=null).
  *
  * KASITLI olarak `vehicles.assigned_worker_id` BOŞALTILMAZ: araç "şoförsüz kaldı"
  * Dikkat/Aksiyon kalemiyle patronu bilinçli yeniden atamaya iter (kullanıcı
@@ -343,6 +365,13 @@ export async function terminateWorkerAction(
       is_active: false,
       telegram_chat_id: null,
       telegram_linked_at: null,
+      // FİLO ŞEFLİĞİ DE BIRAKILIR (28.07.2026). Eskiden managed_fleet olduğu
+      // gibi kalıyordu: ayrılan kişi veride hâlâ "bordo filosunun şefi"
+      // görünüyordu. Bugün zararsız çünkü lib/fleet-scope.ts is_active=false
+      // olanı şef saymıyor — yani koruma BAŞKA bir alanın yan etkisine
+      // dayanıyordu. Yarın biri o kontrolü gevşetirse ayrılmış bir şef sessizce
+      // filo kapsamı kazanır. Yetki, veriyle birlikte bırakılır.
+      managed_fleet: null,
     })
     .eq("id", workerId);
   if (error) return { ok: false, error: "Güncelleme başarısız" };

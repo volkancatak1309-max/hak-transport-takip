@@ -53,6 +53,10 @@ export async function approvedLeaveWorkerIdsForDay(
   dayYmd: string = todayYmdVienna()
 ): Promise<Set<string>> {
   try {
+    // test-visible: bu bir KİMLİK KÜMESİ, gösterilen bir liste değil. Çağıranlar
+    // ("bu şoför bugün izinli mi") kendi satır kümelerini zaten eliyor; küme
+    // yalnız eşleşme için okunuyor. Filtre konulsaydı test hesabının izni
+    // görünmez olurdu — test hesabının amacı tam da akışı gerçek gibi denemek.
     const { data, error } = await supabaseAdmin
       .from("worker_leaves")
       .select("worker_id")

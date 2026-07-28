@@ -452,6 +452,10 @@ export async function reconcileIdleEpisodes(
   // "kaç epizod açık kaldı" sayısı yanlış raporlanırdı.
   const { data } = await fetchAllRows<{ id: string; last_seen_at: string }>(
     (from, to) =>
+      // test-visible: BAKIM İŞİ, gösterim değil. Bekçi açık kalmış epizodları
+      // kapatır; test aracının epizodu elenirse SONSUZA KADAR açık kalır ve
+      // "kaç epizod açık" sayısını kalıcı olarak bozar. Gizleme, bu satırların
+      // OKUNDUĞU yönetici yüzeylerinde yapılır (listIdleEpisodesInRange).
       supabaseAdmin
         .from("idle_episodes")
         .select("id, last_seen_at")

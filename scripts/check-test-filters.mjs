@@ -44,7 +44,21 @@ const EXT = /\.(ts|tsx)$/;
  * time_entries okuması) gözden kaçtı ve test vardiyası yönetici panosunda
  * göründü. Test kaydı üç tablodan da sızabilir.
  */
-const GUARDED = ["workers", "vehicles", "time_entries"];
+const GUARDED = [
+  "workers",
+  "vehicles",
+  "time_entries",
+  // 28.07.2026'da EKLENDİ. Üçlü liste yeterli sanılıyordu; app/admin/page.tsx'teki
+  // driver_reports sorgusu ne test ne filo kapsamı taşıyordu ve muhafız onu HİÇ
+  // görmüyordu — filo şefi karşı filonun bildirimini konum linkiyle görebiliyordu.
+  // Ders time_entries'te bir kez öğrenilmişti (yukarıdaki nota bak) ama liste
+  // yalnız o tabloyla genişletilmişti. Kural: ŞOFÖR ya da ARAÇ eksenli, yönetici
+  // yüzeyinde okunan her tablo bu listeye girer.
+  "driver_reports",
+  "vehicle_events",
+  "idle_episodes",
+  "worker_leaves",
+];
 
 /** Zincirde bunlardan biri varsa sorgu ANAHTARLI sayılır. */
 const KEYED = [

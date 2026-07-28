@@ -202,12 +202,38 @@ export default async function AdminPage({
   // sessizce boş döner; id listesi parçalanarak sorgulanır.
   const entryIds = entriesData.map((e) => e.id);
   const [reportsRes, ...photoChunks] = await Promise.all([
-    supabaseAdmin
-      .from("driver_reports")
-      .select("id, worker_id, report_type, created_at, latitude, longitude")
-      .is("resolved_at", null)
-      .order("created_at", { ascending: false })
-      .limit(50),
+    // ŞOFÖR BİLDİRİMLERİ — ÜÇ kapsam da burada (28.07.2026).
+    //
+    // Bu sorgu uzun süre kapsamsız kaldı ve iki gerçek sızıntı taşıyordu:
+    //   • test şoförünün bildirimi yönetici panosunda görünüyordu;
+    //   • filo şefi KARŞI FİLONUN bildirimini görüyordu — hem tipini hem de
+    //     Google Maps konum linkini. Aynı dosyadaki diğer üç sorgu ikisini de
+    //     taşıyordu; yalnız bu atlanmıştı.
+    // Kök neden yapısaldı: scripts/check-test-filters.mjs'in GUARDED listesi
+    // driver_reports'u içermiyordu, yani muhafız bu sorguyu HİÇ denetlemiyordu.
+    // Liste bu sürümde genişletildi; artık aynı hata derlemeyi kırar.
+    //
+    // driver-scoped: yönetici hesabından bildirim gelmesi beklenmez ama bu bir
+    // ŞOFÖR bildirimi kartıdır; kapsam simetrik olsun diye o da uygulanıyor.
+    onlyDrivers(
+      onlyFleet(
+        withoutTestRows(
+          supabaseAdmin
+            .from("driver_reports")
+            .select("id, worker_id, report_type, created_at, latitude, longitude")
+            .is("resolved_at", null)
+            .order("created_at", { ascending: false })
+            .limit(50),
+          "worker_id",
+          scope.workerIds
+        ),
+        "worker_id",
+        fleetScope.workerIds,
+        fleetScope
+      ),
+      "worker_id",
+      driverScope
+    ),
     // SAYFALI (25.07.2026): chunk BAŞINA da 1000 satır tavanı işliyor. 100
     // vardiyalık bir chunk'ta ortalama 10 fotoğraf tavanı doldurur ve fazlası
     // sessizce düşerdi → bazı vardiyalar "fotoğrafı yok" görünürdü.

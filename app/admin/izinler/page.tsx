@@ -99,41 +99,54 @@ export default async function IzinlerPage({
       fleetScope
     ),
     // Ayı kesen izinler (reddedilenler hariç). Tablo yoksa data null → boş.
-    onlyFleet(
-      withoutTestRows(
-        supabaseAdmin
-          .from("worker_leaves")
-          .select(LEAVE_COLS)
-          .neq("status", "rejected")
-          .lte("start_date", end)
-          .gte("end_date", start),
+    // driver-scoped: filtre İZNİ ALAN kişinin (worker_id) üstünde. Onaylayan
+    // yönetici approved_by/created_by alanlarında yaşıyor ve ELENMİYOR —
+    // "kim onayladı" bilgisi korunur.
+    onlyDrivers(
+      onlyFleet(
+        withoutTestRows(
+          supabaseAdmin
+            .from("worker_leaves")
+            .select(LEAVE_COLS)
+            .neq("status", "rejected")
+            .lte("start_date", end)
+            .gte("end_date", start),
+          "worker_id",
+          scope.workerIds
+        ),
         "worker_id",
-        scope.workerIds
+        fleetScope.workerIds,
+        fleetScope
       ),
       "worker_id",
-      fleetScope.workerIds,
-      fleetScope
+      driverScope
     ),
     // ARŞİV (25.07.2026): karara BAĞLANMIŞ izinler — aya bağlı DEĞİL, tüm geçmiş.
     // Takvim ızgarası yalnız görüntülenen ayı ve reddedilmeyenleri gösteriyor;
     // "kim neyi ne zaman onayladı/reddetti" sorusunun cevabı hiçbir yerde
     // görünmüyordu. Reddedilenler de burada: kayıt iz için DURUYOR (silinmiyor).
     // ARCHIVE_LIMIT satırla sınırlı — dolarsa UI dipnot basar.
-    onlyFleet(
-      withoutTestRows(
-        supabaseAdmin
-          .from("worker_leaves")
-          .select(LEAVE_COLS)
-          .in("status", ["approved", "rejected"])
-          .order("decided_at", { ascending: false, nullsFirst: false })
-          .order("created_at", { ascending: false })
-          .limit(ARCHIVE_LIMIT),
+    // driver-scoped: yukarıdakiyle aynı — eleme İZNİ ALAN kişide, karar veren
+    // yöneticinin adı arşivde KALIR (arşivin amacı zaten o izi tutmak).
+    onlyDrivers(
+      onlyFleet(
+        withoutTestRows(
+          supabaseAdmin
+            .from("worker_leaves")
+            .select(LEAVE_COLS)
+            .in("status", ["approved", "rejected"])
+            .order("decided_at", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false })
+            .limit(ARCHIVE_LIMIT),
+          "worker_id",
+          scope.workerIds
+        ),
         "worker_id",
-        scope.workerIds
+        fleetScope.workerIds,
+        fleetScope
       ),
       "worker_id",
-      fleetScope.workerIds,
-      fleetScope
+      driverScope
     ),
   ]);
 

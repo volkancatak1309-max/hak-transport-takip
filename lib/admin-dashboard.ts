@@ -10,6 +10,7 @@ import {
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { listFleetActiveDtc, listLatestVehiclePositions } from "@/lib/telemetry";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope, onlyDrivers, type DriverScope } from "@/lib/driver-scope";
 import {
   UNRESTRICTED,
   onlyFleet,
@@ -348,6 +349,9 @@ export async function getDashboardData(
   // Operasyon Özeti, Dikkat/Aksiyon ve Kapanmamış Vardiyalar hepsi aşağıdaki
   // dizilerden türediği için eleme burada bir kez yapılır.
   const scope = await getTestScope();
+  // Şoför kapsamı: yönetici hesapları roster'a ve ehliyet uyarılarına girmez
+  // (lib/driver-scope.ts). İkisi de aşağıdaki dizilerden türer.
+  const driverScope = await getDriverScope();
 
   const [
     todayRes,
@@ -365,72 +369,99 @@ export async function getDashboardData(
     estimatedRes,
     manualStartRes,
   ] = await Promise.all([
-    onlyFleet(
-      withoutTestRows(
-        supabaseAdmin
-          .from("time_entries")
-          .select(ENTRY_COLS)
-          .gte("started_at", todayStart.toISOString()),
+    // driver-scoped: yönetici hesabından açılmış vardiyalar panonun HİÇBİR
+    // sayısına girmemeli. Roster zaten eleniyordu ama vardiya VERİSİ elenmiyordu:
+    // Operasyon Özeti, Toplam KM, performans sıralaması ve canlı durum kartı
+    // dördü de bu dizilerden türüyor. Canlıda iki demo satır 20.100 km taşıyordu.
+    onlyDrivers(
+      onlyFleet(
+        withoutTestRows(
+          supabaseAdmin
+            .from("time_entries")
+            .select(ENTRY_COLS)
+            .gte("started_at", todayStart.toISOString()),
+          "worker_id",
+          scope.workerIds
+        ),
         "worker_id",
-        scope.workerIds
+        fleetScope.workerIds,
+        fleetScope
       ),
       "worker_id",
-      fleetScope.workerIds,
-      fleetScope
+      driverScope
     ),
     // Uzun aralıklar 1000 satır tavanını aşabilir → performans sıralaması ve
     // aksiyon kalemleri eksik hesaplanmasın diye sonuna kadar sayfalanır.
     fetchAllRows<LiteEntry>((from, to) =>
-      onlyFleet(
-        withoutTestRows(
-          supabaseAdmin
-            .from("time_entries")
-            .select(ENTRY_COLS)
-            .gte("started_at", rangeStart)
-            .lte("started_at", rangeEnd)
-            .order("id"),
+      // driver-scoped: yukarıdakiyle aynı gerekçe (aralık verisi).
+      onlyDrivers(
+        onlyFleet(
+          withoutTestRows(
+            supabaseAdmin
+              .from("time_entries")
+              .select(ENTRY_COLS)
+              .gte("started_at", rangeStart)
+              .lte("started_at", rangeEnd)
+              .order("id"),
+            "worker_id",
+            scope.workerIds
+          ),
           "worker_id",
-          scope.workerIds
+          fleetScope.workerIds,
+          fleetScope
         ),
         "worker_id",
-        fleetScope.workerIds,
-        fleetScope
+        driverScope
       ).range(from, to)
     ),
     // Performans penceresi — tablo aralığından ayrı, sabit son 7 gün.
     fetchAllRows<LiteEntry>((from, to) =>
-      onlyFleet(
-        withoutTestRows(
-          supabaseAdmin
-            .from("time_entries")
-            .select(ENTRY_COLS)
-            .gte("started_at", perfStart.toISOString())
-            .lte("started_at", perfEnd.toISOString())
-            .order("id"),
+      // driver-scoped: "Şoför Performans Sıralaması"nın kaynağı — adı zaten
+      // şoför diyor, yönetici satırı oraya hiç girmemeli.
+      onlyDrivers(
+        onlyFleet(
+          withoutTestRows(
+            supabaseAdmin
+              .from("time_entries")
+              .select(ENTRY_COLS)
+              .gte("started_at", perfStart.toISOString())
+              .lte("started_at", perfEnd.toISOString())
+              .order("id"),
+            "worker_id",
+            scope.workerIds
+          ),
           "worker_id",
-          scope.workerIds
+          fleetScope.workerIds,
+          fleetScope
         ),
         "worker_id",
-        fleetScope.workerIds,
-        fleetScope
+        driverScope
       ).range(from, to)
     ),
     // Single source of truth for live status: EVERY open shift (ended_at IS
     // NULL), independent of the today/range window. The top summary, the
     // active-shift card and the table all derive their "active / on break /
     // in field" numbers from this one set so they can never disagree.
-    onlyFleet(
-      withoutTestRows(
-        supabaseAdmin
-          .from("time_entries")
-          .select("id, worker_id, vehicle_id, started_at, break_started_at, auto_started")
-          .is("ended_at", null),
+    // driver-scoped: harita aynı soruya ("kim şu an açık vardiyada") artık
+    // kapsamlı cevap veriyor — burası kapsamsız kalırsa iki ekran birbirini
+    // tutmaz. Otomatik kapanış kaldırıldığı için yöneticinin kapanmamış bir
+    // vardiyası burada süresiz "sahada" görünürdü.
+    onlyDrivers(
+      onlyFleet(
+        withoutTestRows(
+          supabaseAdmin
+            .from("time_entries")
+            .select("id, worker_id, vehicle_id, started_at, break_started_at, auto_started")
+            .is("ended_at", null),
+          "worker_id",
+          scope.workerIds
+        ),
         "worker_id",
-        scope.workerIds
+        fleetScope.workerIds,
+        fleetScope
       ),
       "worker_id",
-      fleetScope.workerIds,
-      fleetScope
+      driverScope
     ),
     listVehiclesWithStatus(fleetScope),
     // is_active/is_admin de okunur: Günün Panosu satırları AKTİF ŞOFÖRLERDEN
@@ -453,14 +484,24 @@ export async function getDashboardData(
     // data null → yalnız ehliyet uyarıları boş kalır, dashboard'ın geri kalanı
     // (isimler dahil) etkilenmez. Yalnız çalışan personel uyarı üretir.
     onlyFleet(
-      withoutTestRows(
-        supabaseAdmin
-          .from("workers")
-          .select("id, name, license_expiry")
-          .eq("is_active", true)
-          .not("license_expiry", "is", null),
+      // driver-scoped: ehliyet uyarısı bir ŞOFÖR uyarısıdır. Yöneticinin
+      // ehliyet tarihi doluysa "Dikkat/Aksiyon" panosuna şoför kalemi olarak
+      // düşüyordu. Şefler is_admin=false olduğu için uyarı ALMAYA DEVAM eder —
+      // onlar direksiyona geçiyor. is_active=true ise ayrı bir soru ("hâlâ
+      // çalışıyor mu") ve KALIR: ayrılmış personelin ehliyeti kimseyi
+      // ilgilendirmez.
+      onlyDrivers(
+        withoutTestRows(
+          supabaseAdmin
+            .from("workers")
+            .select("id, name, license_expiry")
+            .eq("is_active", true)
+            .not("license_expiry", "is", null),
+          "id",
+          scope.workerIds
+        ),
         "id",
-        scope.workerIds
+        driverScope
       ),
       "id",
       fleetScope.workerIds,
@@ -506,53 +547,69 @@ export async function getDashboardData(
       : Promise.resolve({ data: [] as { worker_id: string }[] }),
     // Bugün ARAÇTAN SİNYAL ALINAMADAN açılmış vardiyalar (Modül 6). Kolon yoksa
     // (migration 035 öncesi) error → data null → boş → kalem çıkmaz (best-effort).
-    onlyFleet(
-      withoutTestRows(
-        supabaseAdmin
-          .from("time_entries")
-          .select("id, worker_id")
-          .eq("location_unverified", true)
-          .gte("started_at", todayStart.toISOString()),
+    // driver-scoped: Dikkat kalemi bir ŞOFÖR uyarısıdır.
+    onlyDrivers(
+      onlyFleet(
+        withoutTestRows(
+          supabaseAdmin
+            .from("time_entries")
+            .select("id, worker_id")
+            .eq("location_unverified", true)
+            .gte("started_at", todayStart.toISOString()),
+          "worker_id",
+          scope.workerIds
+        ),
         "worker_id",
-        scope.workerIds
+        fleetScope.workerIds,
+        fleetScope
       ),
       "worker_id",
-      fleetScope.workerIds,
-      fleetScope
+      driverScope
     ),
     // Bugün başlangıç anı KESTİRİMLE yazılmış vardiyalar (038). Araç depodaydı,
     // yalnız saat depo girişinden türetilemedi — konum sorunu değil. Kolon yoksa
     // (038 öncesi) error → data null → boş → kalem çıkmaz (best-effort).
-    onlyFleet(
-      withoutTestRows(
-        supabaseAdmin
-          .from("time_entries")
-          .select("id, worker_id")
-          .eq("start_time_estimated", true)
-          .gte("started_at", todayStart.toISOString()),
+    // driver-scoped: Dikkat kalemi bir ŞOFÖR uyarısıdır.
+    onlyDrivers(
+      onlyFleet(
+        withoutTestRows(
+          supabaseAdmin
+            .from("time_entries")
+            .select("id, worker_id")
+            .eq("start_time_estimated", true)
+            .gte("started_at", todayStart.toISOString()),
+          "worker_id",
+          scope.workerIds
+        ),
         "worker_id",
-        scope.workerIds
+        fleetScope.workerIds,
+        fleetScope
       ),
       "worker_id",
-      fleetScope.workerIds,
-      fleetScope
+      driverScope
     ),
     // Bugün FİLO ŞEFİNİN elle başlattığı vardiyalar (037) → panelde Dikkat
     // bildirimi. start_source kolonu yoksa (037 öncesi) error → data null → boş
     // → kalem çıkmaz (best-effort). Patron başlatmaları ('admin') gösterilmez.
-    onlyFleet(
-      withoutTestRows(
-        supabaseAdmin
-          .from("time_entries")
-          .select("id, worker_id, started_by, started_at")
-          .eq("start_source", "chief")
-          .gte("started_at", todayStart.toISOString()),
+    // driver-scoped: Dikkat kalemi bir ŞOFÖR uyarısıdır. (Şefin KENDİSİ şoför
+    // kalır — burada elenen, adına vardiya açılan kişi yönetici ise o satır.)
+    onlyDrivers(
+      onlyFleet(
+        withoutTestRows(
+          supabaseAdmin
+            .from("time_entries")
+            .select("id, worker_id, started_by, started_at")
+            .eq("start_source", "chief")
+            .gte("started_at", todayStart.toISOString()),
+          "worker_id",
+          scope.workerIds
+        ),
         "worker_id",
-        scope.workerIds
+        fleetScope.workerIds,
+        fleetScope
       ),
       "worker_id",
-      fleetScope.workerIds,
-      fleetScope
+      driverScope
     ),
   ]);
 
@@ -739,7 +796,8 @@ export async function getDashboardData(
       vehicles,
       todayEntries,
       positions,
-      leaveWorkerIds
+      leaveWorkerIds,
+      driverScope
     ),
     attention: buildAttention(
       rangeEntries,
@@ -971,7 +1029,14 @@ function buildTodayRoster(
   todayEntries: LiteEntry[],
   positions: { vehicle_id: string; recorded_at: string }[],
   /** ONAYLI izni bugünü kapsayan şoförler → "İzinli" durumu (Modül 1). */
-  leaveWorkerIds: Set<string>
+  leaveWorkerIds: Set<string>,
+  /**
+   * ŞOFÖR kapsamı (lib/driver-scope.ts). workerRows BİLEREK geniş gelir —
+   * aynı dizi `names` isim sözlüğünü de besliyor ve orada yönetici adı
+   * gerekebilir (şoförsüz araç kalemi, vardiya satırı). Daraltma bu yüzden
+   * sorguda değil, YALNIZ roster kurulurken yapılır.
+   */
+  driverScope: DriverScope
 ): TodayRosterRow[] {
   const nowMs = Date.now();
 
@@ -1005,8 +1070,13 @@ function buildTodayRoster(
 
   const rows: TodayRosterRow[] = [];
   for (const w of workerRows) {
-    // Yönetici hesapları ve ayrılmış personel panoda yer almaz.
-    if (w.is_admin === true) continue;
+    // Yönetici/test hesapları ve ayrılmış personel panoda yer almaz.
+    // driver-scoped: eleme TEK KAYNAKTAN (lib/driver-scope.ts) — buradaki
+    // eski `w.is_admin === true` kontrolü kaldırıldı, aksi hâlde aynı kural
+    // iki yerde yaşar ve zamanla ayrışır (Analiz'de unutulmuştu, bu yüzden
+    // "ŞOFÖR 33" gösteriyordu). is_active AYRI kalır: o "çalışıyor mu"
+    // sorusudur, "şoför mü" sorusu değil.
+    if (!driverScope.isDriver(w.id)) continue;
     if (w.is_active === false) continue;
 
     const veh = vehicleByWorker.get(w.id) ?? null;

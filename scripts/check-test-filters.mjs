@@ -92,6 +92,50 @@ const FLEET_SURFACES = [
 ];
 const FLEET_FILTERED = ["onlyFleet(", "dropOtherFleets(", "// fleet-scoped:"];
 
+/**
+ * ŞOFÖR KAPSAMI (28.07.2026, lib/driver-scope.ts). `workers` tablosu TÜM
+ * personeli tutar; yöneticiler şoför DEĞİLDİR. Bir şoför yüzeyi kapsamı
+ * uygulamayı unutursa yönetici hesapları sayaca, sıralamaya ve skora karışır —
+ * Analiz sayfası tam olarak bunu yapıyordu ("ŞOFÖR 33", gerçek 30).
+ *
+ * Filo kapsamıyla AYNI mantık, ayrı eksen: orada "kim görüyor", burada
+ * "kim sayılıyor".
+ *
+ * Yalnız ŞOFÖR SAYAN/LİSTELEYEN yüzeyler denetlenir. Çalışanlar sayfası,
+ * personel dosyası, giriş, PIN ve Telegram alıcı listeleri BİLEREK dışarıda:
+ * oralarda yönetici GÖRÜNMEYE DEVAM ETMELİ (kural: "yönetici personeldir,
+ * şoför değildir"). Listeye eklenen her yeni dosya, o dosyadaki ANAHTARSIZ
+ * `workers`/`time_entries` okumalarının şoför kapsamını uygulamasını zorunlu
+ * kılar.
+ */
+const DRIVER_SURFACES = [
+  "lib/analytics.ts",
+  "lib/reports.ts",
+  "lib/admin-dashboard.ts",
+  "app/admin/page.tsx",
+  "app/admin/harita/page.tsx",
+  "app/admin/izinler/page.tsx",
+  "app/admin/seferler/page.tsx",
+  "app/admin/araclar/page.tsx",
+  "app/admin/araclar/[id]/page.tsx",
+  "app/actions/azg-report.ts",
+];
+/**
+ * `// driver-scoped:` işareti "bu sorguda şoför kapsamı BİLİNÇLİ olarak ele
+ * alındı" demektir — ya uygulandı (eleme başka satırda/dönüşte yapılıyor) ya da
+ * gerekçesiyle uygulanmadı (ör. araç eksenli bir raporun isim etiketi sözlüğü).
+ * Gerekçe yazmak zorunlu; işaretin tek başına anlamı yok.
+ */
+const DRIVER_FILTERED = ["onlyDrivers(", "dropNonDrivers(", "// driver-scoped:"];
+
+/**
+ * Şoför kuralının KENDİ muafiyet işareti. `// test-visible:` BİLEREK kabul
+ * edilmez: tek bir yorum iki bağımsız denetimi birden susturursa, test
+ * muafiyeti yazan biri farkında olmadan şoför denetimini de kapatır. Her kural
+ * kendi gerekçesini ister.
+ */
+const DRIVER_EXEMPT = /\/\/\s*driver-scoped:\s*\S/;
+
 /** Muafiyet yorumu. Gerekçe zorunlu: `// test-visible: <neden>`. */
 const EXEMPT = /\/\/\s*test-visible:\s*\S/;
 
@@ -112,6 +156,8 @@ function walk(dir, out = []) {
 
 const findings = [];
 let checked = 0;
+/** Şoför kuralının GERÇEKTEN baktığı sorgu sayısı — yalnız DRIVER_SURFACES. */
+let driverChecked = 0;
 
 for (const d of SCAN_DIRS) {
   for (const file of walk(join(ROOT, d))) {
@@ -167,7 +213,23 @@ for (const d of SCAN_DIRS) {
         findings.push({ file: rel, line: i + 1, table, kind: "test", snippet: lines[i].trim() });
       }
 
-      // ── 2) Filo kapsamı ────────────────────────────────────────────────
+      // ── 2) Şoför kapsamı ───────────────────────────────────────────────
+      // Yalnız şoför SAYAN/LİSTELEYEN yüzeylerde ve yalnız ANAHTARSIZ liste
+      // okumalarında aranır. `vehicles` hariç: o araç ekseni, şoför değil.
+      // `// test-visible:` BURADA muaf tutmaz (bkz. DRIVER_EXEMPT); yalnız
+      // `// driver-scoped:` susturur ve gerekçe yazmak zorunludur.
+      if (DRIVER_SURFACES.includes(rel) && table !== "vehicles") {
+        driverChecked++;
+        if (
+          !DRIVER_EXEMPT.test(before) &&
+          !KEYED.some((k) => stmt.includes(k)) &&
+          !DRIVER_FILTERED.some((f) => wide.includes(f))
+        ) {
+          findings.push({ file: rel, line: i + 1, table, kind: "driver", snippet: lines[i].trim() });
+        }
+      }
+
+      // ── 3) Filo kapsamı ────────────────────────────────────────────────
       // Yalnız filo şefinin gördüğü yüzeylerde ve yalnız ANAHTARSIZ liste
       // okumalarında aranır.
       if (!FLEET_SURFACES.includes(rel)) continue;
@@ -181,12 +243,14 @@ for (const d of SCAN_DIRS) {
 
 if (findings.length === 0) {
   console.log(
-    `✓ kapsam muhafızı: ${checked} sorgu denetlendi (test verisi + filo). Filtresiz sorgu yok.`
+    `✓ kapsam muhafızı: test verisi ${checked} sorgu · şoför ${driverChecked} sorgu ` +
+      `(${DRIVER_SURFACES.length} yüzey) · filo ${FLEET_SURFACES.length} yüzey. Filtresiz sorgu yok.`
   );
   process.exit(0);
 }
 
 const testFindings = findings.filter((f) => f.kind === "test");
+const driverFindings = findings.filter((f) => f.kind === "driver");
 const fleetFindings = findings.filter((f) => f.kind === "fleet");
 
 function dump(list) {
@@ -205,6 +269,20 @@ if (testFindings.length) {
   Çözüm: withoutTestRows(query, "id"|"worker_id"|"vehicle_id", scope.*)
          ya da dropTestRows(rows, pick, scope)   [lib/test-data.ts]
          Bilinçli istisnaysa: // test-visible: <gerekçe>
+`);
+}
+
+if (driverFindings.length) {
+  console.error(
+    `\n✗ ŞOFÖR KAPSAMI EKSİK — ${driverFindings.length} sorgu yönetici hesaplarını elemiyor.\n` +
+      `  Bu yüzeyler ŞOFÖR sayar/listeler; yönetici karışırsa sayaç ve sıralama şişer.\n`
+  );
+  dump(driverFindings);
+  console.error(`
+  Çözüm: onlyDrivers(query, "id"|"worker_id", driverScope)
+         ya da dropNonDrivers(rows, pickWorkerId, driverScope)   [lib/driver-scope.ts]
+         Bilinçli istisnaysa: // driver-scoped: <gerekçe>
+         (// test-visible: burada MUAF TUTMAZ — her kural kendi gerekçesini ister)
 `);
 }
 

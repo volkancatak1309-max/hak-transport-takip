@@ -2,6 +2,7 @@ import { requireFleetView } from "@/lib/session";
 import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin, fetchAllRows, chunkIds } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope, dropNonDrivers, onlyDrivers } from "@/lib/driver-scope";
 import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AdminClient } from "./AdminClient";
@@ -95,11 +96,13 @@ export default async function AdminPage({
   // Uzun aralıklar (ay/özel) 1000 satır tavanını aşabilir; toplamlar ve
   // Excel/PDF dışa aktarımlar eksik kalmasın diye sonuna kadar sayfalanır.
   const scope = await getTestScope();
+  const driverScope = await getDriverScope();
   const entriesQuery = fetchAllRows<TimeEntry>((from, to) => {
-    // Her iki eleme de AŞAĞIDA, koşullu filtrelerden SONRA uygulanıyor
+    // ÜÇ eleme de AŞAĞIDA, koşullu filtrelerden SONRA uygulanıyor
     // (zincirin sonunda `query = ...`), muhafızın penceresi dışında kalıyor:
     // test-filtered: withoutTestRows(query, "worker_id", scope.workerIds)
     // fleet-scoped: onlyFleet(query, "worker_id", fleetScope.workerIds)
+    // driver-scoped: onlyDrivers(query, "worker_id", driverScope)
     let query = supabaseAdmin
       .from("time_entries")
       .select("*")
@@ -115,6 +118,11 @@ export default async function AdminPage({
     // Vardiya Kayıtları arşivi + üst toplamlar + CSV/PDF dışa aktarımı hepsi
     // bu diziden türer; eleme tek noktada.
     query = withoutTestRows(query, "worker_id", scope.workerIds);
+    // driver-scoped: üst toplamlar (Toplam Saat / Toplam KM / tavan aşımı) ve
+    // Excel-PDF çıktısı bu diziden türüyor. Yönetici hesabından açılmış iki
+    // demo vardiya tek başına 20.100 km taşıyordu — Raporlar > Performans onu
+    // artık elediği için burası kapsamsız kalsaydı iki ekran birbirini tutmazdı.
+    query = onlyDrivers(query, "worker_id", driverScope);
     // Arsiv sefte GIZLI; veriyi yine de daraltiyoruz ki gizli bir bilesen
     // ya da ileride acilacak bir gorunum karsi filoyu sizdirmasin.
     query = onlyFleet(query, "worker_id", fleetScope.workerIds, fleetScope);
@@ -124,6 +132,10 @@ export default async function AdminPage({
   const [entriesResult, workersResult, dashboard] = await Promise.all([
     entriesQuery,
     // test-filtered: withoutTestRows — isim haritası + şoför filtresi dropdown'ı.
+    // driver-scoped: sorgu BİLEREK geniş kalır — çıktısı hem geniş isim
+    // haritasını (workerMap) hem dar şoför seçicisini (driverWorkers) besliyor.
+    // Daraltma aşağıda, dropNonDrivers ile YALNIZ seçici tarafında yapılıyor;
+    // burada daraltılsaydı eski vardiya satırları "—" adıyla kalırdı.
     onlyFleet(
       withoutTestRows(
         supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
@@ -138,7 +150,18 @@ export default async function AdminPage({
   ]);
 
   const workersData = (workersResult.data ?? []) as WorkerPublic[];
+  // İSİM HARİTASI — BİLEREK GENİŞ. Vardiya satırlarının adını buradan çözüyoruz;
+  // daraltılırsa yönetici hesabından açılmış eski bir vardiya "—" adıyla ekranda
+  // kalır (satır düşmez, yalnız kimliği kaybolur). Şoför EVRENİ ayrı: aşağıdaki
+  // driverWorkers.
   const workerMap = new Map(workersData.map((w) => [w.id, w]));
+
+  // driver-scoped: yalnız ŞOFÖR SEÇİCİSİ ve Excel'in Pers.-Nr numaralandırması
+  // için. Yöneticiler seçicide şoför gibi görünüyordu (seçilince liste boş
+  // geliyordu) ve sıralamada yer kapladıkları için employee_number'ı boş olan
+  // şoförlerin yedek numaraları kayıyordu. Ayrılan şoförler KALIR — bu bir
+  // GEÇMİŞ KAYIT filtresi, eski vardiyaları aranabilmeli.
+  const driverWorkers = dropNonDrivers(workersData, (w) => w.id, driverScope);
 
   let entriesData = ((entriesResult.data ?? []) as TimeEntry[]).map((e) => {
     const w = workerMap.get(e.worker_id);
@@ -246,15 +269,22 @@ export default async function AdminPage({
   // bolumden biri. Kapsam UNUTULMUSTU ve muhafiz yakaladi (22.07.2026):
   // sef karsi filonun acik vardiyalarini goruyordu. vehicle_id select'e
   // eklendi — filo bagi arac uzerinden kuruluyor, plaka metni degil.
+  // driver-scoped: "Kapanmamış Vardiyalar" kartı. Otomatik kapanış KALDIRILDI
+  // (22.07.2026) → yönetici hesabının kapanmamış bir vardiyası burada süresiz
+  // durur ve gerçek bir şoför sorunu gibi okunur.
   const { data: activeShiftData } = await onlyFleet(
-    withoutTestRows(
-      supabaseAdmin
-        .from("time_entries")
-        .select("id, worker_id, vehicle_id, plate, started_at")
-        .is("ended_at", null)
-        .order("started_at", { ascending: true }),
+    onlyDrivers(
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select("id, worker_id, vehicle_id, plate, started_at")
+          .is("ended_at", null)
+          .order("started_at", { ascending: true }),
+        "worker_id",
+        scope.workerIds
+      ),
       "worker_id",
-      scope.workerIds
+      driverScope
     ),
     // Şoför ekseni: ödünç araç kullanan şoför kendi şefinin listesinde kalır.
     "worker_id",
@@ -316,7 +346,7 @@ export default async function AdminPage({
              gostermemek icin. */
           readOnly={isChief}
           entries={entriesData}
-          workers={workersData}
+          workers={driverWorkers}
           range={range}
           from={sp.from ?? ""}
           to={sp.to ?? ""}

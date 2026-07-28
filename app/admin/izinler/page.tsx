@@ -3,6 +3,7 @@ import { requireFleetView } from "@/lib/session";
 import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import {
   LeaveCalendar,
@@ -41,6 +42,7 @@ export default async function IzinlerPage({
   const { session, fleet, isChief } = await requireFleetView();
   const fleetScope = await getFleetScope(fleet);
   const scope = await getTestScope();
+  const driverScope = await getDriverScope();
 
   const sp = await searchParams;
   const month = /^\d{4}-\d{2}$/.test(sp.month ?? "")
@@ -51,15 +53,22 @@ export default async function IzinlerPage({
   const [activeRes, formerRes, leavesRes, archiveRes] = await Promise.all([
     // Aktif kadro (terminated_at'ten BAĞIMSIZ — migration 032 gelmeden de çalışır).
     onlyFleet(
-      withoutTestRows(
-        supabaseAdmin
-          .from("workers")
-          .select("id, name")
-          .eq("is_active", true)
-          .eq("is_admin", false)
-          .order("name"),
+      // driver-scoped: eski `.eq("is_admin", false)` kaldırıldı — aynı kural
+      // artık lib/driver-scope.ts'te TEK yerde yaşıyor. Davranış birebir aynı
+      // (şefler is_admin=false, izin takviminde KALIRLAR); değişen tek şey,
+      // kuralın kopyası olmaması.
+      onlyDrivers(
+        withoutTestRows(
+          supabaseAdmin
+            .from("workers")
+            .select("id, name")
+            .eq("is_active", true)
+            .order("name"),
+          "id",
+          scope.workerIds
+        ),
         "id",
-        scope.workerIds
+        driverScope
       ),
       "id",
       fleetScope.workerIds,
@@ -70,16 +79,20 @@ export default async function IzinlerPage({
     // Best-effort: migration 032 gelmeden terminated_at kolonu yok → error →
     // boş; aktif kadro yine görünür (M1↔M2 birleşimi).
     onlyFleet(
-      withoutTestRows(
-        supabaseAdmin
-          .from("workers")
-          .select("id, name, terminated_at")
-          .eq("is_admin", false)
-          .not("terminated_at", "is", null)
-          .gte("terminated_at", start)
-          .order("name"),
+      // driver-scoped: yukarıdakiyle aynı gerekçe (tek kaynak).
+      onlyDrivers(
+        withoutTestRows(
+          supabaseAdmin
+            .from("workers")
+            .select("id, name, terminated_at")
+            .not("terminated_at", "is", null)
+            .gte("terminated_at", start)
+            .order("name"),
+          "id",
+          scope.workerIds
+        ),
         "id",
-        scope.workerIds
+        driverScope
       ),
       "id",
       fleetScope.workerIds,

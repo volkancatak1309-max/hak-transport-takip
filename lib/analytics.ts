@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
+import { getDriverScope, dropNonDrivers } from "@/lib/driver-scope";
 import {
   startOfTodayVienna,
   endOfTodayVienna,
@@ -196,11 +197,28 @@ export function previousPeriod(range: DateRange): DateRange | null {
 
 // ── Yardımcılar ──────────────────────────────────────────────────────────────
 
+/**
+ * Analiz + Hız/Mesafe/Performans raporlarının ORTAK evreni.
+ *
+ * İKİ AYRI LİSTE döner ve ayrım kasıtlıdır:
+ *   • `workers`     — ŞOFÖR EVRENİ (yönetici/test elenmiş). "Kaç şoför",
+ *                     sıralama, skor, rapor SATIRI hep bunun üzerinde döner.
+ *   • `workerNames` — İSİM SÖZLÜĞÜ (yalnız test elenmiş). Bir ARAÇ satırına
+ *                     "bu aracı kim kullanıyor" etiketi basmak için.
+ *
+ * Neden ikisi: sayı ile etiket farklı sorulardır. Tek liste kullanılsaydı ya
+ * yönetici şoför sayılırdı (eski hata, "ŞOFÖR 33") ya da araca atanmış birinin
+ * adı raporda "—"e dönerdi (bilgi kaybı). Yakıt raporu (buildFuelReport) bu
+ * ayrımı kendi içinde zaten yapıyordu; hız/mesafe raporları da aynı sözlüğü
+ * kullansın diye buraya taşındı.
+ */
 export async function listVehiclesAndWorkers(): Promise<{
   vehicles: VehicleLite[];
   workers: WorkerLite[];
+  workerNames: WorkerLite[];
 }> {
   const scope = await getTestScope();
+  const driverScope = await getDriverScope();
   // test-filtered: dropTestRows — Analiz sayfasının ve Hız/Mesafe/Performans
   // raporlarının ORTAK araç/şoför evreni (lib/reports.ts loadBase buradan okur).
   const [{ data: vData }, { data: wData }] = await Promise.all([
@@ -209,19 +227,33 @@ export async function listVehiclesAndWorkers(): Promise<{
     // isim evreni TÜM personel olmalı ki geçmiş raporlarda ayrılan şoförün adı
     // görünsün (aksi halde "—" olur / Performans satırı düşer). Aktif/ayrıldı
     // ayrımı yalnız CANLI yüzeylerde (roster/harita/seçiciler) uygulanır.
+    //
+    // driver-scoped: yönetici elemesi SORGUDA değil, aşağıdaki dönüşte
+    // dropNonDrivers ile yapılıyor — araç sorgusuyla paralel çalışsın diye
+    // (iki sorgu tek Promise.all'da, ek gidiş-geliş yok).
     supabaseAdmin.from("workers").select("id, name"),
   ]);
+  const workerNames = dropTestRows(
+    (wData ?? []) as WorkerLite[],
+    (w) => ({ worker: w.id }),
+    scope
+  );
   return {
     vehicles: dropTestRows(
       (vData ?? []) as VehicleLite[],
       (v) => ({ vehicle: v.id }),
       scope
     ),
-    workers: dropTestRows(
-      (wData ?? []) as WorkerLite[],
-      (w) => ({ worker: w.id }),
-      scope
-    ),
+    // driver-scoped: ŞOFÖR EVRENİ — computeSafetyScores satır satır bunun
+    // üzerinde döner (ŞOFÖR sayacı, skor tablosu, Performans raporu satırları
+    // hep buradan çıkar). Yönetici hesapları burada kalırsa sayaç 33 gösterir
+    // (canlıda ölçüldü, 28.07.2026).
+    //
+    // resolveDriver (Top-10 / Rölanti / Aylık Pivot) BİLEREK bu DAR listeyi
+    // alır: yöneticiye araç atanmışsa olay "Atanmamış · PLAKA" satırına düşer,
+    // şoför ligine girmez. Geniş sözlük oraya GEÇİRİLMEMELİDİR.
+    workers: dropNonDrivers(workerNames, (w) => w.id, driverScope),
+    workerNames,
   };
 }
 
@@ -368,6 +400,20 @@ function idleEpisodeDurationMs(ep: { started_at: string; ended_at: string | null
   return Math.max(0, endMs - startMs) + IDLE_TRIGGER_S * 1000;
 }
 
+/**
+ * Aracın olayını ŞOFÖR EKSENİNE çevirir (Top-10, Rölanti İsraf Panosu, Aylık
+ * Pivot Arşivi üçü de bunu kullanır).
+ *
+ * ŞOFÖR-OLMAYAN SAVUNMASI: `workersById` çağıran tarafta listVehiclesAndWorkers
+ * çıktısından kurulur ve o liste ŞOFÖR EVRENİDİR (yönetici/test elenmiş,
+ * bkz. lib/driver-scope.ts). Dolayısıyla bir yöneticiye araç atanırsa `get()`
+ * undefined döner ve olay "Atanmamış · PLAKA" satırına düşer — yönetici şoför
+ * liginde ASLA görünmez. Bu davranış KAZARA DEĞİL, kasıtlıdır: olay yutulmaz
+ * (sayım korunur) ama şoför sıralamasına da girmez.
+ *
+ * Buraya geniş bir isim sözlüğü GEÇİRİLMEMELİDİR — geçirilirse yönetici adı
+ * doğrudan şoför etiketi olarak basılır ve savunma sessizce kaybolur.
+ */
 function resolveDriver(
   vehicleId: string,
   vehiclesById: Map<string, VehicleLite>,

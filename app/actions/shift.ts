@@ -370,11 +370,19 @@ export async function startShiftForWorkerAction(input: {
   // Hedef şoför hâlâ kadroda mı?
   const { data: target } = await supabaseAdmin
     .from("workers")
-    .select("id, is_active")
+    .select("id, is_active, is_admin")
     .eq("id", input.workerId)
     .maybeSingle();
   if (!target || target.is_active !== true) {
     return { ok: false, error: "inactive_worker" };
+  }
+  // Yönetici adına vardiya AÇILAMAZ. Seçici (roster) zaten yöneticileri
+  // göstermiyor ama bu sunucu kapısı istemciye güvenmez: böyle bir satır
+  // açılırsa Analiz, AZG ve tüm raporlara GERÇEK vardiya gibi girer ve şoför
+  // metriklerini kalıcı olarak kirletir (canlıda iki demo satır tam olarak
+  // bunu yapmıştı). Şefler is_admin=false olduğu için bu kapıya TAKILMAZ.
+  if (target.is_admin === true) {
+    return { ok: false, error: "not_a_driver" };
   }
 
   // Araç: verilen (override) ya da atanmış. active + test-değil şartı iki yolda da.

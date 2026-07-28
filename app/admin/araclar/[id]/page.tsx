@@ -18,6 +18,7 @@ import { getActiveGeofences } from "@/app/actions/geofences";
 import { startOfTodayVienna } from "@/lib/format";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { VehicleDetailClient } from "./VehicleDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export default async function VehicleDetailPage({
   // pasifler de gelir (filtrelenirse yönetici atamayı temizlediğini sanıp
   // ex-çalışanı geri yazar).
   const scope = await getTestScope();
+  const driverScope = await getDriverScope();
   const [detail, telemetry, track, zones, events, dtc, driversResult] =
     await Promise.all([
       getVehicleDetail(id),
@@ -45,10 +47,16 @@ export default async function VehicleDetailPage({
       getActiveGeofences(),
       listVehicleEvents(id, 10),
       listActiveDtc(id),
-      withoutTestRows(
-        supabaseAdmin.from("workers").select("id, name, is_active").order("name"),
+      // driver-scoped: araç detayındaki "Atanmış şoför" seçicisi — liste
+      // sayfasıyla aynı gerekçe (bkz. app/admin/araclar/page.tsx).
+      onlyDrivers(
+        withoutTestRows(
+          supabaseAdmin.from("workers").select("id, name, is_active").order("name"),
+          "id",
+          scope.workerIds
+        ),
         "id",
-        scope.workerIds
+        driverScope
       ),
     ]);
   if (!detail) notFound();

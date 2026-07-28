@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope } from "@/lib/driver-scope";
 import { vehicleSchema } from "@/lib/validation";
 import type { Vehicle } from "@/lib/types";
 
@@ -195,6 +196,27 @@ async function checkVehicleConflicts(
   return null;
 }
 
+/**
+ * Araca ŞOFÖR OLMAYAN biri atanamaz (yönetici / test hesabı).
+ *
+ * Seçici zaten yalnız şoför gösteriyor (app/admin/araclar/**), ama bu sunucu
+ * kapısı istemciye güvenmez — shift.ts'teki "not_a_driver" kapısıyla aynı
+ * gerekçe. Kritik olan yanı: vehicles.assigned_worker_id, olayların şoför
+ * eksenine çevrildiği TEK bağdır (lib/analytics.ts resolveDriver). Buraya bir
+ * yönetici yazılırsa Top-10, Rölanti Panosu ve Aylık Pivot'ta o aracın olayları
+ * "Atanmamış" satırına düşer — sızıntı olmaz ama aracın gerçek sahibi kaybolur.
+ *
+ * null (atamayı temizleme) her zaman serbest. Şefler is_admin=false → geçer.
+ */
+async function assertDriverAssignable(
+  workerId: string | null
+): Promise<VehicleActionResult | null> {
+  if (!workerId) return null;
+  const driverScope = await getDriverScope();
+  if (driverScope.isDriver(workerId)) return null;
+  return { ok: false, error: "Yönetici hesabı araca şoför olarak atanamaz" };
+}
+
 export async function createVehicle(
   formData: FormData
 ): Promise<VehicleActionResult> {
@@ -213,6 +235,9 @@ export async function createVehicle(
     null
   );
   if (conflict) return conflict;
+
+  const notDriver = await assertDriverAssignable(d.assigned_worker_id ?? null);
+  if (notDriver) return notDriver;
 
   const { data, error } = await supabaseAdmin
     .from("vehicles")
@@ -275,6 +300,14 @@ export async function updateVehicle(
   const prevFromForm = typeof prevRaw === "string" && prevRaw ? prevRaw : null;
   const nextWorkerId = d.assigned_worker_id ?? null;
   const assignmentTouched = prevFromForm !== nextWorkerId;
+
+  // Yalnız atama GERÇEKTEN değiştiyse denetlenir: dokunulmamış bir formda eski
+  // (varsayımsal) yönetici ataması kaydı kilitlemesin — muayene tarihi
+  // düzeltmek isteyen yönetici hata duvarına çarpmamalı.
+  if (assignmentTouched) {
+    const notDriver = await assertDriverAssignable(nextWorkerId);
+    if (notDriver) return notDriver;
+  }
 
   const { data: current } = await supabaseAdmin
     .from("vehicles")

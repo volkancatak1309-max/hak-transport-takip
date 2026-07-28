@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { listLatestVehiclePositions } from "@/lib/telemetry";
@@ -18,15 +19,26 @@ export default async function AraclarPage() {
   // temizlemiyor, filtrelenirse o araç formda "Şoför yok" görünür ve yönetici
   // atamayı temizlediğini sanıp aslında ex-çalışanı geri yazar.
   const scope = await getTestScope();
+  const driverScope = await getDriverScope();
   const [vehicles, driversResult, dtc, positions] = await Promise.all([
     listVehiclesWithStatus(),
-    withoutTestRows(
-      supabaseAdmin
-        .from("workers")
-        .select("id, name, is_active")
-        .order("name"),
+    // driver-scoped: yöneticiler araca ATANAMAZ. Bu seçici, bir yöneticinin
+    // vehicles.assigned_worker_id'ye yazılabildiği TEK yol — oradan da Top-10,
+    // Rölanti Panosu ve Aylık Pivot'a şoför olarak sızardı (lib/analytics.ts
+    // resolveDriver savunması onu "Atanmamış · PLAKA"ya düşürür ama o zaman da
+    // aracın gerçek sahibi kaybolur). Kapıyı kaynağında kapatmak daha temiz.
+    // is_active filtresi YOK olmaya devam ediyor — yukarıdaki gerekçe geçerli.
+    onlyDrivers(
+      withoutTestRows(
+        supabaseAdmin
+          .from("workers")
+          .select("id, name, is_active")
+          .order("name"),
+        "id",
+        scope.workerIds
+      ),
       "id",
-      scope.workerIds
+      driverScope
     ),
     // Filo arıza özeti — 22.07.2026'da yönetici panosundan buraya taşındı.
     // Arıza aracın özelliğidir; panoda sayfanın ilk 420 px'ini işgal ediyordu.

@@ -18,6 +18,7 @@ import {
   SPEED_MIN_KM,
 } from "@/lib/metric-thresholds";
 import { getTestScope, dropTestRows, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { workedMs, kmDiff, viennaDayKey } from "@/lib/format";
 import type { TimeEntry } from "@/lib/types";
 
@@ -129,7 +130,7 @@ function rangeDays(range: DateRange): number {
 async function loadBase(range: DateRange) {
   const startISO = range.start.toISOString();
   const endISO = range.end.toISOString();
-  const { vehicles, workers } = await listVehiclesAndWorkers();
+  const { vehicles, workers, workerNames } = await listVehiclesAndWorkers();
   const [events, idleEpisodes, spanEntries] = await Promise.all([
     listEventsInRange(startISO, endISO),
     listIdleEpisodesInRange(startISO, endISO),
@@ -143,7 +144,10 @@ async function loadBase(range: DateRange) {
     startISO,
     endISO,
     vehicles,
+    /** ŞOFÖR EVRENİ — satır/sayı üreten her yer bunu kullanır. */
     workers,
+    /** İSİM SÖZLÜĞÜ — araç satırına sürücü etiketi basan yerler bunu kullanır. */
+    workerNames,
     events,
     idleEpisodes,
     distanceByVehicle: new Map(spanEntries.map(([id, s]) => [id, s.km] as const)),
@@ -176,7 +180,10 @@ function checkKmDenominator(
 /** HIZ RAPORU — ihlaller `vehicle_events`'ten (gerçek olay + kayıtlı hız). */
 export async function buildSpeedReport(range: DateRange): Promise<SpeedReport> {
   const base = await loadBase(range);
-  const workerName = new Map(base.workers.map((w) => [w.id, w.name]));
+  // İSİM SÖZLÜĞÜ (geniş) — hız raporu ARAÇ eksenlidir, driverName yalnız
+  // "bu aracı kim kullanıyor" etiketidir. Şoför evreni (base.workers)
+  // kullanılsaydı atanmış birinin adı "—"e dönerdi. Yakıt raporu da böyle.
+  const workerName = new Map(base.workerNames.map((w) => [w.id, w.name]));
 
   const byVehicle = new Map<string, { count: number; max: number | null }>();
   for (const e of base.events) {
@@ -231,7 +238,8 @@ export async function buildSpeedReport(range: DateRange): Promise<SpeedReport> {
 /** FİLO MESAFE — odometre uç-noktaları (getVehicleDistanceKm, km-guard dahil). */
 export async function buildDistanceReport(range: DateRange): Promise<DistanceReport> {
   const base = await loadBase(range);
-  const workerName = new Map(base.workers.map((w) => [w.id, w.name]));
+  // İSİM SÖZLÜĞÜ (geniş) — mesafe raporu ARAÇ eksenli; bkz. hız raporu.
+  const workerName = new Map(base.workerNames.map((w) => [w.id, w.name]));
   const days = rangeDays(range);
 
   const rows: DistanceRow[] = base.vehicles.map((v) => {
@@ -272,21 +280,31 @@ export async function buildPerformanceReport(
   // SAYFALI (25.07.2026): PostgREST 1000 satırda kesiyor ve `.limit()` bunu
   // aşamıyor. ~29 şoför × 1 vardiya/gün ile tavan ~34 günde doluyordu; "son 3 ay"
   // ya da yıllık performans raporu sessizce eksik satırla hesaplanırdı.
+  const driverScope = await getDriverScope();
   const { data: entryData } = await fetchAllRows<TimeEntry>(
     (from, to) =>
-      withoutTestRows(
-        supabaseAdmin
-          .from("time_entries")
-          .select(
-            "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count"
-          )
-          .gte("started_at", base.startISO)
-          .lte("started_at", base.endISO)
-          .order("started_at", { ascending: true })
-          .order("id")
-          .range(from, to),
+      // driver-scoped: yönetici hesabından açılmış vardiyalar bu rapora
+      // GERÇEK vardiya gibi giriyordu. Canlıda iki demo satır vardı ve
+      // toplam 20.100 km taşıyorlardı (biri 2 dakikada 20.000 km) — filo
+      // km'sini, çalışma süresini ve teslimat sayısını doğrudan şişiriyordu.
+      // Ayrılan şoförlerin vardiyaları KALIR: onlar şoför, arşiv 7 yıl.
+      onlyDrivers(
+        withoutTestRows(
+          supabaseAdmin
+            .from("time_entries")
+            .select(
+              "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count"
+            )
+            .gte("started_at", base.startISO)
+            .lte("started_at", base.endISO)
+            .order("started_at", { ascending: true })
+            .order("id")
+            .range(from, to),
+          "worker_id",
+          scope.workerIds
+        ),
         "worker_id",
-        scope.workerIds
+        driverScope
       ),
     "buildPerformanceReport/time_entries"
   );
@@ -613,6 +631,13 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     // is_active FİLTRESİ YOK (Modül 2): geçmiş yakıt raporu ayrılan personelin
     // adını göstermeye devam etmeli — isim evreni TÜM personel olmalı, yoksa
     // terminated şoförün adı "—"e döner (7 yıl arşiv zorunluluğu).
+    //
+    // driver-scoped: KAPSAM BİLEREK UYGULANMADI. Bu bir İSİM ETİKETİ sözlüğü,
+    // şoför evreni değil: yakıt raporunun satırları ARAÇ eksenlidir (vehicleCount,
+    // measured, l100VehicleCount hepsi araç sayar) ve buradaki ad yalnız "bu aracı
+    // kim kullanıyor" etiketidir. Kapsamı uygulamak hiçbir SAYIYI değiştirmez,
+    // yalnız bir yöneticiye araç atanmışsa etiketi "—"e çevirir — bilgi kaybı,
+    // düzeltme değil. Şoför SAYAN yüzey buranın üstünde: buildPerformanceReport.
     supabaseAdmin.from("workers").select("id, name"),
   ]);
   const vehicles = dropTestRows(

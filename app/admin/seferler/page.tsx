@@ -2,6 +2,7 @@ import { getTranslations } from "next-intl/server";
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getAssignments } from "@/app/actions/assignments";
 import { AdminAssignmentsClient } from "./AdminAssignmentsClient";
@@ -14,14 +15,22 @@ export default async function AssignmentsPage() {
   const assignments = await getAssignments();
 
   const scope = await getTestScope();
-  const { data: workers } = await withoutTestRows(
-    supabaseAdmin
-      .from("workers")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("name"),
+  const driverScope = await getDriverScope();
+  // driver-scoped: sefer ataması bir ŞOFÖR görevidir; yönetici hesapları
+  // seçicide çıkmamalı (seçilirse gerçek bir atama satırı doğar ve sefer
+  // sayıları yöneticiye yazılır). Şefler is_admin=false → seçilebilir kalır.
+  const { data: workers } = await onlyDrivers(
+    withoutTestRows(
+      supabaseAdmin
+        .from("workers")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("name"),
+      "id",
+      scope.workerIds
+    ),
     "id",
-    scope.workerIds
+    driverScope
   );
   const workerOpts = (workers ?? []).map((w) => ({
     id: w.id as string,

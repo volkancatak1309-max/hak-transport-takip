@@ -3,6 +3,7 @@ import { requireFleetView } from "@/lib/session";
 import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { LiveTrackingClient } from "./LiveTrackingClient";
 import { listLatestVehiclePositions } from "@/lib/telemetry";
@@ -28,15 +29,29 @@ export default async function HaritaPage() {
 
   // 1) All active shifts (ended_at IS NULL)
   const scope = await getTestScope();
+  const driverScope = await getDriverScope();
   // Test şoförünün açık vardiyası haritanın "Şoförler (N)" sekmesine düşmesin.
+  //
+  // driver-scoped: bu TEK sorgu altı ölçüyü birden besliyor — "Aktif Vardiya"
+  // KPI'ı, "Şoförler (N)" sekmesi, yan panel listesi, "En Uzun Aktif", tavan
+  // aşımı sayısı ve harita kartı başlığı. Yönetici hesabının kapanmamış bir
+  // vardiyası burada kalırsa hepsi birden bozulur: otomatik kapanış KALDIRILDIĞI
+  // için (bkz. 22.07.2026 kararı) böyle bir satır günlerce açık durur, "En Uzun
+  // Aktif" saçma bir değere fırlar ve "Tavan aşımı" SAHTE AZG ihlali sayar.
+  // Eleme burada, kaynak kümede yapılır — listede yapılırsa üst KPI ile sekme
+  // sayısı birbirini tutmaz (bkz. satır 65-67'deki değişmez kural).
   const { data: shiftsData, error: shiftsErr } = await onlyFleet(
-    withoutTestRows(
-      supabaseAdmin
-        .from("time_entries")
-        .select("id, started_at, worker_id, vehicle_id")
-        .is("ended_at", null),
+    onlyDrivers(
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select("id, started_at, worker_id, vehicle_id")
+          .is("ended_at", null),
+        "worker_id",
+        scope.workerIds
+      ),
       "worker_id",
-      scope.workerIds
+      driverScope
     ),
     // Şoför ekseni (kural 7): şoför ödünç araç kullansa da şefi onu görür.
     // Konumu ise aracın telemetrisinden gelir — o araç getFleetScope'ta

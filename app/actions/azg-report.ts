@@ -4,6 +4,7 @@ import { getTranslations } from "next-intl/server";
 import { listEditedEntryIds } from "@/lib/shift-edit-log";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { requireAdmin } from "@/lib/session";
 import { workedMs, formatDate, formatTime } from "@/lib/format";
 import {
@@ -120,6 +121,7 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
 
   // Test vardiyaları resmî AZG raporuna GİRMEZ — bu belge denetime çıkar.
   const scope = await getTestScope();
+  const driverScope = await getDriverScope();
 
   // Resmî § 26 AZG raporu: aylık vardiyalar 1000 satır tavanını aşarsa rapor
   // eksik basılır — sorgu sonuna kadar sayfalanır.
@@ -130,17 +132,28 @@ export async function getAZGReportData(month: string): Promise<AZGResult> {
     ended_at: string | null;
     break_minutes: number | null;
   }>((from, to) =>
-    withoutTestRows(
-      supabaseAdmin
-        .from("time_entries")
-        .select("id, worker_id, started_at, ended_at, break_minutes")
-        .gte("started_at", start.toISOString())
-        .lt("started_at", end.toISOString())
-        .not("ended_at", "is", null)
-        .order("started_at", { ascending: true })
-        .order("id"),
+    // driver-scoped: § 26 AZG raporu ŞOFÖRLERİN sürüş/çalışma süresi kaydıdır ve
+    // totalWorkers doğrudan bir şoför sayısıdır. Yönetici hesabından açılmış
+    // vardiyalar bu belgeye girmemeli — canlıda iki demo satır vardı (biri 2
+    // dakika sürüyor, 20.000 km "sürülmüş" gösteriyor); böyle bir satır resmî
+    // bir çalışma-süresi kaydına dönüşürse belge denetimde savunulamaz hâle
+    // gelir. Şefler is_admin=false → raporda KALIRLAR (gerçekten direksiyondalar).
+    // Ayrılan şoförler de KALIR: ait oldukları ayın raporu değişmez.
+    onlyDrivers(
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select("id, worker_id, started_at, ended_at, break_minutes")
+          .gte("started_at", start.toISOString())
+          .lt("started_at", end.toISOString())
+          .not("ended_at", "is", null)
+          .order("started_at", { ascending: true })
+          .order("id"),
+        "worker_id",
+        scope.workerIds
+      ),
       "worker_id",
-      scope.workerIds
+      driverScope
     ).range(from, to)
   );
 

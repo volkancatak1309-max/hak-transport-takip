@@ -93,6 +93,7 @@ import {
   REPORT_EMPTY,
   buildShiftReportRow,
   reportPeriodDe,
+  FILE_PREFIX_LOWER,
 } from "@/lib/report-de";
 import type { TimeEntryWithWorker, WorkerPublic } from "@/lib/types";
 import { PACKAGES_ENABLED } from "@/lib/tenant";
@@ -399,7 +400,7 @@ export function AdminClient({
         rows: entries.map((e) =>
           buildShiftReportRow(e, e.workers?.name ?? REPORT_EMPTY)
         ),
-        filename: `hak-report-${range}-${new Date().toISOString().slice(0, 10)}.pdf`,
+        filename: `${FILE_PREFIX_LOWER}-report-${range}-${new Date().toISOString().slice(0, 10)}.pdf`,
       });
     } catch {
       toast.error(tExport("error"));
@@ -549,9 +550,11 @@ export function AdminClient({
     <div className="space-y-6">
       {/* Sayfa başlığı + genel eylemler. Excel/PDF/AZG/Çalışan Ekle en üste
           alındı: yönetici bunları arşiv tablosunu açmadan da kullanır. */}
+      {/* Başlık balonu paket sayacını ANLATIYOR ("kaç paket dağıtıldı") —
+          sayaç kapalıyken o cümle olmayan bir özelliği vaat ediyordu. */}
       <PageHeader
         title={t("title")}
-        help="page_dashboard"
+        help={PACKAGES_ENABLED ? "page_dashboard" : "page_dashboard_nopkg"}
         action={
           readOnly ? null : (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -696,7 +699,11 @@ export function AdminClient({
             { key: "closed", label: t("boardTabClosed"), value: boardCounts.closed, help: "strip_closed" },
             { key: "overLimit", label: t("stripOverLimit"), value: overLimitShifts, help: "ops_over_limit" },
             { key: "silent", label: t("stripSilentVehicles"), value: silentVehicleCount, help: "strip_silent" },
-            { key: "loaded", label: t("stripLoaded"), value: boardCounts.loaded > 0 ? boardCounts.loaded : "—", help: "strip_loaded" },
+            // Paket sayacı kapalı kurulumda (lib/tenant.ts) bu kalem her zaman
+            // "—" gösterirdi: sayaç kullanılmayan filoda ölü bir sütun.
+            ...(PACKAGES_ENABLED
+              ? [{ key: "loaded", label: t("stripLoaded"), value: boardCounts.loaded > 0 ? boardCounts.loaded : "—", help: "strip_loaded" }]
+              : []),
           ]}
         />
 
@@ -754,34 +761,40 @@ export function AdminClient({
                   : `${formatNumber(dashboard.todayOps.totalKmToday, locale)} km`
               }
             />
-            <OpsGroupRow
-              label={t("dash.ops_loaded")}
-              help="ops_loaded"
-              value={
-                dashboard.todayOps.loaded === null
-                  ? "—"
-                  : formatNumber(dashboard.todayOps.loaded, locale)
-              }
-            />
-            <OpsGroupRow
-              label={t("dash.ops_delivered")}
-              help="ops_delivered"
-              value={
-                dashboard.todayOps.delivered === null
-                  ? "—"
-                  : formatNumber(dashboard.todayOps.delivered, locale)
-              }
-            />
-            <OpsGroupRow
-              label={t("dash.ops_undelivered")}
-              help="ops_undelivered"
-              value={
-                dashboard.todayOps.undelivered === null
-                  ? "—"
-                  : formatNumber(dashboard.todayOps.undelivered, locale)
-              }
-              tone={dashboard.todayOps.undelivered ? "warning" : "neutral"}
-            />
+            {/* Paket üçlüsü — sayaç kapalıyken üçü de kalkar (lib/tenant.ts).
+                Veri modeli aynen durur; yalnız ölçüm satırları gizlenir. */}
+            {PACKAGES_ENABLED && (
+              <>
+                <OpsGroupRow
+                  label={t("dash.ops_loaded")}
+                  help="ops_loaded"
+                  value={
+                    dashboard.todayOps.loaded === null
+                      ? "—"
+                      : formatNumber(dashboard.todayOps.loaded, locale)
+                  }
+                />
+                <OpsGroupRow
+                  label={t("dash.ops_delivered")}
+                  help="ops_delivered"
+                  value={
+                    dashboard.todayOps.delivered === null
+                      ? "—"
+                      : formatNumber(dashboard.todayOps.delivered, locale)
+                  }
+                />
+                <OpsGroupRow
+                  label={t("dash.ops_undelivered")}
+                  help="ops_undelivered"
+                  value={
+                    dashboard.todayOps.undelivered === null
+                      ? "—"
+                      : formatNumber(dashboard.todayOps.undelivered, locale)
+                  }
+                  tone={dashboard.todayOps.undelivered ? "warning" : "neutral"}
+                />
+              </>
+            )}
             <OpsGroupRow
               label={t("dash.ops_break45")}
               help="ops_break45"

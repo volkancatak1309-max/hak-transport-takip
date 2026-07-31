@@ -1,5 +1,14 @@
 {
   "common": {
+    "palette_title": "Komut paleti",
+    "palette_desc": "Araç, sayfa veya eylem ara",
+    "palette_placeholder": "Araç plakası, sayfa veya eylem ara…",
+    "palette_empty": "Sonuç yok.",
+    "palette_group_pages": "Sayfalar",
+    "palette_group_vehicles": "Araçlar",
+    "density_group": "Satır yoğunluğu",
+    "density_comfortable": "Rahat",
+    "density_compact": "Sıkı",
     "appName": "{brand}",
     "tagline": "Saat & KM Takip",
     "logout": "Çıkış",
@@ -260,7 +269,7 @@
   },
   "zones": {
     "title": "Bölgeler",
-    "intro": "Araçların girmemesi veya çıkmaması gereken coğrafi bölgeler.",
+    "intro": "Coğrafi bölgeler: yasak/zorunlu alanlar ve DEPO — depo bölgesi otomatik vardiya başlangıcını ve bitişini yönetir.",
     "add": "Bölge ekle",
     "edit_title": "Bölgeyi düzenle",
     "none": "Henüz bölge tanımlanmamış",
@@ -1342,6 +1351,7 @@
   "help": {
     "toggle": "Yardım",
     "page_dashboard": "Günün canlı panosu: kim sahada, ne kadar çalışıldı, kaç paket dağıtıldı, acil ne var.",
+    "page_dashboard_nopkg": "Günün canlı panosu: kim sahada, ne kadar çalışıldı, acil ne var.",
     "page_analiz": "Sürüş güvenliği ve rölanti israfının şoför bazında özeti. Tek tek olaylar Alarmlar sayfasında.",
     "page_reports": "Rapor merkezi. Her rapor tek bir soruyu cevaplar: yakıt, hız, mesafe, performans.",
     "page_trips": "Sefer planı: hangi şoför hangi gün hangi bölgeye atandı. Buradaki atamalar şoförün panelinde görünür.",

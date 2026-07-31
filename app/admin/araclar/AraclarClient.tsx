@@ -35,6 +35,7 @@ import { SavedViews, type SavedView } from "@/components/ui-v2";
 import { VehicleFormDialog } from "@/components/admin/VehicleFormDialog";
 import { formatDurationShort } from "@/lib/format";
 import { STATUS_STYLE, FLEET_STYLE, fleetLabel } from "@/lib/vehicle-ui";
+import { ACTIVE_FLEETS } from "@/lib/tenant";
 import type { VehicleWithStatus, VehicleFleet } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { deleteVehicle } from "@/app/actions/vehicles";
@@ -113,8 +114,14 @@ export function AraclarClient({
       { key: "silent", label: t("view_silent"), count: silent, alert: true },
       { key: "faulty", label: t("view_faulty"), count: faulty, alert: true },
       { key: "no_driver", label: t("view_no_driver"), count: noDriver, alert: true },
-      { key: "mavi", label: fleetLabel("mavi", t), count: vehicles.filter((v) => v.fleet === "mavi").length },
-      { key: "bordo", label: fleetLabel("bordo", t), count: vehicles.filter((v) => v.fleet === "bordo").length },
+      // Filo çipleri YALNIZ kullanılan filolar için (lib/tenant.ts ACTIVE_FLEETS).
+      // Tek filolu kurulumda ikinci çip hep "0" gösteriyordu ve o müşteride
+      // karşılığı olmayan bir kavramı ekrana taşıyordu.
+      ...ACTIVE_FLEETS.map((f) => ({
+        key: f as ViewKey,
+        label: fleetLabel(f, t),
+        count: vehicles.filter((v) => v.fleet === f).length,
+      })),
     ];
   }, [vehicles, lastSeen, dtcByVehicle, t]);
 
@@ -240,8 +247,11 @@ export function AraclarClient({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("filter_all")}</SelectItem>
-            <SelectItem value="bordo">{fleetLabel("bordo", t)}</SelectItem>
-            <SelectItem value="mavi">{fleetLabel("mavi", t)}</SelectItem>
+            {ACTIVE_FLEETS.map((f) => (
+              <SelectItem key={f} value={f}>
+                {fleetLabel(f, t)}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 

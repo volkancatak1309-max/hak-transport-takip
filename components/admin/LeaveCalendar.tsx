@@ -19,6 +19,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { leaveCellStyle, LeaveSwatch } from "@/components/admin/LeaveCell";
 import {
   LEAVE_TYPES,
+  leaveTypeLabel,
   leaveTypeDef,
   type LeaveTypeKey,
   type LeaveStatus,
@@ -226,7 +227,7 @@ export function LeaveCalendar({
           }
           const def = leaveTypeDef(l.leave_type);
           const isPending = l.status === "pending";
-          const title = `${nameById.get(l.worker_id) ?? ""} · ${def.tr} · ${l.start_date} → ${l.end_date}${
+          const title = `${nameById.get(l.worker_id) ?? ""} · ${leaveTypeLabel(def, locale)} · ${l.start_date} → ${l.end_date}${
             isPending ? ` · ${t("statusPending")}` : ""
           }${l.note ? ` · ${l.note}` : ""}`;
           // Ayrılan personelde izin GÖRÜNÜR ama tıklanamaz (salt okunur).
@@ -326,7 +327,7 @@ export function LeaveCalendar({
                         {nameById.get(l.worker_id) ?? "—"}
                       </span>
                       <span className="nums text-muted-foreground">
-                        · {def.tr} · {l.start_date} → {l.end_date}
+                        · {leaveTypeLabel(def, locale)} · {l.start_date} → {l.end_date}
                       </span>
                     </span>
                     <span className="flex items-center gap-1.5">
@@ -439,7 +440,7 @@ export function LeaveCalendar({
             >
               {d.short}
             </span>
-            {d.tr}
+            {leaveTypeLabel(d, locale)}
           </span>
         ))}
         {/* Bekleyen talep YOKKEN bu satır karşılığı olmayan bir açıklamaydı:
@@ -521,7 +522,7 @@ function LeaveArchive({
                     <td className="px-3 py-2">
                       <span className="inline-flex items-center gap-1.5">
                         <LeaveSwatch def={def} />
-                        {locale === "de" ? def.de : def.tr}
+                        {leaveTypeLabel(def, locale)}
                       </span>
                     </td>
                     <td className="nums px-3 py-2 text-muted-foreground">
@@ -584,6 +585,7 @@ function LeaveDrawer({
   onChanged: () => void;
 }) {
   const t = useTranslations("izinler");
+  const locale = useLocale();
   const [pending, start] = useTransition();
   const editing = state.mode === "edit" ? state.leave : null;
   const [workerId, setWorkerId] = useState(
@@ -705,14 +707,14 @@ function LeaveDrawer({
                 <optgroup label={t("groupCommon")}>
                   {common.map((d) => (
                     <option key={d.key} value={d.key}>
-                      {d.tr}
+                      {leaveTypeLabel(d, locale)}
                     </option>
                   ))}
                 </optgroup>
                 <optgroup label={t("groupOther")}>
                   {other.map((d) => (
                     <option key={d.key} value={d.key}>
-                      {d.tr}
+                      {leaveTypeLabel(d, locale)}
                     </option>
                   ))}
                 </optgroup>

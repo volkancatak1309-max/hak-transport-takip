@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import type { VehicleWithStatus, VehicleBaseStatus, VehicleFleet } from "@/lib/types";
 import { fleetLabel } from "@/lib/vehicle-ui";
+import { ACTIVE_FLEETS } from "@/lib/tenant";
 import {
   createVehicle,
   updateVehicle,
@@ -267,9 +268,15 @@ function VehicleForm({
               {((v: unknown) => fleetLabel(String(v), t)) as never}
             </SelectValue>
           </SelectTrigger>
+          {/* Yalnız kullanılan filolar seçilebilir (lib/tenant.ts). Tek filolu
+              kurulumda kullanıcı o müşteride var olmayan bir filoya araç
+              atayamamalı; DB'deki kod adları ve CHECK kısıtı değişmez. */}
           <SelectContent>
-            <SelectItem value="mavi">{fleetLabel("mavi", t)}</SelectItem>
-            <SelectItem value="bordo">{fleetLabel("bordo", t)}</SelectItem>
+            {ACTIVE_FLEETS.map((f) => (
+              <SelectItem key={f} value={f}>
+                {fleetLabel(f, t)}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { Truck, ArrowRight, type LucideIcon } from "lucide-react";
 import {
   Command,
@@ -33,6 +34,10 @@ export function CommandPalette({
   onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
+  // 31.07.2026: bu paletin altı metni düz Türkçe yazılıydı ve Almanca
+  // kurulumda (Sendigo) Türkçe basıyordu — diyalog başlığı/açıklaması ekran
+  // okuyucuya her sayfada okunuyor.
+  const t = useTranslations("common");
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const setOpen = (v: boolean) => {
@@ -73,15 +78,15 @@ export function CommandPalette({
     <CommandDialog
       open={open}
       onOpenChange={setOpen}
-      title="Komut paleti"
-      description="Araç, sayfa veya eylem ara"
+      title={t("palette_title")}
+      description={t("palette_desc")}
     >
       <Command>
-      <CommandInput placeholder="Araç plakası, sayfa veya eylem ara…" />
+      <CommandInput placeholder={t("palette_placeholder")} />
       <CommandList>
-        <CommandEmpty>Sonuç yok.</CommandEmpty>
+        <CommandEmpty>{t("palette_empty")}</CommandEmpty>
 
-        <CommandGroup heading="Sayfalar">
+        <CommandGroup heading={t("palette_group_pages")}>
           {pages.map((p) => {
             const Icon = p.icon ?? ArrowRight;
             return (
@@ -98,7 +103,7 @@ export function CommandPalette({
         </CommandGroup>
 
         {vehicles && vehicles.length > 0 && (
-          <CommandGroup heading="Araçlar">
+          <CommandGroup heading={t("palette_group_vehicles")}>
             {vehicles.map((v) => (
               <CommandItem
                 key={v.id}

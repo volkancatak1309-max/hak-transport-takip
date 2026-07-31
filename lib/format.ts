@@ -7,13 +7,30 @@ export function formatDuration(ms: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+/**
+ * Kısa süre: "8s 30dk" (tr) · "8 Std 30 Min" (de).
+ *
+ * BOŞLUK YALNIZ ALMANCADA (31.07.2026, Sendigo kabul testi). Çıktı "0Std 00Min"
+ * biçimindeydi; Almancada sayı ile birimin bitişik yazılması yanlıştır
+ * (doğrusu "0 Std 00 Min") ve ekranda okunaksızdı.
+ *
+ * TÜRKÇE BİLEREK DEĞİŞMEDİ: "8s 30dk" HAK61'in bugün canlıda gösterdiği
+ * biçimdir ve Türkçede bu bitişik kısaltma yaygındır. Tek boşluk uğruna
+ * çalışan bir müşterinin tablolarını kaydırmıyoruz.
+ *
+ * ⚠️ Almanca çıktı HAK61'de de görünür: PDF raporlar SABİT ALMANCADIR
+ * (lib/report-de.ts). Yani HAK61'in vardiya/AZG PDF'lerinde süre sütunu
+ * "8Std 30Min" yerine "8 Std 30 Min" basar. Görsel bir düzeltme; sayılar,
+ * sütun sırası ve hesap aynı.
+ */
 export function formatDurationShort(ms: number, locale: string = "tr"): string {
   if (ms < 0) ms = 0;
   const totalMin = Math.floor(ms / 60000);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  const hSuffix = locale === "de" ? "Std" : "s";
-  const mSuffix = locale === "de" ? "Min" : "dk";
+  const de = locale === "de";
+  const hSuffix = de ? " Std" : "s";
+  const mSuffix = de ? " Min" : "dk";
   return `${h}${hSuffix} ${String(m).padStart(2, "0")}${mSuffix}`;
 }
 

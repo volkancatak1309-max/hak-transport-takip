@@ -90,6 +90,25 @@ export const LEAVE_TYPES: LeaveTypeDef[] = [
 
 export const LEAVE_TYPE_KEYS: LeaveTypeKey[] = LEAVE_TYPES.map((t) => t.key);
 
+/**
+ * İZİN TÜRÜNÜN EKRAN ADI — dile göre. TEK KAYNAK.
+ *
+ * 31.07.2026 (Sendigo kabul testi): `LeaveCalendar` altı yerde etiket basıyordu
+ * ve BEŞİ koşulsuz `def.tr` okuyordu. Almanca kurulumda izin takvimi lejantı,
+ * tür seçicisi ve satır ipuçları Türkçe çıkıyordu ("Yıllık izin",
+ * "Raporlu / hasta", "Hasta yakını bakımı"…) — oysa Almanca karşılıkları
+ * yukarıdaki tabloda ZATEN vardı. Yalnız bir çağrı yeri doğruydu.
+ *
+ * Koşulu altı yere kopyalamak yerine buraya alındı: kural tek yerde yaşar,
+ * yeni bir çağrı yeri eklendiğinde tekrar unutulamaz. Üçüncü bir dil geldiğinde
+ * de dokunulacak yer burasıdır.
+ *
+ * Bilinmeyen dil → Türkçe (bugünkü davranış; `de` dışındaki her değer tr'dir).
+ */
+export function leaveTypeLabel(def: LeaveTypeDef, locale: string): string {
+  return locale === "de" ? def.de : def.tr;
+}
+
 const BY_KEY = new Map<string, LeaveTypeDef>(LEAVE_TYPES.map((t) => [t.key, t]));
 
 /** Bilinmeyen anahtar için güvenli fallback (bozuk veri UI'ı çökertmesin). */

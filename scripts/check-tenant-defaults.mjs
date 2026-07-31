@@ -51,6 +51,10 @@ const EXPECTED = {
   "tenant.SHIFT_AUTO_END": "off", //          auto-shift.ts: AUTO_END_ENABLED = false
   "tenant.SHIFT_AUTO_END_IDLE_MIN": 30, //    auto-shift.ts: DEFAULT_IDLE_END_MINUTES = 30
   "tenant.FLEET_EPOCH_ISO": "2026-06-01T00:00:00.000Z", // analytics.ts: FLEET_EPOCH
+  // Araçlar sayfasındaki filo çipleri ve araç formundaki filo seçeneği. HAK61'de
+  // İKİSİ DE görünür (migration 023: 9 bordo / 19 mavi) — bu satır kayarsa
+  // canlıda bir filo arayüzden kaybolur.
+  "tenant.ACTIVE_FLEETS": "bordo,mavi",
 
   // ── lib/brand.ts ─────────────────────────────────────────────────────────
   "brand.tenant": "hak61",
@@ -83,6 +87,12 @@ const EXPECTED = {
   "company.extraLine": "", //                 böyle bir satır YOKTU
   "company.brandMark": "HAK", //              PDF amblem kutusu
   "company.logoRatio": 915 / 300, //          BrandLogo.tsx: height * (915/300)
+  // İndirilen PDF dosya adlarının öneki. 31.07.2026 öncesi ALTI çağrı yerinde
+  // düz metin yazılıydı: `HAK_AZG_…` · `HAK_CO2_…` · `hak-kraftstoff-…` ·
+  // `hak-fahrerleistung-…` · `hak-report-…` · `hak-<isim>-…`. Artık amblemden
+  // türetiliyor; bu iki satır HAK61'de adların DEĞİŞMEDİĞİNİ denetler.
+  "company.filePrefixUpper": "HAK",
+  "company.filePrefixLower": "hak",
 };
 
 /**
@@ -135,6 +145,7 @@ const out = {
   "tenant.SHIFT_AUTO_END": tenant.SHIFT_AUTO_END,
   "tenant.SHIFT_AUTO_END_IDLE_MIN": tenant.SHIFT_AUTO_END_IDLE_MIN,
   "tenant.FLEET_EPOCH_ISO": tenant.FLEET_EPOCH_ISO,
+  "tenant.ACTIVE_FLEETS": tenant.ACTIVE_FLEETS.join(","),
   "brand.tenant": brand.BRAND.tenant,
   "brand.name": brand.BRAND.name,
   "brand.legalName": brand.BRAND.legalName,
@@ -161,6 +172,8 @@ const out = {
   "company.extraLine": report.COMPANY_EXTRA_LINE,
   "company.brandMark": report.BRAND_MARK,
   "company.logoRatio": brand.BRAND.logoRatio,
+  "company.filePrefixUpper": report.FILE_PREFIX_UPPER,
+  "company.filePrefixLower": report.FILE_PREFIX_LOWER,
 };
 process.stdout.write(JSON.stringify(out));
 `;

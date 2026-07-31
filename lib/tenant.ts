@@ -129,6 +129,38 @@ export const FLEET_LABELS: Record<string, string> = {
   mavi: process.env.NEXT_PUBLIC_FLEET_MAVI_LABEL?.trim() || "",
 };
 
+/**
+ * KULLANILAN FİLOLAR — hangi filo kullanıcıya SEÇENEK olarak sunulur.
+ *
+ * 31.07.2026 (Sendigo kabul testi): tek filolu kurulumda Araçlar sayfasında
+ * "Bordo Filo 0" çipi duruyordu — o filoya hiç araç girmeyecek, kavramın
+ * kendisi o müşteride yok. Etiket env'i (yukarıdaki FLEET_LABELS) yalnız ADI
+ * değiştiriyor, filoyu gizlemiyordu.
+ *
+ * DB'DEKİ KOD ADLARI DEĞİŞMEZ: `vehicles.fleet` hâlâ 'bordo'/'mavi' tutar ve
+ * migration 023'ün CHECK kısıtı olduğu gibi kalır. Buradaki liste yalnız
+ * ARAYÜZ süzgeci: gösterilmeyen filoya yeni araç atanamaz, ama veri düzeyinde
+ * hiçbir şey kısıtlanmaz (eski kayıt varsa okunmaya devam eder).
+ *
+ * Varsayılan HAK61'in bugünkü hâli: iki filo da açık.
+ */
+export const ACTIVE_FLEETS: string[] = (() => {
+  const raw = process.env.NEXT_PUBLIC_FLEETS?.trim();
+  if (!raw) return ["bordo", "mavi"];
+  const known = ["bordo", "mavi"];
+  const picked = raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => known.includes(s));
+  // Tanınmayan/boş liste sessizce filoyu yok etmesin — bugünkü davranışa döner.
+  return picked.length > 0 ? picked : ["bordo", "mavi"];
+})();
+
+/** Bu filo arayüzde gösterilsin mi (bkz. ACTIVE_FLEETS). */
+export function isFleetVisible(fleet: string | null | undefined): boolean {
+  return fleet ? ACTIVE_FLEETS.includes(fleet) : true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // VARDİYA OTOMATI (yalnız sunucu — lib/auto-shift.ts)
 // ─────────────────────────────────────────────────────────────────────────────

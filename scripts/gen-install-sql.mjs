@@ -87,8 +87,47 @@ alter table public.workers
   check (phone is null or phone ~ '^\\+?[0-9]{6,20}$');
 `;
 
+// ─── 033 UYARLAMASI ─────────────────────────────────────────────────────────
+// Migration, tabloyu kurduktan sonra HAK61'in KENDİ cihaz dönem kaydını da
+// yazıyor. Yeni bir müşteride bu kayıt hem yanlış hem başkasının verisi.
+const DROP_033_INSERT = `-- ═══ [birleştirici] HAK61'E ÖZEL VERİ SATIRI ÇIKARILDI ═══════════════════
+-- Özgün 033, tabloyu kurduktan sonra şu kaydı da yazıyordu:
+--   params = '11104: 120->131'
+--   note   = 'Asiri hiz uyari esigi 120->131 km/s (28 cihaz + DO-505GS kuyruk…)'
+--
+-- Bu, HAK61 filosunda 23.07.2026'da yapılan bir cihaz ayarı değişikliğinin
+-- kaydıdır: 28 cihazı ve bir HAK61 PLAKASINI (DO-505GS) adlandırır. Yeni bir
+-- kurulumda böyle bir eşik değişikliği HİÇ OLMADI; kayıt hem olguyu yanlış
+-- anlatır hem başka bir müşterinin verisini taşır.
+--
+-- CANLI ETKİ (Sendigo kabul testi, 31.07.2026): /admin/alarmlar sayfasında
+-- "Seit den neuen Schwellen" (yeni eşiklerden beri) filtresi çıkıyordu —
+-- Sendigo'da hiç yaşanmamış bir olaya göre süzme seçeneği.
+--
+-- Tablo KURULUR (kod onu okuyor, yokluğunda alarm sayfası hata verir);
+-- yalnız satır yazılmaz. Yeni müşteri kendi cihaz ayarını değiştirdiğinde
+-- kaydı kendisi ekler.
+`;
+
 // ─── Dosya bazlı cerrahi dönüşümler ─────────────────────────────────────────
 function transform(file, sql) {
+  // (d) 033: tablo kalır, HAK61'e özel INSERT çıkar.
+  if (file === "033_device_config_epochs.sql") {
+    const before = sql;
+    sql = sql.replace(
+      /insert into public\.device_config_epochs[\s\S]*?\n\);\n/,
+      DROP_033_INSERT
+    );
+    if (sql === before) {
+      throw new Error(
+        "033 INSERT bloğu bulunamadı — dosya değişmiş olabilir. " +
+          "Birleştirici sessizce HAK61 verisini yazmasın diye durduruldu."
+      );
+    }
+    changes.push(`${file}: HAK61'e özel device_config_epochs satırı çıkarıldı`);
+    return sql;
+  }
+
   // (a) İç içe işlem bloklarını kaldır: tüm dosya TEK transaction içinde koşuyor.
   //     İçerideki `commit;` dış transaction'ı erkenden kapatır ve kalan
   //     ifadeler transaction DIŞINDA çalışırdı — kısmi kurulum riski.

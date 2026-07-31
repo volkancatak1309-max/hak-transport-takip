@@ -1,5 +1,14 @@
 {
   "common": {
+    "palette_title": "Befehlspalette",
+    "palette_desc": "Fahrzeug, Seite oder Aktion suchen",
+    "palette_placeholder": "Kennzeichen, Seite oder Aktion suchen…",
+    "palette_empty": "Keine Treffer.",
+    "palette_group_pages": "Seiten",
+    "palette_group_vehicles": "Fahrzeuge",
+    "density_group": "Zeilendichte",
+    "density_comfortable": "Komfortabel",
+    "density_compact": "Kompakt",
     "appName": "{brand}",
     "tagline": "Schicht & KM-Erfassung",
     "logout": "Abmelden",
@@ -260,7 +269,7 @@
   },
   "zones": {
     "title": "Zonen",
-    "intro": "Geografische Zonen, die Fahrzeuge nicht betreten oder verlassen dürfen.",
+    "intro": "Geografische Zonen: Sperr- und Pflichtbereiche sowie das Depot — der Depot-Bereich steuert den automatischen Schichtbeginn und das Schichtende.",
     "add": "Zone hinzufügen",
     "edit_title": "Zone bearbeiten",
     "none": "Noch keine Zonen definiert",
@@ -1342,6 +1351,7 @@
   "help": {
     "toggle": "Hilfe",
     "page_dashboard": "Live-Tafel des Tages: wer ist unterwegs, wie lange gearbeitet, wie viele Pakete, was ist dringend.",
+    "page_dashboard_nopkg": "Live-Tafel des Tages: wer ist unterwegs, wie lange gearbeitet, was ist dringend.",
     "page_analiz": "Fahrsicherheit und Leerlauf je Fahrer. Einzelne Ereignisse stehen auf der Seite Alarme.",
     "page_reports": "Berichtszentrale. Jeder Bericht beantwortet eine Frage: Kraftstoff, Tempo, Strecke, Leistung.",
     "page_trips": "Tourenplan: welcher Fahrer an welchem Tag in welches Gebiet. Erscheint in der Fahrer-App.",

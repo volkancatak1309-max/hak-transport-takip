@@ -2003,13 +2003,23 @@ create table if not exists public.device_config_epochs (
 );
 alter table public.device_config_epochs disable row level security;
 
-insert into public.device_config_epochs (changed_at, params, note)
-select timestamptz '2026-07-23T21:38:09.579Z',
-       '11104: 120->131',
-       'Asiri hiz uyari esigi 120->131 km/s (28 cihaz + DO-505GS kuyruk; gonderim UTC 2026-07-23T21:38)'
-where not exists (
-  select 1 from public.device_config_epochs where params like '%11104%'
-);
+-- ═══ [birleştirici] HAK61'E ÖZEL VERİ SATIRI ÇIKARILDI ═══════════════════
+-- Özgün 033, tabloyu kurduktan sonra şu kaydı da yazıyordu:
+--   params = '11104: 120->131'
+--   note   = 'Asiri hiz uyari esigi 120->131 km/s (28 cihaz + DO-505GS kuyruk…)'
+--
+-- Bu, HAK61 filosunda 23.07.2026'da yapılan bir cihaz ayarı değişikliğinin
+-- kaydıdır: 28 cihazı ve bir HAK61 PLAKASINI (DO-505GS) adlandırır. Yeni bir
+-- kurulumda böyle bir eşik değişikliği HİÇ OLMADI; kayıt hem olguyu yanlış
+-- anlatır hem başka bir müşterinin verisini taşır.
+--
+-- CANLI ETKİ (Sendigo kabul testi, 31.07.2026): /admin/alarmlar sayfasında
+-- "Seit den neuen Schwellen" (yeni eşiklerden beri) filtresi çıkıyordu —
+-- Sendigo'da hiç yaşanmamış bir olaya göre süzme seçeneği.
+--
+-- Tablo KURULUR (kod onu okuyor, yokluğunda alarm sayfası hata verir);
+-- yalnız satır yazılmaz. Yeni müşteri kendi cihaz ayarını değiştirdiğinde
+-- kaydı kendisi ekler.
 
 notify pgrst, 'reload schema';
 

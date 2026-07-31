@@ -2,7 +2,12 @@
 
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
-import { COMPANY, COMPANY_UID_LINE, COMPANY_EXTRA_LINE } from "@/lib/report-de";
+import {
+  COMPANY,
+  COMPANY_UID_LINE,
+  COMPANY_EXTRA_LINE,
+  FILE_PREFIX_LOWER,
+} from "@/lib/report-de";
 
 registerPdfFont();
 
@@ -191,7 +196,7 @@ export async function downloadFuelPdf(opts: {
     url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `hak-kraftstoff-${new Date().toISOString().slice(0, 10)}.pdf`;
+    a.download = `${FILE_PREFIX_LOWER}-kraftstoff-${new Date().toISOString().slice(0, 10)}.pdf`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

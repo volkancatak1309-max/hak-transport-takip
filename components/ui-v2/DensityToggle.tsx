@@ -1,6 +1,7 @@
 "use client";
 
 import { Rows2, Rows3 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { useDensity } from "./useDensity";
 
@@ -10,17 +11,20 @@ import { useDensity } from "./useDensity";
  */
 export function DensityToggle({ className }: { className?: string }) {
   const [density, setDensity] = useDensity();
+  // 31.07.2026: üç etiket düz Türkçe yazılıydı. `title` fareyle üzerine
+  // gelindiğinde GÖRÜNÜR bir ipucudur — Almanca kurulumda Türkçe çıkıyordu.
+  const t = useTranslations("common");
   return (
     <div
       role="group"
-      aria-label="Satır yoğunluğu"
+      aria-label={t("density_group")}
       className={cn("inline-flex items-center rounded-[10px] border border-border/60 p-0.5", className)}
     >
       <button
         type="button"
         aria-pressed={density === "comfortable"}
-        aria-label="Rahat"
-        title="Rahat"
+        aria-label={t("density_comfortable")}
+        title={t("density_comfortable")}
         onClick={() => setDensity("comfortable")}
         className={cn(
           "flex size-7 items-center justify-center rounded-[7px] transition-colors",
@@ -32,8 +36,8 @@ export function DensityToggle({ className }: { className?: string }) {
       <button
         type="button"
         aria-pressed={density === "compact"}
-        aria-label="Sıkı"
-        title="Sıkı"
+        aria-label={t("density_compact")}
+        title={t("density_compact")}
         onClick={() => setDensity("compact")}
         className={cn(
           "flex size-7 items-center justify-center rounded-[7px] transition-colors",

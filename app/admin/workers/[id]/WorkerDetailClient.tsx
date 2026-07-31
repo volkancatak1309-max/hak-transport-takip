@@ -22,11 +22,13 @@ import {
   SHIFT_REPORT_DE,
   REPORT_LOCALE,
   buildShiftReportRow,
+  FILE_PREFIX_LOWER,
 } from "@/lib/report-de";
 import { KmEditButton } from "@/components/KmEditButton";
 import { EditWorkerDialog } from "@/components/admin/EditWorkerDialog";
 import { licenseState, LICENSE_BADGE } from "@/lib/worker-ui";
 import { cn } from "@/lib/utils";
+import { PACKAGES_ENABLED } from "@/lib/tenant";
 import type { WorkerPublic, TimeEntry } from "@/lib/types";
 
 type Props = {
@@ -97,7 +99,7 @@ export function WorkerDetailClient({ worker, entries, monthSummary }: Props) {
         footer: SHIFT_REPORT_DE.footer,
         headers: SHIFT_REPORT_DE.headers,
         rows: entries.map((e) => buildShiftReportRow(e, worker.name)),
-        filename: `hak-${worker.name.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`,
+        filename: `${FILE_PREFIX_LOWER}-${worker.name.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`,
       });
     } catch {
       toast.error(tExport("error"));
@@ -108,7 +110,11 @@ export function WorkerDetailClient({ worker, entries, monthSummary }: Props) {
     { k: "shifts", label: t("totalShifts"), value: monthSummary.shifts.toLocaleString(nf) },
     { k: "hours", label: t("totalHours"), value: formatDuration(monthSummary.ms) },
     { k: "km", label: t("totalKm"), value: monthSummary.km.toLocaleString(nf) },
-    { k: "cargo", label: t("totalCargo"), value: monthSummary.cargo.toLocaleString(nf) },
+    // Paket sayacı kapalı kurulumda (lib/tenant.ts) bu kutu her zaman 0 gösterir
+    // ve dört sütunluk şeritte anlamsız bir sütun kalır.
+    ...(PACKAGES_ENABLED
+      ? [{ k: "cargo", label: t("totalCargo"), value: monthSummary.cargo.toLocaleString(nf) }]
+      : []),
   ];
 
   return (
@@ -166,7 +172,14 @@ export function WorkerDetailClient({ worker, entries, monthSummary }: Props) {
       </div>
 
       {/* ② ÖZET ŞERİDİ — dört ayrı kart değil, tek panelde dört sayı. */}
-      <div className="glass-panel mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-[16px] sm:grid-cols-4">
+      {/* Sütun sayısı kutu sayısını İZLER: paket sayacı kapalıyken üç kutu
+          kalır ve sabit 4 sütunlu ızgarada boş bir hücre açılırdı. */}
+      <div
+        className={cn(
+          "glass-panel mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-[16px]",
+          stats.length === 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"
+        )}
+      >
         {stats.map((s) => (
           <div key={s.k} className="px-5 py-4">
             <div className="font-mono text-[26px] font-bold leading-none tabular-nums tracking-[-0.01em]">

@@ -32,11 +32,52 @@ export const REPORT_EMPTY = "—";
  * diğerleri geride kalıyordu. Adres tahminle doldurulmaz: burası resmî belgenin
  * antetidir, değeri yalnız Volkan'ın verdiği metindir.
  */
+/**
+ * ⚠️ NEDEN `NEXT_PUBLIC_` (31.07.2026 — Sendigo kabul testinde yakalandı).
+ *
+ * Bu künyeyi okuyan BEŞ PDF bileşeninin beşi de `"use client"`: belge
+ * tarayıcıda üretilir (@react-pdf/renderer → blob → indirme). Next, istemci
+ * paketine YALNIZ `NEXT_PUBLIC_` önekli env'leri gömer; öneksiz olan tarayıcıda
+ * `undefined`'dır. Sonuç: Sendigo'nun Vercel'inde `COMPANY_*` doğru tanımlıydı,
+ * sunucuda doğru okunuyordu, ama indirilen AZG raporunun antetinde HAK61'in
+ * adı, adresi ve UID numarası basılıyordu — başka bir firmanın vergi kimliği,
+ * resmî bir belgede. Ölçüldü: Sendigo'ya inen istemci paketi `ATU79519228`
+ * içeriyordu, `681377a` hiç içermiyordu.
+ *
+ * Öneksiz ad geriye dönük OKUNMAYA DEVAM EDER: sunucu tarafındaki bir çağrı
+ * (ya da eski bir kurulum) yalnız `COMPANY_NAME` tanımlamışsa davranış
+ * değişmez. Sıra: NEXT_PUBLIC_ → öneksiz → HAK61 varsayılanı.
+ *
+ * ALTERNATİF NEDEN SEÇİLMEDİ: PDF üretimini sunucuya almak da çözerdi, ama beş
+ * bileşenin indirme akışını (blob + <a download>) baştan yazmayı ve rapor
+ * verisini ikinci kez sunucuya taşımayı gerektirirdi. Sorun künyenin İSMİNDE,
+ * üretim yerinde değil.
+ *
+ * ⚠️ HER ERİŞİM DÜZ LİTERAL OLMAK ZORUNDA. Next/Turbopack `process.env.X`
+ * ifadesini derleme anında METİN olarak değiştirir; `process.env[expr]` gibi
+ * dinamik bir erişimi değiştiremez ve istemcide yine `undefined` kalır. Bu
+ * yüzden burada yardımcı fonksiyona parametre GEÇİLMEZ — değerler çağrı
+ * yerinde okunup fonksiyona hazır dize olarak verilir.
+ */
+function pickCompany(
+  publicValue: string | undefined,
+  serverValue: string | undefined,
+  fallback: string
+): string {
+  return publicValue?.trim() || serverValue?.trim() || fallback;
+}
+
 export const COMPANY = {
-  name: process.env.COMPANY_NAME?.trim() || "HAK61 GmbH",
-  address:
-    process.env.COMPANY_ADDRESS?.trim() ||
-    "Josef-Ganahl-Straße 4, 6850 Dornbirn, Österreich",
+  name: pickCompany(
+    process.env.NEXT_PUBLIC_COMPANY_NAME,
+    process.env.COMPANY_NAME,
+    "HAK61 GmbH"
+  ),
+  address: pickCompany(
+    process.env.NEXT_PUBLIC_COMPANY_ADDRESS,
+    process.env.COMPANY_ADDRESS,
+    "Josef-Ganahl-Straße 4, 6850 Dornbirn, Österreich"
+  ),
 } as const;
 
 /**
@@ -51,14 +92,21 @@ export const COMPANY = {
  * "UID-Nr.:" önekini koda gömmek, UID'si olmayan firmada yanlış bir hukuki
  * iddia basardı.
  */
-export const COMPANY_UID_LINE =
-  process.env.COMPANY_REG_LINE?.trim() || "UID-Nr.: ATU79519228";
+export const COMPANY_UID_LINE = pickCompany(
+  process.env.NEXT_PUBLIC_COMPANY_REG_LINE,
+  process.env.COMPANY_REG_LINE,
+  "UID-Nr.: ATU79519228"
+);
 
 /**
  * Antetin isteğe bağlı DÖRDÜNCÜ satırı (ör. "Geschäftsführer: …"). Tanımsızsa
  * satır hiç basılmaz — HAK61 antetinde böyle bir satır yoktu ve olmayacak.
  */
-export const COMPANY_EXTRA_LINE = process.env.COMPANY_EXTRA_LINE?.trim() || "";
+export const COMPANY_EXTRA_LINE = pickCompany(
+  process.env.NEXT_PUBLIC_COMPANY_EXTRA_LINE,
+  process.env.COMPANY_EXTRA_LINE,
+  ""
+);
 
 /**
  * PDF kapağındaki kare amblem kutusunun içindeki kısa işaret. Bir GÖRSEL değil,
@@ -66,7 +114,30 @@ export const COMPANY_EXTRA_LINE = process.env.COMPANY_EXTRA_LINE?.trim() || "";
  * hata yüzeyi demek, üç raporun kapağı için bedeli yüksek. Varsayılan "HAK",
  * yani bugün basılan dizenin aynısı.
  */
-export const BRAND_MARK = process.env.PDF_BRAND_MARK?.trim() || "HAK";
+export const BRAND_MARK = pickCompany(
+  process.env.NEXT_PUBLIC_PDF_BRAND_MARK,
+  process.env.PDF_BRAND_MARK,
+  "HAK"
+);
+
+/**
+ * İNDİRİLEN DOSYA ADI ÖNEKİ — amblemden türetilir.
+ *
+ * 31.07.2026 öncesi beş bileşenin dördünde önek KODA SABİTTİ (`HAK_AZG_…`,
+ * `hak-kraftstoff-…`). Sendigo'da indirilen AZG raporunun adı `HAK_AZG_2026-07.pdf`
+ * çıkıyordu — künye düzelse bile dosya adı yanlış kalırdı.
+ *
+ * HAK61'de `BRAND_MARK` varsayılanı "HAK" olduğu için üretilen adlar
+ * BİREBİR eskisiyle aynıdır: `HAK_AZG_…` ve `hak-kraftstoff-…`.
+ *
+ * Dosya adına giren her şey temizlenir: amblem serbest metin bir env'dir ve
+ * boşluk/eğik çizgi içerebilir; işletim sistemi adında bunlar kabul edilmez.
+ */
+const FILE_MARK = BRAND_MARK.replace(/[^A-Za-z0-9]+/g, "") || "HAK";
+/** `HAK_AZG_2026-07.pdf` biçimindeki adların öneki. */
+export const FILE_PREFIX_UPPER = FILE_MARK.toUpperCase();
+/** `hak-kraftstoff-2026-07-31.pdf` biçimindeki adların öneki. */
+export const FILE_PREFIX_LOWER = FILE_MARK.toLowerCase();
 
 export const SHIFT_REPORT_DE = {
   title: "Schichtbericht",

@@ -205,11 +205,13 @@ NEXT_PUBLIC_TENANT=sendigo
 NEXT_PUBLIC_DEFAULT_LOCALE=de
 
 # Resmî antet (UID henüz yok → FN kullanılıyor; geldiğinde bu satır değişir)
-COMPANY_NAME=Sendigo GmbH
-COMPANY_ADDRESS=Bildgasse 10, 6850 Dornbirn, Österreich
-COMPANY_REG_LINE=FN 681377a (Landesgericht Feldkirch)
-COMPANY_EXTRA_LINE=Geschäftsführer: Gökhan Kalkanlı
-PDF_BRAND_MARK=SEN
+# ⚠️ NEXT_PUBLIC_ ÖNEKİ ZORUNLU: PDF'ler tarayıcıda üretilir, öneksiz env
+# istemciye ulaşmaz ve künye HAK61 varsayılanına düşer (31.07.2026 düzeltmesi).
+NEXT_PUBLIC_COMPANY_NAME=Sendigo GmbH
+NEXT_PUBLIC_COMPANY_ADDRESS=Bildgasse 10, 6850 Dornbirn, Österreich
+NEXT_PUBLIC_COMPANY_REG_LINE=FN 681377a (Landesgericht Feldkirch)
+NEXT_PUBLIC_COMPANY_EXTRA_LINE=Geschäftsführer: Gökhan Kalkanlı
+NEXT_PUBLIC_PDF_BRAND_MARK=SEN
 
 # Araç odaklı kurulum: şoför paneli yok, paket sayacı yok
 NEXT_PUBLIC_DRIVER_PANEL_ENABLED=false
@@ -224,8 +226,10 @@ SHIFT_AUTO_END_IDLE_MIN=20
 # Skor kalibrasyonu HAK61 filosuna ait — kendi medyanı ölçülene kadar kapalı
 NEXT_PUBLIC_SAFETY_SCORE_CALIBRATED=false
 
-# Tek filo: renk kod adı DB'de 'mavi' kalır, etiket sadeleşir
+# Tek filo: renk kod adı DB'de 'mavi' kalır, etiket sadeleşir ve ikinci
+# filonun çipi/seçeneği arayüzden kalkar
 NEXT_PUBLIC_FLEET_MAVI_LABEL=Flotte
+NEXT_PUBLIC_FLEETS=mavi
 
 FLEET_EPOCH=2026-08-01T00:00:00.000Z
 ```

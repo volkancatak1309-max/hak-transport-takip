@@ -7,6 +7,7 @@ import {
   COMPANY_UID_LINE,
   COMPANY_EXTRA_LINE,
   BRAND_MARK,
+  FILE_PREFIX_UPPER,
 } from "@/lib/report-de";
 import type { CO2ReportData } from "@/lib/co2";
 
@@ -170,7 +171,7 @@ export async function downloadCO2Report(data: CO2ReportData, title: string) {
     url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `HAK_CO2_${data.monthLabel}.pdf`;
+    a.download = `${FILE_PREFIX_UPPER}_CO2_${data.monthLabel}.pdf`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

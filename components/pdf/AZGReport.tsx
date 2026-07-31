@@ -7,6 +7,7 @@ import {
   COMPANY_UID_LINE,
   COMPANY_EXTRA_LINE,
   BRAND_MARK,
+  FILE_PREFIX_UPPER,
 } from "@/lib/report-de";
 import type { AZGData, AZGSeverity } from "@/app/actions/azg-report";
 
@@ -297,7 +298,7 @@ export async function downloadAZGReport(data: AZGData) {
     url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `HAK_AZG_${data.monthLabel}.pdf`;
+    a.download = `${FILE_PREFIX_UPPER}_AZG_${data.monthLabel}.pdf`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

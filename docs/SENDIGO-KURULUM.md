@@ -54,7 +54,6 @@ select plate, is_test, status from public.vehicles;
 
 > ⚠️ **`NEXT_PUBLIC_*` env'leri build ANINDA koda gömülür.** Sonradan
 > değiştirirsen Vercel'de **Redeploy** şart — yalnız kaydetmek yetmez.
-> `COMPANY_*` sunucu env'idir, o da redeploy ister.
 
 ### 1.3 İlk yönetici → §4.
 
@@ -62,7 +61,7 @@ select plate, is_test, status from public.vehicles;
 
 ## 2. Tek parça kurulum SQL'i
 
-**Dosya:** `db/install/sendigo-full.sql` (2.399 satır)
+**Dosya:** `db/install/sendigo-full.sql` (2.409 satır)
 **Üreteci:** `node scripts/gen-install-sql.mjs` — dosya **elle düzenlenmez**;
 yeni bir migration eklenince üreteçteki sıraya yazılır ve betik yeniden
 çalıştırılır. Yapılan her sapma üreteçte açıkça kodludur ve çalıştırınca raporlanır.
@@ -78,7 +77,7 @@ yoktur** (`db/seed/*` demo araç/rota verisidir).
 - **Boşluk denetimi.** İlk blok veritabanının boş olduğunu doğrular; doluysa
   kendini durdurur — yanlış projeye çalıştırılamaz.
 
-**Kaynak migration'lara göre 4 bilinçli sapma** (dosyanın başında da yazılı):
+**Kaynak migration'lara göre 5 bilinçli sapma** (dosyanın başında da yazılı):
 
 | # | Sapma | Neden |
 |---|---|---|
@@ -86,6 +85,7 @@ yoktur** (`db/seed/*` demo araç/rota verisidir).
 | 2 | 008 ve 030'daki iç `begin;`/`commit;` kaldırıldı | Dosyanın tamamı zaten tek transaction; içerideki `commit` dış transaction'ı erken kapatır ve kalan ifadeler korumasız kalırdı |
 | 3 | 030 uyarlandı | Özgün dosya HAK61'e özgü bir **veri onarımıdır** (iki çalışanın numarasındaki görünmez Unicode). Boş DB'de onarılacak satır yok. Kalıcı şema parçası (telefon biçimi kısıtı) korundu; teşhis SELECT'leri ve **gerçek HAK61 telefon parçaları içeren** `DELETE FROM login_attempts` çıkarıldı |
 | 4 | 006/007'deki `create table/index/trigger` idempotent yapıldı | Boş veritabanında sonuç birebir aynı; yalnız ikinci çalıştırma hata vermek yerine no-op olur |
+| 5 | **033'ün HAK61'e özel veri satırı çıkarıldı** | Migration, tabloyu kurduktan sonra HAK61'in cihaz eşiği kaydını da yazıyordu (`11104: 120->131`, notunda HAK61 plakası `DO-505GS`). Sendigo'da hiç yaşanmamış bir olaya göre "Seit den neuen Schwellen" filtresi çıkıyordu. **Tablo kurulur, satır yazılmaz.** 31.07 öncesi kurulmuş veritabanları için ayrıca `db/install/sendigo-fix-033-hak61-epoch.sql` |
 
 **Doğrulama — tahmin değil, icra edildi.** Dosya gerçek bir Postgres 16
 motorunda (PGlite) boş veritabanına çalıştırıldı:
@@ -95,6 +95,7 @@ motorunda (PGlite) boş veritabanına çalıştırıldı:
 ✓ 24 tablo · 6 fonksiyon · 81 indeks · 4 trigger
 ✓ vehicles.tank_capacity_l var (numeric)
 ✓ TEST-001 aracı + test şoförü yazıldı
+✓ device_config_epochs 0 satır (HAK61 kaydı yok)
 ✓ workers_phone_temiz kısıtı çalışıyor (boşluklu numara reddedildi)
 ✓ 4 rapor RPC'si çağrılabiliyor
 ✓ Boşluk denetimi dolu veritabanında durdurdu
@@ -143,17 +144,21 @@ logo oranı `lib/brand.ts`'teki SENDIGO künyesinden gelir; görseller
 PNG). `NEXT_PUBLIC_BRAND_*` satırlarının hiçbirine ihtiyaç yok — ancak bir
 metni ezmek gerekirse env her zaman künyeyi ezer.
 
-### 3.3 Resmî belge anteti (PDF) — sunucu env'i, `NEXT_PUBLIC_` **değil**
+### 3.3 Resmî belge anteti (PDF)
 
-| Değişken | Durum | Değer |
-|---|---|---|
-| `COMPANY_NAME` | 🟢 | `Sendigo GmbH` |
-| `COMPANY_ADDRESS` | 🟢 | `Bildgasse 10, 6850 Dornbirn, Österreich` |
-| `COMPANY_REG_LINE` | 🟢 | `FN 681377a (Landesgericht Feldkirch)` |
-| `COMPANY_EXTRA_LINE` | 🟢 | `Geschäftsführer: Gökhan Kalkanlı` |
-| `PDF_BRAND_MARK` | 🟢 | `SEN` |
+| Değişken | Durum | Değer | Not |
+|---|---|---|---|
+| `NEXT_PUBLIC_COMPANY_NAME` | 🟢 | `Sendigo GmbH` | |
+| `NEXT_PUBLIC_COMPANY_ADDRESS` | 🟢 | `Bildgasse 10, 6850 Dornbirn, Österreich` | |
+| `NEXT_PUBLIC_COMPANY_REG_LINE` | 🟢 | `FN 681377a (Landesgericht Feldkirch)` | UID gelince yalnız bu değişir |
+| `NEXT_PUBLIC_COMPANY_EXTRA_LINE` | 🟢 | `Geschäftsführer: Gökhan Kalkanlı` | |
+| `NEXT_PUBLIC_PDF_BRAND_MARK` | 🟢 | `SEN` | İndirilen PDF adlarının de öneki: `SEN_AZG_…` · `sen-kraftstoff-…` |
 
-> UID (ATU…) geldiğinde **yalnız** `COMPANY_REG_LINE` değişir:
+> ⚠️ **Öneki kısaltma.** Bu beş değer PDF'lere gider ve PDF'ler **tarayıcıda**
+> üretilir. `NEXT_PUBLIC_` öneki olmadan istemciye ulaşmazlar ve künye sessizce
+> HAK61'in adına/adresine/UID'sine düşer (31.07.2026'da tam olarak bu yaşandı).
+
+> UID (ATU…) geldiğinde **yalnız** `NEXT_PUBLIC_COMPANY_REG_LINE` değişir:
 > `UID-Nr.: ATU…` → kaydet → **Redeploy**.
 
 ### 3.4 Kurulum modu ve vardiya otomatı
@@ -166,6 +171,7 @@ metni ezmek gerekirse env her zaman künyeyi ezer.
 | `NEXT_PUBLIC_LENKZEIT_WARNING_ENABLED` | 🟢 | `false` | 2,5 t altı sınır geçmeyen filoda VO 561/2006 uygulanmaz |
 | `NEXT_PUBLIC_SAFETY_SCORE_CALIBRATED` | 🟢 | `false` | Skor kalibrasyonu HAK61 filosuna ait; kendi medyanı ölçülene kadar kapalı |
 | `NEXT_PUBLIC_FLEET_MAVI_LABEL` | 🟢 | `Flotte` | Tek filo; DB kod adı `mavi` kalır, etiket sadeleşir |
+| `NEXT_PUBLIC_FLEETS` | 🟢 | `mavi` | İkinci filonun çipi ve form seçeneği arayüzden kalkar |
 | `SHIFT_START_TRIGGER` | 🟢 | `first_ignition` | Gün, aracın **ilk çalıştırılmasıyla** başlar |
 | `SHIFT_AUTO_END` | 🟢 | `depot_idle` | Araç **depoda** + kontak kapalı + eşik → vardiya kapanır |
 | `SHIFT_AUTO_END_IDLE_MIN` | 🟢 | `20` | Eşik: 20 dakika |
@@ -352,8 +358,8 @@ Doğru davranış. `SHIFT_AUTO_END=depot_idle` gir.
 `NEXT_PUBLIC_*` build anında gömülür → Vercel'de **Redeploy** et.
 
 **"PDF anteti hâlâ HAK61."**
-`COMPANY_*` sunucu env'idir, `NEXT_PUBLIC_` öneki **almaz**. Girildikten sonra
-redeploy gerekir.
+Künye env'leri `NEXT_PUBLIC_` önekli OLMAK ZORUNDA — PDF tarayıcıda üretilir ve
+öneksiz env istemciye hiç ulaşmaz. Önek doğruysa **Redeploy** et.
 
 **"Migration 028 hata verdi."**
 `db/install/sendigo-full.sql` yerine tek tek migration çalıştırıyorsun ve

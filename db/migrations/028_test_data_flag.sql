@@ -42,41 +42,92 @@ create index if not exists idx_workers_is_test
 create index if not exists idx_vehicles_is_test
   on public.vehicles (id) where is_test;
 
--- ── 2) Mevcut "Test şoför" kaydı işaretlenir ────────────────────────────────
--- 21.07.2026'da açılmış, hiç vardiyası yok, PIN'i belirlenmiş durumda.
--- employee_number NULL'a çekilir: nextEmployeeNumber() en büyük numarayı baz
--- alıyor (app/actions/workers.ts), test hesabı sırada durursa gerçek personel
--- numaralandırmasını kaydırır.
-update public.workers
-   set is_test         = true,
-       employee_number = null,
-       plate           = 'TEST-001'   -- vehicles.assigned_worker_id'nin türetilmiş aynası
- where id = 'fa3841cc-f540-46f5-b170-91daa5e4c005';
+-- ── 2-3) Test şoförü + test aracı ───────────────────────────────────────────
+--
+-- ⚠️ 31.07.2026 — BOŞ VERİTABANI DÜZELTMESİ.
+-- Bu bölüm 21.07.2026'da açılmış HAK61 test hesabının UUID'sini DÜZ YAZIYORDU.
+-- Sıfırdan kurulan bir veritabanında o kayıt yoktur: update 0 satır etkiler,
+-- ardından gelen insert `assigned_worker_id`'ye var olmayan bir UUID yazmaya
+-- çalışır ve `vehicles.assigned_worker_id → workers(id)` yabancı anahtarı
+-- (migration 009) yüzünden HATA verir. Migration zinciri 028'de durur, 029-040
+-- hiç çalışmaz. İkinci müşteri kurulumunda yakalandı.
+--
+-- Çözüm: kimlik ARANIR, bulunamazsa YARATILIR. Üç aşamalı, sırayla:
+--   1. Bilinen HAK61 test hesabı (varsa)  → canlıda bugünkü davranış birebir
+--   2. is_test zaten işaretli bir hesap    → tekrar çalıştırmada sabit kalır
+--   3. Hiçbiri yoksa yeni test hesabı      → boş veritabanı yolu
+--
+-- HAK61 canlısında 1. adım eşleşir; update'ler aynı değerleri yazar, araç zaten
+-- vardır, insert atlanır. Yani bu düzeltme canlıda TAM NO-OP'tur.
+do $$
+declare
+  v_worker uuid;
+begin
+  -- 1) Bilinen HAK61 test hesabı.
+  select id into v_worker
+    from public.workers
+   where id = 'fa3841cc-f540-46f5-b170-91daa5e4c005';
 
--- ── 3) Test aracı ───────────────────────────────────────────────────────────
--- Plaka bilerek gerçek DO-* deseninden uzak: bir yerde sızarsa insan gözü
--- anında yakalasın. Cihaz alanları NULL — gerçek donanım yok, dolayısıyla
--- device_telemetry / vehicle_events / idle_episodes / vehicle_dtc tarafında
--- tek satır bile üretmez ve telemetri türevi ekranlarda kendiliğinden yoktur.
-insert into public.vehicles (
-  plate, make, model, year, status, fleet,
-  assigned_worker_id, flespi_device_id, imei, tank_capacity_l, notes, is_test
-)
-select
-  'TEST-001', 'TEST', 'TEST', null, 'active', 'mavi',
-  'fa3841cc-f540-46f5-b170-91daa5e4c005', null, null, null,
-  'Test aracı — gerçek donanım yok. Yönetici yüzeylerinde gizlidir (is_test).',
-  true
-where not exists (
-  select 1 from public.vehicles where plate = 'TEST-001'
-);
+  -- 2) Yoksa: zaten işaretlenmiş bir test hesabı (bu migration'ın tekrarı).
+  if v_worker is null then
+    select id into v_worker
+      from public.workers
+     where is_test
+     order by created_at
+     limit 1;
+  end if;
 
--- Kayıt zaten varsa (tekrar çalıştırma) işareti ve atamayı garantiye al.
-update public.vehicles
-   set is_test            = true,
-       status             = 'active',
-       assigned_worker_id = 'fa3841cc-f540-46f5-b170-91daa5e4c005'
- where plate = 'TEST-001';
+  -- 3) O da yoksa: yeni test hesabı. PIN karşılığı olmayan bir bcrypt dizesi
+  --    konur — hesap PANELDEN giriş yapabilsin diye VARDIR, ama kurulumcu
+  --    PIN'i /admin/workers üzerinden bilinçli olarak belirleyene kadar hiçbir
+  --    PIN bu hash'i açmaz. Telefon numarası gerçek bir numarayla ÇAKIŞMAZ.
+  if v_worker is null then
+    insert into public.workers (name, phone, pin_hash, is_admin, is_active, is_test)
+    values (
+      'Test Şoför',
+      '+430000000001',
+      '$2a$10$0000000000000000000000000000000000000000000000000000',
+      false,
+      true,
+      true
+    )
+    returning id into v_worker;
+  end if;
+
+  -- Test şoförü işaretlenir. employee_number NULL'a çekilir:
+  -- nextEmployeeNumber() en büyük numarayı baz alıyor (app/actions/workers.ts),
+  -- test hesabı sırada durursa gerçek personel numaralandırmasını kaydırır.
+  update public.workers
+     set is_test         = true,
+         employee_number = null,
+         plate           = 'TEST-001'  -- vehicles.assigned_worker_id'nin türetilmiş aynası
+   where id = v_worker;
+
+  -- Test aracı. Plaka bilerek gerçek DO-* deseninden uzak: bir yerde sızarsa
+  -- insan gözü anında yakalasın. Cihaz alanları NULL — gerçek donanım yok,
+  -- dolayısıyla device_telemetry / vehicle_events / idle_episodes / vehicle_dtc
+  -- tarafında tek satır bile üretmez ve telemetri türevi ekranlarda
+  -- kendiliğinden yoktur.
+  insert into public.vehicles (
+    plate, make, model, year, status, fleet,
+    assigned_worker_id, flespi_device_id, imei, tank_capacity_l, notes, is_test
+  )
+  select
+    'TEST-001', 'TEST', 'TEST', null, 'active', 'mavi',
+    v_worker, null, null, null,
+    'Test aracı — gerçek donanım yok. Yönetici yüzeylerinde gizlidir (is_test).',
+    true
+  where not exists (
+    select 1 from public.vehicles where plate = 'TEST-001'
+  );
+
+  -- Kayıt zaten varsa (tekrar çalıştırma) işareti ve atamayı garantiye al.
+  update public.vehicles
+     set is_test            = true,
+         status             = 'active',
+         assigned_worker_id = v_worker
+   where plate = 'TEST-001';
+end $$;
 
 -- PostgREST şema önbelleğini tazele (is_test kolonu /rest altında görünsün).
 notify pgrst, 'reload schema';

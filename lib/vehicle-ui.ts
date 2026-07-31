@@ -1,4 +1,5 @@
 import type { VehicleLiveStatus, VehicleBaseStatus, VehicleFleet } from "@/lib/types";
+import { FLEET_LABELS } from "@/lib/tenant";
 
 /**
  * Live operational status from shift/break/base data. NO green/red:
@@ -96,3 +97,21 @@ export const FLEET_STYLE: Record<VehicleFleet, FleetStyle> = {
     dot: "bg-accent-sky",
   },
 };
+
+/**
+ * FİLO ETİKETİ — kullanıcıya gösterilen metin.
+ *
+ * DB'deki kod adları (`bordo` / `mavi`) ve yukarıdaki FLEET_STYLE müşteriye
+ * göre DEĞİŞMEZ: migration 023/029'daki CHECK kısıtı bu iki değeri bekliyor ve
+ * renk kimliği tasarım kararıdır. Değişen yalnız ETİKETTİR — dört araçlık tek
+ * filolu bir müşteride "Bordo Filo / Mavi Filo" ayrımı anlamsızdır.
+ *
+ * Env tanımlı değilse i18n sözlüğündeki bugünkü karşılık kullanılır, yani
+ * HAK61'de hiçbir şey değişmez.
+ */
+export function fleetLabel(
+  fleet: string,
+  t: (key: string) => string
+): string {
+  return FLEET_LABELS[fleet] || t(`fleet.${fleet}`);
+}

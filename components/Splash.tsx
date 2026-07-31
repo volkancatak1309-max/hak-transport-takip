@@ -3,9 +3,10 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { BRAND } from "@/lib/brand";
 
 /**
- * Brief launch splash with the HAK61 emblem — measured/centered, never fullscreen
+ * Brief launch splash with the tenant emblem — measured/centered, never fullscreen
  * artwork. Shows ONCE per browser session (first app open only), then fades out.
  * Effect-driven (no SSR markup) to avoid any hydration mismatch.
  */
@@ -45,10 +46,10 @@ export function Splash() {
     >
       <div className="splash-emblem">
         <Image
-          src="/splash.webp"
-          alt="HAK61 GmbH"
-          width={920}
-          height={717}
+          src={BRAND.assets.splash}
+          alt={BRAND.legalName}
+          width={BRAND.assets.splashWidth}
+          height={BRAND.assets.splashHeight}
           priority
           className="h-auto w-[80vw] max-w-[460px]"
         />

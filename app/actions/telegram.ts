@@ -7,6 +7,8 @@ import { requireWorker, requireAdmin } from "@/lib/session";
 import { getLocale } from "@/i18n/request";
 import { sendTelegramMessage } from "@/lib/telegram";
 import { lenkzeitMessage } from "@/lib/telegram-messages";
+import { LENKZEIT_WARNING_ENABLED } from "@/lib/tenant";
+import { BRAND } from "@/lib/brand";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -84,6 +86,11 @@ export async function unlinkTelegram(): Promise<{ ok: boolean }> {
 export async function notifyLenkzeit(timeEntryId: string): Promise<{ ok: boolean }> {
   const session = await requireWorker();
 
+  // Sunucu son sözü söyler: uyarı kapalıysa istemci yine de çağırsa bile
+  // Telegram mesajı gitmez. Bayrağı yalnız arayüzde tutmak, eski bir sekmeden
+  // gelen çağrıyla kapalı müşteride bildirim gönderirdi.
+  if (!LENKZEIT_WARNING_ENABLED) return { ok: true };
+
   // Claim the one-shot guard atomically: only the call that flips NULL -> now wins.
   const { data: claimed } = await supabaseAdmin
     .from("time_entries")
@@ -128,7 +135,7 @@ export async function sendTestMessage(
   if (!w?.telegram_chat_id) return { ok: false, error: "not_linked" };
 
   // Escape so arbitrary admin text can't break HTML parse_mode.
-  const html = `🔔 <b>HAK61 — Test</b>\n\n${escapeHtml(body)}`;
+  const html = `🔔 <b>${BRAND.name} — Test</b>\n\n${escapeHtml(body)}`;
   const ok = await sendTelegramMessage(w.telegram_chat_id as string, html);
   return ok ? { ok: true } : { ok: false, error: "send_failed" };
 }

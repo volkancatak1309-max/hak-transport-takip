@@ -1,7 +1,11 @@
 import "server-only";
+import { BRAND } from "@/lib/brand";
 
 // Notification bodies (HTML parse_mode). Each is rendered in the recipient's
 // language; legal terms (AZG § 9, VO 561/2006) stay as-is.
+//
+// Mesaj başlığındaki marka adı lib/brand.ts'ten gelir (31.07.2026): bu dosyada
+// 20 yerde düz metin yazılıydı ve ikinci müşteride hepsi tek tek aranacaktı.
 
 type Loc = "tr" | "de";
 const L = (locale: string | null | undefined): Loc => (locale === "de" ? "de" : "tr");
@@ -28,14 +32,14 @@ export function nineHourMessage(
   const plate = esc(p.plate);
   if (L(locale) === "de") {
     return (
-      "🚨 HAK61\n\n" +
+      `🚨 ${BRAND.name}\n\n` +
       `<b>${name}</b> (${plate}) <b>${p.hours}</b> Stunden aktiv.\n\n` +
       "AZG § 9 Abs. 1: höchstens 12 Stunden täglich (bei Nachtarbeit 10).\n" +
       "Bitte mit dem Fahrer Kontakt aufnehmen."
     );
   }
   return (
-    "🚨 HAK61\n\n" +
+    `🚨 ${BRAND.name}\n\n` +
     `<b>${name}</b> (${plate}) <b>${p.hours}</b> saattir aktif.\n\n` +
     "AZG § 9 Abs. 1: günlük en fazla 12 saat (gece çalışmasında 10).\n" +
     "Lütfen şoförle iletişime geçin."
@@ -51,13 +55,13 @@ export function shiftStartedMessage(
   const plate = esc(p.plate);
   if (L(locale) === "de") {
     return (
-      "🟢 HAK61\n\n" +
+      `🟢 ${BRAND.name}\n\n` +
       `<b>${name}</b> (${plate}) hat die Schicht begonnen.\n` +
       `🕐 Uhrzeit: <b>${p.time}</b>`
     );
   }
   return (
-    "🟢 HAK61\n\n" +
+    `🟢 ${BRAND.name}\n\n` +
     `<b>${name}</b> (${plate}) vardiyayı başlattı.\n` +
     `🕐 Saat: <b>${p.time}</b>`
   );
@@ -72,14 +76,14 @@ export function autoShiftStartedAdminMessage(
   const plate = esc(p.plate);
   if (L(locale) === "de") {
     return (
-      "🟢 HAK61\n\n" +
+      `🟢 ${BRAND.name}\n\n` +
       `Zündung an: Schicht von <b>${name}</b> (${plate}) wurde automatisch gestartet.\n` +
       `🕐 Uhrzeit: <b>${p.time}</b>\n` +
       "Bestätigung des Fahrers steht noch aus."
     );
   }
   return (
-    "🟢 HAK61\n\n" +
+    `🟢 ${BRAND.name}\n\n` +
     `Kontak açıldı: <b>${name}</b> (${plate}) vardiyası otomatik başlatıldı.\n` +
     `🕐 Saat: <b>${p.time}</b>\n` +
     "Şoför onayı bekleniyor."
@@ -96,13 +100,13 @@ export function autoShiftStartedDriverMessage(
     return (
       "🟢 <b>Schicht gestartet</b>\n\n" +
       `Zündung an (${plate}) — deine Schicht läuft seit <b>${p.time}</b>.\n` +
-      "Bitte im Panel mit einem Tipp bestätigen.\n<i>HAK61</i>"
+      `Bitte im Panel mit einem Tipp bestätigen.\n<i>${BRAND.name}</i>`
     );
   }
   return (
     "🟢 <b>Vardiyan başladı</b>\n\n" +
     `Kontak açıldı (${plate}) — vardiyan <b>${p.time}</b> itibarıyla başladı.\n` +
-    "Lütfen panelden tek dokunuşla onayla.\n<i>HAK61</i>"
+    `Lütfen panelden tek dokunuşla onayla.\n<i>${BRAND.name}</i>`
   );
 }
 
@@ -128,14 +132,14 @@ export function driverReportMessage(
   if (L(locale) === "de") {
     const label = typesDe[p.type] ?? p.type;
     return (
-      "⚠️ HAK61 — <b>Fahrermeldung</b>\n\n" +
+      `⚠️ ${BRAND.name} — <b>Fahrermeldung</b>\n\n` +
       `<b>${name}</b> (${plate}) meldet: <b>${esc(label)}</b>\n` +
       "Details im Admin-Panel."
     );
   }
   const label = typesTr[p.type] ?? p.type;
   return (
-    "⚠️ HAK61 — <b>Şoför Bildirimi</b>\n\n" +
+    `⚠️ ${BRAND.name} — <b>Şoför Bildirimi</b>\n\n` +
     `<b>${name}</b> (${plate}) bildirdi: <b>${esc(label)}</b>\n` +
     "Detaylar yönetici panelinde."
   );
@@ -153,7 +157,7 @@ export function shiftSummaryMessage(
       `🚚 Kilometer: <b>${p.km}</b> km\n` +
       `📦 Fracht: <b>${p.cargo}</b>\n` +
       `☕ Pause: <b>${p.breakMin}</b> Min\n\n` +
-      "Gute Arbeit 👋\n<i>HAK61</i>"
+      `Gute Arbeit 👋\n<i>${BRAND.name}</i>`
     );
   }
   return (
@@ -162,7 +166,7 @@ export function shiftSummaryMessage(
     `🚚 Kilometre: <b>${p.km}</b> km\n` +
     `📦 Kargo: <b>${p.cargo}</b>\n` +
     `☕ Mola: <b>${p.breakMin}</b> dk\n\n` +
-    "İyi çalışmalar 👋\n<i>HAK61</i>"
+    `İyi çalışmalar 👋\n<i>${BRAND.name}</i>`
   );
 }
 
@@ -176,13 +180,13 @@ export function stillActiveMessage(
 ): string {
   if (L(locale) === "de") {
     return (
-      "⏳ <b>HAK61</b>\n\n" +
+      `⏳ <b>${BRAND.name}</b>\n\n` +
       `Deine Schicht ist seit <b>${p.hours}</b> Stunden offen.\n` +
       "Ist deine Schicht noch aktiv?"
     );
   }
   return (
-    "⏳ <b>HAK61</b>\n\n" +
+    `⏳ <b>${BRAND.name}</b>\n\n` +
     `Vardiyan <b>${p.hours}</b> saattir açık.\n` +
     "Vardiyan hâlâ devam ediyor mu?"
   );
@@ -208,12 +212,12 @@ export function shiftClosedByWatchdogMessage(locale: string | null): string {
   if (L(locale) === "de") {
     return (
       "✅ <b>Schicht beendet</b>\n\n" +
-      "Deine offene Schicht wurde geschlossen. Bitte Kilometer/Fracht bei Bedarf im Panel nachtragen.\n<i>HAK61</i>"
+      `Deine offene Schicht wurde geschlossen. Bitte Kilometer/Fracht bei Bedarf im Panel nachtragen.\n<i>${BRAND.name}</i>`
     );
   }
   return (
     "✅ <b>Vardiya kapatıldı</b>\n\n" +
-    "Açık kalan vardiyan kapatıldı. Gerekirse km/kargo bilgisini panelden tamamlayabilirsin.\n<i>HAK61</i>"
+    `Açık kalan vardiyan kapatıldı. Gerekirse km/kargo bilgisini panelden tamamlayabilirsin.\n<i>${BRAND.name}</i>`
   );
 }
 
@@ -226,14 +230,14 @@ export function longShiftUnreachableMessage(
   const plate = esc(p.plate);
   if (L(locale) === "de") {
     return (
-      "⚠️ HAK61\n\n" +
+      `⚠️ ${BRAND.name}\n\n` +
       `<b>${name}</b> (${plate}) hat eine seit <b>${p.hours}</b> Std offene Schicht ` +
       "und ist nicht per Telegram erreichbar.\n" +
       "Bitte prüfen / Schicht im Panel schließen."
     );
   }
   return (
-    "⚠️ HAK61\n\n" +
+    `⚠️ ${BRAND.name}\n\n` +
     `<b>${name}</b> (${plate}) <b>${p.hours}</b> saattir açık bir vardiyaya sahip ` +
     "ve Telegram'dan ulaşılamıyor.\n" +
     "Lütfen kontrol edin / vardiyayı panelden kapatın."
@@ -246,12 +250,12 @@ export function lenkzeitMessage(locale: string | null): string {
     return (
       "⚠️ <b>Lenkzeit-Warnung</b>\n\n" +
       "4,5 Stunden Fahrt absolviert. <b>45 Min Pause</b> erforderlich.\n\n" +
-      "VO (EG) 561/2006\n<i>HAK61</i>"
+      `VO (EG) 561/2006\n<i>${BRAND.name}</i>`
     );
   }
   return (
     "⚠️ <b>Lenkzeit Uyarısı</b>\n\n" +
     "4.5 saat sürüş tamamlandı. <b>45 dk mola</b> yapma zamanı.\n\n" +
-    "EU 561/2006\n<i>HAK61</i>"
+    `EU 561/2006\n<i>${BRAND.name}</i>`
   );
 }

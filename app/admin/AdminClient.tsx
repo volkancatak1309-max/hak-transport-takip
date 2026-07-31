@@ -95,6 +95,7 @@ import {
   reportPeriodDe,
 } from "@/lib/report-de";
 import type { TimeEntryWithWorker, WorkerPublic } from "@/lib/types";
+import { PACKAGES_ENABLED } from "@/lib/tenant";
 
 // 22.07.2026: satır vurgusu 9 saatte değil YASAL TAVANDA kırmızıya döner
 // (§ 9 Abs. 1 = 12 sa; gece çalışması varsa § 14 Abs. 2 = 10 sa). 9 saat bir
@@ -325,10 +326,13 @@ export function AdminClient({
       persNr.set(w.id, (w.employee_number ?? "").trim() || String(i + 1))
     );
 
+    // Paket sütunları müşteri ayarına bağlı (lib/tenant.ts): paket sayacı
+    // kullanmayan filoda dışa aktarımda üç boş sütun kalmaz.
     const header = [
       t("tblPersNr"), t("tblWorker"), t("tblDate"), t("tblStart"), t("tblEnd"),
-      t("tblWorked"), t("tblBreak"), t("tblKm"), t("tblLoaded"), t("tblCargo"),
-      t("tblUndelivered"), t("tblPlate"), t("tblNote"),
+      t("tblWorked"), t("tblBreak"), t("tblKm"),
+      ...(PACKAGES_ENABLED ? [t("tblLoaded"), t("tblCargo"), t("tblUndelivered")] : []),
+      t("tblPlate"), t("tblNote"),
     ];
     const rows = entries.map((e) => {
       const w = workedMs(e);
@@ -342,9 +346,13 @@ export function AdminClient({
         formatDurationShort(w, locale),
         String(e.break_minutes ?? 0),
         km !== null ? String(km) : "",
-        e.start_package_count !== null ? String(e.start_package_count) : "",
-        e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "",
-        e.undelivered_count !== null ? String(e.undelivered_count) : "",
+        ...(PACKAGES_ENABLED
+          ? [
+              e.start_package_count !== null ? String(e.start_package_count) : "",
+              e.ended_at && e.cargo_count !== null ? String(e.cargo_count) : "",
+              e.undelivered_count !== null ? String(e.undelivered_count) : "",
+            ]
+          : []),
         e.plate ?? "",
         e.notes ?? "",
       ];
@@ -504,24 +512,28 @@ export function AdminClient({
       sortable: true,
       sortValue: (e) => kmDiff(e) ?? -1,
     },
-    {
-      key: "loaded",
-      header: t("tblLoaded"),
-      help: "col_loaded",
-      cell: (e) => e.start_package_count ?? "—",
-      align: "right",
-      nums: true,
-      hideBelow: "lg",
-    },
-    {
-      key: "cargo",
-      header: t("tblCargo"),
-      help: "col_delivered",
-      cell: (e) => (shiftState(e).active ? "—" : e.cargo_count ?? "—"),
-      align: "right",
-      nums: true,
-      hideBelow: "lg",
-    },
+    ...(PACKAGES_ENABLED
+      ? ([
+          {
+            key: "loaded",
+            header: t("tblLoaded"),
+            help: "col_loaded",
+            cell: (e) => e.start_package_count ?? "—",
+            align: "right",
+            nums: true,
+            hideBelow: "lg",
+          },
+          {
+            key: "cargo",
+            header: t("tblCargo"),
+            help: "col_delivered",
+            cell: (e) => (shiftState(e).active ? "—" : e.cargo_count ?? "—"),
+            align: "right",
+            nums: true,
+            hideBelow: "lg",
+          },
+        ] as Column<TimeEntryWithWorker>[])
+      : []),
     {
       key: "plate",
       header: t("tblPlate"),
@@ -1055,6 +1067,7 @@ export function AdminClient({
                   Teslim edilen artık elle girilmiyor: alınan − geri getirilen
                   olarak hesaplanıyor, yani yönetici de şoförle aynı matematiği
                   kullanıyor ve tutarsız üçlü oluşturulamıyor. */}
+              {PACKAGES_ENABLED && (
               <fieldset className="space-y-3 rounded-xl border border-border/60 p-3">
                 <legend className="px-1 text-xs uppercase tracking-wide text-muted-foreground">
                   {t("editPackagesGroup")}
@@ -1118,6 +1131,7 @@ export function AdminClient({
                   </p>
                 )}
               </fieldset>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="e_pl">{t("tblPlate")}</Label>
                 <Input id="e_pl" name="plate" defaultValue={editOpen.plate ?? ""} className="nums h-10 uppercase" />
@@ -1231,8 +1245,8 @@ function ShiftDetail({
         {field(t("tblBreak"), `${entry.break_minutes ?? 0} dk`)}
         {field(t("tblKm"), km !== null ? km.toLocaleString(nf) : "—")}
         {field(t("tblPlate"), <span className="uppercase">{entry.plate ?? "—"}</span>)}
-        {field(t("tblLoaded"), entry.start_package_count ?? "—")}
-        {field(t("tblCargo"), active ? "—" : entry.cargo_count ?? "—")}
+        {PACKAGES_ENABLED && field(t("tblLoaded"), entry.start_package_count ?? "—")}
+        {PACKAGES_ENABLED && field(t("tblCargo"), active ? "—" : entry.cargo_count ?? "—")}
       </dl>
       {entry.notes && (
         <div>

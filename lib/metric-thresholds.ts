@@ -50,7 +50,11 @@
  * MUTLAK bir kalite ölçüsü değil, aynı dönemde şoförleri KIYASLAYAN bir
  * sıralamadır. Ekrandaki (i) balonu bunu açıkça söyler.
  */
-export const SAFETY_SCORE_CALIBRATED = true;
+// Kalibrasyon MÜŞTERİYE ÖZELDİR (31.07.2026): aşağıdaki K, HAK61 filosunun
+// canlı medyanından ve HAK61'in Teltonika eşik parametrelerinden türetildi.
+// Başka bir filoda aynı K ile üretilen skor mutlak bir anlam taşımaz; yeni
+// kurulumda kapalı başlar ve kendi medyanı ölçülene kadar kapalı kalır.
+export { SAFETY_SCORE_CALIBRATED } from "@/lib/tenant";
 
 /**
  * Skor eğrisinin yarılanma sabiti. `ceza = K` olan şoför 50 puan alır.

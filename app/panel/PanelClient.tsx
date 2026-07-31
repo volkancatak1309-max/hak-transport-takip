@@ -48,6 +48,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { LenkzeitWarning } from "@/components/LenkzeitWarning";
+import { LENKZEIT_WARNING_ENABLED } from "@/lib/tenant";
 import { TelegramLink } from "@/components/TelegramLink";
 import { tryServerAction } from "@/lib/offline-aware";
 import { ConfirmShiftCard } from "./ConfirmShiftCard";
@@ -515,7 +516,11 @@ export function PanelClient({
           cihazı (FMC003 → device_telemetry). Şoför telefonu artık konum
           göndermiyor; Lenkzeit uyarısı vardiya saatinden hesaplandığı için
           konumdan bağımsız çalışmaya devam eder. */}
-      {active && (
+      {/* Lenkzeit (VO (EG) 561/2006) uyarısı müşteri ayarına bağlı: 2,5 t altı,
+          sınır geçmeyen filoda AB sürüş-dinlenme tüzüğü uygulanmaz (bkz.
+          lib/azg-rules.ts). HAK61'de AÇIK kalır — şoförler alışkın ve kaldırmak
+          davranış değişikliği olurdu; Sendigo'da kapalı. */}
+      {active && LENKZEIT_WARNING_ENABLED && (
         <>
           <LenkzeitWarning
             timeEntryId={active.id}

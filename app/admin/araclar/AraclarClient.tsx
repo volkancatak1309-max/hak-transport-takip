@@ -34,7 +34,7 @@ import { HelpTip } from "@/components/help/HelpTip";
 import { SavedViews, type SavedView } from "@/components/ui-v2";
 import { VehicleFormDialog } from "@/components/admin/VehicleFormDialog";
 import { formatDurationShort } from "@/lib/format";
-import { STATUS_STYLE, FLEET_STYLE } from "@/lib/vehicle-ui";
+import { STATUS_STYLE, FLEET_STYLE, fleetLabel } from "@/lib/vehicle-ui";
 import type { VehicleWithStatus, VehicleFleet } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { deleteVehicle } from "@/app/actions/vehicles";
@@ -113,8 +113,8 @@ export function AraclarClient({
       { key: "silent", label: t("view_silent"), count: silent, alert: true },
       { key: "faulty", label: t("view_faulty"), count: faulty, alert: true },
       { key: "no_driver", label: t("view_no_driver"), count: noDriver, alert: true },
-      { key: "mavi", label: t("fleet.mavi"), count: vehicles.filter((v) => v.fleet === "mavi").length },
-      { key: "bordo", label: t("fleet.bordo"), count: vehicles.filter((v) => v.fleet === "bordo").length },
+      { key: "mavi", label: fleetLabel("mavi", t), count: vehicles.filter((v) => v.fleet === "mavi").length },
+      { key: "bordo", label: fleetLabel("bordo", t), count: vehicles.filter((v) => v.fleet === "bordo").length },
     ];
   }, [vehicles, lastSeen, dtcByVehicle, t]);
 
@@ -210,7 +210,7 @@ export function AraclarClient({
         )}
         {fleetFilter !== "all" && (
           <FilterChip
-            label={t("filter_fleet") + ": " + t("fleet." + fleetFilter)}
+            label={t("filter_fleet") + ": " + fleetLabel(fleetFilter, t)}
             onClear={() => setFleetFilter("all")}
           />
         )}
@@ -240,8 +240,8 @@ export function AraclarClient({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("filter_all")}</SelectItem>
-            <SelectItem value="bordo">{t("fleet.bordo")}</SelectItem>
-            <SelectItem value="mavi">{t("fleet.mavi")}</SelectItem>
+            <SelectItem value="bordo">{fleetLabel("bordo", t)}</SelectItem>
+            <SelectItem value="mavi">{fleetLabel("mavi", t)}</SelectItem>
           </SelectContent>
         </Select>
 
@@ -382,7 +382,7 @@ export function AraclarClient({
                                 FLEET_STYLE[v.fleet].chip
                               )}
                             >
-                              {t("fleet." + v.fleet)}
+                              {fleetLabel(v.fleet, t)}
                             </span>
                             {dtcCount > 0 && (
                               <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-status-critical-text">
@@ -427,7 +427,7 @@ export function AraclarClient({
                             FLEET_STYLE[v.fleet].chip
                           )}
                         >
-                          {t("fleet." + v.fleet)}
+                          {fleetLabel(v.fleet, t)}
                         </span>
                         {dtcCount > 0 && (
                           <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[10px] font-semibold text-status-critical-text">

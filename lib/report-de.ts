@@ -33,17 +33,40 @@ export const REPORT_EMPTY = "—";
  * antetidir, değeri yalnız Volkan'ın verdiği metindir.
  */
 export const COMPANY = {
-  name: "HAK61 GmbH",
-  address: "Josef-Ganahl-Straße 4, 6850 Dornbirn, Österreich",
-  /**
-   * ATU-Nummer. Avusturya'da resmî belgede firma adı + adres + UID birlikte
-   * bulunur; antette "UID-Nr.: …" biçiminde yazılır (uidLabel).
-   */
-  uid: "ATU79519228",
+  name: process.env.COMPANY_NAME?.trim() || "HAK61 GmbH",
+  address:
+    process.env.COMPANY_ADDRESS?.trim() ||
+    "Josef-Ganahl-Straße 4, 6850 Dornbirn, Österreich",
 } as const;
 
-/** Antette basılan UID satırı — üç PDF'te de aynı biçim. */
-export const COMPANY_UID_LINE = `UID-Nr.: ${COMPANY.uid}`;
+/**
+ * Antette basılan SİCİL SATIRI — tüm PDF'lerde aynı biçim.
+ *
+ * Avusturya'da resmî belgede firma adı + adres + sicil kimliği birlikte
+ * bulunur. Kimliğin TÜRÜ firmaya göre değişir ve bu yüzden 31.07.2026'da
+ * "UID" alanı yerine SERBEST SATIR oldu:
+ *   • HAK61'in UID'si var        → "UID-Nr.: ATU79519228"  (varsayılan, değişmedi)
+ *   • Sendigo'nun henüz yok      → "FN 681377a (Landesgericht Feldkirch)"
+ * UID geldiğinde tek env satırı değişir, kod değişmez. Etiketi de env taşır:
+ * "UID-Nr.:" önekini koda gömmek, UID'si olmayan firmada yanlış bir hukuki
+ * iddia basardı.
+ */
+export const COMPANY_UID_LINE =
+  process.env.COMPANY_REG_LINE?.trim() || "UID-Nr.: ATU79519228";
+
+/**
+ * Antetin isteğe bağlı DÖRDÜNCÜ satırı (ör. "Geschäftsführer: …"). Tanımsızsa
+ * satır hiç basılmaz — HAK61 antetinde böyle bir satır yoktu ve olmayacak.
+ */
+export const COMPANY_EXTRA_LINE = process.env.COMPANY_EXTRA_LINE?.trim() || "";
+
+/**
+ * PDF kapağındaki kare amblem kutusunun içindeki kısa işaret. Bir GÖRSEL değil,
+ * 2-4 harflik bir metin — @react-pdf'te dış görsel yüklemek ek bir ağ isteği ve
+ * hata yüzeyi demek, üç raporun kapağı için bedeli yüksek. Varsayılan "HAK",
+ * yani bugün basılan dizenin aynısı.
+ */
+export const BRAND_MARK = process.env.PDF_BRAND_MARK?.trim() || "HAK";
 
 export const SHIFT_REPORT_DE = {
   title: "Schichtbericht",

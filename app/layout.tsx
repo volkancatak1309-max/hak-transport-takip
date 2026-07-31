@@ -5,25 +5,35 @@ import { getLocale } from "@/i18n/request";
 import { Providers } from "@/components/providers";
 import { Toaster } from "@/components/ui/sonner";
 import { Splash } from "@/components/Splash";
+import { BRAND } from "@/lib/brand";
+import { assertTenantConfig } from "@/lib/tenant";
 import "./globals.css";
+
+// Kurulum tutarlılık denetimi — modül yüklenirken bir kez. Yanlış env bileşimi
+// (şoför paneli yok + otomatik kapanma yok) sessiz veri kaybına dönüşmesin diye
+// üretimde değil, ilk render'da patlar. HAK61 varsayılanlarında hiçbir şey atmaz.
+assertTenantConfig();
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
+// Marka metinleri ve ikon yolları lib/brand.ts'te (çok-müşteri tek kaynak).
+// HAK61 künyesi 31.07.2026 öncesindeki değerlerin birebir kopyasıdır — ikon
+// yollarındaki "?v=2" damgası dahil: o damga cihazlarda kurulu PWA
+// kısayollarının ikonunu tazeleyen sürümdür, düşürülemez.
 export const metadata: Metadata = {
-  title: "HAK61 — Schicht & KM",
-  description: "Çalışan vardiya ve kilometre takip sistemi",
+  title: BRAND.appTitle,
+  description: BRAND.description,
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "HAK61" },
-  // ?v=2 busts the old orange "HAK Transport" icon cached on devices/home screens.
+  appleWebApp: { capable: true, statusBarStyle: "default", title: BRAND.name },
   icons: {
     icon: [
-      { url: "/favicon.ico?v=2", sizes: "any" },
-      { url: "/favicon-32x32.png?v=2", type: "image/png", sizes: "32x32" },
-      { url: "/icon-192.png?v=2", type: "image/png", sizes: "192x192" },
-      { url: "/icon-512.png?v=2", type: "image/png", sizes: "512x512" },
+      { url: BRAND.assets.favicon, sizes: "any" },
+      { url: BRAND.assets.favicon32, type: "image/png", sizes: "32x32" },
+      { url: BRAND.assets.icon192, type: "image/png", sizes: "192x192" },
+      { url: BRAND.assets.icon512, type: "image/png", sizes: "512x512" },
     ],
-    apple: [{ url: "/apple-touch-icon.png?v=2", sizes: "180x180" }],
+    apple: [{ url: BRAND.assets.appleTouch, sizes: "180x180" }],
   },
 };
 

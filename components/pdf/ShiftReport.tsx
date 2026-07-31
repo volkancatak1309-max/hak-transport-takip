@@ -9,7 +9,10 @@ import {
   pdf,
   Image,
 } from "@react-pdf/renderer";
+import type { Style } from "@react-pdf/types";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
+import { BRAND_MARK } from "@/lib/report-de";
+import { PACKAGES_ENABLED } from "@/lib/tenant";
 
 registerPdfFont();
 
@@ -114,19 +117,8 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: "#1e293b",
   },
-  // Toplam 100%. Start-KM/End-KM kolonlarından boşalan 16 puan kalan
-  // kolonlara dağıtıldı — özellikle isim ve sayı kolonları kırpılmasın diye.
-  colWorker: { width: "14%" },
-  colDate: { width: "9%" },
-  colStart: { width: "7%" },
-  colEnd: { width: "7%" },
-  colWorked: { width: "10%" },
-  colBreak: { width: "7%" },
-  colKm: { width: "9%" },
-  colLoaded: { width: "9%" },
-  colCargo: { width: "9%" },
-  colUndelivered: { width: "10%" },
-  colPlate: { width: "9%" },
+  // Kolon genişlikleri COL_W'den türetilir (aşağıda) — paket kolonları
+  // kapalıyken boşalan pay kalan kolonlara oransal dağıtılır.
   footer: {
     position: "absolute",
     bottom: 20,
@@ -142,7 +134,52 @@ const styles = StyleSheet.create({
   },
 });
 
+/**
+ * KOLON PAYLARI — yüzde DEĞİL, PAY. Yüzdeye çevirmeyi `colW()` yapar.
+ *
+ * Paket kolonları (alınan / teslim / teslim edilemeyen) müşteri ayarına bağlı
+ * (lib/tenant.ts). Kapalıyken sabit yüzdeler bırakılsaydı tablo sayfanın
+ * %72'sinde sıkışır, sağda 28 puanlık boş bir şerit kalırdı. Bunun yerine
+ * kalan kolonlar boşalan payı ORANSAL paylaşır: tablo her iki kurulumda da
+ * sayfayı tam doldurur ve isim kolonu kırpılmaz.
+ *
+ * HAK61 (paketler açık): paylar 14/9/7/7/10/7/9/9/9/10/9 = 100 → bugünkü
+ * yüzdelerin birebir aynısı.
+ */
+const COL_W = {
+  worker: 14,
+  date: 9,
+  start: 7,
+  end: 7,
+  worked: 10,
+  break: 7,
+  km: 9,
+  loaded: 9,
+  cargo: 9,
+  undelivered: 10,
+  plate: 9,
+} as const;
+
+const PACKAGE_COLS = ["loaded", "cargo", "undelivered"] as const;
+
+function colWidths(withPackages: boolean): Record<keyof typeof COL_W, Style> {
+  const keys = Object.keys(COL_W) as (keyof typeof COL_W)[];
+  const active = withPackages
+    ? keys
+    : keys.filter((k) => !(PACKAGE_COLS as readonly string[]).includes(k));
+  const total = active.reduce((n, k) => n + COL_W[k], 0);
+  const out = {} as Record<keyof typeof COL_W, Style>;
+  for (const k of keys) {
+    out[k] = active.includes(k)
+      ? { width: `${((COL_W[k] / total) * 100).toFixed(3)}%` }
+      : { width: 0 };
+  }
+  return out;
+}
+
+
 function ReportDoc(opts: PdfOptions) {
+  const w = colWidths(PACKAGES_ENABLED);
   return (
     <Document>
       <Page size="A4" orientation="landscape" style={styles.page} wrap>
@@ -152,7 +189,7 @@ function ReportDoc(opts: PdfOptions) {
               <Image src={opts.logoDataUrl} style={{ width: 110, height: 30, marginBottom: 6 }} />
             ) : (
               <View style={styles.brandBox}>
-                <Text style={styles.brandText}>HAK</Text>
+                <Text style={styles.brandText}>{BRAND_MARK}</Text>
               </View>
             )}
             <Text style={styles.company}>{opts.company}</Text>
@@ -168,31 +205,39 @@ function ReportDoc(opts: PdfOptions) {
 
         <View style={styles.table}>
           <View style={styles.thead} fixed>
-            <Text style={[styles.th, styles.colWorker]}>{opts.headers.worker}</Text>
-            <Text style={[styles.th, styles.colDate]}>{opts.headers.date}</Text>
-            <Text style={[styles.th, styles.colStart]}>{opts.headers.start}</Text>
-            <Text style={[styles.th, styles.colEnd]}>{opts.headers.end}</Text>
-            <Text style={[styles.th, styles.colWorked]}>{opts.headers.worked}</Text>
-            <Text style={[styles.th, styles.colBreak]}>{opts.headers.breakMin}</Text>
-            <Text style={[styles.th, styles.colKm]}>{opts.headers.km}</Text>
-            <Text style={[styles.th, styles.colLoaded]}>{opts.headers.loaded}</Text>
-            <Text style={[styles.th, styles.colCargo]}>{opts.headers.cargo}</Text>
-            <Text style={[styles.th, styles.colUndelivered]}>{opts.headers.undelivered}</Text>
-            <Text style={[styles.th, styles.colPlate]}>{opts.headers.plate}</Text>
+            <Text style={[styles.th, w.worker]}>{opts.headers.worker}</Text>
+            <Text style={[styles.th, w.date]}>{opts.headers.date}</Text>
+            <Text style={[styles.th, w.start]}>{opts.headers.start}</Text>
+            <Text style={[styles.th, w.end]}>{opts.headers.end}</Text>
+            <Text style={[styles.th, w.worked]}>{opts.headers.worked}</Text>
+            <Text style={[styles.th, w.break]}>{opts.headers.breakMin}</Text>
+            <Text style={[styles.th, w.km]}>{opts.headers.km}</Text>
+            {PACKAGES_ENABLED && (
+              <>
+                <Text style={[styles.th, w.loaded]}>{opts.headers.loaded}</Text>
+                <Text style={[styles.th, w.cargo]}>{opts.headers.cargo}</Text>
+                <Text style={[styles.th, w.undelivered]}>{opts.headers.undelivered}</Text>
+              </>
+            )}
+            <Text style={[styles.th, w.plate]}>{opts.headers.plate}</Text>
           </View>
           {opts.rows.map((r, i) => (
             <View key={i} style={[styles.tr, i % 2 === 1 ? styles.trAlt : {}]} wrap={false}>
-              <Text style={[styles.td, styles.colWorker]}>{r.worker}</Text>
-              <Text style={[styles.td, styles.colDate]}>{r.date}</Text>
-              <Text style={[styles.td, styles.colStart]}>{r.start}</Text>
-              <Text style={[styles.td, styles.colEnd]}>{r.end}</Text>
-              <Text style={[styles.td, styles.colWorked]}>{r.worked}</Text>
-              <Text style={[styles.td, styles.colBreak]}>{r.breakMin}</Text>
-              <Text style={[styles.td, styles.colKm]}>{r.km}</Text>
-              <Text style={[styles.td, styles.colLoaded]}>{r.loaded}</Text>
-              <Text style={[styles.td, styles.colCargo]}>{r.cargo}</Text>
-              <Text style={[styles.td, styles.colUndelivered]}>{r.undelivered}</Text>
-              <Text style={[styles.td, styles.colPlate]}>{r.plate}</Text>
+              <Text style={[styles.td, w.worker]}>{r.worker}</Text>
+              <Text style={[styles.td, w.date]}>{r.date}</Text>
+              <Text style={[styles.td, w.start]}>{r.start}</Text>
+              <Text style={[styles.td, w.end]}>{r.end}</Text>
+              <Text style={[styles.td, w.worked]}>{r.worked}</Text>
+              <Text style={[styles.td, w.break]}>{r.breakMin}</Text>
+              <Text style={[styles.td, w.km]}>{r.km}</Text>
+              {PACKAGES_ENABLED && (
+                <>
+                  <Text style={[styles.td, w.loaded]}>{r.loaded}</Text>
+                  <Text style={[styles.td, w.cargo]}>{r.cargo}</Text>
+                  <Text style={[styles.td, w.undelivered]}>{r.undelivered}</Text>
+                </>
+              )}
+              <Text style={[styles.td, w.plate]}>{r.plate}</Text>
             </View>
           ))}
         </View>

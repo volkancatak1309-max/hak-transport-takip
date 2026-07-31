@@ -26,6 +26,7 @@ import { TelegramLink } from "@/components/TelegramLink";
 import { sendTestMessage } from "@/app/actions/telegram";
 import { formatDateTime } from "@/lib/format";
 import type { WebhookInfo } from "@/lib/telegram";
+import { BRAND } from "@/lib/brand";
 
 type ConnectedUser = {
   id: string;
@@ -199,7 +200,9 @@ export function TelegramAdminClient({ connected, myStatus, webhook }: Props) {
                           variant="outline"
                           size="sm"
                           disabled={rowBusy === u.id}
-                          onClick={() => send(u.id, t("test_default"), u.id)}
+                          onClick={() =>
+                            send(u.id, t("test_default", { brand: BRAND.name }), u.id)
+                          }
                           aria-label={`${t("test_send")} — ${u.name}`}
                         >
                           {rowBusy === u.id ? (

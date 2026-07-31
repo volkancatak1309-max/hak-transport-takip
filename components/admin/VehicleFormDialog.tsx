@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { VehicleWithStatus, VehicleBaseStatus, VehicleFleet } from "@/lib/types";
+import { fleetLabel } from "@/lib/vehicle-ui";
 import {
   createVehicle,
   updateVehicle,
@@ -263,12 +264,12 @@ function VehicleForm({
         <Select value={fleet} onValueChange={(v) => v && setFleet(v as VehicleFleet)}>
           <SelectTrigger className="h-11">
             <SelectValue>
-              {((v: unknown) => t(`fleet.${String(v)}`)) as never}
+              {((v: unknown) => fleetLabel(String(v), t)) as never}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="mavi">{t("fleet.mavi")}</SelectItem>
-            <SelectItem value="bordo">{t("fleet.bordo")}</SelectItem>
+            <SelectItem value="mavi">{fleetLabel("mavi", t)}</SelectItem>
+            <SelectItem value="bordo">{fleetLabel("bordo", t)}</SelectItem>
           </SelectContent>
         </Select>
       </div>

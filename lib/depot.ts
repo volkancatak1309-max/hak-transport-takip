@@ -487,3 +487,45 @@ export async function resolveShiftStartAt(
   // 3) Hiç veri yok (yeni araç/cihaz) ya da hata.
   return { at: nowIso, source: "now", verified: false };
 }
+
+/**
+ * ARACIN SON FIX'İ DEPODA MI? — otomatik kapanış için (31.07.2026).
+ *
+ * `depotLocationState`'ten iki farkı var ve ikisi de bilinçli:
+ *
+ *  1. TAZELİK ARAMAZ. O fonksiyon kilit içindir ve "cihaz sessizse konum
+ *     doğrulanamaz" der. Burada durum tam tersi: kapanışı tetikleyen ŞEY zaten
+ *     kontağın kapalı ve cihazın sessiz olmasıdır. Tazelik şartı konsaydı depoya
+ *     gelip motoru susturan araç ASLA kapanmazdı — kapanış için son bilinen
+ *     konum doğru cevaptır.
+ *  2. Boolean döner, üç durumlu değil: çağıran zaten "depoda mı, değil mi"
+ *     sorusunu soruyor; konumu hiç bilinmeyen araç (fix yok) `false` sayılır ve
+ *     gece-yarısı emniyetine bırakılır — sessizce kapatılmaz.
+ *
+ * Depo tanımlı değilse `false`: depo bilinmeden "depoda" denemez.
+ */
+export async function lastFixInDepot(
+  vehicleId: string,
+  zones?: DepotZone[]
+): Promise<boolean> {
+  const z = zones ?? (await activeDepotZones());
+  if (z.length === 0) return false;
+  try {
+    const latest = await latestVehicleTelemetry(vehicleId);
+    if (!latest || latest.latitude == null || latest.longitude == null) return false;
+    return z.some((zone) =>
+      pointInCircleM(
+        latest.latitude,
+        latest.longitude,
+        zone.center_lat,
+        zone.center_lng,
+        zone.radius_m
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** activeDepotZones()'un döndürdüğü tip — auto-shift motoru da kullanıyor. */
+export type { DepotZone };

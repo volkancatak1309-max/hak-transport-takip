@@ -7,6 +7,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getSession } from "@/lib/session";
 import { loginSchema, changePinSchema } from "@/lib/validation";
 import { canonicalPhone, phoneVariants } from "@/lib/phone";
+import { DRIVER_PANEL_ENABLED } from "@/lib/tenant";
 
 export type LoginState = {
   error?: "invalid" | "inactive" | "db" | "validation" | "locked";
@@ -136,6 +137,16 @@ export async function loginAction(
     return { error: "invalid" };
   }
 
+  // ŞOFÖR PANELİ KAPALI MÜŞTERİ (Sendigo): şoförün gideceği bir yer yok.
+  // Kayıtları AZG/vardiya raporu için sistemde DURUR — takip araç ekseninde
+  // yürür — ama panele giremezler. Hata mesajı bilerek diğerleriyle AYNI
+  // ("invalid"): "bu telefon kayıtlı ama yetkisiz" demek hesap sayımına
+  // (account enumeration) kapı açardı, yukarıdaki tüm tasarım bunu önlüyor.
+  if (!DRIVER_PANEL_ENABLED && !worker.is_admin) {
+    await registerFailure(identifier);
+    return { error: "invalid" };
+  }
+
   await clearFailures(identifier);
 
   const session = await getSession();
@@ -150,7 +161,7 @@ export async function loginAction(
   // A temp PIN (admin create / reset) must be changed before anything else —
   // requireWorker/requireAdmin enforce the same gate for every other route.
   if (worker.must_change_pin) redirect("/pin");
-  redirect(worker.is_admin ? "/admin" : "/panel");
+  redirect(worker.is_admin || !DRIVER_PANEL_ENABLED ? "/admin" : "/panel");
 }
 
 export async function logoutAction() {
@@ -206,5 +217,5 @@ export async function changePinAction(
   session.must_change_pin = false;
   await session.save();
 
-  redirect(worker.is_admin ? "/admin" : "/panel");
+  redirect(worker.is_admin || !DRIVER_PANEL_ENABLED ? "/admin" : "/panel");
 }

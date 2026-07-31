@@ -8,8 +8,12 @@
     "start": "next start",
     "lint": "eslint",
     "lint:test-filters": "node scripts/check-test-filters.mjs",
+    "lint:tenant-defaults": "node scripts/check-tenant-defaults.mjs",
     "verify:test-hidden": "node scripts/verify-test-hidden.mjs",
-    "verify": "npm run lint && npm run lint:test-filters && npm run build"
+    "verify:autoshift-parity": "node scripts/verify-autoshift-parity.mjs",
+    "brand:assets": "node scripts/gen-brand-assets.mjs",
+    "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
+    "verify": "npm run lint && npm run lint:test-filters && npm run lint:tenant-defaults && npm run build"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

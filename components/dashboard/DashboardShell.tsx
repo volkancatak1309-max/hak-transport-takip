@@ -38,6 +38,8 @@ import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/app/actions/auth";
 import { setLocaleAction } from "@/app/actions/preferences";
 import { FUEL_ENABLED, EXPENSE_ENABLED, LEAVES_ENABLED } from "@/lib/features";
+import { DRIVER_PANEL_ENABLED } from "@/lib/tenant";
+import { brandCopyright } from "@/lib/brand";
 
 export type HeaderUser = {
   id: string;
@@ -109,7 +111,11 @@ export function DashboardShell({
         ...(LEAVES_ENABLED
           ? [{ href: "/admin/izinler", label: t("leaves"), icon: CalendarOff }]
           : []),
-        { href: "/panel", label: t("backToPanel"), icon: ArrowLeft },
+        // Şoför paneli kapalı müşteride (Sendigo) /panel yok — şefi var olmayan
+        // bir sayfaya gönderen bir bağlantı bırakılmaz.
+        ...(DRIVER_PANEL_ENABLED
+          ? [{ href: "/panel", label: t("backToPanel"), icon: ArrowLeft }]
+          : []),
       ]
     : user.isAdmin
     ? [
@@ -386,7 +392,7 @@ export function DashboardShell({
 
         <footer className="border-t border-border px-4 py-3 sm:px-6">
           <div className="flex flex-col items-center justify-between gap-1 text-xs text-text-tertiary sm:flex-row">
-            <span>© {new Date().getFullYear()} HAK61 GmbH</span>
+            <span>{brandCopyright(new Date().getFullYear())}</span>
             <span className="nums">v2.0.0</span>
           </div>
         </footer>

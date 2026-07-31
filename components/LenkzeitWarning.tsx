@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/format";
 import { notifyLenkzeit } from "@/app/actions/telegram";
+import { BRAND } from "@/lib/brand";
 
 const WARN_MIN = 240; // 4h — pre-warning
 const VIOLATION_MIN = 270; // 4.5h — mandatory break
@@ -79,7 +80,7 @@ export function LenkzeitWarning({
     if (typeof Notification === "undefined") return;
     const fire = () => {
       try {
-        new Notification("HAK61", {
+        new Notification(BRAND.name, {
           body: t("violation_body"),
           icon: "/logo.png",
         });

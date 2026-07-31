@@ -4,6 +4,7 @@ import { ChangePinForm } from "./ChangePinForm";
 import { BrandLogo } from "@/components/BrandLogo";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { brandCityLine } from "@/lib/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ function ChangePinShell() {
         <ChangePinForm />
       </div>
 
-      <p className="mt-6 text-center text-xs text-text-tertiary">HAK61 · Wien</p>
+      <p className="mt-6 text-center text-xs text-text-tertiary">{brandCityLine()}</p>
     </div>
   );
 }

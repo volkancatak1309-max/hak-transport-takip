@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
+import { FLEET_EPOCH_ISO } from "@/lib/tenant";
 import { getDriverScope, dropNonDrivers } from "@/lib/driver-scope";
 import {
   startOfTodayVienna,
@@ -59,7 +60,10 @@ export {
 
 // Filo bu tarihten eskiye gitmiyor — "tüm zamanlar" alt sınırı, sonsuz sorgu
 // aralığından kaçınır (fetchAllRows'un tüm tabloyu taramasını sınırlar).
-export const FLEET_EPOCH = new Date("2026-06-01T00:00:00.000Z");
+// Müşteriye göre değişir (lib/tenant.ts): HAK61 için 2026-06-01, yeni bir
+// kurulum için sistemin canlıya alındığı gün. Yanlış olması veriyi bozmaz,
+// yalnız anlamsız boş bir "önceki dönem" üretir.
+export const FLEET_EPOCH = new Date(FLEET_EPOCH_ISO);
 
 /**
  * Güvenlik skoru için "yeterli sürüş" eşiği — GÜN BAŞINA minimum güvenilir km.

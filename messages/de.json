@@ -1,6 +1,6 @@
 {
   "common": {
-    "appName": "HAK61",
+    "appName": "{brand}",
     "tagline": "Schicht & KM-Erfassung",
     "logout": "Abmelden",
     "save": "Speichern",
@@ -509,7 +509,7 @@
     "error": "Aktion fehlgeschlagen, bitte erneut versuchen",
     "test_send": "Testnachricht senden",
     "test_sent": "Testnachricht gesendet",
-    "test_default": "Testnachricht ✅ HAK61-Benachrichtigungen funktionieren.",
+    "test_default": "Testnachricht ✅ {brand}-Benachrichtigungen funktionieren.",
     "connected_users": "Verbundene Benutzer",
     "no_users": "Noch keine verbundenen Benutzer",
     "select_worker": "Mitarbeiter wählen",

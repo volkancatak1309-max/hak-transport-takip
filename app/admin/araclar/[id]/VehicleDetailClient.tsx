@@ -29,7 +29,7 @@ import {
   RailCard,
   type RailTone,
 } from "@/components/ui-v2";
-import { STATUS_STYLE, FLEET_STYLE } from "@/lib/vehicle-ui";
+import { STATUS_STYLE, FLEET_STYLE, fleetLabel } from "@/lib/vehicle-ui";
 import {
   formatDate,
   formatTime,
@@ -308,7 +308,7 @@ export function VehicleDetailClient({
             )}
           >
             <Truck className="size-3.5 shrink-0" aria-hidden />
-            {t(`fleet.${v.fleet}`)}
+            {fleetLabel(v.fleet, t)}
           </span>
           <span
             className={cn(
@@ -405,7 +405,7 @@ export function VehicleDetailClient({
                 FLEET_STYLE[v.fleet].chip
               )}
             >
-              {t(`fleet.${v.fleet}`)}
+              {fleetLabel(v.fleet, t)}
             </span>
           </SpecRow>
           <SpecRow label={td("live_status")}>

@@ -3,7 +3,14 @@ import { cookies } from "next/headers";
 
 export const SUPPORTED_LOCALES = ["tr", "de"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
-export const DEFAULT_LOCALE: Locale = "tr";
+/**
+ * Çerezi olmayan ziyaretçinin gördüğü dil. HAK61'de Türkçe (şoförlerin dili);
+ * Sendigo'da Almanca — yönetim ve belgeler Almanca yürüyor, panele yalnız
+ * yönetici giriyor. Geçersiz değer sessizce Türkçeye düşer.
+ */
+const ENV_LOCALE = process.env.NEXT_PUBLIC_DEFAULT_LOCALE?.trim();
+export const DEFAULT_LOCALE: Locale =
+  ENV_LOCALE === "de" || ENV_LOCALE === "tr" ? ENV_LOCALE : "tr";
 export const LOCALE_COOKIE = "hak_locale";
 
 export async function getLocale(): Promise<Locale> {

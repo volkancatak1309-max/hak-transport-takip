@@ -2,7 +2,7 @@
 
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
-import { COMPANY, COMPANY_UID_LINE } from "@/lib/report-de";
+import { COMPANY, COMPANY_UID_LINE, COMPANY_EXTRA_LINE } from "@/lib/report-de";
 
 registerPdfFont();
 
@@ -124,6 +124,9 @@ function Doc({
             <Text style={styles.company}>{COMPANY.name}</Text>
             <Text style={styles.address}>{COMPANY.address}</Text>
             <Text style={styles.address}>{COMPANY_UID_LINE}</Text>
+            {COMPANY_EXTRA_LINE ? (
+              <Text style={styles.address}>{COMPANY_EXTRA_LINE}</Text>
+            ) : null}
           </View>
           <View style={{ alignItems: "flex-end" }}>
             <Text style={styles.title}>{DE.title}</Text>

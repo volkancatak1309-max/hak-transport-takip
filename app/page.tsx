@@ -5,6 +5,8 @@ import { LoginForm } from "./LoginForm";
 import { BrandLogo } from "@/components/BrandLogo";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { brandCityLine } from "@/lib/brand";
+import { DRIVER_PANEL_ENABLED } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +29,7 @@ function LoginShell() {
       </div>
 
       <p className="mt-6 text-center text-xs text-text-tertiary">
-        HAK61 · Wien
+        {brandCityLine()}
       </p>
     </div>
   );
@@ -36,7 +38,9 @@ function LoginShell() {
 export default async function LoginPage() {
   const session = await getSession();
   if (session.worker_id) {
-    redirect(session.is_admin ? "/admin" : "/panel");
+    // Şoför paneli kapalı müşteride şoför rotası yok; oturumu olan herkes
+    // yönetici yüzeyine gider (giriş zaten yalnız yöneticiye açık — auth.ts).
+    redirect(session.is_admin || !DRIVER_PANEL_ENABLED ? "/admin" : "/panel");
   }
 
   return (

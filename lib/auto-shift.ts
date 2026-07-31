@@ -9,24 +9,41 @@ import {
   autoShiftStartedDriverMessage,
   shiftSummaryMessage,
 } from "@/lib/telegram-messages";
-import { workedMs, formatDurationShort, formatTime } from "@/lib/format";
+import {
+  workedMs,
+  formatDurationShort,
+  formatTime,
+  startOfTodayVienna,
+} from "@/lib/format";
 import { workersWithShiftToday } from "@/lib/shift-day";
 import { approvedLeaveWorkerIdsForDay } from "@/lib/leaves";
-import { activeDepotZones, depotArrivalTrigger } from "@/lib/depot";
+import { activeDepotZones, depotArrivalTrigger, lastFixInDepot } from "@/lib/depot";
+import {
+  SHIFT_START_TRIGGER,
+  SHIFT_AUTO_END,
+  SHIFT_AUTO_END_IDLE_MIN,
+  SHIFT_AUTO_END_MIDNIGHT_FALLBACK,
+} from "@/lib/tenant";
 
 /**
  * Otomatik vardiya motoru (Şoför Paneli v2 — İş 1).
  *
  * Araç telemetrisi (device_telemetry.ignition_on) üzerinden:
- *  - BAŞLAT: KALDIRILDI (24.07.2026, AUTO_START_ENABLED=false). Vardiyayı
- *    yalnızca PERSONEL başlatır; sistem kontaktan vardiya AÇMAZ. Eski davranış
- *    (kontak açılınca auto_started=true açma) kodda kill-switch ardında duruyor.
- *    Mesai artık depoya bağlı — geri istenirse depo kapısıyla açılmalı.
- *  - BİTİR: KALDIRILDI (22.07.2026, AUTO_END_ENABLED=false). Vardiyayı
- *    yalnızca personel kapatır; sistem hiçbir koşulda kapatmaz. Eski davranış
- *    (kontak kapalı + AUTO_SHIFT_IDLE_END_MINUTES hareketsizlik → auto_idle)
- *    kodda duruyor ama şalter kapalı. Gerekçe: eşik, depoda yükleme yapan
- *    şoförü ölü sayıp vardiyayı 9 dakikada kapatıyordu.
+ *  - BAŞLAT: tetikleyici MÜŞTERİ AYARI (31.07.2026, SHIFT_START_TRIGGER):
+ *    'depot_entry' (HAK61 varsayılanı — depoya giriş) ya da 'first_ignition'
+ *    (günün ilk kontak açılışı; geceyi depoda geçiren filo için).
+ *    Tarihsel not (24.07.2026): kontak-tetikli açma kaldırılmıştı — her kontak
+ *    açılışı yeni vardiya ekliyordu. 'first_ignition' o hata DEĞİLDİR: günün
+ *    İLK açılışını alır ve "günde tek vardiya" kilidi (lib/shift-day.ts)
+ *    ikincisini zaten engeller.
+ *  - BİTİR: MÜŞTERİ AYARI (31.07.2026, SHIFT_AUTO_END). HAK61'de KAPALI
+ *    ('off' varsayılanı): vardiyayı yalnızca personel kapatır. 22.07.2026'da
+ *    kaldırılmıştı çünkü eşik, depoda yükleme yapan şoförü ölü sayıp vardiyayı
+ *    9 dakikada kapatıyordu — 24 şoförün 20'si kilitlendi.
+ *    Şoför paneli olmayan müşteride 'depot_idle' ile açılır ve o hatanın
+ *    tekrarı DEPO ŞARTIyla önlenir: kapanış için hareketsizlik yetmez, aracın
+ *    depoya dönmüş olması da gerekir. Gün içindeki teslimat durakları
+ *    (kontak kapalı, araç depo dışında) vardiyayı kapatmaz.
  *
  * /api/flespi/sync (her ~30-60 sn, harici cron) ve /api/flespi/ingest
  * (stream push) çağırır. Eşzamanlı çalışmaya dayanıklıdır: açık vardiya
@@ -40,12 +57,29 @@ import { activeDepotZones, depotArrivalTrigger } from "@/lib/depot";
 const DEFAULT_IDLE_END_MINUTES = 30;
 
 /**
- * OTOMATİK KAPANIŞ ANA ŞALTERİ — KAPALI (Volkan, 22.07.2026).
- * "Vardiyayı yalnızca personel kapatır." Tip açıkça `boolean`: literal `false`
- * olarak daraltılsaydı aşağıdaki blok statik olarak erişilmez sayılırdı.
- * Kural geri istenirse tek yapılacak bunu `true` yapmaktır.
+ * OTOMATİK KAPANIŞ ANA ŞALTERİ — artık MÜŞTERİ AYARI (31.07.2026).
+ *
+ * HAK61'de KAPALI kalır (SHIFT_AUTO_END varsayılanı 'off'): "vardiyayı yalnızca
+ * personel kapatır" kuralı 22.07.2026'da 20 şoförü kilitleyen olaydan sonra
+ * kondu ve bu turda DEĞİŞMEDİ — env tanımlı değilken bu sabit bugünkü gibi
+ * `false`tur.
+ *
+ * Şoför paneli olmayan müşteride (Sendigo) 'depot_idle' ile açılır: kapatacak
+ * bir insan yoktur, açık kalan vardiya gece boyu büyür. lib/tenant.ts'teki
+ * assertTenantConfig() iki ayarın tutarsız bileşimini kurulumda patlatır.
  */
-const AUTO_END_ENABLED: boolean = false;
+const AUTO_END_ENABLED: boolean = SHIFT_AUTO_END !== "off";
+
+/**
+ * Kapanış için aracın DEPODA olması şart mı?
+ *
+ * 'depot_idle' modunun çekirdeği: gün içindeki teslimat duraklarında kontak
+ * defalarca kapanır ve araç dakikalarca hareketsiz kalır — bunlar vardiyayı
+ * KAPATMAMALIDIR. Vardiyayı bitiren şey "hareketsizlik" değil, "depoya dönmüş
+ * ve hareketsiz"dir. Depo şartı olmasaydı eşik ne kadar büyütülse de uzun bir
+ * eczane teslimatı vardiyayı yanlışlıkla kapatabilirdi.
+ */
+const AUTO_END_REQUIRES_DEPOT: boolean = SHIFT_AUTO_END === "depot_idle";
 
 /**
  * OTOMATİK BAŞLATMA ANA ŞALTERİ — DEPO-KAPILI AÇIK (Volkan, 24.07.2026, Modül 7).
@@ -62,8 +96,19 @@ const AUTO_END_ENABLED: boolean = false;
  */
 const AUTO_START_ENABLED: boolean = true;
 
-/** Config: kontak kapalı + hareketsizlik eşiği (dk). Env ile ayarlanabilir. */
+/**
+ * Kontak kapalı + hareketsizlik eşiği (dk).
+ *
+ * İki env okunur: yeni ad (SHIFT_AUTO_END_IDLE_MIN, lib/tenant.ts) ÖNCE, eski
+ * ad (AUTO_SHIFT_IDLE_END_MINUTES) sonra. Eski ad geriye dönük destekleniyor
+ * çünkü HAK61 ortamında tanımlı olabilir ve sessizce anlamını yitirmemeli.
+ * İkisi de yoksa 30 — bu dosyadaki bugünkü varsayılanın aynısı.
+ */
 export function autoEndIdleMinutes(): number {
+  const tenant = SHIFT_AUTO_END_IDLE_MIN;
+  if (process.env.SHIFT_AUTO_END_IDLE_MIN && tenant >= 5 && tenant <= 720) {
+    return tenant;
+  }
   const raw = Number(process.env.AUTO_SHIFT_IDLE_END_MINUTES);
   if (Number.isFinite(raw) && raw >= 5 && raw <= 720) return Math.floor(raw);
   return DEFAULT_IDLE_END_MINUTES;
@@ -297,6 +342,37 @@ async function linkedAdmins(): Promise<{ chat: string; locale: string | null }[]
  * (ingest push'u); verilmezse atanmış şoförü olan tüm aktif araçlar (sync).
  * Asla throw etmez — hatalar summary.errors'a yazılır (GPS akışını düşürmez).
  */
+/**
+ * BUGÜNÜN İLK KONTAK AÇILIŞI (Viyana günü) — 'first_ignition' tetikleyicisi.
+ *
+ * Araçların geceyi depoda geçirdiği filoda mesai, sabah aracın çalıştırılmasıyla
+ * başlar; depo geofence'ine hiç girilmez (araç zaten oradadır) ve depo tetiği
+ * bu yüzden hiç ateşlenmez. Ayrıca depo tetiği teğet-geçme ve telemetri
+ * boşluklarına duyarlıdır (25.07.2026 dersi: 29 aracın 9'unda fix seyrek);
+ * kontak sinyali o boşluklardan bağımsızdır.
+ *
+ * Günün İLKİ aranır, son değil: vardiya başlangıcı sabahki ilk çalıştırmadır,
+ * gün içindeki her yeniden çalıştırma değil. Kayıt yoksa null → vardiya açılmaz.
+ */
+async function firstIgnitionToday(vehicleId: string): Promise<string | null> {
+  const dayStart = startOfTodayVienna().toISOString();
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("device_telemetry")
+      .select("recorded_at")
+      .eq("vehicle_id", vehicleId)
+      .eq("ignition_on", true)
+      .gte("recorded_at", dayStart)
+      .order("recorded_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data.recorded_at as string;
+  } catch {
+    return null;
+  }
+}
+
 export async function processAutoShifts(
   vehicleIds?: string[]
 ): Promise<AutoShiftSummary> {
@@ -379,7 +455,9 @@ export async function processAutoShifts(
         // izinli/ayrılmış/bugün-başlamış DEĞİL. Sonra depotArrivalTrigger.
         if (
           AUTO_START_ENABLED &&
-          depotZones.length > 0 &&
+          // Depo bölgesi şartı YALNIZ depo tetiğinde geçerli: 'first_ignition'
+          // depo tanımına hiç bakmaz (araç zaten depoda uyanır).
+          (SHIFT_START_TRIGGER === "first_ignition" || depotZones.length > 0) &&
           !vehicleShift &&
           v.assigned_worker_id &&
           v.status === "active" &&
@@ -395,11 +473,20 @@ export async function processAutoShifts(
             .maybeSingle();
           if (!w || w.is_active !== true) continue;
 
-          // DEPO TETİĞİ: bugün depoya girip ≥3dk kaldı mı? Başlangıç = VARIŞ anı
-          // (kontak-açılma DEĞİL — commute sayılmaz). Girmemiş/dwell yoksa geç.
-          const trig = await depotArrivalTrigger(v.id);
-          if (!trig) continue;
-          const startedAt = trig.startAt;
+          // TETİKLEYİCİ MÜŞTERİ AYARI (lib/tenant.ts):
+          //  • depot_entry    — bugün depoya girip ≥3dk kaldı mı? Başlangıç =
+          //                     VARIŞ anı (kontak-açılma DEĞİL, commute sayılmaz).
+          //  • first_ignition — bugünün ilk kontak açılışı.
+          // İkisi de "bugün için bir başlangıç anı" döndürür ya da hiç; aşağısı
+          // ortak yoldur, iki tetikleyici için ayrı bir açma kodu YOKTUR.
+          let startedAt: string | null = null;
+          if (SHIFT_START_TRIGGER === "first_ignition") {
+            startedAt = await firstIgnitionToday(v.id);
+          } else {
+            const trig = await depotArrivalTrigger(v.id);
+            startedAt = trig ? trig.startAt : null;
+          }
+          if (!startedAt) continue;
           const startKm = await resolveStartKm(v.id, latest.odometer_km);
 
           // BAŞLATMA YOLU İZİ (037): start_source='auto'. 25.07.2026'ya kadar bu
@@ -511,7 +598,11 @@ export async function processAutoShifts(
         // kullanımda (resolveEndKm manuel kapanışın km kaynağı).
         if (!AUTO_END_ENABLED) continue;
 
-        if (!vehicleShift || !vehicleShift.auto_started) continue;
+        if (!vehicleShift) continue;
+        // AUTO_STARTED ŞARTI — yalnız depo tetikli kurulumda (HAK61 davranışı).
+        // 'depot_idle' kurulumunda şoför paneli yoktur: yöneticinin elle açtığı
+        // bir vardiyayı da kapatacak kimse kalmaz, o yüzden orada şart aranmaz.
+        if (!AUTO_END_REQUIRES_DEPOT && !vehicleShift.auto_started) continue;
         // Şoför molada — mola, vardiyanın bilinçli sürdüğünün beyanı.
         if (vehicleShift.break_started_at) continue;
         // Kontak açık ve cihaz konuşuyor → vardiya sürüyor.
@@ -521,6 +612,26 @@ export async function processAutoShifts(
 
         const lastActivity = await lastActivityMs(v.id, vehicleShift);
         if (now - lastActivity < idleMs) continue;
+
+        // ── DEPO ŞARTI + GECE-YARISI EMNİYETİ ('depot_idle') ─────────────
+        // Gün içindeki teslimat duraklarında kontak kapanır ve araç eşiği aşacak
+        // kadar hareketsiz kalabilir. Vardiyayı bitiren şey hareketsizlik değil,
+        // DEPOYA DÖNMÜŞ + hareketsiz olmaktır.
+        //
+        // Emniyet: araç gün sonuna kadar depoya dönmezse vardiya gece boyu açık
+        // kalmamalı. Vardiyanın başladığı Viyana günü kapandıysa, kapanış SON
+        // HAREKET anına yazılır (şu ana değil) — çalışılmayan saatler AZG
+        // raporuna girmez. Emniyet kapatılabilir; kapalıysa depo dışındaki araç
+        // hiç kapanmaz ve ertesi gün yönetici düzeltir.
+        if (AUTO_END_REQUIRES_DEPOT) {
+          const inDepot = await lastFixInDepot(v.id, depotZones);
+          if (!inDepot) {
+            const shiftDayEnded =
+              new Date(vehicleShift.started_at).getTime() <
+              startOfTodayVienna().getTime();
+            if (!(SHIFT_AUTO_END_MIDNIGHT_FALLBACK && shiftDayEnded)) continue;
+          }
+        }
 
         const endedAtIso = new Date(lastActivity).toISOString();
         const endKm = await resolveEndKm(

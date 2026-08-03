@@ -208,6 +208,11 @@ export async function startShiftManualAction(
     // vardiya ihtimali yukarıdaki guard'da zaten elendi).
     if (!todays) return { ok: false, error: "day_done" };
 
+    // ARAÇ da yazılır (03.08.2026). Eskiden yeniden açma vehicle_id ve plate'e
+    // HİÇ dokunmuyordu: şoför günün ikinci açılışında BAŞKA araç seçse bile
+    // vardiya sabahki araçla devam ediyordu — telemetri, km ve rapor yanlış
+    // araca yazılıyordu. Yönetici/şef yolu (aşağıda) ikisini zaten yazıyordu;
+    // iki yeniden-açma yolu bu noktada ayrışmıştı, artık aynı.
     const { error: reopenErr } = await supabaseAdmin
       .from("time_entries")
       .update({
@@ -220,6 +225,8 @@ export async function startShiftManualAction(
         summary_confirmed_by: null,
         still_active_asked_at: null,
         undelivered_count: null,
+        vehicle_id: veh.id,
+        plate: veh.plate,
         updated_at: new Date().toISOString(),
         updated_by: session.worker_id,
       })
@@ -1010,12 +1017,31 @@ export async function editEntryAction(formData: FormData): Promise<ShiftResult> 
     return { ok: false, error: `km_low:${parsed.data.end_km}:${parsed.data.start_km}` };
   }
 
+  // ARAÇ REFERANSI SENKRONU (03.08.2026). Form yalnız `plate` metnini
+  // düzenletiyor; vehicle_id'ye hiç dokunulmuyordu ve iki referans ayrışıyordu
+  // (satırda "W-1234" yazarken telemetri/km başka aracın id'sinden okunuyordu).
+  // Artık plaka bir araca çözülüyorsa vehicle_id de o araca yazılır. Çözülmüyorsa
+  // (bilinmeyen/boş plaka) null yazılır: yanlış aracı asılı bırakmaktansa bağı
+  // yokuz demek dürüsttür — hiçbir yüzey "bilinmiyor"u sayı gibi göstermiyor.
+  const plateText = (parsed.data.plate ?? "").trim();
+  let nextVehicleId: string | null = null;
+  if (plateText) {
+    const { data: vehRow } = await supabaseAdmin
+      .from("vehicles")
+      .select("id")
+      .ilike("plate", plateText)
+      .limit(1)
+      .maybeSingle();
+    nextVehicleId = (vehRow?.id as string | undefined) ?? null;
+  }
+
   const update: Record<string, unknown> = {
     started_at: startedAtIso,
     ended_at: endedAtIso,
     start_km: parsed.data.start_km,
     end_km: parsed.data.end_km,
     plate: parsed.data.plate,
+    vehicle_id: nextVehicleId,
     notes: parsed.data.notes,
     break_minutes: parsed.data.break_minutes ?? 0,
     start_package_count: taken,
@@ -1032,7 +1058,7 @@ export async function editEntryAction(formData: FormData): Promise<ShiftResult> 
   const { data: before } = await supabaseAdmin
     .from("time_entries")
     .select(
-      "started_at, ended_at, start_km, end_km, plate, notes, break_minutes, start_package_count, undelivered_count, cargo_count"
+      "started_at, ended_at, start_km, end_km, plate, vehicle_id, notes, break_minutes, start_package_count, undelivered_count, cargo_count"
     )
     .eq("id", parsed.data.id)
     .maybeSingle();

@@ -91,10 +91,17 @@ const AUTO_END_REQUIRES_DEPOT: boolean = SHIFT_AUTO_END === "depot_idle";
  * Geçmiş: 22.07'de otomatik KAPATMA kaldırılırken başlatma yanlışlıkla kontağa
  * bağlı kalmıştı; her kontak açılışı yeni vardiya ekliyor, mesai evde başlamış
  * görünüyordu (24.07 sabahı 12 vardiyanın 9'u). Kill-switch'le kapatıldı, sonra
- * depo-kapılı geri açıldı. `false` yaparsan hiç otomatik açılmaz (yalnız elle).
+ * depo-kapılı geri açıldı.
+ *
+ * 03.08.2026: sabit `true` yerine MÜŞTERİ AYARI. Kaynak SHIFT_START_TRIGGER'ın
+ * kendisidir — ayrı bir bayrak eklenmedi, çünkü "hangi tetik" ile "tetik var mı"
+ * aynı sorunun iki yüzü ve iki ayrı env sessizce çelişebilirdi. HAK61'de env
+ * tanımlı değil → tetik 'depot_entry' → bu sabit bugünkü gibi `true`.
+ * Sendigo'da SHIFT_START_TRIGGER='off': şoför paneli açık, vardiyayı insan açar
+ * ve motor hiç başlatmaz — panel ile motorun aynı gün için yarışması imkânsız.
  * Tip açıkça `boolean` — literal daraltması engellensin.
  */
-const AUTO_START_ENABLED: boolean = true;
+const AUTO_START_ENABLED: boolean = SHIFT_START_TRIGGER !== "off";
 
 /**
  * Kontak kapalı + hareketsizlik eşiği (dk).

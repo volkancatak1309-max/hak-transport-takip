@@ -188,22 +188,32 @@ export function isFleetVisible(fleet: string | null | undefined): boolean {
 // VARDİYA OTOMATI (yalnız sunucu — lib/auto-shift.ts)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ShiftStartTrigger = "depot_entry" | "first_ignition";
+export type ShiftStartTrigger = "depot_entry" | "first_ignition" | "off";
 export type ShiftAutoEndMode = "off" | "depot_idle";
 
 /**
  * VARDİYA BAŞLANGICI.
  *
  *  • `depot_entry`    — araç depo bölgesine girip kontağı AÇIKKEN bekliyorsa
- *                       mesai başlar (HAK61, 25.07.2026'dan beri).
+ *                       mesai başlar (HAK61, 25.07.2026'dan beri; VARSAYILAN).
  *  • `first_ignition` — Viyana gününün İLK kontak açılışı mesai başlangıcıdır.
  *                       Araçlar geceyi depoda geçiren filolar için: sabah
  *                       çalıştırma zaten mesai başlangıcıdır ve depo geofence'i
  *                       teğet geçme/telemetri boşluğu sorunlarına açık değildir.
+ *  • `off`            — OTOMATİK BAŞLATMA YOK. Vardiyayı yalnız insan açar
+ *                       (şoför paneli ya da yönetici/şef "adına başlat").
+ *
+ * ── `off` NEDEN VAR (03.08.2026, Sendigo) ──────────────────────────────────
+ * Sendigo'da bir aracı gece/gündüz iki ayrı şoför kullanıyor; araç-şoför sabit
+ * ataması yok. Otomatik motor ise ARAÇ ekseninde çalışır ve vardiyayı aracın
+ * ATANMIŞ şoförüne açar (lib/auto-shift.ts) — atama olmayınca aracı atlar,
+ * atama varsa da yanlış kişiye açardı. Şoför paneli ile otomatik motor aynı
+ * anda açıkken ikisi aynı gün için iki ayrı yol denerdi; `off` bu ikiliği
+ * kaynağında keser. HAK61 varsayılanı `depot_entry` — değişmedi.
  */
 export const SHIFT_START_TRIGGER: ShiftStartTrigger = envEnum(
   process.env.SHIFT_START_TRIGGER,
-  ["depot_entry", "first_ignition"] as const,
+  ["depot_entry", "first_ignition", "off"] as const,
   "depot_entry"
 );
 
@@ -266,6 +276,16 @@ export function assertTenantConfig(): void {
     throw new Error(
       "Kurulum hatası: NEXT_PUBLIC_DRIVER_PANEL_ENABLED=false iken SHIFT_AUTO_END='off' olamaz — " +
         "vardiyayı kapatacak kimse kalmaz. SHIFT_AUTO_END='depot_idle' yapın."
+    );
+  }
+  // Simetrik kapı (03.08.2026): panel kapalıyken otomatik BAŞLATMA da kapalıysa
+  // vardiyayı açacak tek yol yöneticinin elle başlatmasıdır — yani hiç kimse
+  // unutursa o gün hiç kayıt oluşmaz. Sessiz veri kaybı; kurulumda patlasın.
+  // Panel AÇIKKEN bu bileşim meşrudur (Sendigo: şoför kendi açar) ve tetiklenmez.
+  if (!DRIVER_PANEL_ENABLED && SHIFT_START_TRIGGER === "off") {
+    throw new Error(
+      "Kurulum hatası: NEXT_PUBLIC_DRIVER_PANEL_ENABLED=false iken SHIFT_START_TRIGGER='off' olamaz — " +
+        "vardiyayı başlatacak kimse kalmaz. Paneli açın ya da otomatik bir tetik seçin."
     );
   }
 }

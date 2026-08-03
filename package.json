@@ -13,7 +13,7 @@
     "verify:autoshift-parity": "node scripts/verify-autoshift-parity.mjs",
     "brand:assets": "node scripts/gen-brand-assets.mjs",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
-    "verify": "npm run lint && npm run lint:test-filters && npm run lint:tenant-defaults && npm run build"
+    "verify": "npm run lint && npm run lint:test-filters && npm run build && npm run lint:tenant-defaults"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

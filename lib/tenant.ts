@@ -23,28 +23,42 @@
  * Bayraklar görünürlüğü kapatır; kapatılan modülün sunucu eylemleri de aynı
  * bayrağı kontrol eder (mevcut `LEAVES_ENABLED` deseni). Menüden link
  * kaldırmak yetki değildir.
+ *
+ * ── ⚠️ HER ERİŞİM DÜZ LİTERAL OLMAK ZORUNDA ────────────────────────────────
+ * Next/Turbopack `process.env.X` ifadesini derleme anında METİN olarak
+ * değiştirir; `process.env[ifade]` gibi DİNAMİK bir erişimi değiştiremez ve
+ * istemcide `undefined` kalır. Bu yüzden aşağıdaki yardımcılara env ADI
+ * GEÇİLMEZ — çağrı yerinde düz literal okunur, fonksiyona hazır DEĞER verilir.
+ * Aynı kural lib/report-de.ts:56-60'ta da yazılıdır.
+ *
+ * 03.08.2026'da ölçüldü: bu dosya dinamik okuyordu ve Sendigo'nun canlı
+ * paketinde `r("NEXT_PUBLIC_PACKAGES_ENABLED",!0)` biçiminde duruyordu — ad
+ * dize olarak kalmış, değer gömülmemişti. Sonuç: SUNUCU env'i doğru okuyor,
+ * İSTEMCİ varsayılana düşüyordu (paket sayacı kapatılamadı; DRIVER_PANEL,
+ * LENKZEIT_WARNING ve SAFETY_SCORE_CALIBRATED de istemcide takılı kaldı).
+ * `scripts/check-tenant-defaults.mjs` artık bu imzayı build çıktısında arar.
  */
 
 /** "true"/"1"/"yes" → true, "false"/"0"/"no" → false, tanımsız → varsayılan. */
-function envBool(name: string, fallback: boolean): boolean {
-  const raw = process.env[name]?.trim().toLowerCase();
+function envBool(value: string | undefined, fallback: boolean): boolean {
+  const raw = value?.trim().toLowerCase();
   if (!raw) return fallback;
   if (raw === "true" || raw === "1" || raw === "yes") return true;
   if (raw === "false" || raw === "0" || raw === "no") return false;
   return fallback;
 }
 
-function envInt(name: string, fallback: number): number {
-  const n = Number(process.env[name]?.trim());
+function envInt(value: string | undefined, fallback: number): number {
+  const n = Number(value?.trim());
   return Number.isFinite(n) && n > 0 ? Math.round(n) : fallback;
 }
 
 function envEnum<T extends string>(
-  name: string,
+  value: string | undefined,
   allowed: readonly T[],
   fallback: T
 ): T {
-  const raw = process.env[name]?.trim().toLowerCase() as T | undefined;
+  const raw = value?.trim().toLowerCase() as T | undefined;
   return raw && allowed.includes(raw) ? raw : fallback;
 }
 
@@ -55,16 +69,19 @@ function envEnum<T extends string>(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Yakıt modülü (/admin/yakit, /panel/yakit). */
-export const FUEL_ENABLED = envBool("NEXT_PUBLIC_FUEL_ENABLED", false);
+export const FUEL_ENABLED = envBool(process.env.NEXT_PUBLIC_FUEL_ENABLED, false);
 /** Masraf modülü (/admin/masraflar, /panel/masraflar). */
-export const EXPENSE_ENABLED = envBool("NEXT_PUBLIC_EXPENSE_ENABLED", false);
+export const EXPENSE_ENABLED = envBool(process.env.NEXT_PUBLIC_EXPENSE_ENABLED, false);
 /** Bakım modülü (yakıt sayfasını paylaşır). */
-export const MAINTENANCE_ENABLED = envBool("NEXT_PUBLIC_MAINTENANCE_ENABLED", false);
+export const MAINTENANCE_ENABLED = envBool(
+  process.env.NEXT_PUBLIC_MAINTENANCE_ENABLED,
+  false
+);
 /**
  * İzin takvimi (/admin/izinler). ⚠️ AÇMADAN ÖNCE migration 031 çalıştırılmış
  * olmalı — tablo yoksa okuma boş döner ama YAZMA hata verir.
  */
-export const LEAVES_ENABLED = envBool("NEXT_PUBLIC_LEAVES_ENABLED", true);
+export const LEAVES_ENABLED = envBool(process.env.NEXT_PUBLIC_LEAVES_ENABLED, true);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // KURULUM MODU
@@ -80,7 +97,10 @@ export const LEAVES_ENABLED = envBool("NEXT_PUBLIC_LEAVES_ENABLED", true);
  * ⚠️ Kapalıyken vardiyayı BAŞLATIP BİTİRECEK bir insan kalmaz; bu yüzden
  * SHIFT_AUTO_END açık olmak ZORUNDADIR (aşağıda fail-closed doğrulanır).
  */
-export const DRIVER_PANEL_ENABLED = envBool("NEXT_PUBLIC_DRIVER_PANEL_ENABLED", true);
+export const DRIVER_PANEL_ENABLED = envBool(
+  process.env.NEXT_PUBLIC_DRIVER_PANEL_ENABLED,
+  true
+);
 
 /**
  * PAKET SAYACI (alınan / teslim edilen / teslim edilemeyen).
@@ -91,7 +111,10 @@ export const DRIVER_PANEL_ENABLED = envBool("NEXT_PUBLIC_DRIVER_PANEL_ENABLED", 
  * PDF/rapor sütunları görünmez; VERİ MODELİ AYNEN DURUR (kolonlar silinmez,
  * geçmiş kayıtlar okunabilir kalır).
  */
-export const PACKAGES_ENABLED = envBool("NEXT_PUBLIC_PACKAGES_ENABLED", true);
+export const PACKAGES_ENABLED = envBool(
+  process.env.NEXT_PUBLIC_PACKAGES_ENABLED,
+  true
+);
 
 /**
  * LENKZEIT UYARISI (4 sa ön uyarı / 4,5 sa zorunlu mola, VO (EG) 561/2006).
@@ -102,7 +125,7 @@ export const PACKAGES_ENABLED = envBool("NEXT_PUBLIC_PACKAGES_ENABLED", true);
  * "HAK61'e dokunma" kuralının istisnası olurdu. Sendigo'da kapalı.
  */
 export const LENKZEIT_WARNING_ENABLED = envBool(
-  "NEXT_PUBLIC_LENKZEIT_WARNING_ENABLED",
+  process.env.NEXT_PUBLIC_LENKZEIT_WARNING_ENABLED,
   true
 );
 
@@ -115,7 +138,7 @@ export const LENKZEIT_WARNING_ENABLED = envBool(
  * okunur, "kalibre edilmiş" iddiası taşımaz.
  */
 export const SAFETY_SCORE_CALIBRATED = envBool(
-  "NEXT_PUBLIC_SAFETY_SCORE_CALIBRATED",
+  process.env.NEXT_PUBLIC_SAFETY_SCORE_CALIBRATED,
   true
 );
 
@@ -179,7 +202,7 @@ export type ShiftAutoEndMode = "off" | "depot_idle";
  *                       teğet geçme/telemetri boşluğu sorunlarına açık değildir.
  */
 export const SHIFT_START_TRIGGER: ShiftStartTrigger = envEnum(
-  "SHIFT_START_TRIGGER",
+  process.env.SHIFT_START_TRIGGER,
   ["depot_entry", "first_ignition"] as const,
   "depot_entry"
 );
@@ -196,7 +219,7 @@ export const SHIFT_START_TRIGGER: ShiftStartTrigger = envEnum(
  * gece boyu açık kalır. `assertTenantConfig()` bunu fail-closed denetler.
  */
 export const SHIFT_AUTO_END: ShiftAutoEndMode = envEnum(
-  "SHIFT_AUTO_END",
+  process.env.SHIFT_AUTO_END,
   ["off", "depot_idle"] as const,
   "off"
 );
@@ -209,14 +232,17 @@ export const SHIFT_AUTO_END: ShiftAutoEndMode = envEnum(
  * BUGÜNKÜ değer olmasını gerektirir. Sendigo'nun 20 dakikası bir kod
  * varsayılanı değil, o kurulumun env satırıdır.
  */
-export const SHIFT_AUTO_END_IDLE_MIN = envInt("SHIFT_AUTO_END_IDLE_MIN", 30);
+export const SHIFT_AUTO_END_IDLE_MIN = envInt(
+  process.env.SHIFT_AUTO_END_IDLE_MIN,
+  30
+);
 
 /**
  * Araç gün sonuna kadar depoya dönmezse vardiya SON HAREKET anında kapanır —
  * gece boyu açık kalmaz. Yalnız `depot_idle` modunda geçerlidir.
  */
 export const SHIFT_AUTO_END_MIDNIGHT_FALLBACK = envBool(
-  "SHIFT_AUTO_END_MIDNIGHT_FALLBACK",
+  process.env.SHIFT_AUTO_END_MIDNIGHT_FALLBACK,
   true
 );
 

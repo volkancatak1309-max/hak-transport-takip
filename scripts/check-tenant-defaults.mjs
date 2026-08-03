@@ -6,11 +6,24 @@
  * metinden env'e taşındı. Taşınırken DEĞERİN değil yalnız KAYNAĞIN değişmesi
  * gerekiyordu. Bu betik onu denetler.
  *
- * NASIL: aşağıdaki tablo, taşınmadan ÖNCEKİ değerlerin kaydıdır — kod
- * okunarak değil, 31.07.2026 öncesi dosyalardan alınarak yazıldı. Betik
- * lib/tenant.ts + lib/brand.ts + lib/report-de.ts modüllerini HİÇBİR env
- * tanımlı DEĞİLKEN yükler ve her alanı bu kayıtla karşılaştırır. Bir varsayılan
- * kayarsa çıkış kodu 1 → `npm run verify` kırılır.
+ * İKİ FAZ VAR:
+ *
+ *   FAZ 1 — VARSAYILANLAR. Aşağıdaki tablo, taşınmadan ÖNCEKİ değerlerin
+ *   kaydıdır — kod okunarak değil, 31.07.2026 öncesi dosyalardan alınarak
+ *   yazıldı. Betik lib/tenant.ts + lib/brand.ts + lib/report-de.ts modüllerini
+ *   HİÇBİR env tanımlı DEĞİLKEN yükler ve her alanı bu kayıtla karşılaştırır.
+ *
+ *   FAZ 2 — İSTEMCİ PAKETİ. Faz 1 tek başına YETMİYOR ve bunu bir kusuru
+ *   kaçırarak öğrendik: lib/tenant.ts env'i `process.env[ad]` ile DİNAMİK
+ *   okuyordu. Ham Node'da bu sorunsuz çalışır — Faz 1 yeşil kalır — ama
+ *   Next/Turbopack yalnız DÜZ LİTERAL `process.env.X` erişimini derleme anında
+ *   değerle değiştirir. Dinamik erişim tarayıcıda `undefined` kalır ve bayrak
+ *   sessizce varsayılana düşer. Sonuç 03.08.2026'da Sendigo'da ölçüldü: sunucu
+ *   `false` okurken istemci `true` okuyordu. Faz 2 bu yüzden ham modülü değil
+ *   PROD BUILD ÇIKTISINI (.next/static) okur.
+ *
+ * ⚠️ FAZ 2 BUILD SONRASI ÇALIŞMAK ZORUNDA. `npm run verify` zincirinde bu
+ *    betik bilerek `npm run build`'den SONRA gelir.
  *
  * NEDEN BİR TEST DEĞİL DE BETİK: projede test koşucusu yok ve bu denetimin
  * `npm run verify` zincirine girmesi gerekiyordu — muhafız betikleri
@@ -20,13 +33,20 @@
  *    DEĞİŞTİRMEK DEMEKTİR. Kayıt "eskiden ne yapıyordu"yu tutar; kodu ona
  *    uydurmak gerekir, tersi değil.
  *
- * Kullanım: node scripts/check-tenant-defaults.mjs
+ * Kullanım: npm run build && node scripts/check-tenant-defaults.mjs
  */
 
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { writeFileSync, rmSync, mkdtempSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
+import {
+  writeFileSync,
+  rmSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -50,11 +70,19 @@ const EXPECTED = {
   "tenant.SHIFT_START_TRIGGER": "depot_entry", // auto-shift.ts: depotArrivalTrigger
   "tenant.SHIFT_AUTO_END": "off", //          auto-shift.ts: AUTO_END_ENABLED = false
   "tenant.SHIFT_AUTO_END_IDLE_MIN": 30, //    auto-shift.ts: DEFAULT_IDLE_END_MINUTES = 30
+  // Gece yarısı emniyeti: araç depoya dönmezse vardiya son hareket anında
+  // kapanır. Yalnız `depot_idle` modunda iş görür, HAK61'de SHIFT_AUTO_END
+  // 'off' olduğu için bugün fiilen uykuda — ama varsayılanı açık.
+  "tenant.SHIFT_AUTO_END_MIDNIGHT_FALLBACK": true,
   "tenant.FLEET_EPOCH_ISO": "2026-06-01T00:00:00.000Z", // analytics.ts: FLEET_EPOCH
   // Araçlar sayfasındaki filo çipleri ve araç formundaki filo seçeneği. HAK61'de
   // İKİSİ DE görünür (migration 023: 9 bordo / 19 mavi) — bu satır kayarsa
   // canlıda bir filo arayüzden kaybolur.
   "tenant.ACTIVE_FLEETS": "bordo,mavi",
+  // Filo ETİKETLERİ. 31.07.2026 öncesi böyle bir env yoktu; isimler i18n
+  // sözlüğünden geliyordu. Boş dizeler "override yok, sözlük kazanır" demek —
+  // bu satır kayarsa canlıda filo adları env'e kaçmış olur.
+  "tenant.FLEET_LABELS": '{"bordo":"","mavi":""}',
 
   // ── lib/brand.ts ─────────────────────────────────────────────────────────
   "brand.tenant": "hak61",
@@ -144,8 +172,10 @@ const out = {
   "tenant.SHIFT_START_TRIGGER": tenant.SHIFT_START_TRIGGER,
   "tenant.SHIFT_AUTO_END": tenant.SHIFT_AUTO_END,
   "tenant.SHIFT_AUTO_END_IDLE_MIN": tenant.SHIFT_AUTO_END_IDLE_MIN,
+  "tenant.SHIFT_AUTO_END_MIDNIGHT_FALLBACK": tenant.SHIFT_AUTO_END_MIDNIGHT_FALLBACK,
   "tenant.FLEET_EPOCH_ISO": tenant.FLEET_EPOCH_ISO,
   "tenant.ACTIVE_FLEETS": tenant.ACTIVE_FLEETS.join(","),
+  "tenant.FLEET_LABELS": JSON.stringify(tenant.FLEET_LABELS),
   "brand.tenant": brand.BRAND.tenant,
   "brand.name": brand.BRAND.name,
   "brand.legalName": brand.BRAND.legalName,
@@ -246,4 +276,139 @@ if (fail > 0) {
   process.exit(1);
 }
 
-console.log(`✓ ${total} varsayılan da 31.07.2026 öncesi değerlerle birebir.`);
+console.log(`✓ Faz 1 — ${total} varsayılan da 31.07.2026 öncesi değerlerle birebir.`);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FAZ 2 — İSTEMCİ PAKETİ: NEXT_PUBLIC_ env'leri gerçekten GÖMÜLDÜ MÜ?
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// İki kural. İkisi de derlenmiş chunk metninde ölçülür, kod okunarak değil.
+//
+//   K1 — KUSUR İMZASI: bir env ADI chunk'ta TIRNAK İÇİNDE geçemez. Geçiyorsa
+//        o env bir değişkene/fonksiyona AD olarak veriliyor demektir; derleyici
+//        böyle bir erişimi değerle değiştiremez ve tarayıcıda undefined kalır.
+//        (03.08.2026'da yakalanan kusur tam olarak buydu:
+//         `r("NEXT_PUBLIC_PACKAGES_ENABLED",!0)`.)
+//        Bu kural env TANIMLI OLSUN OLMASIN geçerlidir — imzanın kendisi hatadır.
+//
+//   K2 — GÖMÜLME İSPATI: env'in build anında bir DEĞERİ varsa, adı chunk'ta
+//        `.ADI` biçiminde (özellik erişimi olarak) HİÇ kalmamalıdır. Kalmışsa
+//        değer gömülmemiş, tarayıcı yine varsayılana düşecek demektir.
+//        Env tanımsızsa (HAK61'in hâli) erişimin `.ADI` olarak durması DOĞRUdur:
+//        gömülecek bir değer yoktur, çalışma anında undefined → varsayılan.
+//
+// Denetlenen ad listesi .env.example'dan okunur; yeni bir NEXT_PUBLIC_ eklendiği
+// anda kapsama kendiliğinden girer.
+
+const STATIC_DIR = join(ROOT, ".next", "static");
+
+if (!existsSync(STATIC_DIR)) {
+  console.error(
+    "\n✗ .next/static yok — istemci paketi denetimi YAPILAMADI.\n" +
+      "  Faz 2 prod build ÇIKTISINI okur. Önce: npm run build\n" +
+      "  (npm run verify zincirinde build bu betikten önce gelir.)"
+  );
+  process.exit(1);
+}
+
+/** .env dosyası okuyucu — yalnız KEY=VALUE satırları, tırnaklar soyulur. */
+function readEnvFile(p) {
+  const out = {};
+  if (!existsSync(p)) return out;
+  for (const line of readFileSync(p, "utf8").split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/);
+    if (!m) continue;
+    let v = m[2].trim();
+    if (
+      (v.startsWith('"') && v.endsWith('"')) ||
+      (v.startsWith("'") && v.endsWith("'"))
+    ) {
+      v = v.slice(1, -1);
+    }
+    out[m[1]] = v;
+  }
+  return out;
+}
+
+// Next'in build anındaki öncelik sırası: .env → .env.local → süreç ortamı.
+const buildEnv = {
+  ...readEnvFile(join(ROOT, ".env")),
+  ...readEnvFile(join(ROOT, ".env.local")),
+  ...process.env,
+};
+
+const PUBLIC_NAMES = [
+  ...new Set(
+    readFileSync(join(ROOT, ".env.example"), "utf8")
+      .split(/\r?\n/)
+      .map((l) => l.match(/^(NEXT_PUBLIC_[A-Z0-9_]+)\s*=/)?.[1])
+      .filter(Boolean)
+  ),
+];
+
+function jsFiles(dir) {
+  const out = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) out.push(...jsFiles(p));
+    else if (e.name.endsWith(".js")) out.push(p);
+  }
+  return out;
+}
+
+const chunks = jsFiles(STATIC_DIR);
+const quotedHits = []; // K1 ihlali
+const notInlinedHits = []; // K2 ihlali
+const withValue = PUBLIC_NAMES.filter(
+  (n) => buildEnv[n] !== undefined && buildEnv[n] !== ""
+);
+
+for (const file of chunks) {
+  const src = readFileSync(file, "utf8");
+  for (const name of PUBLIC_NAMES) {
+    if (!src.includes(name)) continue;
+    const where = relative(ROOT, file);
+    if (new RegExp("[\"'`]" + name + "[\"'`]").test(src)) {
+      quotedHits.push(`${name}  →  ${where}`);
+    }
+    if (withValue.includes(name) && new RegExp("\\." + name + "\\b").test(src)) {
+      notInlinedHits.push(`${name}  →  ${where}`);
+    }
+  }
+}
+
+if (quotedHits.length > 0 || notInlinedHits.length > 0) {
+  if (quotedHits.length > 0) {
+    console.error(
+      "\n✗ K1 — env ADI istemci paketinde TIRNAK İÇİNDE duruyor " +
+        `(${quotedHits.length} yer):\n    ` +
+        [...new Set(quotedHits)].join("\n    ") +
+        "\n\n  Bu, env'in bir yardımcıya AD olarak geçirildiği anlamına gelir." +
+        "\n  Derleyici böyle bir erişimi değerle değiştiremez; tarayıcıda" +
+        "\n  undefined kalır ve bayrak sessizce varsayılana düşer." +
+        "\n  Çözüm: erişimi çağrı yerinde DÜZ LİTERAL yapın —" +
+        "\n  envBool(process.env.NEXT_PUBLIC_X, varsayılan)."
+    );
+  }
+  if (notInlinedHits.length > 0) {
+    console.error(
+      "\n✗ K2 — env'in build anında DEĞERİ var ama adı pakette özellik erişimi " +
+        `olarak duruyor (${notInlinedHits.length} yer):\n    ` +
+        [...new Set(notInlinedHits)].join("\n    ") +
+        "\n\n  Değer gömülmemiş; istemci yine varsayılana düşecek."
+    );
+  }
+  process.exit(1);
+}
+
+const vacuous = PUBLIC_NAMES.length - withValue.length;
+console.log(
+  `✓ Faz 2 — ${chunks.length} istemci chunk'ında ${PUBLIC_NAMES.length} ` +
+    `NEXT_PUBLIC_ adının hiçbiri dize olarak geçmiyor.`
+);
+console.log(
+  withValue.length > 0
+    ? `  Değeri tanımlı ${withValue.length} env'in hepsi gömülü: ${withValue.join(", ")}`
+    : `  Bu build'de tanımlı NEXT_PUBLIC_ env yok (${vacuous} adın hepsi varsayılan dalında) — ` +
+      "K2 boşta, K1 tek başına kusuru tutar."
+);

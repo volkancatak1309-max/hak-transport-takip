@@ -12,7 +12,7 @@ import { HelpTip } from "@/components/help/HelpTip";
 import { SubTabs, PageHeader } from "@/components/ui-v2";
 import { ReportStatBand } from "@/components/admin/ReportStatBand";
 import { formatRelative, formatTime, formatDurationShort } from "@/lib/format";
-import { FLEET_STYLE } from "@/lib/vehicle-ui";
+import { FLEET_STYLE, fleetLabel } from "@/lib/vehicle-ui";
 import { cn } from "@/lib/utils";
 import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
 import {
@@ -59,7 +59,8 @@ export function LiveTrackingClient({
   serverNow: number;
 }) {
   const t = useTranslations("map");
-  const tf = useTranslations("vehicles.fleet");
+  // `vehicles` kökünde: fleetLabel içeride `fleet.<kod>` anahtarına iniyor.
+  const tf = useTranslations("vehicles");
   const tAdmin = useTranslations("admin");
   const locale = useLocale();
   const router = useRouter();
@@ -232,7 +233,7 @@ export function LiveTrackingClient({
                                 FLEET_STYLE[v.fleet].chip
                               )}
                             >
-                              {tf(v.fleet)}
+                              {fleetLabel(v.fleet, tf)}
                             </span>
                             <span
                               className={cn(

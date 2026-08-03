@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/session";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope } from "@/lib/driver-scope";
 import { vehicleSchema } from "@/lib/validation";
+import { ACTIVE_FLEETS } from "@/lib/tenant";
 import type { Vehicle } from "@/lib/types";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -115,7 +116,12 @@ function parseVehicle(formData: FormData) {
     model: formData.get("model") || null,
     year: formData.get("year") || null,
     status: formData.get("status"),
-    fleet: formData.get("fleet") || "mavi",
+    // Form filoyu her zaman gönderir; bu yalnız son savunma. HAK61'de "mavi"
+    // KALIR (kullanımda), tek filolu müşteride o müşterinin filosuna düşer —
+    // yoksa zod enum'u geçen ama arayüzde görünmeyen bir filo yazılabilirdi.
+    fleet:
+      formData.get("fleet") ||
+      (ACTIVE_FLEETS.includes("mavi") ? "mavi" : ACTIVE_FLEETS[0]),
     assigned_worker_id: formData.get("assigned_worker_id") || null,
     flespi_device_id: formData.get("flespi_device_id") || null,
     imei: formData.get("imei") || null,

@@ -13,7 +13,8 @@ import Link from "next/link";
 import { VectorBaseLayer } from "@/components/VectorBaseLayer";
 import { useLocale, useTranslations } from "next-intl";
 import "leaflet/dist/leaflet.css";
-import { FLEET_STYLE } from "@/lib/vehicle-ui";
+import { FLEET_STYLE, fleetLabel } from "@/lib/vehicle-ui";
+import { ACTIVE_FLEETS } from "@/lib/tenant";
 import { formatRelative, formatTime } from "@/lib/format";
 import {
   VEHICLE_FRESH_MS,
@@ -131,7 +132,9 @@ export const FleetMap = memo(function FleetMap({
   hoveredVehicleId?: string | null;
 }) {
   const t = useTranslations("map");
-  const tf = useTranslations("vehicles.fleet");
+  // `vehicles` kökünde: fleetLabel içeride `fleet.<kod>` anahtarına iniyor.
+  // Daha dar bir kökle (eski hâli "vehicles.fleet") anahtar iki kez eklenirdi.
+  const tf = useTranslations("vehicles");
   const locale = useLocale();
 
   // Registry of live Leaflet markers by vehicle id — HoverSync reads it to focus
@@ -244,35 +247,43 @@ export const FleetMap = memo(function FleetMap({
         />
         {vehicleMarkers}
       </MapContainer>
-      {/* Filo lejantı — iki filo rengi + adı (migration 023). Haritayı saran
-          kapsayıcı relative (LiveTrackingClient); leaflet pane'lerinin üstünde
+      {/* Filo lejantı — KULLANILAN filoların rengi + adı (migration 023 +
+          lib/tenant.ts ACTIVE_FLEETS). 03.08.2026'ya kadar burada 'bordo' ve
+          'mavi' SABİT basılıyordu: tek filolu Sendigo'da haritanın lejantı
+          olmayan bir filoyu ilan ediyordu (Araçlar sayfasındaki aynı kusur
+          31.07'de kapanmış, harita geride kalmıştı). Etiket de fleetLabel'dan
+          gelir — env ile "Flotte" diyen müşteride lejant da onu yazar.
+
+          Haritayı saran kapsayıcı relative (LiveTrackingClient); leaflet
+          pane'lerinin üstünde
           (z-1000), tıklamayı harita alır. Yüzey glass-pop: bg-background koyu
           temada TRANSPARENT (bilinen Splash tuzağı) — açık harita üstünde küçük
           metin ancak yoğun dolguyla okunur. Örnekler DİKDÖRTGEN + açık kenarlı:
           yuvarlak sky nokta şoför pinleriyle karışırdı, kenarsız bordo dolgu ise
           koyu zeminde 1.3:1 ile kaybolurdu (WCAG 1.4.11). */}
       <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] space-y-1 rounded-[10px] glass-pop px-3 py-2 text-xs font-medium">
-        <span className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className={`h-3 w-5 shrink-0 rounded-[4px] border border-white/45 ${FLEET_STYLE.bordo.dot}`}
-          />
-          {tf("bordo")}
-        </span>
-        <span className="flex items-center gap-2">
-          <span
-            aria-hidden
-            className={`h-3 w-5 shrink-0 rounded-[4px] border border-white/45 ${FLEET_STYLE.mavi.dot}`}
-          />
-          {tf("mavi")}
-        </span>
+        {ACTIVE_FLEETS.map((f) => (
+          <span key={f} className="flex items-center gap-2">
+            <span
+              aria-hidden
+              className={`h-3 w-5 shrink-0 rounded-[4px] border border-white/45 ${FLEET_STYLE[f as VehicleFleet].dot}`}
+            />
+            {fleetLabel(f, tf)}
+          </span>
+        ))}
         {/* Bayat işaretçi soluk filo tonunda (gri DEĞİL) — örnek, pildeki
             saturate filtresinin aynısıyla çizilir; opaklık kısılmaz ki koyu
-            glass zemininde örnek kaybolmasın (1.4.11 dersi). */}
+            glass zemininde örnek kaybolmasın (1.4.11 dersi). Bu satır FİLO
+            DEĞİL DURUM açıklamasıdır, o yüzden tek filoda da kalır; yalnız
+            örnekleri kullanılan filo sayısınca çizilir. */}
         <span className="flex items-center gap-2">
           <span aria-hidden className="flex shrink-0 items-center gap-1" style={{ filter: "saturate(.4)" }}>
-            <span className={`h-3 w-5 rounded-[4px] border border-white/45 ${FLEET_STYLE.bordo.dot}`} />
-            <span className={`h-3 w-5 rounded-[4px] border border-white/45 ${FLEET_STYLE.mavi.dot}`} />
+            {ACTIVE_FLEETS.map((f) => (
+              <span
+                key={f}
+                className={`h-3 w-5 rounded-[4px] border border-white/45 ${FLEET_STYLE[f as VehicleFleet].dot}`}
+              />
+            ))}
           </span>
           {t("legend_stale", { min: VEHICLE_FRESH_MS / 60000 })}
         </span>

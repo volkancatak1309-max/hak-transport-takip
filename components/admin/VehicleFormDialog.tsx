@@ -102,7 +102,14 @@ function VehicleForm({
   const [model, setModel] = useState(vehicle?.model ?? "");
   const [year, setYear] = useState(vehicle?.year ? String(vehicle.year) : "");
   const [status, setStatus] = useState<VehicleBaseStatus>(vehicle?.status ?? "active");
-  const [fleet, setFleet] = useState<VehicleFleet>(vehicle?.fleet ?? "mavi");
+  // YENİ araç için varsayılan filo. HAK61'de "mavi" olmaya DEVAM EDER (o filo
+  // kullanımda). Tek filolu bir müşteride sabit "mavi" seçili gelirse ve o filo
+  // ACTIVE_FLEETS'te yoksa, seçicide karşılığı olmayan bir değer preselect
+  // edilirdi — bu yüzden kullanımdaki filoya düşer.
+  const [fleet, setFleet] = useState<VehicleFleet>(
+    vehicle?.fleet ??
+      ((ACTIVE_FLEETS.includes("mavi") ? "mavi" : ACTIVE_FLEETS[0]) as VehicleFleet)
+  );
   const [deviceId, setDeviceId] = useState(
     vehicle?.flespi_device_id != null ? String(vehicle.flespi_device_id) : ""
   );

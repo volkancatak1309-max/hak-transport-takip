@@ -19,7 +19,7 @@ Ayrıca 1 yeni bulgu (konsol hidrasyon hatası, 2 sayfada).
 |---|---|---|---|
 | K1 | PDF künyesinde HAK61'in adı/adresi/UID'si | 🟢 **KAPANDI** | Üretilen AZG PDF'inde `Sendigo GmbH · Bildgasse 10 · FN 681377a`, HAK61 izi **sıfır**; dosya adı `SEN_AZG_…` |
 | K2 | HAK61'in cihaz eşiği kaydı Sendigo DB'sinde | 🟢 **KAPANDI** | `/admin/alarmlar`'da "Seit den neuen Schwellen" yok, filtre `7 Tage` |
-| K3 | Paket kalemleri panoda duruyor | 🔴 **KAPANMADI** | Kalemler hâlâ görünür — **kod doğru, `NEXT_PUBLIC_PACKAGES_ENABLED` bu dağıtımda `false` değil** (kanıt aşağıda) |
+| K3 | Paket kalemleri panoda duruyor | 🔴 **KAPANMADI** | Kalemler hâlâ görünür — ⚠️ *bu turdaki "env eksik" teşhisi 03.08'de YANLIŞ çıktı; gerçek sebep `lib/tenant.ts`'te dinamik `process.env[name]`, bkz. sondaki **EK — 3. tur*** |
 | K4 | İzin takvimi Almanca arayüzde Türkçe | 🟢 **KAPANDI** | Lejant: `Urlaub · Krankenstand · Pflegefreistellung · Unbezahlter Urlaub · Eheschließung` |
 | K5 | Tek filoda ikinci filo çipi | 🟢 **KAPANDI** | Araçlar sayfasında yalnız `Flotte 0`; `Bordo-Flotte` yok |
 | K6 | Kenar çubuğu logosu okunmuyor | 🟢 **KAPANDI** | Logo 39×38 → **60×59 px**, "SENDIGO" okunuyor |
@@ -99,7 +99,13 @@ Volkan `db/install/sendigo-fix-033-hak61-epoch.sql` betiğini çalıştırdı ve
 
 ---
 
-## K3 — Paket kalemleri 🔴 KAPANMADI (kod değil, ENV)
+## K3 — Paket kalemleri 🔴 KAPANMADI (~~kod değil, ENV~~ → ENV değil, KOD)
+
+> ⚠️ **Bu bölümün teşhisi 03.08.2026'da çürütüldü.** Aşağıdaki 3 kanıttan
+> 3.'sü (`NEXT_PUBLIC_FLEETS` çalışıyor → env mekanizması sağlam) geçersiz:
+> FLEETS **statik**, bayraklar **dinamik** okunuyor — aynı mekanizma değiller.
+> Doğru teşhis için sondaki **EK — 3. tur** bölümüne bak. Bölüm, nasıl yanlış
+> sonuca varıldığının kaydı olarak silinmeden bırakıldı.
 
 **Hâlâ görünen kalemler:**
 
@@ -298,3 +304,167 @@ gösteriyor (`21:53`, tarayıcı `22:53`) ✅ · menüde Yakıt/Masraf/Bakım yo
    açılıp React'in ayrıntılı hidrasyon uyarısı okunmalı (üretimde okunamıyor).
 3. **Kalan 4 PDF.** Araç/şoför/vardiya girildikten sonra Vardiya, Personel,
    Yakıt ve Fahrerleistung PDF'lerinin anteti tekrar kontrol edilmeli.
+
+---
+---
+
+# EK — 3. tur doğrulama (03.08.2026)
+
+**Tarih:** 03.08.2026, 13:28–13:35 (Viyana)
+**Test edilen dağıtım:** `dpl_G8FKbv8eBsY4VrM9Un5tnm4vrCNP` *(2. turdaki
+`dpl_Hi6B2AABsRYSprHnox33oeA421W6` değil — yani araya bir **redeploy girdi**)*
+**Kapsam:** yalnız ölçüm. Hiçbir kod değiştirilmedi.
+
+**Sonuç:**
+- **K3 hâlâ açık** — ama 2. turun teşhisi **YANLIŞTI**. Sorun env'in eksik
+  olması değil; **`lib/tenant.ts`'te bir kod kusuru**. Env doğru girilmiş ve
+  sunucu onu doğru okuyor.
+- **Y1 (React #418) artık YOK.** 12 sayfa gezildi, hidrasyon hatası sıfır.
+
+---
+
+## Kök neden — `process.env[name]` istemcide gömülmüyor
+
+`lib/tenant.ts:30`:
+
+```ts
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]?.trim().toLowerCase();   // ← DİNAMİK İNDEKS
+  ...
+}
+```
+
+Next.js istemci paketine **yalnız statik** `process.env.NEXT_PUBLIC_X`
+erişimlerinin değerini gömer. `process.env[name]` **hesaplanmış** bir erişimdir;
+derleyici hangi anahtarın okunacağını bilemez, dolayısıyla değiştirmez.
+Tarayıcıda `process.env` bu anahtarları içermez → `raw` `undefined` →
+**fonksiyon varsayılana düşer**. Sunucuda ise gerçek `process.env` çalışma
+anında okunur ve **doğru** değeri verir.
+
+Yani tek dağıtımda **sunucu `false`, istemci `true`** okuyor.
+
+### Kanıt A — canlı JS paketinden birebir alıntı
+
+`01f~i.u6z6e7w.js?dpl=dpl_G8FKbv8eBsY4VrM9Un5tnm4vrCNP`:
+
+```js
+function r(e,r){let n=t.default.env[e]?.trim().toLowerCase();...}
+let a=r("NEXT_PUBLIC_FUEL_ENABLED",!1),
+    i=r("NEXT_PUBLIC_EXPENSE_ENABLED",!1);
+    r("NEXT_PUBLIC_MAINTENANCE_ENABLED",!1);
+let s=r("NEXT_PUBLIC_LEAVES_ENABLED",!0),
+    l=r("NEXT_PUBLIC_DRIVER_PANEL_ENABLED",!0),
+    o=r("NEXT_PUBLIC_PACKAGES_ENABLED",!0),      // ← değer YOK, yalnız AD + varsayılan
+    u=r("NEXT_PUBLIC_LENKZEIT_WARNING_ENABLED",!0),
+    c=r("NEXT_PUBLIC_SAFETY_SCORE_CALIBRATED",!0),
+    d={bordo:t.default.env.NEXT_PUBLIC_FLEET_BORDO_LABEL?.trim()||"",
+       mavi:"Flotte".trim()||""},                 // ← STATİK erişim: değer GÖMÜLMÜŞ
+    f=(()=>{let e="mavi".trim(); ... })();        // ← NEXT_PUBLIC_FLEETS: GÖMÜLMÜŞ
+```
+
+Aynı satırlarda iki davranış yan yana duruyor: **env adı dize olarak kalanlar**
+(bayraklar) gömülmedi, **statik okunan** filo değerleri (`"Flotte"`, `"mavi"`)
+gömüldü.
+
+**Bu, 2. turun 3. kanıtını da düzeltiyor.** "`NEXT_PUBLIC_FLEETS` çalışıyor,
+demek ki env mekanizması sağlam" çıkarımı geçersizdi: FLEETS statik okunuyor,
+bayraklar dinamik. İkisi aynı mekanizma değil.
+
+### Kanıt B — sunucu doğru, istemci yanlış (aynı sayfa, aynı istek)
+
+`/admin/workers/[id]` — tarayıcının aldığı **HTML belgesi** ile hidrasyon
+sonrası **DOM** karşılaştırıldı:
+
+| Ölçüm | Sunucudan gelen HTML | Tarayıcıdaki DOM |
+|---|---|---|
+| Özet şeridi ızgarası | `sm:grid-cols-3` (1 kez) | `sm:grid-cols-4` |
+| `sm:grid-cols-4` | **0 kez** | var |
+| Kutular | 3 | 4 → `0 SCHICHTEN · 00:00:00 STUNDEN · 0 KILOMETER · **0 PAKETE**` |
+
+`/admin` — sunucu HTML'inde paket kalemleri **hiç yok** (dize sayımı; sözlük
+içindeki çeviri kayıtları hariç tutuldu):
+
+| Dize | Sunucu HTML'i | DOM |
+|---|---|---|
+| `Fahrzeuge ohne Signal` (kontrol kalemi) | 2 kez → **1'i render edilmiş** | var |
+| `Heute zu liefernde Pakete` | 1 kez → **yalnız sözlükte, render YOK** | var |
+| `Geladen` | 1 kez → yalnız sözlükte | var |
+
+Yani sunucu bayrağı `false` okuyup kalemleri **düşürüyor**; istemci `true`
+okuyup **geri koyuyor**.
+
+---
+
+## K3'ün 4 yüzeyi — tek tek
+
+| # | Yüzey | Durum | Kanıt |
+|---|---|---|---|
+| 1 | **Pano kalemleri** | 🔴 **KALDI** | Üst şerit `HEUTE ZU LIEFERNDE PAKETE`; Betriebsüberblick `Geladen · Zugestellt · Nicht zugestellt`; başlık balonu hâlâ "…wie viele **Pakete**…" (`page_dashboard`, `page_dashboard_nopkg` değil); personel detayında 4. kutu `0 PAKETE` |
+| 2 | **Kapanış formu** | 🔴 **KALDI — üstelik iki ayrı kusur** | (a) **Şoför kapanış formu** `app/panel/PanelClient.tsx` `PACKAGES_ENABLED`'ı **hiç kontrol etmiyor** — bayrak doğru çalışsa bile alanlar kalkmazdı; kodda uygulanmamış. Sendigo'da pratik etkisi yok: `/panel` → **307 `/admin`** (ölçüldü). (b) **Yönetici düzenleme dialogu** (`AdminClient.tsx:1083`) kodu doğru ama istemci bayrağı `true` → `PAKETE` alan grubu görünür kalır. Canlıda açılamadı: **0 vardiya** var |
+| 3 | **Tablo kolonları** | 🟠 **ÖLÇÜLEMEDİ — mekanizma gereği kalır** | Arşiv katlaması açıldı: `0 Einträge`, DataTable boş-durum basıyor, hiç `<th>` yok. Kolonlar (`AdminClient.tsx:516`) ve Excel başlıkları (`:335`) aynı istemci bayrağından besleniyor → `true` olduğu sürece kalırlar. Excel/PDF düğmeleri 0 kayıtta **pasif** |
+| 4 | **PDF sütunları** | 🟠 **ÖLÇÜLEMEDİ — mekanizma gereği kalır** | `components/pdf/ShiftReport.tsx` `"use client"` — PDF **tarayıcıda** üretiliyor, yani istemci bayrağını kullanır. 0 vardiya olduğu için üretilemedi |
+
+**Özet: 4 yüzeyin hiçbiri kapanmadı.** 1 ve 2 doğrudan ölçüldü; 3 ve 4 veri
+yokluğundan ölçülemedi ama ikisi de aynı istemci bayrağını okuyor.
+
+---
+
+## Yan hasar — aynı kusur 3 bayrağı daha varsayılanda tutuyor
+
+İstemcide **her** `envBool` çağrısı varsayılana düşüyor. Etkisi olanlar:
+
+| Bayrak | Sendigo'da olması gereken | İstemcide fiilen |
+|---|---|---|
+| `NEXT_PUBLIC_PACKAGES_ENABLED` | `false` | 🔴 `true` |
+| `NEXT_PUBLIC_DRIVER_PANEL_ENABLED` | `false` | 🔴 `true` *(rota sunucuda korunuyor: `/panel` 307 ✅)* |
+| `NEXT_PUBLIC_LENKZEIT_WARNING_ENABLED` | `false` | 🔴 `true` |
+| `NEXT_PUBLIC_SAFETY_SCORE_CALIBRATED` | `false` | 🔴 `true` |
+
+Etkisi olmayanlar (varsayılanı zaten istenen değer): `FUEL` · `EXPENSE` ·
+`MAINTENANCE` (üçü de `false`) · `LEAVES` (`true`).
+
+⚠️ `scripts/check-tenant-defaults.mjs` bunu **yakalayamaz**: muhafız Node'da
+çalışır, orada `process.env[name]` sorunsuz okunur. Kusur yalnız tarayıcı
+paketinde doğuyor.
+
+---
+
+## Y1 — hidrasyon hatası ARTIK YOK ✅
+
+12 sayfa, her biri ayrı tam yükleme, `console` + `pageerror` dinleyicisiyle
+(dinleyici sağlaması yapıldı: enjekte edilen test hatası yakalandı):
+
+| Sayfa | Konsol |
+|---|---|
+| `/admin` | ✅ temiz |
+| `/admin/workers/[id]` | ✅ temiz |
+| `/admin/workers` · `/admin/araclar` · `/admin/alarmlar` · `/admin/analiz` · `/admin/raporlar` · `/admin/bolgeler` · `/admin/seferler` · `/admin/izinler` · `/admin/telegram` | ✅ temiz |
+| `/admin/harita` | 🟡 yalnız maplibre `circle-11` uyarısı (1. ve 2. turda da vardı) |
+
+**Not — kapanmamış bir soru:** sunucu 3 kutu, istemci 4 kutu basmasına rağmen
+React hata vermiyor. Yani K3'ün altındaki uyuşmazlık duruyor, React'in
+şikâyeti susmuş. K3 düzeltilince bu soru kendiliğinden kapanır; ayrıca
+kovalamaya değmez.
+
+---
+
+## Yapılacaklar — güncellenmiş
+
+1. **K3 → kod düzeltmesi (env DEĞİL).** `lib/tenant.ts`'teki `envBool` /
+   `envEnum` dinamik `process.env[name]` erişimini bırakmalı; her
+   `NEXT_PUBLIC_` değişken **statik** okunmalı, örneğin adları değil
+   **değerleri** taşıyan bir sabit haritadan:
+   ```ts
+   const RAW = {
+     PACKAGES: process.env.NEXT_PUBLIC_PACKAGES_ENABLED,   // statik → gömülür
+     ...
+   } as const;
+   ```
+   Sonra `envBool(RAW.PACKAGES, true)`. Dört bayrak da (PACKAGES,
+   DRIVER_PANEL, LENKZEIT_WARNING, SAFETY_SCORE_CALIBRATED) aynı anda düzelir.
+2. **Muhafıza istemci kuralı ekle.** `check-tenant-defaults.mjs` bu sınıfı
+   göremiyor; `lib/tenant.ts` içinde `process.env[` deseni yasaklanmalı.
+3. **Şoför kapanış formu.** `app/panel/PanelClient.tsx` `PACKAGES_ENABLED`'ı
+   hiç kontrol etmiyor — bayrak düzelse bile paket alanları kalkmaz.
+4. **Kalan 4 PDF + tablo kolonları.** Araç/şoför/vardiya girildikten sonra
+   ölçülmeli (2. turdan devreden madde; hâlâ 0 vardiya).

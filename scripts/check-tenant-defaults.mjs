@@ -64,6 +64,11 @@ const EXPECTED = {
 
   // ── Kurulum modu — hepsi "bugün böyle davranıyordu" ──────────────────────
   "tenant.DRIVER_PANEL_ENABLED": true, //     /panel herkese açıktı
+  // Şoför vardiyayı hangi araçla açar. 03.08.2026 öncesi böyle bir ayar yoktu:
+  // başlat butonu ve araç seçicisi "atanmış araç VAR ve aktif" bloğunun içinde
+  // duruyordu (PanelClient.tsx). 'assigned' o davranışın birebir kendisidir —
+  // bu satır kayarsa HAK61 şoförüne serbest plaka seçimi açılır.
+  "tenant.DRIVER_VEHICLE_CHOICE": "assigned",
   "tenant.PACKAGES_ENABLED": true, //         paket kolonları her yerde görünürdü
   "tenant.LENKZEIT_WARNING_ENABLED": true, // LenkzeitWarning koşulsuz render ediliyordu
   "tenant.SAFETY_SCORE_CALIBRATED": true, //  metric-thresholds.ts: = true
@@ -166,6 +171,7 @@ const out = {
   "tenant.MAINTENANCE_ENABLED": tenant.MAINTENANCE_ENABLED,
   "tenant.LEAVES_ENABLED": tenant.LEAVES_ENABLED,
   "tenant.DRIVER_PANEL_ENABLED": tenant.DRIVER_PANEL_ENABLED,
+  "tenant.DRIVER_VEHICLE_CHOICE": tenant.DRIVER_VEHICLE_CHOICE,
   "tenant.PACKAGES_ENABLED": tenant.PACKAGES_ENABLED,
   "tenant.LENKZEIT_WARNING_ENABLED": tenant.LENKZEIT_WARNING_ENABLED,
   "tenant.SAFETY_SCORE_CALIBRATED": tenant.SAFETY_SCORE_CALIBRATED,

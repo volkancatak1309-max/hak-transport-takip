@@ -21,6 +21,7 @@ import {
   MAX_PER_SHIFT_KM,
   MAX_COUNT,
 } from "@/lib/validation";
+import { PACKAGES_ENABLED } from "@/lib/tenant";
 import {
   workedMs,
   formatDurationShort,
@@ -600,9 +601,15 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
 
   // Yeni paket akışı: "teslim edilemeyen" kapanışta ZORUNLU (0 girilebilir, boş
   // bırakılamaz). İstemci de required yapıyor; sunucu son söz.
+  //
+  // PAKET MODÜLÜ KAPALI olan kiracıda (03.08.2026) bu alan hiçbir adımda
+  // SORULMAZ — zorunlu tutmak vardiyayı KAPATILAMAZ yapardı. Kapalıyken null
+  // geçer ve kolona null yazılır: "sayılmadı" demektir. 0 yazmak sayılmış gibi
+  // görünürdü ve bu uydurma bir değer olurdu.
   if (
-    parsed.data.undelivered_count === null ||
-    parsed.data.undelivered_count === undefined
+    PACKAGES_ENABLED &&
+    (parsed.data.undelivered_count === null ||
+      parsed.data.undelivered_count === undefined)
   ) {
     return { ok: false, error: "undelivered_required" };
   }
@@ -647,17 +654,19 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
   //  • teslim edilen (cargo_count) = alınan − teslim edilemeyen  → TÜRETİLİR
   // Alınan hiç girilmemişse (null) teslim edilen bilinmiyor kalır (null yazmayız,
   // mevcut değeri ezmeyiz).
-  const undelivered = parsed.data.undelivered_count;
+  const undelivered = parsed.data.undelivered_count ?? null;
   const totalTaken = active.start_package_count;
 
   // ÜST SINIR (22.07.2026). endShiftSchema'daki MAX_COUNT (100.000) bir şema
   // tavanı; anlamlı değil — canlıya 87.189 "teslim edilemeyen" girilebildi.
   // Anlamsal sınır: teslim edilemeyen ≤ alınan (bilinmiyorsa mutlak tavan).
   // Şema geçse bile sunucu son sözü söyler.
-  const bound = checkUndelivered(undelivered, totalTaken as number | null);
-  if (!bound.ok) return { ok: false, error: bound.code };
+  if (undelivered !== null) {
+    const bound = checkUndelivered(undelivered, totalTaken as number | null);
+    if (!bound.ok) return { ok: false, error: bound.code };
+  }
   const delivered =
-    totalTaken !== null && totalTaken !== undefined
+    undelivered !== null && totalTaken !== null && totalTaken !== undefined
       ? Math.max(0, totalTaken - undelivered)
       : null;
 

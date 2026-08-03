@@ -17,6 +17,7 @@ import {
   PackageX,
   Pause,
   PlayCircle,
+  Search,
   Square,
   MapPin,
 } from "lucide-react";
@@ -32,7 +33,7 @@ import { listPickableVehiclesAction } from "@/app/actions/driver-panel";
 import { pingPanelAction } from "@/app/actions/depot";
 import type { PickableVehicle } from "@/lib/vehicles";
 import { breakTargetMin, AZG_BREAK_AFTER_6H_MIN } from "@/lib/break-rules";
-import { classifyUndelivered } from "@/lib/package-limits";
+import { classifyUndelivered, type UndeliveredCheck } from "@/lib/package-limits";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -48,7 +49,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { LenkzeitWarning } from "@/components/LenkzeitWarning";
-import { LENKZEIT_WARNING_ENABLED } from "@/lib/tenant";
+import {
+  LENKZEIT_WARNING_ENABLED,
+  PACKAGES_ENABLED,
+  DRIVER_VEHICLE_CHOICE,
+} from "@/lib/tenant";
 import { TelegramLink } from "@/components/TelegramLink";
 import { tryServerAction } from "@/lib/offline-aware";
 import { ConfirmShiftCard } from "./ConfirmShiftCard";
@@ -152,7 +157,13 @@ export function PanelClient({
   //   returnMode "none" → "hepsini teslim ettim" (geri = 0)
   //   returnMode "some" → sayı girişi açık
   // endUndel BOŞ başlar (eski varsayılan "0" üzerine yazılıyordu).
-  const [returnMode, setReturnMode] = useState<null | "none" | "some">(null);
+  //
+  // PAKET MODÜLÜ KAPALIYKEN 1. ADIM HİÇ YOKTUR: soru paket sorusudur ve
+  // sorulmaması gerekir. Başlangıç değeri "none" (geri getirilen = 0) olur,
+  // yani form doğrudan not + kapat adımına açılır ve undelivered_count 0 gider.
+  const [returnMode, setReturnMode] = useState<null | "none" | "some">(
+    PACKAGES_ENABLED ? null : "none"
+  );
   const [endUndel, setEndUndel] = useState("");
   /** Sıra dışı sayı girildiğinde gösterilen teyit adımı (engel değil). */
   const [confirmNeeded, setConfirmNeeded] = useState(false);
@@ -171,6 +182,8 @@ export function PanelClient({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickable, setPickable] = useState<PickableVehicle[]>([]);
+  /** Plaka araması — sabit atamasız filoda liste uzun olabilir. */
+  const [pickerQuery, setPickerQuery] = useState("");
   /** Meşgul araç seçildiğinde önce onay sorulur; seçilen araç burada bekler. */
   const [confirmBusy, setConfirmBusy] = useState<PickableVehicle | null>(null);
 
@@ -191,6 +204,23 @@ export function PanelClient({
       setConfirmLater(false);
     }
   }, [activeId]);
+
+  /**
+   * Şoför plakayı vardiya açarken kendisi mi seçiyor? (lib/tenant.ts)
+   * 'assigned' (HAK61 varsayılanı) → hayır, atanmış aracıyla açar.
+   */
+  const freeVehicleChoice = DRIVER_VEHICLE_CHOICE === "free";
+
+  /** Seçicide gösterilecek araçlar — plaka/marka/model araması uygulanmış. */
+  const visiblePickable = (() => {
+    const q = pickerQuery.trim().toLocaleLowerCase("tr");
+    if (!q) return pickable;
+    return pickable.filter((v) =>
+      [v.plate, v.make, v.model]
+        .filter(Boolean)
+        .some((s) => (s as string).toLocaleLowerCase("tr").includes(q))
+    );
+  })();
 
   // Alınan (planlanan) paket sayısı — sunucudaki manuel değer (start_package_count).
   const packagesTaken = active?.start_package_count ?? null;
@@ -345,8 +375,13 @@ export function PanelClient({
           : null;
 
   /** Alan henüz boş: hata DEĞİL, sadece eksik. Uyarı basmayız, gönderimi kapatırız. */
-  const undelEmpty = returnMode === "some" && endUndel.trim() === "";
-  const undelCheck = classifyUndelivered(undeliveredValue, packagesTaken);
+  const undelEmpty =
+    PACKAGES_ENABLED && returnMode === "some" && endUndel.trim() === "";
+  // Paket modülü kapalıyken paket matematiği HİÇ ÇALIŞMAZ: soru sorulmadığı
+  // için "eksik/çelişkili cevap" diye bir şey yoktur ve engel de üretilemez.
+  const undelCheck: UndeliveredCheck = PACKAGES_ENABLED
+    ? classifyUndelivered(undeliveredValue, packagesTaken)
+    : { level: "ok" };
   /** Görsel uyarı yalnız gerçek çelişkilerde çıkar (boş alan sessizdir). */
   const showBlock = !undelEmpty && undelCheck.level === "block";
 
@@ -472,6 +507,7 @@ export function PanelClient({
   /** "Başka araç kullanacağım" — listeyi çeker ve seçiciyi açar. */
   function openVehiclePicker() {
     setPickerLoading(true);
+    setPickerQuery("");
     startTransition(async () => {
       try {
         setPickable(await listPickableVehiclesAction());
@@ -617,15 +653,17 @@ export function PanelClient({
                   </div>
                 </div>
               )}
-              <div className="flex items-center justify-center gap-3 border-t border-white/[0.06] pt-4">
-                <Package className="size-6 text-accent-sky-text" aria-hidden />
-                <span className="text-sm text-muted-foreground">
-                  {t("v2TotalPackages")}
-                </span>
-                <span className="nums text-4xl font-bold text-foreground">
-                  {packagesTaken ?? "—"}
-                </span>
-              </div>
+              {PACKAGES_ENABLED && (
+                <div className="flex items-center justify-center gap-3 border-t border-white/[0.06] pt-4">
+                  <Package className="size-6 text-accent-sky-text" aria-hidden />
+                  <span className="text-sm text-muted-foreground">
+                    {t("v2TotalPackages")}
+                  </span>
+                  <span className="nums text-4xl font-bold text-foreground">
+                    {packagesTaken ?? "—"}
+                  </span>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -633,26 +671,33 @@ export function PanelClient({
               (Volkan, 21.07.2026) — HAK61 kullanmıyordu. Bileşenleri ve rotaları
               (ShiftPhotoButton, ProblemReportDialog, /api foto yükleme) repoda
               DURUYOR; yalnız şoför ekranından gizlendi. */}
-          <div className="space-y-3">
-            <button
-              type="button"
-              onClick={openPkg}
-              className="btn-primary flex h-28 w-full items-center justify-center gap-4 rounded-2xl text-3xl font-bold tracking-wide text-primary-foreground shadow-lg transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.98]"
-            >
-              <Package className="size-10" aria-hidden />
-              {packagesTaken !== null ? t("v2EditPackages") : t("v2SetPackages")}
-            </button>
-            <div className="flex justify-center">
-              <HelpTip tkey="drv_packages" />
+          {/* Paket modülü kapalı kiracıda bu dev buton HİÇ ÇIKMAZ — paket
+              hiçbir adımda sorulmaz (03.08.2026). */}
+          {PACKAGES_ENABLED && (
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={openPkg}
+                className="btn-primary flex h-28 w-full items-center justify-center gap-4 rounded-2xl text-3xl font-bold tracking-wide text-primary-foreground shadow-lg transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.98]"
+              >
+                <Package className="size-10" aria-hidden />
+                {packagesTaken !== null ? t("v2EditPackages") : t("v2SetPackages")}
+              </button>
+              <div className="flex justify-center">
+                <HelpTip tkey="drv_packages" />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* İkincil: mola + vardiyayı bitir. Balonlar butonların İÇİNE değil
               üstlerine konuyor: butonlar dev ve tek dokunuşluk, içlerine (i)
               koymak yanlış dokunma riski yaratır (eldivenli el, sarsan araç). */}
           <div className="flex items-center justify-center gap-6 pb-0.5">
             <HelpTip tkey="drv_break" />
-            <HelpTip tkey="drv_end" />
+            {/* Balonun bugünkü metni "yalnız kaç paket geri getirdiğin
+                sorulur" diyor — paket kapalıyken YANLIŞ. AdminClient'taki
+                `_nopkg` deseninin aynısı. */}
+            <HelpTip tkey={PACKAGES_ENABLED ? "drv_end" : "drv_end_nopkg"} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Button
@@ -743,7 +788,11 @@ export function PanelClient({
                 {t("v2WaitTitle")}
               </h1>
               <p className="mx-auto max-w-xs text-sm text-muted-foreground">
-                {t("v2WaitDesc")}
+                {/* "Kontak açılınca otomatik başlar" cümlesi SERBEST SEÇİM
+                    kiracısında YANLIŞTIR: otomatik motor vardiyayı aracın
+                    ATANMIŞ şoförüne açar, burada atama yok — yani hiçbir zaman
+                    kendiliğinden başlamaz. Şoföre yapması gerekeni söyleriz. */}
+                {freeVehicleChoice ? t("v2WaitDescManual") : t("v2WaitDesc")}
               </p>
             </div>
             {assignedVehicle ? (
@@ -752,6 +801,12 @@ export function PanelClient({
                 {t("v2YourVehicle")}:{" "}
                 <span className="nums uppercase">{assignedVehicle.plate}</span>
               </div>
+            ) : freeVehicleChoice ? (
+              /* SERBEST SEÇİM kiracısında atama YOKLUĞU normaldir, kusur
+                 değil — "aracın atanmamış" uyarısı ÇIKMAZ. Ne yapılacağını
+                 yukarıdaki v2WaitDescManual zaten söylüyor, ikinci bir cümle
+                 aynı şeyi tekrarlardı. */
+              null
             ) : (
               <div className="mx-auto flex max-w-xs items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-left text-sm text-accent-gold-text">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -850,6 +905,50 @@ export function PanelClient({
                 </p>
               </div>
             )}
+
+            {/* SERBEST ARAÇ SEÇİMİ (03.08.2026, DRIVER_VEHICLE_CHOICE='free').
+                Araç↔şoför sabit ataması olmayan filoda (aynı araç gece/gündüz
+                farklı şoförlerde) vardiyayı açan kişi plakayı O AN seçer.
+                Bu blok YALNIZCA atanmış araç yokken çıkar; ataması olan şoför
+                yukarıdaki bildik akışı görür, yani HAK61 yolu değişmez.
+
+                Sunucu tarafı zaten hazırdı: startShiftManualAction override
+                araç kabul ediyor ve atanmış araç aramıyor (shift.ts). Burada
+                yeni bir yazma yolu AÇILMIYOR, var olanın kapısı gösteriliyor. */}
+            {!assignedVehicle && freeVehicleChoice && (
+              <div className="space-y-2">
+                {depotPanel?.locked && (
+                  <div className="mx-auto flex max-w-xs items-start gap-2 rounded-xl bg-accent-gold/12 px-4 py-3 text-left text-sm text-accent-gold-text">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    {t("v2DepotLocked")}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    depotPanel?.locked
+                      ? toast.warning(t("v2DepotLocked"))
+                      : openVehiclePicker()
+                  }
+                  disabled={pending || pickerLoading}
+                  aria-disabled={depotPanel?.locked || undefined}
+                  className={`btn-primary flex h-24 w-full items-center justify-center gap-4 rounded-2xl text-xl font-bold tracking-wide text-primary-foreground shadow-lg transition-all duration-200 ease-[cubic-bezier(0.25,0.1,0.25,1)] focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.98] disabled:opacity-60 ${
+                    depotPanel?.locked ? "opacity-50" : ""
+                  }`}
+                >
+                  {pending || pickerLoading ? (
+                    <Loader2 className="size-8 animate-spin" aria-hidden />
+                  ) : (
+                    <Truck className="size-8" aria-hidden />
+                  )}
+                  {t("v2PickVehicleAndStart")}
+                </button>
+                <HelpTip tkey="drv_start" className="mx-auto" />
+                <p className="mx-auto max-w-xs text-xs text-muted-foreground">
+                  {t("v2StartHint")} {t("v2OncePerDayHint")}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -900,7 +999,9 @@ export function PanelClient({
                 "Pakete gesamt: 175" yazıyordu — girmesi gereken sayı ile
                 girdiği sayı yan yana duruyordu ve karışıyordu. */}
             <DialogDescription className="text-base text-foreground">
-              {t("v2ReturnQuestion")}
+              {/* Paket modülü kapalıyken bu soru PAKET sorusudur ve sorulmaz;
+                  yerine ne olacağını anlatan nötr bir cümle kalır. */}
+              {PACKAGES_ENABLED ? t("v2ReturnQuestion") : t("v2EndNoPackagesDesc")}
             </DialogDescription>
           </DialogHeader>
           {/* ADIM 1 — SORU + İKİ BÜYÜK BUTON (22.07.2026 yeniden yazımı).
@@ -952,7 +1053,15 @@ export function PanelClient({
               className="space-y-4"
             >
               <input type="hidden" name="break_minutes" value={totalBreakSoFar} />
-              <input type="hidden" name="undelivered_count" value={undeliveredValue ?? ""} />
+              {/* Paket kapalıyken alan HİÇ GÖNDERİLMEZ → sunucu null yazar,
+                  yani "sayılmadı". 0 göndermek sayılmış gibi görünürdü. */}
+              {PACKAGES_ENABLED && (
+                <input
+                  type="hidden"
+                  name="undelivered_count"
+                  value={undeliveredValue ?? ""}
+                />
+              )}
               {/* KM ALANI YOK (21.07.2026). Kilometre cihazdan türetiliyor. */}
 
               {returnMode === "some" && (
@@ -977,25 +1086,29 @@ export function PanelClient({
               {/* BÜYÜK HESAP — eski tasarımda bu bilgi 11px soluk griydi ve
                   "Zugestellt: 0" uyarısı görülmedi. Artık ekranın en okunur
                   cümlesi; sonuç 0 ise bordoya döner. */}
-              <div className="rounded-xl bg-surface-2/60 px-4 py-3">
-                <p className="text-sm text-muted-foreground">
-                  {packagesTaken !== null
-                    ? t("v2CalcLine", {
-                        taken: packagesTaken,
-                        returned: undeliveredValue ?? 0,
-                      })
-                    : t("v2CalcNoTotal")}
-                </p>
-                {packagesTaken !== null && (
-                  <p
-                    className={`nums mt-1 text-3xl font-bold ${
-                      deliveredPreview === 0 ? "text-accent-claret-text" : "text-foreground"
-                    }`}
-                  >
-                    {t("v2CalcDelivered", { n: deliveredPreview })}
+              {PACKAGES_ENABLED && (
+                <div className="rounded-xl bg-surface-2/60 px-4 py-3">
+                  <p className="text-sm text-muted-foreground">
+                    {packagesTaken !== null
+                      ? t("v2CalcLine", {
+                          taken: packagesTaken,
+                          returned: undeliveredValue ?? 0,
+                        })
+                      : t("v2CalcNoTotal")}
                   </p>
-                )}
-              </div>
+                  {packagesTaken !== null && (
+                    <p
+                      className={`nums mt-1 text-3xl font-bold ${
+                        deliveredPreview === 0
+                          ? "text-accent-claret-text"
+                          : "text-foreground"
+                      }`}
+                    >
+                      {t("v2CalcDelivered", { n: deliveredPreview })}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* ENGEL — alınan girilmemişken geri > 0. Şoförü çıkmaza sokmadan
                   eksik bilgiyi tamamlatıyoruz: buton paket dialogunu açar. */}
@@ -1074,13 +1187,16 @@ export function PanelClient({
 
               {!confirmNeeded && (
                 <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setReturnMode(null)}
-                  >
-                    {t("v2Back")}
-                  </Button>
+                  {/* Paket kapalıyken 1. adım YOK — dönülecek yer de yok. */}
+                  {PACKAGES_ENABLED && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setReturnMode(null)}
+                    >
+                      {t("v2Back")}
+                    </Button>
+                  )}
                   <Button
                     type="submit"
                     variant="destructive"
@@ -1122,7 +1238,8 @@ export function PanelClient({
               onClick={() => {
                 setConfirmEndOpen(false);
                 // Her açılışta sıfırdan: mod seçilmemiş, sayı boş, teyit yok.
-                setReturnMode(null);
+                // Paket kapalıyken 1. adım yok — doğrudan "none"a açılır.
+                setReturnMode(PACKAGES_ENABLED ? null : "none");
                 setEndUndel("");
                 setConfirmNeeded(false);
                 setEndOpen(true);
@@ -1174,11 +1291,35 @@ export function PanelClient({
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{t("v2OtherVehicle")}</DialogTitle>
-            <DialogDescription>{t("v2OtherVehicleHint")}</DialogDescription>
+            {/* Aynı dialog iki ayrı soruyu karşılıyor. Atanmış aracı OLAN
+                şoförde soru "bugün başka araç mı?"dır. Serbest seçim
+                kiracısında ise "kendi aracı" diye bir şey yoktur — o metin
+                orada var olmayan bir aracı ima ederdi. */}
+            <DialogTitle>
+              {assignedVehicle ? t("v2OtherVehicle") : t("v2PickVehicleTitle")}
+            </DialogTitle>
+            <DialogDescription>
+              {assignedVehicle ? t("v2OtherVehicleHint") : t("v2PickVehicleDesc")}
+            </DialogDescription>
           </DialogHeader>
+          {/* PLAKA ARAMASI — sabit atamasız filoda şoför kendi aracını
+              listeden gözle aramak zorunda kalmasın. Marka/model de eşleşir.
+              autoFocus YOK: mobilde klavye açılıp listeyi kapatırdı. */}
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              value={pickerQuery}
+              onChange={(e) => setPickerQuery(e.target.value)}
+              placeholder={t("v2VehicleSearch")}
+              aria-label={t("v2VehicleSearch")}
+              className="nums h-11 pl-9 uppercase"
+            />
+          </div>
           <ul className="space-y-1.5">
-            {pickable.map((v) => (
+            {visiblePickable.map((v) => (
               <li key={v.id}>
                 <button
                   type="button"
@@ -1202,6 +1343,13 @@ export function PanelClient({
               </li>
             ))}
           </ul>
+          {visiblePickable.length === 0 && (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {pickable.length === 0
+                ? t("v2VehicleNone")
+                : t("v2VehicleNoMatch", { q: pickerQuery.trim() })}
+            </p>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -102,6 +102,31 @@ export const DRIVER_PANEL_ENABLED = envBool(
   true
 );
 
+export type DriverVehicleChoice = "assigned" | "free";
+
+/**
+ * ŞOFÖR VARDİYAYI HANGİ ARAÇLA AÇAR? (03.08.2026)
+ *
+ *  • `assigned` — HAK61'in BUGÜNKÜ davranışı ve VARSAYILAN. Vardiya, şoförün
+ *    kalıcı olarak atandığı araçla (vehicles.assigned_worker_id) açılır.
+ *    Başlat butonu ve "başka araç" seçicisi yalnız atanmış araç VARSA görünür;
+ *    ataması olmayan şoför bekleme ekranında "aracın atanmamış" uyarısını görür.
+ *
+ *  • `free` — araç↔şoför SABİT ATAMASI OLMAYAN filo (Sendigo). Aynı aracı gece
+ *    ve gündüz farklı şoförler kullanıyor, dolayısıyla kalıcı atama yok:
+ *    vardiyayı açan kişi plakayı O AN seçer. Seçim yalnız o vardiya için
+ *    geçerlidir (time_entries.vehicle_id); kalıcı atama YAZILMAZ.
+ *
+ * Sunucu tarafı iki modda da AYNI: startShiftManualAction zaten override araç
+ * kabul ediyor ve atanmış araç yoksa override ile açabiliyor. Bu ayar yalnız
+ * ŞOFÖRE NE GÖSTERİLDİĞİNİ belirler — yeni bir yazma yolu açmaz.
+ */
+export const DRIVER_VEHICLE_CHOICE: DriverVehicleChoice = envEnum(
+  process.env.NEXT_PUBLIC_DRIVER_VEHICLE_CHOICE,
+  ["assigned", "free"] as const,
+  "assigned"
+);
+
 /**
  * PAKET SAYACI (alınan / teslim edilen / teslim edilemeyen).
  *

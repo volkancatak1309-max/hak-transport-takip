@@ -7,9 +7,16 @@ import { toast } from "sonner";
 import { CheckCircle2, Loader2, Package, Route, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { confirmShiftSummaryAction } from "@/app/actions/driver-panel";
-import { formatDate, formatDurationShort, kmDiff, workedMs } from "@/lib/format";
+import {
+  formatDate,
+  formatDurationShort,
+  formatTime,
+  kmDiff,
+  workedMs,
+} from "@/lib/format";
 import type { TimeEntry } from "@/lib/types";
 import { HelpTip } from "@/components/help/HelpTip";
+import { PACKAGES_ENABLED } from "@/lib/tenant";
 
 type Props = {
   entry: TimeEntry;
@@ -82,16 +89,38 @@ export function ShiftSummaryCard({ entry, week, onLater }: Props) {
           value={formatDurationShort(worked, locale)}
           label={t("workedHours")}
         />
-        <SummaryStat
-          icon={<Route className="size-7" aria-hidden />}
-          value={km !== null ? `${km.toLocaleString(numLocale)} km` : "—"}
-          label={t("totalKm")}
-        />
-        <SummaryStat
-          icon={<Package className="size-7" aria-hidden />}
-          value={String(packages)}
-          label={t("v2TodayPackages")}
-        />
+        {/* HESAPLANAMAYAN METRİK GÖSTERİLMEZ (03.08.2026). Eskiden km yokken
+            dev bir "—" basılıyordu: şoför bunu "0 km" ya da "ekran bozuk" diye
+            okuyordu. Kilometre cihaz odometresinden/GPS'ten türetilir; aracın
+            telemetrisi yoksa hesaplanamaz. O durumda kutu HİÇ çizilmez, yerine
+            SEBEBİ yazılır. Uydurma sayı yazmayız. */}
+        {km !== null ? (
+          <SummaryStat
+            icon={<Route className="size-7" aria-hidden />}
+            value={`${km.toLocaleString(numLocale)} km`}
+            label={t("totalKm")}
+          />
+        ) : (
+          <p className="rounded-[14px] border border-dashed border-border/70 px-5 py-4 text-center text-sm text-muted-foreground">
+            {t("v2SummaryKmUnavailable")}
+          </p>
+        )}
+        {/* Sürüş bilgisi — başlangıç/bitiş saati ve varsa mola. Hepsi kayıtta
+            duran gerçek değerler; türetme yok. */}
+        <p className="text-center text-sm text-muted-foreground">
+          {formatTime(entry.started_at, locale)}
+          {entry.ended_at ? ` – ${formatTime(entry.ended_at, locale)}` : ""}
+          {(entry.break_minutes ?? 0) > 0
+            ? ` · ${t("v2BreakTotal", { min: entry.break_minutes ?? 0 })}`
+            : ""}
+        </p>
+        {PACKAGES_ENABLED && (
+          <SummaryStat
+            icon={<Package className="size-7" aria-hidden />}
+            value={String(packages)}
+            label={t("v2TodayPackages")}
+          />
+        )}
       </div>
 
       <div className="w-full max-w-md space-y-4">

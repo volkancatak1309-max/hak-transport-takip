@@ -4,6 +4,7 @@ import { startOfTodayVienna } from "@/lib/format";
 import { computeLiveStatus } from "@/lib/vehicle-ui";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
 import { UNRESTRICTED, dropOtherFleets, type FleetScope } from "@/lib/fleet-scope";
+import { isFleetVisible } from "@/lib/tenant";
 import type {
   VehicleFleet,
   Vehicle,
@@ -63,10 +64,15 @@ export async function listVehiclesForDriverPick(
 ): Promise<PickableVehicle[]> {
   const scope = await getTestScope();
 
-  // fleet-scoped: BİLEREK filo kapsamı YOK. Bu şoföre ait bir seçicidir,
-  // yönetici yüzeyi değil; kural 2 gereği tüm aktif araçlar listelenir
+  // fleet-scoped: ŞEF kapsamı BİLEREK YOK. Bu şoföre ait bir seçicidir,
+  // yönetici yüzeyi değil; kural 2 gereği filolar arası seçim serbesttir
   // (mavi şoför bordo araç seçebilmeli). Filo şefinin gördüğü yüzeyler
   // ayrı ve orada kapsam uygulanıyor.
+  //
+  // 03.08.2026 — KİRACININ KULLANMADIĞI filo yine de elenir (ACTIVE_FLEETS,
+  // aşağıda). HAK61'de iki filo da kullanımda → liste DEĞİŞMEZ. Tek filolu
+  // müşteride arayüzün hiçbir yerinde görünmeyen bir filonun aracı seçiciye
+  // düşmemeli.
   // test-filtered: dropTestRows — test aracı şoföre de gösterilmez.
   const [{ data: vData }, { data: sData }] = await Promise.all([
     supabaseAdmin
@@ -85,9 +91,9 @@ export async function listVehiclesForDriverPick(
   ]);
 
   const vehicles = dropTestRows(
-    (vData ?? []) as (Pick<Vehicle, "id" | "plate" | "make" | "model" | "fleet"> & {
+    ((vData ?? []) as (Pick<Vehicle, "id" | "plate" | "make" | "model" | "fleet"> & {
       assigned_worker_id: string | null;
-    })[],
+    })[]).filter((v) => isFleetVisible(v.fleet)),
     (v) => ({ vehicle: v.id }),
     scope
   );

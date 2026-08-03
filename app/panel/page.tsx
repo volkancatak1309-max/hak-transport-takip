@@ -125,7 +125,12 @@ export default async function PanelPage() {
         id: session.worker_id!,
         name: session.name!,
         phone: session.phone ?? "",
+        // isAdmin=false BİLEREK: yönetici panele girdiğinde diğer şoförlerle
+        // AYNI ekranı görmeli (menü de dahil). Yönetici yetkisi ayrı bayrakla
+        // taşınır ve yalnız üst çubuktaki "Filo Yönetimi" dönüş bağlantısını
+        // açar — sunucu tarafında hiçbir kapıyı gevşetmez.
         isAdmin: false,
+        adminAccount: session.is_admin === true,
         managedFleet,
       }}
     >

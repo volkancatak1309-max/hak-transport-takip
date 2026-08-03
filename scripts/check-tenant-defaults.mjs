@@ -69,6 +69,10 @@ const EXPECTED = {
   // duruyordu (PanelClient.tsx). 'assigned' o davranışın birebir kendisidir —
   // bu satır kayarsa HAK61 şoförüne serbest plaka seçimi açılır.
   "tenant.DRIVER_VEHICLE_CHOICE": "assigned",
+  // Yönetici üst çubuğunda "Şoför Paneli" geçişi. 03.08.2026 öncesi böyle bir
+  // buton YOKTU (DashboardShell'deki geçiş yalnız filo şefine görünüyordu);
+  // false o davranışın birebir kendisidir.
+  "tenant.ADMIN_DRIVER_PANEL_LINK": false,
   "tenant.PACKAGES_ENABLED": true, //         paket kolonları her yerde görünürdü
   "tenant.LENKZEIT_WARNING_ENABLED": true, // LenkzeitWarning koşulsuz render ediliyordu
   "tenant.SAFETY_SCORE_CALIBRATED": true, //  metric-thresholds.ts: = true
@@ -172,6 +176,7 @@ const out = {
   "tenant.LEAVES_ENABLED": tenant.LEAVES_ENABLED,
   "tenant.DRIVER_PANEL_ENABLED": tenant.DRIVER_PANEL_ENABLED,
   "tenant.DRIVER_VEHICLE_CHOICE": tenant.DRIVER_VEHICLE_CHOICE,
+  "tenant.ADMIN_DRIVER_PANEL_LINK": tenant.ADMIN_DRIVER_PANEL_LINK,
   "tenant.PACKAGES_ENABLED": tenant.PACKAGES_ENABLED,
   "tenant.LENKZEIT_WARNING_ENABLED": tenant.LENKZEIT_WARNING_ENABLED,
   "tenant.SAFETY_SCORE_CALIBRATED": tenant.SAFETY_SCORE_CALIBRATED,

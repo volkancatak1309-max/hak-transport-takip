@@ -102,6 +102,28 @@ export const DRIVER_PANEL_ENABLED = envBool(
   true
 );
 
+/**
+ * YÖNETİCİ ÜST ÇUBUĞUNDA "ŞOFÖR PANELİ" GEÇİŞİ (03.08.2026)
+ *
+ * Kapalı (VARSAYILAN = HAK61'in bugünkü hâli): yönetici üst çubuğunda böyle bir
+ * buton YOKTUR. HAK61'de yöneticiler direksiyona geçmiyor — canlı ölçüm: üç
+ * yönetici hesabının ikisinde 0 vardiya, üçüncüsündeki 2 satır 2026 Mayıs/
+ * Haziran'dan kalma demo kayıtları (biri 2 dakikada 20.000 km).
+ *
+ * Açık: yöneticinin hesabı aynı zamanda ŞOFÖR hesabı olan müşteride (Sendigo —
+ * Gökhan hem yönetici hem sürücü) yönetim ve panel arasında tek dokunuşla
+ * gidilir. Filo şefinin migration 029'dan beri kullandığı geçişin AYNISIDIR,
+ * yalnız kime görüneceği genişler.
+ *
+ * ⚠️ Bu ayar yalnız BAĞLANTIYI gösterir. Yöneticinin açtığı vardiyanın şoför
+ * metriklerinden elenmesi (lib/driver-scope.ts) DEĞİŞMEZ ve bu ayara bağlı
+ * değildir — o ayrı bir karardır.
+ */
+export const ADMIN_DRIVER_PANEL_LINK = envBool(
+  process.env.NEXT_PUBLIC_ADMIN_DRIVER_PANEL_LINK,
+  false
+);
+
 export type DriverVehicleChoice = "assigned" | "free";
 
 /**

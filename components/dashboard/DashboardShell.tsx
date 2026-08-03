@@ -38,7 +38,7 @@ import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/app/actions/auth";
 import { setLocaleAction } from "@/app/actions/preferences";
 import { FUEL_ENABLED, EXPENSE_ENABLED, LEAVES_ENABLED } from "@/lib/features";
-import { DRIVER_PANEL_ENABLED } from "@/lib/tenant";
+import { DRIVER_PANEL_ENABLED, ADMIN_DRIVER_PANEL_LINK } from "@/lib/tenant";
 import { brandCopyright } from "@/lib/brand";
 
 export type HeaderUser = {
@@ -51,6 +51,14 @@ export type HeaderUser = {
    * isAdmin ile BIRLIKTE kullanilmaz: sef isAdmin=false'tur.
    */
   managedFleet?: string | null;
+  /**
+   * Hesabın YÖNETİCİ YETKİSİ var mı? `isAdmin`den ayrıdır: `isAdmin` "yönetici
+   * KABUĞUNU çiz" demektir (menü, komut paleti). Yönetici şoför panelindeyken
+   * diğer şoförlerle AYNI ekranı görmeli, yani orada `isAdmin=false` geçilir —
+   * ama üst çubuktaki "Filo Yönetimi" dönüş bağlantısı yine de çıkmalıdır.
+   * Bu bayrak tam olarak o farkı taşır. Filo şefinde kullanılmaz (o `isChief`).
+   */
+  adminAccount?: boolean;
 };
 
 type NavItem = { href: string; label: string; icon: LucideIcon };
@@ -101,6 +109,15 @@ export function DashboardShell({
   // sayfalar zaten requireAdmin() ile sunucu tarafinda kapali.
   const isChief = !user.isAdmin && !!user.managedFleet;
   const onAdminSide = pathname.startsWith("/admin");
+  /**
+   * YÖNETİCİ ↔ ŞOFÖR PANELİ GEÇİŞİ (03.08.2026). Filo şefinin migration
+   * 029'dan beri kullandığı geçişin AYNISI; yalnız kime görüneceği genişliyor.
+   * Üç koşul birden: kiracı ayarı açık + şoför paneli açık + hesap yönetici.
+   * HAK61 varsayılanı kapalı → orada üst çubuk aynen bugünkü gibi kalır.
+   */
+  const isAdminAccount = user.isAdmin || !!user.adminAccount;
+  const showAdminPanelToggle =
+    ADMIN_DRIVER_PANEL_LINK && DRIVER_PANEL_ENABLED && isAdminAccount;
   const navItems: NavItem[] = isChief
     ? [
         { href: "/admin", label: t("admin"), icon: LayoutDashboard },
@@ -305,18 +322,28 @@ export function DashboardShell({
                 sofor panelinde gecirir; yonetim gorunumu ikincil is.
                 Panelde "Filo Yonetimi", yonetim tarafinda "Panelime don".
                 Bordo aksan, yeni renk yok. */}
-            {isChief && (
+            {(isChief || showAdminPanelToggle) && (
               <Link
                 href={onAdminSide ? "/panel" : "/admin"}
                 className="inline-flex items-center gap-1.5 rounded-[10px] border border-accent-claret/40 px-2.5 py-1.5 text-xs font-medium text-accent-claret-text transition-colors hover:bg-accent-claret/10"
               >
                 {onAdminSide ? (
-                  <ArrowLeft className="size-4" aria-hidden />
+                  isChief ? (
+                    <ArrowLeft className="size-4" aria-hidden />
+                  ) : (
+                    /* Yonetici icin bu bir DONUS degil, GIDIS: sefin
+                       "panelime don" oku yerine surus ikonu. */
+                    <Truck className="size-4" aria-hidden />
+                  )
                 ) : (
                   <LayoutDashboard className="size-4" aria-hidden />
                 )}
                 <span className="hidden sm:inline">
-                  {onAdminSide ? t("backToPanel") : t("fleetAdmin")}
+                  {onAdminSide
+                    ? isChief
+                      ? t("backToPanel")
+                      : t("driverPanel")
+                    : t("fleetAdmin")}
                 </span>
               </Link>
             )}

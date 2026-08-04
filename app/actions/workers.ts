@@ -14,6 +14,7 @@ import {
 import { canonicalPhone, phoneVariants } from "@/lib/phone";
 import { clearLoginLock } from "@/lib/login-lock";
 import { logLoginUnlock } from "@/lib/login-unlock-log";
+import { logWorkerAdminChange } from "@/lib/worker-admin-log";
 
 export type WorkerResult = { ok: boolean; error?: string };
 
@@ -196,7 +197,9 @@ export async function getWorkerVehicleOptions(workerId: string): Promise<{
 }
 
 export async function updateWorkerAction(formData: FormData): Promise<WorkerResult> {
-  await requireAdmin();
+  // Patron kapısı: şef (is_admin=false) buraya HİÇ giremez — /panel'e atılır.
+  // Yetki alanı bu action'a eklendiği için kapı artık ikinci bir işe de yarıyor.
+  const session = await requireAdmin();
 
   const id = formData.get("id");
   if (typeof id !== "string" || !id) return { ok: false, error: "Geçersiz kayıt" };
@@ -206,6 +209,7 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
     name: formData.get("name"),
     phone: formData.get("phone"),
     employee_number: formData.get("employee_number") || null,
+    is_admin: formData.get("is_admin") === "on",
     counts_as_driver: formData.get("counts_as_driver") === "on",
     birth_date: formData.get("birth_date") || null,
     email: formData.get("email") || null,
@@ -236,23 +240,60 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
   if (dupe) return { ok: false, error: "Bu telefon zaten kayıtlı" };
 
   // Mevcut satırı çek → SADECE DEĞİŞEN alanı yaz (mevcut doğru veriyi ezme).
-  // plate/pin_hash/is_active/must_change_pin/is_admin bu diff'e HİÇ girmez.
+  // plate/pin_hash/is_active/must_change_pin bu diff'e HİÇ girmez.
   const { data: cur } = await supabaseAdmin
     .from("workers")
     .select(
-      "name, phone, employee_number, counts_as_driver, birth_date, email, address, social_security_no, employment_start, employment_type, license_no, license_expiry, emergency_contact_name, emergency_contact_relation, emergency_contact_phone"
+      "name, phone, employee_number, is_admin, counts_as_driver, birth_date, email, address, social_security_no, employment_start, employment_type, license_no, license_expiry, emergency_contact_name, emergency_contact_relation, emergency_contact_phone"
     )
     .eq("id", id)
     .maybeSingle();
   if (!cur) return { ok: false, error: "Çalışan bulunamadı" };
 
+  /**
+   * YETKİ DEĞİŞİKLİĞİ — iki kapı, ikisi de SUNUCUDA (istemciye güvenilmez).
+   *
+   * 1) KENDİ KENDİNİ DÜŞÜRME YOK. Tek yönetici olmasa bile: oturumdaki kişinin
+   *    kendi yetkisini alması, elindeki dalı kesmektir — ve geri almak için
+   *    yetkiye ihtiyaç vardır. Yanlış tıklamanın bedeli, bir başka yöneticinin
+   *    devreye girmesini beklemek olurdu.
+   * 2) SON YÖNETİCİ KORUMASI. Sistemde giriş yapabilecek en az bir yönetici
+   *    kalmalı; aksi hâlde panele kimse giremez ve kilit yalnız veritabanından
+   *    açılır. Sayım is_active'i de gözetir: pasif yönetici giriş yapamaz,
+   *    dolayısıyla "kalan yönetici" sayılamaz.
+   */
+  const wasAdmin = cur.is_admin === true;
+  const nextAdmin = d.is_admin === true;
+
+  if (wasAdmin && !nextAdmin) {
+    if (session.worker_id === id) return { ok: false, error: "errSelfDemote" };
+
+    // test-visible: SON YÖNETİCİ sayımı. Test hesabı da giriş yapabildiği için
+    // buraya DAHİLDİR — soru "kimse panele giremez mi", "kaç gerçek yönetici
+    // var" değil. Test hesabını elemek, elenen hesap tek yönetici olduğunda
+    // kapıyı sessizce açardı.
+    const { count } = await supabaseAdmin
+      .from("workers")
+      .select("id", { count: "exact", head: true })
+      .eq("is_admin", true)
+      .eq("is_active", true);
+    if ((count ?? 0) <= 1) return { ok: false, error: "errLastAdmin" };
+  }
+
   const next: Record<string, unknown> = {
     name: d.name,
     phone,
     employee_number: d.employee_number ?? null,
+    is_admin: nextAdmin,
     // Muafiyet işareti (migration 041): kutu işaretsizse FALSE yazılır — yani
     // form onu geri de alabilir. Diff mantığı değişmediyse hiç UPDATE etmez.
-    counts_as_driver: d.counts_as_driver ?? false,
+    //
+    // YETKİ GİDERSE BAYRAK DA GİDER: counts_as_driver'ın anlamı YALNIZ
+    // is_admin=true kayıtta var ("bu yönetici şoför sayılsın"). Yönetici
+    // olmayanda okunmaz bile — kalırsa yarın o kişi yeniden yönetici
+    // yapıldığında sessizce şoför sayılmaya başlardı. Veri, anlamıyla tutarlı
+    // kalsın diye burada temizleniyor.
+    counts_as_driver: nextAdmin ? d.counts_as_driver ?? false : false,
     birth_date: d.birth_date ?? null,
     email: d.email ?? null,
     address: d.address ?? null,
@@ -273,6 +314,10 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
   if (Object.keys(update).length > 0) {
     const { error } = await supabaseAdmin.from("workers").update(update).eq("id", id);
     if (error) return { ok: false, error: "Güncelleme başarısız: " + error.message };
+    // İz YAZMADAN SONRA: yazma başarısızsa iz de olmamalı (migration 043).
+    if (wasAdmin !== nextAdmin) {
+      await logWorkerAdminChange(id, session.worker_id ?? null, nextAdmin);
+    }
   }
 
   // Araç ataması — yalnız GERÇEKTEN değiştiyse dokunulur (form açıldığındaki

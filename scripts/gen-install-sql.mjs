@@ -2,7 +2,7 @@
 /**
  * db/install/sendigo-full.sql üreticisi.
  *
- * 001→042 migration'larını DOĞRU SIRAYLA tek dosyada birleştirir. Yapılan her
+ * 001→043 migration'larını DOĞRU SIRAYLA tek dosyada birleştirir. Yapılan her
  * dönüşüm burada AÇIKÇA listelidir ve çalıştırıldığında rapor edilir — üretilen
  * dosya elle düzenlenmez, bu betik yeniden çalıştırılır.
  */
@@ -36,6 +36,7 @@ const ORDER = [
   "036_depot_autostart.sql", "037_manual_shift_start.sql",
   "038_start_time_estimated.sql", "039_fuel_volume.sql", "040_shift_edit_log.sql",
   "041_counts_as_driver.sql", "042_login_unlock_log.sql",
+  "043_worker_admin_log.sql",
 ];
 
 // ─── KÖPRÜ: hiçbir migration'ın yaratmadığı kolon ────────────────────────────
@@ -167,7 +168,7 @@ function transform(file, sql) {
 // ─── Birleştir ──────────────────────────────────────────────────────────────
 const HEADER = `-- ═══════════════════════════════════════════════════════════════════════════
 --  SENDIGO — TEK PARÇA KURULUM SQL'İ
---  hak-transport-takip · şema 001 → 042 · üretim tarihi: 04.08.2026
+--  hak-transport-takip · şema 001 → 043 · üretim tarihi: 04.08.2026
 -- ═══════════════════════════════════════════════════════════════════════════
 --
 --  NE İŞE YARAR

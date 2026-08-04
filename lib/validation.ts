@@ -192,9 +192,16 @@ export const updateWorkerSchema = z.object({
   name: z.string().trim().min(2, "errName").max(100),
   phone: phoneSchema,
   employee_number: z.string().trim().max(20).optional().nullable(),
-  // is_admin BU FORMDAN DEĞİŞMEZ (yetki ayrı bir karar), ama muafiyet işareti
-  // düzenlenebilir olmalı: mevcut bir yöneticinin direksiyona geçmesi kayıt
-  // yaratmayı değil, kaydı DÜZENLEMEYİ gerektiren bir durum (migration 041).
+  /**
+   * Yönetici yetkisi (04.08.2026). Eskiden YALNIZ ekleme formundaydı: bir kez
+   * yönetici yapılan kişinin yetkisi panelden geri ALINAMIYORDU — yanlışlıkla
+   * yönetici eklenen bir şoför öyle kalıyordu. Yazma kapıları (kendi kendini
+   * düşürme + son yönetici koruması) app/actions/workers.ts'te.
+   */
+  is_admin: z.coerce.boolean().optional(),
+  // Muafiyet işareti düzenlenebilir olmalı: mevcut bir yöneticinin direksiyona
+  // geçmesi kayıt yaratmayı değil, kaydı DÜZENLEMEYİ gerektiren bir durum
+  // (migration 041).
   counts_as_driver: z.coerce.boolean().optional(),
   birth_date: optionalDate,
   email: z.string().trim().email("errEmail").max(120).optional().nullable(),

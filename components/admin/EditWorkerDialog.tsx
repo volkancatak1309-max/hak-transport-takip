@@ -108,6 +108,9 @@ function EditWorkerForm({
       errPhone: t("errPhone"),
       errEmail: t("errEmail"),
       errDate: t("errDate"),
+      // Yetki kapıları (sunucuda uygulanır, mesaj burada çevrilir).
+      errSelfDemote: t("errSelfDemote"),
+      errLastAdmin: t("errLastAdmin"),
     };
     return known[e] ?? e;
   }
@@ -317,10 +320,23 @@ function EditWorkerForm({
         />
       </div>
 
-      {/* MUAFİYET (migration 041). Yetki (is_admin) bu formdan DEĞİŞMEZ — ayrı
-          bir karar — ama muafiyet işareti mevcut kayıtta açılıp kapanabilmeli:
-          "yönetici bugün direksiyona geçti" yeni kayıt değil, düzenleme. */}
-      <label className="flex items-start gap-2 pt-1 text-sm">
+      {/* ── Yetki ──
+          Kutu 04.08.2026'da EKLENDİ. Eskiden yalnız EKLEME formundaydı: bir kez
+          yönetici yapılan kişinin yetkisi panelden geri alınamıyordu, yanlışlıkla
+          yönetici eklenen şoför öyle kalıyordu. Kapılar sunucuda (kendi kendini
+          düşürme + son yönetici); bu form yalnız patrona açık (requireAdmin). */}
+      <label className="flex items-center gap-2 pt-1 text-sm">
+        <Checkbox
+          name="is_admin"
+          id="e_is_admin"
+          defaultChecked={worker.is_admin}
+        />
+        {t("isAdmin")}
+      </label>
+
+      {/* MUAFİYET (migration 041). Yalnız yönetici kaydında anlamlı: yetki
+          kaldırılırsa sunucu bu bayrağı da false'a düşürür. */}
+      <label className="flex items-start gap-2 text-sm">
         <Checkbox
           name="counts_as_driver"
           id="e_counts_as_driver"

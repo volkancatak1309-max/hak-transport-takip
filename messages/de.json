@@ -1123,6 +1123,8 @@
     "employeeNumber": "Personalnummer (optional)",
     "employeeNumberHint": "Leer = automatisch",
     "isAdmin": "Verwaltungsrechte vergeben",
+    "errSelfDemote": "Sie können sich die eigenen Verwaltungsrechte nicht entziehen — das muss eine andere Verwaltungskraft tun.",
+    "errLastAdmin": "Es muss mindestens eine aktive Verwaltungskraft bleiben. Ernennen Sie zuerst eine weitere.",
     "countsAsDriver": "Als Fahrer zählen",
     "countsAsDriverHint": "Die Schichten dieser Verwaltungskraft fließen in die Fahrerkennzahlen und den AZG-Bericht ein.",
     "workerAdded": "Mitarbeiter hinzugefügt",

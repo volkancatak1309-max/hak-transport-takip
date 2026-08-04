@@ -845,7 +845,8 @@
     "errInvalid": "Telefon oder PIN falsch",
     "errInactive": "Konto inaktiv. Bitte Verwaltung kontaktieren.",
     "errDb": "Datenbankfehler",
-    "errLocked": "Zu viele Fehlversuche. Bitte in {seconds} Sekunden erneut versuchen."
+    "errLocked": "Zu viele Fehlversuche. Bitte in {seconds} Sekunden erneut versuchen.",
+    "lockCleared": "Wartezeit abgelaufen — Sie können es erneut versuchen."
   },
   "changePin": {
     "title": "Neue PIN festlegen",
@@ -1276,6 +1277,9 @@
     "back": "← Verwaltung",
     "noWorkers": "Keine Mitarbeiter",
     "setPin": "PIN festlegen",
+    "unlockLogin": "Anmeldesperre aufheben",
+    "loginLocked": "Anmeldung gesperrt · {attempts} Fehlversuche",
+    "loginUnlocked": "Anmeldesperre aufgehoben",
     "deactivate": "Deaktivieren",
     "activate": "Aktivieren",
     "confirmStatus": "Mitarbeiter {name} wirklich auf {action} setzen?",

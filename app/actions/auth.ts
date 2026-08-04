@@ -6,13 +6,27 @@ import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getSession } from "@/lib/session";
 import { loginSchema, changePinSchema } from "@/lib/validation";
-import { canonicalPhone, phoneVariants } from "@/lib/phone";
+import { phoneVariants } from "@/lib/phone";
 import { DRIVER_PANEL_ENABLED } from "@/lib/tenant";
+import {
+  MAX_FAILURES,
+  ATTEMPT_WINDOW_MS,
+  lockMs,
+  lockIdentifier,
+} from "@/lib/login-lock";
 
 export type LoginState = {
   error?: "invalid" | "inactive" | "db" | "validation" | "locked";
   /** Seconds until the next attempt is allowed (only when error === "locked"). */
   retryAfter?: number;
+  /**
+   * Kilidin bitiş anı (ISO) — yalnız error === "locked" iken. İstemci geri
+   * sayan sayacı bununla KİMLİKLENDİRİR: iki ayrı kilit olayının `retryAfter`
+   * değeri tesadüfen aynı olabilir, `lockedUntil` olamaz. Sayacın süresi yine
+   * retryAfter'dan (göreli saniye) kurulur — sunucu/istemci saat farkı geri
+   * sayımı bozmasın diye mutlak zaman DEĞİL, kalan süre esas alınır.
+   */
+  lockedUntil?: string;
 };
 
 // Brute-force throttle. After MAX_FAILURES failed logins for the same
@@ -21,8 +35,9 @@ export type LoginState = {
 // Combined with the 6-digit PIN keyspace this makes online guessing infeasible.
 // Keying on ip|phone (not phone alone) avoids an attacker locking a real driver
 // out from a different network.
-const MAX_FAILURES = 5;
-const ATTEMPT_WINDOW_MS = 30 * 60 * 1000; // forget stale failures after 30 min
+//
+// Eşikler ve kimlik biçimi lib/login-lock.ts'te — yönetici panelindeki "Giriş
+// kilidini kaldır" düğmesi aynı sabitleri okuyor, ikinci bir kopya olmasın.
 
 // A fixed valid bcrypt hash compared against when the phone is unknown or the
 // account is inactive, so a failed login takes ~the same time regardless of
@@ -30,12 +45,6 @@ const ATTEMPT_WINDOW_MS = 30 * 60 * 1000; // forget stale failures after 30 min
 // irrelevant — the compare is only there to burn equivalent CPU.
 const DUMMY_PIN_HASH =
   "$2b$10$Qvy2kwozHmqx5Uv2kbISjuV0Dy00KwKR0mbfKIM7G/qiOqdcOFMgC";
-
-/** Escalating lock once failures reach the threshold: 30s, 1m, 5m, 15m, 1h. */
-function lockMs(failures: number): number {
-  const steps = [30_000, 60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
-  return steps[Math.min(Math.max(failures - MAX_FAILURES, 0), steps.length - 1)];
-}
 
 // Telefon normalizasyonu lib/phone.ts'te — tek kaynak. Buradaki eski sürüm
 // yalnız boşluk/tire/parantez siliyordu; kişi listesinden yapıştırılan Unicode
@@ -48,8 +57,19 @@ async function clientIp(): Promise<string> {
   return h.get("x-real-ip") ?? "unknown";
 }
 
-/** Records a failed attempt and (re)arms the lock if the threshold is crossed. */
-async function registerFailure(identifier: string): Promise<void> {
+/**
+ * Records a failed attempt and (re)arms the lock if the threshold is crossed.
+ *
+ * Kilidi KURAN denemenin sonucunu da döner (`lockedUntil`): eskiden bu deneme
+ * düz "hatalı PIN" cevabı alıyordu, kilit ancak BİR SONRAKİ denemede fark
+ * ediliyordu. Kullanıcı için bu "PIN'i yanlış yazdım" ile "artık kilitliyim"
+ * arasındaki farkı görünmez kılıyordu; sayaç da bir deneme geç başlıyordu.
+ * Bilgi sızıntısı yok: kilit ip|phone üzerinde tutulur ve numara kayıtlı olsa
+ * da olmasa da aynı şekilde kurulur.
+ */
+async function registerFailure(
+  identifier: string
+): Promise<{ attempts: number; lockedUntil: string | null }> {
   const { data: row } = await supabaseAdmin
     .from("login_attempts")
     .select("attempts, last_attempt_at")
@@ -62,19 +82,35 @@ async function registerFailure(identifier: string): Promise<void> {
     now - new Date(row.last_attempt_at).getTime() > ATTEMPT_WINDOW_MS;
   const attempts = (stale ? 0 : row?.attempts ?? 0) + 1;
   const nowIso = new Date(now).toISOString();
+  const lockedUntil =
+    attempts >= MAX_FAILURES
+      ? new Date(now + lockMs(attempts)).toISOString()
+      : null;
 
   await supabaseAdmin.from("login_attempts").upsert(
     {
       identifier,
       attempts,
       last_attempt_at: nowIso,
-      locked_until:
-        attempts >= MAX_FAILURES
-          ? new Date(now + lockMs(attempts)).toISOString()
-          : null,
+      locked_until: lockedUntil,
     },
     { onConflict: "identifier" }
   );
+  return { attempts, lockedUntil };
+}
+
+/** Başarısız denemenin istemciye dönen hâli: kilit kurulduysa geri sayımla. */
+function failureState(res: {
+  lockedUntil: string | null;
+}): LoginState {
+  if (!res.lockedUntil) return { error: "invalid" };
+  const remainingMs = new Date(res.lockedUntil).getTime() - Date.now();
+  if (remainingMs <= 0) return { error: "invalid" };
+  return {
+    error: "locked",
+    retryAfter: Math.ceil(remainingMs / 1000),
+    lockedUntil: res.lockedUntil,
+  };
 }
 
 async function clearFailures(identifier: string): Promise<void> {
@@ -91,9 +127,10 @@ export async function loginAction(
   });
   if (!parsed.success) return { error: "validation" };
   // Kilit sayacı kanonik numaraya bağlanır: aynı şoförün "+43660…" ve
-  // "+430660…" yazımları tek bir sayaçta toplanır, ayrı ayrı 5 hak kazanmaz.
-  const phone = canonicalPhone(parsed.data.phone);
-  const identifier = `${await clientIp()}|${phone}`;
+  // "+430660…" yazımları tek bir sayaçta toplanır, ayrı ayrı hak kazanmaz.
+  // Kimliğin biçimi lib/login-lock.ts'te — kilidi kaldıran yönetici eylemi
+  // satırı aynı şekle göre buluyor.
+  const identifier = lockIdentifier(await clientIp(), parsed.data.phone);
 
   // Locked out? Reject before any DB lookup or bcrypt work.
   const { data: gate } = await supabaseAdmin
@@ -104,7 +141,11 @@ export async function loginAction(
   if (gate?.locked_until) {
     const remainingMs = new Date(gate.locked_until).getTime() - Date.now();
     if (remainingMs > 0) {
-      return { error: "locked", retryAfter: Math.ceil(remainingMs / 1000) };
+      return {
+        error: "locked",
+        retryAfter: Math.ceil(remainingMs / 1000),
+        lockedUntil: gate.locked_until as string,
+      };
     }
   }
 
@@ -133,8 +174,7 @@ export async function loginAction(
   const authed = !!worker && worker.is_active && pinOk;
 
   if (!authed || !worker) {
-    await registerFailure(identifier);
-    return { error: "invalid" };
+    return failureState(await registerFailure(identifier));
   }
 
   // ŞOFÖR PANELİ KAPALI MÜŞTERİ (Sendigo): şoförün gideceği bir yer yok.
@@ -143,8 +183,7 @@ export async function loginAction(
   // ("invalid"): "bu telefon kayıtlı ama yetkisiz" demek hesap sayımına
   // (account enumeration) kapı açardı, yukarıdaki tüm tasarım bunu önlüyor.
   if (!DRIVER_PANEL_ENABLED && !worker.is_admin) {
-    await registerFailure(identifier);
-    return { error: "invalid" };
+    return failureState(await registerFailure(identifier));
   }
 
   await clearFailures(identifier);

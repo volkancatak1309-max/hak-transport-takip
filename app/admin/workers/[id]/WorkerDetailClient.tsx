@@ -4,7 +4,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { FileText, KeyRound, Pencil, Power } from "lucide-react";
+import { FileText, KeyRound, LockOpen, Pencil, Power } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/UserAvatar";
 import { SpecGroup, SpecRow } from "@/components/ui-v2";
@@ -16,7 +16,8 @@ import {
   kmDiff,
   formatDuration,
 } from "@/lib/format";
-import { toggleActiveAction } from "../../../actions/workers";
+import { clearLoginLockAction, toggleActiveAction } from "../../../actions/workers";
+import type { LoginLockState } from "@/lib/login-lock";
 import { SetPinDialog } from "@/components/admin/SetPinDialog";
 import {
   SHIFT_REPORT_DE,
@@ -33,6 +34,8 @@ import type { WorkerPublic, TimeEntry } from "@/lib/types";
 
 type Props = {
   worker: WorkerPublic;
+  /** Giriş kilidi durumu (lib/login-lock.ts) — kilitliyse kaldırma düğmesi çıkar. */
+  loginLock: LoginLockState;
   entries: TimeEntry[];
   monthSummary: { shifts: number; ms: number; km: number; cargo: number };
 };
@@ -52,7 +55,12 @@ type Props = {
  * ve dört ayrı gölge, tek satırda okunabilecek bir özet için fazlaydı. Sayılar
  * artık künyenin üstünde tek şeritte yaşıyor (Authkit'in OpsStatGrid dili).
  */
-export function WorkerDetailClient({ worker, entries, monthSummary }: Props) {
+export function WorkerDetailClient({
+  worker,
+  loginLock,
+  entries,
+  monthSummary,
+}: Props) {
   const t = useTranslations("workers");
   const ta = useTranslations("admin");
   const tc = useTranslations("common");
@@ -80,6 +88,16 @@ export function WorkerDetailClient({ worker, entries, monthSummary }: Props) {
       const res = await toggleActiveAction(worker.id);
       if (res.ok) {
         toast.success(tc("save"));
+        router.refresh();
+      } else toast.error(res.error ?? "Error");
+    });
+  }
+
+  function handleUnlock() {
+    startTransition(async () => {
+      const res = await clearLoginLockAction(worker.id);
+      if (res.ok) {
+        toast.success(t("loginUnlocked"));
         router.refresh();
       } else toast.error(res.error ?? "Error");
     });
@@ -146,6 +164,12 @@ export function WorkerDetailClient({ worker, entries, monthSummary }: Props) {
                 {ls.state === "expired" ? t("licenseExpired") : t("licenseExpiring", { days: ls.days })}
               </span>
             )}
+            {/* Kilit rozeti: düğme "ne yapabilirim"i söylüyor, rozet "neden"i. */}
+            {loginLock.locked && (
+              <span className="rounded-[6px] bg-status-critical-soft px-1.5 py-0.5 text-[10px] font-semibold text-status-critical-text">
+                {t("loginLocked", { attempts: loginLock.attempts })}
+              </span>
+            )}
           </div>
 
           {/* Eylemler: ayrı blok değil, kimliğin altında sessiz şerit. */}
@@ -163,6 +187,14 @@ export function WorkerDetailClient({ worker, entries, monthSummary }: Props) {
               <Power className="size-3.5" />
               {worker.is_active ? t("deactivate") : t("activate")}
             </Button>
+            {/* YALNIZ gerçekten kilitliyken. Her zaman duran bir "kilit kaldır"
+                düğmesi, kilidin olağan bir durum olduğunu ima ederdi. */}
+            {loginLock.locked && (
+              <Button variant="outline" size="sm" onClick={handleUnlock} disabled={pending}>
+                <LockOpen className="size-3.5" />
+                {t("unlockLogin")}
+              </Button>
+            )}
             <Button size="sm" onClick={exportPdf} disabled={entries.length === 0}>
               <FileText className="size-3.5" />
               {t("pdfForWorker")}

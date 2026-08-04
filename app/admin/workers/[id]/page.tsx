@@ -21,6 +21,7 @@ import {
   kmDiff,
 } from "@/lib/format";
 import { licenseState, LICENSE_BADGE } from "@/lib/worker-ui";
+import { getLoginLockState } from "@/lib/login-lock";
 import type { WorkerPublic, TimeEntry } from "@/lib/types";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 import { getLocale, getTranslations } from "next-intl/server";
@@ -63,7 +64,11 @@ export default async function WorkerDetailPage({
   // Telefon GPS'i kaldırıldı (21.07.2026): "bugünkü rota" haritası
   // driver_locations'tan besleniyordu. Rota takibi artık yalnız araç
   // cihazından (FMC003) gelir — araç detayındaki rota sayfası korunuyor.
-  const [monthEntriesResult, allEntriesResult] = await Promise.all([
+  // Giriş kilidi: düğme YALNIZ gerçekten kilitliyken basılır (boşuna durmasın).
+  // Okuma ucuz ve hata durumunda "kilitli değil"e düşer — sayfa etkilenmez.
+  const [loginLock, [monthEntriesResult, allEntriesResult]] = await Promise.all([
+    getLoginLockState(w.phone),
+    Promise.all([
     supabaseAdmin
       .from("time_entries")
       .select("*")
@@ -75,6 +80,7 @@ export default async function WorkerDetailPage({
       .eq("worker_id", id)
       .order("started_at", { ascending: false })
       .limit(200),
+    ]),
   ]);
 
   const monthEntries = (monthEntriesResult.data ?? []) as TimeEntry[];
@@ -243,6 +249,7 @@ export default async function WorkerDetailPage({
 
         <WorkerDetailClient
           worker={w}
+          loginLock={loginLock}
           entries={allEntries}
           monthSummary={{
             shifts: monthEntries.length,

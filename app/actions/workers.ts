@@ -12,6 +12,8 @@ import {
   DEFAULT_TEMP_PIN,
 } from "@/lib/validation";
 import { canonicalPhone, phoneVariants } from "@/lib/phone";
+import { clearLoginLock } from "@/lib/login-lock";
+import { logLoginUnlock } from "@/lib/login-unlock-log";
 
 export type WorkerResult = { ok: boolean; error?: string };
 
@@ -387,6 +389,42 @@ export async function terminateWorkerAction(
   revalidatePath("/admin/workers");
   revalidatePath("/admin/araclar");
   revalidatePath("/panel");
+  return { ok: true };
+}
+
+/**
+ * GİRİŞ KİLİDİNİ KALDIRIR (04.08.2026).
+ *
+ * Canlıda yönetici doğru PIN'i bildiği hâlde kilit yüzünden giremedi ve kilit
+ * `delete from login_attempts` ile ELLE temizlendi. Bu, SQL editörü açabilen
+ * birinin yapabildiği, açamayanın yapamadığı bir işti; artık panelde.
+ *
+ * YALNIZ PATRON: requireAdmin() şef hesabını /panel'e yönlendirir (şeflerin
+ * is_admin'i false — bkz. lib/session.ts). Kilit açmak filo işi değil, hesap
+ * işidir; şefin kendi filosundaki şoförün giriş korumasını kaldırabilmesi için
+ * bir gerekçe yok.
+ *
+ * KORUMA KALKMAZ: yalnız BU kişinin sayacı sıfırlanır. Eşikler, merdiven ve
+ * mekanizmanın kendisi yerinde durur; bir sonraki hatalı denemede kilit
+ * baştan işlemeye başlar. İşlem login_unlock_log'a yazılır (migration 042).
+ */
+export async function clearLoginLockAction(
+  workerId: string
+): Promise<WorkerResult> {
+  const session = await requireAdmin();
+
+  const { data: worker } = await supabaseAdmin
+    .from("workers")
+    .select("id, phone")
+    .eq("id", workerId)
+    .maybeSingle();
+  if (!worker) return { ok: false, error: "Çalışan bulunamadı" };
+
+  const cleared = await clearLoginLock(worker.phone as string | null);
+  await logLoginUnlock(workerId, session.worker_id ?? null, cleared);
+
+  revalidatePath("/admin/workers");
+  revalidatePath(`/admin/workers/${workerId}`);
   return { ok: true };
 }
 

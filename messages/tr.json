@@ -845,7 +845,8 @@
     "errInvalid": "Telefon veya PIN hatalı",
     "errInactive": "Hesap pasif. Yönetici ile görüşün.",
     "errDb": "Veritabanı hatası",
-    "errLocked": "Çok fazla başarısız deneme. Lütfen {seconds} saniye sonra tekrar deneyin."
+    "errLocked": "Çok fazla başarısız deneme. Lütfen {seconds} saniye sonra tekrar deneyin.",
+    "lockCleared": "Süre doldu, tekrar deneyebilirsiniz."
   },
   "changePin": {
     "title": "Yeni PIN Belirleyin",
@@ -1276,6 +1277,9 @@
     "back": "← Panel",
     "noWorkers": "Çalışan yok",
     "setPin": "PIN Belirle",
+    "unlockLogin": "Giriş kilidini kaldır",
+    "loginLocked": "Giriş kilitli · {attempts} hatalı deneme",
+    "loginUnlocked": "Giriş kilidi kaldırıldı",
     "deactivate": "Pasifleştir",
     "activate": "Aktifleştir",
     "confirmStatus": "{name} adlı çalışanı {action} duruma getirmek istediğinize emin misiniz?",

@@ -220,6 +220,18 @@ export function AddWorkerDialog({ children }: Props) {
             <Checkbox name="is_admin" id="is_admin" />
             {t("isAdmin")}
           </label>
+          {/* MUAFİYET (migration 041) — yönetici kutusunun hemen altında, çünkü
+              yalnız is_admin=true kayıtta etkisi var. Açıklama satırı zorunlu:
+              işaretin ne yaptığı kutunun etiketinden anlaşılmıyor. */}
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox name="counts_as_driver" id="counts_as_driver" className="mt-0.5" />
+            <span>
+              {t("countsAsDriver")}
+              <span className="mt-0.5 block text-[12px] leading-snug text-muted-foreground">
+                {t("countsAsDriverHint")}
+              </span>
+            </span>
+          </label>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               {tc("cancel")}

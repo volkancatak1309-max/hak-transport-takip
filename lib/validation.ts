@@ -163,6 +163,9 @@ export const createWorkerSchema = z.object({
   plate: z.string().trim().max(20).optional().nullable(),
   employee_number: z.string().trim().max(20).optional().nullable(),
   is_admin: z.coerce.boolean().optional(),
+  // Araç kullanan yönetici muafiyeti (migration 041). Yalnız is_admin=true
+  // kayıtta etkisi var; is_admin=false olanda sessizce anlamsızdır.
+  counts_as_driver: z.coerce.boolean().optional(),
   // Personel dosyası (migration 025) — HEPSİ opsiyonel: kâğıt formlar eksik
   // gelebiliyor; zorunlu alanlar yalnız yukarıdaki mevcut üçlü (ad/telefon/PIN).
   birth_date: optionalDate,
@@ -189,6 +192,10 @@ export const updateWorkerSchema = z.object({
   name: z.string().trim().min(2, "errName").max(100),
   phone: phoneSchema,
   employee_number: z.string().trim().max(20).optional().nullable(),
+  // is_admin BU FORMDAN DEĞİŞMEZ (yetki ayrı bir karar), ama muafiyet işareti
+  // düzenlenebilir olmalı: mevcut bir yöneticinin direksiyona geçmesi kayıt
+  // yaratmayı değil, kaydı DÜZENLEMEYİ gerektiren bir durum (migration 041).
+  counts_as_driver: z.coerce.boolean().optional(),
   birth_date: optionalDate,
   email: z.string().trim().email("errEmail").max(120).optional().nullable(),
   address: z.string().trim().max(200).optional().nullable(),

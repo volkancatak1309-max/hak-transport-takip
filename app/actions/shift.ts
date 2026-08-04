@@ -378,7 +378,7 @@ export async function startShiftForWorkerAction(input: {
   // Hedef şoför hâlâ kadroda mı?
   const { data: target } = await supabaseAdmin
     .from("workers")
-    .select("id, is_active, is_admin")
+    .select("id, is_active, is_admin, counts_as_driver")
     .eq("id", input.workerId)
     .maybeSingle();
   if (!target || target.is_active !== true) {
@@ -389,7 +389,13 @@ export async function startShiftForWorkerAction(input: {
   // açılırsa Analiz, AZG ve tüm raporlara GERÇEK vardiya gibi girer ve şoför
   // metriklerini kalıcı olarak kirletir (canlıda iki demo satır tam olarak
   // bunu yapmıştı). Şefler is_admin=false olduğu için bu kapıya TAKILMAZ.
-  if (target.is_admin === true) {
+  //
+  // MUAFİYET (migration 041): counts_as_driver=true olan yönetici roster'a
+  // GİRER (lib/driver-scope.ts onu elemiyor) ve Günün Panosu'nda "Vardiya
+  // Başlat" düğmesiyle görünür. Kapı buradaki ham is_admin kontrolüyle kalsaydı
+  // düğme sunucuda "not_a_driver" ile reddedilirdi: listede duran ama
+  // çalışmayan bir eylem. Koşul kapsamla AYNI cümleyi kurar — ayrışamaz.
+  if (target.is_admin === true && target.counts_as_driver !== true) {
     return { ok: false, error: "not_a_driver" };
   }
 

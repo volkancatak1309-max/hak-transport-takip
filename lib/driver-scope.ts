@@ -32,6 +32,22 @@ import { getTestScope } from "@/lib/test-data";
  * büro/depo personeli) burası tek dokunulacak yerdir: aşağıdaki sorguya bir
  * koşul eklenir, 20 çağrı noktasının hiçbiri değişmez. Soyutlamanın amacı bu.
  *
+ * ── ARAÇ KULLANAN YÖNETİCİ — counts_as_driver (04.08.2026) ─────────────────
+ * O gün geldi, ama BEKLENEN yönde değil: eksik olan "yönetici olmayan büro
+ * personeli" değil, DİREKSİYONA GEÇEN YÖNETİCİ oldu. Küçük bir kurulumda patron
+ * ilk (bazen tek) şoförün kendisi; hesabından açtığı gerçek vardiyalar hiçbir
+ * yüzeyde görünmüyor, pano "bugün kimse çalışmadı" diyor.
+ *
+ * Yukarıdaki paragrafta tarif edilen şey aynen yapıldı: sorguya TEK bir koşul
+ * eklendi (migration 041), 20 çağrı noktasının hiçbiri değişmedi.
+ *
+ * `role` kararıyla çelişmiyor: counts_as_driver bir ROL DEĞİL, tek bir kayda
+ * verilen MUAFİYET işaretidir. is_admin'i ikame etmez — o kayıt hâlâ tam
+ * yetkili yöneticidir; yalnız ŞOFÖR METRİKLERİNDEN düşürülmez.
+ *
+ * "Tüm yöneticileri say" gibi bir gevşetme YOK ve olmamalı: varsayılan false,
+ * istisna yalnız işaretlenen kayıtta. Bayrak açılmadıkça hiçbir sayı oynamaz.
+ *
  * ── Neden is_active/terminated_at BURAYA girmiyor ──────────────────────────
  * İşten ayrılan şoför HÂLÂ ŞOFÖRDÜR: geçmiş AZG/vardiya/yakıt raporlarında ve
  * aylık alarm arşivinde adı görünmeye devam eder (§ 132 BAO, 7 yıl — bkz.
@@ -100,7 +116,11 @@ export const getDriverScope = cache(async (): Promise<DriverScope> => {
   const { data, error } = await supabaseAdmin
     .from("workers")
     .select("id")
-    .eq("is_admin", true);
+    .eq("is_admin", true)
+    // MUAFİYET (migration 041): işaretli yönetici direksiyona geçiyor → ŞOFÖR
+    // SAYILIR, elenmez. Kolon `not null default false` olduğu için bu koşul
+    // işaretsiz her yöneticiyi bugünkü gibi yakalamaya devam eder.
+    .eq("counts_as_driver", false);
 
   if (error) return EMPTY;
 

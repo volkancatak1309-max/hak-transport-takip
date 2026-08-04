@@ -1122,6 +1122,8 @@
     "employeeNumber": "Personalnummer (optional)",
     "employeeNumberHint": "Leer = automatisch",
     "isAdmin": "Verwaltungsrechte vergeben",
+    "countsAsDriver": "Als Fahrer zählen",
+    "countsAsDriverHint": "Die Schichten dieser Verwaltungskraft fließen in die Fahrerkennzahlen und den AZG-Bericht ein.",
     "workerAdded": "Mitarbeiter hinzugefügt",
     "errName": "Name muss mindestens 2 Zeichen haben",
     "errPhone": "Ungültige Telefonnummer",

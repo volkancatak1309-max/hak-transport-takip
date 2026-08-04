@@ -1122,6 +1122,8 @@
     "employeeNumber": "Personel No (opsiyonel)",
     "employeeNumberHint": "Boş bırak = otomatik",
     "isAdmin": "Yönetici yetkisi ver",
+    "countsAsDriver": "Şoför olarak say",
+    "countsAsDriverHint": "Bu yöneticinin vardiyaları şoför metriklerine ve AZG raporuna dahil edilir.",
     "workerAdded": "Çalışan eklendi",
     "errName": "Ad en az 2 karakter olmalı",
     "errPhone": "Geçersiz telefon numarası",

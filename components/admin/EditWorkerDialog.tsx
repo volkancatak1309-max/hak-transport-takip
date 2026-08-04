@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -315,6 +316,24 @@ function EditWorkerForm({
           className="h-11"
         />
       </div>
+
+      {/* MUAFİYET (migration 041). Yetki (is_admin) bu formdan DEĞİŞMEZ — ayrı
+          bir karar — ama muafiyet işareti mevcut kayıtta açılıp kapanabilmeli:
+          "yönetici bugün direksiyona geçti" yeni kayıt değil, düzenleme. */}
+      <label className="flex items-start gap-2 pt-1 text-sm">
+        <Checkbox
+          name="counts_as_driver"
+          id="e_counts_as_driver"
+          defaultChecked={worker.counts_as_driver}
+          className="mt-0.5"
+        />
+        <span>
+          {t("countsAsDriver")}
+          <span className="mt-0.5 block text-[12px] leading-snug text-muted-foreground">
+            {t("countsAsDriverHint")}
+          </span>
+        </span>
+      </label>
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>

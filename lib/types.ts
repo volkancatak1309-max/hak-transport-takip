@@ -13,6 +13,13 @@ export type Worker = {
   telegram_linked_at: string | null;
   telegram_locale: string | null;
   is_admin: boolean;
+  /**
+   * ARAÇ KULLANAN YÖNETİCİ muafiyeti (migration 041). YALNIZ is_admin=true
+   * kayıtlarda anlamlıdır: true → lib/driver-scope.ts bu kaydı ELEMEZ,
+   * vardiyaları şoför metriklerine ve § 26 AZG raporuna girer. Varsayılan
+   * false = bugünkü davranış ("yönetici personeldir, şoför değildir").
+   */
+  counts_as_driver: boolean;
   is_active: boolean;
   /**
    * İşten çıkış tarihi (son çalışma günü, migration 032). null = çalışıyor.
@@ -50,7 +57,7 @@ export type WorkerPublic = Omit<Worker, "pin_hash">;
  * worker data. Server-only flows that need the hash (login) select it explicitly.
  */
 export const WORKER_PUBLIC_COLUMNS =
-  "id, name, phone, plate, employee_number, telegram_chat_id, telegram_username, telegram_linked_at, telegram_locale, is_admin, is_active, terminated_at, created_at, birth_date, email, address, social_security_no, employment_start, employment_type, license_no, license_expiry, emergency_contact_name, emergency_contact_relation, emergency_contact_phone";
+  "id, name, phone, plate, employee_number, telegram_chat_id, telegram_username, telegram_linked_at, telegram_locale, is_admin, counts_as_driver, is_active, terminated_at, created_at, birth_date, email, address, social_security_no, employment_start, employment_type, license_no, license_expiry, emergency_contact_name, emergency_contact_relation, emergency_contact_phone";
 
 /**
  * Shift-start confirmation (migration 020): 'pending' = auto-started, waiting

@@ -50,6 +50,7 @@ export async function createWorkerAction(formData: FormData): Promise<WorkerResu
     plate: formData.get("plate") || null,
     employee_number: formData.get("employee_number") || null,
     is_admin: formData.get("is_admin") === "on",
+    counts_as_driver: formData.get("counts_as_driver") === "on",
     // Personel dosyası (migration 025) — boş string null'a düşer (opsiyonel).
     birth_date: formData.get("birth_date") || null,
     email: formData.get("email") || null,
@@ -91,6 +92,8 @@ export async function createWorkerAction(formData: FormData): Promise<WorkerResu
     plate: d.plate ?? null,
     employee_number,
     is_admin: d.is_admin ?? false,
+    // Araç kullanan yönetici muafiyeti (migration 041) — varsayılan false.
+    counts_as_driver: d.counts_as_driver ?? false,
     is_active: true,
     // Admin-set PIN is temporary — force the driver to set their own at /pin.
     must_change_pin: true,
@@ -201,6 +204,7 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
     name: formData.get("name"),
     phone: formData.get("phone"),
     employee_number: formData.get("employee_number") || null,
+    counts_as_driver: formData.get("counts_as_driver") === "on",
     birth_date: formData.get("birth_date") || null,
     email: formData.get("email") || null,
     address: formData.get("address") || null,
@@ -230,11 +234,11 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
   if (dupe) return { ok: false, error: "Bu telefon zaten kayıtlı" };
 
   // Mevcut satırı çek → SADECE DEĞİŞEN alanı yaz (mevcut doğru veriyi ezme).
-  // plate/pin_hash/is_active/must_change_pin bu diff'e HİÇ girmez.
+  // plate/pin_hash/is_active/must_change_pin/is_admin bu diff'e HİÇ girmez.
   const { data: cur } = await supabaseAdmin
     .from("workers")
     .select(
-      "name, phone, employee_number, birth_date, email, address, social_security_no, employment_start, employment_type, license_no, license_expiry, emergency_contact_name, emergency_contact_relation, emergency_contact_phone"
+      "name, phone, employee_number, counts_as_driver, birth_date, email, address, social_security_no, employment_start, employment_type, license_no, license_expiry, emergency_contact_name, emergency_contact_relation, emergency_contact_phone"
     )
     .eq("id", id)
     .maybeSingle();
@@ -244,6 +248,9 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
     name: d.name,
     phone,
     employee_number: d.employee_number ?? null,
+    // Muafiyet işareti (migration 041): kutu işaretsizse FALSE yazılır — yani
+    // form onu geri de alabilir. Diff mantığı değişmediyse hiç UPDATE etmez.
+    counts_as_driver: d.counts_as_driver ?? false,
     birth_date: d.birth_date ?? null,
     email: d.email ?? null,
     address: d.address ?? null,

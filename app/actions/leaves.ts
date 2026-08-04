@@ -100,11 +100,19 @@ export async function submitLeaveAction(
   // Hedef personel geçerli mi (yönetici hesabına / var olmayan kişiye izin yok).
   const { data: target } = await supabaseAdmin
     .from("workers")
-    .select("id, is_admin, is_active, terminated_at")
+    .select("id, is_admin, counts_as_driver, is_active, terminated_at")
     .eq("id", data.worker_id)
     .maybeSingle();
   if (!target) return { ok: false, error: "no_worker" };
-  if (target.is_admin === true) return { ok: false, error: "admin_target" };
+  // MUAFİYET (migration 041): counts_as_driver=true olan yönetici İzin
+  // Takvimi'nde ZATEN satır olarak duruyor — sayfa kadroyu onlyDrivers ile
+  // kuruyor ve kapsam onu elemiyor. Kapı buradaki ham is_admin kontrolüyle
+  // kalsaydı takvimde görünen ama izin girilemeyen bir satır olurdu: aynı kişi
+  // şoför sayılıp izni girilemezdi. Koşul kapsamla ve shift.ts'teki kardeş
+  // kapıyla AYNI cümleyi kurar — üçü birden ayrışamaz.
+  if (target.is_admin === true && target.counts_as_driver !== true) {
+    return { ok: false, error: "admin_target" };
+  }
   // AYRILAN personel salt okunur: yeni izin girilemez, mevcut düzenlenemez.
   // Takvimde UI yolu zaten yok; bu sunucu kapısı boşluğu kapatır (fail-closed).
   // terminated_at yoksa (migration 032 gelmeden) alan undefined → kapı sessiz açık.

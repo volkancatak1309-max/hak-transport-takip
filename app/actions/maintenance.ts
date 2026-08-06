@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getTranslations } from "next-intl/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope } from "@/lib/test-data";
-import { requireAdmin } from "@/lib/session";
+import { requireAdmin, requireWorker } from "@/lib/session";
 import { createMaintenanceSchema } from "@/lib/validation";
 import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storage";
 import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
@@ -131,11 +131,29 @@ export async function getDueMaintenance(): Promise<VehicleMaintenance[]> {
  * Called after a fuel entry. If this entry crosses the (next_service_km - 1000)
  * threshold for its vehicle, nudge admins once. No cron, no extra flag —
  * "crossing" is detected by comparing against the previous fuel odometer.
+ *
+ * KAPI: requireWorker() — requireAdmin() DEĞİL, bilerek.
+ *
+ * Bu dosya "use server" ile işaretli, dolayısıyla buradaki HER export ağdan
+ * çağrılabilir bir uçtur: Next build'i bu fonksiyona da kendi action ID'sini
+ * verip hem /admin/yakit hem /panel/yakit route'una kaydediyor. Server action'lar
+ * sayfa ve layout guard'larından ÖNCE koştuğu için /panel/yakit'in requireWorker()
+ * kapısı bu ucu KORUMAZ — kapı fonksiyonun kendi başında olmak zorunda.
+ * Kapısızken oturumsuz bir çağrı tüm yöneticilere Telegram bildirimi düşürebiliyordu.
+ *
+ * Neden requireWorker: tek meşru çağıran createFuelEntry (app/actions/fuel.ts:133)
+ * ve o da requireWorker() ile korunuyor — yani bu yol bir ŞOFÖR akışıdır.
+ * requireAdmin() konsaydı şoför redirect("/panel") ile NEXT_REDIRECT'e çarpar,
+ * yakıt fişi satırı yazılmış olduğu hâlde createFuelEntry başarı dönmeden kopardı.
+ * requireWorker çağıranın gerçek yetki seviyesiyle birebir aynı; davranış korunur,
+ * yalnız kimliksiz çağrı kapanır.
  */
 export async function triggerMaintenanceReminder(
   plate: string,
   currentKm: number
 ): Promise<void> {
+  await requireWorker();
+
   const { data: m } = await supabaseAdmin
     .from("vehicle_maintenance")
     .select("next_service_km")

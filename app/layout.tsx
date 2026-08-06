@@ -56,6 +56,10 @@ export default async function RootLayout({
     <html
       lang={locale}
       suppressHydrationWarning
+      // MÜŞTERİ KİMLİK KANCASI (07.08.2026) — CSS'in tenant'a göre token
+      // ezebilmesi için. HAK61'de değer "hak61"dir ve globals.css'te o koda ait
+      // hiçbir kural YOKTUR, yani öznitelik eklenmesi görünümü değiştirmez.
+      data-tenant={BRAND.tenant}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-screen bg-background text-foreground">

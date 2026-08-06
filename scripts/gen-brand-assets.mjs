@@ -13,6 +13,19 @@
  * Üretilenler: logo.png (normalize), splash.png, icon-192/512, favicon-32x32,
  * favicon.ico, apple-touch-icon.
  *
+ * ── İKİ KAYNAK (07.08.2026) ────────────────────────────────────────────────
+ * Aynı klasörde `icon-source.png` VARSA ikon türevleri ONDAN üretilir; logo.png
+ * ve splash.png yine `logo-source.png`den gelir.
+ *
+ * Neden: marka logosu çoğu zaman GENİŞ bir lockup'tır (işaret + yazı). Kare bir
+ * ikona `fit: contain` ile oturtulduğunda yazı okunamayacak kadar küçülür ve
+ * 192 px'lik PWA ikonunda gri bir şerit görünür. Ayrı bir kare "işaret" kaynağı
+ * bu sorunu kaynağında çözer.
+ *
+ * `icon-source.png` YOKSA davranış BİREBİR eskisidir — ikonlar da logodan
+ * türetilir. HAK61 ve Sendigo klasörlerinde böyle bir dosya yok, dolayısıyla
+ * o iki müşterinin görselleri bu değişiklikten etkilenmez.
+ *
  * Kullanım:
  *   node scripts/gen-brand-assets.mjs sendigo
  *   node scripts/gen-brand-assets.mjs sendigo --bg "#0a0d16"
@@ -67,20 +80,42 @@ function findSource() {
   return null;
 }
 
+/**
+ * İKON kaynağı — İSTEĞE BAĞLI ayrı kare işaret (`icon-source.png`).
+ *
+ * Bulunamazsa null döner ve ikonlar logo kaynağından üretilir (eski davranış).
+ * findSource()'taki büyük/küçük harf toleransının aynısı: Windows'ta konan
+ * "Icon-Source.png" Linux'ta bulunamamazlık etmesin.
+ */
+function findIconSource() {
+  const files = readdirSync(DIR);
+  const hit = files.find((f) => f.toLowerCase() === "icon-source.png");
+  return hit ? join(DIR, hit) : null;
+}
+
 let SOURCE = null;
 const SOURCE_BUFFER = () => SOURCE;
+
+/** Ayrı ikon kaynağının buffer'ı; yoksa null kalır ve SOURCE'a düşülür. */
+let ICON_SOURCE = null;
 
 const SRC = findSource();
 if (!SRC) {
   console.error(`✗ public/brands/${tenant}/logo.png bulunamadı.`);
   process.exit(1);
 }
+const ICON_SRC = findIconSource();
 
-/** Şeffaf logoyu markalı kare zemine, %18 boşlukla oturtur. */
+/**
+ * Şeffaf işareti markalı kare zemine, %18 boşlukla oturtur.
+ *
+ * Kaynak: varsa ayrı ikon işareti, yoksa logo. Boşluk oranı İKİSİNDE DE aynı —
+ * ayrı kaynak "işareti büyüt" demek değil, "yazıyı ikondan çıkar" demek.
+ */
 async function icon(size, out) {
   const pad = Math.round(size * 0.18);
   const inner = size - pad * 2;
-  const logo = await sharp(SOURCE_BUFFER())
+  const logo = await sharp(ICON_SOURCE ?? SOURCE_BUFFER())
     .resize({ width: inner, height: inner, fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png()
     .toBuffer();
@@ -95,8 +130,21 @@ async function main() {
   await mkdir(DIR, { recursive: true });
   const meta = await sharp(SRC).metadata();
   SOURCE = await sharp(SRC).png().toBuffer();
-  console.log(`Kaynak: ${SRC.replace(process.cwd(), ".")} (${meta.width}×${meta.height})`);
-  console.log(`Oran   : ${(meta.width / meta.height).toFixed(4)}  → NEXT_PUBLIC_BRAND_LOGO_RATIO`);
+  console.log(`Logo kaynağı: ${SRC.replace(process.cwd(), ".")} (${meta.width}×${meta.height})`);
+  console.log(`Oran        : ${(meta.width / meta.height).toFixed(4)}  → NEXT_PUBLIC_BRAND_LOGO_RATIO`);
+
+  // Ayrı ikon kaynağı da SOURCE gibi ÖNCE belleğe alınır: çıktı adlarıyla
+  // çakışmasa bile aynı okuma-altından-yazma tuzağına kapı bırakılmaz.
+  if (ICON_SRC) {
+    const im = await sharp(ICON_SRC).metadata();
+    ICON_SOURCE = await sharp(ICON_SRC).png().toBuffer();
+    console.log(`İkon kaynağı: ${ICON_SRC.replace(process.cwd(), ".")} (${im.width}×${im.height})`);
+    if (im.width !== im.height) {
+      console.log(`  ⚠️ İkon kaynağı KARE DEĞİL (${im.width}×${im.height}) — kare zemine oturtulurken boşluk kalır.`);
+    }
+  } else {
+    console.log("İkon kaynağı: (yok — ikonlar logodan türetilecek, eski davranış)");
+  }
 
   // logo.png — küçük harfli kanonik ad.
   //

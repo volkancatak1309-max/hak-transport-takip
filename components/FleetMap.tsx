@@ -46,9 +46,13 @@ function makeVehicleIcon(
   fleet: VehicleFleet,
   stale: boolean
 ): L.DivIcon {
-  const bordo = fleet === "bordo";
-  const bg = bordo ? "var(--accent-claret)" : "var(--accent-sky)";
-  const fg = bordo ? "#fff" : "#0c1626";
+  // FİLO KİMLİK TOKEN'I — accent DEĞİL (07.08.2026). Burası FLEET_STYLE'ı
+  // atlayan İKİNCİ kaynaktı: renkler `var(--accent-*)` ve `#0c1626` olarak
+  // sabit basılıyordu, dolayısıyla müşteriye göre ezilemiyordu. Artık
+  // globals.css'teki --fleet-* ailesinden okunur; HAK61'de hesaplanan değer
+  // birebir eskisidir (bordo→claret+beyaz, mavi→sky+#0c1626).
+  const bg = `var(--fleet-${fleet})`;
+  const fg = `var(--fleet-${fleet}-fg)`;
   return L.divIcon({
     className: `hak-veh-wrap veh-${fleet}${stale ? " is-stale" : ""}`,
     html:

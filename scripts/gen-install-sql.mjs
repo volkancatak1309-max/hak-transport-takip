@@ -1,10 +1,19 @@
 #!/usr/bin/env node
 /**
- * db/install/sendigo-full.sql üreticisi.
+ * db/install/<musteri>-full.sql üreticisi.
  *
  * 001→043 migration'larını DOĞRU SIRAYLA tek dosyada birleştirir. Yapılan her
  * dönüşüm burada AÇIKÇA listelidir ve çalıştırıldığında rapor edilir — üretilen
  * dosya elle düzenlenmez, bu betik yeniden çalıştırılır.
+ *
+ * Kullanım:
+ *   node scripts/gen-install-sql.mjs            → db/install/sendigo-full.sql
+ *   node scripts/gen-install-sql.mjs galzura    → db/install/galzura-full.sql
+ *
+ * MÜŞTERİ ADI YALNIZ BAŞLIĞA ve dosya adına girer (07.08.2026). Şema müşteriden
+ * bağımsızdır: üretilen SQL'in gövdesi her müşteride BAYT BAYT aynıdır, çünkü
+ * kurulum dosyası şemayı kurar, veriyi değil. Üçüncü müşteri için ikinci bir
+ * üreteç yazmak iki kaynağın zamanla ayrışması demekti.
  */
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -14,7 +23,14 @@ import { join } from "node:path";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = join(ROOT, "db", "migrations");
 const OUT_DIR = join(ROOT, "db", "install");
-const OUT = join(OUT_DIR, "sendigo-full.sql");
+
+/** Müşteri kodu — yalnız dosya adı ve başlık metni için. Varsayılan: sendigo. */
+const TENANT = (process.argv[2] ?? "sendigo").trim().toLowerCase();
+if (!/^[a-z0-9-]+$/.test(TENANT)) {
+  console.error(`Geçersiz müşteri kodu: "${TENANT}" (yalnız a-z, 0-9, tire)`);
+  process.exit(1);
+}
+const OUT = join(OUT_DIR, `${TENANT}-full.sql`);
 
 const changes = [];
 
@@ -167,8 +183,8 @@ function transform(file, sql) {
 
 // ─── Birleştir ──────────────────────────────────────────────────────────────
 const HEADER = `-- ═══════════════════════════════════════════════════════════════════════════
---  SENDIGO — TEK PARÇA KURULUM SQL'İ
---  hak-transport-takip · şema 001 → 043 · üretim tarihi: 04.08.2026
+--  ${TENANT.toUpperCase()} — TEK PARÇA KURULUM SQL'İ
+--  hak-transport-takip · şema 001 → 043 · üreten: scripts/gen-install-sql.mjs
 -- ═══════════════════════════════════════════════════════════════════════════
 --
 --  NE İŞE YARAR

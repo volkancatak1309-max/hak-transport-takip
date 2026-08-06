@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════
---  SENDIGO — TEK PARÇA KURULUM SQL'İ
+--  GALZURA — TEK PARÇA KURULUM SQL'İ
 --  hak-transport-takip · şema 001 → 043 · üreten: scripts/gen-install-sql.mjs
 -- ═══════════════════════════════════════════════════════════════════════════
 --

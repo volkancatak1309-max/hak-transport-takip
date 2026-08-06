@@ -82,19 +82,28 @@ export type FleetStyle = {
 
 /** Fleet identity colors (migration 023): bordo filo = claret, mavi filo = sky.
  *  Single source of truth — the map legend, list badges and panel chips all
- *  derive from here; never inline the accent vars for fleet identity. */
+ *  derive from here; never inline the accent vars for fleet identity.
+ *
+ *  ⚠️ KENDİ TOKEN AİLESİ, accent DEĞİL (07.08.2026). Bu değerler eskiden
+ *  `accent-claret` / `accent-sky` idi. Üçüncü müşteride (galzura-demo) tek filo
+ *  var ve rengi Galzura yeşili; `--accent-sky`ı ezmek filo çipiyle BİRLİKTE
+ *  "sevkiyatta" durum çipini, `--status-active`i ve `--chart-4`ü de yeşile
+ *  çevirirdi — filo kimliği ile operasyonel durum aynı token'ı paylaşamaz.
+ *  `--fleet-*` app/globals.css'te accent'lerin takma adı olarak tanımlıdır:
+ *  HAK61 ve Sendigo'da hesaplanan renk BİREBİR eskisidir, müşteri kodu olan
+ *  kurulumda CSS tarafında ezilir. Koyu tema kendiliğinden izler. */
 export const FLEET_STYLE: Record<VehicleFleet, FleetStyle> = {
   bordo: {
-    chip: "bg-accent-claret/15 text-accent-claret-text",
-    text: "text-accent-claret-text",
-    dot: "bg-accent-claret",
+    chip: "bg-fleet-bordo/15 text-fleet-bordo-text",
+    text: "text-fleet-bordo-text",
+    dot: "bg-fleet-bordo",
   },
   mavi: {
-    // Saf --accent-sky metin olarak 10-12px'te AA'yı geçmiyor (açıkta 3.6:1);
+    // Saf dolgu tonu metin olarak 10-12px'te AA'yı geçmiyor (açıkta 3.6:1);
     // metin rolü için okunur türev token kullanılır — bordo'daki desenin aynısı.
-    chip: "bg-accent-sky/15 text-accent-sky-text",
-    text: "text-accent-sky-text",
-    dot: "bg-accent-sky",
+    chip: "bg-fleet-mavi/15 text-fleet-mavi-text",
+    text: "text-fleet-mavi-text",
+    dot: "bg-fleet-mavi",
   },
 };
 

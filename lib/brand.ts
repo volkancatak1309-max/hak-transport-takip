@@ -122,9 +122,48 @@ const SENDIGO: BrandDescriptor = {
   },
 };
 
+/**
+ * Galzura Fleet — SATIŞ DEMOSU ortamı (07.08.2026), gerçek bir müşteri değil.
+ *
+ * Künyeye alınmasının tek sebebi GÖRSEL ÖLÇÜLERDİR. Yedek künye
+ * (`fallbackDescriptor`) splash'i 920×920 varsayar; gerçek lockup 920×569 ve
+ * `next/image` yanlış oranla yer ayırdığı için açılış ekranında dikey boşluk
+ * kalıyordu. Ölçüler `npm run brand:assets -- galzura-demo` çıktısından alındı:
+ *   logo-source 1600×989 → oran 1.6178 · splash 920×569
+ *
+ * İkonlar ayrı bir kare işaretten (`icon-source.png`) üretilir — geniş lockup
+ * 192 px'lik ikonda okunmuyordu (bkz. scripts/gen-brand-assets.mjs).
+ *
+ * Metin alanları env ile zaten eziliyor (docs/GALZURA-KURULUM.md §3); buradaki
+ * değerler env unutulursa devreye giren makul karşılıklardır.
+ */
+const GALZURA_DEMO: BrandDescriptor = {
+  name: "Galzura Fleet",
+  legalName: "Galzura Fleet",
+  city: "Wien",
+  appTitle: "Galzura Fleet",
+  description: "Fuhrpark- und Schichtverfolgung",
+  shortName: "Galzura",
+  logoRatio: 1600 / 989,
+  themeColor: HAK61.themeColor,
+  backgroundColor: HAK61.backgroundColor,
+  assets: {
+    logo: "/brands/galzura-demo/logo.png",
+    splash: "/brands/galzura-demo/splash.png",
+    splashWidth: 920,
+    splashHeight: 569,
+    favicon: "/brands/galzura-demo/favicon.ico",
+    favicon32: "/brands/galzura-demo/favicon-32x32.png",
+    icon192: "/brands/galzura-demo/icon-192.png",
+    icon512: "/brands/galzura-demo/icon-512.png",
+    appleTouch: "/brands/galzura-demo/apple-touch-icon.png",
+  },
+};
+
 const REGISTRY: Record<string, BrandDescriptor> = {
   hak61: HAK61,
   sendigo: SENDIGO,
+  "galzura-demo": GALZURA_DEMO,
 };
 
 /**

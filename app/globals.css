@@ -41,6 +41,13 @@ body {
   --color-accent-claret-text: var(--accent-claret-text);
   --color-accent-sky: var(--accent-sky);
   --color-accent-sky-text: var(--accent-sky-text);
+  /* FİLO KİMLİK TONLARI (07.08.2026) — bkz. :root'taki tanım. Ayrı bir token
+     ailesi olmalarının tek sebebi müşteriye göre ezilebilmeleri; HAK61'de
+     accent-claret/accent-sky'ın takma adıdırlar, değer birebir aynıdır. */
+  --color-fleet-bordo: var(--fleet-bordo);
+  --color-fleet-bordo-text: var(--fleet-bordo-text);
+  --color-fleet-mavi: var(--fleet-mavi);
+  --color-fleet-mavi-text: var(--fleet-mavi-text);
   --color-accent-gold: var(--accent-gold);
   --color-accent-gold-text: var(--accent-gold-text);
   --color-accent-green: var(--accent-green);
@@ -185,6 +192,27 @@ body {
   --status-active: var(--accent-sky);
   --status-break: var(--accent-claret);
   --status-idle: var(--accent-gold);
+
+  /* ── FİLO KİMLİĞİ (07.08.2026, çok-müşteri) ──────────────────────────────
+     lib/vehicle-ui.ts'teki FLEET_STYLE bugüne dek accent-claret/accent-sky'ı
+     DOĞRUDAN kullanıyordu. Üçüncü müşteride (galzura-demo) tek filo var ve rengi
+     Galzura yeşili; ama --accent-sky'ı ezmek filo çipiyle birlikte "sevkiyatta"
+     durum çipini, --status-active'i ve --chart-4'ü de yeşile çevirirdi. Bu yüzden
+     filo kimliği KENDİ token ailesine alındı.
+
+     HAK61/Sendigo'da bunlar accent'lerin TAKMA ADIdır — hesaplanan değer birebir
+     eskisi, tek bir piksel değişmez. Koyu tema için ayrıca tanım GEREKMEZ:
+     var() referansı kullanım anında çözülür, .dark bloğu --accent-* değerlerini
+     zaten yeniden tanımlar ve bu takma adlar onu kendiliğinden izler. */
+  --fleet-bordo: var(--accent-claret);
+  --fleet-bordo-text: var(--accent-claret-text);
+  --fleet-mavi: var(--accent-sky);
+  --fleet-mavi-text: var(--accent-sky-text);
+  /* Harita pilinin ÜSTÜNDEKİ metin (components/FleetMap.tsx). Bugünkü sabitlerin
+     birebir kopyası: bordo dolgu yeterince koyu → beyaz (11.57:1); mavi dolgu
+     açık → koyu metin (beyaz mavide ~3.2:1, 11px için AA değil). */
+  --fleet-bordo-fg: #fff;
+  --fleet-mavi-fg: #0c1626;
 
   /* Semantik olay şiddeti (DESIGN-SYSTEM §2.4) — kritik, bordodan ayrışır.
      Açık tema değerleri; .dark bloğu koyu zemine göre remap eder. */
@@ -359,6 +387,35 @@ body {
   --sidebar-accent-foreground: var(--accent-coral);
   --sidebar-border: rgba(255, 255, 255, 0.08);
   --sidebar-ring: var(--accent-coral);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MÜŞTERİYE ÖZEL TOKEN EZME — galzura-demo (07.08.2026)
+   ═══════════════════════════════════════════════════════════════════════════
+   Tek filo var ("Filo") ve rengi Galzura yeşili #0F766E. `:root`/`.dark` ile
+   AYNI özgüllükte olduğu için bu blok onlardan SONRA gelmek zorundadır.
+
+   DOLGU ≠ METİN. Ölçüldü (07.08.2026, "en kötü zemin" kuralı — çip metni kendi
+   %15 tinti ÜSTÜNDE, hem sayfa hem kart zemininde):
+     #0F766E metin olarak açık temada 3.93:1 → AA DEĞİL.
+     #115E59 (teal-800)                5.45:1 → ✅ açık tema metni
+     #14B8A6 (teal-500) koyu temada    7.07:1 → ✅ koyu tema metni
+     #0F766E dolgu olarak düz zeminde 4.80:1 (açık) / 3.69:1 (koyu) → nokta ve
+     şerit için yeterli (metin değil, eşik 3:1).
+   Yani ana ton dolguda kalır, metin rolü koyulaştırılmış türevi kullanır —
+   --accent-sky-text ve --accent-gold-text'teki desenin aynısı. */
+[data-tenant="galzura-demo"] {
+  --fleet-mavi: #0f766e;
+  --fleet-mavi-text: #115e59;
+  /* Harita pili: yeşil dolgu bordo kadar koyu, yani BEYAZ metin ister. Ölçüldü —
+     beyaz 5.47:1 ✅ · bugünkü koyu metin (#0c1626) yeşilin üstünde 3.31:1 ❌.
+     Bu satır olmasaydı Galzura'nın harita pili AA'nın altına düşerdi. */
+  --fleet-mavi-fg: #ffffff;
+}
+
+.dark[data-tenant="galzura-demo"],
+[data-tenant="galzura-demo"] .dark {
+  --fleet-mavi-text: #14b8a6;
 }
 
 @layer base {
@@ -650,11 +707,14 @@ body {
 .hak-veh-wrap {
   transition: opacity 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
+/* Odak halkası da FİLO kimliğidir → --fleet-* ailesinden okunur (07.08.2026).
+   HAK61'de değer birebir eskisi (claret / sky); müşteri ezmesi buraya da iner,
+   yani pil, çip ve halka üçü birden aynı renkte kalır. */
 .hak-veh-wrap.veh-bordo {
-  --veh-ring: var(--accent-claret);
+  --veh-ring: var(--fleet-bordo);
 }
 .hak-veh-wrap.veh-mavi {
-  --veh-ring: var(--accent-sky);
+  --veh-ring: var(--fleet-mavi);
 }
 /* Tazelik: bayat = kendi filosunun soluk tonu (gri DEĞİL). */
 .hak-veh-wrap.is-stale {

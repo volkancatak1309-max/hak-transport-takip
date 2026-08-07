@@ -490,7 +490,8 @@ export function extractIdle(msg: Record<string, unknown>): IdleReading | null {
  */
 export async function fetchDeviceMessages(
   deviceId: number,
-  sinceTs?: number
+  sinceTs?: number,
+  untilTs?: number
 ): Promise<{
   points: FlespiPoint[];
   events: FlespiEvent[];
@@ -502,6 +503,12 @@ export async function fetchDeviceMessages(
   // that `count` caps the result on the real device.
   const data: Record<string, unknown> = { reverse: false, count: MAX_PER_POLL };
   if (sinceTs && Number.isFinite(sinceTs)) data.from = sinceTs;
+  // ÜST SINIR — YALNIZ GEÇMİŞ DOLGUSU İÇİN (07.08.2026, lib/backfill.ts).
+  // Canlı senkron bu argümanı HİÇ vermez; verilmediğinde `data` nesnesi
+  // eskisiyle bayt bayt aynı kalır, dolayısıyla üretilen URL de aynıdır.
+  // Dolgu ise pencereyi kapatmak zorunda: `to` olmadan sayfalama son sayfada
+  // canlı akışa taşar ve nerede duracağını bilemezdi.
+  if (untilTs && Number.isFinite(untilTs)) data.to = untilTs;
 
   const url =
     `${FLESPI_BASE}/gw/devices/${deviceId}/messages` +

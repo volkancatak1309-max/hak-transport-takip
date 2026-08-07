@@ -272,6 +272,21 @@ export const VIN_BACKFILL_ENABLED = envBool(
   !IDENTITY_MASKED
 );
 
+/**
+ * GEÇMİŞ DOLGU UCU (/api/flespi/backfill) açık mı?
+ *
+ * `IDENTITY_MASKED` ile AYNI kaynaktan türer ve bu bilinçli: dolgu ucu, geçmişi
+ * geriye dönük üreten ve normalde bilinçli olarak kapalı tutulan üç korumayı
+ * (olay cooldown'u, rölanti imleci, vardiyanın bugün-kapsamı) atlayan bir
+ * araçtır. Böyle bir aracın GERÇEK bir müşteri kurulumunda bulunmasının hiçbir
+ * meşru sebebi yok — HAK61'de çalıştırılması geçmiş vardiyaları ve alarmları
+ * uydurulmuş kayıtlarla kirletirdi.
+ *
+ * Env ile AÇILAMAZ (kaçış kapısı yok): türetilmiş sabit. Kurulum kodundan başka
+ * hiçbir şey bu ucu HAK61/Sendigo'da canlandıramaz.
+ */
+export const DEMO_BACKFILL_ENABLED: boolean = IDENTITY_MASKED;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // VARDİYA OTOMATI (yalnız sunucu — lib/auto-shift.ts)
 // ─────────────────────────────────────────────────────────────────────────────

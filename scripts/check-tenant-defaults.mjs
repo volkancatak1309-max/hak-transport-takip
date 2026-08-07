@@ -71,6 +71,8 @@ const EXPECTED = {
   // yüklemede false olmak ZORUNDA.
   "tenant.IDENTITY_MASKED": false,
   "tenant.VIN_BACKFILL_ENABLED": true,
+  // Dolgu ucu: HAK61/Sendigo'da KAPALI olmak zorunda.
+  "tenant.DEMO_BACKFILL_ENABLED": false,
   // Şoför vardiyayı hangi araçla açar. 03.08.2026 öncesi böyle bir ayar yoktu:
   // başlat butonu ve araç seçicisi "atanmış araç VAR ve aktif" bloğunun içinde
   // duruyordu (PanelClient.tsx). 'assigned' o davranışın birebir kendisidir —
@@ -184,6 +186,7 @@ const out = {
   "tenant.DRIVER_PANEL_ENABLED": tenant.DRIVER_PANEL_ENABLED,
   "tenant.IDENTITY_MASKED": tenant.IDENTITY_MASKED,
   "tenant.VIN_BACKFILL_ENABLED": tenant.VIN_BACKFILL_ENABLED,
+  "tenant.DEMO_BACKFILL_ENABLED": tenant.DEMO_BACKFILL_ENABLED,
   "tenant.DRIVER_VEHICLE_CHOICE": tenant.DRIVER_VEHICLE_CHOICE,
   "tenant.ADMIN_DRIVER_PANEL_LINK": tenant.ADMIN_DRIVER_PANEL_LINK,
   "tenant.PACKAGES_ENABLED": tenant.PACKAGES_ENABLED,

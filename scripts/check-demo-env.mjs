@@ -94,6 +94,7 @@ const EXPECTED = {
   // Bu ikisi env'e DEĞİL müşteri koduna bağlıdır; env unutulsa bile true olmalı.
   "tenant.IDENTITY_MASKED": true,
   "tenant.VIN_BACKFILL_ENABLED": false,
+  "tenant.DEMO_BACKFILL_ENABLED": true,
 
   // ⚠️ ASIL MESELE — bu üçü sessizce düşerse demo yanlış çalışır:
   "tenant.SHIFT_START_TRIGGER": "first_ignition",
@@ -165,6 +166,7 @@ process.stdout.write(JSON.stringify({
   "brand.favicon": brand.BRAND.assets.favicon,
   "tenant.IDENTITY_MASKED": tenant.IDENTITY_MASKED,
   "tenant.VIN_BACKFILL_ENABLED": tenant.VIN_BACKFILL_ENABLED,
+  "tenant.DEMO_BACKFILL_ENABLED": tenant.DEMO_BACKFILL_ENABLED,
   "tenant.SHIFT_START_TRIGGER": tenant.SHIFT_START_TRIGGER,
   "tenant.SHIFT_AUTO_END": tenant.SHIFT_AUTO_END,
   "tenant.SHIFT_AUTO_END_IDLE_MIN": tenant.SHIFT_AUTO_END_IDLE_MIN,

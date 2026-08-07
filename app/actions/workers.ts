@@ -13,6 +13,7 @@ import {
 } from "@/lib/validation";
 import { canonicalPhone, phoneVariants } from "@/lib/phone";
 import { clearLoginLock } from "@/lib/login-lock";
+import { bumpTokenVersion } from "@/lib/mobile-auth";
 import { logLoginUnlock } from "@/lib/login-unlock-log";
 import { logWorkerAdminChange } from "@/lib/worker-admin-log";
 
@@ -376,6 +377,12 @@ export async function toggleActiveAction(workerId: string): Promise<WorkerResult
 
   if (error) return { ok: false, error: "Güncelleme başarısız" };
 
+  // PASİFE ALINDIYSA mobil anahtarları da düşür. Tarayıcı tarafında karşılığı
+  // is_active kontrolüdür; mobilde token 30 gün yaşadığı için sayacı artırmak
+  // şart. Aktifleştirmede de artırıyoruz: eski bir token'ın hesap geri açılınca
+  // canlanması istenmez. Migration 044 yoksa sessiz no-op.
+  await bumpTokenVersion(workerId);
+
   revalidatePath("/admin/workers");
   // İzin Takvimi kadro listesini bu iki alandan kuruyor — çift satır hatasının
   // düzeldiği anında görünmesi için o sayfa da tazelenir.
@@ -429,6 +436,11 @@ export async function terminateWorkerAction(
     })
     .eq("id", workerId);
   if (error) return { ok: false, error: "Güncelleme başarısız" };
+
+  // İŞTEN ÇIKIŞ → telefondaki anahtar ANINDA ölmeli. Refresh token 30 gün
+  // yaşadığı için sayacı artırmadan ayrılan personel bir ay daha veri okurdu.
+  // Migration 044 yoksa sessiz no-op.
+  await bumpTokenVersion(workerId);
 
   revalidatePath("/admin");
   revalidatePath("/admin/workers");
@@ -514,6 +526,12 @@ export async function setWorkerPinAction(
     .eq("id", workerId);
 
   if (error) return { ok: false, error: "pinUpdateFailed" };
+
+  // PIN'i yönetici sıfırladı → eski PIN'le alınmış mobil token'lar ölmeli.
+  // Telefonu kaybolan şoför için asıl kurtarma yolu budur: patron PIN'i
+  // sıfırlar, kayıp cihazdaki anahtar aynı anda geçersizleşir.
+  // Migration 044 yoksa sessiz no-op.
+  await bumpTokenVersion(workerId);
 
   revalidatePath("/admin/workers");
   revalidatePath(`/admin/workers/${workerId}`);

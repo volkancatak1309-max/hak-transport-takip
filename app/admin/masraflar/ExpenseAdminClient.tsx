@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { EXPORT_ENABLED } from "@/lib/tenant";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -192,7 +193,7 @@ export function ExpenseAdminClient({ entries }: Props) {
           },
         ]}
         right={
-          <Button variant="outline" className="h-9" onClick={() => setCsvOpen(true)}>
+          <Button variant="outline" className="h-9" onClick={() => setCsvOpen(true)} hidden={!EXPORT_ENABLED} disabled={!EXPORT_ENABLED}>
             <FileSpreadsheet className="size-4" /> {t("payroll_export")}
           </Button>
         }

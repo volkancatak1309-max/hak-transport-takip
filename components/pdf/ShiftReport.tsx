@@ -11,6 +11,7 @@ import {
 } from "@react-pdf/renderer";
 import type { Style } from "@react-pdf/types";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
+import { Watermark } from "@/components/pdf/Watermark";
 import { BRAND_MARK } from "@/lib/report-de";
 import { PACKAGES_ENABLED } from "@/lib/tenant";
 
@@ -183,6 +184,7 @@ function ReportDoc(opts: PdfOptions) {
   return (
     <Document>
       <Page size="A4" orientation="landscape" style={styles.page} wrap>
+      <Watermark />
         <View style={styles.header} fixed>
           <View style={styles.headerLeft}>
             {opts.logoDataUrl ? (

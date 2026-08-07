@@ -72,6 +72,12 @@ const ENV = {
   // Demo'nun kurulum günü. Varsayılan 2026-06-01 olsaydı "tüm zamanlar"
   // aralığı iki ay boş geçmiş gösterirdi.
   FLEET_EPOCH: "2026-08-07T00:00:00.000Z",
+
+  // ── Güvenlik katmanı (045) — demoda AÇIK ────────────────────────────────
+  SECURITY_LAYER_ENABLED: "true",
+  SINGLE_SESSION: "true",
+  NEXT_PUBLIC_EXPORT_ENABLED: "false",
+  NEXT_PUBLIC_PDF_WATERMARK: "GALZURA DEMO",
 };
 
 /**
@@ -95,6 +101,10 @@ const EXPECTED = {
   "tenant.IDENTITY_MASKED": true,
   "tenant.VIN_BACKFILL_ENABLED": false,
   "tenant.DEMO_BACKFILL_ENABLED": true,
+  "tenant.SECURITY_LAYER_ENABLED": true,
+  "tenant.SINGLE_SESSION": true,
+  "tenant.EXPORT_ENABLED": false,
+  "tenant.PDF_WATERMARK": "GALZURA DEMO",
 
   // ⚠️ ASIL MESELE — bu üçü sessizce düşerse demo yanlış çalışır:
   "tenant.SHIFT_START_TRIGGER": "first_ignition",
@@ -167,6 +177,10 @@ process.stdout.write(JSON.stringify({
   "tenant.IDENTITY_MASKED": tenant.IDENTITY_MASKED,
   "tenant.VIN_BACKFILL_ENABLED": tenant.VIN_BACKFILL_ENABLED,
   "tenant.DEMO_BACKFILL_ENABLED": tenant.DEMO_BACKFILL_ENABLED,
+  "tenant.SECURITY_LAYER_ENABLED": tenant.SECURITY_LAYER_ENABLED,
+  "tenant.SINGLE_SESSION": tenant.SINGLE_SESSION,
+  "tenant.EXPORT_ENABLED": tenant.EXPORT_ENABLED,
+  "tenant.PDF_WATERMARK": tenant.PDF_WATERMARK,
   "tenant.SHIFT_START_TRIGGER": tenant.SHIFT_START_TRIGGER,
   "tenant.SHIFT_AUTO_END": tenant.SHIFT_AUTO_END,
   "tenant.SHIFT_AUTO_END_IDLE_MIN": tenant.SHIFT_AUTO_END_IDLE_MIN,

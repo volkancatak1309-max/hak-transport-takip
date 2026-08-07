@@ -73,6 +73,16 @@ const EXPECTED = {
   "tenant.VIN_BACKFILL_ENABLED": true,
   // Dolgu ucu: HAK61/Sendigo'da KAPALI olmak zorunda.
   "tenant.DEMO_BACKFILL_ENABLED": false,
+  // Güvenlik katmanı — 07.08.2026 (migration 045). Öncesinde böyle bir kavram
+  // YOKTU: başarılı giriş kaydedilmiyordu, eylem izi yoktu, oturum sürümü
+  // denetlenmiyordu. Üçü de KAPALI olmak zorunda; biri kayarsa HAK61'de her
+  // istekte yeni sorgular başlar ve 045 çalıştırılmadığı için hata üretir.
+  "tenant.SECURITY_LAYER_ENABLED": false,
+  "tenant.SINGLE_SESSION": false,
+  // Dışa aktarma bugün AÇIK (4 CSV yüzeyi çalışıyor) — kaymamalı.
+  "tenant.EXPORT_ENABLED": true,
+  // Filigran YOKTU; boş dize "filigran basma" demek.
+  "tenant.PDF_WATERMARK": "",
   // Şoför vardiyayı hangi araçla açar. 03.08.2026 öncesi böyle bir ayar yoktu:
   // başlat butonu ve araç seçicisi "atanmış araç VAR ve aktif" bloğunun içinde
   // duruyordu (PanelClient.tsx). 'assigned' o davranışın birebir kendisidir —
@@ -187,6 +197,10 @@ const out = {
   "tenant.IDENTITY_MASKED": tenant.IDENTITY_MASKED,
   "tenant.VIN_BACKFILL_ENABLED": tenant.VIN_BACKFILL_ENABLED,
   "tenant.DEMO_BACKFILL_ENABLED": tenant.DEMO_BACKFILL_ENABLED,
+  "tenant.SECURITY_LAYER_ENABLED": tenant.SECURITY_LAYER_ENABLED,
+  "tenant.SINGLE_SESSION": tenant.SINGLE_SESSION,
+  "tenant.EXPORT_ENABLED": tenant.EXPORT_ENABLED,
+  "tenant.PDF_WATERMARK": tenant.PDF_WATERMARK,
   "tenant.DRIVER_VEHICLE_CHOICE": tenant.DRIVER_VEHICLE_CHOICE,
   "tenant.ADMIN_DRIVER_PANEL_LINK": tenant.ADMIN_DRIVER_PANEL_LINK,
   "tenant.PACKAGES_ENABLED": tenant.PACKAGES_ENABLED,

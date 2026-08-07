@@ -405,6 +405,14 @@ export type SessionData = {
   // Mirrors workers.must_change_pin at login time; gates the panel until the
   // driver sets a new PIN at /pin (migration 019).
   must_change_pin?: boolean;
+  /**
+   * Giriş anındaki workers.session_version (migration 045). Tek oturum kilidi
+   * ve "oturumları sonlandır" bunu kullanır: DB'deki sayaç artınca çerezdeki
+   * değer eskir ve oturum reddedilir. Katman kapalıyken hiç yazılmaz/okunmaz.
+   */
+  session_version?: number;
+  /** Açık login_sessions satırının id'si — çıkışta kapatmak için (045). */
+  login_session_id?: string;
 };
 
 export type GeofenceRuleKind = "forbidden" | "allowed_only";

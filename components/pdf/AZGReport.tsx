@@ -2,6 +2,7 @@
 
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
+import { Watermark } from "@/components/pdf/Watermark";
 import {
   COMPANY,
   COMPANY_UID_LINE,
@@ -123,6 +124,7 @@ function ReportDoc({ data }: { data: AZGData }) {
     <Document>
       {/* Cover */}
       <Page size="A4" style={styles.cover}>
+      <Watermark />
         <View style={styles.brandBox}>
           <Text style={styles.brandText}>{BRAND_MARK}</Text>
         </View>
@@ -149,6 +151,7 @@ function ReportDoc({ data }: { data: AZGData }) {
 
       {/* Summary + suspicious */}
       <Page size="A4" style={styles.page}>
+      <Watermark />
         <Text style={styles.h2}>Zusammenfassung je Mitarbeiter</Text>
         <View style={styles.table}>
           <View style={styles.thead} fixed>
@@ -240,6 +243,7 @@ function ReportDoc({ data }: { data: AZGData }) {
 
       {/* Detail */}
       <Page size="A4" style={styles.page}>
+      <Watermark />
         <Text style={styles.h2}>Detaillierte Verstöße</Text>
         <View style={styles.table}>
           <View style={styles.thead} fixed>

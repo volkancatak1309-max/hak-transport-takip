@@ -9,6 +9,9 @@ import {
   UNRESTRICTED,
   type FleetScope,
 } from "./fleet-scope";
+import { supabaseAdmin } from "./supabase";
+import { SECURITY_LAYER_ENABLED } from "./tenant";
+import { cache } from "react";
 
 const password = process.env.SESSION_PASSWORD;
 if (!password || password.length < 32) {
@@ -32,10 +35,30 @@ export async function getSession() {
   return getIronSession<SessionData>(cookieStore, sessionOptions);
 }
 
+/**
+ * OTURUM İPTAL DENETİMİ (migration 045) — tek oturum kilidi + uzaktan kesme.
+ *
+ * `SECURITY_LAYER_ENABLED` kapalıyken `isSessionRevoked` İLK SATIRDA `false`
+ * döner: ek sorgu yok, ek gecikme yok, davranış değişmez. HAK61 ve Sendigo bu
+ * dalın içine hiç girmez.
+ *
+ * İptal edilmişse çerez temizlenir ve giriş ekranına gönderilir — kullanıcı
+ * "başka cihazdan giriş yapıldı" durumunu oturumu ölmüş olarak görür.
+ */
+async function enforceSessionVersion(session: Awaited<ReturnType<typeof getSession>>) {
+  if (!SECURITY_LAYER_ENABLED || !session.worker_id) return;
+  const { isSessionRevoked } = await import("@/lib/security-log");
+  if (await isSessionRevoked(session.worker_id, session.session_version)) {
+    session.destroy();
+    redirect("/");
+  }
+}
+
 export async function requireWorker() {
   const session = await getSession();
   if (!session.worker_id) redirect("/");
   if (session.must_change_pin) redirect("/pin");
+  await enforceSessionVersion(session);
   return session;
 }
 
@@ -44,6 +67,35 @@ export async function requireAdmin() {
   if (!session.worker_id) redirect("/");
   if (session.must_change_pin) redirect("/pin");
   if (!session.is_admin) redirect("/panel");
+  await enforceSessionVersion(session);
+  return session;
+}
+
+/**
+ * PATRON KAPISI (migration 045) — YALNIZ /admin/guvenlik için.
+ *
+ * requireAdmin()'den farkı: `workers.is_owner` şartı. Mevcut 19 yönetici
+ * sayfası requireAdmin()'de KALDI ve bu fonksiyon oralara hiç girmiyor —
+ * yani bu kapı kimsenin yetkisini daraltmaz, yalnız yeni ekranı kısıtlar.
+ *
+ * Yetki ÇEREZDEN OKUNMAZ, her çağrıda DB'den gelir (getManagedFleet deseninin
+ * aynısı): oturum çerezi 30 gün yaşıyor, is_owner alındığında hemen etkili
+ * olmalı. DB hatası / migration öncesi (kolon yok) → FAIL-CLOSED, /admin'e.
+ */
+export async function requireOwner() {
+  const session = await getSession();
+  if (!session.worker_id) redirect("/");
+  if (session.must_change_pin) redirect("/pin");
+  if (!session.is_admin) redirect("/panel");
+  await enforceSessionVersion(session);
+
+  const { data, error } = await supabaseAdmin
+    .from("workers")
+    .select("is_owner")
+    .eq("id", session.worker_id)
+    .maybeSingle();
+  // Kolon yok (045 çalışmamış) ya da hata → patron DEĞİL. Hata = KAPALI.
+  if (error || data?.is_owner !== true) redirect("/admin");
   return session;
 }
 
@@ -149,3 +201,24 @@ export async function requirePinChange() {
   if (!session.must_change_pin) redirect(session.is_admin ? "/admin" : "/panel");
   return session;
 }
+
+/**
+ * Bu kişi patron mu? (migration 045) — istek başına TEK sorgu (React cache).
+ *
+ * Menüde /admin/guvenlik ögesini göstermek için kullanılır. Menü kozmetiktir:
+ * sayfanın kendisi requireOwner() ile korunur, yani bu değer yanlış olsa bile
+ * yetki aşılamaz. Kolon yoksa (045 öncesi) ya da hata varsa `false`.
+ */
+export const isOwnerCached = cache(async (workerId: string): Promise<boolean> => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("workers")
+      .select("is_owner")
+      .eq("id", workerId)
+      .maybeSingle();
+    if (error || !data) return false;
+    return data.is_owner === true;
+  } catch {
+    return false;
+  }
+});

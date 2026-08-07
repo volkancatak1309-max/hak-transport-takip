@@ -2,6 +2,7 @@
 
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
+import { Watermark } from "@/components/pdf/Watermark";
 import {
   COMPANY,
   COMPANY_UID_LINE,
@@ -65,6 +66,7 @@ function Doc({ data, title }: { data: CO2ReportData; title: string }) {
   return (
     <Document>
       <Page size="A4" style={styles.cover}>
+      <Watermark />
         <View style={styles.brandBox}>
           <Text style={styles.brandText}>{BRAND_MARK}</Text>
         </View>
@@ -100,6 +102,7 @@ function Doc({ data, title }: { data: CO2ReportData; title: string }) {
       </Page>
 
       <Page size="A4" style={styles.page}>
+      <Watermark />
         <Text style={styles.h2}>CO₂ je Fahrzeug</Text>
         <View style={styles.table}>
           <View style={styles.thead} fixed>
@@ -134,6 +137,7 @@ function Doc({ data, title }: { data: CO2ReportData; title: string }) {
       </Page>
 
       <Page size="A4" style={styles.page}>
+      <Watermark />
         <Text style={styles.h2}>Zusammenfassung & EU-Rahmen</Text>
         <View style={styles.legal}>
           <Text>

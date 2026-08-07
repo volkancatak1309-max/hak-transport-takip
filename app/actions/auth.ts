@@ -9,6 +9,7 @@ import { changePinSchema } from "@/lib/validation";
 import { DRIVER_PANEL_ENABLED } from "@/lib/tenant";
 import { verifyCredentials, clientIpFromHeaders } from "@/lib/auth-core";
 import { bumpTokenVersion } from "@/lib/mobile-auth";
+import { openLoginSession, closeLoginSession } from "@/lib/security-log";
 
 export type LoginState = {
   error?: "invalid" | "inactive" | "db" | "validation" | "locked";
@@ -52,6 +53,12 @@ export async function loginAction(
   }
   const worker = res.worker;
 
+  // GÜVENLİK İZİ (045) — oturum satırını AÇ, "yeni cihaz" / "çoklu oturum"
+  // işaretlerini hesapla, SINGLE_SESSION açıksa önceki oturumları düşür.
+  // Katman kapalıyken (HAK61/Sendigo varsayılanı) ilk satırda çıkar: ek sorgu
+  // yok. ASLA throw etmez — güvenlik izi yazılamadı diye giriş engellenemez.
+  const opened = await openLoginSession(worker.id);
+
   const session = await getSession();
   session.worker_id = worker.id;
   session.name = worker.name;
@@ -59,6 +66,8 @@ export async function loginAction(
   session.is_admin = worker.is_admin;
   session.plate = worker.plate;
   session.must_change_pin = !!worker.must_change_pin;
+  session.session_version = opened.sessionVersion;
+  session.login_session_id = opened.id ?? undefined;
   await session.save();
 
   // A temp PIN (admin create / reset) must be changed before anything else —
@@ -69,6 +78,9 @@ export async function loginAction(
 
 export async function logoutAction() {
   const session = await getSession();
+  // Açık oturum satırını kapat (045). Katman kapalıysa ya da id yoksa no-op;
+  // hata durumunda bile çıkış tamamlanır — iz yazımı çıkışı engelleyemez.
+  await closeLoginSession(session.login_session_id, "logout");
   session.destroy();
   redirect("/");
 }

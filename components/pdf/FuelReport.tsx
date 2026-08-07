@@ -2,6 +2,7 @@
 
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
+import { Watermark } from "@/components/pdf/Watermark";
 import {
   COMPANY,
   COMPANY_UID_LINE,
@@ -117,6 +118,7 @@ function Doc({
   return (
     <Document>
       <Page size="A4" orientation="landscape" style={styles.page} wrap>
+      <Watermark />
         <View style={styles.header} fixed>
           <View>
             <Text style={styles.company}>{COMPANY.name}</Text>

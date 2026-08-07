@@ -10,6 +10,8 @@ import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storag
 import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
 import { formatDate } from "@/lib/format";
 import type { ExpenseEntry, ExpenseEntryWithWorker } from "@/lib/types";
+import { EXPORT_ENABLED } from "@/lib/tenant";
+import { audit } from "@/lib/security-log";
 
 const BUCKET = "expense-receipts";
 const APP_URL =
@@ -230,7 +232,11 @@ function csvField(v: string): string {
 
 /** Payroll-style CSV of approved expenses for a month (admin). DATEV/BMD-style. */
 export async function generatePayrollExpenseCSV(month: string): Promise<PayrollCsvResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
+  // DIŞA AKTARMA KAPISI (045) — SUNUCUDA. Butonu gizlemek yetmez: action
+  // doğrudan çağrılabilir. Varsayılan açık, yani HAK61/Sendigo etkilenmez.
+  if (!EXPORT_ENABLED) return { ok: false, error: "export_disabled" };
+  await audit(session.worker_id ?? null, "export_csv", "expenses/payroll", { month });
   const m = /^(\d{4})-(\d{2})$/.exec(month);
   if (!m) return { ok: false, error: "bad_month" };
   const year = Number(m[1]);

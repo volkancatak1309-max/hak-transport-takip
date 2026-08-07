@@ -60,7 +60,8 @@
     "leaves": "Urlaub",
     "backToPanel": "Zurück zu meinem Panel",
     "driverPanel": "Fahrerpanel",
-    "fleetAdmin": "Flottenverwaltung"
+    "fleetAdmin": "Flottenverwaltung",
+    "security": "Sicherheit"
   },
   "izinler": {
     "title": "Urlaubskalender",

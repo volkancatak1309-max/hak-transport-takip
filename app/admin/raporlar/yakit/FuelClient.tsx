@@ -1,6 +1,7 @@
 "use client";
 
 import { useLocale, useTranslations } from "next-intl";
+import { EXPORT_ENABLED } from "@/lib/tenant";
 import { toast } from "sonner";
 import { Download, FileText, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -422,7 +423,7 @@ export function FuelClient({
             tkey="rep_fuel_table"
             actions={
               <>
-                <Button variant="outline" size="sm" onClick={exportCsv}>
+                <Button variant="outline" size="sm" onClick={exportCsv} hidden={!EXPORT_ENABLED} disabled={!EXPORT_ENABLED}>
                   <Download className="size-4" />
                   {t("export_csv")}
                 </Button>

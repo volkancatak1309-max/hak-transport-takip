@@ -60,7 +60,8 @@
     "leaves": "İzinler",
     "backToPanel": "Panelime dön",
     "driverPanel": "Şoför Paneli",
-    "fleetAdmin": "Filo Yönetimi"
+    "fleetAdmin": "Filo Yönetimi",
+    "security": "Güvenlik"
   },
   "izinler": {
     "title": "İzin Takvimi",

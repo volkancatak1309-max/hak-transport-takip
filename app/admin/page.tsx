@@ -1,4 +1,5 @@
-import { requireFleetView } from "@/lib/session";
+import { requireFleetView, isOwnerCached } from "@/lib/session";
+import { audit } from "@/lib/security-log";
 import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin, fetchAllRows, chunkIds } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
@@ -354,6 +355,14 @@ export default async function AdminPage({
   );
   const overLimitCount = activeShifts.filter((s) => s.overLimit).length;
 
+  // Patron menü ögesi (045). Menü kozmetiktir; /admin/guvenlik kendi
+  // requireOwner() kapısıyla korunur. Katman kapalıysa sorgu yine de tek ve
+  // önbellekli, kolon yoksa false döner.
+  const owner = session.worker_id ? await isOwnerCached(session.worker_id) : false;
+
+  // Sayfa görüntüleme izi (045) — katman kapalıyken no-op.
+  await audit(session.worker_id ?? null, "page_view", "/admin");
+
   return (
     <DashboardShell
       user={{
@@ -361,6 +370,7 @@ export default async function AdminPage({
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: !isChief,
+        isOwner: owner,
         managedFleet: fleet,
       }}
     >

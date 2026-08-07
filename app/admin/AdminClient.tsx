@@ -96,7 +96,7 @@ import {
   FILE_PREFIX_LOWER,
 } from "@/lib/report-de";
 import type { TimeEntryWithWorker, WorkerPublic } from "@/lib/types";
-import { PACKAGES_ENABLED } from "@/lib/tenant";
+import { PACKAGES_ENABLED, EXPORT_ENABLED } from "@/lib/tenant";
 
 // 22.07.2026: satır vurgusu 9 saatte değil YASAL TAVANDA kırmızıya döner
 // (§ 9 Abs. 1 = 12 sa; gece çalışması varsa § 14 Abs. 2 = 10 sa). 9 saat bir
@@ -558,7 +558,7 @@ export function AdminClient({
         action={
           readOnly ? null : (
           <div className="flex flex-wrap items-center gap-1.5">
-            <Button variant="outline" size="sm" onClick={exportCsv} disabled={!entries.length} title={t("exportExcel")}>
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={!entries.length || !EXPORT_ENABLED} hidden={!EXPORT_ENABLED} title={t("exportExcel")}>
               <FileSpreadsheet className="size-4" />
               <span className="hidden xl:inline">Excel</span>
             </Button>

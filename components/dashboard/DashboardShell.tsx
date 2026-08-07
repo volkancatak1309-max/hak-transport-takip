@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { setWatermarkUser } from "@/lib/pdf-watermark-user";
 import { usePathname } from "next/navigation";
 import { useRef, useState, useTransition, useEffect } from "react";
 import { useLocale, useTranslations } from "next-intl";
@@ -25,6 +26,7 @@ import {
   Globe,
   Search,
   type LucideIcon,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "@/components/ui-v2/CommandPalette";
@@ -46,6 +48,12 @@ export type HeaderUser = {
   name: string;
   phone: string;
   isAdmin: boolean;
+  /**
+   * Patron kademesi (migration 045). YALNIZ /admin/guvenlik menü ögesini
+   * gösterir; sayfanın kendisi requireOwner() ile ayrıca korunur — menüyü
+   * gizlemek kozmetiktir, yetkiyi kapı verir.
+   */
+  isOwner?: boolean;
   /**
    * Filo sefi ise yonettigi filo (migration 029); degilse null/undefined.
    * isAdmin ile BIRLIKTE kullanilmaz: sef isAdmin=false'tur.
@@ -95,6 +103,9 @@ export function DashboardShell({
   title?: string;
   children: React.ReactNode;
 }) {
+  // PDF filigranı istemcide üretiliyor ve React ağacının dışından çağrılıyor;
+  // adı burada bir kez yazıyoruz (bkz. lib/pdf-watermark-user.ts).
+  setWatermarkUser(user?.name ?? null);
   const t = useTranslations("nav");
   const tc = useTranslations("common");
   const pathname = usePathname();
@@ -153,6 +164,9 @@ export function DashboardShell({
           ? [{ href: "/admin/izinler", label: t("leaves"), icon: CalendarOff }]
           : []),
         { href: "/admin/telegram", label: t("telegram"), icon: Send },
+        ...(user.isOwner
+          ? [{ href: "/admin/guvenlik", label: t("security"), icon: ShieldCheck }]
+          : []),
       ]
     : [
         { href: "/panel", label: t("panel"), icon: LayoutDashboard },

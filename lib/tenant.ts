@@ -288,6 +288,58 @@ export const VIN_BACKFILL_ENABLED = envBool(
 export const DEMO_BACKFILL_ENABLED: boolean = IDENTITY_MASKED;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GÜVENLİK KATMANI (migration 045) — hepsi VARSAYILAN KAPALI
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ANA ŞALTER — giriş oturumu kaydı, eylem izi, oturum sürümü denetimi ve
+ * /admin/guvenlik ekranının tamamı buna bağlı.
+ *
+ * ⚠️ VARSAYILANI `false` ve bu bilinçli. Katman migration 045'i gerektiriyor;
+ * HAK61 ve Sendigo'da o migration çalıştırılmadığı sürece tablolar YOK. Bayrak
+ * kapalıyken kod hiçbir yeni sorgu atmaz — yani 045 çalıştırılmamış bir
+ * kurulumda "tablo yok" hatası bile üretilemez. Çift koruma: bayrak + eksik
+ * tabloya dayanıklı okuma.
+ *
+ * Env ile açılır (`SECURITY_LAYER_ENABLED=true`); yalnız sunucuda okunur.
+ */
+export const SECURITY_LAYER_ENABLED = envBool(
+  process.env.SECURITY_LAYER_ENABLED,
+  false
+);
+
+/**
+ * TEK OTURUM KİLİDİ — bir hesap aynı anda TEK cihazda açık kalabilir; ikinci
+ * giriş birincisini düşürür (workers.session_version artırılarak).
+ *
+ * Varsayılanı `false`: HAK61'de bir şoför hem telefondan hem depodaki
+ * tabletten girebiliyor ve bu bugünkü davranıştır. `true` yapmak onu kırardı.
+ * Yalnız SECURITY_LAYER_ENABLED açıkken anlamlıdır.
+ */
+export const SINGLE_SESSION = envBool(process.env.SINGLE_SESSION, false);
+
+/**
+ * DIŞA AKTARMA (CSV) AÇIK MI?
+ *
+ * Varsayılanı `true` — bugün dört ekranda CSV indirme var ve çalışıyor.
+ * Kapatıldığında buton gizlenir VE sunucu tarafındaki veri kaynağı da reddeder
+ * (yalnız butonu gizlemek, action doğrudan çağrılınca korumaz).
+ */
+export const EXPORT_ENABLED = envBool(
+  process.env.NEXT_PUBLIC_EXPORT_ENABLED,
+  true
+);
+
+/**
+ * PDF FİLİGRANI — boş dize = filigran YOK (HAK61/Sendigo'nun bugünkü hâli).
+ * Dolu verilirse rapor sayfalarına çapraz olarak
+ * "<metin> — <kullanıcı> — <tarih saat>" basılır.
+ */
+export const PDF_WATERMARK = (
+  process.env.NEXT_PUBLIC_PDF_WATERMARK ?? ""
+).trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
 // VARDİYA OTOMATI (yalnız sunucu — lib/auto-shift.ts)
 // ─────────────────────────────────────────────────────────────────────────────
 

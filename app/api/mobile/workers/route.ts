@@ -37,6 +37,16 @@ type WorkerRow = {
  * Kolon kümesi WORKER_PUBLIC_COLUMNS — pin_hash gibi alanlar zaten dışarıda.
  * Yanıtta ayrıca PII daraltılıyor: adres, TC/SV numarası, acil durum kişisi ve
  * doğum tarihi liste ucundan HİÇ çıkmaz; liste ekranının onlara ihtiyacı yok.
+ *
+ * ── VARSAYILAN: YALNIZ AKTİF (panel görünümüyle aynı) ─────────────────────
+ * Panelin veri katmanı tüm kadroyu çekip İSTEMCİDE süzüyor ve varsayılan
+ * "active" (app/admin/workers/WorkersClient.tsx:77). Sunucu 33, ekran 31
+ * gösteriyor. Mobilde süzme sunucuda olmak zorunda (sayfalama), bu yüzden
+ * VARSAYILAN da panelin gördüğüyle hizalandı — aksi hâlde aynı kadro için
+ * panel 31, uygulama 33 derdi.
+ *   ?aktif yok / =1  → yalnız aktif   (panel varsayılanı)
+ *   ?aktif=0         → yalnız pasif
+ *   ?aktif=all       → tümü           (panelin "Tümü" seçeneği)
  */
 export async function GET(req: NextRequest) {
   const guard = await requireMobileAdmin(req);
@@ -44,7 +54,7 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const page = parsePage(url);
-  const aktifParam = url.searchParams.get("aktif"); // "1" | "0" | yok
+  const aktifParam = url.searchParams.get("aktif") ?? "1"; // varsayılan: panel gibi yalnız aktif
 
   const scope = await getTestScope();
   let q = supabaseAdmin
@@ -66,6 +76,7 @@ export async function GET(req: NextRequest) {
 
   return Response.json({
     ok: true,
+    filtre: { aktif: aktifParam },
     page: pageInfo(page, count ?? rows.length),
     personel: rows.map((w) => ({
       id: w.id,

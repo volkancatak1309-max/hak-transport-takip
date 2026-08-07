@@ -64,6 +64,13 @@ const EXPECTED = {
 
   // ── Kurulum modu — hepsi "bugün böyle davranıyordu" ──────────────────────
   "tenant.DRIVER_PANEL_ENABLED": true, //     /panel herkese açıktı
+  // Kimlik maskeleme — 07.08.2026'da eklendi (galzura-demo demo ortamı).
+  // Öncesinde böyle bir kavram YOKTU: maybeBackfillVin koşulsuz yazıyordu.
+  // Bu iki satır HAK61/Sendigo'da o koşulsuz davranışın korunduğunu denetler;
+  // IDENTITY_MASKED env'den DEĞİL müşteri kodundan türer, o yüzden env'siz
+  // yüklemede false olmak ZORUNDA.
+  "tenant.IDENTITY_MASKED": false,
+  "tenant.VIN_BACKFILL_ENABLED": true,
   // Şoför vardiyayı hangi araçla açar. 03.08.2026 öncesi böyle bir ayar yoktu:
   // başlat butonu ve araç seçicisi "atanmış araç VAR ve aktif" bloğunun içinde
   // duruyordu (PanelClient.tsx). 'assigned' o davranışın birebir kendisidir —
@@ -175,6 +182,8 @@ const out = {
   "tenant.MAINTENANCE_ENABLED": tenant.MAINTENANCE_ENABLED,
   "tenant.LEAVES_ENABLED": tenant.LEAVES_ENABLED,
   "tenant.DRIVER_PANEL_ENABLED": tenant.DRIVER_PANEL_ENABLED,
+  "tenant.IDENTITY_MASKED": tenant.IDENTITY_MASKED,
+  "tenant.VIN_BACKFILL_ENABLED": tenant.VIN_BACKFILL_ENABLED,
   "tenant.DRIVER_VEHICLE_CHOICE": tenant.DRIVER_VEHICLE_CHOICE,
   "tenant.ADMIN_DRIVER_PANEL_LINK": tenant.ADMIN_DRIVER_PANEL_LINK,
   "tenant.PACKAGES_ENABLED": tenant.PACKAGES_ENABLED,

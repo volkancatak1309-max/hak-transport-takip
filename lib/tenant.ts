@@ -39,6 +39,8 @@
  * `scripts/check-tenant-defaults.mjs` artık bu imzayı build çıktısında arar.
  */
 
+import { TENANT } from "@/lib/brand";
+
 /** "true"/"1"/"yes" → true, "false"/"0"/"no" → false, tanımsız → varsayılan. */
 function envBool(value: string | undefined, fallback: boolean): boolean {
   const raw = value?.trim().toLowerCase();
@@ -230,6 +232,45 @@ export const ACTIVE_FLEETS: string[] = (() => {
 export function isFleetVisible(fleet: string | null | undefined): boolean {
   return fleet ? ACTIVE_FLEETS.includes(fleet) : true;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KİMLİK MASKELEME (yalnız sunucu)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * KİMLİĞİ MASKELENMİŞ KURULUM — 07.08.2026, galzura-demo.
+ *
+ * Demo ortamı GERÇEK araçların telemetrisini okur ama plakaları, şoför adlarını
+ * ve VIN'leri TAKMADIR. Bu, tek yönlü bir sözdür: veritabanına takma değer
+ * yazmak yetmez, cihazdan gelen gerçek kimliğin oraya SONRADAN sızmaması da
+ * gerekir.
+ *
+ * ⚠️ ENV DEĞİL, MÜŞTERİ KODUNDAN TÜRETİLİR — bilinçli. Bir env satırı Vercel'de
+ * unutulabilir ve unutulduğunda varsayılan "maskeleme kapalı" olurdu: ilk sync
+ * turunda gerçek VIN demo veritabanına düşer, maskeleme sessizce çökerdi.
+ * Müşteri kodu (NEXT_PUBLIC_TENANT) zaten marka için ZORUNLU olduğundan
+ * unutulması mümkün değil. Fail-closed olan taraf budur.
+ *
+ * HAK61 ve Sendigo bu kümede DEĞİL → maskeleme kapalı → davranışları değişmez.
+ */
+const IDENTITY_MASKED_TENANTS = new Set(["galzura-demo"]);
+
+export const IDENTITY_MASKED: boolean = IDENTITY_MASKED_TENANTS.has(TENANT);
+
+/**
+ * Cihazın bildirdiği VIN `vehicles.vin` boşken oraya yazılsın mı?
+ * (lib/telemetry.ts → maybeBackfillVin; iki çağıran: /api/flespi/sync ve
+ * /api/flespi/ingest — kapı bu yüzden fonksiyonun İÇİNDE.)
+ *
+ * Varsayılan maskelenmemiş kurulumda `true` — yani HAK61 ve Sendigo'da
+ * 07.08.2026 öncesiyle BİREBİR aynı davranış (koşulsuz backfill).
+ * Env yalnız kaçış kapısıdır; maskeli kurulumda açmak için bilerek
+ * `VIN_BACKFILL_ENABLED=true` yazmak gerekir.
+ */
+export const VIN_BACKFILL_ENABLED = envBool(
+  process.env.VIN_BACKFILL_ENABLED,
+  !IDENTITY_MASKED
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VARDİYA OTOMATI (yalnız sunucu — lib/auto-shift.ts)

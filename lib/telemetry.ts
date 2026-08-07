@@ -11,6 +11,7 @@ import { IDLE_SPEED_THRESHOLD_KMH, MAX_GAP_MS } from "@/lib/metrics-idle";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
 import { UNRESTRICTED, dropOtherFleets, type FleetScope } from "@/lib/fleet-scope";
 import type { ActiveVehicle, VehicleFleet } from "@/lib/types";
+import { VIN_BACKFILL_ENABLED } from "@/lib/tenant";
 
 /**
  * Rölanti "aşırı" tetik eşiği (Teltonika param 11205, saniye). Cihaz idle.status
@@ -976,11 +977,24 @@ export async function reconcileDtc(
  * One-time VIN backfill: set vehicles.vin from a device-reported VIN, but ONLY
  * when it is currently NULL, so a manually-entered value is never overwritten.
  * Throws on DB error — the caller MUST wrap this in its own try/catch.
+ *
+ * ── KİMLİĞİ MASKELENMİŞ KURULUMDA YAZMAZ (07.08.2026) ──────────────────────
+ * Kapı fonksiyonun İÇİNDE, çağıranlarda değil: iki çağıran var
+ * (/api/flespi/sync ve /api/flespi/ingest) ve birine kapı koyup diğerini
+ * unutmak sızıntının tam kendisi olurdu. İleride üçüncü bir çağıran eklenirse
+ * o da kendiliğinden korunur.
+ *
+ * Neden gerekli: galzura-demo GERÇEK cihazları okuyor ama plaka/şoför/VIN
+ * takma. VIN'i tohumda boş bırakmak YETMEZ — cihaz `vehicle.vin` bildirdiği
+ * için ilk sync turunda gerçek VIN buraya düşer ve maskeleme sessizce çöker.
+ * VIN_BACKFILL_ENABLED maskelenmemiş kurulumda `true`, yani HAK61 ve
+ * Sendigo'da davranış değişmedi (bkz. lib/tenant.ts).
  */
 export async function maybeBackfillVin(
   vehicleId: string,
   vin: string
 ): Promise<void> {
+  if (!VIN_BACKFILL_ENABLED) return;
   await supabaseAdmin
     .from("vehicles")
     .update({ vin })

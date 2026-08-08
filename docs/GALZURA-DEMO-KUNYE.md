@@ -23,12 +23,10 @@
 | **Alarmlar** | Sürüş olayları ve rölanti epizotları, araç/şoför ekseninde | 1.282 olay · 250 rölanti |
 | **Analiz** | Haftalık/aylık toplamlar, araç sıralamaları, güvenlik skoru | 7 gün |
 | **Raporlar** | AZG (çalışma süresi), CO₂, yakıt, performans, mesafe — PDF çıktılı | 5 rapor |
-| **Bölgeler** | Coğrafi bölge tanımları (depo, yasak/izinli alan) | — |
+| **Bölgeler** | Coğrafi bölge tanımları (depo, yasak/izinli alan) | 2 depo bölgesi |
 | **Seferler** | Sefer planlama ve takibi; durum, güzergâh, paket | 120 sefer |
 | **Çalışanlar** | Personel listesi ve personel dosyası | 29 şoför |
-| **İzinler** | İzin takvimi ve onay akışı | — |
-
-Bölgeler ve İzinler kayıt sayıları ölçülmedi.
+| **İzinler** | İzin takvimi ve onay akışı | 2 kayıt |
 
 ---
 

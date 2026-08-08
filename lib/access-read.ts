@@ -48,6 +48,8 @@ export type AccessRule = {
   countries: string[] | null;
   etkinCountries: string[];
   is_owner: boolean;
+  /** Kapı 1/2/3'ten muaf (048). Anahtar (kapı 4) bundan etkilenmez. */
+  gate_exempt: boolean;
 };
 
 /** Kiracı varsayılanları — ekranda "neye göre" sorusunun cevabı. */
@@ -128,7 +130,7 @@ export async function listAccessRules(): Promise<AccessRule[]> {
       supabaseAdmin
         .from("workers")
         .select(
-          "id, name, is_owner, access_hours_start, access_hours_end, allowed_countries"
+          "id, name, is_owner, gate_exempt, access_hours_start, access_hours_end, allowed_countries"
         )
         .eq("is_active", true)
         .order("name"),
@@ -152,6 +154,7 @@ export async function listAccessRules(): Promise<AccessRule[]> {
         countries,
         etkinCountries: countries ?? ACCESS_COUNTRIES,
         is_owner: w.is_owner === true,
+        gate_exempt: w.gate_exempt === true,
       };
     });
   } catch {

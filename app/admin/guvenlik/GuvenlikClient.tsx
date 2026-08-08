@@ -31,6 +31,7 @@ import {
   approveDeviceAction,
   approveCountryAction,
   setAccessHoursAction,
+  setGateExemptAction,
   killSwitchConfirmAction,
   killSwitchActivateAction,
   killSwitchDeactivateAction,
@@ -266,10 +267,12 @@ function SaatSatiri({
   kural,
   pending,
   onKaydet,
+  onMuafiyet,
 }: {
   kural: AccessRule;
   pending: boolean;
   onKaydet: (workerId: string, bas: string, bit: string) => void;
+  onMuafiyet: (workerId: string, muaf: boolean) => void;
 }) {
   const [bas, setBas] = useState(kural.start ?? "");
   const [bit, setBit] = useState(kural.end ?? "");
@@ -285,8 +288,13 @@ function SaatSatiri({
           )}
         </span>
         <span className="text-xs text-text-tertiary">
-          Etkin: {kural.is_owner ? "kısıt yok (muaf)" : kural.etkin} · Ülke:{" "}
-          {kural.etkinCountries.join(", ")}
+          Etkin:{" "}
+          {kural.is_owner
+            ? "kısıt yok (patron)"
+            : kural.gate_exempt
+              ? "kısıt yok (muaf) · anahtar hariç"
+              : kural.etkin}{" "}
+          · Ülke: {kural.etkinCountries.join(", ")}
         </span>
       </div>
       <div className="flex items-center gap-2">
@@ -301,6 +309,14 @@ function SaatSatiri({
           onClick={() => onKaydet(kural.id, bas, bit)}>
           Kaydet
         </Button>
+        {/* Patron zaten dört kapıdan da muaf; ona ayrıca muafiyet vermek
+            anlamsız ve kafa karıştırıcı olurdu. */}
+        {!kural.is_owner && (
+          <Button variant="outline" size="sm" disabled={pending}
+            onClick={() => onMuafiyet(kural.id, !kural.gate_exempt)}>
+            {kural.gate_exempt ? "Muafiyeti kaldır" : "Kapılardan muaf yap"}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -448,6 +464,14 @@ export function GuvenlikClient({
     start(async () => {
       const r = await enterShadowAction(id);
       if (r && !r.ok) setHata(r.error ?? "Gölge moduna girilemedi");
+    });
+  }
+
+  function muafiyetDegistir(workerId: string, muaf: boolean) {
+    setHata(null);
+    start(async () => {
+      const r = await setGateExemptAction(workerId, muaf);
+      if (!r.ok) setHata(r.error ?? "Bilinmeyen hata");
     });
   }
 
@@ -863,7 +887,8 @@ export function GuvenlikClient({
             <EmptyState title="Kadro boş" />
           ) : (
             accessRules.map((r) => (
-              <SaatSatiri key={r.id} kural={r} pending={pending} onKaydet={saatKaydet} />
+              <SaatSatiri key={r.id} kural={r} pending={pending} onKaydet={saatKaydet}
+                onMuafiyet={muafiyetDegistir} />
             ))
           )}
         </div>

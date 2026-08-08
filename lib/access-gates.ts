@@ -109,13 +109,15 @@ type WorkerGateRow = {
   allowed_countries: string[] | null;
   access_hours_start: string | null;
   access_hours_end: string | null;
+  /** Migration 048 — kapı 1/2/3'ten muaf. Kapı 4'ü (anahtar) ETKİLEMEZ. */
+  gate_exempt: boolean | null;
 };
 
 /** Kapı kolonlarını okur. Kolonlar yoksa (046 yok) null döner → kısıt yok. */
 async function readWorkerGates(workerId: string): Promise<WorkerGateRow | null> {
   const { data, error } = await supabaseAdmin
     .from("workers")
-    .select("allowed_countries, access_hours_start, access_hours_end")
+    .select("allowed_countries, access_hours_start, access_hours_end, gate_exempt")
     .eq("id", workerId)
     .maybeSingle();
   if (error || !data) return null;
@@ -206,6 +208,17 @@ export async function evaluateAccess(
 
     const ctx = readRequestContext(h);
     const kisi = await readWorkerGates(workerId);
+
+    // ── MUAFİYET (migration 048) — SIRA BURADA, TESADÜFİ DEĞİL ──────────
+    // Ölü adam anahtarından SONRA, diğer üç kapıdan ÖNCE geliyor. Yani muaf
+    // kişi yeni cihazdan, herhangi bir ülkeden ve saat dışında girebilir; ama
+    // anahtar çekilmişse O DA DÜŞER. Muafiyet anahtarın önüne geçseydi
+    // "sistemi kapat" düğmesi, kapattığını sandığın ama birkaç kişinin içeride
+    // kaldığı bir düğmeye dönerdi — acil durum aracı olmaktan çıkardı.
+    //
+    // ⚠️ Muafiyet GÖRÜNÜRLÜK VERMEZ: bu kişi /admin/guvenlik'i açamaz
+    // (requireOwner) ve patronu personel listelerinde göremez (045 ayrı eksen).
+    if (kisi?.gate_exempt === true) return IZIN;
 
     // ── KAPI 3: saat kilidi ─────────────────────────────────────────────
     const bas = hhmm(kisi?.access_hours_start) ?? ACCESS_HOURS_START;

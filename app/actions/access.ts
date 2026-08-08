@@ -131,6 +131,49 @@ export async function setAccessHoursAction(
   }
 }
 
+/**
+ * KAPILARDAN MUAFİYET (migration 048) — kişi bazında aç/kapa.
+ *
+ * MUAF: cihaz onayı · ülke onayı · saat kilidi.
+ * MUAF DEĞİL: ölü adam anahtarı — orada tek istisna patrondur ve öyle kalmalı,
+ * yoksa "sistemi kapat" düğmesi birkaç kişiyi içeride bırakan bir düğmeye
+ * dönerdi.
+ *
+ * ⚠️ Muafiyet YETKİ ya da GÖRÜNÜRLÜK VERMEZ: muaf kişi /admin/guvenlik'i
+ * açamaz (requireOwner) ve patronu personel listelerinde göremez (045 ayrı
+ * eksen). İki kavram bilerek ayrı tutuluyor.
+ *
+ * Değişiklik eski/yeni değeriyle ize düşer — SQL'le yapılan düşmez.
+ */
+export async function setGateExemptAction(
+  workerId: string,
+  exempt: boolean
+): Promise<AccessResult> {
+  const session = await requireOwner();
+  if (!ACCESS_GATES_ENABLED) return { ok: false, error: "gates_disabled" };
+  if (!workerId) return { ok: false, error: "missing_worker" };
+  try {
+    const { data: once } = await supabaseAdmin
+      .from("workers")
+      .select("id, name, gate_exempt")
+      .eq("id", workerId)
+      .maybeSingle();
+    const { error } = await supabaseAdmin
+      .from("workers")
+      .update({ gate_exempt: exempt })
+      .eq("id", workerId);
+    if (error) return { ok: false, error: error.message };
+
+    const { auditChange } = await import("@/lib/audit-change");
+    await auditChange(session.worker_id ?? null, "update", "workers", workerId,
+      once as Record<string, unknown> | null, { gate_exempt: exempt });
+    revalidatePath("/admin/guvenlik");
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "error" };
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // OTURUM KAYIT OYNATICI + PDF PARMAK İZİ SORGUSU (dalga 3)
 // ─────────────────────────────────────────────────────────────────────────────

@@ -21,7 +21,7 @@
     "all": "Alle",
     "yes": "Ja",
     "no": "Nein",
-    "loading": "Laden…",
+    "loading": "Wird geladen…",
     "saving": "Wird gespeichert…",
     "active": "Aktiv",
     "passive": "Inaktiv",
@@ -34,7 +34,8 @@
     "themeSystem": "System",
     "search": "Suchen",
     "actions": "Aktionen",
-    "epoch_warning": "Der gewählte Zeitraum umfasst die alten Alarmschwellen — Einträge vor dem {date} wurden mit anderen Einstellungen erzeugt, die Zahlen sind nicht vergleichbar."
+    "epoch_warning": "Der gewählte Zeitraum umfasst die alten Alarmschwellen — Einträge vor dem {date} wurden mit anderen Einstellungen erzeugt, die Zahlen sind nicht vergleichbar.",
+    "loading_slow": "Wird noch berechnet — bei großen Zeiträumen kann das etwas dauern"
   },
   "errors": {
     "error_title": "Etwas ist schiefgelaufen",
@@ -1600,7 +1601,7 @@
     "tank_missing": "fehlt",
     "stat_total_fuel": "Gesamtverbrauch",
     "stat_fleet_l100": "Flotte Ø L/100km",
-    "stat_thirstiest": "Höchster Verbrauch",
+    "stat_thirstiest": "Höchster Verbrauch (L/100km)",
     "stat_thirstiest_scope": "{n} L/100km",
     "stat_leak_vehicles": "Verdächtiger Abfall",
     "stat_leak_scope": "ungeklärter Abfall · Fahrzeuge",
@@ -1641,6 +1642,9 @@
     "distance_hint": "in der Fahrzeugdetailseite",
     "fuel_hint": "PDF- und CSV-Export",
     "shift_hint": "Export-Schaltflächen im Admin-Dashboard",
-    "calc_hint": "daraus berechnet"
+    "calc_hint": "daraus berechnet",
+    "stat_thirstiest_none": "Kein Fahrzeug mit mindestens {km} km",
+    "fuel_price_note": "Kosten berechnet mit {price} €/L — Quelle: {source}, {date}. Ihren eigenen Flottenkartenpreis können Sie über FUEL_PRICE_EUR_PER_L hinterlegen.",
+    "fuel_price_note_custom": "Kosten berechnet mit dem von Ihnen hinterlegten Preis von {price} €/L."
   }
 }

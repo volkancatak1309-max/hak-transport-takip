@@ -19,6 +19,12 @@ import {
 } from "@/lib/metric-thresholds";
 import { getTestScope, dropTestRows, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
+import {
+  FUEL_PRICE_EUR_PER_L,
+  FUEL_PRICE_SOURCE,
+  FUEL_PRICE_AS_OF,
+  FUEL_PRICE_IS_CUSTOM,
+} from "@/lib/tenant";
 import { workedMs, kmDiff, viennaDayKey } from "@/lib/format";
 import type { TimeEntry } from "@/lib/types";
 
@@ -516,6 +522,19 @@ export type FuelReport = {
    * Ekranda "18/29 araçtan" diye yazılır: ortalama, filonun tamamı değildir.
    */
   l100VehicleCount: number;
+  /**
+   * PARASAL KARŞILIK (09.08.2026). Çarpım SUNUCUDA yapılır ve yalnız SONUÇ
+   * istemciye iner — fiyat env'i istemci paketine hiç girmez.
+   * totalConsumedLiters null olamaz (0 başlar), yani maliyet de her zaman sayı.
+   */
+  totalCostEur: number;
+  /** Kullanılan litre fiyatı — ekrandaki küçük notta gösterilir. */
+  fuelPriceEurPerL: number;
+  /** Fiyat müşterinin kendi girdiği mi (true) yoksa piyasa varsayılanı mı? */
+  fuelPriceIsCustom: boolean;
+  /** Varsayılan fiyatın kaynağı ve tarihi (yalnız custom değilken anlamlı). */
+  fuelPriceSource: string;
+  fuelPriceAsOf: string;
   refillTotalCount: number;
   refillTotalLiters: number;
   /** En az bir şüpheli düşüşü olan araç sayısı. */
@@ -674,6 +693,11 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     l100Available,
     rangeDays: days,
     l100VehicleCount: 0,
+    totalCostEur: 0,
+    fuelPriceEurPerL: FUEL_PRICE_EUR_PER_L,
+    fuelPriceIsCustom: FUEL_PRICE_IS_CUSTOM,
+    fuelPriceSource: FUEL_PRICE_SOURCE,
+    fuelPriceAsOf: FUEL_PRICE_AS_OF,
     refillTotalCount: 0,
     refillTotalLiters: 0,
     suspiciousVehicles: 0,
@@ -1007,6 +1031,11 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     l100Available,
     rangeDays: days,
     l100VehicleCount,
+    totalCostEur: totalConsumedLiters * FUEL_PRICE_EUR_PER_L,
+    fuelPriceEurPerL: FUEL_PRICE_EUR_PER_L,
+    fuelPriceIsCustom: FUEL_PRICE_IS_CUSTOM,
+    fuelPriceSource: FUEL_PRICE_SOURCE,
+    fuelPriceAsOf: FUEL_PRICE_AS_OF,
     refillTotalCount,
     refillTotalLiters,
     suspiciousVehicles,

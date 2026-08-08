@@ -91,6 +91,23 @@ export const TOP_DRIVER_MIN_SCORED = 2;
 export const FUEL_MIN_KM = 50;
 
 /**
+ * "En çok yakan" KARTI için asgari mesafe (km, dönem toplamı).
+ *
+ * FUEL_MIN_KM (50) oranın HESAPLANABİLİR olduğu tabandır; bu ise oranla
+ * SIRALAMA yapmanın tabanıdır ve daha yüksek olmalı. Gerekçe: cihaz yakıt
+ * seviyesini tam sayı yüzde gönderiyor, ~70 L tankta 1 puan = 0,7 L. 50 km'de
+ * tek bir kuantizasyon adımı oranı ±1,4 L/100km oynatır — yani 8,0 ile 9,4
+ * arasındaki fark ölçüm gürültüsünün kendisidir ve "filo birincisi" iddiası
+ * kura çekmeye döner. 200 km'de aynı adım oranı yalnız ±0,35 L/100km oynatır
+ * (%4'ün altı), sıralama anlamlı hâle gelir.
+ *
+ * 200 km ≈ bir aracın 1-1,5 günlük normal seyri (canlı medyan ~1.900 km/ay);
+ * yani haftalık aralıkta filonun büyük kısmı eşiği geçer, yalnız gerçekten az
+ * giden araçlar sıralamanın dışında kalır — ki zaten onların oranı sapıktır.
+ */
+export const THIRSTIEST_MIN_KM = 200;
+
+/**
  * L/100km için asgari PAY (tüketim, yüzde puanı).
  *
  * Cihaz yakıt seviyesini TAM SAYI YÜZDE olarak gönderiyor: ~70 L'lik tankta

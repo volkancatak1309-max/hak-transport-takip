@@ -34,7 +34,8 @@
     "themeSystem": "Sistem",
     "search": "Ara",
     "actions": "Eylemler",
-    "epoch_warning": "Seçilen aralık eski alarm eşiklerini kapsıyor — {date} öncesi kayıtlar farklı ayarlarla üretildi, sayılar kıyaslanabilir değil."
+    "epoch_warning": "Seçilen aralık eski alarm eşiklerini kapsıyor — {date} öncesi kayıtlar farklı ayarlarla üretildi, sayılar kıyaslanabilir değil.",
+    "loading_slow": "Hâlâ hesaplanıyor — büyük aralıklarda bu biraz sürebilir"
   },
   "errors": {
     "error_title": "Bir şeyler ters gitti",
@@ -1600,7 +1601,7 @@
     "tank_missing": "girilmemiş",
     "stat_total_fuel": "Toplam tüketim",
     "stat_fleet_l100": "Filo ort. L/100km",
-    "stat_thirstiest": "En çok yakan",
+    "stat_thirstiest": "En çok yakan (L/100km)",
     "stat_thirstiest_scope": "{n} L/100km",
     "stat_leak_vehicles": "Şüpheli düşüş",
     "stat_leak_scope": "açıklanamayan düşüş · araç",
@@ -1641,6 +1642,9 @@
     "distance_hint": "araç detay sayfasında",
     "fuel_hint": "PDF ve CSV çıktısı var",
     "shift_hint": "yönetici panosundaki dışa aktarım düğmeleri",
-    "calc_hint": "bu kayıtlardan hesaplanır"
+    "calc_hint": "bu kayıtlardan hesaplanır",
+    "stat_thirstiest_none": "En az {km} km giden araç yok",
+    "fuel_price_note": "Maliyet {price} €/L üzerinden hesaplandı — kaynak: {source}, {date}. Kendi filo kartı fiyatınızı FUEL_PRICE_EUR_PER_L ile girebilirsiniz.",
+    "fuel_price_note_custom": "Maliyet, girdiğiniz {price} €/L fiyatı üzerinden hesaplandı."
   }
 }

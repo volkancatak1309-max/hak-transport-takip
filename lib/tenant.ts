@@ -55,6 +55,38 @@ function envInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? Math.round(n) : fallback;
 }
 
+/** Ondalıklı pozitif sayı (envInt'in yuvarlamayan ikizi — fiyat için şart). */
+function envNum(value: string | undefined, fallback: number): number {
+  const n = Number(value?.trim());
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/**
+ * YAKIT LİTRE FİYATI (EUR) — "Toplam tüketim" kartının parasal karşılığı.
+ *
+ * Varsayılan 2,051 = Avusturya dizel ortalaması 27.07.2026 (WKO/FVMI). Bu bir
+ * PİYASA ortalamasıdır; filo kartıyla akaryakıt alan müşteri kendi anlaşmalı
+ * fiyatını FUEL_PRICE_EUR_PER_L ile geçer ve tüm tenant'larda (HAK61, Sendigo,
+ * galzura-demo) aynı hesap çalışır.
+ *
+ * Sunucu tarafı env — bilinçli olarak NEXT_PUBLIC_ DEĞİL: fiyat sunucuda
+ * çarpılıp sonuç prop olarak iniyor. `process.env[name]` dinamik erişimi
+ * istemci paketine gömülmüyor (03.08 ölçümü), o tuzağa hiç girmiyoruz.
+ */
+export const FUEL_PRICE_EUR_PER_L = envNum(
+  process.env.FUEL_PRICE_EUR_PER_L,
+  2.051
+);
+
+/** Varsayılan fiyatın kaynağı — ekrandaki küçük notta gösterilir. */
+export const FUEL_PRICE_SOURCE = "WKO/FVMI";
+/** Varsayılan fiyatın ölçüm tarihi (ISO) — notta gösterilir. */
+export const FUEL_PRICE_AS_OF = "2026-07-27";
+/** Fiyat env'den mi geldi (true) yoksa varsayılan mı (false)? Not metnini seçer. */
+export const FUEL_PRICE_IS_CUSTOM =
+  Number.isFinite(Number(process.env.FUEL_PRICE_EUR_PER_L?.trim())) &&
+  Number(process.env.FUEL_PRICE_EUR_PER_L?.trim()) > 0;
+
 function envEnum<T extends string>(
   value: string | undefined,
   allowed: readonly T[],

@@ -10,6 +10,7 @@ import { ReportStatBand } from "@/components/admin/ReportStatBand";
 import { ReportTableHeader } from "@/components/admin/ReportTableHeader";
 import {
   FUEL_L100_MIN_DAYS,
+  THIRSTIEST_MIN_KM,
   FUEL_MIN_CONSUMED_PCT,
   FUEL_MIN_KM,
 } from "@/lib/metric-thresholds";
@@ -38,6 +39,13 @@ export function FuelClient({
   const num = (v: number, d = 0) =>
     v.toLocaleString(nf, { minimumFractionDigits: d, maximumFractionDigits: d });
   const pct = (v: number) => `%${Math.round(v)}`;
+  /** Para birimi hep EUR: firma Avusturya'da, yakıt kartı da EUR kesiyor. */
+  const eur = (v: number) =>
+    v.toLocaleString(nf, {
+      style: "currency",
+      currency: "EUR",
+      maximumFractionDigits: 0,
+    });
 
   // Rapor hesaplanamadıysa SEBEBİ söylenir (22.07.2026). Eskiden her hata
   // "migration bekliyor" diye gösteriliyordu; migration uygulanmışken zaman
@@ -334,9 +342,29 @@ export function FuelClient({
     },
   ];
 
-  // "En çok yakan" güvenilmez sensörden seçilemez — sayısı gösterilmeyen bir
-  // aracı filo birincisi ilan etmek yanıltıcı olurdu.
-  const top = report.rows.find((r) => r.hasData && !r.dataUnreliable);
+  // "EN ÇOK YAKAN" — ORAN, TOPLAM DEĞİL (09.08.2026, Volkan).
+  //
+  // Eskiden listenin ilk uygun satırı alınıyordu; liste toplam litreye göre
+  // sıralı olduğu için kart fiilen "en çok YOL GİDEN aracı" gösteriyordu —
+  // çok giden doğal olarak çok yakar, bilgi değeri sıfır. Doğru soru "hangi
+  // araç birim mesafede daha çok yakıyor", cevabı L/100km.
+  //
+  // Üç kapı: (1) güvenilmez sensör seçilemez, (2) oranı hesaplanamayanlar
+  // (lPer100Km === null) yarışmaz, (3) mesafe THIRSTIEST_MIN_KM altındaysa
+  // oran ölçüm gürültüsüyle aynı büyüklükte olur ve sıralama kura çekmeye
+  // döner — gerekçesi lib/metric-thresholds.ts'te.
+  const top = report.rows
+    .filter(
+      (r) =>
+        r.hasData &&
+        !r.dataUnreliable &&
+        r.lPer100Km !== null &&
+        (r.km ?? 0) >= THIRSTIEST_MIN_KM
+    )
+    .reduce<(typeof report.rows)[number] | undefined>(
+      (best, r) => (!best || r.lPer100Km! > best.lPer100Km! ? r : best),
+      undefined
+    );
 
   return (
     <div className="space-y-6">
@@ -345,7 +373,10 @@ export function FuelClient({
           {
             label: t("stat_total_fuel"),
             value: `${num(report.totalConsumedLiters)} L`,
-            scope: t("scope_range"),
+            // PARASAL KARŞILIK: çarpım sunucuda yapıldı, buraya hazır iniyor.
+            // Fiyatın kaynağı/tarihi ve "kendi fiyatını girebilirsin" bilgisi
+            // bandın altındaki notta (tek yerde, her karta tekrarlanmadan).
+            scope: `${t("scope_range")} · ${eur(report.totalCostEur)}`,
           },
           // FİLO ORTALAMASI — yalnız üç kapıyı geçen araçlardan (22.07.2026).
           // Eskiden satırda gizlediğimiz saçma değerlerin km'si ve litresi yine
@@ -366,12 +397,9 @@ export function FuelClient({
           {
             label: t("stat_thirstiest"),
             value: top ? top.plate : "—",
-            scope:
-              top && top.lPer100Km !== null
-                ? t("stat_thirstiest_scope", { n: num(top.lPer100Km, 1) })
-                : top && top.consumedLiters !== null
-                  ? `${num(top.consumedLiters)} L`
-                  : t("no_data"),
+            scope: top
+              ? t("stat_thirstiest_scope", { n: num(top.lPer100Km!, 1) })
+              : t("stat_thirstiest_none", { km: THIRSTIEST_MIN_KM }),
           },
           {
             label: t("stat_leak_vehicles"),
@@ -381,6 +409,21 @@ export function FuelClient({
           },
         ]}
       />
+
+      {/* FİYAT KÜNYESİ — bandın altında TEK yerde. Kartın içine sıkıştırmak
+          "2.051" sayısını KPI sanılacak kadar öne çıkarırdı; buradaki asıl iş
+          sayının NEREDEN geldiğini ve DEĞİŞTİRİLEBİLİR olduğunu söylemek. */}
+      <p className="-mt-3 text-xs text-muted-foreground">
+        {report.fuelPriceIsCustom
+          ? t("fuel_price_note_custom", {
+              price: num(report.fuelPriceEurPerL, 3),
+            })
+          : t("fuel_price_note", {
+              price: num(report.fuelPriceEurPerL, 3),
+              source: report.fuelPriceSource,
+              date: report.fuelPriceAsOf,
+            })}
+      </p>
 
       {/* UYARILAR TEK KÜMEDE: üçü de "eksik sayının sebebi" ailesindendir ve
           band ile tablo arasındaki aynı boşluğu paylaşır; ayrı ayrı 24px arayla

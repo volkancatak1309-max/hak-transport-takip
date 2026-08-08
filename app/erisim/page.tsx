@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
+import { LogOut } from "lucide-react";
 import { getSession } from "@/lib/session";
+import { logoutAction } from "@/app/actions/auth";
+import { Button } from "@/components/ui/button";
 import { ownerDisplayName } from "@/lib/access-gates";
 import { ACCESS_GATES_ENABLED } from "@/lib/tenant";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -21,10 +24,17 @@ export const dynamic = "force-dynamic";
  * anda bir sonraki yenilemede kullanıcı panele düşer (kapı artık `ok` döner ve
  * aşağıdaki yönlendirme çalışır).
  *
- * ── ÇIKIŞ DÜĞMESİ DE YOK — BİLİNEN ÖDÜN ────────────────────────────────────
- * Yanlış hesapla giren biri kendi başına çıkış yapamaz; çerez 30 gün yaşıyor.
- * Kural "tıklanabilir öğe olmasın" olduğu için düğme konmadı. Çözüm patronda:
- * güvenlik ekranından "oturumları sonlandır" o çerezi anında öldürür.
+ * ── TEK İSTİSNA: ÇIKIŞ DÜĞMESİ ─────────────────────────────────────────────
+ * İlk sürümde çıkış düğmesi de yoktu ve bu bir kusurdu (Volkan, 08.08.2026):
+ * yanlış hesapla giren biri sahada kilitli kalıyor, çerez 30 gün yaşadığı için
+ * kendi başına kurtulamıyor ve patrona ulaşmak zorunda kalıyordu.
+ *
+ * Kuralı bozmaz, çünkü kuralın amacı İÇERİ SIZMAYI önlemek: buradaki her
+ * bağlantı panele bir kapı olurdu, çıkış ise ters yöne — oturumu YOK EDER ve
+ * giriş ekranına bırakır. Erişim genişletmeyen tek eylem budur.
+ *
+ * Menü, gezinme bağlantısı ve başka hiçbir form YOK; tek düğmelik bu form
+ * dışında sayfada tıklanacak bir şey bulunmuyor.
  *
  * ── KENDİ KAPISI VAR ───────────────────────────────────────────────────────
  * requireWorker/requireAdmin çağrılmaz — onlar bu sayfaya yönlendiriyor, yani
@@ -68,6 +78,15 @@ export default async function ErisimPage() {
           <p className="mt-8 text-xs text-text-tertiary">
             Onaylandığında bu sayfa kendiliğinden açılır.
           </p>
+
+          {/* Sayfadaki TEK tıklanabilir öğe. Sunucu action'ı: oturumu kapatır
+              (login_sessions satırı 'logout' ile kapanır) ve giriş ekranına
+              bırakır — hiçbir yere GİRİŞ sağlamaz. */}
+          <form action={logoutAction} className="mt-8">
+            <Button type="submit" variant="outline" size="sm">
+              <LogOut className="size-4" aria-hidden /> Çıkış yap
+            </Button>
+          </form>
         </div>
       </main>
     </>

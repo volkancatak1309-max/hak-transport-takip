@@ -16,6 +16,7 @@ import { clearLoginLock } from "@/lib/login-lock";
 import { bumpTokenVersion } from "@/lib/mobile-auth";
 import { logLoginUnlock } from "@/lib/login-unlock-log";
 import { logWorkerAdminChange } from "@/lib/worker-admin-log";
+import { assertOwnerWritable } from "@/lib/owner-scope";
 
 export type WorkerResult = { ok: boolean; error?: string };
 
@@ -204,6 +205,13 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
 
   const id = formData.get("id");
   if (typeof id !== "string" || !id) return { ok: false, error: "Geçersiz kayıt" };
+  // PATRON KORUMASI (045): görünmezlik yazma koruması olmadan yarımdır —
+  // liste gizlense de id bir kez öğrenilirse bu action doğrudan çağrılabilir.
+  // "Bulunamadı" diyoruz, "yasak" değil: yasak demek kaydın VAR olduğunu
+  // doğrulardı. Katman kapalıyken (HAK61/Sendigo) hiç sorgu atmaz.
+  if (!(await assertOwnerWritable(session.worker_id, id)).ok) {
+    return { ok: false, error: "Çalışan bulunamadı" };
+  }
 
   const et = formData.get("employment_type");
   const parsed = updateWorkerSchema.safeParse({
@@ -343,7 +351,14 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
 }
 
 export async function toggleActiveAction(workerId: string): Promise<WorkerResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
+  // PATRON KORUMASI (045): görünmezlik yazma koruması olmadan yarımdır —
+  // liste gizlense de id bir kez öğrenilirse bu action doğrudan çağrılabilir.
+  // "Bulunamadı" diyoruz, "yasak" değil: yasak demek kaydın VAR olduğunu
+  // doğrulardı. Katman kapalıyken (HAK61/Sendigo) hiç sorgu atmaz.
+  if (!(await assertOwnerWritable(session.worker_id, workerId)).ok) {
+    return { ok: false, error: "Çalışan bulunamadı" };
+  }
 
   const { data: worker } = await supabaseAdmin
     .from("workers")
@@ -405,7 +420,14 @@ export async function terminateWorkerAction(
   workerId: string,
   lastDay: string
 ): Promise<WorkerResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
+  // PATRON KORUMASI (045): görünmezlik yazma koruması olmadan yarımdır —
+  // liste gizlense de id bir kez öğrenilirse bu action doğrudan çağrılabilir.
+  // "Bulunamadı" diyoruz, "yasak" değil: yasak demek kaydın VAR olduğunu
+  // doğrulardı. Katman kapalıyken (HAK61/Sendigo) hiç sorgu atmaz.
+  if (!(await assertOwnerWritable(session.worker_id, workerId)).ok) {
+    return { ok: false, error: "Çalışan bulunamadı" };
+  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(lastDay)) {
     return { ok: false, error: "Geçersiz tarih" };
   }
@@ -469,6 +491,13 @@ export async function clearLoginLockAction(
   workerId: string
 ): Promise<WorkerResult> {
   const session = await requireAdmin();
+  // PATRON KORUMASI (045): görünmezlik yazma koruması olmadan yarımdır —
+  // liste gizlense de id bir kez öğrenilirse bu action doğrudan çağrılabilir.
+  // "Bulunamadı" diyoruz, "yasak" değil: yasak demek kaydın VAR olduğunu
+  // doğrulardı. Katman kapalıyken (HAK61/Sendigo) hiç sorgu atmaz.
+  if (!(await assertOwnerWritable(session.worker_id, workerId)).ok) {
+    return { ok: false, error: "Çalışan bulunamadı" };
+  }
 
   const { data: worker } = await supabaseAdmin
     .from("workers")
@@ -504,7 +533,14 @@ export async function setWorkerPinAction(
   pin: string,
   mustChange: boolean
 ): Promise<WorkerResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
+  // PATRON KORUMASI (045): görünmezlik yazma koruması olmadan yarımdır —
+  // liste gizlense de id bir kez öğrenilirse bu action doğrudan çağrılabilir.
+  // "Bulunamadı" diyoruz, "yasak" değil: yasak demek kaydın VAR olduğunu
+  // doğrulardı. Katman kapalıyken (HAK61/Sendigo) hiç sorgu atmaz.
+  if (!(await assertOwnerWritable(session.worker_id, workerId)).ok) {
+    return { ok: false, error: "Çalışan bulunamadı" };
+  }
 
   const parsed = adminSetPinSchema.safeParse(pin);
   if (!parsed.success) {

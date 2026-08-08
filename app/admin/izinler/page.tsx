@@ -4,6 +4,7 @@ import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
+import { getOwnerScope, withoutOwner } from "@/lib/owner-scope";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import {
   LeaveCalendar,
@@ -47,6 +48,8 @@ export default async function IzinlerPage({
   const fleetScope = await getFleetScope(fleet);
   const scope = await getTestScope();
   const driverScope = await getDriverScope();
+  // Patron kademesi (045) — katman kapalıysa boş kapsam, sorgu değişmez.
+  const ownerScope = await getOwnerScope(session.worker_id);
 
   const sp = await searchParams;
   const month = /^\d{4}-\d{2}$/.test(sp.month ?? "")
@@ -61,18 +64,23 @@ export default async function IzinlerPage({
       // artık lib/driver-scope.ts'te TEK yerde yaşıyor. Davranış birebir aynı
       // (şefler is_admin=false, izin takviminde KALIRLAR); değişen tek şey,
       // kuralın kopyası olmaması.
-      onlyDrivers(
-        withoutTestRows(
-          supabaseAdmin
-            .from("workers")
-            .select("id, name")
-            .eq("is_active", true)
-            .order("name"),
+      // owner-filtered: withoutOwner — patron izin takviminde de görünmez.
+      withoutOwner(
+        onlyDrivers(
+          withoutTestRows(
+            supabaseAdmin
+              .from("workers")
+              .select("id, name")
+              .eq("is_active", true)
+              .order("name"),
+            "id",
+            scope.workerIds
+          ),
           "id",
-          scope.workerIds
+          driverScope
         ),
         "id",
-        driverScope
+        ownerScope
       ),
       "id",
       fleetScope.workerIds,
@@ -84,19 +92,24 @@ export default async function IzinlerPage({
     // boş; aktif kadro yine görünür (M1↔M2 birleşimi).
     onlyFleet(
       // driver-scoped: yukarıdakiyle aynı gerekçe (tek kaynak).
-      onlyDrivers(
-        withoutTestRows(
-          supabaseAdmin
-            .from("workers")
-            .select("id, name, terminated_at")
-            .not("terminated_at", "is", null)
-            .gte("terminated_at", start)
-            .order("name"),
+      // owner-filtered: withoutOwner — ayrılan kadroda da gizli kalır.
+      withoutOwner(
+        onlyDrivers(
+          withoutTestRows(
+            supabaseAdmin
+              .from("workers")
+              .select("id, name, terminated_at")
+              .not("terminated_at", "is", null)
+              .gte("terminated_at", start)
+              .order("name"),
+            "id",
+            scope.workerIds
+          ),
           "id",
-          scope.workerIds
+          driverScope
         ),
         "id",
-        driverScope
+        ownerScope
       ),
       "id",
       fleetScope.workerIds,
@@ -188,10 +201,19 @@ export default async function IzinlerPage({
     ),
   ];
   if (missingIds.length > 0) {
-    const { data: extra } = await supabaseAdmin
-      .from("workers")
-      .select("id, name")
-      .in("id", missingIds);
+    // owner-filtered: withoutOwner — arşivdeki "kim onayladı" sütunu patronun
+    // ADINI çözen TEK yer, dolayısıyla gizlemenin son deliği burasıydı.
+    //
+    // ⚠️ BİLİNÇLİ ÖDÜN: is_owner olmayan biri (ör. filo şefi) patronun
+    // onayladığı satırda ad yerine '—' görür. Kaydın kendisi DÜŞMEZ, tarihi ve
+    // sonucu durur — yani "bir karar verildi ve ne zaman verildi" bilgisi
+    // korunur, yalnız karar verenin adı görünmez. Satırı silmek arşivi
+    // yalan söyler hâle getirirdi; ad göstermek gizlemeyi delerdi.
+    const { data: extra } = await withoutOwner(
+      supabaseAdmin.from("workers").select("id, name").in("id", missingIds),
+      "id",
+      ownerScope
+    );
     for (const w of (extra ?? []) as { id: string; name: string }[]) {
       nameById.set(w.id, w.name);
     }

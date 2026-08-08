@@ -110,15 +110,32 @@ export async function openLoginSession(
     const simdi = new Date();
     const simdiIso = simdi.toISOString();
 
-    // Bu cihaz izi bu kişide daha önce görüldü mü?
-    const { data: gecmis, error: gecmisErr } = await supabaseAdmin
-      .from("login_sessions")
-      .select("id")
-      .eq("worker_id", workerId)
-      .eq("device_hash", ctx.deviceHash)
-      .limit(1);
+    // ── "YENİ CİHAZ" NE DEMEK DEĞİL ─────────────────────────────────────
+    // İlk sürümde bu işaret "bu cihaz izi bu kişide görülmedi" demekti ve
+    // İLK GİRİŞTE DE YANIYORDU. Sonucu: katman açıldığı gün herkesin ilk
+    // girişi şüpheli görünür, "Şüpheli" sekmesi kadro sayısı kadar satırla
+    // dolar ve gerçek bir olayı fark etmek imkânsızlaşır. Bir uyarı, her
+    // seferinde yanıyorsa uyarı değildir.
+    //
+    // Doğru anlamı: "bu kişi DAHA ÖNCE girmişti, ama bu cihazdan hiç." İlk
+    // giriş yeni bir cihaz değil, sadece ilk giriştir.
+    const [{ data: ayniCihaz, error: gecmisErr }, { data: herhangiGiris }] =
+      await Promise.all([
+        supabaseAdmin
+          .from("login_sessions")
+          .select("id")
+          .eq("worker_id", workerId)
+          .eq("device_hash", ctx.deviceHash)
+          .limit(1),
+        supabaseAdmin
+          .from("login_sessions")
+          .select("id")
+          .eq("worker_id", workerId)
+          .limit(1),
+      ]);
     if (gecmisErr && isMissingRelation(gecmisErr)) return KAPALI;
-    const newDevice = (gecmis?.length ?? 0) === 0;
+    const ilkGiris = (herhangiGiris?.length ?? 0) === 0;
+    const newDevice = !ilkGiris && (ayniCihaz?.length ?? 0) === 0;
 
     // ── ÖLÜ SATIRLARI SÜPÜR ─────────────────────────────────────────────
     // Çerez ömründen (30 gün) eski açık satırlar artık kimseyi temsil etmiyor:

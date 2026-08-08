@@ -2,6 +2,7 @@ import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
+import { getOwnerScope, withoutOwner } from "@/lib/owner-scope";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { listLatestVehiclePositions } from "@/lib/telemetry";
@@ -24,6 +25,8 @@ export default async function AraclarPage() {
   // atamayı temizlediğini sanıp aslında ex-çalışanı geri yazar.
   const scope = await getTestScope();
   const driverScope = await getDriverScope();
+  // Patron kademesi (045) — katman kapalıysa boş kapsam, sorgu değişmez.
+  const ownerScope = await getOwnerScope(session.worker_id);
   const [vehicles, driversResult, dtc, positions] = await Promise.all([
     listVehiclesWithStatus(),
     // driver-scoped: yöneticiler araca ATANAMAZ. Bu seçici, bir yöneticinin
@@ -32,17 +35,24 @@ export default async function AraclarPage() {
     // resolveDriver savunması onu "Atanmamış · PLAKA"ya düşürür ama o zaman da
     // aracın gerçek sahibi kaybolur). Kapıyı kaynağında kapatmak daha temiz.
     // is_active filtresi YOK olmaya devam ediyor — yukarıdaki gerekçe geçerli.
-    onlyDrivers(
-      withoutTestRows(
-        supabaseAdmin
-          .from("workers")
-          .select("id, name, is_active")
-          .order("name"),
+    // owner-filtered: withoutOwner — bugün driver-scope patronu zaten eliyor
+    // (is_admin + counts_as_driver=false); bu katman o muafiyet açılırsa
+    // gizlemenin delinmemesi için.
+    withoutOwner(
+      onlyDrivers(
+        withoutTestRows(
+          supabaseAdmin
+            .from("workers")
+            .select("id, name, is_active")
+            .order("name"),
+          "id",
+          scope.workerIds
+        ),
         "id",
-        scope.workerIds
+        driverScope
       ),
       "id",
-      driverScope
+      ownerScope
     ),
     // Filo arıza özeti — 22.07.2026'da yönetici panosundan buraya taşındı.
     // Arıza aracın özelliğidir; panoda sayfanın ilk 420 px'ini işgal ediyordu.

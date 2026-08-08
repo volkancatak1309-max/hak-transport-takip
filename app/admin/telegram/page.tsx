@@ -5,6 +5,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getWebhookInfo } from "@/lib/telegram";
 import { TelegramAdminClient } from "./TelegramAdminClient";
 import { audit } from "@/lib/security-log";
+import { getOwnerScope, withoutOwner } from "@/lib/owner-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -15,14 +16,21 @@ export default async function TelegramAdminPage() {
   await audit(session.worker_id ?? null, "page_view", "/admin/telegram");
 
   const scope = await getTestScope();
-  const { data: connectedRaw } = await withoutTestRows(
-    supabaseAdmin
-      .from("workers")
-      .select("id, name, telegram_username, telegram_linked_at, telegram_chat_id")
-      .not("telegram_chat_id", "is", null)
-      .order("telegram_linked_at", { ascending: false }),
+  // owner-filtered: withoutOwner — patronun Telegram bağlantısı, dolayısıyla
+  // varlığı, is_owner olmayan yöneticiye bu listede görünmez.
+  const ownerScope = await getOwnerScope(session.worker_id);
+  const { data: connectedRaw } = await withoutOwner(
+    withoutTestRows(
+      supabaseAdmin
+        .from("workers")
+        .select("id, name, telegram_username, telegram_linked_at, telegram_chat_id")
+        .not("telegram_chat_id", "is", null)
+        .order("telegram_linked_at", { ascending: false }),
+      "id",
+      scope.workerIds
+    ),
     "id",
-    scope.workerIds
+    ownerScope
   );
 
   const connected = (connectedRaw ?? []).map((w) => ({

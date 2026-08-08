@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getOwnerScope, withoutOwner } from "@/lib/owner-scope";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { WorkersClient } from "./WorkersClient";
 import { startOfMonthVienna, workedMs } from "@/lib/format";
@@ -36,12 +37,20 @@ export default async function WorkersPage() {
   // Aylık vardiyalar 26-28 araçta 1000 satır tavanına dayanır; "Bu Ay" saat
   // toplamları ve "Son Vardiya" eksik hesaplanmasın diye sonuna kadar okunur.
   const scope = await getTestScope();
+  // Patron kademesi (045): is_owner OLMAYAN yöneticiye patron gösterilmez.
+  // Katman kapalıysa boş kapsam → sorgu birebir bugünküyle aynı kalır.
+  const ownerScope = await getOwnerScope(session.worker_id);
   const [workersResult, entriesResult, vehiclesResult] = await Promise.all([
     // test-filtered: withoutTestRows — Çalışanlar listesinin ana giriş noktası.
-    withoutTestRows(
-      supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
+    // owner-filtered: withoutOwner — patron bu listede is_owner olmayana çıkmaz.
+    withoutOwner(
+      withoutTestRows(
+        supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
+        "id",
+        scope.workerIds
+      ),
       "id",
-      scope.workerIds
+      ownerScope
     ),
     fetchAllRows<MonthEntry>((from, to) =>
       withoutTestRows(

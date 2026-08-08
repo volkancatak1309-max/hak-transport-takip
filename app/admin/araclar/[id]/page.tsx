@@ -19,6 +19,7 @@ import { startOfTodayVienna } from "@/lib/format";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
+import { getOwnerScope, withoutOwner } from "@/lib/owner-scope";
 import { VehicleDetailClient } from "./VehicleDetailClient";
 import { audit } from "@/lib/security-log";
 
@@ -43,6 +44,8 @@ export default async function VehicleDetailPage({
   // ex-çalışanı geri yazar).
   const scope = await getTestScope();
   const driverScope = await getDriverScope();
+  // Patron kademesi (045) — katman kapalıysa boş kapsam, sorgu değişmez.
+  const ownerScope = await getOwnerScope(session.worker_id);
   const [detail, telemetry, track, zones, events, dtc, driversResult] =
     await Promise.all([
       getVehicleDetail(id),
@@ -53,14 +56,19 @@ export default async function VehicleDetailPage({
       listActiveDtc(id),
       // driver-scoped: araç detayındaki "Atanmış şoför" seçicisi — liste
       // sayfasıyla aynı gerekçe (bkz. app/admin/araclar/page.tsx).
-      onlyDrivers(
-        withoutTestRows(
-          supabaseAdmin.from("workers").select("id, name, is_active").order("name"),
+      // owner-filtered: withoutOwner — aynı yerde, aynı gerekçe.
+      withoutOwner(
+        onlyDrivers(
+          withoutTestRows(
+            supabaseAdmin.from("workers").select("id, name, is_active").order("name"),
+            "id",
+            scope.workerIds
+          ),
           "id",
-          scope.workerIds
+          driverScope
         ),
         "id",
-        driverScope
+        ownerScope
       ),
     ]);
   if (!detail) notFound();

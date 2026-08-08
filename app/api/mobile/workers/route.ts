@@ -5,6 +5,7 @@ import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { mobileError } from "@/lib/mobile-auth";
 import { parsePage, pageInfo } from "@/lib/mobile-list";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
+import { getOwnerScope, withoutOwner } from "@/lib/owner-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,12 +58,18 @@ export async function GET(req: NextRequest) {
   const aktifParam = url.searchParams.get("aktif") ?? "1"; // varsayılan: panel gibi yalnız aktif
 
   const scope = await getTestScope();
+  // Patron kademesi (045) — panelin Çalışanlar listesiyle AYNI gizleme.
+  // Mobil ayrı bir kapı; burada unutulsaydı web'de gizlenen kayıt telefonda
+  // görünürdü ve gizleme fiilen hiç olmamış olurdu.
+  const ownerScope = await getOwnerScope(guard.actor.worker.id);
+  // owner-filtered: withoutOwner — aşağıda, zincir kurulduktan sonra uygulanıyor.
   let q = supabaseAdmin
     .from("workers")
     .select(WORKER_PUBLIC_COLUMNS, { count: "exact" })
     .order("name");
   // test-filtered: withoutTestRows — panelin Çalışanlar listesiyle aynı eleme.
   q = withoutTestRows(q, "id", scope.workerIds);
+  q = withoutOwner(q, "id", ownerScope);
   if (aktifParam === "1") q = q.eq("is_active", true);
   else if (aktifParam === "0") q = q.eq("is_active", false);
 

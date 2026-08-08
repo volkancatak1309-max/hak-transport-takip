@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { SECURITY_LAYER_ENABLED } from "@/lib/tenant";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 
 /**
  * GÜVENLİK EKRANI OKUMA KATMANI (045).
@@ -63,6 +64,9 @@ export type SecurityWorker = {
 };
 
 async function workerNames(): Promise<Map<string, string>> {
+  // owner-visible: bu ekranı YALNIZ patron açabiliyor (app/admin/guvenlik/page.tsx
+  // → requireOwner). Gizlenecek bir izleyici yok; patronun kendi adını kendi
+  // ekranında saklamak, oturum satırlarını adsız bırakmaktan başka işe yaramaz.
   // test-visible: GÜVENLİK ekranı. Test hesabı BİLEREK elenmiyor — bu ekranın
   // işi "kim girdi"yi eksiksiz göstermek. Test hesabı gizlenseydi o hesapla
   // yapılmış bir giriş adsız ("—") görünür, yani ele geçirilmiş bir test
@@ -132,12 +136,26 @@ export async function listAudit(limit = 200): Promise<AuditRow[]> {
  */
 export async function listSecurityWorkers(): Promise<SecurityWorker[]> {
   try {
-    // test-visible: GÜVENLİK ekranı — yukarıdaki gerekçenin aynısı. Patron
-    // test hesabının da oturumlarını görebilmeli ve onu dondurabilmeli.
-    const { data, error } = await supabaseAdmin
-      .from("workers")
-      .select("id, name, phone, is_admin, is_owner, is_active")
-      .order("name");
+    // test-filtered: test hesapları bu YÖNETİM listesinden çıkarıldı
+    // (Volkan, 08.08.2026) — demoda kalabalık yapıyordu.
+    //
+    // ⚠️ AYRIM ÖNEMLİ: elenen şey yalnız aşağıdaki KULLANICI KARTLARI, yani
+    // "dondur / oturumları sonlandır" satırları. Test hesabının GİRİŞLERİ
+    // (listSessions) ve EYLEMLERİ (listAudit) ekranda DURMAYA devam eder —
+    // ele geçirilmiş bir test hesabı tam da orada görünmelidir. Dondurmak
+    // gerekirse Çalışanlar sayfasından yapılır.
+    const scope = await getTestScope();
+    // owner-visible: ekran requireOwner arkasında — yukarıdaki gerekçenin aynısı.
+    // Patron burada KENDİNİ görür ve görmelidir: "patron" rozeti bu listede
+    // basılıyor, gizlenirse kendi kademesini doğrulayamaz.
+    const { data, error } = await withoutTestRows(
+      supabaseAdmin
+        .from("workers")
+        .select("id, name, phone, is_admin, is_owner, is_active")
+        .order("name"),
+      "id",
+      scope.workerIds
+    );
     if (error || !data) return [];
     const acik = await listOpenSessions();
     const sayac = new Map<string, number>();

@@ -6,6 +6,7 @@ import { getLoginLockState } from "@/lib/login-lock";
 import { workedMs, kmDiff, startOfMonthVienna } from "@/lib/format";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 import type { TimeEntry } from "@/lib/types";
+import { getOwnerScope } from "@/lib/owner-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +37,10 @@ export async function GET(
     .eq("id", id)
     .maybeSingle();
   if (!w) return mobileError(404, "not_found");
+  // Patron dosyası is_owner olmayana KAPALI (045) — web'deki notFound()'un eşi.
+  // 404, 403 DEĞİL: 403 kaydın var olduğunu doğrulardı.
+  const ownerScope = await getOwnerScope(guard.actor.worker.id);
+  if (!ownerScope.isVisible(id)) return mobileError(404, "not_found");
   const worker = w as unknown as Record<string, unknown>;
 
   const monthStart = startOfMonthVienna();

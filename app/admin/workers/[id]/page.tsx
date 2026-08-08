@@ -24,6 +24,7 @@ import { licenseState, LICENSE_BADGE } from "@/lib/worker-ui";
 import { getLoginLockState } from "@/lib/login-lock";
 import type { WorkerPublic, TimeEntry } from "@/lib/types";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
+import { getOwnerScope } from "@/lib/owner-scope";
 import { getLocale, getTranslations } from "next-intl/server";
 import { audit } from "@/lib/security-log";
 
@@ -50,6 +51,11 @@ export default async function WorkerDetailPage({
     .eq("id", id)
     .maybeSingle();
   if (!worker) notFound();
+  // Patron dosyası is_owner olmayana KAPALI (045). Liste gizlemesi tek başına
+  // yetmez: id bir kez öğrenildiğinde bu sayfa doğrudan açılabilir. "Yok" demek
+  // "yasak" demekten iyidir — 403 kaydın VAR olduğunu doğrulardı.
+  const ownerScope = await getOwnerScope(session.worker_id);
+  if (!ownerScope.isVisible(id)) notFound();
   const w = worker as WorkerPublic;
 
   // Plaka tek kaynaktan: vehicles.assigned_worker_id (şoför paneliyle aynı

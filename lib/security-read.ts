@@ -50,13 +50,16 @@ export type AuditRow = {
   target: string | null;
   ip: string | null;
   /**
-   * Değişiklik ayrıntısı — "plate: 34ABC → 34XYZ" gibi tek satır.
+   * Değişiklik ayrıntısı — ALAN ALAN, tek dize DEĞİL.
    *
-   * audit_log.meta içindeki before/after çiftinden SUNUCUDA üretilir: ham jsonb
-   * istemciye gönderilip orada biçimlenseydi, PIN hash'i gibi maskelenmiş ama
-   * yine de gereksiz alanlar tarayıcıya inerdi.
+   * Önce tek satırlık bir özet dizesiydi ("plate: A → B · model: C → D") ve
+   * ekranda okunmuyordu: dört değişiklik yan yana dizilince satır bir metin
+   * bloğuna dönüşüyordu. Dize istemcide GÜVENLE bölünemez (değerlerin içinde
+   * de "·" ya da "→" geçebilir), bu yüzden bölme işi kaynağa alındı.
+   *
+   * Ham jsonb yine istemciye İNMEZ: maskeleme ve kırpma burada yapılır.
    */
-  detay: string | null;
+  degisim: ChangeField[];
   /** Satır hangi tablodan geldi — birleşik zaman çizgisinde kaynağı gösterir. */
   kaynak: TimelineSource;
 };
@@ -70,6 +73,14 @@ export type AuditRow = {
  * ekranında da kullanılıyor (vardiya düzenleme izi vardiya detayında, izin izi
  * izin arşivinde). Burada yalnız OKUNUP tek zaman çizgisinde birleştiriliyor.
  */
+/** Tek bir alanın eski→yeni hâli. Boş değer "—" ile temsil edilir. */
+export type ChangeField = {
+  /** Ham kolon adı — ekranda Türkçeleştirilir, sözlükte yoksa ham hâli görünür. */
+  alan: string;
+  eski: string;
+  yeni: string;
+};
+
 export type TimelineSource =
   | "audit_log"
   | "worker_admin_log"
@@ -136,9 +147,11 @@ export async function listOpenSessions(): Promise<SessionRow[]> {
   return hepsi.filter((s) => s.ended_at === null);
 }
 
-/** Değeri ekranda okunur kıl: null → "boş", uzun dizeyi kırp. */
+/** Değeri ekranda okunur kıl: boş → "—", uzun dizeyi kırp. */
 function goster(v: unknown): string {
-  if (v === null || v === undefined || v === "") return "boş";
+  // "boş" kelimesi bir DEĞER gibi okunuyordu ("boş → 2028-11-10" satırında
+  // sanki alanın eski değeri "boş" metniymiş gibi). Tire, yokluğu anlatır.
+  if (v === null || v === undefined || v === "") return "—";
   if (typeof v === "object") {
     try {
       return JSON.stringify(v).slice(0, 60);
@@ -150,34 +163,41 @@ function goster(v: unknown): string {
 }
 
 /**
- * audit_log.meta → tek satırlık okunur özet.
+ * audit_log.meta → ALAN ALAN değişiklik listesi.
  *
- * update  →  "plate: 34ABC → 34XYZ · status: aktif → serviste"
- * create  →  "plate=34ABC · fleet=mavi"
- * delete  →  "silinen: plate=34ABC · fleet=mavi"
+ * update  →  her değişen alan için { alan, eski, yeni }
+ * create  →  { alan, eski: "—", yeni: <değer> }   (yokluktan var oluşa)
+ * delete  →  { alan, eski: <değer>, yeni: "—" }   (var oluştan yokluğa)
  *
- * En fazla 4 alan gösterilir; gerisi "+N alan" olarak sayılır — satır tabloyu
- * taşırmasın ama EKSİLTİLDİĞİ görünsün.
+ * create/delete'i de aynı eski→yeni biçimine oturtmak bilinçli: ekran tek bir
+ * satır bileşeni kullanıyor ve üç ayrı düzen yerine tek düzen okunuyor.
+ *
+ * KIRPMA YOK: alan sayısı burada sınırlanmıyor, katlama işi EKRANDA yapılıyor
+ * (ilk 3 + "+N alan daha"). Sunucuda kırpsaydık kullanıcı "daha" düğmesine
+ * bastığında elde olmayan veriyi göstermek gerekirdi.
  */
-function metaOzet(action: string, meta: unknown): string | null {
-  if (!meta || typeof meta !== "object") return null;
+function metaDegisim(action: string, meta: unknown): ChangeField[] {
+  if (!meta || typeof meta !== "object") return [];
   const m = meta as Record<string, unknown>;
   const before = (m.before ?? null) as Record<string, unknown> | null;
   const after = (m.after ?? null) as Record<string, unknown> | null;
 
   if (action === "update" && before && after) {
-    const alanlar = Object.keys(after);
-    const bas = alanlar.slice(0, 4)
-      .map((k) => `${k}: ${goster(before[k])} → ${goster(after[k])}`)
-      .join(" · ");
-    return alanlar.length > 4 ? `${bas} · +${alanlar.length - 4} alan` : bas;
+    return Object.keys(after).map((k) => ({
+      alan: k,
+      eski: goster(before[k]),
+      yeni: goster(after[k]),
+    }));
   }
   const kaynak = action === "delete" ? before : after;
-  if (!kaynak) return null;
-  const alanlar = Object.keys(kaynak).filter((k) => k !== "_kirpildi");
-  const bas = alanlar.slice(0, 4).map((k) => `${k}=${goster(kaynak[k])}`).join(" · ");
-  const kuyruk = alanlar.length > 4 ? ` · +${alanlar.length - 4} alan` : "";
-  return action === "delete" ? `silinen: ${bas}${kuyruk}` : `${bas}${kuyruk}`;
+  if (!kaynak) return [];
+  return Object.keys(kaynak)
+    .filter((k) => k !== "_kirpildi")
+    .map((k) =>
+      action === "delete"
+        ? { alan: k, eski: goster(kaynak[k]), yeni: "—" }
+        : { alan: k, eski: "—", yeni: goster(kaynak[k]) }
+    );
 }
 
 /** Son eylem izi (yalnız audit_log). */
@@ -199,7 +219,7 @@ export async function listAudit(limit = 200): Promise<AuditRow[]> {
       action: r.action as string,
       target: (r.target as string | null) ?? null,
       ip: (r.ip as string | null) ?? null,
-      detay: metaOzet(r.action as string, r.meta),
+      degisim: metaDegisim(r.action as string, r.meta),
       kaynak: "audit_log" as TimelineSource,
     }));
   } catch {
@@ -268,7 +288,7 @@ export async function listActionTimeline(limit = 200): Promise<AuditRow[]> {
         action: r.granted ? "admin_grant" : "admin_revoke",
         target: `workers · ${ad(r.worker_id)}`,
         ip: null,
-        detay: `is_admin: ${!r.granted} → ${!!r.granted}`,
+        degisim: [{ alan: "is_admin", eski: String(!r.granted), yeni: String(!!r.granted) }],
         kaynak: "worker_admin_log" as TimelineSource,
       })),
       ...shiftLog.map((r) => ({
@@ -279,7 +299,7 @@ export async function listActionTimeline(limit = 200): Promise<AuditRow[]> {
         action: "shift_edit",
         target: "time_entries",
         ip: null,
-        detay: `${r.field as string}: ${goster(r.old_value)} → ${goster(r.new_value)}`,
+        degisim: [{ alan: r.field as string, eski: goster(r.old_value), yeni: goster(r.new_value) }],
         kaynak: "shift_edit_log" as TimelineSource,
       })),
       ...leaveLog.map((r) => ({
@@ -290,7 +310,7 @@ export async function listActionTimeline(limit = 200): Promise<AuditRow[]> {
         action: `leave_${r.action as string}`,
         target: "worker_leaves",
         ip: null,
-        detay: `${r.field as string}: ${goster(r.old_value)} → ${goster(r.new_value)}`,
+        degisim: [{ alan: r.field as string, eski: goster(r.old_value), yeni: goster(r.new_value) }],
         kaynak: "leave_edit_log" as TimelineSource,
       })),
       ...unlockLog.map((r) => ({
@@ -301,7 +321,7 @@ export async function listActionTimeline(limit = 200): Promise<AuditRow[]> {
         action: "login_unlock",
         target: `workers · ${ad(r.worker_id)}`,
         ip: null,
-        detay: `silinen deneme: ${goster(r.cleared_rows)}`,
+        degisim: [{ alan: "cleared_rows", eski: "—", yeni: goster(r.cleared_rows) }],
         kaynak: "login_unlock_log" as TimelineSource,
       })),
     ];

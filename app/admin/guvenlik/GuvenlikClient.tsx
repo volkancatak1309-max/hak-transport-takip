@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui-v2/ConfirmDialog";
 import { Input } from "@/components/ui/input";
 import type { SessionRow, AuditRow, SecurityWorker } from "@/lib/security-read";
+import type { ChangeField } from "@/lib/security-read";
 import type {
   PendingDevice,
   PendingCountry,
@@ -118,6 +119,130 @@ const EYLEM_ADI: Record<string, string> = {
   leave_reject: "İzin reddetti",
   login_unlock: "Giriş kilidini açtı",
 };
+
+/**
+ * Alan adlarının Türkçe karşılığı.
+ *
+ * Sözlükte olmayan alan HAM ADIYLA görünür — yeni bir kolon eklendiğinde satır
+ * kaybolmaz, yalnız İngilizce görünür. Sessizce gizlemek, izin en çok
+ * güvenilmesi gereken yerinde veri kaybı olurdu.
+ */
+const ALAN_ADI: Record<string, string> = {
+  plate: "Plaka",
+  make: "Marka",
+  model: "Model",
+  year: "Model yılı",
+  status: "Durum",
+  fleet: "Filo",
+  imei: "IMEI",
+  flespi_device_id: "Cihaz no",
+  inspection_due: "Muayene bitişi",
+  insurance_due: "Sigorta bitişi",
+  tank_capacity_l: "Depo (L)",
+  assigned_worker_id: "Atanmış şoför",
+  name: "Ad",
+  phone: "Telefon",
+  is_admin: "Yönetici",
+  is_active: "Aktif",
+  is_owner: "Patron",
+  counts_as_driver: "Şoför sayılır",
+  employee_number: "Personel no",
+  employment_type: "Sözleşme türü",
+  employment_start: "İşe giriş",
+  terminated_at: "İşten çıkış",
+  managed_fleet: "Yönettiği filo",
+  license_no: "Ehliyet no",
+  license_expiry: "Ehliyet bitişi",
+  birth_date: "Doğum tarihi",
+  email: "E-posta",
+  address: "Adres",
+  social_security_no: "Sigorta no",
+  emergency_contact_name: "Acil durum kişisi",
+  emergency_contact_phone: "Acil durum telefonu",
+  emergency_contact_relation: "Acil durum yakınlığı",
+  access_hours_start: "Giriş saati (baş)",
+  access_hours_end: "Giriş saati (bit)",
+  allowed_countries: "İzinli ülkeler",
+  center_lat: "Merkez enlem",
+  center_lng: "Merkez boylam",
+  radius_m: "Yarıçap (m)",
+  rule_kind: "Kural türü",
+  purpose: "Amaç",
+  active: "Etkin",
+  worker_id: "Personel",
+  scheduled_at: "Planlanan zaman",
+  category: "Kategori",
+  stops: "Duraklar",
+  package_count: "Paket sayısı",
+  notes: "Not",
+  cancel_reason: "İptal sebebi",
+  exempt_date: "Muafiyet günü",
+  cleared_rows: "Silinen deneme",
+  break_minutes: "Mola (dk)",
+  started_at: "Başlangıç",
+  ended_at: "Bitiş",
+  start_date: "Başlangıç",
+  end_date: "Bitiş",
+  leave_type: "İzin türü",
+};
+
+/** Ekranda gösterilecek alan sayısı; gerisi katlanır. */
+const ACIK_ALAN = 3;
+
+/**
+ * "Değişiklik" hücresi — her alan AYRI SATIR.
+ *
+ * ── NEDEN TEK DİZE DEĞİL ───────────────────────────────────────────────────
+ * Önce sunucu tek satırlık bir özet üretiyordu ("make: Mercedes → Fiat · model:
+ * … · …"). Dört değişiklik yan yana dizilince hücre okunmaz bir metin bloğuna
+ * dönüşüyordu. Artık alanlar ayrı satırlarda, aralarında ince ayırıcı var.
+ *
+ * ── RENK TOKEN'LARI (elle hex YOK) ─────────────────────────────────────────
+ *   eski  → text-status-critical-text   (globals.css --status-critical-text)
+ *   yeni  → text-accent-green-text      (globals.css --accent-green-text)
+ *   alan  → text-text-tertiary          (nötr)
+ * Yeşilin -text varyantı bu iş için EKLENDİ: --accent-green dolgu/ikon için
+ * tasarlanmış ve metin olarak açık temada AA'yı geçmiyordu (3.27:1).
+ */
+function Degisiklik({ alanlar }: { alanlar: ChangeField[] }) {
+  const [acik, setAcik] = useState(false);
+  if (alanlar.length === 0) {
+    return <span className="text-xs text-text-tertiary">—</span>;
+  }
+  const gorunen = acik ? alanlar : alanlar.slice(0, ACIK_ALAN);
+  const kalan = alanlar.length - gorunen.length;
+
+  return (
+    <div className="flex flex-col text-xs">
+      {gorunen.map((f, i) => (
+        <div
+          key={`${f.alan}-${i}`}
+          className={
+            "flex flex-wrap items-baseline gap-x-1.5 py-1" +
+            (i > 0 ? " border-t border-border/60" : "")
+          }
+        >
+          <span className="text-text-tertiary">{ALAN_ADI[f.alan] ?? f.alan}</span>
+          <span className="text-status-critical-text line-through decoration-1">
+            {f.eski}
+          </span>
+          <span className="text-text-tertiary" aria-hidden>→</span>
+          <span className="text-accent-green-text">{f.yeni}</span>
+        </div>
+      ))}
+      {(kalan > 0 || acik) && (
+        <button
+          type="button"
+          onClick={() => setAcik((v) => !v)}
+          aria-expanded={acik}
+          className="mt-1 self-start text-xs text-text-secondary underline underline-offset-2"
+        >
+          {acik ? "daha az göster" : `+${kalan} alan daha`}
+        </button>
+      )}
+    </div>
+  );
+}
 
 /**
  * Kişi başına saat aralığı satırı (KAPI 3).
@@ -394,11 +519,9 @@ export function GuvenlikClient({
     {
       key: "detay",
       header: "Değişiklik",
-      // "eski → yeni" burada görünür; sunucuda üretiliyor (ham jsonb istemciye
-      // inmiyor). Boşsa görüntüleme/indirme satırıdır, değişiklik değil.
-      cell: (r) => (
-        <span className="text-xs text-text-secondary">{r.detay ?? "—"}</span>
-      ),
+      // Alan alan, eski kırmızı / yeni yeşil. Boşsa görüntüleme-indirme
+      // satırıdır, değişiklik değil → "—".
+      cell: (r) => <Degisiklik alanlar={r.degisim} />,
     },
     { key: "ip", header: "IP", cell: (r) => r.ip ?? "—", hideBelow: "md" },
     { key: "ne_zaman", header: "Zaman", cell: (r) => zaman(r.at), sortable: true, sortValue: (r) => r.at },

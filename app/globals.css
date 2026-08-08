@@ -51,6 +51,7 @@ body {
   --color-accent-gold: var(--accent-gold);
   --color-accent-gold-text: var(--accent-gold-text);
   --color-accent-green: var(--accent-green);
+  --color-accent-green-text: var(--accent-green-text);
   --color-status-active: var(--status-active);
   --color-status-break: var(--status-break);
   --color-status-idle: var(--status-idle);
@@ -187,6 +188,13 @@ body {
   /* Green — reserved for hardware-signal state (device ignition ON). Not used
      for shift/operational status, which stays sky/claret/gold by design. */
   --accent-green: oklch(0.6 0.13 155);
+  /* METİN varyantı (08.08.2026). --accent-green DOLGU/İKON için tasarlandı ve
+     metin olarak açık temada AA'yı GEÇMİYOR: #2c965d, #eef0f5 zemininde
+     3.27:1 (ölçüldü). Diğer aksanların hepsinde -text karşılığı zaten vardı,
+     yalnız yeşilde yoktu. Bu değer aynı zeminde 5.31:1 verir ve kırmızı
+     karşılığıyla (status-critical-text, 5.82:1) dengelidir — biri diğerini
+     bastırmaz. Hue kilitli (155), yalnız açıklık düşürüldü. */
+  --accent-green-text: oklch(0.48 0.13 155);
 
   /* Operational status — NO green/red. active=sky, break=claret, idle=gold. */
   --status-active: var(--accent-sky);
@@ -333,6 +341,9 @@ body {
   --accent-gold-text: oklch(0.88 0.11 82);
   /* Lightened for the dark base, hue locked to the light-theme green. */
   --accent-green: oklch(0.72 0.13 155);
+  /* Koyu temada metin varyantı: kart zemininde (#0a0b14) 10.34:1 — kırmızı
+     karşılığı 9.01:1, ikisi aynı ağırlıkta okunur. */
+  --accent-green-text: oklch(0.78 0.13 155);
 
   --status-active: var(--accent-sky);
   --status-break: var(--accent-claret);

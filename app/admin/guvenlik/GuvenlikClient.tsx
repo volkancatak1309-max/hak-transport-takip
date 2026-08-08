@@ -9,6 +9,7 @@ import {
   X,
   Power,
   Clock,
+  ChevronDown,
 } from "lucide-react";
 import { DataTable, type Column } from "@/components/ui-v2/DataTable";
 import { StatCard } from "@/components/ui-v2/StatCard";
@@ -83,6 +84,27 @@ function konum(s: SessionRow): string {
   if (!s.city && !s.country) return "—";
   return [s.city, s.country].filter(Boolean).join(", ");
 }
+
+/**
+ * Eylem adlarının okunur karşılığı.
+ *
+ * Tablo ham `action` dizesini basıyordu ("page_view", "kill_switch_on") — yani
+ * ekran, veritabanı kolonunu olduğu gibi gösteriyordu. Bilinmeyen bir ad
+ * gelirse ham hâli basılır: sözlükte olmayan yeni bir eylem satırı KAYBETMEZ.
+ */
+const EYLEM_ADI: Record<string, string> = {
+  page_view: "Sayfa görüntüleme",
+  export_pdf: "PDF indirme",
+  export_csv: "CSV indirme",
+  session_revoke: "Oturumları sonlandırdı",
+  account_freeze: "Hesabı dondurdu",
+  account_unfreeze: "Hesabı geri açtı",
+  access_approve: "Erişim onayladı",
+  access_deny: "Erişim reddetti",
+  access_hours: "Saat aralığı değiştirdi",
+  kill_switch_on: "SİSTEMİ KAPATTI",
+  kill_switch_off: "Sistemi geri açtı",
+};
 
 /**
  * Kişi başına saat aralığı satırı (KAPI 3).
@@ -179,6 +201,8 @@ export function GuvenlikClient({
   const [sebep, setSebep] = useState("");
   const [anahtarHata, setAnahtarHata] = useState<string | null>(null);
   const [kalanHak, setKalanHak] = useState<number>(killSwitch.kalanHak);
+  // Kullanıcı listesi varsayılan KAPALI — kadro büyüdükçe sayfayı şişiriyordu.
+  const [kullanicilarAcik, setKullanicilarAcik] = useState(false);
 
   const bekleyenToplam = pendingDevices.length + pendingCountries.length;
 
@@ -324,7 +348,13 @@ export function GuvenlikClient({
 
   const izKolon: Column<AuditRow>[] = [
     { key: "kim", header: "Kim", cell: (r) => r.worker_name },
-    { key: "ne", header: "Eylem", cell: (r) => r.action, sortable: true, sortValue: (r) => r.action },
+    {
+      key: "ne",
+      header: "Eylem",
+      cell: (r) => EYLEM_ADI[r.action] ?? r.action,
+      sortable: true,
+      sortValue: (r) => EYLEM_ADI[r.action] ?? r.action,
+    },
     { key: "hedef", header: "Hedef", cell: (r) => r.target ?? "—" },
     { key: "ip", header: "IP", cell: (r) => r.ip ?? "—", hideBelow: "md" },
     { key: "ne_zaman", header: "Zaman", cell: (r) => zaman(r.at), sortable: true, sortValue: (r) => r.at },
@@ -603,9 +633,30 @@ export function GuvenlikClient({
         </div>
       )}
 
+      {/* KULLANICILAR — VARSAYILAN KAPALI (Volkan, 08.08.2026).
+          32 kişilik kadro sayfanın altına iki ekran boyu kart yığıyordu ve
+          asıl bakılan yer (sekmeler) yukarıda kalıyordu. Liste kapalı;
+          başlık düğmesi açıp kapatıyor. Sayı başlıkta duruyor, yani açmadan
+          da "kaç kişi var" görülüyor. */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold">Kullanıcılar</h2>
-        <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => setKullanicilarAcik((v) => !v)}
+          aria-expanded={kullanicilarAcik}
+          className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left"
+        >
+          <span className="text-base font-semibold">
+            Kullanıcılar ({workers.length})
+          </span>
+          <span className="flex items-center gap-2 text-sm text-text-tertiary">
+            {kullanicilarAcik ? "Gizle" : "Göster"}
+            <ChevronDown
+              className={`size-4 transition-transform ${kullanicilarAcik ? "rotate-180" : ""}`}
+              aria-hidden
+            />
+          </span>
+        </button>
+        <div className={kullanicilarAcik ? "flex flex-col gap-2" : "hidden"}>
           {workers.map((w) => (
             <div key={w.id}
               className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">

@@ -2,6 +2,7 @@ import "server-only";
 import { sealData, unsealData } from "iron-session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { sessionOptions } from "@/lib/session";
+import { ACCESS_GATES_ENABLED } from "@/lib/tenant";
 
 /**
  * MOBİL TOKEN KATMANI — React Native istemcisi için çerezsiz kimlik.
@@ -296,6 +297,23 @@ export async function verifyMobileRequest(req: {
   // İptal sayacı: token mühürlendiğinden beri artmışsa token ölüdür.
   if (tokenVersion !== null && payload.tv !== tokenVersion) {
     return { ok: false, status: 401, code: "revoked" };
+  }
+
+  // ── ERİŞİM KAPILARI (046) — TEK BOĞAZ NOKTASI ───────────────────────────
+  // Tüm /api/mobile/* uçları buradan geçiyor, dolayısıyla kapıyı burada
+  // uygulamak hepsini birden kapatır. Girişte bir kez bakmak yetmezdi: saat
+  // kilidi ve ölü adam anahtarı AÇIK oturumu da düşürmek zorunda ve mobil
+  // access token 15 dakika yaşıyor.
+  //
+  // Bayrak kapalıyken evaluateAccess ilk satırda çıkar — HAK61/Sendigo'da
+  // mobil istek başına ek sorgu YOK. Dinamik import: access-gates zinciri
+  // lib/session'a uğruyor, statik bağlamak döngü kurardı.
+  if (ACCESS_GATES_ENABLED) {
+    const { evaluateAccess } = await import("@/lib/access-gates");
+    const kapi = await evaluateAccess(worker.id, req.headers);
+    if (!kapi.ok) {
+      return { ok: false, status: 403, code: `gate_${kapi.gate}` };
+    }
   }
 
   return { ok: true, worker, tokenVersion: tokenVersion ?? payload.tv };

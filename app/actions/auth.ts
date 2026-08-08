@@ -10,9 +10,21 @@ import { DRIVER_PANEL_ENABLED } from "@/lib/tenant";
 import { verifyCredentials, clientIpFromHeaders } from "@/lib/auth-core";
 import { bumpTokenVersion } from "@/lib/mobile-auth";
 import { openLoginSession, closeLoginSession } from "@/lib/security-log";
+import { evaluateAccess } from "@/lib/access-gates";
 
 export type LoginState = {
-  error?: "invalid" | "inactive" | "db" | "validation" | "locked";
+  error?:
+    | "invalid"
+    | "inactive"
+    | "db"
+    | "validation"
+    | "locked"
+    /** Ölü adam anahtarı açık (046). */
+    | "system_locked"
+    /** Saat kilidi (046) — `detail` izinli aralığı taşır. */
+    | "outside_hours";
+  /** outside_hours için "07:00–21:00" gibi izinli aralık. */
+  detail?: string;
   /** Seconds until the next attempt is allowed (only when error === "locked"). */
   retryAfter?: number;
   /**
@@ -53,6 +65,19 @@ export async function loginAction(
   }
   const worker = res.worker;
 
+  // ── ERİŞİM KAPILARI (046) — kimlik doğru, ama içeri girebilir mi? ───────
+  // Kimlik doğrulamasından SONRA, oturum kurulmadan ÖNCE. Sıra önemli: kapı
+  // kararı kişiye bağlı (muafiyetler is_owner'a, saat/ülke kişinin kendi
+  // kolonlarına bakıyor), yani kimin geldiğini bilmeden değerlendirilemez.
+  // Katman kapalıyken ilk satırda çıkar: ek sorgu yok.
+  const kapi = await evaluateAccess(worker.id, await headers());
+  if (!kapi.ok && kapi.mode === "reject") {
+    // RED → oturum HİÇ kurulmaz. Kullanıcı giriş ekranında kalır.
+    return kapi.gate === "kill"
+      ? { error: "system_locked" }
+      : { error: "outside_hours", detail: kapi.detail };
+  }
+
   // GÜVENLİK İZİ (045) — oturum satırını AÇ, "yeni cihaz" / "çoklu oturum"
   // işaretlerini hesapla, SINGLE_SESSION açıksa önceki oturumları düşür.
   // Katman kapalıyken (HAK61/Sendigo varsayılanı) ilk satırda çıkar: ek sorgu
@@ -68,7 +93,13 @@ export async function loginAction(
   session.must_change_pin = !!worker.must_change_pin;
   session.session_version = opened.sessionVersion;
   session.login_session_id = opened.id ?? undefined;
+  // BEKLET → oturum kurulur ama işaretli: tüm kapılar /erisim'e gönderir.
+  // Oturumun kurulması gerekiyor çünkü onay satırı KİŞİYE ait; bekleyenin
+  // kim olduğunu bilmeden patrona ne göstereceğimizi bilemeyiz.
+  if (!kapi.ok) session.access_gate = kapi.gate;
   await session.save();
+
+  if (!kapi.ok) redirect("/erisim");
 
   // A temp PIN (admin create / reset) must be changed before anything else —
   // requireWorker/requireAdmin enforce the same gate for every other route.

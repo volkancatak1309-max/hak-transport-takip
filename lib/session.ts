@@ -1,5 +1,5 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { getIronSession, type SessionOptions } from "iron-session";
 import { redirect } from "next/navigation";
 import type { SessionData, VehicleFleet } from "./types";
@@ -10,7 +10,7 @@ import {
   type FleetScope,
 } from "./fleet-scope";
 import { supabaseAdmin } from "./supabase";
-import { SECURITY_LAYER_ENABLED } from "./tenant";
+import { SECURITY_LAYER_ENABLED, ACCESS_GATES_ENABLED } from "./tenant";
 import { cache } from "react";
 
 const password = process.env.SESSION_PASSWORD;
@@ -64,11 +64,58 @@ async function enforceSessionVersion(session: Awaited<ReturnType<typeof getSessi
   await touchLoginSession(session.login_session_id);
 }
 
+/**
+ * ERİŞİM KAPILARI (migration 046) — her korumalı istekte yeniden değerlendirilir.
+ *
+ * Girişte bir kez bakmak YETMEZ: ölü adam anahtarı ve saat kilidi AÇIK
+ * OTURUMU da düşürmek zorunda. Çerez 30 gün yaşıyor; kapıyı yalnız giriş
+ * anında uygulasaydık, sabah giren biri gece yarısından sonra da içeride
+ * kalırdı ve anahtar çekildiğinde hiçbir şey olmazdı.
+ *
+ * RED (anahtar/saat) → çerez yok edilir, giriş ekranına.
+ * BEKLET (cihaz/ülke) → çerez korunur, /erisim ekranına.
+ *
+ * `ACCESS_GATES_ENABLED` kapalıyken İLK SATIRDA çıkar: HAK61 ve Sendigo bu
+ * dalın içine hiç girmez, tek sorgu bile atılmaz.
+ *
+ * Dinamik import bilinçli: access-gates → kill-switch/owner-scope zinciri
+ * lib/session'a geri döndüğü için statik bir döngü kurardı.
+ */
+async function enforceAccessGates(
+  session: Awaited<ReturnType<typeof getSession>>
+) {
+  if (!ACCESS_GATES_ENABLED || !session.worker_id) return;
+  const { evaluateAccess } = await import("@/lib/access-gates");
+  const karar = await evaluateAccess(session.worker_id, await headers());
+
+  if (karar.ok) {
+    // Kapı açıldı (patron onayladı) → işaret temizlenir, kullanıcı normale döner.
+    if (session.access_gate) {
+      session.access_gate = undefined;
+      await session.save();
+    }
+    return;
+  }
+
+  if (karar.mode === "reject") {
+    session.destroy();
+    redirect("/");
+  }
+
+  // Tip artık burada 'kill'/'hours' olamayacağını garanti ediyor (ayrık birleşim).
+  if (session.access_gate !== karar.gate) {
+    session.access_gate = karar.gate;
+    await session.save();
+  }
+  redirect("/erisim");
+}
+
 export async function requireWorker() {
   const session = await getSession();
   if (!session.worker_id) redirect("/");
   if (session.must_change_pin) redirect("/pin");
   await enforceSessionVersion(session);
+  await enforceAccessGates(session);
   return session;
 }
 
@@ -78,6 +125,7 @@ export async function requireAdmin() {
   if (session.must_change_pin) redirect("/pin");
   if (!session.is_admin) redirect("/panel");
   await enforceSessionVersion(session);
+  await enforceAccessGates(session);
   return session;
 }
 
@@ -98,6 +146,7 @@ export async function requireOwner() {
   if (session.must_change_pin) redirect("/pin");
   if (!session.is_admin) redirect("/panel");
   await enforceSessionVersion(session);
+  await enforceAccessGates(session);
 
   const { data, error } = await supabaseAdmin
     .from("workers")
@@ -134,6 +183,7 @@ export async function requireFleetView() {
   // geçiyor, yani bu satır olmadan patronun "oturumları sonlandır" düğmesi
   // panelin iki ana ekranında etkisiz kalırdı.
   await enforceSessionVersion(session);
+  await enforceAccessGates(session);
   if (session.is_admin) {
     return { session, fleet: null as VehicleFleet | null, isChief: false };
   }
@@ -215,6 +265,7 @@ export async function requirePinChange() {
   if (!session.must_change_pin) redirect(session.is_admin ? "/admin" : "/panel");
   // Düşürülmüş bir oturum PIN ekranında da içeride sayılmamalı (045).
   await enforceSessionVersion(session);
+  await enforceAccessGates(session);
   return session;
 }
 

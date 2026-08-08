@@ -1,14 +1,37 @@
 "use client";
 import { useState, useTransition } from "react";
-import { MonitorSmartphone, ShieldOff, Snowflake, Undo2 } from "lucide-react";
+import {
+  MonitorSmartphone,
+  ShieldOff,
+  Snowflake,
+  Undo2,
+  Check,
+  X,
+  Power,
+  Clock,
+} from "lucide-react";
 import { DataTable, type Column } from "@/components/ui-v2/DataTable";
 import { StatCard } from "@/components/ui-v2/StatCard";
 import { EmptyState } from "@/components/ui-v2/EmptyState";
 import { SegmentedControl } from "@/components/ui-v2/SegmentedControl";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui-v2/ConfirmDialog";
+import { Input } from "@/components/ui/input";
 import type { SessionRow, AuditRow, SecurityWorker } from "@/lib/security-read";
+import type {
+  PendingDevice,
+  PendingCountry,
+  AccessRule,
+} from "@/lib/access-read";
 import { revokeSessionsAction, unfreezeAccountAction } from "@/app/actions/security";
+import {
+  approveDeviceAction,
+  approveCountryAction,
+  setAccessHoursAction,
+  killSwitchConfirmAction,
+  killSwitchActivateAction,
+  killSwitchDeactivateAction,
+} from "@/app/actions/access";
 
 /**
  * GÜVENLİK EKRANI (045) — dört sekme: giriş geçmişi, aktif oturumlar,
@@ -19,7 +42,23 @@ import { revokeSessionsAction, unfreezeAccountAction } from "@/app/actions/secur
  * kullanılamaz hâle getiriyor. Caydırıcılık filigran + iz kaydıyla sağlanıyor.
  */
 
-type Sekme = "gecmis" | "aktif" | "supheli" | "iz";
+type Sekme =
+  | "gecmis"
+  | "aktif"
+  | "supheli"
+  | "iz"
+  // ── ERİŞİM KAPILARI (046) — yalnız gatesEnabled iken görünür ─────────────
+  | "onaylar"
+  | "kurallar"
+  | "anahtar";
+
+export type KillSwitchView = {
+  active: boolean;
+  activatedAt: string | null;
+  reason: string | null;
+  lockedUntil: string | null;
+  kalanHak: number;
+};
 
 function zaman(iso: string): string {
   return new Date(iso).toLocaleString("de-AT", { timeZone: "Europe/Vienna" });
@@ -45,6 +84,57 @@ function konum(s: SessionRow): string {
   return [s.city, s.country].filter(Boolean).join(", ");
 }
 
+/**
+ * Kişi başına saat aralığı satırı (KAPI 3).
+ *
+ * Kendi yerel durumunu tutar: aynı ekranda 30 satır varsa üst bileşende 60
+ * ayrı alan tutmak yerine her satır kendi iki kutusunu yönetir. Kaydetme yine
+ * sunucu action'ıdır; buradaki durum yalnız yazarken görünen metindir.
+ */
+function SaatSatiri({
+  kural,
+  pending,
+  onKaydet,
+}: {
+  kural: AccessRule;
+  pending: boolean;
+  onKaydet: (workerId: string, bas: string, bit: string) => void;
+}) {
+  const [bas, setBas] = useState(kural.start ?? "");
+  const [bit, setBit] = useState(kural.end ?? "");
+  const degisti = bas !== (kural.start ?? "") || bit !== (kural.end ?? "");
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+      <div className="flex min-w-0 flex-col">
+        <span className="truncate font-medium">
+          {kural.name}
+          {kural.is_owner && (
+            <span className="ml-2 text-xs text-accent-coral">patron · muaf</span>
+          )}
+        </span>
+        <span className="text-xs text-text-tertiary">
+          Etkin: {kural.is_owner ? "kısıt yok (muaf)" : kural.etkin} · Ülke:{" "}
+          {kural.etkinCountries.join(", ")}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Input value={bas} onChange={(e) => setBas(e.target.value)}
+          placeholder="07:00" className="w-[86px]" autoComplete="off"
+          aria-label={`${kural.name} başlangıç saati`} />
+        <span className="text-text-tertiary">–</span>
+        <Input value={bit} onChange={(e) => setBit(e.target.value)}
+          placeholder="21:00" className="w-[86px]" autoComplete="off"
+          aria-label={`${kural.name} bitiş saati`} />
+        <Button variant="outline" size="sm" disabled={pending || !degisti}
+          onClick={() => onKaydet(kural.id, bas, bit)}>
+          Kaydet
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function GuvenlikClient({
   sessions,
   open,
@@ -53,6 +143,12 @@ export function GuvenlikClient({
   meId,
   layerEnabled,
   singleSession,
+  gatesEnabled,
+  pendingDevices,
+  pendingCountries,
+  accessRules,
+  accessDefaults,
+  killSwitch,
 }: {
   sessions: SessionRow[];
   open: SessionRow[];
@@ -61,11 +157,30 @@ export function GuvenlikClient({
   meId: string;
   layerEnabled: boolean;
   singleSession: boolean;
+  gatesEnabled: boolean;
+  pendingDevices: PendingDevice[];
+  pendingCountries: PendingCountry[];
+  accessRules: AccessRule[];
+  accessDefaults: { hours: string; countries: string[] };
+  killSwitch: KillSwitchView;
 }) {
   const [sekme, setSekme] = useState<Sekme>("gecmis");
   const [pending, start] = useTransition();
   const [onay, setOnay] = useState<{ id: string; ad: string; dondur: boolean } | null>(null);
   const [hata, setHata] = useState<string | null>(null);
+
+  // ── ÖLÜ ADAM ANAHTARI: üç aşama, istemcide YALNIZ adım sayacı ───────────
+  // Aşamaların kendisi sunucuda doğrulanıyor (killSwitchConfirmAction →
+  // killSwitchActivateAction). Buradaki sayaç sadece hangi ekranın
+  // gösterileceğini söyler; atlanırsa da sunucu geçirmez.
+  const [asama, setAsama] = useState<0 | 1 | 2 | 3>(0);
+  const [onayMetni, setOnayMetni] = useState("");
+  const [cevap, setCevap] = useState("");
+  const [sebep, setSebep] = useState("");
+  const [anahtarHata, setAnahtarHata] = useState<string | null>(null);
+  const [kalanHak, setKalanHak] = useState<number>(killSwitch.kalanHak);
+
+  const bekleyenToplam = pendingDevices.length + pendingCountries.length;
 
   const supheli = sessions.filter((s) => s.new_device || s.concurrent);
   const donmus = workers.filter((w) => !w.is_active);
@@ -86,6 +201,75 @@ export function GuvenlikClient({
     start(async () => {
       const r = await unfreezeAccountAction(id);
       if (!r.ok) setHata(r.error ?? "Bilinmeyen hata");
+    });
+  }
+
+  // ── KAPI 1/2: onay kararı ───────────────────────────────────────────────
+  function kararVer(tur: "device" | "country", id: string, onayla: boolean) {
+    setHata(null);
+    start(async () => {
+      const r =
+        tur === "device"
+          ? await approveDeviceAction(id, onayla)
+          : await approveCountryAction(id, onayla);
+      if (!r.ok) setHata(r.error ?? "Bilinmeyen hata");
+    });
+  }
+
+  // ── KAPI 3: saat aralığı ────────────────────────────────────────────────
+  function saatKaydet(workerId: string, bas: string, bit: string) {
+    setHata(null);
+    start(async () => {
+      const r = await setAccessHoursAction(workerId, bas, bit);
+      if (!r.ok) setHata(r.error ?? "Bilinmeyen hata");
+    });
+  }
+
+  // ── KAPI 4: aşama 2 → 3 ─────────────────────────────────────────────────
+  function onayiDogrula() {
+    setAnahtarHata(null);
+    start(async () => {
+      const r = await killSwitchConfirmAction(onayMetni);
+      if (r.ok) {
+        setAsama(3);
+        setOnayMetni("");
+      } else {
+        setAnahtarHata("Metin birebir ONAYLIYORUM olmalı.");
+      }
+    });
+  }
+
+  // ── KAPI 4: aşama 3 → aktivasyon ────────────────────────────────────────
+  function anahtariCek() {
+    setAnahtarHata(null);
+    start(async () => {
+      const r = await killSwitchActivateAction(cevap, sebep);
+      setCevap("");
+      if (r.ok) {
+        setAsama(0);
+        return;
+      }
+      if (typeof r.kalanHak === "number") setKalanHak(r.kalanHak);
+      if (r.error === "locked") {
+        setAnahtarHata(
+          `Anahtar kilitlendi. ${r.lockedUntil ? zaman(r.lockedUntil) : "24 saat"} tarihine kadar açılamaz.`
+        );
+        setAsama(0);
+      } else if (r.error === "wrong_answer") {
+        setAnahtarHata(
+          `Yanlış cevap. Kalan hak: ${typeof r.kalanHak === "number" ? r.kalanHak : "?"}`
+        );
+      } else {
+        setAnahtarHata(r.error ?? "Bilinmeyen hata");
+      }
+    });
+  }
+
+  function anahtariAc() {
+    setAnahtarHata(null);
+    start(async () => {
+      const r = await killSwitchDeactivateAction();
+      if (!r.ok) setAnahtarHata(r.error ?? "Bilinmeyen hata");
     });
   }
 
@@ -188,6 +372,15 @@ export function GuvenlikClient({
           { value: "aktif", label: `Aktif oturumlar (${open.length})` },
           { value: "supheli", label: `Şüpheli (${supheli.length})` },
           { value: "iz", label: "Eylem izi" },
+          // Kapılar kapalıysa sekmeler HİÇ görünmez — boş ekran göstermek
+          // yerine, o kurulumda var olmayan bir özelliği hiç anmamak doğru.
+          ...(gatesEnabled
+            ? ([
+                { value: "onaylar", label: `Bekleyen onaylar (${bekleyenToplam})` },
+                { value: "kurallar", label: "Erişim kuralları" },
+                { value: "anahtar", label: "Ölü adam anahtarı" },
+              ] as const)
+            : []),
         ]}
       />
 
@@ -206,6 +399,208 @@ export function GuvenlikClient({
       {sekme === "iz" && (
         <DataTable rows={audit} columns={izKolon} rowKey={(r) => r.id}
           empty={<EmptyState title="Eylem izi boş" />} />
+      )}
+
+      {/* ── BEKLEYEN ONAYLAR (KAPI 1 + 2) ─────────────────────────────── */}
+      {sekme === "onaylar" && (
+        <div className="flex flex-col gap-6">
+          <section className="flex flex-col gap-3">
+            <h2 className="text-base font-semibold">
+              Yeni cihaz ({pendingDevices.length})
+            </h2>
+            {pendingDevices.length === 0 ? (
+              <EmptyState title="Bekleyen cihaz onayı yok" />
+            ) : (
+              pendingDevices.map((d) => (
+                <div key={d.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate font-medium">{d.worker_name}</span>
+                    <span className="text-xs text-text-tertiary">
+                      {cihaz(d.user_agent)} · {d.first_ip ?? "—"}
+                      {(d.first_city || d.first_country) &&
+                        ` · ${[d.first_city, d.first_country].filter(Boolean).join(", ")}`}
+                      {" · "}{zaman(d.requested_at)}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" disabled={pending}
+                      onClick={() => kararVer("device", d.id, true)}>
+                      <Check className="size-4" aria-hidden /> Onayla
+                    </Button>
+                    <Button variant="outline" size="sm" disabled={pending}
+                      onClick={() => kararVer("device", d.id, false)}>
+                      <X className="size-4" aria-hidden /> Reddet
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+
+          <section className="flex flex-col gap-3">
+            <h2 className="text-base font-semibold">
+              Yeni ülke ({pendingCountries.length})
+            </h2>
+            <p className="text-xs text-text-tertiary">
+              Onay beklemeden serbest ülkeler: {accessDefaults.countries.join(", ")}
+            </p>
+            {pendingCountries.length === 0 ? (
+              <EmptyState title="Bekleyen ülke onayı yok" />
+            ) : (
+              pendingCountries.map((c) => (
+                <div key={c.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate font-medium">
+                      {c.worker_name} · {c.country}
+                    </span>
+                    <span className="text-xs text-text-tertiary">{zaman(c.requested_at)}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" disabled={pending}
+                      onClick={() => kararVer("country", c.id, true)}>
+                      <Check className="size-4" aria-hidden /> Onayla
+                    </Button>
+                    <Button variant="outline" size="sm" disabled={pending}
+                      onClick={() => kararVer("country", c.id, false)}>
+                      <X className="size-4" aria-hidden /> Reddet
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* ── ERİŞİM KURALLARI (KAPI 3) ─────────────────────────────────── */}
+      {sekme === "kurallar" && (
+        <div className="flex flex-col gap-3">
+          <p className="flex items-start gap-2 text-sm text-text-tertiary">
+            <Clock className="mt-0.5 size-4 shrink-0" aria-hidden />
+            Varsayılan aralık {accessDefaults.hours} (Europe/Istanbul). Boş
+            bırakılan satır varsayılanı kullanır; iki ucu birlikte doldurun.
+          </p>
+          {accessRules.length === 0 ? (
+            <EmptyState title="Kadro boş" />
+          ) : (
+            accessRules.map((r) => (
+              <SaatSatiri key={r.id} kural={r} pending={pending} onKaydet={saatKaydet} />
+            ))
+          )}
+        </div>
+      )}
+
+      {/* ── ÖLÜ ADAM ANAHTARI (KAPI 4) ────────────────────────────────── */}
+      {sekme === "anahtar" && (
+        <div className="flex flex-col gap-4">
+          {anahtarHata && (
+            <p className="text-sm text-status-critical-text" role="alert">
+              {anahtarHata}
+            </p>
+          )}
+
+          {killSwitch.active ? (
+            <div className="flex flex-col gap-3 rounded-xl border border-status-critical-border bg-status-critical-bg px-4 py-4">
+              <span className="font-semibold text-status-critical-text">
+                SİSTEM KAPALI
+              </span>
+              <span className="text-sm">
+                {killSwitch.activatedAt ? zaman(killSwitch.activatedAt) : "—"}
+                {killSwitch.reason ? ` · ${killSwitch.reason}` : ""}
+              </span>
+              <span className="text-sm text-text-secondary">
+                Sizin dışınızda herkesin oturumu düşürüldü ve girişler
+                reddediliyor. Veriye dokunulmadı — geri açtığınızda sistem
+                birebir eski hâline döner.
+              </span>
+              <div>
+                <Button variant="outline" size="sm" disabled={pending} onClick={anahtariAc}>
+                  <Power className="size-4" aria-hidden /> Sistemi geri aç
+                </Button>
+              </div>
+            </div>
+          ) : killSwitch.lockedUntil ? (
+            <EmptyState
+              title="Anahtar kilitli"
+              hint={`Üst üste üç yanlış cevap verildi. ${zaman(killSwitch.lockedUntil)} tarihine kadar açılamaz.`}
+            />
+          ) : asama === 0 ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-text-secondary">
+                Bu düğme sizin dışınızda herkesin oturumunu düşürür ve tüm
+                girişleri reddeder. Üç aşamalı onay ister.
+              </p>
+              <div>
+                <Button variant="outline" size="sm" disabled={pending}
+                  onClick={() => { setAsama(1); setAnahtarHata(null); }}>
+                  <Power className="size-4" aria-hidden /> Tüm sistemi kapat
+                </Button>
+              </div>
+            </div>
+          ) : asama === 1 ? (
+            <div className="flex flex-col gap-3 rounded-xl border border-status-critical-border bg-status-critical-bg px-4 py-4">
+              <span className="font-semibold text-status-critical-text">
+                Aşama 1/3 — Ne olacağını okuyun
+              </span>
+              <ul className="list-disc pl-5 text-sm">
+                <li>Sizin dışınızda TÜM oturumlar (web ve mobil) anında düşer.</li>
+                <li>Yeni girişler reddedilir; şoför paneli ve mobil uygulama açılmaz.</li>
+                <li>Telemetri akmaya devam eder — veri kaybı olmaz.</li>
+                <li>Yalnız siz geri açabilirsiniz.</li>
+              </ul>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setAsama(2)}>
+                  Devam
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setAsama(0)}>
+                  Vazgeç
+                </Button>
+              </div>
+            </div>
+          ) : asama === 2 ? (
+            <div className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-4">
+              <span className="font-semibold">Aşama 2/3 — Onay metni</span>
+              <p className="text-sm text-text-secondary">
+                Devam etmek için kutuya <strong>ONAYLIYORUM</strong> yazın.
+              </p>
+              <Input value={onayMetni} onChange={(e) => setOnayMetni(e.target.value)}
+                placeholder="ONAYLIYORUM" autoComplete="off" />
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={pending} onClick={onayiDogrula}>
+                  Devam
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => { setAsama(0); setOnayMetni(""); }}>
+                  Vazgeç
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 rounded-xl border border-status-critical-border bg-status-critical-bg px-4 py-4">
+              <span className="font-semibold text-status-critical-text">
+                Aşama 3/3 — Gizli soru
+              </span>
+              <p className="text-sm">Apolet no?</p>
+              <Input value={cevap} onChange={(e) => setCevap(e.target.value)}
+                type="password" autoComplete="off" inputMode="numeric" />
+              <p className="text-xs text-text-tertiary">
+                Kalan hak: {kalanHak}. Üçüncü yanlışta anahtar 24 saat kilitlenir.
+              </p>
+              <Input value={sebep} onChange={(e) => setSebep(e.target.value)}
+                placeholder="Sebep (isteğe bağlı, ize yazılır)" autoComplete="off" />
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={pending || !cevap}
+                  onClick={anahtariCek}>
+                  <Power className="size-4" aria-hidden /> Sistemi kapat
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => { setAsama(0); setCevap(""); }}>
+                  Vazgeç
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       <section className="flex flex-col gap-3">

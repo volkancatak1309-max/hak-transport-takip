@@ -413,6 +413,15 @@ export type SessionData = {
   session_version?: number;
   /** Açık login_sessions satırının id'si — çıkışta kapatmak için (045). */
   login_session_id?: string;
+  /**
+   * BEKLEYEN ERİŞİM KAPISI (046) — "device" | "country".
+   *
+   * Doluysa kullanıcı kimliğini doğrulamıştır ama İÇERİ ALINMAMIŞTIR: tüm
+   * kapılar onu /erisim ekranına gönderir. Neden oturum kuruluyor da boş
+   * bırakılmıyor: onay satırı KİŞİYE ait, dolayısıyla bekleyenin kim olduğunu
+   * bilmemiz gerekiyor. Reddedilen (saat/anahtar) durumda oturum HİÇ kurulmaz.
+   */
+  access_gate?: "device" | "country";
 };
 
 export type GeofenceRuleKind = "forbidden" | "allowed_only";

@@ -7,7 +7,18 @@ import {
   listSecurityWorkers,
 } from "@/lib/security-read";
 import { audit } from "@/lib/security-log";
-import { SECURITY_LAYER_ENABLED, SINGLE_SESSION } from "@/lib/tenant";
+import {
+  listPendingDevices,
+  listPendingCountries,
+  listAccessRules,
+  ACCESS_DEFAULTS,
+} from "@/lib/access-read";
+import { getKillSwitchState } from "@/lib/kill-switch";
+import {
+  SECURITY_LAYER_ENABLED,
+  SINGLE_SESSION,
+  ACCESS_GATES_ENABLED,
+} from "@/lib/tenant";
 import { GuvenlikClient } from "./GuvenlikClient";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +33,25 @@ export const dynamic = "force-dynamic";
 export default async function GuvenlikPage() {
   const session = await requireOwner();
 
-  const [sessions, open, auditRows, workers] = await Promise.all([
+  const [
+    sessions,
+    open,
+    auditRows,
+    workers,
+    // ERİŞİM KAPILARI (046) — bayrak kapalıysa dördü de boş döner, sorgu yok.
+    pendingDevices,
+    pendingCountries,
+    accessRules,
+    killSwitch,
+  ] = await Promise.all([
     listSessions(200),
     listOpenSessions(),
     listAudit(200),
     listSecurityWorkers(),
+    listPendingDevices(),
+    listPendingCountries(),
+    listAccessRules(),
+    getKillSwitchState(),
   ]);
 
   // Bu sayfanın kendi görüntülenmesi de ize girer — güvenlik ekranına kimin
@@ -52,6 +77,12 @@ export default async function GuvenlikPage() {
         meId={session.worker_id!}
         layerEnabled={SECURITY_LAYER_ENABLED}
         singleSession={SINGLE_SESSION}
+        gatesEnabled={ACCESS_GATES_ENABLED}
+        pendingDevices={pendingDevices}
+        pendingCountries={pendingCountries}
+        accessRules={accessRules}
+        accessDefaults={ACCESS_DEFAULTS}
+        killSwitch={killSwitch}
       />
     </DashboardShell>
   );

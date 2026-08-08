@@ -94,6 +94,12 @@ export function LoginForm() {
       ? t("errInactive")
       : state.error === "db"
       ? t("errDb")
+      // ERİŞİM KAPILARI (046). İkisi de RED: oturum hiç kurulmadı, kullanıcı
+      // giriş ekranında kalır. "Bekleme" durumu buraya DÜŞMEZ — o /erisim'de.
+      : state.error === "system_locked"
+      ? t("errSystemLocked")
+      : state.error === "outside_hours"
+      ? t("errOutsideHours", { window: state.detail ?? "" })
       : null;
 
   return (

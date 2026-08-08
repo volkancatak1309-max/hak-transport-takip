@@ -360,6 +360,59 @@ export const PDF_WATERMARK = (
 ).trim();
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ERİŞİM KAPILARI (migration 046) — dördü de TEK şaltere bağlı
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * DÖRT KAPININ ANA ŞALTERİ: cihaz onayı, ülke onayı, saat kilidi, ölü adam
+ * anahtarı. Kapalıyken hiçbiri tek sorgu atmaz ve giriş akışı bugünküyle
+ * birebir aynı kalır.
+ *
+ * ⚠️ Neden dört ayrı bayrak DEĞİL: dördü tek bir güvenlik duruşunun parçası ve
+ * ayrı ayrı açılmaları anlamlı bir kurulum üretmiyor (cihaz onayı açıkken ülke
+ * onayı kapalı olmak neyi çözer?). Dört env daha eklemek, dördünden birinin
+ * Vercel'de unutulup katmanın SESSİZCE yarım çalışması demekti — 045'te
+ * NEXT_PUBLIC ayna bayrağında bir kez yaşandı, muhafız betiğiyle kapatıldı.
+ * Tek şalter, tek denetim noktası.
+ *
+ * ⚠️ 046 migration'ını GEREKTİRİR ve 045'in üstüne biner (muafiyet ölçütü
+ * workers.is_owner). Migration çalışmadan açılırsa her kapı kendi eksik-tablo
+ * dalına düşer ve GİRİŞİ ENGELLEMEZ (fail-open) — bkz. lib/access-gates.ts.
+ */
+export const ACCESS_GATES_ENABLED = envBool(
+  process.env.ACCESS_GATES_ENABLED,
+  false
+);
+
+/**
+ * ONAY BEKLEMEDEN SERBEST ÜLKELER (ISO 3166-1 alpha-2, virgülle).
+ * Kişi bazında workers.allowed_countries bunu EZER.
+ */
+export const ACCESS_COUNTRIES: string[] = (
+  process.env.ACCESS_COUNTRIES ?? "TR,AT"
+)
+  .split(",")
+  .map((c) => c.trim().toUpperCase())
+  .filter(Boolean);
+
+/**
+ * GİRİŞ SERBEST SAAT ARALIĞI — "HH:MM" (Europe/Istanbul).
+ *
+ * ⚠️ SAAT DİLİMİ İSTANBUL, panelin geri kalanı VİYANA. Bu bilinçli bir istek
+ * (Volkan, 08.08.2026) ama sonucu şudur: 07:00-21:00 İstanbul = 06:00-20:00
+ * Viyana. Filo Avusturya'da çalıştığı için aralık kişi bazında daraltılırken
+ * bu bir saatlik kayma akılda tutulmalı.
+ *
+ * Kişi bazında workers.access_hours_start/end bunu EZER.
+ */
+export const ACCESS_HOURS_START = (
+  process.env.ACCESS_HOURS_START ?? "07:00"
+).trim();
+export const ACCESS_HOURS_END = (
+  process.env.ACCESS_HOURS_END ?? "21:00"
+).trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
 // VARDİYA OTOMATI (yalnız sunucu — lib/auto-shift.ts)
 // ─────────────────────────────────────────────────────────────────────────────
 

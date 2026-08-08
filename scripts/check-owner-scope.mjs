@@ -55,6 +55,10 @@ const OWNER_SURFACES = [
   "app/api/mobile/workers/route.ts",
   "app/api/mobile/workers/[id]/route.ts",
   "lib/security-read.ts",
+  // ERİŞİM KAPILARI (046): ikisi de `workers` üzerinde liste okuması yapıyor
+  // ve patron ekranını besliyor — aynı denetime tabi.
+  "lib/access-read.ts",
+  "lib/access-gates.ts",
 ];
 
 /** Zincirde bunlardan biri varsa sorgu ANAHTARLI sayılır (liste değildir). */

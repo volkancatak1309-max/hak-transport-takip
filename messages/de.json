@@ -847,7 +847,9 @@
     "errInactive": "Konto inaktiv. Bitte Verwaltung kontaktieren.",
     "errDb": "Datenbankfehler",
     "errLocked": "Zu viele Fehlversuche. Bitte in {seconds} Sekunden erneut versuchen.",
-    "lockCleared": "Wartezeit abgelaufen — Sie können es erneut versuchen."
+    "lockCleared": "Wartezeit abgelaufen — Sie können es erneut versuchen.",
+    "errSystemLocked": "Das System wurde vorübergehend gesperrt. Bitte wenden Sie sich an Ihre Leitung.",
+    "errOutsideHours": "Anmeldung nur zwischen {window} möglich."
   },
   "changePin": {
     "title": "Neue PIN festlegen",

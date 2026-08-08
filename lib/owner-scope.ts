@@ -108,6 +108,34 @@ export const getOwnerScope = cache(
 );
 
 /**
+ * BU KİŞİ PATRON MU — bayraktan BAĞIMSIZ, anahtarlı tek okuma.
+ *
+ * ⚠️ Bilerek `SECURITY_LAYER_ENABLED` denetlemez. Erişim kapıları (046) ayrı
+ * bir bayrağa bağlı ve muafiyet ölçütleri is_owner; burada güvenlik katmanının
+ * bayrağına baksaydık, kapılar açık ama güvenlik katmanı kapalı bir kurulumda
+ * patron "patron değil" sayılır ve KENDİ SİSTEMİNDEN KİLİTLENİRDİ. Çağıran
+ * kendi bayrağını denetler; bu fonksiyon yalnız gerçeği söyler.
+ *
+ * Kolon yoksa (045 çalışmamış) ya da hata varsa `false`.
+ */
+export async function isOwnerWorker(
+  workerId: string | null | undefined
+): Promise<boolean> {
+  if (!workerId) return false;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("workers")
+      .select("is_owner")
+      .eq("id", workerId)
+      .maybeSingle();
+    if (error || !data) return false;
+    return data.is_owner === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * `.not(col, "in", ...)` uygulayabilen her PostgREST builder'ı. Özyineli kısıt
  * VERİLMEZ — bkz. lib/test-data.ts'teki aynı not (TypeScript "excessively
  * deep" ile derlemeyi kırıyor).

@@ -847,7 +847,9 @@
     "errInactive": "Hesap pasif. Yönetici ile görüşün.",
     "errDb": "Veritabanı hatası",
     "errLocked": "Çok fazla başarısız deneme. Lütfen {seconds} saniye sonra tekrar deneyin.",
-    "lockCleared": "Süre doldu, tekrar deneyebilirsiniz."
+    "lockCleared": "Süre doldu, tekrar deneyebilirsiniz.",
+    "errSystemLocked": "Sistem geçici olarak kapatıldı. Lütfen yöneticinizle görüşün.",
+    "errOutsideHours": "Giriş yalnız {window} saatleri arasında yapılabilir."
   },
   "changePin": {
     "title": "Yeni PIN Belirleyin",

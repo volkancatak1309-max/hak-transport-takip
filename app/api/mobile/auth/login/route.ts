@@ -7,6 +7,7 @@ import {
 } from "@/lib/mobile-auth";
 import { buildMobileUser } from "@/lib/mobile-user";
 import { openLoginSession } from "@/lib/security-log";
+import { evaluateAccess } from "@/lib/access-gates";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,6 +65,21 @@ export async function POST(req: NextRequest) {
   }
 
   const worker = res.worker;
+
+  // ── ERİŞİM KAPILARI (046) ───────────────────────────────────────────────
+  // Web'den FARKI: burada "beklet" diye bir hâl YOK, her kapı REDDEDER.
+  // Sebebi yapısal — tarayıcıda bekleyen kullanıcıyı /erisim ekranına
+  // hapsedebiliyoruz, mobilde ise token vermek demek tüm /api/mobile/* uçlarını
+  // açmak demek. Yarım yetkili bir token, hiç token vermemekten kötüdür.
+  const kapi = await evaluateAccess(worker.id, req.headers);
+  if (!kapi.ok) {
+    const kod =
+      kapi.gate === "kill" ? "system_locked"
+      : kapi.gate === "hours" ? "outside_hours"
+      : kapi.gate === "device" ? "device_pending"
+      : "country_pending";
+    return mobileError(403, kod, kapi.detail ? { detail: kapi.detail } : undefined);
+  }
 
   // GÜVENLİK İZİ (045) — mobil de bir GİRİŞ KAPISI, o yüzden buraya da yazar.
   // Yazılmazsa /admin/guvenlik "kim girdi" sorusuna eksik cevap verir: telefondan

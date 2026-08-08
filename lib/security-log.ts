@@ -401,7 +401,13 @@ export type AuditAction =
   | "export_pdf"
   | "session_revoke"
   | "account_freeze"
-  | "account_unfreeze";
+  | "account_unfreeze"
+  // ── ERİŞİM KAPILARI (046) ────────────────────────────────────────────────
+  | "access_approve"
+  | "access_deny"
+  | "access_hours"
+  | "kill_switch_on"
+  | "kill_switch_off";
 
 /**
  * Eylem izi yazar. ASLA throw etmez ve katman kapalıyken hiçbir şey yapmaz.

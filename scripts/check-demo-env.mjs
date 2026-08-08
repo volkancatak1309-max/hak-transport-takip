@@ -83,6 +83,12 @@ const ENV = {
   SINGLE_SESSION: "true",
   NEXT_PUBLIC_EXPORT_ENABLED: "false",
   NEXT_PUBLIC_PDF_WATERMARK: "GALZURA DEMO",
+
+  // ── Erişim kapıları (046) — demoda AÇIK ─────────────────────────────────
+  // Tek şalter dördünü birden açar: cihaz onayı, ülke onayı, saat kilidi,
+  // ölü adam anahtarı. Ülke ve saat varsayılanları bilerek env'siz bırakıldı
+  // (TR,AT / 07:00-21:00); kişi bazında ayar patron ekranından yapılıyor.
+  ACCESS_GATES_ENABLED: "true",
 };
 
 /**
@@ -108,6 +114,10 @@ const EXPECTED = {
   "tenant.DEMO_BACKFILL_ENABLED": true,
   "tenant.SECURITY_LAYER_ENABLED": true,
   "tenant.SECURITY_LAYER_PUBLIC": true,
+  "tenant.ACCESS_GATES_ENABLED": true,
+  "tenant.ACCESS_COUNTRIES": "TR,AT",
+  "tenant.ACCESS_HOURS_START": "07:00",
+  "tenant.ACCESS_HOURS_END": "21:00",
   "tenant.SINGLE_SESSION": true,
   "tenant.EXPORT_ENABLED": false,
   "tenant.PDF_WATERMARK": "GALZURA DEMO",
@@ -185,6 +195,10 @@ process.stdout.write(JSON.stringify({
   "tenant.DEMO_BACKFILL_ENABLED": tenant.DEMO_BACKFILL_ENABLED,
   "tenant.SECURITY_LAYER_ENABLED": tenant.SECURITY_LAYER_ENABLED,
   "tenant.SECURITY_LAYER_PUBLIC": tenant.SECURITY_LAYER_PUBLIC,
+  "tenant.ACCESS_GATES_ENABLED": tenant.ACCESS_GATES_ENABLED,
+  "tenant.ACCESS_COUNTRIES": tenant.ACCESS_COUNTRIES.join(","),
+  "tenant.ACCESS_HOURS_START": tenant.ACCESS_HOURS_START,
+  "tenant.ACCESS_HOURS_END": tenant.ACCESS_HOURS_END,
   "tenant.SINGLE_SESSION": tenant.SINGLE_SESSION,
   "tenant.EXPORT_ENABLED": tenant.EXPORT_ENABLED,
   "tenant.PDF_WATERMARK": tenant.PDF_WATERMARK,

@@ -87,6 +87,16 @@ const EXPECTED = {
   "tenant.EXPORT_ENABLED": true,
   // Filigran YOKTU; boş dize "filigran basma" demek.
   "tenant.PDF_WATERMARK": "",
+  // Erişim kapıları — 08.08.2026 (migration 046). Öncesinde böyle bir kavram
+  // YOKTU: cihaz/ülke onayı, saat kilidi ve ölü adam anahtarı yoktu. Şalter
+  // kayarsa HAK61'de giriş yolu dört yeni sorgu açar ve 046 çalıştırılmadığı
+  // için kapılar eksik-tablo dalına düşer.
+  "tenant.ACCESS_GATES_ENABLED": false,
+  // Bunlar yalnız şalter açıkken anlamlı; yine de kayarlarsa demo yanlış
+  // çalışır, o yüzden kayda giriyorlar.
+  "tenant.ACCESS_COUNTRIES": "TR,AT",
+  "tenant.ACCESS_HOURS_START": "07:00",
+  "tenant.ACCESS_HOURS_END": "21:00",
   // Şoför vardiyayı hangi araçla açar. 03.08.2026 öncesi böyle bir ayar yoktu:
   // başlat butonu ve araç seçicisi "atanmış araç VAR ve aktif" bloğunun içinde
   // duruyordu (PanelClient.tsx). 'assigned' o davranışın birebir kendisidir —
@@ -203,6 +213,10 @@ const out = {
   "tenant.DEMO_BACKFILL_ENABLED": tenant.DEMO_BACKFILL_ENABLED,
   "tenant.SECURITY_LAYER_ENABLED": tenant.SECURITY_LAYER_ENABLED,
   "tenant.SECURITY_LAYER_PUBLIC": tenant.SECURITY_LAYER_PUBLIC,
+  "tenant.ACCESS_GATES_ENABLED": tenant.ACCESS_GATES_ENABLED,
+  "tenant.ACCESS_COUNTRIES": tenant.ACCESS_COUNTRIES.join(","),
+  "tenant.ACCESS_HOURS_START": tenant.ACCESS_HOURS_START,
+  "tenant.ACCESS_HOURS_END": tenant.ACCESS_HOURS_END,
   "tenant.SINGLE_SESSION": tenant.SINGLE_SESSION,
   "tenant.EXPORT_ENABLED": tenant.EXPORT_ENABLED,
   "tenant.PDF_WATERMARK": tenant.PDF_WATERMARK,

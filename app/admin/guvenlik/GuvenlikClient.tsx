@@ -104,6 +104,19 @@ const EYLEM_ADI: Record<string, string> = {
   access_hours: "Saat aralığı değiştirdi",
   kill_switch_on: "SİSTEMİ KAPATTI",
   kill_switch_off: "Sistemi geri açtı",
+  create: "Kayıt oluşturdu",
+  update: "Kayıt değiştirdi",
+  delete: "Kayıt sildi",
+  // Dört eski iz tablosundan gelen satırlar (birleşik zaman çizgisi)
+  admin_grant: "Yönetici yetkisi verdi",
+  admin_revoke: "Yönetici yetkisini aldı",
+  shift_edit: "Vardiya düzenledi",
+  leave_create: "İzin oluşturdu",
+  leave_update: "İzin değiştirdi",
+  leave_delete: "İzin sildi",
+  leave_approve: "İzin onayladı",
+  leave_reject: "İzin reddetti",
+  login_unlock: "Giriş kilidini açtı",
 };
 
 /**
@@ -203,8 +216,30 @@ export function GuvenlikClient({
   const [kalanHak, setKalanHak] = useState<number>(killSwitch.kalanHak);
   // Kullanıcı listesi varsayılan KAPALI — kadro büyüdükçe sayfayı şişiriyordu.
   const [kullanicilarAcik, setKullanicilarAcik] = useState(false);
+  // ── EYLEM İZİ SÜZGEÇLERİ ────────────────────────────────────────────────
+  // İstemcide süzülüyor: sunucudan zaten 200 satır geliyor ve her süzme için
+  // sunucuya gitmek, satır sayısı bu ölçekteyken yalnız gecikme eklerdi.
+  const [fKisi, setFKisi] = useState("");
+  const [fEylem, setFEylem] = useState("");
+  const [fBas, setFBas] = useState("");
+  const [fBit, setFBit] = useState("");
 
   const bekleyenToplam = pendingDevices.length + pendingCountries.length;
+
+  // Süzgeç seçenekleri VERİDEN türer: elle liste tutmak, yeni bir eylem
+  // eklendiğinde süzgeçte görünmemesine yol açardı.
+  const izKisiler = [...new Set(audit.map((r) => r.worker_name))].sort();
+  const izEylemler = [...new Set(audit.map((r) => r.action))].sort();
+  const izSuzulmus = audit.filter((r) => {
+    if (fKisi && r.worker_name !== fKisi) return false;
+    if (fEylem && r.action !== fEylem) return false;
+    // Tarih karşılaştırması YEREL güne göre: ISO dizesinin ilk 10 hanesi UTC
+    // günüdür ve gece yarısına yakın satırları yanlış güne atardı.
+    const gun = new Date(r.at).toLocaleDateString("sv-SE", { timeZone: "Europe/Vienna" });
+    if (fBas && gun < fBas) return false;
+    if (fBit && gun > fBit) return false;
+    return true;
+  });
 
   const supheli = sessions.filter((s) => s.new_device || s.concurrent);
   const donmus = workers.filter((w) => !w.is_active);
@@ -356,6 +391,15 @@ export function GuvenlikClient({
       sortValue: (r) => EYLEM_ADI[r.action] ?? r.action,
     },
     { key: "hedef", header: "Hedef", cell: (r) => r.target ?? "—" },
+    {
+      key: "detay",
+      header: "Değişiklik",
+      // "eski → yeni" burada görünür; sunucuda üretiliyor (ham jsonb istemciye
+      // inmiyor). Boşsa görüntüleme/indirme satırıdır, değişiklik değil.
+      cell: (r) => (
+        <span className="text-xs text-text-secondary">{r.detay ?? "—"}</span>
+      ),
+    },
     { key: "ip", header: "IP", cell: (r) => r.ip ?? "—", hideBelow: "md" },
     { key: "ne_zaman", header: "Zaman", cell: (r) => zaman(r.at), sortable: true, sortValue: (r) => r.at },
   ];
@@ -427,8 +471,50 @@ export function GuvenlikClient({
           empty={<EmptyState title="Şüpheli işaret yok" hint="Yeni cihazdan giriş ya da eşzamanlı oturum görülmedi." />} />
       )}
       {sekme === "iz" && (
-        <DataTable rows={audit} columns={izKolon} rowKey={(r) => r.id}
-          empty={<EmptyState title="Eylem izi boş" />} />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs text-text-tertiary">
+              Kişi
+              <select value={fKisi} onChange={(e) => setFKisi(e.target.value)}
+                className="h-9 rounded-lg border border-border bg-card px-2 text-sm text-text-primary">
+                <option value="">Hepsi</option>
+                {izKisiler.map((k) => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-text-tertiary">
+              Eylem
+              <select value={fEylem} onChange={(e) => setFEylem(e.target.value)}
+                className="h-9 rounded-lg border border-border bg-card px-2 text-sm text-text-primary">
+                <option value="">Hepsi</option>
+                {izEylemler.map((a) => (
+                  <option key={a} value={a}>{EYLEM_ADI[a] ?? a}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-text-tertiary">
+              Başlangıç
+              <Input type="date" value={fBas} onChange={(e) => setFBas(e.target.value)}
+                className="h-9 w-[150px]" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-text-tertiary">
+              Bitiş
+              <Input type="date" value={fBit} onChange={(e) => setFBit(e.target.value)}
+                className="h-9 w-[150px]" />
+            </label>
+            {(fKisi || fEylem || fBas || fBit) && (
+              <Button variant="outline" size="sm"
+                onClick={() => { setFKisi(""); setFEylem(""); setFBas(""); setFBit(""); }}>
+                Süzgeci temizle
+              </Button>
+            )}
+            <span className="ml-auto self-center text-xs text-text-tertiary">
+              {izSuzulmus.length} / {audit.length} satır
+            </span>
+          </div>
+          <DataTable rows={izSuzulmus} columns={izKolon} rowKey={(r) => r.id}
+            empty={<EmptyState title="Eylem izi boş"
+              hint={audit.length ? "Süzgeç bu aralıkta satır bulamadı." : undefined} />} />
+        </div>
       )}
 
       {/* ── BEKLEYEN ONAYLAR (KAPI 1 + 2) ─────────────────────────────── */}

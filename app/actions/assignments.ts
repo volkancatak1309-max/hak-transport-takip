@@ -1,4 +1,5 @@
 "use server";
+import { auditChange } from "@/lib/audit-change";
 
 import { revalidatePath } from "next/cache";
 import { getTranslations } from "next-intl/server";
@@ -137,6 +138,8 @@ export async function createAssignment(
   if (error || !inserted) return { ok: false, error: error?.message ?? "insert" };
 
   await notifyAssignment(inserted.id as string);
+  await auditChange(session.worker_id ?? null, "create", "assignments",
+    inserted.id as string, null, parsed.data as Record<string, unknown>);
 
   revalidateAll();
   return { ok: true, id: inserted.id as string };
@@ -147,12 +150,18 @@ export async function updateAssignment(
   id: string,
   data: AssignmentInput
 ): Promise<AssignmentActionResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
 
   const parsed = createAssignmentSchema.safeParse(data);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
   }
+
+  const { data: once } = await supabaseAdmin
+    .from("assignments")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
 
   const { error } = await supabaseAdmin
     .from("assignments")
@@ -167,6 +176,8 @@ export async function updateAssignment(
     .eq("id", id);
 
   if (error) return { ok: false, error: error.message };
+  await auditChange(session.worker_id ?? null, "update", "assignments", id,
+    once as Record<string, unknown> | null, parsed.data as Record<string, unknown>);
   revalidateAll();
   return { ok: true, id };
 }
@@ -176,7 +187,7 @@ export async function cancelAssignment(
   id: string,
   reason: string
 ): Promise<AssignmentActionResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
 
   const { data: existing } = await supabaseAdmin
     .from("assignments")
@@ -194,6 +205,12 @@ export async function cancelAssignment(
     .eq("id", id);
 
   if (error) return { ok: false, error: error.message };
+
+  // İptal bir SİLME değil durum değişimi; yine de eski satırın tamamı elde
+  // (yukarıdaki okuma bildirim için zaten yapılıyordu), sebebiyle birlikte.
+  await auditChange(session.worker_id ?? null, "update", "assignments", id,
+    existing as Record<string, unknown> | null,
+    { status: "cancelled", cancel_reason: reason.trim() || null });
 
   if (existing) {
     const a = existing as Assignment;

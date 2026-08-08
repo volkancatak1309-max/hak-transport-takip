@@ -3,7 +3,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import {
   listSessions,
   listOpenSessions,
-  listAudit,
+  listActionTimeline,
   listSecurityWorkers,
 } from "@/lib/security-read";
 import { audit } from "@/lib/security-log";
@@ -46,7 +46,8 @@ export default async function GuvenlikPage() {
   ] = await Promise.all([
     listSessions(200),
     listOpenSessions(),
-    listAudit(200),
+    // Beş tablo tek zaman çizgisinde (audit_log + dört eski iz tablosu).
+    listActionTimeline(200),
     listSecurityWorkers(),
     listPendingDevices(),
     listPendingCountries(),

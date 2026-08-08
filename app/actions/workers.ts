@@ -1,4 +1,5 @@
 "use server";
+import { auditChange } from "@/lib/audit-change";
 
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
@@ -327,6 +328,11 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
     if (wasAdmin !== nextAdmin) {
       await logWorkerAdminChange(id, session.worker_id ?? null, nextAdmin);
     }
+    // worker_admin_log YALNIZ is_admin eksenini tutuyor; ad, telefon, ehliyet,
+    // sözleşme türü gibi alanlar hiçbir yerde iz bırakmıyordu. Değişen alanlar
+    // (`update`) ve eski hâl (`cur`) zaten elde — ek sorgu YOK.
+    await auditChange(session.worker_id ?? null, "update", "workers", id,
+      cur as Record<string, unknown> | null, update);
   }
 
   // Araç ataması — yalnız GERÇEKTEN değiştiyse dokunulur (form açıldığındaki
@@ -362,7 +368,7 @@ export async function toggleActiveAction(workerId: string): Promise<WorkerResult
 
   const { data: worker } = await supabaseAdmin
     .from("workers")
-    .select("is_active")
+    .select("id, name, is_active, terminated_at")
     .eq("id", workerId)
     .maybeSingle();
   if (!worker) return { ok: false, error: "Çalışan bulunamadı" };
@@ -398,6 +404,8 @@ export async function toggleActiveAction(workerId: string): Promise<WorkerResult
   // canlanması istenmez. Migration 044 yoksa sessiz no-op.
   await bumpTokenVersion(workerId);
 
+  await auditChange(session.worker_id ?? null, "update", "workers", workerId,
+    worker as Record<string, unknown> | null, { is_active: nextActive });
   revalidatePath("/admin/workers");
   // İzin Takvimi kadro listesini bu iki alandan kuruyor — çift satır hatasının
   // düzeldiği anında görünmesi için o sayfa da tazelenir.
@@ -433,7 +441,7 @@ export async function terminateWorkerAction(
   }
   const { data: worker } = await supabaseAdmin
     .from("workers")
-    .select("is_admin")
+    .select("id, name, is_admin, is_active, terminated_at, managed_fleet")
     .eq("id", workerId)
     .maybeSingle();
   if (!worker) return { ok: false, error: "Çalışan bulunamadı" };
@@ -464,6 +472,9 @@ export async function terminateWorkerAction(
   // Migration 044 yoksa sessiz no-op.
   await bumpTokenVersion(workerId);
 
+  await auditChange(session.worker_id ?? null, "update", "workers", workerId,
+    worker as Record<string, unknown> | null,
+    { terminated_at: lastDay, is_active: false, managed_fleet: null });
   revalidatePath("/admin");
   revalidatePath("/admin/workers");
   revalidatePath("/admin/araclar");

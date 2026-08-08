@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireAdmin, getSession } from "@/lib/session";
 import { todayYmdVienna } from "@/lib/leaves";
+import { auditChange } from "@/lib/audit-change";
 
 /**
  * PANEL YOKLAMASI (Modül 7). Şoför paneli açıkken workers.panel_seen_at'i günceller.
@@ -46,6 +47,8 @@ export async function setDepotExemptionAction(
     { onConflict: "worker_id,exempt_date" }
   );
   if (error) return { ok: false, error: error.message };
+  await auditChange(session.worker_id ?? null, "create", "depot_exemptions",
+    workerId, null, { worker_id: workerId, exempt_date: todayYmdVienna() });
   revalidatePath("/admin");
   revalidatePath("/panel");
   return { ok: true };
@@ -54,13 +57,15 @@ export async function setDepotExemptionAction(
 export async function clearDepotExemptionAction(
   workerId: string
 ): Promise<DepotExemptResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
   const { error } = await supabaseAdmin
     .from("depot_exemptions")
     .delete()
     .eq("worker_id", workerId)
     .eq("exempt_date", todayYmdVienna());
   if (error) return { ok: false, error: error.message };
+  await auditChange(session.worker_id ?? null, "delete", "depot_exemptions",
+    workerId, { worker_id: workerId, exempt_date: todayYmdVienna() }, null);
   revalidatePath("/admin");
   revalidatePath("/panel");
   return { ok: true };

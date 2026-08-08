@@ -8,6 +8,7 @@ import { getDriverScope } from "@/lib/driver-scope";
 import { vehicleSchema } from "@/lib/validation";
 import { ACTIVE_FLEETS } from "@/lib/tenant";
 import type { Vehicle } from "@/lib/types";
+import { auditChange } from "@/lib/audit-change";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -226,7 +227,7 @@ async function assertDriverAssignable(
 export async function createVehicle(
   formData: FormData
 ): Promise<VehicleActionResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
   const parsed = parseVehicle(formData);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
@@ -270,6 +271,8 @@ export async function createVehicle(
     d.assigned_worker_id ?? null,
     null
   );
+  await auditChange(session.worker_id ?? null, "create", "vehicles",
+    data.id as string, null, { ...d, plate });
   revalidatePath("/admin/araclar");
   revalidatePath("/admin/workers");
   revalidatePath("/panel");
@@ -279,7 +282,7 @@ export async function createVehicle(
 export async function updateVehicle(
   formData: FormData
 ): Promise<VehicleActionResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
   const id = formData.get("id");
   if (typeof id !== "string" || !id) return { ok: false, error: "id" };
   const parsed = parseVehicle(formData);
@@ -315,9 +318,11 @@ export async function updateVehicle(
     if (notDriver) return notDriver;
   }
 
+  // Bu okuma ZATEN vardı (atama ayrışması için); değişiklik izi de aynı
+  // satıra ihtiyaç duyduğu için kolon listesi genişletildi — ek sorgu YOK.
   const { data: current } = await supabaseAdmin
     .from("vehicles")
-    .select("assigned_worker_id")
+    .select("*")
     .eq("id", id)
     .maybeSingle();
   const currentWorkerId = (current?.assigned_worker_id as string) ?? null;
@@ -348,6 +353,8 @@ export async function updateVehicle(
       .update({ plate })
       .eq("id", currentWorkerId);
   }
+  await auditChange(session.worker_id ?? null, "update", "vehicles", id,
+    current as Record<string, unknown> | null, update);
   revalidatePath("/admin/araclar");
   revalidatePath("/admin/workers");
   revalidatePath("/panel");
@@ -355,10 +362,17 @@ export async function updateVehicle(
 }
 
 export async function deleteVehicle(id: string): Promise<VehicleActionResult> {
-  await requireAdmin();
+  const session = await requireAdmin();
   if (!id) return { ok: false, error: "id" };
+  const { data: once } = await supabaseAdmin
+    .from("vehicles")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
   const { error } = await supabaseAdmin.from("vehicles").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
+  await auditChange(session.worker_id ?? null, "delete", "vehicles", id,
+    once as Record<string, unknown> | null, null);
   revalidatePath("/admin/araclar");
   return { ok: true, id };
 }

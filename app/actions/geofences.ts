@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { geofenceSchema } from "@/lib/validation";
 import type { Geofence } from "@/lib/types";
+import { auditChange } from "@/lib/audit-change";
 
 export type GeofenceResultAction = { ok: boolean; error?: string; id?: string };
 
@@ -62,7 +63,7 @@ function parse(formData: FormData) {
 export async function createGeofence(
   formData: FormData
 ): Promise<GeofenceResultAction> {
-  await requireAdmin();
+  const session = await requireAdmin();
   const parsed = parse(formData);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
@@ -82,6 +83,10 @@ export async function createGeofence(
     .select("id")
     .maybeSingle();
   if (error || !data) return { ok: false, error: error?.message ?? "insert" };
+  // Değişiklik izi: bölge sınırı vardiya OTOMATININ girdisidir (depo tetiği),
+  // yani buradaki bir değişiklik vardiya kayıtlarını dolaylı olarak etkiler.
+  await auditChange(session.worker_id ?? null, "create", "geofences",
+    data.id as string, null, { ...parsed.data, active: true });
   revalidatePath("/admin/bolgeler");
   return { ok: true, id: data.id as string };
 }
@@ -89,13 +94,20 @@ export async function createGeofence(
 export async function updateGeofence(
   formData: FormData
 ): Promise<GeofenceResultAction> {
-  await requireAdmin();
+  const session = await requireAdmin();
   const id = formData.get("id");
   if (typeof id !== "string" || !id) return { ok: false, error: "id" };
   const parsed = parse(formData);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
   }
+  // ESKİ HÂL yazmadan ÖNCE okunur — sonrasında okumak yeni değeri verirdi ve
+  // iz "neyin neye döndüğünü" söyleyemezdi.
+  const { data: once } = await supabaseAdmin
+    .from("geofences")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
   const { error } = await supabaseAdmin
     .from("geofences")
     .update({
@@ -108,6 +120,8 @@ export async function updateGeofence(
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+  await auditChange(session.worker_id ?? null, "update", "geofences", id,
+    once as Record<string, unknown> | null, parsed.data);
   revalidatePath("/admin/bolgeler");
   return { ok: true, id };
 }
@@ -116,20 +130,36 @@ export async function toggleGeofence(
   id: string,
   active: boolean
 ): Promise<GeofenceResultAction> {
-  await requireAdmin();
+  const session = await requireAdmin();
+  const { data: once } = await supabaseAdmin
+    .from("geofences")
+    .select("id, name, active")
+    .eq("id", id)
+    .maybeSingle();
   const { error } = await supabaseAdmin
     .from("geofences")
     .update({ active })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+  await auditChange(session.worker_id ?? null, "update", "geofences", id,
+    once as Record<string, unknown> | null, { active });
   revalidatePath("/admin/bolgeler");
   return { ok: true, id };
 }
 
 export async function deleteGeofence(id: string): Promise<GeofenceResultAction> {
-  await requireAdmin();
+  const session = await requireAdmin();
+  // SİLMEDE TAM KAYIT: satır gittikten sonra ne olduğunu okumanın başka yolu
+  // kalmıyor, bu yüzden bütün alanlar ize yazılır.
+  const { data: once } = await supabaseAdmin
+    .from("geofences")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
   const { error } = await supabaseAdmin.from("geofences").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
+  await auditChange(session.worker_id ?? null, "delete", "geofences", id,
+    once as Record<string, unknown> | null, null);
   revalidatePath("/admin/bolgeler");
   return { ok: true, id };
 }

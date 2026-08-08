@@ -407,7 +407,12 @@ export type AuditAction =
   | "access_deny"
   | "access_hours"
   | "kill_switch_on"
-  | "kill_switch_off";
+  | "kill_switch_off"
+  // ── DEĞİŞİKLİK İZİ (lib/audit-change.ts) ─────────────────────────────────
+  // "kim neyi NEYE çevirdi" — meta içinde eski/yeni değer taşınır.
+  | "create"
+  | "update"
+  | "delete";
 
 /**
  * Eylem izi yazar. ASLA throw etmez ve katman kapalıyken hiçbir şey yapmaz.

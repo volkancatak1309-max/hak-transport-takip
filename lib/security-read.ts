@@ -49,7 +49,33 @@ export type AuditRow = {
   action: string;
   target: string | null;
   ip: string | null;
+  /**
+   * Değişiklik ayrıntısı — "plate: 34ABC → 34XYZ" gibi tek satır.
+   *
+   * audit_log.meta içindeki before/after çiftinden SUNUCUDA üretilir: ham jsonb
+   * istemciye gönderilip orada biçimlenseydi, PIN hash'i gibi maskelenmiş ama
+   * yine de gereksiz alanlar tarayıcıya inerdi.
+   */
+  detay: string | null;
+  /** Satır hangi tablodan geldi — birleşik zaman çizgisinde kaynağı gösterir. */
+  kaynak: TimelineSource;
 };
+
+/**
+ * İZİN DAĞILDIĞI YERLER.
+ *
+ * "Kim neyi değiştirdi" sorusunun cevabı bu depoda BEŞ ayrı tabloya dağılmış
+ * durumda: audit_log (046 ile gelen genel iz) ve ondan önce yazılmış dört özel
+ * tablo. Tabloları birleştirmek (taşımak/silmek) YAPILMADI — her biri kendi
+ * ekranında da kullanılıyor (vardiya düzenleme izi vardiya detayında, izin izi
+ * izin arşivinde). Burada yalnız OKUNUP tek zaman çizgisinde birleştiriliyor.
+ */
+export type TimelineSource =
+  | "audit_log"
+  | "worker_admin_log"
+  | "shift_edit_log"
+  | "leave_edit_log"
+  | "login_unlock_log";
 
 export type SecurityWorker = {
   id: string;
@@ -110,21 +136,180 @@ export async function listOpenSessions(): Promise<SessionRow[]> {
   return hepsi.filter((s) => s.ended_at === null);
 }
 
-/** Son eylem izi. */
+/** Değeri ekranda okunur kıl: null → "boş", uzun dizeyi kırp. */
+function goster(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "boş";
+  if (typeof v === "object") {
+    try {
+      return JSON.stringify(v).slice(0, 60);
+    } catch {
+      return "…";
+    }
+  }
+  return String(v).slice(0, 60);
+}
+
+/**
+ * audit_log.meta → tek satırlık okunur özet.
+ *
+ * update  →  "plate: 34ABC → 34XYZ · status: aktif → serviste"
+ * create  →  "plate=34ABC · fleet=mavi"
+ * delete  →  "silinen: plate=34ABC · fleet=mavi"
+ *
+ * En fazla 4 alan gösterilir; gerisi "+N alan" olarak sayılır — satır tabloyu
+ * taşırmasın ama EKSİLTİLDİĞİ görünsün.
+ */
+function metaOzet(action: string, meta: unknown): string | null {
+  if (!meta || typeof meta !== "object") return null;
+  const m = meta as Record<string, unknown>;
+  const before = (m.before ?? null) as Record<string, unknown> | null;
+  const after = (m.after ?? null) as Record<string, unknown> | null;
+
+  if (action === "update" && before && after) {
+    const alanlar = Object.keys(after);
+    const bas = alanlar.slice(0, 4)
+      .map((k) => `${k}: ${goster(before[k])} → ${goster(after[k])}`)
+      .join(" · ");
+    return alanlar.length > 4 ? `${bas} · +${alanlar.length - 4} alan` : bas;
+  }
+  const kaynak = action === "delete" ? before : after;
+  if (!kaynak) return null;
+  const alanlar = Object.keys(kaynak).filter((k) => k !== "_kirpildi");
+  const bas = alanlar.slice(0, 4).map((k) => `${k}=${goster(kaynak[k])}`).join(" · ");
+  const kuyruk = alanlar.length > 4 ? ` · +${alanlar.length - 4} alan` : "";
+  return action === "delete" ? `silinen: ${bas}${kuyruk}` : `${bas}${kuyruk}`;
+}
+
+/** Son eylem izi (yalnız audit_log). */
 export async function listAudit(limit = 200): Promise<AuditRow[]> {
   if (!SECURITY_LAYER_ENABLED) return [];
   try {
     const { data, error } = await supabaseAdmin
       .from("audit_log")
-      .select("id, worker_id, at, action, target, ip")
+      .select("id, worker_id, at, action, target, ip, meta")
       .order("at", { ascending: false })
       .limit(limit);
     if (error || !data) return [];
     const isim = await workerNames();
-    return data.map((r) => {
-      const row = r as Omit<AuditRow, "worker_name">;
-      return { ...row, worker_name: row.worker_id ? isim.get(row.worker_id) ?? "—" : "—" };
-    });
+    return (data as Record<string, unknown>[]).map((r) => ({
+      id: r.id as string,
+      worker_id: (r.worker_id as string | null) ?? null,
+      worker_name: r.worker_id ? isim.get(r.worker_id as string) ?? "—" : "—",
+      at: r.at as string,
+      action: r.action as string,
+      target: (r.target as string | null) ?? null,
+      ip: (r.ip as string | null) ?? null,
+      detay: metaOzet(r.action as string, r.meta),
+      kaynak: "audit_log" as TimelineSource,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** Tablo yoksa/hata varsa BOŞ döner — eksik migration ekranı kırmaz. */
+async function guvenliOku(
+  tablo: string,
+  kolonlar: string,
+  sirala: string,
+  limit: number
+): Promise<Record<string, unknown>[]> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from(tablo)
+      .select(kolonlar)
+      .order(sirala, { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
+    return data as unknown as Record<string, unknown>[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * BİRLEŞİK ZAMAN ÇİZGİSİ — beş tablo, tek liste.
+ *
+ * ── NEDEN BİRLEŞTİRME, NEDEN TAŞIMA DEĞİL ──────────────────────────────────
+ * Dört eski tablo kendi ekranlarında da kullanılıyor: vardiya düzenleme izi
+ * vardiya detayında, izin izi izin arşivinde, kilit açma personel dosyasında.
+ * Onları audit_log'a taşımak o üç ekranı da yeniden yazmak demekti ve geçmiş
+ * veriyi göç ettirmek gerekirdi. Okuyup birleştirmek aynı soruyu yanıtlıyor,
+ * hiçbir şeyi kırmıyor.
+ *
+ * ── SIRALAMA VE TAVAN ──────────────────────────────────────────────────────
+ * Her tablodan en yeni `limit` satır çekilip birleşik liste zamana göre
+ * sıralanıyor ve yine `limit`e kırpılıyor. Tek bir tablo çok konuşkansa
+ * diğerlerini ekrandan SÜRMEZ, çünkü hepsi kendi payını getiriyor.
+ *
+ * Katman kapalıyken tek sorgu bile atılmaz.
+ */
+export async function listActionTimeline(limit = 200): Promise<AuditRow[]> {
+  if (!SECURITY_LAYER_ENABLED) return [];
+  try {
+    const [audit, adminLog, shiftLog, leaveLog, unlockLog] = await Promise.all([
+      listAudit(limit),
+      guvenliOku("worker_admin_log", "id, changed_at, changed_by, worker_id, granted", "changed_at", limit),
+      guvenliOku("shift_edit_log", "id, time_entry_id, changed_at, changed_by, field, old_value, new_value", "changed_at", limit),
+      guvenliOku("leave_edit_log", "id, leave_id, changed_at, changed_by, action, field, old_value, new_value", "changed_at", limit),
+      guvenliOku("login_unlock_log", "id, unlocked_at, unlocked_by, worker_id, cleared_rows", "unlocked_at", limit),
+    ]);
+
+    const isim = await workerNames();
+    const ad = (id: unknown) => (id ? isim.get(id as string) ?? "—" : "—");
+
+    const satirlar: AuditRow[] = [
+      ...audit,
+      ...adminLog.map((r) => ({
+        id: `wa-${r.id as string}`,
+        worker_id: (r.changed_by as string | null) ?? null,
+        worker_name: ad(r.changed_by),
+        at: r.changed_at as string,
+        action: r.granted ? "admin_grant" : "admin_revoke",
+        target: `workers · ${ad(r.worker_id)}`,
+        ip: null,
+        detay: `is_admin: ${!r.granted} → ${!!r.granted}`,
+        kaynak: "worker_admin_log" as TimelineSource,
+      })),
+      ...shiftLog.map((r) => ({
+        id: `se-${r.id as string}`,
+        worker_id: (r.changed_by as string | null) ?? null,
+        worker_name: ad(r.changed_by),
+        at: r.changed_at as string,
+        action: "shift_edit",
+        target: "time_entries",
+        ip: null,
+        detay: `${r.field as string}: ${goster(r.old_value)} → ${goster(r.new_value)}`,
+        kaynak: "shift_edit_log" as TimelineSource,
+      })),
+      ...leaveLog.map((r) => ({
+        id: `le-${r.id as string}`,
+        worker_id: (r.changed_by as string | null) ?? null,
+        worker_name: ad(r.changed_by),
+        at: r.changed_at as string,
+        action: `leave_${r.action as string}`,
+        target: "worker_leaves",
+        ip: null,
+        detay: `${r.field as string}: ${goster(r.old_value)} → ${goster(r.new_value)}`,
+        kaynak: "leave_edit_log" as TimelineSource,
+      })),
+      ...unlockLog.map((r) => ({
+        id: `lu-${r.id as string}`,
+        worker_id: (r.unlocked_by as string | null) ?? null,
+        worker_name: ad(r.unlocked_by),
+        at: r.unlocked_at as string,
+        action: "login_unlock",
+        target: `workers · ${ad(r.worker_id)}`,
+        ip: null,
+        detay: `silinen deneme: ${goster(r.cleared_rows)}`,
+        kaynak: "login_unlock_log" as TimelineSource,
+      })),
+    ];
+
+    return satirlar
+      .filter((r) => !!r.at)
+      .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+      .slice(0, limit);
   } catch {
     return [];
   }

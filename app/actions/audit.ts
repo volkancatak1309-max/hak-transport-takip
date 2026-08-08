@@ -1,6 +1,8 @@
 "use server";
 
+import { headers } from "next/headers";
 import { getSession } from "@/lib/session";
+import { clientIpFromHeaders } from "@/lib/auth-core";
 import { audit } from "@/lib/security-log";
 import { SECURITY_LAYER_ENABLED } from "@/lib/tenant";
 
@@ -68,4 +70,29 @@ export async function logPdfExportAction(target: string): Promise<void> {
 /** CSV indirildi. İstemcide tablodan üretilen üç yüzeyden çağrılır. */
 export async function logCsvExportAction(target: string): Promise<void> {
   await yaz("export_csv", target, CSV_HEDEF);
+}
+
+/**
+ * PDF PARMAK İZİ ÜRET (047) — değer SUNUCUDA doğuyor, istemci yalnız taşıyor.
+ *
+ * İstemciden çağrılıyor ama üretimi ve kaydı burada: tarayıcıda üretilseydi
+ * kullanıcı başka bir değer koyabilir ya da hiç koymayabilirdi. Dönen dize
+ * belgeye gömülür; silinse bile pdf_fingerprints satırı sunucuda kalır.
+ *
+ * Oturumsuz çağrı `null` alır — kimliksiz bir işaret sorgulandığında
+ * "kimseye ait değil" derdi, yani işe yaramaz bir iz olurdu.
+ */
+export async function mintPdfFingerprintAction(
+  reportType: string
+): Promise<string | null> {
+  if (!SECURITY_LAYER_ENABLED) return null;
+  try {
+    const session = await getSession();
+    if (!session.worker_id) return null;
+    const { mintFingerprint } = await import("@/lib/pdf-fingerprint");
+    const ip = clientIpFromHeaders(await headers());
+    return await mintFingerprint(session.worker_id, reportType, ip);
+  } catch {
+    return null;
+  }
 }

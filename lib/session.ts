@@ -110,12 +110,57 @@ async function enforceAccessGates(
   redirect("/erisim");
 }
 
+/**
+ * KAPSAM KARARLARI İÇİN GEÇERLİ İZLEYİCİ.
+ *
+ * Gölge modunda patron, taklit ettiği kişinin GÖRDÜĞÜNÜ görmeli: listelerde
+ * kendisi gizli olmalı (o kişi is_owner değil), filo kapsamı onunki olmalı.
+ * Bu yüzden kapsam soruları `shadow_of`u kullanır.
+ *
+ * İZ kayıtları BUNU KULLANMAZ — onlar `session.worker_id` ile yazılır ve
+ * patronu gösterir. İki soru farklı: "kim görüyor" ile "kim yaptı".
+ */
+export function effectiveViewerId(
+  session: { worker_id?: string; shadow_of?: string }
+): string | undefined {
+  return session.shadow_of ?? session.worker_id;
+}
+
+/**
+ * GÖLGE MODU SALT OKUMADIR — sunucu tarafında zorlanır.
+ *
+ * ── NASIL TEK YERDEN ───────────────────────────────────────────────────────
+ * Next.js sunucu action'larını `Next-Action` başlığıyla çağırır; sayfa
+ * render'ı bu başlığı TAŞIMAZ. Yani başlığın varlığı "istemciden tetiklenen
+ * bir action" demektir — panelde yazma işlemlerinin tek giriş biçimi budur.
+ * Böylece 60 action'a tek tek koruma eklemek yerine kapıların hepsinde tek
+ * satır yetiyor ve YARIN eklenecek bir action da varsayılan olarak kapalı.
+ *
+ * ⚠️ Bu ölçüt OKUYAN action'ları da durdurur (ör. bir düğmeye basıp veri
+ * çeken). Bilinçli seçim: gölge modu bir inceleme aracı, gezinme aracı değil.
+ * Sayfa render'ı sırasında çağrılan action'lar (getAssignments gibi) başlık
+ * taşımadığı için ETKİLENMEZ — paneller normal dolar.
+ *
+ * `exitShadowAction` bu kapıdan geçmez (require* çağırmaz), yoksa patron
+ * gölgeden çıkamazdı.
+ */
+async function enforceShadowReadOnly(session: { shadow_of?: string }) {
+  if (!session.shadow_of) return;
+  const h = await headers();
+  if (h.get("next-action")) {
+    throw new Error(
+      "GÖLGE MODU salt okumadır — yazma işlemi yapılamaz. Önce gölgeden çıkın."
+    );
+  }
+}
+
 export async function requireWorker() {
   const session = await getSession();
   if (!session.worker_id) redirect("/");
   if (session.must_change_pin) redirect("/pin");
   await enforceSessionVersion(session);
   await enforceAccessGates(session);
+  await enforceShadowReadOnly(session);
   return session;
 }
 
@@ -126,6 +171,7 @@ export async function requireAdmin() {
   if (!session.is_admin) redirect("/panel");
   await enforceSessionVersion(session);
   await enforceAccessGates(session);
+  await enforceShadowReadOnly(session);
   return session;
 }
 
@@ -147,6 +193,7 @@ export async function requireOwner() {
   if (!session.is_admin) redirect("/panel");
   await enforceSessionVersion(session);
   await enforceAccessGates(session);
+  await enforceShadowReadOnly(session);
 
   const { data, error } = await supabaseAdmin
     .from("workers")
@@ -184,6 +231,7 @@ export async function requireFleetView() {
   // panelin iki ana ekranında etkisiz kalırdı.
   await enforceSessionVersion(session);
   await enforceAccessGates(session);
+  await enforceShadowReadOnly(session);
   if (session.is_admin) {
     return { session, fleet: null as VehicleFleet | null, isChief: false };
   }
@@ -266,6 +314,7 @@ export async function requirePinChange() {
   // Düşürülmüş bir oturum PIN ekranında da içeride sayılmamalı (045).
   await enforceSessionVersion(session);
   await enforceAccessGates(session);
+  await enforceShadowReadOnly(session);
   return session;
 }
 

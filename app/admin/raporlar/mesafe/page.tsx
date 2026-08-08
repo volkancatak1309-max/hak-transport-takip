@@ -38,6 +38,7 @@ export default async function DistanceReportPage({
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
       title={t("distance_title")}
     >

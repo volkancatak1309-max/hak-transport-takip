@@ -85,6 +85,7 @@ export default async function ReportsPage() {
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
       title={t("title")}
     >

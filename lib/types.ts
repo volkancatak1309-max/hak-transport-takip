@@ -422,6 +422,21 @@ export type SessionData = {
    * bilmemiz gerekiyor. Reddedilen (saat/anahtar) durumda oturum HİÇ kurulmaz.
    */
   access_gate?: "device" | "country";
+  /**
+   * GÖLGE MODU (dalga 3) — patronun "gözünden baktığı" yöneticinin id'si.
+   *
+   * ⚠️ `worker_id` DEĞİŞMEZ, patronun kendisi kalır. Ayrı bir alan olmasının
+   * sebebi tam olarak bu: eylem izi `worker_id` ile yazıldığı için gölge
+   * modundaki gezinme OTOMATİK OLARAK patron adına düşer, taklit edilenin
+   * adına değil. Kimliği değiştirseydik log kirlenir ve "Furkan o sayfaya
+   * baktı" diyen sahte satırlar doğardı.
+   *
+   * Kapsam kararları (kimin neyi gördüğü) ise bu alana bakar —
+   * bkz. effectiveViewerId().
+   */
+  shadow_of?: string;
+  /** Gölgelenen kişinin adı — şerit her sayfada sorgu atmadan yazsın diye. */
+  shadow_name?: string;
 };
 
 export type GeofenceRuleKind = "forbidden" | "allowed_only";

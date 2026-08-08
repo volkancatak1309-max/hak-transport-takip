@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { requireAdmin } from "@/lib/session";
+import { requireAdmin, effectiveViewerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import {
@@ -54,7 +54,7 @@ export default async function WorkerDetailPage({
   // Patron dosyası is_owner olmayana KAPALI (045). Liste gizlemesi tek başına
   // yetmez: id bir kez öğrenildiğinde bu sayfa doğrudan açılabilir. "Yok" demek
   // "yasak" demekten iyidir — 403 kaydın VAR olduğunu doğrulardı.
-  const ownerScope = await getOwnerScope(session.worker_id);
+  const ownerScope = await getOwnerScope(effectiveViewerId(session));
   if (!ownerScope.isVisible(id)) notFound();
   const w = worker as WorkerPublic;
 
@@ -112,6 +112,7 @@ export default async function WorkerDetailPage({
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
     >
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 space-y-6">

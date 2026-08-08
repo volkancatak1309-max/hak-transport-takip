@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireFleetView } from "@/lib/session";
+import { requireFleetView, effectiveViewerId } from "@/lib/session";
 import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
@@ -49,7 +49,7 @@ export default async function IzinlerPage({
   const scope = await getTestScope();
   const driverScope = await getDriverScope();
   // Patron kademesi (045) — katman kapalıysa boş kapsam, sorgu değişmez.
-  const ownerScope = await getOwnerScope(session.worker_id);
+  const ownerScope = await getOwnerScope(effectiveViewerId(session));
 
   const sp = await searchParams;
   const month = /^\d{4}-\d{2}$/.test(sp.month ?? "")

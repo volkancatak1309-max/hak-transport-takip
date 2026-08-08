@@ -44,6 +44,7 @@ export default async function VehicleRoutePage({
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
       title={t("title")}
     >

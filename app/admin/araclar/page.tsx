@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/session";
+import { requireAdmin, effectiveViewerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
@@ -26,7 +26,7 @@ export default async function AraclarPage() {
   const scope = await getTestScope();
   const driverScope = await getDriverScope();
   // Patron kademesi (045) — katman kapalıysa boş kapsam, sorgu değişmez.
-  const ownerScope = await getOwnerScope(session.worker_id);
+  const ownerScope = await getOwnerScope(effectiveViewerId(session));
   const [vehicles, driversResult, dtc, positions] = await Promise.all([
     listVehiclesWithStatus(),
     // driver-scoped: yöneticiler araca ATANAMAZ. Bu seçici, bir yöneticinin
@@ -80,6 +80,7 @@ export default async function AraclarPage() {
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
     >
       <AraclarClient vehicles={vehicles} drivers={drivers} dtc={dtc} lastSeen={lastSeen} />

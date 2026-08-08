@@ -36,6 +36,7 @@ export default async function FuelReportPage({
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
       title={t("fuel_title")}
     >

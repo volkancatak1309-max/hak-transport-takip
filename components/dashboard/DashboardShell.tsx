@@ -38,6 +38,7 @@ import { HelpToggle } from "@/components/help/HelpToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/app/actions/auth";
+import { exitShadowAction } from "@/app/actions/shadow";
 import { setLocaleAction } from "@/app/actions/preferences";
 import { FUEL_ENABLED, EXPENSE_ENABLED, LEAVES_ENABLED } from "@/lib/features";
 import { DRIVER_PANEL_ENABLED, ADMIN_DRIVER_PANEL_LINK } from "@/lib/tenant";
@@ -54,6 +55,14 @@ export type HeaderUser = {
    * gizlemek kozmetiktir, yetkiyi kapı verir.
    */
   isOwner?: boolean;
+  /**
+   * GÖLGE MODU (dalga 3) — patron bu kişinin gözünden bakıyorsa ONUN ADI.
+   *
+   * Ad oturumda taşınıyor (session.shadow_name), her sayfada ayrı bir sorguyla
+   * çözülmüyor: şerit 20 yüzeyde birden görünüyor ve her biri için bir okuma
+   * eklemek, salt görsel bir uyarı için ölçülebilir bir maliyet olurdu.
+   */
+  shadowOf?: string | null;
   /**
    * Filo sefi ise yonettigi filo (migration 029); degilse null/undefined.
    * isAdmin ile BIRLIKTE kullanilmaz: sef isAdmin=false'tur.
@@ -237,6 +246,26 @@ export function DashboardShell({
 
   return (
     <HelpProvider>
+    {/* GÖLGE ŞERİDİ — sayfanın en üstünde ve KALICI (dalga 3).
+        Gölge modunda olduğunu unutan bir patron, gördüğü eksik listeyi gerçek
+        sanar ("kadroda neden ben yokum?") ve yanlış karar verir. Bu yüzden bir
+        kez gösterilip kaybolan bildirim DEĞİL, sürekli duran bir şerit.
+        Çıkış her sayfadan tek tıkla erişilebilir: gölgeden çıkamamak paneli
+        yarı kullanılamaz bırakırdı. */}
+    {user.shadowOf && (
+      <form
+        action={exitShadowAction}
+        className="sticky top-0 z-50 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-status-critical-fill px-4 py-2 text-sm text-white"
+      >
+        <span>
+          <strong>GÖLGE MODU</strong> — {user.shadowOf} olarak görüntülüyorsun ·
+          salt okuma
+        </span>
+        <button type="submit" className="underline underline-offset-2">
+          Çık
+        </button>
+      </form>
+    )}
     <div className="flex min-h-screen bg-background text-foreground">
       {/* YÜZEN NAV RAYI (DESIGN.md §5 — birincil referans Runey'in imza öğesi).
           Kenara yapışık değil: her yanından 12px içeride, 20px köşeli, koyu yüzey.

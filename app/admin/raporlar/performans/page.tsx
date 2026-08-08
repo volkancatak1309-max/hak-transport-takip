@@ -36,6 +36,7 @@ export default async function PerformanceReportPage({
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
       title={t("perf_title")}
     >

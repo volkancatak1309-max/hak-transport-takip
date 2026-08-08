@@ -412,7 +412,10 @@ export type AuditAction =
   // "kim neyi NEYE çevirdi" — meta içinde eski/yeni değer taşınır.
   | "create"
   | "update"
-  | "delete";
+  | "delete"
+  // ── GÖLGE MODU (dalga 3) ─────────────────────────────────────────────────
+  | "shadow_enter"
+  | "shadow_exit";
 
 /**
  * Eylem izi yazar. ASLA throw etmez ve katman kapalıyken hiçbir şey yapmaz.

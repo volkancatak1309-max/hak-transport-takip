@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { requireOwner } from "@/lib/session";
 import { audit } from "@/lib/security-log";
 import { clientIpFromHeaders } from "@/lib/auth-core";
-import { ACCESS_GATES_ENABLED } from "@/lib/tenant";
+import { ACCESS_GATES_ENABLED, SECURITY_LAYER_ENABLED } from "@/lib/tenant";
 import {
   getKillSwitchState,
   recordAttempt,
@@ -129,6 +129,48 @@ export async function setAccessHoursAction(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "error" };
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OTURUM KAYIT OYNATICI + PDF PARMAK İZİ SORGUSU (dalga 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Bir kişinin bir gününü getirir.
+ *
+ * İSTEK ÜZERİNE yükleniyor, sayfa açılışında değil: oynatıcı altı tabloyu
+ * birden okuyor ve güvenlik ekranını her açan bunu ödemek zorunda değil.
+ */
+export async function getDayReplayAction(workerId: string, ymd: string) {
+  const session = await requireOwner();
+  if (!SECURITY_LAYER_ENABLED) return [];
+  const { buildDayReplay } = await import("@/lib/replay");
+  const olaylar = await buildDayReplay(workerId, ymd);
+  // Oynatıcıyı KİMİN açtığı da ize girer: bir kişinin bütün gününü okumak,
+  // izlenmeye değer bir eylemdir.
+  await audit(session.worker_id ?? null, "page_view", "/admin/guvenlik#oynatici", {
+    hedef: workerId,
+    gun: ymd,
+  });
+  return olaylar;
+}
+
+/**
+ * PDF parmak izini sorgular: işareti yapıştır, kimin ne zaman indirdiğini söyle.
+ *
+ * Bulunamazsa `null` — "bu iz bize ait değil" demenin tek dürüst yolu bu.
+ * Tahmini bir eşleşme döndürmek, sahte bir suçlamaya dayanak olurdu.
+ */
+export async function lookupFingerprintAction(raw: string) {
+  const session = await requireOwner();
+  if (!SECURITY_LAYER_ENABLED) return null;
+  const { lookupFingerprint } = await import("@/lib/pdf-fingerprint");
+  const hit = await lookupFingerprint(raw);
+  await audit(session.worker_id ?? null, "page_view", "/admin/guvenlik#parmakizi", {
+    sorgu: (raw ?? "").slice(0, 40),
+    bulundu: !!hit,
+  });
+  return hit;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

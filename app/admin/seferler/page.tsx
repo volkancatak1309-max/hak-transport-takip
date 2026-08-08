@@ -1,5 +1,5 @@
 import { getTranslations } from "next-intl/server";
-import { requireAdmin } from "@/lib/session";
+import { requireAdmin, effectiveViewerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
@@ -22,7 +22,7 @@ export default async function AssignmentsPage() {
   const scope = await getTestScope();
   const driverScope = await getDriverScope();
   // Patron kademesi (045) — katman kapalıysa boş kapsam, sorgu değişmez.
-  const ownerScope = await getOwnerScope(session.worker_id);
+  const ownerScope = await getOwnerScope(effectiveViewerId(session));
   // driver-scoped: sefer ataması bir ŞOFÖR görevidir; yönetici hesapları
   // seçicide çıkmamalı (seçilirse gerçek bir atama satırı doğar ve sefer
   // sayıları yöneticiye yazılır). Şefler is_admin=false → seçilebilir kalır.
@@ -59,6 +59,7 @@ export default async function AssignmentsPage() {
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
       title={t("title")}
     >

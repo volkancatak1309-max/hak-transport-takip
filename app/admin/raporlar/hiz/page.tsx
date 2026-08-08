@@ -43,6 +43,7 @@ export default async function SpeedReportPage({
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
       title={t("speed_title")}
     >

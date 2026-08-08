@@ -3,6 +3,7 @@
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
 import { Watermark } from "@/components/pdf/Watermark";
+import { Fingerprint, fingerprintDocProps } from "@/components/pdf/Fingerprint";
 import {
   COMPANY,
   COMPANY_UID_LINE,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/report-de";
 import type { CO2ReportData } from "@/lib/co2";
 import { noteExport } from "@/lib/audit-export-client";
+import { mintPdfFingerprint } from "@/lib/pdf-fingerprint-client";
 
 registerPdfFont();
 
@@ -65,9 +67,10 @@ const styles = StyleSheet.create({
 function Doc({ data, title }: { data: CO2ReportData; title: string }) {
   const gen = new Date(data.generatedAt).toLocaleString("de-AT", { timeZone: "Europe/Vienna" });
   return (
-    <Document>
+    <Document {...fingerprintDocProps()}>
       <Page size="A4" style={styles.cover}>
       <Watermark />
+      <Fingerprint />
         <View style={styles.brandBox}>
           <Text style={styles.brandText}>{BRAND_MARK}</Text>
         </View>
@@ -104,6 +107,7 @@ function Doc({ data, title }: { data: CO2ReportData; title: string }) {
 
       <Page size="A4" style={styles.page}>
       <Watermark />
+      <Fingerprint />
         <Text style={styles.h2}>CO₂ je Fahrzeug</Text>
         <View style={styles.table}>
           <View style={styles.thead} fixed>
@@ -139,6 +143,7 @@ function Doc({ data, title }: { data: CO2ReportData; title: string }) {
 
       <Page size="A4" style={styles.page}>
       <Watermark />
+      <Fingerprint />
         <Text style={styles.h2}>Zusammenfassung & EU-Rahmen</Text>
         <View style={styles.legal}>
           <Text>
@@ -170,6 +175,9 @@ function Doc({ data, title }: { data: CO2ReportData; title: string }) {
 }
 
 export async function downloadCO2Report(data: CO2ReportData, title: string) {
+  // Parmak izi SUNUCUDA uretilir ve BELGEDEN ONCE alinir: render
+  // basladiktan sonra gelseydi ilk sayfaya yetismezdi.
+  await mintPdfFingerprint("co2");
   let url: string | null = null;
   try {
     const blob = await pdf(<Doc data={data} title={title} />).toBlob();

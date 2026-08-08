@@ -3,7 +3,9 @@
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
 import { Watermark } from "@/components/pdf/Watermark";
+import { Fingerprint, fingerprintDocProps } from "@/components/pdf/Fingerprint";
 import { noteExport } from "@/lib/audit-export-client";
+import { mintPdfFingerprint } from "@/lib/pdf-fingerprint-client";
 import {
   COMPANY,
   COMPANY_UID_LINE,
@@ -117,9 +119,10 @@ function Doc({
 }) {
   const gen = new Date().toLocaleString("de-AT", { timeZone: "Europe/Vienna" });
   return (
-    <Document>
+    <Document {...fingerprintDocProps()}>
       <Page size="A4" orientation="landscape" style={styles.page} wrap>
       <Watermark />
+      <Fingerprint />
         <View style={styles.header} fixed>
           <View>
             <Text style={styles.company}>{COMPANY.name}</Text>
@@ -186,6 +189,9 @@ export async function downloadFuelPdf(opts: {
   fleetL100: string;
   rows: FuelPdfRow[];
 }) {
+  // Parmak izi SUNUCUDA uretilir ve BELGEDEN ONCE alinir: render
+  // basladiktan sonra gelseydi ilk sayfaya yetismezdi.
+  await mintPdfFingerprint("fuel");
   let url: string | null = null;
   try {
     const blob = await pdf(

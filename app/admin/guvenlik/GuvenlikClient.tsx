@@ -10,6 +10,7 @@ import {
   Power,
   Clock,
   ChevronDown,
+  Eye,
 } from "lucide-react";
 import { DataTable, type Column } from "@/components/ui-v2/DataTable";
 import { StatCard } from "@/components/ui-v2/StatCard";
@@ -33,7 +34,12 @@ import {
   killSwitchConfirmAction,
   killSwitchActivateAction,
   killSwitchDeactivateAction,
+  getDayReplayAction,
+  lookupFingerprintAction,
 } from "@/app/actions/access";
+import { enterShadowAction } from "@/app/actions/shadow";
+import type { ReplayEvent } from "@/lib/replay";
+import type { FingerprintHit } from "@/lib/pdf-fingerprint";
 
 /**
  * GÜVENLİK EKRANI (045) — dört sekme: giriş geçmişi, aktif oturumlar,
@@ -52,7 +58,10 @@ type Sekme =
   // ── ERİŞİM KAPILARI (046) — yalnız gatesEnabled iken görünür ─────────────
   | "onaylar"
   | "kurallar"
-  | "anahtar";
+  | "anahtar"
+  // ── DALGA 3 ──────────────────────────────────────────────────────────────
+  | "oynatici"
+  | "parmakizi";
 
 export type KillSwitchView = {
   active: boolean;
@@ -118,6 +127,8 @@ const EYLEM_ADI: Record<string, string> = {
   leave_approve: "İzin onayladı",
   leave_reject: "İzin reddetti",
   login_unlock: "Giriş kilidini açtı",
+  shadow_enter: "GÖLGE MODUNA girdi",
+  shadow_exit: "Gölge modundan çıktı",
 };
 
 /**
@@ -341,6 +352,13 @@ export function GuvenlikClient({
   const [kalanHak, setKalanHak] = useState<number>(killSwitch.kalanHak);
   // Kullanıcı listesi varsayılan KAPALI — kadro büyüdükçe sayfayı şişiriyordu.
   const [kullanicilarAcik, setKullanicilarAcik] = useState(false);
+  // ── OYNATICI: istek üzerine yüklenir (altı tabloyu birden okuyor) ────────
+  const [oyKisi, setOyKisi] = useState("");
+  const [oyGun, setOyGun] = useState("");
+  const [oyOlaylar, setOyOlaylar] = useState<ReplayEvent[] | null>(null);
+  // ── PARMAK İZİ SORGUSU ──────────────────────────────────────────────────
+  const [fpSorgu, setFpSorgu] = useState("");
+  const [fpSonuc, setFpSonuc] = useState<FingerprintHit | null | "yok">(null);
   // ── EYLEM İZİ SÜZGEÇLERİ ────────────────────────────────────────────────
   // İstemcide süzülüyor: sunucudan zaten 200 satır geliyor ve her süzme için
   // sunucuya gitmek, satır sayısı bu ölçekteyken yalnız gecikme eklerdi.
@@ -406,6 +424,30 @@ export function GuvenlikClient({
     start(async () => {
       const r = await setAccessHoursAction(workerId, bas, bit);
       if (!r.ok) setHata(r.error ?? "Bilinmeyen hata");
+    });
+  }
+
+  function oynat() {
+    setHata(null);
+    start(async () => {
+      const r = await getDayReplayAction(oyKisi, oyGun);
+      setOyOlaylar(r);
+    });
+  }
+
+  function fpSor() {
+    setHata(null);
+    start(async () => {
+      const r = await lookupFingerprintAction(fpSorgu);
+      setFpSonuc(r ?? "yok");
+    });
+  }
+
+  function golgele(id: string) {
+    setHata(null);
+    start(async () => {
+      const r = await enterShadowAction(id);
+      if (r && !r.ok) setHata(r.error ?? "Gölge moduna girilemedi");
     });
   }
 
@@ -576,6 +618,8 @@ export function GuvenlikClient({
                 { value: "onaylar", label: `Bekleyen onaylar (${bekleyenToplam})` },
                 { value: "kurallar", label: "Erişim kuralları" },
                 { value: "anahtar", label: "Ölü adam anahtarı" },
+                { value: "oynatici", label: "Gün oynatıcı" },
+                { value: "parmakizi", label: "PDF parmak izi" },
               ] as const)
             : []),
         ]}
@@ -710,6 +754,100 @@ export function GuvenlikClient({
               ))
             )}
           </section>
+        </div>
+      )}
+
+      {/* ── GÜN OYNATICI (dalga 3) ────────────────────────────────────── */}
+      {sekme === "oynatici" && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs text-text-tertiary">
+              Kişi
+              <select value={oyKisi} onChange={(e) => setOyKisi(e.target.value)}
+                className="h-9 rounded-lg border border-border bg-card px-2 text-sm text-text-primary">
+                <option value="">Seçin</option>
+                {workers.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-text-tertiary">
+              Gün
+              <Input type="date" value={oyGun} onChange={(e) => setOyGun(e.target.value)}
+                className="h-9 w-[160px]" />
+            </label>
+            <Button variant="outline" size="sm" disabled={pending || !oyKisi || !oyGun}
+              onClick={oynat}>
+              Günü aç
+            </Button>
+          </div>
+
+          {oyOlaylar === null ? (
+            <EmptyState title="Bir kişi ve gün seçin"
+              hint="Giriş, sayfa görüntülemeleri, indirmeler ve değişiklikler tek zaman çizgisinde gelir." />
+          ) : oyOlaylar.length === 0 ? (
+            <EmptyState title="O gün kayıt yok" />
+          ) : (
+            /* Dikey çizgi: sol kenarda tek bir hat, olaylar üstüne oturuyor. */
+            <ol className="relative flex flex-col gap-0 border-l border-border pl-4">
+              {oyOlaylar.map((o) => (
+                <li key={o.id} className="relative py-2">
+                  <span
+                    className={
+                      "absolute -left-[21px] top-3.5 size-2 rounded-full " +
+                      (o.kind === "gap" ? "bg-border" : "bg-accent-coral")
+                    }
+                    aria-hidden
+                  />
+                  {o.kind === "gap" ? (
+                    <span className="text-xs italic text-text-tertiary">{o.baslik}</span>
+                  ) : (
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm">
+                        <span className="tabular-nums text-text-tertiary">
+                          {new Date(o.at).toLocaleTimeString("de-AT", {
+                            timeZone: "Europe/Vienna", hour: "2-digit", minute: "2-digit",
+                          })}
+                        </span>{" "}
+                        <span className="font-medium">{EYLEM_ADI[o.baslik] ?? o.baslik}</span>
+                        {o.alt && <span className="text-text-tertiary"> · {o.alt}</span>}
+                      </span>
+                      {o.degisim.length > 0 && <Degisiklik alanlar={o.degisim} />}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+
+      {/* ── PDF PARMAK İZİ SORGUSU (dalga 3) ──────────────────────────── */}
+      {sekme === "parmakizi" && (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-text-secondary">
+            Elinizdeki PDF&apos;ten çıkan işareti yapıştırın. İşaret belgede
+            görünmezdir; metin ayıklayıcı ya da belge künyesi (&quot;Konu&quot;
+            alanı) ile okunur.
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <Input value={fpSorgu} onChange={(e) => setFpSorgu(e.target.value)}
+              placeholder="HAK-XXXX-XXXX-XXXX" className="w-[260px]" autoComplete="off" />
+            <Button variant="outline" size="sm" disabled={pending || !fpSorgu} onClick={fpSor}>
+              Sorgula
+            </Button>
+          </div>
+          {fpSonuc === "yok" && (
+            <EmptyState title="Bu işaret bulunamadı"
+              hint="İz bu kurulumda üretilmemiş olabilir. Tahmini eşleşme gösterilmez." />
+          )}
+          {fpSonuc && fpSonuc !== "yok" && (
+            <div className="flex flex-col gap-1 rounded-xl border border-border bg-card px-4 py-3">
+              <span className="font-medium">{fpSonuc.worker_name}</span>
+              <span className="text-sm text-text-secondary">
+                {zaman(fpSonuc.at)} · {fpSonuc.report_type} raporu · IP {fpSonuc.ip ?? "—"}
+              </span>
+              <span className="text-xs text-text-tertiary">{fpSonuc.fingerprint}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -892,6 +1030,14 @@ export function GuvenlikClient({
                       onClick={() => setOnay({ id: w.id, ad: w.name, dondur: true })}>
                       <Snowflake className="size-4" aria-hidden /> Dondur
                     </Button>
+                    {/* GÖLGE MODU: yalnız YÖNETİCİ hesaplarda ve patron
+                        kendini/başka patronu gölgeleyemez (sunucu da reddeder). */}
+                    {w.is_admin && !w.is_owner && w.id !== meId && (
+                      <Button variant="outline" size="sm" disabled={pending}
+                        onClick={() => golgele(w.id)}>
+                        <Eye className="size-4" aria-hidden /> Gözünden bak
+                      </Button>
+                    )}
                   </>
                 ) : (
                   <Button variant="outline" size="sm" disabled={pending} onClick={() => geriAc(w.id)}>

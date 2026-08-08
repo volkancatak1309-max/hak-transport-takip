@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getLocale } from "next-intl/server";
-import { requireAdmin } from "@/lib/session";
+import { requireAdmin, effectiveViewerId } from "@/lib/session";
 import { lookupDtc } from "@/lib/dtc-codes";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getVehicleDetail } from "@/lib/vehicles";
@@ -45,7 +45,7 @@ export default async function VehicleDetailPage({
   const scope = await getTestScope();
   const driverScope = await getDriverScope();
   // Patron kademesi (045) — katman kapalıysa boş kapsam, sorgu değişmez.
-  const ownerScope = await getOwnerScope(session.worker_id);
+  const ownerScope = await getOwnerScope(effectiveViewerId(session));
   const [detail, telemetry, track, zones, events, dtc, driversResult] =
     await Promise.all([
       getVehicleDetail(id),
@@ -101,6 +101,7 @@ export default async function VehicleDetailPage({
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
       title={detail.vehicle.plate}
     >

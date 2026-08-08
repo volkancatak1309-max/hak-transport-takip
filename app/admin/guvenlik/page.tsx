@@ -66,6 +66,7 @@ export default async function GuvenlikPage() {
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
         isOwner: true,
       }}
       title="Güvenlik"

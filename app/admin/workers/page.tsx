@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/session";
+import { requireAdmin, effectiveViewerId } from "@/lib/session";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getOwnerScope, withoutOwner } from "@/lib/owner-scope";
@@ -39,7 +39,7 @@ export default async function WorkersPage() {
   const scope = await getTestScope();
   // Patron kademesi (045): is_owner OLMAYAN yöneticiye patron gösterilmez.
   // Katman kapalıysa boş kapsam → sorgu birebir bugünküyle aynı kalır.
-  const ownerScope = await getOwnerScope(session.worker_id);
+  const ownerScope = await getOwnerScope(effectiveViewerId(session));
   const [workersResult, entriesResult, vehiclesResult] = await Promise.all([
     // test-filtered: withoutTestRows — Çalışanlar listesinin ana giriş noktası.
     // owner-filtered: withoutOwner — patron bu listede is_owner olmayana çıkmaz.
@@ -121,6 +121,7 @@ export default async function WorkersPage() {
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
     >
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6">

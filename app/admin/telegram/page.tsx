@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/session";
+import { requireAdmin, effectiveViewerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -18,7 +18,7 @@ export default async function TelegramAdminPage() {
   const scope = await getTestScope();
   // owner-filtered: withoutOwner — patronun Telegram bağlantısı, dolayısıyla
   // varlığı, is_owner olmayan yöneticiye bu listede görünmez.
-  const ownerScope = await getOwnerScope(session.worker_id);
+  const ownerScope = await getOwnerScope(effectiveViewerId(session));
   const { data: connectedRaw } = await withoutOwner(
     withoutTestRows(
       supabaseAdmin
@@ -55,6 +55,7 @@ export default async function TelegramAdminPage() {
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
     >
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 space-y-4">

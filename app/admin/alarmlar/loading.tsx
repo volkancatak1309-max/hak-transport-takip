@@ -13,6 +13,7 @@ export default async function Loading() {
         name: session.name ?? "",
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
     >
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6">

@@ -12,9 +12,11 @@ import {
 import type { Style } from "@react-pdf/types";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
 import { Watermark } from "@/components/pdf/Watermark";
+import { Fingerprint, fingerprintDocProps } from "@/components/pdf/Fingerprint";
 import { BRAND_MARK } from "@/lib/report-de";
 import { PACKAGES_ENABLED } from "@/lib/tenant";
 import { noteExport } from "@/lib/audit-export-client";
+import { mintPdfFingerprint } from "@/lib/pdf-fingerprint-client";
 
 registerPdfFont();
 
@@ -183,9 +185,10 @@ function colWidths(withPackages: boolean): Record<keyof typeof COL_W, Style> {
 function ReportDoc(opts: PdfOptions) {
   const w = colWidths(PACKAGES_ENABLED);
   return (
-    <Document>
+    <Document {...fingerprintDocProps()}>
       <Page size="A4" orientation="landscape" style={styles.page} wrap>
       <Watermark />
+      <Fingerprint />
         <View style={styles.header} fixed>
           <View style={styles.headerLeft}>
             {opts.logoDataUrl ? (
@@ -259,6 +262,9 @@ function ReportDoc(opts: PdfOptions) {
 }
 
 export async function downloadPdf(opts: PdfOptions) {
+  // Parmak izi SUNUCUDA uretilir ve BELGEDEN ONCE alinir: render
+  // basladiktan sonra gelseydi ilk sayfaya yetismezdi.
+  await mintPdfFingerprint("shift");
   let url: string | null = null;
   try {
     const blob = await pdf(<ReportDoc {...opts} />).toBlob();

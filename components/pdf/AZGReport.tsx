@@ -3,6 +3,7 @@
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
 import { Watermark } from "@/components/pdf/Watermark";
+import { Fingerprint, fingerprintDocProps } from "@/components/pdf/Fingerprint";
 import {
   COMPANY,
   COMPANY_UID_LINE,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/report-de";
 import type { AZGData, AZGSeverity } from "@/app/actions/azg-report";
 import { noteExport } from "@/lib/audit-export-client";
+import { mintPdfFingerprint } from "@/lib/pdf-fingerprint-client";
 
 registerPdfFont();
 
@@ -122,10 +124,11 @@ function ReportDoc({ data }: { data: AZGData }) {
   const seriousColor = data.seriousCount > 0 ? SEVERITY_COLOR.serious_violation : "#94a3b8";
 
   return (
-    <Document>
+    <Document {...fingerprintDocProps()}>
       {/* Cover */}
       <Page size="A4" style={styles.cover}>
       <Watermark />
+      <Fingerprint />
         <View style={styles.brandBox}>
           <Text style={styles.brandText}>{BRAND_MARK}</Text>
         </View>
@@ -153,6 +156,7 @@ function ReportDoc({ data }: { data: AZGData }) {
       {/* Summary + suspicious */}
       <Page size="A4" style={styles.page}>
       <Watermark />
+      <Fingerprint />
         <Text style={styles.h2}>Zusammenfassung je Mitarbeiter</Text>
         <View style={styles.table}>
           <View style={styles.thead} fixed>
@@ -245,6 +249,7 @@ function ReportDoc({ data }: { data: AZGData }) {
       {/* Detail */}
       <Page size="A4" style={styles.page}>
       <Watermark />
+      <Fingerprint />
         <Text style={styles.h2}>Detaillierte Verstöße</Text>
         <View style={styles.table}>
           <View style={styles.thead} fixed>
@@ -297,6 +302,9 @@ function ReportDoc({ data }: { data: AZGData }) {
 }
 
 export async function downloadAZGReport(data: AZGData) {
+  // Parmak izi SUNUCUDA uretilir ve BELGEDEN ONCE alinir: render
+  // basladiktan sonra gelseydi ilk sayfaya yetismezdi.
+  await mintPdfFingerprint("azg");
   let url: string | null = null;
   try {
     const blob = await pdf(<ReportDoc data={data} />).toBlob();

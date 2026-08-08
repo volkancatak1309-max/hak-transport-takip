@@ -22,6 +22,7 @@ export default async function BolgelerPage() {
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
       title={t("title")}
     >

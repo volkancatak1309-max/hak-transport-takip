@@ -36,6 +36,7 @@ export default async function AdminFuelPage() {
         name: session.name!,
         phone: session.phone ?? "",
         isAdmin: true,
+        shadowOf: session.shadow_name ?? null,
       }}
     >
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 space-y-4">

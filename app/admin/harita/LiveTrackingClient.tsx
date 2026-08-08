@@ -76,8 +76,16 @@ export function LiveTrackingClient({
   const [hovered, setHovered] = useState<string | null>(null);
 
   // Soft auto-refresh of server data + a 1s tick for live durations.
+  //
+  // GÖRÜNÜRLÜK KAPISI (yalnız `refresh` için): harita yenilemesi araç başına
+  // ayrı sorgu attırıyor (listLatestVehiclePositions, 29 araç = 29 istek);
+  // arkadaki sekme bunu bedavaya ödetiyordu. `tick` kapıya alınmaz — o yalnız
+  // yerel saat ilerletir, DB'ye gitmez, ve sekme öne geldiğinde süreler
+  // anında doğru görünsün diye kesintisiz kalmalı.
   useEffect(() => {
-    const refresh = setInterval(() => router.refresh(), REFRESH_MS);
+    const refresh = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, REFRESH_MS);
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       clearInterval(refresh);

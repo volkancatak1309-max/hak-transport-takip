@@ -126,8 +126,15 @@ export function PanelClient({
 
   // Otomatik başlayan/biten vardiyalar sunucuda oluşur — panel 30 sn'de bir
   // tazelenir ki onay kartı/özet şoförün karşısına kendiliğinden çıksın.
+  //
+  // GÖRÜNÜRLÜK KAPISI: şoför telefonu cebine koyduğunda / başka uygulamaya
+  // geçtiğinde panel arka plana düşer ama yenileme sürüyordu — 29 şoför ×
+  // vardiya boyu. Sekme öne geldiğinde ilk tikte tazelenir, yani şoför
+  // paneli açtığında gördüğü veri yine güncel.
   useEffect(() => {
-    const id = setInterval(() => router.refresh(), 30_000);
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 30_000);
     return () => clearInterval(id);
   }, [router]);
 

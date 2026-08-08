@@ -262,8 +262,15 @@ export function AdminClient({
   // Yumuşak otomatik yenileme (vardiya başl/mola/bitiş F5'siz görünsün) — canlı
   // harita ile aynı yaklaşım. Aktif vardiyanın saniyelik canlı süresi artık
   // LiveWorked bileşeninde izole; buradaki 1sn'lik global tick KALDIRILDI.
+  //
+  // GÖRÜNÜRLÜK KAPISI: yalnız sekme öndeyken yenilenir. Bu sayfa 20 sn'de bir
+  // 43-51 sorgu attırıyor (ölçüldü: ~73 KB/yenileme); arkada unutulmuş bir
+  // sekme 8 saatte ~101 MB Supabase egress'i üretiyordu. Kalıbın kaynağı
+  // VehicleDetailClient.tsx — sekme öne gelince bir sonraki tikte devam eder.
   useEffect(() => {
-    const id = setInterval(() => router.refresh(), 20_000);
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 20_000);
     return () => clearInterval(id);
   }, [router]);
 

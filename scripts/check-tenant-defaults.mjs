@@ -78,6 +78,10 @@ const EXPECTED = {
   // denetlenmiyordu. Üçü de KAPALI olmak zorunda; biri kayarsa HAK61'de her
   // istekte yeni sorgular başlar ve 045 çalıştırılmadığı için hata üretir.
   "tenant.SECURITY_LAYER_ENABLED": false,
+  // İstemciye görünen ayna. Kayarsa HAK61/Sendigo'da her PDF/CSV indirmesinde
+  // hiçbir şey yazmayacak bir sunucu isteği gidip döner — "davranış değişmedi"
+  // sözü ölçülebilir biçimde bozulur.
+  "tenant.SECURITY_LAYER_PUBLIC": false,
   "tenant.SINGLE_SESSION": false,
   // Dışa aktarma bugün AÇIK (4 CSV yüzeyi çalışıyor) — kaymamalı.
   "tenant.EXPORT_ENABLED": true,
@@ -198,6 +202,7 @@ const out = {
   "tenant.VIN_BACKFILL_ENABLED": tenant.VIN_BACKFILL_ENABLED,
   "tenant.DEMO_BACKFILL_ENABLED": tenant.DEMO_BACKFILL_ENABLED,
   "tenant.SECURITY_LAYER_ENABLED": tenant.SECURITY_LAYER_ENABLED,
+  "tenant.SECURITY_LAYER_PUBLIC": tenant.SECURITY_LAYER_PUBLIC,
   "tenant.SINGLE_SESSION": tenant.SINGLE_SESSION,
   "tenant.EXPORT_ENABLED": tenant.EXPORT_ENABLED,
   "tenant.PDF_WATERMARK": tenant.PDF_WATERMARK,

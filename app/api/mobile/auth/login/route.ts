@@ -6,6 +6,7 @@ import {
   mobileError,
 } from "@/lib/mobile-auth";
 import { buildMobileUser } from "@/lib/mobile-user";
+import { openLoginSession } from "@/lib/security-log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,6 +64,16 @@ export async function POST(req: NextRequest) {
   }
 
   const worker = res.worker;
+
+  // GÜVENLİK İZİ (045) — mobil de bir GİRİŞ KAPISI, o yüzden buraya da yazar.
+  // Yazılmazsa /admin/guvenlik "kim girdi" sorusuna eksik cevap verir: telefondan
+  // yapılan giriş hiç görünmez, yani izlenmesi gereken yerde kör kalırdık.
+  //
+  // ⚠️ SIRA: token_version okumasından ÖNCE. SINGLE_SESSION açıkken
+  // openLoginSession sayacı artırıyor; sonra okusaydık az önce geçersiz kıldığımız
+  // sürümle token mühürlerdik ve istemci daha ilk istekte 401 alırdı.
+  await openLoginSession(worker.id, { source: "mobile", headers: req.headers });
+
   const tv = await readTokenVersion(worker.id);
   if (tv.status === "error") return mobileError(503, "db_error");
   const version = tv.status === "ok" ? tv.value : 0;

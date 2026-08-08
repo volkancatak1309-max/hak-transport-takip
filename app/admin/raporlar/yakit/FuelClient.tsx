@@ -14,6 +14,7 @@ import {
   FUEL_MIN_KM,
 } from "@/lib/metric-thresholds";
 import type { FuelReport, FuelRow } from "@/lib/reports";
+import { noteExport } from "@/lib/audit-export-client";
 
 /**
  * Yakıt raporu. Yüzde okumaları device_telemetry.fuel_level_pct'ten
@@ -54,7 +55,7 @@ export function FuelClient({
     );
   }
 
-  function exportCsv() {
+  async function exportCsv() {
     const header = [
       t("col_plate"),
       t("col_driver"),
@@ -106,6 +107,8 @@ export function FuelClient({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    // İz: CSV'yi kim dışa çıkardı (045). Katman kapalıysa no-op.
+    await noteExport("csv", "fuel");
   }
 
   async function exportPdf() {

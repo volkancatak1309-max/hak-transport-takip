@@ -5,6 +5,7 @@ import {
   bumpTokenVersion,
   mobileError,
 } from "@/lib/mobile-auth";
+import { closeSessionsBySource } from "@/lib/security-log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +53,11 @@ export async function POST(req: NextRequest) {
 
   const bumped = await bumpTokenVersion(payload.sub);
   if (!bumped) return mobileError(503, "revoke_failed");
+
+  // Oturum satırlarını da kapat (045). Çıkış hesap ekseninde yürüdüğü için
+  // kapanış da hesap ekseninde: aksi hâlde çıkış yapmış bir telefon
+  // /admin/guvenlik'te "açık oturum" olarak durmaya devam ederdi.
+  await closeSessionsBySource(payload.sub, "mobile", "logout");
 
   return Response.json({ ok: true });
 }

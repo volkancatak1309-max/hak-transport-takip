@@ -14,6 +14,7 @@ import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
 import { Watermark } from "@/components/pdf/Watermark";
 import { BRAND_MARK } from "@/lib/report-de";
 import { PACKAGES_ENABLED } from "@/lib/tenant";
+import { noteExport } from "@/lib/audit-export-client";
 
 registerPdfFont();
 
@@ -268,6 +269,8 @@ export async function downloadPdf(opts: PdfOptions) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    // İz: raporu kim dışa çıkardı (045). Katman kapalıysa no-op.
+    await noteExport("pdf", "shift");
   } finally {
     // Always release the object URL, even if generation/click threw. The error
     // (if any) propagates so the caller can surface it to the user.

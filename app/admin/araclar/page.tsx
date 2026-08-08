@@ -7,11 +7,15 @@ import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { listLatestVehiclePositions } from "@/lib/telemetry";
 import { getFleetDtc } from "@/lib/admin-dashboard";
 import { AraclarClient } from "./AraclarClient";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
 export default async function AraclarPage() {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/araclar");
   // Araç formundaki "Atanmış şoför" seçimi. Bu ilişki
   // (vehicles.assigned_worker_id) şoför↔araç eşleşmesinin tek kaynağı: şoför
   // paneli ve Çalışanlar sayfası ikisi de buradan okur.

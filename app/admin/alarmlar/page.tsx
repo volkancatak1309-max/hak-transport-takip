@@ -20,6 +20,7 @@ import {
 import { eventTone } from "@/lib/event-ui";
 import type { TrendBucket } from "@/components/ui-v2";
 import { AlarmsClient, type AlarmRow } from "./AlarmsClient";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +108,9 @@ export default async function AlarmsPage({
   searchParams: Promise<{ range?: string }>;
 }) {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/alarmlar");
   const sp = await searchParams;
 
   // Eşik sınırı önce okunur: hem VARSAYILAN aralığı hem uyarıyı o belirliyor.

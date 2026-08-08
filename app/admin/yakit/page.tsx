@@ -6,12 +6,16 @@ import { getMaintenance, getDueMaintenance } from "@/app/actions/maintenance";
 import { FuelAdminClient } from "./FuelAdminClient";
 import { MaintenanceAdminClient } from "./MaintenanceAdminClient";
 import { FUEL_ENABLED, MAINTENANCE_ENABLED } from "@/lib/features";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminFuelPage() {
   if (!FUEL_ENABLED && !MAINTENANCE_ENABLED) redirect("/admin");
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/yakit");
   const [entries, maint, due] = await Promise.all([
     FUEL_ENABLED ? getFuelEntries({ withUrls: true }) : Promise.resolve([]),
     MAINTENANCE_ENABLED ? getMaintenance() : Promise.resolve([]),

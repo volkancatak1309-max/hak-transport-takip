@@ -96,14 +96,35 @@ export function GuvenlikClient({
     { key: "konum", header: "Konum", cell: (r) => konum(r), hideBelow: "md" },
     { key: "cihaz", header: "Cihaz", cell: (r) => cihaz(r.user_agent), hideBelow: "sm" },
     {
+      key: "kapi",
+      header: "Kapı",
+      cell: (r) => (r.source === "mobile" ? "mobil" : "tarayıcı"),
+      hideBelow: "md",
+    },
+    {
       key: "durum",
       header: "Durum",
+      // "Açık" ile "canlı" farklı: çıkış yapmadan tarayıcıyı kapatan biri açık
+      // kalır ama son 30 dakikada iz bırakmamıştır. Tek kelimeyle "açık" demek
+      // patrona olmayan bir eşzamanlılık gösterirdi.
       cell: (r) =>
         r.ended_at ? (
           <span className="text-text-tertiary">{r.ended_reason ?? "kapandı"}</span>
+        ) : r.live ? (
+          <span className="text-accent-green">canlı</span>
         ) : (
-          <span className="text-accent-green">açık</span>
+          <span className="text-text-secondary" title={`Son görülme: ${zaman(r.last_seen_at)}`}>
+            açık · uykuda
+          </span>
         ),
+    },
+    {
+      key: "son",
+      header: "Son görülme",
+      cell: (r) => zaman(r.last_seen_at),
+      sortable: true,
+      sortValue: (r) => r.last_seen_at,
+      hideBelow: "lg",
     },
     {
       key: "isaret",
@@ -137,7 +158,11 @@ export function GuvenlikClient({
   return (
     <div className="flex flex-col gap-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Açık oturum" value={String(open.length)} scope="şu an" />
+        <StatCard
+          label="Canlı oturum"
+          value={String(open.filter((s) => s.live).length)}
+          scope={`${open.length} açık · son 30 dk iz bırakan`}
+        />
         <StatCard label="Kayıtlı giriş" value={String(sessions.length)} scope="son 200" />
         <StatCard label="Şüpheli işaret" value={String(supheli.length)} scope="son 200 giriş" tone={supheli.length ? "warning" : "neutral"} />
         <StatCard label="Donmuş hesap" value={String(donmus.length)} scope="tüm kullanıcılar" tone={donmus.length ? "warning" : "neutral"} />
@@ -197,6 +222,7 @@ export function GuvenlikClient({
                 </span>
                 <span className="text-xs text-text-tertiary">
                   {w.phone} · {w.acikOturum} açık oturum
+                  {w.acikOturum > 0 && ` (${w.canliOturum} canlı)`}
                   {!w.is_active && <span className="ml-2 text-status-critical-text">donmuş</span>}
                 </span>
               </div>

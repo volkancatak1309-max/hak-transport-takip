@@ -6,11 +6,15 @@ import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getAssignments } from "@/app/actions/assignments";
 import { AdminAssignmentsClient } from "./AdminAssignmentsClient";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
 export default async function AssignmentsPage() {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/seferler");
 
   const assignments = await getAssignments();
 

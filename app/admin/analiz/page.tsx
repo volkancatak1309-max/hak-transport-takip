@@ -22,6 +22,7 @@ import {
   comparisonCrossesEpoch,
 } from "@/lib/config-epoch";
 import { AnalizClient } from "./AnalizClient";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,9 @@ export default async function AnalizPage({
   searchParams: Promise<{ aralik?: string; baslangic?: string; bitis?: string }>;
 }) {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/analiz");
   const sp = await searchParams;
   const rangeKey = (
     RANGE_KEYS.includes(sp.aralik as AnalyticsRangeKey) ? sp.aralik : "hafta"

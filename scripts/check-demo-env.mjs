@@ -75,6 +75,11 @@ const ENV = {
 
   // ── Güvenlik katmanı (045) — demoda AÇIK ────────────────────────────────
   SECURITY_LAYER_ENABLED: "true",
+  // Ana şalterin istemciye görünen aynası. Ayrı bir env olmak ZORUNDA: PDF/CSV
+  // tarayıcıda üretiliyor, dolayısıyla "indirdi" izini yazacak çağrı istemciden
+  // gidiyor ve sunucu-özel bayrağı okuyamıyor. Bu satır unutulursa dışa aktarma
+  // izi SESSİZCE tutulmaz — betiğin bunu denetlemesinin tek sebebi bu.
+  NEXT_PUBLIC_SECURITY_LAYER_ENABLED: "true",
   SINGLE_SESSION: "true",
   NEXT_PUBLIC_EXPORT_ENABLED: "false",
   NEXT_PUBLIC_PDF_WATERMARK: "GALZURA DEMO",
@@ -102,6 +107,7 @@ const EXPECTED = {
   "tenant.VIN_BACKFILL_ENABLED": false,
   "tenant.DEMO_BACKFILL_ENABLED": true,
   "tenant.SECURITY_LAYER_ENABLED": true,
+  "tenant.SECURITY_LAYER_PUBLIC": true,
   "tenant.SINGLE_SESSION": true,
   "tenant.EXPORT_ENABLED": false,
   "tenant.PDF_WATERMARK": "GALZURA DEMO",
@@ -178,6 +184,7 @@ process.stdout.write(JSON.stringify({
   "tenant.VIN_BACKFILL_ENABLED": tenant.VIN_BACKFILL_ENABLED,
   "tenant.DEMO_BACKFILL_ENABLED": tenant.DEMO_BACKFILL_ENABLED,
   "tenant.SECURITY_LAYER_ENABLED": tenant.SECURITY_LAYER_ENABLED,
+  "tenant.SECURITY_LAYER_PUBLIC": tenant.SECURITY_LAYER_PUBLIC,
   "tenant.SINGLE_SESSION": tenant.SINGLE_SESSION,
   "tenant.EXPORT_ENABLED": tenant.EXPORT_ENABLED,
   "tenant.PDF_WATERMARK": tenant.PDF_WATERMARK,

@@ -25,7 +25,11 @@ export type RequestContext = {
   country: string | null;
 };
 
-type HeaderBag = { get(name: string): string | null };
+/**
+ * `next/headers` çıktısı ve `Request.headers` (Headers) bu biçime uyar — böylece
+ * hem sunucu action'ı hem route handler aynı okuyucuyu kullanır.
+ */
+export type HeaderBag = { get(name: string): string | null };
 
 /**
  * CİHAZ PARMAK İZİ — kasıtlı olarak ZAYIF ve bunu açıkça söylüyoruz.

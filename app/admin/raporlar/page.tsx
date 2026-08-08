@@ -16,6 +16,7 @@ import { PageHeader } from "@/components/ui-v2";
 import { ReportCard } from "@/components/admin/ReportCard";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,9 @@ function CategoryLabel({ children }: { children: React.ReactNode }) {
 
 export default async function ReportsPage() {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/raporlar");
   const t = await getTranslations("reports");
 
   // Kart altyazılarındaki hacimler — head:true ile yalnız sayım döner (satır

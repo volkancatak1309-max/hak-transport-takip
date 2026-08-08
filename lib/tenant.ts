@@ -309,6 +309,26 @@ export const SECURITY_LAYER_ENABLED = envBool(
 );
 
 /**
+ * ANA ŞALTERİN İSTEMCİYE GÖRÜNEN AYNASI — yalnız GEREKSİZ AĞ İSTEĞİNİ ÖNLER.
+ *
+ * Neden iki bayrak: PDF ve CSV tarayıcıda üretiliyor, yani "indirdi" eylemini
+ * ize yazmanın tek yolu istemciden bir sunucu action'ı çağırmak. Yukarıdaki
+ * şalter `NEXT_PUBLIC_` değil (olmamalı da — sunucu kararı sunucuda kalsın),
+ * dolayısıyla istemci onu OKUYAMAZ. Ayna olmasaydı HAK61 ve Sendigo'da her PDF
+ * indirmede hiçbir şey yazmayacak bir istek sunucuya gidip dönerdi — yani
+ * "davranış değişmedi" sözü ölçülebilir biçimde bozulurdu.
+ *
+ * ⚠️ SON SÖZ BUNDA DEĞİL: `logExportAction` sunucuda yine `SECURITY_LAYER_ENABLED`
+ *    denetler. Bu ayna yanlış `true` verilse bile hiçbir şey yazılmaz; yanlış
+ *    `false` verilirse yalnız dışa-aktarma izi eksik kalır — bu yüzden
+ *    check-demo-env onu ayrıca denetliyor (sessiz düşüş olmasın).
+ */
+export const SECURITY_LAYER_PUBLIC = envBool(
+  process.env.NEXT_PUBLIC_SECURITY_LAYER_ENABLED,
+  false
+);
+
+/**
  * TEK OTURUM KİLİDİ — bir hesap aynı anda TEK cihazda açık kalabilir; ikinci
  * giriş birincisini düşürür (workers.session_version artırılarak).
  *

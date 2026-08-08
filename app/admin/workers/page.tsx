@@ -6,6 +6,7 @@ import { WorkersClient } from "./WorkersClient";
 import { startOfMonthVienna, workedMs } from "@/lib/format";
 import type { WorkerPublic, TimeEntry } from "@/lib/types";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,9 @@ export type WorkerWithStats = WorkerPublic & {
 
 export default async function WorkersPage() {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/workers");
 
   const monthStart = startOfMonthVienna();
 

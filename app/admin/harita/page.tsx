@@ -9,6 +9,7 @@ import { LiveTrackingClient } from "./LiveTrackingClient";
 import { listLatestVehiclePositions } from "@/lib/telemetry";
 import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
 import type { ActiveDriver } from "@/lib/types";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,9 @@ type WorkerRow = { id: string; name: string; plate: string | null };
 
 export default async function HaritaPage() {
   const { session, fleet, isChief } = await requireFleetView();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/harita");
   const fleetScope = await getFleetScope(fleet);
 
   // 1) All active shifts (ended_at IS NULL)

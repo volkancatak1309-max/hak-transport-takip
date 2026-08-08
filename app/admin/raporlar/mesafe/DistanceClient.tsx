@@ -8,6 +8,7 @@ import { DataTable, EmptyState, type Column } from "@/components/ui-v2";
 import { ReportStatBand } from "@/components/admin/ReportStatBand";
 import { ReportTableHeader } from "@/components/admin/ReportTableHeader";
 import type { DistanceReport, DistanceRow } from "@/lib/reports";
+import { noteExport } from "@/lib/audit-export-client";
 
 /**
  * Filo geneli mesafe raporu. Km, aracın KENDİ odometresinin aralıktaki ilk ve
@@ -24,7 +25,7 @@ export function DistanceClient({ report }: { report: DistanceReport }) {
   const num = (v: number, d = 0) =>
     v.toLocaleString(nf, { minimumFractionDigits: d, maximumFractionDigits: d });
 
-  function exportCsv() {
+  async function exportCsv() {
     const header = [t("col_plate"), t("col_driver"), t("col_km"), t("col_km_day")];
     const lines = report.rows.map((r) =>
       [
@@ -45,6 +46,8 @@ export function DistanceClient({ report }: { report: DistanceReport }) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    // İz: CSV'yi kim dışa çıkardı (045). Katman kapalıysa no-op.
+    await noteExport("csv", "distance");
   }
 
   const columns: Column<DistanceRow>[] = [

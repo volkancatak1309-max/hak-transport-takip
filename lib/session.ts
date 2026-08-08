@@ -36,22 +36,32 @@ export async function getSession() {
 }
 
 /**
- * OTURUM İPTAL DENETİMİ (migration 045) — tek oturum kilidi + uzaktan kesme.
+ * OTURUM DENETİMİ + CANLILIK (migration 045) — her korumalı kapının ilk işi.
  *
- * `SECURITY_LAYER_ENABLED` kapalıyken `isSessionRevoked` İLK SATIRDA `false`
- * döner: ek sorgu yok, ek gecikme yok, davranış değişmez. HAK61 ve Sendigo bu
- * dalın içine hiç girmez.
+ * İki şey yapar:
+ *   1. İPTAL: çerezdeki `session_version` DB'dekiyle uyuşmuyorsa oturum ölmüş
+ *      (tek oturum kilidi ya da patronun "sonlandır" düğmesi). Çerez temizlenir
+ *      ve giriş ekranına gidilir.
+ *   2. CANLILIK: `login_sessions.last_seen_at` ileri taşınır. Bu olmadan
+ *      "açık oturum" ile "canlı oturum" ayrımı yapılamaz ve çoklu-oturum
+ *      işareti ilk girişten sonraki her girişte yanan bir gürültüye dönüşür
+ *      (bkz. lib/security-log.ts → CANLI_PENCERE_MS).
  *
- * İptal edilmişse çerez temizlenir ve giriş ekranına gönderilir — kullanıcı
- * "başka cihazdan giriş yapıldı" durumunu oturumu ölmüş olarak görür.
+ * `SECURITY_LAYER_ENABLED` kapalıyken İLK SATIRDA çıkar: ek sorgu yok, ek
+ * gecikme yok, davranış değişmez. HAK61 ve Sendigo bu dalın içine hiç girmez.
+ *
+ * Dinamik import bilinçli: security-log → mobile-auth → lib/session statik bir
+ * döngü kurardı.
  */
 async function enforceSessionVersion(session: Awaited<ReturnType<typeof getSession>>) {
   if (!SECURITY_LAYER_ENABLED || !session.worker_id) return;
-  const { isSessionRevoked } = await import("@/lib/security-log");
+  const { isSessionRevoked, touchLoginSession } = await import("@/lib/security-log");
   if (await isSessionRevoked(session.worker_id, session.session_version)) {
     session.destroy();
     redirect("/");
   }
+  // İptal denetiminden SONRA: ölmüş bir oturumu canlı damgalamak yanlış olurdu.
+  await touchLoginSession(session.login_session_id);
 }
 
 export async function requireWorker() {
@@ -120,6 +130,10 @@ export async function requireFleetView() {
   const session = await getSession();
   if (!session.worker_id) redirect("/");
   if (session.must_change_pin) redirect("/pin");
+  // İptal denetimi BURAYA DA gerekir: /admin ve /admin/harita bu kapıdan
+  // geçiyor, yani bu satır olmadan patronun "oturumları sonlandır" düğmesi
+  // panelin iki ana ekranında etkisiz kalırdı.
+  await enforceSessionVersion(session);
   if (session.is_admin) {
     return { session, fleet: null as VehicleFleet | null, isChief: false };
   }
@@ -199,6 +213,8 @@ export async function requirePinChange() {
   const session = await getSession();
   if (!session.worker_id) redirect("/");
   if (!session.must_change_pin) redirect(session.is_admin ? "/admin" : "/panel");
+  // Düşürülmüş bir oturum PIN ekranında da içeride sayılmamalı (045).
+  await enforceSessionVersion(session);
   return session;
 }
 
@@ -208,8 +224,14 @@ export async function requirePinChange() {
  * Menüde /admin/guvenlik ögesini göstermek için kullanılır. Menü kozmetiktir:
  * sayfanın kendisi requireOwner() ile korunur, yani bu değer yanlış olsa bile
  * yetki aşılamaz. Kolon yoksa (045 öncesi) ya da hata varsa `false`.
+ *
+ * ⚠️ Katman kapalıyken SORGU ATMAZ. Bu şart olmadan /admin her açılışta
+ * HAK61 ve Sendigo'da da `is_owner` okumaya çalışırdı — o kurulumlarda kolon
+ * yok, yani sorgu HER SEFERİNDE hata dönerdi (yakalanıp yutulsa bile boşa
+ * giden bir gidiş-dönüş). Katman kapalıysa gösterilecek ekran da yok.
  */
 export const isOwnerCached = cache(async (workerId: string): Promise<boolean> => {
+  if (!SECURITY_LAYER_ENABLED) return false;
   try {
     const { data, error } = await supabaseAdmin
       .from("workers")

@@ -6,6 +6,7 @@ import { RouteReplay } from "@/components/RouteReplay";
 import { getVehicleDeviceRoute } from "@/lib/route-history";
 import { viennaDayKey } from "@/lib/format";
 import { supabaseAdmin } from "@/lib/supabase";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,9 @@ export default async function VehicleRoutePage({
   searchParams: Promise<{ date?: string }>;
 }) {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/araclar/[id]/rota");
   const { id } = await params;
   const sp = await searchParams;
   const t = await getTranslations("route");

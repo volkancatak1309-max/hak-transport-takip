@@ -356,8 +356,13 @@ export default async function AdminPage({
   const overLimitCount = activeShifts.filter((s) => s.overLimit).length;
 
   // Patron menü ögesi (045). Menü kozmetiktir; /admin/guvenlik kendi
-  // requireOwner() kapısıyla korunur. Katman kapalıysa sorgu yine de tek ve
-  // önbellekli, kolon yoksa false döner.
+  // requireOwner() kapısıyla korunur.
+  //
+  // Katman KAPALIYSA sorgu HİÇ atılmaz (lib/session.ts → isOwnerCached).
+  // Bu şart ölçümle geldi: 08.08.2026'da canlı HAK61 veritabanına bakıldı,
+  // `workers.is_owner` yok (42703) — yani gating olmadan bu satır /admin'in
+  // HER açılışında hataya düşen bir gidiş-dönüş üretiyordu. Katman kapalıysa
+  // gösterilecek ekran da yok, dolayısıyla sormanın anlamı da yok.
   const owner = session.worker_id ? await isOwnerCached(session.worker_id) : false;
 
   // Sayfa görüntüleme izi (045) — katman kapalıyken no-op.

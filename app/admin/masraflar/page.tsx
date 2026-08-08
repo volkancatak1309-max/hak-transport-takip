@@ -4,12 +4,16 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getExpenseEntries } from "@/app/actions/expenses";
 import { ExpenseAdminClient } from "./ExpenseAdminClient";
 import { EXPENSE_ENABLED } from "@/lib/features";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminExpensesPage() {
   if (!EXPENSE_ENABLED) redirect("/admin");
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/masraflar");
   const entries = await getExpenseEntries({ withUrls: true });
 
   return (

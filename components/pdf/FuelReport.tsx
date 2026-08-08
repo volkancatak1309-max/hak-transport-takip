@@ -3,6 +3,7 @@
 import { Document, Page, Text, View, StyleSheet, pdf } from "@react-pdf/renderer";
 import { registerPdfFont, PDF_FONT } from "@/lib/pdf-font";
 import { Watermark } from "@/components/pdf/Watermark";
+import { noteExport } from "@/lib/audit-export-client";
 import {
   COMPANY,
   COMPANY_UID_LINE,
@@ -202,6 +203,8 @@ export async function downloadFuelPdf(opts: {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    // İz: raporu kim dışa çıkardı (045). Katman kapalıysa no-op.
+    await noteExport("pdf", "fuel");
   } finally {
     if (url) URL.revokeObjectURL(url);
   }

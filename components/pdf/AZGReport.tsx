@@ -11,6 +11,7 @@ import {
   FILE_PREFIX_UPPER,
 } from "@/lib/report-de";
 import type { AZGData, AZGSeverity } from "@/app/actions/azg-report";
+import { noteExport } from "@/lib/audit-export-client";
 
 registerPdfFont();
 
@@ -306,6 +307,8 @@ export async function downloadAZGReport(data: AZGData) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    // İz: raporu kim dışa çıkardı (045). Katman kapalıysa no-op.
+    await noteExport("pdf", "azg");
   } finally {
     // Always release the object URL, even if generation/click threw. The error
     // (if any) propagates so the caller can surface it to the user.

@@ -4,11 +4,15 @@ import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { getWebhookInfo } from "@/lib/telegram";
 import { TelegramAdminClient } from "./TelegramAdminClient";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
 export default async function TelegramAdminPage() {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/telegram");
 
   const scope = await getTestScope();
   const { data: connectedRaw } = await withoutTestRows(

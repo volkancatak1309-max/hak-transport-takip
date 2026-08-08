@@ -25,7 +25,20 @@ export type SessionRow = {
   country: string | null;
   new_device: boolean;
   concurrent: boolean;
+  /** Hangi kapıdan girildi: tarayıcı çerezi ('web') ya da mobil token uçları. */
+  source: "web" | "mobile" | string;
+  /**
+   * AÇIK ama CANLI mı? (son 30 dakikada iz bıraktı mı)
+   *
+   * SUNUCUDA hesaplanıyor, istemcide değil: "şu an"a bağlı bir değeri istemci
+   * bileşeninde üretmek SSR ile ilk render arasında hidrasyon uyuşmazlığı
+   * doğurur. Eşik lib/security-log.ts → CANLI_PENCERE_MS ile aynı.
+   */
+  live: boolean;
 };
+
+/** Canlılık eşiği — lib/security-log.ts → CANLI_PENCERE_MS ile aynı olmalı. */
+const CANLI_PENCERE_MS = 30 * 60 * 1000;
 
 export type AuditRow = {
   id: string;
@@ -45,6 +58,8 @@ export type SecurityWorker = {
   is_owner: boolean;
   is_active: boolean;
   acikOturum: number;
+  /** Açıkların kaçı son 30 dakikada iz bıraktı — "şu an başında mı" sorusu. */
+  canliOturum: number;
 };
 
 async function workerNames(): Promise<Map<string, string>> {
@@ -63,16 +78,23 @@ export async function listSessions(limit = 200): Promise<SessionRow[]> {
     const { data, error } = await supabaseAdmin
       .from("login_sessions")
       .select(
-        "id, worker_id, started_at, last_seen_at, ended_at, ended_reason, ip, user_agent, device_hash, city, country, new_device, concurrent"
+        "id, worker_id, started_at, last_seen_at, ended_at, ended_reason, ip, user_agent, device_hash, city, country, new_device, concurrent, source"
       )
       .order("started_at", { ascending: false })
       .limit(limit);
     if (error || !data) return [];
     const isim = await workerNames();
-    return data.map((r) => ({
-      ...(r as Omit<SessionRow, "worker_name">),
-      worker_name: isim.get((r as { worker_id: string }).worker_id) ?? "—",
-    }));
+    const canliEsik = Date.now() - CANLI_PENCERE_MS;
+    return data.map((r) => {
+      const row = r as Omit<SessionRow, "worker_name" | "live">;
+      return {
+        ...row,
+        worker_name: isim.get(row.worker_id) ?? "—",
+        live:
+          row.ended_at === null &&
+          new Date(row.last_seen_at).getTime() >= canliEsik,
+      };
+    });
   } catch {
     return [];
   }
@@ -119,7 +141,11 @@ export async function listSecurityWorkers(): Promise<SecurityWorker[]> {
     if (error || !data) return [];
     const acik = await listOpenSessions();
     const sayac = new Map<string, number>();
-    for (const s of acik) sayac.set(s.worker_id, (sayac.get(s.worker_id) ?? 0) + 1);
+    const canliSayac = new Map<string, number>();
+    for (const s of acik) {
+      sayac.set(s.worker_id, (sayac.get(s.worker_id) ?? 0) + 1);
+      if (s.live) canliSayac.set(s.worker_id, (canliSayac.get(s.worker_id) ?? 0) + 1);
+    }
     return (data as Record<string, unknown>[]).map((w) => ({
       id: w.id as string,
       name: (w.name as string) ?? "—",
@@ -128,6 +154,7 @@ export async function listSecurityWorkers(): Promise<SecurityWorker[]> {
       is_owner: w.is_owner === true,
       is_active: w.is_active === true,
       acikOturum: sayac.get(w.id as string) ?? 0,
+      canliOturum: canliSayac.get(w.id as string) ?? 0,
     }));
   } catch {
     return [];

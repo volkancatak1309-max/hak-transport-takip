@@ -12,6 +12,7 @@ import {
 } from "@/components/admin/LeaveCalendar";
 import { LEAVES_ENABLED } from "@/lib/features";
 import { LEAVE_COLS, todayYmdVienna, type LeaveRow } from "@/lib/leaves";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,9 @@ export default async function IzinlerPage({
   // TALEBİNİ açar (pending); onay yalnız patronda. Diğer yönetici sayfaları
   // requireAdmin() ile korunmaya devam ediyor.
   const { session, fleet, isChief } = await requireFleetView();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/izinler");
   const fleetScope = await getFleetScope(fleet);
   const scope = await getTestScope();
   const driverScope = await getDriverScope();

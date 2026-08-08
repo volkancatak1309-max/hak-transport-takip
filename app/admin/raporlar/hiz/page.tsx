@@ -8,6 +8,7 @@ import { computeAnalyticsRange } from "@/lib/analytics";
 import { buildSpeedReport } from "@/lib/reports";
 import type { AnalyticsRangeKey } from "@/lib/analytics-shared";
 import { SpeedClient } from "./SpeedClient";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,9 @@ export default async function SpeedReportPage({
   searchParams: Promise<{ aralik?: string; baslangic?: string; bitis?: string }>;
 }) {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/raporlar/hiz");
   const sp = await searchParams;
   const rangeKey = (
     RANGE_KEYS.includes(sp.aralik as AnalyticsRangeKey) ? sp.aralik : "hafta"

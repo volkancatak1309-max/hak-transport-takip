@@ -20,6 +20,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { VehicleDetailClient } from "./VehicleDetailClient";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,9 @@ export default async function VehicleDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/araclar/[id]");
   const { id } = await params;
   // Engine-hours window: Vienna local midnight → now (today's runtime).
   const dayStart = startOfTodayVienna();

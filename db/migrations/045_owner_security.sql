@@ -30,6 +30,10 @@
 -- her istekte DB'deki değerle karşılaştırılır, sayaç artınca eski çerez ölür.
 --
 -- Tekrar çalıştırılabilir (idempotent). Supabase SQL Editor'da çalıştırın.
+--
+-- ⚠️ BU DOSYA GÜNCELLENDİ (login_sessions.source + canlılık indeksi eklendi).
+--    Daha önce çalıştırdıysanız TEKRAR ÇALIŞTIRIN — her adım idempotent, var
+--    olan satırlara ve kolonlara dokunmaz.
 -- =====================================================================
 
 begin;
@@ -66,7 +70,10 @@ create table if not exists public.login_sessions (
   id            uuid primary key default gen_random_uuid(),
   worker_id     uuid not null references public.workers(id) on delete cascade,
   started_at    timestamptz not null default now(),
-  -- Oturum canlılığı: korumalı her sayfa isteğinde ileri taşınır.
+  -- Oturum CANLILIĞI. Korumalı her sayfa isteğinde ileri taşınır
+  -- (lib/session.ts → touchLoginSession). "Açık" ile "canlı" farklı şeyler:
+  -- tarayıcıyı çıkış yapmadan kapatan biri açık kalır ama canlı değildir —
+  -- bu yüzden çoklu-oturum işareti started_at değil BU alana bakar.
   last_seen_at  timestamptz not null default now(),
   -- NULL = hâlâ açık. Dolu = kapandı (aşağıdaki sebeple).
   ended_at      timestamptz,
@@ -74,7 +81,7 @@ create table if not exists public.login_sessions (
                   ('logout','single_session','revoked','expired')),
   ip            text,
   user_agent    text,
-  -- Cihaz parmak izi: UA + dil başlığının sha256'sı (lib/device.ts).
+  -- Cihaz parmak izi: UA + dil başlığının sha256'sı (lib/request-context.ts).
   -- ⚠️ Kesin kimlik DEĞİL — aynı tarayıcı sürümü + aynı dil aynı izi üretir.
   -- "Yeni cihaz" işareti bu yüzden bir İPUCU, kanıt değil.
   device_hash   text,
@@ -85,16 +92,42 @@ create table if not exists public.login_sessions (
   -- Bu oturum açılırken aynı kişinin başka açık oturumu var mıydı?
   concurrent    boolean not null default false,
   -- Bu cihaz izi o kişide daha önce hiç görülmedi mi?
-  new_device    boolean not null default false
+  new_device    boolean not null default false,
+  -- Hangi kapıdan girildi: tarayıcı çerezi mi, mobil token ucu mu?
+  -- İki giriş kapısı var (app/actions/auth.ts ve app/api/mobile/auth/login) ve
+  -- ikisi de buraya yazar; ayırt edilmezse "aynı hesap iki cihazda" işareti
+  -- telefondan+masaüstünden çalışan bir kişide yanlış alarma dönüşür.
+  source        text not null default 'web'
 );
+
+-- 045'i DAHA ÖNCE çalıştırmış kurulumlar için: tablo zaten vardı, kolon yoktu.
+alter table public.login_sessions
+  add column if not exists source text not null default 'web';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'login_sessions_source_chk'
+  ) then
+    alter table public.login_sessions
+      add constraint login_sessions_source_chk check (source in ('web','mobile'));
+  end if;
+end $$;
 
 -- Patron ekranının ana sorgusu: kişi bazında en yeniden eskiye.
 create index if not exists idx_login_sessions_worker_time
   on public.login_sessions(worker_id, started_at desc);
 
--- "Aktif oturumlar" listesi ve çoklu-oturum tespiti.
-create index if not exists idx_login_sessions_open
-  on public.login_sessions(worker_id)
+-- "Aktif oturumlar" listesi ve çoklu-oturum tespiti. last_seen_at indekste:
+-- canlılık sorgusu (açık VE son N dakikada görülmüş) tek geçişte çözülsün.
+--
+-- ⚠️ ADI DEĞİŞTİ (idx_login_sessions_open → _live). `create index if not exists`
+--    var olan bir ADI görürse kolonları FARKLI olsa bile hiçbir şey yapmaz ve
+--    sessizce eski tanımı bırakırdı; bu yüzden eskisi adıyla düşürülüyor.
+drop index if exists public.idx_login_sessions_open;
+
+create index if not exists idx_login_sessions_live
+  on public.login_sessions(worker_id, last_seen_at desc)
   where ended_at is null;
 
 -- Tüm kullanıcılar arası zaman çizelgesi (giriş geçmişi ekranı).

@@ -11,6 +11,7 @@ import {
   FILE_PREFIX_UPPER,
 } from "@/lib/report-de";
 import type { CO2ReportData } from "@/lib/co2";
+import { noteExport } from "@/lib/audit-export-client";
 
 registerPdfFont();
 
@@ -179,6 +180,8 @@ export async function downloadCO2Report(data: CO2ReportData, title: string) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    // İz: raporu kim dışa çıkardı (045). Katman kapalıysa no-op.
+    await noteExport("pdf", "co2");
   } finally {
     // Always release the object URL, even if generation/click threw. The error
     // (if any) propagates so the caller can surface it to the user.

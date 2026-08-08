@@ -6,6 +6,7 @@ import { computeAnalyticsRange } from "@/lib/analytics";
 import { buildDistanceReport } from "@/lib/reports";
 import type { AnalyticsRangeKey } from "@/lib/analytics-shared";
 import { DistanceClient } from "./DistanceClient";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,9 @@ export default async function DistanceReportPage({
   searchParams: Promise<{ aralik?: string; baslangic?: string; bitis?: string }>;
 }) {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/raporlar/mesafe");
   const sp = await searchParams;
   // Aralık anahtarları Analiz sayfasıyla AYNI (?aralik/?baslangic/?bitis) —
   // yönetici iki ekran arasında geçerken filtre kavramı değişmesin.

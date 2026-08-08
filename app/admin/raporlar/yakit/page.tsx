@@ -6,6 +6,7 @@ import { computeAnalyticsRange } from "@/lib/analytics";
 import { buildFuelReport, rangeLabel } from "@/lib/reports";
 import type { AnalyticsRangeKey } from "@/lib/analytics-shared";
 import { FuelClient } from "./FuelClient";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,9 @@ export default async function FuelReportPage({
   searchParams: Promise<{ aralik?: string; baslangic?: string; bitis?: string }>;
 }) {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/raporlar/yakit");
   const sp = await searchParams;
   const rangeKey = (
     RANGE_KEYS.includes(sp.aralik as AnalyticsRangeKey) ? sp.aralik : "hafta"

@@ -25,6 +25,7 @@ import { getLoginLockState } from "@/lib/login-lock";
 import type { WorkerPublic, TimeEntry } from "@/lib/types";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 import { getLocale, getTranslations } from "next-intl/server";
+import { audit } from "@/lib/security-log";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,9 @@ export default async function WorkerDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const session = await requireAdmin();
+
+  // Sayfa görüntüleme izi (045). Katman kapalıysa ilk satırda çıkar.
+  await audit(session.worker_id ?? null, "page_view", "/admin/workers/[id]");
   const { id } = await params;
   const t = await getTranslations("workers");
   const tc = await getTranslations("common");

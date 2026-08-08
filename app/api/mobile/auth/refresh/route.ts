@@ -6,6 +6,7 @@ import {
   readTokenVersion,
   mobileError,
 } from "@/lib/mobile-auth";
+import { touchSessionsBySource } from "@/lib/security-log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,5 +58,12 @@ export async function POST(req: NextRequest) {
     data.is_admin === true,
     version
   );
+
+  // MOBİL OTURUM NABZI (045). Access token 15 dakika yaşıyor, yani çalışan bir
+  // istemci en geç 15 dakikada bir buraya geliyor — "canlı oturum" penceresi
+  // (30 dk) için yeterli nabız. Her mobil ucu damgalamak aynı bilgiyi kat kat
+  // yazmak olurdu; yenileme tek ve doğal nokta.
+  await touchSessionsBySource(payload.sub, "mobile");
+
   return Response.json({ ok: true, ...issued });
 }

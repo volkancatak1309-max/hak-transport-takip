@@ -29,8 +29,14 @@
 -- silik görünür, patron onayıyla tam renge döner.
 --
 -- ── TEKRAR ÇALIŞTIRILABİLİR ─────────────────────────────────────────
--- Kişinin ÖRTÜŞEN bir izni varsa o kişi atlanır. İkinci koşu yeni satır
--- yazmaz, elle girilmiş izinleri de ezmez.
+-- İki katman: kişinin ÖRTÜŞEN bir izni varsa o kişi atlanır, VE pencerede
+-- hedeflenen sayıya ulaşılmışsa hiç kimseye yazılmaz (bkz. KOTA). İkinci koşu
+-- 0 satır yazar; elle girilmiş kayıtlar ne ezilir ne de sayılmaz sayılır.
+--
+-- ── DENETİM YALNIZ KENDİ İŞİNE BAKAR ────────────────────────────────
+-- Yazılan satırlar geçici bir tabloda işaretlenir; çelişki denetimi yalnız
+-- onları sınar. Tabloda önceden duran çelişkili kayıtlar UYARI olarak listelenir
+-- ama işlemi düşürmez — betik onları yazmadı, geri alması da anlamsız olurdu.
 --
 -- ⚠️ Yalnız GALZURA DEMO veritabanında. Kapı, test kayıtlarını hariç tutarak
 --    plakaları denetler (bkz. galzura-seferler.sql'deki aynı kapı).
@@ -74,6 +80,17 @@ begin
   raise notice 'Kapı geçildi: % test dışı araç.', toplam;
 end $$;
 
+-- ⚠️ Bu koşuda yazılan satırlar burada işaretlenir. Denetim YALNIZ buraya
+-- bakar. İlk sürümde denetim tüm worker_leaves tablosunu tarıyordu ve betiğin
+-- hiç dokunmadığı eski bir kayıt yüzünden kendi ürettiği satırları da geri
+-- alıyordu. `on commit drop` → işlem bitince kendiliğinden gider.
+create temp table _yeni_izin (
+  id         uuid primary key,
+  worker_id  uuid not null,
+  start_date date not null,
+  end_date   date not null
+) on commit drop;
+
 with
 -- Yönetici ve test hesapları şoför değildir (lib/driver-scope.ts kuralı).
 haric as (
@@ -105,19 +122,45 @@ sofor as (
 ),
 bugun as (select (now() at time zone 'Europe/Vienna')::date as g),
 
--- ── A) GELECEK: YILLIK İZİN (onaylı) — 4 kişi ────────────────────────
+-- ── KOTA: PENCEREDE ZATEN NE VAR ─────────────────────────────────────
+-- Hedef, pencerede ~4 onaylı + 2 bekleyen + 2 hastalık kaydı OLMASI. Kaç tane
+-- YAZILACAĞI, hâlihazırda kaç tane olduğuna bağlı. Sabit sayı yazmak ikinci
+-- koşuda takvimi ikiye katlıyordu: "örtüşen izni olan atlanır" kuralı yalnız
+-- KİŞİYİ atlar, sıradaki kişiye yeni izin yazmayı engellemez. Ölçüldü: 8 satır
+-- yazıldıktan sonra ikinci koşu 6 satır daha yazıyordu.
+mevcut as (
+  select
+    count(*) filter (where l.status = 'approved' and l.leave_type <> 'krankenstand'
+                       and l.end_date >= (select g from bugun))   as onayli,
+    count(*) filter (where l.status = 'pending')                  as bekleyen,
+    count(*) filter (where l.leave_type = 'krankenstand'
+                       and l.start_date < (select g from bugun))  as hasta
+  from public.worker_leaves l
+  where l.end_date   >= (select g from bugun) - 7
+    and l.start_date <= (select g from bugun) + 21
+),
+kota as (
+  select greatest(0, 4 - (select onayli   from mevcut)) as n_yillik,
+         greatest(0, 2 - (select bekleyen from mevcut)) as n_bekleyen,
+         greatest(0, 2 - (select hasta    from mevcut)) as n_hasta
+),
+
+-- ── A) GELECEK: YILLIK İZİN (onaylı) — en çok 4 kişi ─────────────────
 yillik as (
   select s.id, s.name, s.h,
     (select g from bugun) + (2 + (s.h % 16))            as bas,
     (2 + (s.h % 16)) + (4 + ((s.h/13) % 6))             as bit_ofset
-  from sofor s where s.sira between 1 and 4
+  from sofor s
+  where s.sira between 1 and (select n_yillik from kota)
 ),
--- ── B) GELECEK: BEKLEYEN TALEP — 2 kişi ──────────────────────────────
+-- ── B) GELECEK: BEKLEYEN TALEP — en çok 2 kişi ───────────────────────
+-- Dilim sabit (5-6): kota küçülse bile aynı kişiler aynı rolü alır.
 bekleyen as (
   select s.id, s.name, s.h,
     (select g from bugun) + (5 + (s.h % 12))            as bas,
     (5 + (s.h % 12)) + (2 + ((s.h/7) % 3))              as bit_ofset
-  from sofor s where s.sira between 5 and 6
+  from sofor s
+  where s.sira between 5 and 4 + (select n_bekleyen from kota)
 ),
 -- ── C) GEÇMİŞ: HASTALIK — YALNIZ VARDİYASIZ GÜNE ─────────────────────
 -- Son 7 günün hafta içi günleri × şoför; vardiyası OLMAYAN çiftler aday.
@@ -141,56 +184,117 @@ bos_slot as (
     )
 ),
 hastalik as (
-  select id, name, gun from bos_slot where sira <= 2    -- en fazla 2 kayıt
+  select id, name, gun from bos_slot
+  where sira <= (select n_hasta from kota)              -- en fazla 2 kayıt
+),
+-- INSERT ... RETURNING → _yeni_izin. Yazılan satırların kimliği burada kalır.
+ins as (
+  insert into public.worker_leaves
+    (worker_id, leave_type, start_date, end_date, status, note,
+     created_by, approved_by, decided_at, created_at)
+  -- A) Yıllık izin — onaylı
+  select y.id, 'jahresurlaub', y.bas,
+         (select g from bugun) + y.bit_ofset, 'approved',
+         null, (select id from patron), (select id from patron),
+         now() - interval '3 days', now() - interval '3 days'
+  from yillik y
+  union all
+  -- B) Bekleyen talep — onay akışını göstermek için
+  select b.id, 'jahresurlaub', b.bas,
+         (select g from bugun) + b.bit_ofset, 'pending',
+         'Talep şef tarafından açıldı, onay bekliyor',
+         (select id from patron), null, null, now() - interval '1 day'
+  from bekleyen b
+  union all
+  -- C) Hastalık — geçmişte, YALNIZ vardiyasız güne, tek günlük
+  select h.id, 'krankenstand', h.gun, h.gun, 'approved',
+         'Hastalık bildirimi', (select id from patron), (select id from patron),
+         h.gun::timestamp at time zone 'Europe/Vienna',
+         h.gun::timestamp at time zone 'Europe/Vienna'
+  from hastalik h
+  returning id, worker_id, start_date, end_date
 )
-insert into public.worker_leaves
-  (worker_id, leave_type, start_date, end_date, status, note,
-   created_by, approved_by, decided_at, created_at)
--- A) Yıllık izin — onaylı
-select y.id, 'jahresurlaub', y.bas,
-       (select g from bugun) + y.bit_ofset, 'approved',
-       null, (select id from patron), (select id from patron),
-       now() - interval '3 days', now() - interval '3 days'
-from yillik y
-union all
--- B) Bekleyen talep — onay akışını göstermek için
-select b.id, 'jahresurlaub', b.bas,
-       (select g from bugun) + b.bit_ofset, 'pending',
-       'Talep şef tarafından açıldı, onay bekliyor',
-       (select id from patron), null, null, now() - interval '1 day'
-from bekleyen b
-union all
--- C) Hastalık — geçmişte, YALNIZ vardiyasız güne, tek günlük
-select h.id, 'krankenstand', h.gun, h.gun, 'approved',
-       'Hastalık bildirimi', (select id from patron), (select id from patron),
-       h.gun::timestamp at time zone 'Europe/Vienna',
-       h.gun::timestamp at time zone 'Europe/Vienna'
-from hastalik h;
+insert into _yeni_izin (id, worker_id, start_date, end_date)
+select id, worker_id, start_date, end_date from ins;
 
 -- ── DENETİM ──────────────────────────────────────────────────────────
+-- İki ayrı soru, iki ayrı sonuç:
+--
+--   BU KOŞU  → betiğin yazdığı satırlarda çelişki var mı?  Varsa HATA, geri al.
+--              Betik kendi ürettiği kusurdan sorumludur.
+--   MEVCUT   → tabloda önceden duran satırlarda çelişki var mı?  Varsa UYARI.
+--              Betik onları yazmadı, düzeltmek de onun işi değil; sessiz
+--              kalmak yanlış olurdu, işlemi düşürmek de.
+--
+-- Sayım KAYIT eksenli (`exists`), satır çifti değil. Eski sürüm worker_leaves
+-- ile time_entries'i join'liyordu: 5 günlük tek bir izin, o günlerdeki 3
+-- vardiyayla eşleşince "3 çelişki" görünüyordu. Çelişkili izin sayısı 1'di.
 do $$
 declare
+  n_yeni int;
   n_toplam int;
   n_bekleyen int;
-  celiski int;
+  celiski_yeni int;
+  celiski_eski int;
+  r record;
 begin
-  select count(*) into n_toplam from public.worker_leaves;
+  select count(*) into n_yeni    from _yeni_izin;
+  select count(*) into n_toplam  from public.worker_leaves;
   select count(*) into n_bekleyen from public.worker_leaves where status='pending';
 
-  -- ÇELİŞKİ: aynı kişi aynı gün hem izinli hem vardiyada mı? (0 olmalı)
-  select count(*) into celiski
+  -- A) BU KOŞU: yazdığımız izinlerden kaçı bir vardiyayla çakışıyor?
+  select count(*) into celiski_yeni
+  from _yeni_izin y
+  where exists (
+    select 1 from public.time_entries t
+    where t.worker_id = y.worker_id
+      and (t.started_at at time zone 'Europe/Vienna')::date
+          between y.start_date and y.end_date);
+
+  -- B) MEVCUT VERİ: önceden duran kayıtlardan kaçı çakışıyor?
+  select count(*) into celiski_eski
   from public.worker_leaves l
-  join public.time_entries t on t.worker_id = l.worker_id
-  where (t.started_at at time zone 'Europe/Vienna')::date between l.start_date and l.end_date;
+  where not exists (select 1 from _yeni_izin y where y.id = l.id)
+    and exists (
+      select 1 from public.time_entries t
+      where t.worker_id = l.worker_id
+        and (t.started_at at time zone 'Europe/Vienna')::date
+            between l.start_date and l.end_date);
 
   raise notice '─────────────────────────────────────────────';
+  raise notice 'BU KOŞUDA YAZILAN     : %', n_yeni;
   raise notice 'TOPLAM İZİN KAYDI     : %', n_toplam;
   raise notice 'BEKLEYEN TALEP        : %', n_bekleyen;
-  raise notice 'ÇELİŞKİ (izinli+vardiyada) : %  (0 olmalı)', celiski;
+  raise notice 'ÇELİŞKİ — bu koşu     : %  (0 olmalı)', celiski_yeni;
+  raise notice 'ÇELİŞKİ — mevcut veri : %  (uyarı, işlemi düşürmez)', celiski_eski;
   raise notice '─────────────────────────────────────────────';
 
-  if celiski > 0 then
-    raise exception 'ÇELİŞKİLİ İZİN ÜRETİLDİ — işlem geri alındı (% kayıt)', celiski;
+  if celiski_eski > 0 then
+    raise warning 'MEVCUT VERİDE % çelişkili izin kaydı var (bu betik yazmadı):', celiski_eski;
+    for r in
+      select w.name, l.leave_type, l.start_date, l.end_date,
+             (select count(*) from public.time_entries t
+               where t.worker_id = l.worker_id
+                 and (t.started_at at time zone 'Europe/Vienna')::date
+                     between l.start_date and l.end_date) as cakisan
+      from public.worker_leaves l
+      join public.workers w on w.id = l.worker_id
+      where not exists (select 1 from _yeni_izin y where y.id = l.id)
+        and exists (
+          select 1 from public.time_entries t
+          where t.worker_id = l.worker_id
+            and (t.started_at at time zone 'Europe/Vienna')::date
+                between l.start_date and l.end_date)
+      order by l.start_date
+    loop
+      raise warning '  % · % · %→% · çakışan vardiya: %',
+        r.name, r.leave_type, r.start_date, r.end_date, r.cakisan;
+    end loop;
+    raise warning '  Düzeltmek için: db/install/galzura-fix-izin-cakismasi.sql';
+  end if;
+
+  if celiski_yeni > 0 then
+    raise exception 'ÇELİŞKİLİ İZİN ÜRETİLDİ — işlem geri alındı (% kayıt)', celiski_yeni;
   end if;
 end $$;
 

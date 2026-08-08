@@ -6,6 +6,11 @@ var** ve müşteri onları görürse konu oraya kayar.
 
 Demo adresi: **demo.galzura.com**
 
+> 📅 **Bu dokümandaki sayılar 8 Ağustos 2026 itibarıyladır.**
+> Sayılar her gün değişiyor — araçlar çalıştıkça artıyor. Aradan bir hafta
+> geçtiyse ekranda gördüğün rakamı oku, buradakini değil. Anlatım sırası ve
+> hangi araca tıklanacağı değişmez, yalnız sayılar tazelenir.
+
 ---
 
 ## 0. Görüşmeden 10 dakika önce — hazırlık
@@ -130,11 +135,6 @@ Bernhard Winkler. Bunların geçmişi dolu.
 
 ## 3. Alarmlar — "sorunlu araç yakalandı" hikâyesi
 
-> ⛔ **BU BÖLÜM HENÜZ TAMAM DEĞİL — Furkan'a bu hâliyle verme.**
-> Aşağıda `[?]` yazan iki yer var. 7 Ağustos verisi sonradan eklendi ve
-> araç başına sayılar değişti; doğru rakam ölçülüp buraya yazılacak.
-> Volkan dolduracak.
-
 Bu demonun en etkili 4 dakikası. Şöyle anlat:
 
 **Adım 1 — listeyi aç, hiçbir şey söyleme.** Müşteri listeyi görsün.
@@ -146,8 +146,9 @@ Bu demonun en etkili 4 dakikası. Şöyle anlat:
 
 **Adım 3 — W-GF-126'yı göster.**
 
-> "Tek bir araç, filodaki olayların `[?]` kadarını tek başına üretmiş.
-> `[?]` olay. Diğer 28 aracın hiçbiri buna yaklaşmıyor."
+> "Tek bir araç, filodaki olayların neredeyse yarısını tek başına üretmiş.
+> 552 olay — 29 aracın hepsinin toplamının %43'ü. İkinci sıradaki aracın iki
+> katından fazla."
 
 **Adım 4 — asıl vuruşu yap:**
 
@@ -160,22 +161,42 @@ Bu demonun en etkili 4 dakikası. Şöyle anlat:
 > "Burada amaç şoförü cezalandırmak değil. Bu veriyle oturup konuşuyorsunuz.
 > Çoğu firmada bu konuşmadan sonra sayılar bir ayda yarıya iniyor."
 
-**Olay türleri** — sorarsa. En çok görülenden aza doğru:
+### İkinci örnek gerekirse
 
-| Olay | Ne demek |
-|---|---|
-| Sert hızlanma | Ani gaz. Yakıtı en çok yiyen davranış. |
-| Sert viraj | Hızlı dönüş. Yükü ve lastiği zorlar. |
-| Hız aşımı | Limit üstü sürüş |
-| Sert fren | Ani duruş |
+Müşteri "tek araç tesadüf olabilir" derse, sıradaki üçünü göster:
 
-*(Sayıları söylemene gerek yok — sıralama yeter. Müşteri sayı isterse ekrandaki
-listeden oku, ezberden söyleme.)*
+| Plaka | Olay | Filo payı |
+|---|---|---|
+| **W-GF-123** | 232 | %18 |
+| **W-GF-120** | 125 | %10 |
+| **W-GF-119** | 118 | %9 |
 
-Ayrıca **250 rölanti kaydı**:
+> "Aynı tablo dört araçta birden çıkıyor. Bu dört araç filonun %80'ini
+> üretiyor — geri kalan 25 araç neredeyse sessiz."
+
+### Olay türleri — sorarsa
+
+| Olay | Sayı | Pay | Ne demek |
+|---|---|---|---|
+| Sert hızlanma | 799 | %62 | Ani gaz. Yakıtı en çok yiyen davranış. |
+| Sert viraj | 241 | %19 | Hızlı dönüş. Yükü ve lastiği zorlar. |
+| Hız aşımı | 184 | %14 | Limit üstü sürüş |
+| Sert fren | 57 | %4 | Ani duruş |
+
+> "Olayların üçte ikisi ani gaz. Bu en pahalı olanı — doğrudan yakıta gidiyor."
+
+*Tablodaki dört tür 1.281 ediyor; toplam 1.282. Aradaki tek kayıt "sinyal
+karıştırma" — bir kez olmuş. Sorulursa "bir kerelik bir kayıt, üstüne hikâye
+kurulmaz" de, geç.*
+
+⚠️ **Sayıları ekrandan oku, ezberden söyleme.** Her gün değişiyorlar; yukarıdaki
+tablo 8 Ağustos'un fotoğrafı, oranlar aşağı yukarı aynı kalır ama rakamlar
+kayar.
+
+Ayrıca **250 rölanti kaydı, 17 araçta**:
 
 > "Araç duruyor ama motor çalışıyor. Yakıt yanıyor, kilometre artmıyor.
-> Bu hafta 250 kez olmuş."
+> Bu hafta 17 araçta 250 kez olmuş."
 
 ---
 

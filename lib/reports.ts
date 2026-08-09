@@ -712,15 +712,52 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   // 280 bin satır Postgres'te toplulaştırılır. Hata hâlinde rapor çökmez ama
   // SEBEBİ ayırt edilir — "fonksiyon yok" ile "zaman aşımı" farklı sorunlardır
   // ve yöneticiye farklı şey yaptırırlar (migration çalıştır / aralığı daralt).
-  const { data: statData, error } = await supabaseAdmin.rpc("report_fuel_stats", {
-    p_from: startISO,
-    p_to: endISO,
-  });
-  if (error) return empty(classifyRpcError(error));
-
-  const stats = new Map(
-    ((statData ?? []) as FuelStatRow[]).map((s) => [s.vehicle_id, s])
+  // ── ARAÇ BAZINDA PARÇALAMA (migration 050, 09.08.2026) ────────────────────
+  //
+  // Tek çağrılı `report_fuel_stats` 30 günlük aralıkta 8,3 sn'de 57014
+  // (statement timeout) veriyordu ve rapor HİÇ açılmıyordu (ölçüldü canlıda).
+  // Sebep indeks değil (049 devreye girdi, süre artık aralıkla ölçekleniyor):
+  // ~690 bin satır üstünde iki pencere fonksiyonu + lag + iki array_agg.
+  //
+  // `report_fuel_stats_vehicle` aynı gövdenin araç-filtreli hâli: her çağrı
+  // verinin ~1/29'unu görür, pencere fonksiyonları küçük kümede koşar ve 29
+  // çağrı PARALEL gider. ÖLÇÜLDÜ (30 gün, 29 araç): 6.005 ms, 29/29 başarılı.
+  //
+  // GERİYE DÖNÜK: 050 uygulanmamış ortamda ilk araç PGRST202 döner ve tek
+  // çağrılı eski yola düşeriz — Sendigo/demo kurulumları migration sırası
+  // yüzünden raporsuz kalmaz.
+  const perVehicle = await Promise.all(
+    vehicles.map((v) =>
+      supabaseAdmin.rpc("report_fuel_stats_vehicle", {
+        p_from: startISO,
+        p_to: endISO,
+        p_vehicle_id: v.id,
+      })
+    )
   );
+  const missingFn = perVehicle.find(
+    (r) => r.error && classifyRpcError(r.error) === "missing_function"
+  );
+  let statRows: FuelStatRow[];
+  if (missingFn) {
+    const { data: statData, error } = await supabaseAdmin.rpc("report_fuel_stats", {
+      p_from: startISO,
+      p_to: endISO,
+    });
+    if (error) return empty(classifyRpcError(error));
+    statRows = (statData ?? []) as FuelStatRow[];
+  } else {
+    // Araç başına hata TÜM raporu düşürmez: bir aracın zaman aşımı yalnız o
+    // aracı "Veri yok" yapar. Ama HEPSİ hata verdiyse gerçek bir arıza var —
+    // sessizce boş rapor basmak, 057014'ü "yakıt verisi yok" gibi gösterirdi.
+    const failed = perVehicle.filter((r) => r.error);
+    if (failed.length === perVehicle.length && perVehicle.length > 0) {
+      return empty(classifyRpcError(failed[0].error!));
+    }
+    statRows = perVehicle.flatMap((r) => ((r.data ?? []) as FuelStatRow[]));
+  }
+
+  const stats = new Map(statRows.map((s) => [s.vehicle_id, s]));
 
   // LİTRE YOLU (039). Yüzdenin YERİNE değil, YOKLUĞUNDA devreye girer — hem
   // yüzde hem hacim gönderen araçlarda hacim çöp olduğu için (bkz. migration

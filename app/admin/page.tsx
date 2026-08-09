@@ -147,7 +147,20 @@ export default async function AdminPage({
       fleetScope.workerIds,
       fleetScope
     ),
-    getDashboardData(start.toISOString(), end.toISOString(), fleetScope),
+    // ÜST BÖLÜM SABİT BUGÜN (09.08.2026, Volkan kararı). Günün Panosu, 5'li
+    // sayı ızgarası ve Dikkat/Aksiyon "ŞU AN ne oluyor" sorusunu cevaplar;
+    // tarih aralığından etkilenmeleri anlamsızdı ve kafa karıştırıyordu
+    // ("Son 30 gün" seçilince pano hâlâ bugünü gösteriyor, ama Dikkat listesi
+    // 30 günlük teslim edilmemiş paketlerle doluyordu). Aralık artık YALNIZ
+    // aşağıdaki Vardiya Kayıtları arşivini süzer.
+    //
+    // Dünden devreden AÇIK vardiyalar bu daralmayla kaybolmaz: onları
+    // "Dünden açık" kartı ve Günün Panosu'ndaki 5. sekme taşıyor (2b89933).
+    getDashboardData(
+      startOfTodayVienna().toISOString(),
+      endOfTodayVienna().toISOString(),
+      fleetScope
+    ),
   ]);
 
   const workersData = (workersResult.data ?? []) as WorkerPublic[];

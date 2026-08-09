@@ -67,7 +67,6 @@ import { HelpTip } from "@/components/help/HelpTip";
 import {
   PageHeader,
   StatCard,
-  OpsConsole,
   OpsFilter,
   OpsStatGrid,
   OpsGroup,
@@ -631,58 +630,7 @@ export function AdminClient({
           sayı ızgarasına taşındı — bilgi kaybı yok, ayrı bir bileşen daha az.
           Sol sütun ADIM 3'te gerçek filtrelere kavuşacak; şu an kapsamı ve
           durum dağılımını gösteriyor (okunur, tıklanabilir değil). */}
-      <OpsConsole
-        filters={
-          <div className="space-y-4">
-            {/* KAPSAM — tarih aralığı. Sayfanın TAMAMINI etkiler: hem dikkat
-                kalemleri hem arşiv bu aralıktan beslenir. */}
-            <OpsFilter label={t("dateRange")} help="filter_range">
-              <Select value={range} onValueChange={(v) => setParam("range", v ?? "today")}>
-                <SelectTrigger className="h-9 w-full" aria-label={t("dateRange")}>
-                  <SelectValue>{scopeLabel}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">{t("rangeToday")}</SelectItem>
-                  <SelectItem value="week">{t("rangeWeek")}</SelectItem>
-                  <SelectItem value="month">{t("rangeMonth")}</SelectItem>
-                  <SelectItem value="custom">{t("rangeCustom")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </OpsFilter>
-
-            {range === "custom" && (
-              <>
-                <OpsFilter label={t("from")}>
-                  <Input
-                    type="date"
-                    value={from}
-                    onChange={(e) => setParam("from", e.target.value)}
-                    className="nums h-9 w-full"
-                  />
-                </OpsFilter>
-                <OpsFilter label={t("to")}>
-                  <Input
-                    type="date"
-                    value={to}
-                    onChange={(e) => setParam("to", e.target.value)}
-                    className="nums h-9 w-full"
-                  />
-                </OpsFilter>
-              </>
-            )}
-
-            {/* ARŞİV EKSENİ BURADAN TAŞINDI (09.08.2026, Volkan).
-                Şoför + Durum + Yoğunluk seçicileri "Vardiya Kayıtları"
-                başlığının hemen üstüne indi: kullanıcı bu kutuyu çevirip
-                sağdaki Günün Panosu değişmeyince sistemi bozuk sanıyordu.
-                Filtre artık süzdüğü listenin yanında duruyor.
-                TARİH ARALIĞI YUKARIDA KALDI ve kalmalı — o SAYFA GENELİDİR
-                (dikkat kalemleri + arşiv ondan beslenir), yalnız arşivi
-                süzmez. Onu da aşağı indirmek, üstteki kalemleri yöneten
-                kontrolü onların ALTINA koymak olurdu. */}
-          </div>
-        }
-      >
+      <div className="space-y-5">
         <OpsStatGrid
           items={[
             {
@@ -723,7 +671,7 @@ export function AdminClient({
           carriedOver={carriedOver}
           onStart={(row) => setStartWorker({ id: row.workerId, name: row.name })}
         />
-      </OpsConsole>
+      </div>
 
       {/* ── GRUPLU METRİK BLOKLARI (Stellate Adım 5) ──
           Referansın "Most Used / Highest latency / Highest error rate" üçlüsü.
@@ -829,6 +777,50 @@ export function AdminClient({
             Görünüm aynı: aynı OpsFilter bileşenleri, aynı sıra; yalnız konum
             değişti. Dar ekranda alt alta, geniş ekranda yan yana. */}
         <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
+            <OpsFilter label={t("dateRange")} help="filter_range">
+              <Select value={range} onValueChange={(v) => setParam("range", v ?? "today")}>
+                <SelectTrigger className="h-9 w-full" aria-label={t("dateRange")}>
+                  <SelectValue>{scopeLabel}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">{t("rangeToday")}</SelectItem>
+                  <SelectItem value="week">{t("rangeWeek")}</SelectItem>
+                  <SelectItem value="month">{t("rangeMonth")}</SelectItem>
+                  <SelectItem value="custom">{t("rangeCustom")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </OpsFilter>
+
+            {range === "custom" && (
+              <>
+                <OpsFilter label={t("from")}>
+                  <Input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setParam("from", e.target.value)}
+                    className="nums h-9 w-full"
+                  />
+                </OpsFilter>
+                <OpsFilter label={t("to")}>
+                  <Input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setParam("to", e.target.value)}
+                    className="nums h-9 w-full"
+                  />
+                </OpsFilter>
+              </>
+            )}
+
+            {/* ARŞİV EKSENİ BURADAN TAŞINDI (09.08.2026, Volkan).
+                Şoför + Durum + Yoğunluk seçicileri "Vardiya Kayıtları"
+                başlığının hemen üstüne indi: kullanıcı bu kutuyu çevirip
+                sağdaki Günün Panosu değişmeyince sistemi bozuk sanıyordu.
+                Filtre artık süzdüğü listenin yanında duruyor.
+                TARİH ARALIĞI YUKARIDA KALDI ve kalmalı — o SAYFA GENELİDİR
+                (dikkat kalemleri + arşiv ondan beslenir), yalnız arşivi
+                süzmez. Onu da aşağı indirmek, üstteki kalemleri yöneten
+                kontrolü onların ALTINA koymak olurdu. */}
                 
                 <OpsFilter label={t("worker")} help="filter_worker">
                   <Select value={workerFilter} onValueChange={(v) => setParam("worker", v ?? "all")}>

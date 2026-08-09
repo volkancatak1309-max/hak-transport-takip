@@ -39,6 +39,23 @@ type WorkerRow = {
  * Yanıtta ayrıca PII daraltılıyor: adres, TC/SV numarası, acil durum kişisi ve
  * doğum tarihi liste ucundan HİÇ çıkmaz; liste ekranının onlara ihtiyacı yok.
  *
+ * ── PLAKA: TÜRETİLİR, ham workers.plate DEĞİL ─────────────────────────────
+ * Bu uç plakayı `workers.plate` serbest metninden döndürüyordu; panelin kendi
+ * listesi (app/admin/workers/page.tsx:84-92) ve mobil DETAY ucu
+ * (app/api/mobile/workers/[id]/route.ts:49-56) ise tek kaynak olan
+ * `vehicles.assigned_worker_id` ilişkisinden türetiyordu. Aynı uygulamanın
+ * listesi ile detayı aynı kişide farklı plaka gösteriyordu.
+ *
+ * ÖLÇÜLDÜ (canlı HAK61, 09.08.2026, 33 kişi): 17 kişide liste ≠ detay. Listede
+ * plakası dolu 13 kişi, detayda 30 — yani liste gerçek atamaların %57'sini hiç
+ * göstermiyordu. Düzeltme sonrası fark 0. (Sendigo'da hiçbir araca şoför
+ * atanmamış: 0 → 0, davranış değişmiyor.)
+ *
+ * N+1 YOK: detay ucu kişi başına bir sorgu atar, liste bunu YAPAMAZ. Sayfadaki
+ * kimlikler için TEK `vehicles` sorgusu atılır ve bellekte eşlenir — panelin
+ * yaptığının aynısı. Bir şoförde birden çok araç varsa plakaca ilki alınır
+ * (`.order("plate")`), yani üç yüzey de aynı aracı seçer.
+ *
  * ── VARSAYILAN: YALNIZ AKTİF (panel görünümüyle aynı) ─────────────────────
  * Panelin veri katmanı tüm kadroyu çekip İSTEMCİDE süzüyor ve varsayılan
  * "active" (app/admin/workers/WorkersClient.tsx:77). Sunucu 33, ekran 31
@@ -81,6 +98,46 @@ export async function GET(req: NextRequest) {
 
   const rows = (data ?? []) as unknown as WorkerRow[];
 
+  // ── Atanmış plaka: sayfadaki kimlikler için TEK sorgu ────────────────────
+  // `.in("assigned_worker_id", ...)` sayfayla sınırlıdır: liste tavanı 200
+  // (lib/mobile-list.ts MAX_LIMIT), yani sorgu kadro büyüdükçe büyümez ve
+  // PostgREST'in 1000 satır tavanına dayanamaz. Filo geneli okunsaydı büyük bir
+  // kurulumda plakalar SESSİZCE eksik dönerdi; burada eksiklik mümkün değil.
+  const plateByWorker = new Map<string, string>();
+  if (rows.length > 0) {
+    // test-filtered: withoutTestRows — test aracının plakası gerçek bir şoförün
+    // satırına düşmesin. Panelin Çalışanlar listesi de aynı elemeyi yapıyor
+    // (app/admin/workers/page.tsx:66-75). Detay ucunda bu eleme YOKTUR ve
+    // olmamalıdır: orası anahtarlı okuma, test şoförünün kendi dosyasında kendi
+    // aracını görmesi gerekir. Canlıda ölçüldü (HAK61 + Sendigo): hiçbir test
+    // aracı test olmayan bir şoföre atanmamış, yani iki uç bugün AYNI sonucu
+    // veriyor — eleme ileriye dönük bir kapı.
+    const { data: vehData, error: vehError } = await withoutTestRows(
+      supabaseAdmin
+        .from("vehicles")
+        .select("plate, assigned_worker_id")
+        .in(
+          "assigned_worker_id",
+          rows.map((w) => w.id)
+        )
+        .neq("status", "inactive")
+        .order("plate"),
+      "id",
+      scope.vehicleIds
+    );
+    // Sessiz eksik YASAK: bu sorgu düşerse plakalar boş dönerdi ve ekran
+    // "hiç kimseye araç atanmamış" derdi. Liste sorgusunun hatasıyla aynı yanıt.
+    if (vehError) return mobileError(503, "db_error");
+    for (const v of (vehData ?? []) as {
+      plate: string;
+      assigned_worker_id: string;
+    }[]) {
+      if (!plateByWorker.has(v.assigned_worker_id)) {
+        plateByWorker.set(v.assigned_worker_id, v.plate);
+      }
+    }
+  }
+
   return Response.json({
     ok: true,
     filtre: { aktif: aktifParam },
@@ -90,7 +147,8 @@ export async function GET(req: NextRequest) {
       adSoyad: w.name,
       telefon: w.phone,
       personelNo: w.employee_number,
-      plaka: w.plate,
+      // Detay ucuyla BİREBİR aynı kural: atanmış araç, yoksa workers.plate.
+      plaka: plateByWorker.get(w.id) ?? w.plate,
       aktif: w.is_active,
       yonetici: w.is_admin,
       soforSayilir: w.counts_as_driver === true,

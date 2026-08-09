@@ -1,4 +1,6 @@
 import { requireAdmin } from "@/lib/session";
+import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
 import {
@@ -6,6 +8,7 @@ import {
   previousPeriod,
   computeTopDriversByType,
   computeSafetyScores,
+  drivenVehiclesFromEntries,
   computeIdleWaste,
   computeMonthlyPivot,
   getVehicleDistanceSpan,
@@ -48,6 +51,10 @@ export default async function AnalizPage({
   // null döner ve her şey eskisi gibi çalışır.
   const configEpoch = await getLatestConfigEpoch();
 
+  // test-filtered: aşağıdaki time_entries sorgusu bunu kullanır. workersById
+  // zaten test hesaplarını taşımıyor ama filtre sorguda da olmalı — kalıcı test
+  // şoförünün vardiyası km atfına girip gerçek bir aracı ona bağlayabilirdi.
+  const testScope = await getTestScope();
   const { vehicles, workers } = await listVehiclesAndWorkers();
   const vehiclesById = new Map(vehicles.map((v) => [v.id, v]));
   const workersById = new Map(workers.map((w) => [w.id, w]));
@@ -55,10 +62,24 @@ export default async function AnalizPage({
   async function loadPeriod(r: { start: Date; end: Date }) {
     const startISO = r.start.toISOString();
     const endISO = r.end.toISOString();
-    const [events, idleEpisodes] = await Promise.all([
+    const [events, idleEpisodes, entryRes] = await Promise.all([
       listEventsInRange(startISO, endISO),
       listIdleEpisodesInRange(startISO, endISO),
+      // FİİLEN SÜRÜLEN ARAÇ (09.08.2026): km artık atamadan değil vardiyadan
+      // türüyor. Aralıkla KESİŞEN her vardiya sayılır (ended_at null = açık).
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select("worker_id, vehicle_id")
+          .lte("started_at", endISO)
+          .or(`ended_at.is.null,ended_at.gte.${startISO}`),
+        "worker_id",
+        testScope.workerIds
+      ),
     ]);
+    const drivenVehiclesByWorker = drivenVehiclesFromEntries(
+      (entryRes.data ?? []) as { worker_id: string | null; vehicle_id: string | null }[]
+    );
     // Span (km + ÖLÇÜM PENCERESİ). Pencere, skor kapısının şoför başına
     // ölçeklenmesi için gerekli (B kararı, 27.07.2026 — scoreMinKmForSpan).
     const spanEntries = await Promise.all(
@@ -68,7 +89,7 @@ export default async function AnalizPage({
     const distanceByVehicle = new Map(
       [...spanByVehicle].map(([id, s]) => [id, s.km] as const)
     );
-    return { events, idleEpisodes, distanceByVehicle, spanByVehicle };
+    return { events, idleEpisodes, distanceByVehicle, spanByVehicle, drivenVehiclesByWorker };
   }
 
   /** Şoförün araçlarının ölçüm pencerelerinden km eşiğini türeten kapı. */
@@ -96,7 +117,8 @@ export default async function AnalizPage({
     vehiclesById,
     workersById,
     current.distanceByVehicle,
-    gateFor(range, current.spanByVehicle)
+    gateFor(range, current.spanByVehicle),
+    current.drivenVehiclesByWorker
   );
   const idleWaste = computeIdleWaste(current.idleEpisodes, vehiclesById, workersById);
 
@@ -146,7 +168,8 @@ export default async function AnalizPage({
       vehiclesById,
       workersById,
       prev.distanceByVehicle,
-      gateFor(prevRange, prev.spanByVehicle)
+      gateFor(prevRange, prev.spanByVehicle),
+      prev.drivenVehiclesByWorker
     );
     const prevScoreByWorker = new Map(prevSafety.map((r) => [r.workerId, r.score]));
     safetyRowsWithTrend = safetyRows.map((r) => {

@@ -14,6 +14,7 @@ import {
   RankingTile,
   StatCard,
   StatusChip,
+  LoadingState,
   SegmentedControl,
   DataTable,
   EmptyState,
@@ -318,11 +319,23 @@ export function AnalizClient({
         )}
       </div>
 
-      {/* Veri bölümleri — geçişte hafif soluk (isPending), filtre çubuğu aktif kalır */}
+      {/* Veri bölümleri — geçişte hafif soluk (isPending), filtre çubuğu aktif
+          kalır. GÖRÜNÜR GÖSTERGE (09.08.2026): soluklaşma tek başına "donmuş"
+          gibi okunuyordu; ReportPageShell'dekiyle AYNI yüzen halka katmanı.
+          Analiz canlıda 6-10 sn sürüyor, bu en çok burada gerekiyordu. */}
+      <div className="relative">
+      {isPending && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center pt-6">
+          <div className="glass-pop rounded-full px-4 py-1.5 shadow-sm">
+            <LoadingState />
+          </div>
+        </div>
+      )}
       <div
+        aria-busy={isPending}
         className={
           isPending
-            ? "space-y-6 opacity-60 transition-opacity"
+            ? "space-y-6 opacity-40 transition-opacity"
             : "space-y-6 transition-opacity"
         }
       >
@@ -509,6 +522,7 @@ export function AnalizClient({
           <p>{t("epoch_trend_blocked", { date: formatDate(configEpochISO, locale) })}</p>
         </div>
       )}
+      </div>
       </div>
 
       {/* ── Bölüm 4 — AYLIK PİVOT ARŞİVİ (27.07.2026) ──────────────────────

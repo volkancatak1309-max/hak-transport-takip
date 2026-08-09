@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
-import { SegmentedControl, useUrlFilters } from "@/components/ui-v2";
+import { LoadingState, SegmentedControl, useUrlFilters } from "@/components/ui-v2";
 import { HelpTip } from "@/components/help/HelpTip";
 import { Input } from "@/components/ui/input";
 import type { AnalyticsRangeKey } from "@/lib/analytics-shared";
@@ -125,8 +125,29 @@ export function ReportPageShell({
 
       {notice}
 
-      <div className={isPending ? "opacity-60 transition-opacity" : "transition-opacity"}>
-        {children}
+      {/* SEKME DEĞİŞİMİNDE GÖSTERGE (09.08.2026, Volkan).
+          loading.tsx yalnız İLK açılışta (route segmenti mount olurken) çıkar;
+          tarih sekmesi tıklandığında sunucu yeniden hesaplarken hiçbir işaret
+          yoktu — 30 günlük yakıt raporu 8 sn sürerken ekran sadece soluklaşıyor,
+          kullanıcı donmuş sanıyordu. isPending zaten vardı, EKSİK OLAN görünür
+          göstergeydi. Katman gövdenin ÜSTÜNDE yüzer: tablo yerinde kalır
+          (yükseklik zıplamaz), üstü soluklaşır, halka ortada döner. */}
+      <div className="relative">
+        {isPending && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center pt-6">
+            <div className="glass-pop rounded-full px-4 py-1.5 shadow-sm">
+              <LoadingState />
+            </div>
+          </div>
+        )}
+        <div
+          aria-busy={isPending}
+          className={
+            isPending ? "opacity-40 transition-opacity" : "transition-opacity"
+          }
+        >
+          {children}
+        </div>
       </div>
     </>
   );

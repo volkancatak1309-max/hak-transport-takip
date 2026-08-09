@@ -3,6 +3,7 @@ import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
 import {
   computeSafetyScores,
+  drivenVehiclesFromEntries,
   getVehicleDistanceSpan,
   getVehicleFuelSpan,
   listVehiclesAndWorkers,
@@ -332,7 +333,10 @@ export async function buildPerformanceReport(
           vehicleIds.map(
             (id) => base.spanByVehicle.get(id) ?? { firstAt: null, lastAt: null }
           )
-        )
+        ),
+      // FİİLEN SÜRÜLEN ARAÇ (09.08.2026): `entries` zaten bu aralığın
+      // vardiyaları — ikinci bir sorgu gerekmiyor.
+      drivenVehiclesFromEntries(entries)
     ).map((r) => [r.workerId, r])
   );
 

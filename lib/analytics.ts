@@ -487,6 +487,24 @@ export function computeTopDriversByType(
 
 // ── Bölüm 2: şoför güvenlik skoru ────────────────────────────────────────────
 
+/**
+ * `time_entries` satırlarından "şoför → o aralıkta sürdüğü araçlar" haritası.
+ * İki çağıran da (Analiz sayfası, Performans raporu) bunu kullanır ki iki ekran
+ * aynı şoför için farklı km göstermesin.
+ */
+export function drivenVehiclesFromEntries(
+  entries: { worker_id: string | null; vehicle_id: string | null }[]
+): Map<string, Set<string>> {
+  const m = new Map<string, Set<string>>();
+  for (const e of entries) {
+    if (!e.worker_id || !e.vehicle_id) continue;
+    const set = m.get(e.worker_id) ?? new Set<string>();
+    set.add(e.vehicle_id);
+    m.set(e.worker_id, set);
+  }
+  return m;
+}
+
 export function computeSafetyScores(
   events: VehicleEventWithPlate[],
   idleEpisodes: IdleEpisodeWithPlate[],
@@ -499,7 +517,15 @@ export function computeSafetyScores(
    * ölçümünün gerçekten kapsadığı gün sayısına göre ölçekleniyor
    * (bkz. scoreMinKmForSpan). Sayı verilirse eski davranış aynen korunur.
    */
-  minKm: number | ((vehicleIds: string[]) => number)
+  minKm: number | ((vehicleIds: string[]) => number),
+  /**
+   * ŞOFÖRÜN O ARALIKTA FİİLEN SÜRDÜĞÜ ARAÇLAR (09.08.2026 — 0 km'ye puan arızası).
+   *
+   * Kaynak: `time_entries` × araç × aralık kesişimi. Verilmezse km atfı eski
+   * (hatalı) yola düşmez — `undefined` "veri sağlanamadı" demektir ve o zaman
+   * ATAMA yoluna geri dönülür; iki çağıranın ikisi de bunu geçiyor.
+   */
+  drivenVehiclesByWorker?: Map<string, Set<string>>
 ): SafetyScoreRow[] {
   type Acc = { penalty: number; totalEvents: number; days: Set<string> };
   const acc = new Map<string, Acc>();
@@ -525,15 +551,39 @@ export function computeSafetyScores(
     bump(v.assigned_worker_id, SAFETY_SCORE_WEIGHTS.idling ?? 0, viennaDayKey(ep.started_at));
   }
 
-  // Şoför → atanmış araç(lar). Temiz (hiç olayı olmayan) şoförün de km'sini bilmek
-  // için TÜM araçlardan kurulur, yalnız olay üreten araçlardan değil. Böylece "çok
-  // sürüp hiç ihlal yapmayan" şoför gerçek km'siyle skor alır (eskiden zorla 100'dü).
+  // Şoför → km'si ona yazılacak araç(lar).
+  //
+  // ── 0 KM'YE PUAN ARIZASI (09.08.2026, Volkan onayı) ────────────────────────
+  // ESKİDEN: yalnız `vehicles.assigned_worker_id`. Yani araç kimin ÜSTÜNE
+  // KAYITLIYSA o aracın aralıktaki tüm km'si ona yazılıyordu — şoför o dönemde
+  // hiç vardiya açmamış olsa bile. Canlı ölçüm (7 gün, 09.08): 0 vardiyalı 5
+  // şoföre km atfedilmişti; ikisi İŞTEN ÇIKMIŞTI (Ekrem Gyuler 640 km,
+  // Bayram Çöymen 284 km) ve biri 70 puanla listede duruyordu.
+  //
+  // ŞİMDİ: km yalnız o aralıkta o aracı FİİLEN SÜREN vardiyalardan türer
+  // (time_entries × araç × zaman kesişimi, çağıran tarafından hesaplanır).
+  // Vardiyası olmayan şoförün aracı yok → reliableKm null → skor null →
+  // "Yetersiz veri". Atama artık km'yi TEK BAŞINA taşımıyor.
+  //
+  // ⚠️ KALAN YAKLAŞIKLIK: aracın km'si aralığın TAMAMI için ölçülüyor
+  // (getVehicleDistanceSpan uç-nokta farkı), vardiya pencereleri için değil.
+  // Aynı aracı iki şoför paylaşırsa ikisi de aracın tam km'sini alır. Bunu
+  // kapatmak vardiya başına odometre farkı gerektirir (araç başına 2 değil,
+  // vardiya başına 2 sorgu) — ayrı iş, ölçülmeden yapılmamalı.
   const vehiclesByWorker = new Map<string, string[]>();
-  for (const v of vehiclesById.values()) {
-    if (!v.assigned_worker_id) continue;
-    const arr = vehiclesByWorker.get(v.assigned_worker_id) ?? [];
-    arr.push(v.id);
-    vehiclesByWorker.set(v.assigned_worker_id, arr);
+  if (drivenVehiclesByWorker) {
+    for (const [workerId, vids] of drivenVehiclesByWorker) {
+      const arr = [...vids].filter((id) => vehiclesById.has(id));
+      if (arr.length > 0) vehiclesByWorker.set(workerId, arr);
+    }
+  } else {
+    // Geriye dönük yol: sürüş verisi verilmediyse eski atama davranışı.
+    for (const v of vehiclesById.values()) {
+      if (!v.assigned_worker_id) continue;
+      const arr = vehiclesByWorker.get(v.assigned_worker_id) ?? [];
+      arr.push(v.id);
+      vehiclesByWorker.set(v.assigned_worker_id, arr);
+    }
   }
 
   const rows: SafetyScoreRow[] = [];

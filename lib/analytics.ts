@@ -127,6 +127,33 @@ export function scoreMinKmForSpan(
   return SCORE_MIN_KM_PER_DAY * Math.min(rangeDays, coveredDays);
 }
 
+/**
+ * ÇALIŞILAN GÜNE GÖRE EŞİK (09.08.2026, Volkan onayı).
+ *
+ * Eskiden eşik TAKVİM gününe göreydi: 30 günlük aralıkta herkesten 1.200 km
+ * isteniyordu. Ama şoför o 30 günün 19'unda çalışmışsa (izin, hafta tatili,
+ * vardiya dağılımı) 1.200 km haksız bir çıtaydı — ölçüldü: takvim eşiğiyle
+ * 31 şoförün yalnız 9'u listeye giriyordu.
+ *
+ * Artık çıta kişinin GERÇEKTEN çalıştığı gün sayısıyla ölçeklenir:
+ * 19 gün × 40 = 760 km. Aynı sürüş yoğunluğu isteniyor, yalnız payda dürüst.
+ *
+ * ÖNCE 0-KM ARIZASI KAPANDI (389b22e) ve bu sıra ÖNEMLİYDİ: eşiği önce
+ * gevşetseydik, vardiya açmadığı hâlde aracının km'si üstüne yazılan şoförler
+ * (işten çıkmış Ekrem Gyuler dâhil) listeye 120 km'lik çıtayla girerdi.
+ * Km artık yalnız fiilen sürülen vardiyalardan geldiği için güvenli.
+ *
+ * Tavan: aralığın geçen gün sayısı. Çalışılan gün ondan büyük olamaz (aynı
+ * günde iki vardiya tek gün sayılır), ama savunmacı kalıyoruz.
+ * Taban: 1 gün — hiç çalışmamış şoförün km'si zaten null, buraya düşmez.
+ */
+export function scoreMinKmForWorkedDays(
+  range: DateRange,
+  workedDays: number
+): number {
+  return SCORE_MIN_KM_PER_DAY * Math.min(rangeElapsedDays(range), Math.max(1, workedDays));
+}
+
 /** Kayan pencere uzunlukları (gün). Etiketler i18n'de bu sayılarla yazılı. */
 export const SLIDING_WEEK_DAYS = 7;
 export const SLIDING_MONTH_DAYS = 30;
@@ -505,6 +532,24 @@ export function drivenVehiclesFromEntries(
   return m;
 }
 
+/**
+ * `time_entries` satırlarından "şoför → o aralıkta ÇALIŞTIĞI ayrı gün sayısı".
+ * Gün anahtarı Viyana takvim günü (viennaDayKey) — vardiya gece yarısını
+ * aşarsa BAŞLADIĞI güne sayılır, panonun geri kalanıyla aynı tanım.
+ */
+export function workedDaysFromEntries(
+  entries: { worker_id: string | null; started_at: string }[]
+): Map<string, number> {
+  const days = new Map<string, Set<string>>();
+  for (const e of entries) {
+    if (!e.worker_id) continue;
+    const set = days.get(e.worker_id) ?? new Set<string>();
+    set.add(viennaDayKey(e.started_at));
+    days.set(e.worker_id, set);
+  }
+  return new Map([...days].map(([id, set]) => [id, set.size]));
+}
+
 export function computeSafetyScores(
   events: VehicleEventWithPlate[],
   idleEpisodes: IdleEpisodeWithPlate[],
@@ -517,7 +562,7 @@ export function computeSafetyScores(
    * ölçümünün gerçekten kapsadığı gün sayısına göre ölçekleniyor
    * (bkz. scoreMinKmForSpan). Sayı verilirse eski davranış aynen korunur.
    */
-  minKm: number | ((vehicleIds: string[]) => number),
+  minKm: number | ((vehicleIds: string[], workerId: string) => number),
   /**
    * ŞOFÖRÜN O ARALIKTA FİİLEN SÜRDÜĞÜ ARAÇLAR (09.08.2026 — 0 km'ye puan arızası).
    *
@@ -616,7 +661,7 @@ export function computeSafetyScores(
     // sıfıra yaklaşır ama çarpmaz; sıralama en kötü uçta bile korunur.
     const workerVehicleIds = vehiclesByWorker.get(w.id) ?? [];
     const effectiveMinKm =
-      typeof minKm === "function" ? minKm(workerVehicleIds) : minKm;
+      typeof minKm === "function" ? minKm(workerVehicleIds, w.id) : minKm;
     const qualifies = reliableKm != null && reliableKm >= effectiveMinKm;
     const penaltyPer1000 = qualifies ? penalty / (reliableKm! / 1000) : 0;
     const score = qualifies

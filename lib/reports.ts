@@ -4,6 +4,8 @@ import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
 import {
   computeSafetyScores,
   drivenVehiclesFromEntries,
+  workedDaysFromEntries,
+  scoreMinKmForWorkedDays,
   getVehicleDistanceSpan,
   getVehicleFuelSpan,
   listVehiclesAndWorkers,
@@ -317,6 +319,9 @@ export async function buildPerformanceReport(
   );
   const entries = (entryData ?? []) as TimeEntry[];
 
+  // ÇALIŞILAN GÜN eşiği — Analiz sayfasıyla AYNI kapı, aynı kaynak (`entries`).
+  const workedDaysByWorker = workedDaysFromEntries(entries);
+
   const safety = new Map<string, SafetyScoreRow>(
     computeSafetyScores(
       base.events,
@@ -327,8 +332,10 @@ export async function buildPerformanceReport(
       // ANALİZ SAYFASIYLA AYNI KAPI (B, 27.07.2026): eşik aralık uzunluğuna
       // değil, şoförün araçlarının odometre penceresine göre ölçeklenir. İki
       // ekran aynı şoför için farklı karar veremez.
-      (vehicleIds: string[]) =>
-        scoreMinKmForSpan(
+      (vehicleIds: string[], workerId: string) =>
+        (workedDaysByWorker.get(workerId) ?? 0) > 0
+          ? scoreMinKmForWorkedDays(range, workedDaysByWorker.get(workerId)!)
+          : scoreMinKmForSpan(
           range,
           vehicleIds.map(
             (id) => base.spanByVehicle.get(id) ?? { firstAt: null, lastAt: null }

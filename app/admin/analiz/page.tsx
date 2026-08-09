@@ -9,6 +9,8 @@ import {
   computeTopDriversByType,
   computeSafetyScores,
   drivenVehiclesFromEntries,
+  workedDaysFromEntries,
+  scoreMinKmForWorkedDays,
   computeIdleWaste,
   computeMonthlyPivot,
   getVehicleDistanceSpan,
@@ -70,16 +72,20 @@ export default async function AnalizPage({
       withoutTestRows(
         supabaseAdmin
           .from("time_entries")
-          .select("worker_id, vehicle_id")
+          .select("worker_id, vehicle_id, started_at")
           .lte("started_at", endISO)
           .or(`ended_at.is.null,ended_at.gte.${startISO}`),
         "worker_id",
         testScope.workerIds
       ),
     ]);
-    const drivenVehiclesByWorker = drivenVehiclesFromEntries(
-      (entryRes.data ?? []) as { worker_id: string | null; vehicle_id: string | null }[]
-    );
+    const rangeEntryRows = (entryRes.data ?? []) as {
+      worker_id: string | null;
+      vehicle_id: string | null;
+      started_at: string;
+    }[];
+    const drivenVehiclesByWorker = drivenVehiclesFromEntries(rangeEntryRows);
+    const workedDaysByWorker = workedDaysFromEntries(rangeEntryRows);
     // Span (km + ÖLÇÜM PENCERESİ). Pencere, skor kapısının şoför başına
     // ölçeklenmesi için gerekli (B kararı, 27.07.2026 — scoreMinKmForSpan).
     const spanEntries = await Promise.all(
@@ -89,20 +95,36 @@ export default async function AnalizPage({
     const distanceByVehicle = new Map(
       [...spanByVehicle].map(([id, s]) => [id, s.km] as const)
     );
-    return { events, idleEpisodes, distanceByVehicle, spanByVehicle, drivenVehiclesByWorker };
+    return {
+      events,
+      idleEpisodes,
+      distanceByVehicle,
+      spanByVehicle,
+      drivenVehiclesByWorker,
+      workedDaysByWorker,
+    };
   }
 
   /** Şoförün araçlarının ölçüm pencerelerinden km eşiğini türeten kapı. */
+  // ÇALIŞILAN GÜN eşiği (09.08.2026). Odometre penceresi (scoreMinKmForSpan)
+  // yerine şoförün gerçekten çalıştığı gün sayısı: ikisi de "takvim günü haksız"
+  // sorununu çözüyordu ama pencere ARACIN ölçüm süresini, bu KİŞİNİN mesaisini
+  // ölçüyor — doğru payda bu. Çalışılan gün bilinmiyorsa (0) eski pencere
+  // yoluna düşülür, yani davranış hiçbir koşulda tanımsız kalmaz.
   const gateFor =
     (
       r: { start: Date; end: Date },
-      spanByVehicle: Map<string, { firstAt: string | null; lastAt: string | null }>
+      spanByVehicle: Map<string, { firstAt: string | null; lastAt: string | null }>,
+      workedDaysByWorker: Map<string, number>
     ) =>
-    (vehicleIds: string[]) =>
-      scoreMinKmForSpan(
+    (vehicleIds: string[], workerId: string) => {
+      const worked = workedDaysByWorker.get(workerId) ?? 0;
+      if (worked > 0) return scoreMinKmForWorkedDays(r, worked);
+      return scoreMinKmForSpan(
         r,
         vehicleIds.map((id) => spanByVehicle.get(id) ?? { firstAt: null, lastAt: null })
       );
+    };
 
   const current = await loadPeriod(range);
   const topByType = computeTopDriversByType(
@@ -117,7 +139,7 @@ export default async function AnalizPage({
     vehiclesById,
     workersById,
     current.distanceByVehicle,
-    gateFor(range, current.spanByVehicle),
+    gateFor(range, current.spanByVehicle, current.workedDaysByWorker),
     current.drivenVehiclesByWorker
   );
   const idleWaste = computeIdleWaste(current.idleEpisodes, vehiclesById, workersById);
@@ -168,7 +190,7 @@ export default async function AnalizPage({
       vehiclesById,
       workersById,
       prev.distanceByVehicle,
-      gateFor(prevRange, prev.spanByVehicle),
+      gateFor(prevRange, prev.spanByVehicle, prev.workedDaysByWorker),
       prev.drivenVehiclesByWorker
     );
     const prevScoreByWorker = new Map(prevSafety.map((r) => [r.workerId, r.score]));

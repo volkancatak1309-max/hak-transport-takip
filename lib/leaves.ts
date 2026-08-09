@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import type { LeaveTypeKey, LeaveStatus } from "@/lib/leave-types";
+import { TENANT_TZ } from "@/lib/tz";
 
 /**
  * İZİN VERİ ERİŞİMİ (Modül 1).
@@ -39,7 +40,7 @@ export const LEAVE_COLS =
  * `new Date().getDate()` sunucu UTC'de olduğu için yazın bir gün kayardı.
  */
 export function todayYmdVienna(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Vienna" });
+  return new Date().toLocaleDateString("en-CA", { timeZone: TENANT_TZ });
 }
 
 /**

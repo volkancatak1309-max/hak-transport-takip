@@ -41,6 +41,7 @@ import {
 import { enterShadowAction } from "@/app/actions/shadow";
 import type { ReplayEvent } from "@/lib/replay";
 import type { FingerprintHit } from "@/lib/pdf-fingerprint";
+import { TENANT_TZ } from "@/lib/tz";
 
 /**
  * GÜVENLİK EKRANI (045) — dört sekme: giriş geçmişi, aktif oturumlar,
@@ -73,7 +74,7 @@ export type KillSwitchView = {
 };
 
 function zaman(iso: string): string {
-  return new Date(iso).toLocaleString("de-AT", { timeZone: "Europe/Vienna" });
+  return new Date(iso).toLocaleString("de-AT", { timeZone: TENANT_TZ });
 }
 
 /** UA'dan okunabilir kısa cihaz adı. Kesin değil — yalnız ekranda ipucu. */
@@ -394,7 +395,7 @@ export function GuvenlikClient({
     if (fEylem && r.action !== fEylem) return false;
     // Tarih karşılaştırması YEREL güne göre: ISO dizesinin ilk 10 hanesi UTC
     // günüdür ve gece yarısına yakın satırları yanlış güne atardı.
-    const gun = new Date(r.at).toLocaleDateString("sv-SE", { timeZone: "Europe/Vienna" });
+    const gun = new Date(r.at).toLocaleDateString("sv-SE", { timeZone: TENANT_TZ });
     if (fBas && gun < fBas) return false;
     if (fBit && gun > fBit) return false;
     return true;
@@ -828,7 +829,7 @@ export function GuvenlikClient({
                       <span className="text-sm">
                         <span className="tabular-nums text-text-tertiary">
                           {new Date(o.at).toLocaleTimeString("de-AT", {
-                            timeZone: "Europe/Vienna", hour: "2-digit", minute: "2-digit",
+                            timeZone: TENANT_TZ, hour: "2-digit", minute: "2-digit",
                           })}
                         </span>{" "}
                         <span className="font-medium">{EYLEM_ADI[o.baslik] ?? o.baslik}</span>

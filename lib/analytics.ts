@@ -36,6 +36,7 @@ import {
   type IdleWasteSummary,
   type MonthlyPivot,
 } from "@/lib/analytics-shared";
+import { TENANT_TZ } from "@/lib/tz";
 
 // Client-safe sabitler/türler lib/analytics-shared.ts'te yaşar; burada
 // yeniden dışa verilir ki mevcut çağıranlar (page.tsx) tek yerden import etsin.
@@ -59,8 +60,9 @@ export {
 /**
  * /admin/analiz veri katmanı — FAZ 1: olay-tipi top-10, güvenlik skoru,
  * rölanti israf panosu. Tüm ağır hesap burada (server-only); client yalnız
- * render eder. Tarih aralığı hesapları Europe/Vienna (lib/format.ts ile aynı
- * DST-güvenli desen). İstemci-güvenli türler/sabitler → lib/analytics-shared.ts.
+ * render eder. Tarih aralığı hesapları KİRACI dilimine göre (lib/tz.ts; aynı
+ * DST-güvenli desen lib/format.ts'te). İstemci-güvenli türler/sabitler →
+ * lib/analytics-shared.ts.
  */
 
 // Filo bu tarihten eskiye gitmiyor — "tüm zamanlar" alt sınırı, sonsuz sorgu
@@ -823,7 +825,7 @@ export function computeSafetyScores(
 /** Bir ISO anın Viyana AY anahtarı: "2026-07". */
 function viennaMonthKey(iso: string): string {
   return new Date(iso).toLocaleDateString("sv-SE", {
-    timeZone: "Europe/Vienna",
+    timeZone: TENANT_TZ,
     year: "numeric",
     month: "2-digit",
   }).slice(0, 7);

@@ -33,9 +33,9 @@ export const dynamic = "force-dynamic";
 
 type Range = "today" | "week" | "month" | "custom";
 
-// All boundaries are resolved against the Europe/Vienna calendar (see
-// lib/format helpers), so "today / week / month" stay correct regardless of the
-// server's own timezone (Vercel runs on UTC).
+// All boundaries are resolved against the TENANT calendar (lib/tz.ts → lib/format
+// helpers; HAK61/Sendigo/galzura-demo = Europe/Vienna), so "today / week / month"
+// stay correct regardless of the server's own timezone (Vercel runs on UTC).
 //
 // KAYAN PENCERE (27.07.2026, Volkan kararı) — "week"/"month" artık TAKVİM
 // haftası/ayı DEĞİL, son 7 / son 30 gün. Gerekçe ve canlı ölçüm:

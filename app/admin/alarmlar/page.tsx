@@ -21,6 +21,7 @@ import { eventTone } from "@/lib/event-ui";
 import type { TrendBucket } from "@/components/ui-v2";
 import { AlarmsClient, type AlarmRow } from "./AlarmsClient";
 import { audit } from "@/lib/security-log";
+import { TENANT_TZ } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
 
@@ -76,8 +77,8 @@ function buildAlarmTrend(
   const keyOf = (iso: string) => {
     const d = new Date(iso);
     return byHour
-      ? d.toLocaleString("sv-SE", { timeZone: "Europe/Vienna", hour: "2-digit", hour12: false }).slice(-2) + ":00"
-      : d.toLocaleDateString("sv-SE", { timeZone: "Europe/Vienna" });
+      ? d.toLocaleString("sv-SE", { timeZone: TENANT_TZ, hour: "2-digit", hour12: false }).slice(-2) + ":00"
+      : d.toLocaleDateString("sv-SE", { timeZone: TENANT_TZ });
   };
   const labelOf = (key: string) =>
     byHour ? key : `${Number(key.slice(8, 10))}.${key.slice(5, 7)}`;

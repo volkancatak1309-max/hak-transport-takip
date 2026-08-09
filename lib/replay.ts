@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { SECURITY_LAYER_ENABLED } from "@/lib/tenant";
 import type { ChangeField } from "@/lib/security-read";
+import { TENANT_TZ } from "@/lib/tz";
 
 /**
  * OTURUM KAYIT OYNATICI (045/046 üstü) — bir kişinin BİR GÜNÜ, tek çizgide.
@@ -60,7 +61,7 @@ function gunSiniri(ymd: string): { bas: string; bit: string } {
 /** Verilen anda Viyana'nın UTC'den farkı (dakika). */
 function viyanaOfsetDk(d: Date): number {
   const s = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Europe/Vienna",
+    timeZone: TENANT_TZ,
     hour12: false,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",

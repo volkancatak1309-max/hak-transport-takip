@@ -126,6 +126,17 @@ const EXPECTED = {
   // bu satır kayarsa canlıda filo adları env'e kaçmış olur.
   "tenant.FLEET_LABELS": '{"bordo":"","mavi":""}',
 
+  // ── lib/tz.ts — SAAT DİLİMİ ──────────────────────────────────────────────
+  // 09.08.2026 öncesi 19 dosyada 31 ayrı yerde düz metin `"Europe/Vienna"`
+  // yazılıydı (lib/format.ts, i18n/request.ts, 5 PDF bileşeni, admin ekranları…).
+  // Tek kaynağa taşındı; bu satır DEĞERİN taşınmadığını denetler. Kayarsa
+  // HAK61'de her saat, her gün anahtarı ve her "bugün/bu hafta/bu ay" penceresi
+  // birlikte kayar — yani rapor sayıları sessizce değişir.
+  "tz.TENANT_TZ": "Europe/Vienna",
+  // Env verilmemişken "geçersiz" olamaz; true'ya kayması assertTenantConfig'i
+  // HAK61'de patlatır ve uygulama hiç açılmaz.
+  "tz.TENANT_TZ_INVALID": false,
+
   // ── lib/brand.ts ─────────────────────────────────────────────────────────
   "brand.tenant": "hak61",
   "brand.name": "HAK61", //                   layout.tsx appleWebApp.title
@@ -202,7 +213,10 @@ const load = async (p) => import(pathToFileURL(p).href);
 const tenant = await load(process.argv[2]);
 const brand = await load(process.argv[3]);
 const report = await load(process.argv[4]);
+const tz = await load(join(process.argv[5], "lib", "tz.ts"));
 const out = {
+  "tz.TENANT_TZ": tz.TENANT_TZ,
+  "tz.TENANT_TZ_INVALID": tz.TENANT_TZ_INVALID,
   "tenant.FUEL_ENABLED": tenant.FUEL_ENABLED,
   "tenant.EXPENSE_ENABLED": tenant.EXPENSE_ENABLED,
   "tenant.MAINTENANCE_ENABLED": tenant.MAINTENANCE_ENABLED,

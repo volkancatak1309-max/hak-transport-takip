@@ -7,10 +7,11 @@ import { toast } from "sonner";
 import { UserMinus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { terminateWorkerAction } from "@/app/actions/workers";
+import { TENANT_TZ } from "@/lib/tz";
 
 /** Bugünün Viyana takvim tarihi (YYYY-MM-DD) — son çalışma günü varsayılanı. */
 function todayYmdVienna(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Vienna" });
+  return new Date().toLocaleDateString("en-CA", { timeZone: TENANT_TZ });
 }
 
 /**

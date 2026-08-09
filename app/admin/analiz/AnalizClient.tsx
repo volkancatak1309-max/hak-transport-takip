@@ -51,6 +51,7 @@ export function AnalizClient({
   customTo,
   topByType,
   safetyRows,
+  shiftKmFailed,
   idleWaste,
   prevIdleWaste,
   monthlyPivot,
@@ -63,6 +64,9 @@ export function AnalizClient({
   customTo: string | null;
   topByType: Record<Top10EventType, EventTypeAgg>;
   safetyRows: SafetyScoreRow[];
+  /** Vardiya pencereli km hesaplanamadı (052 var ama zaman aşımı) — skorlar
+      "Veri yok" gösterilir, şişik eski km'ye DÜŞÜLMEZ. */
+  shiftKmFailed: boolean;
   idleWaste: IdleWasteSummary;
   prevIdleWaste: { totalMs: number; totalEuro: number } | null;
   /** Aralıktan BAĞIMSIZ aylık arşiv (tüm geçmiş) — sayfanın en altındaki tablo. */
@@ -442,6 +446,16 @@ export function AnalizClient({
           <h2 className="text-[15px] font-semibold">{t("section2_title")}</h2>
           <HelpTip tkey="anl_safety" />
         </div>
+        {/* KM HESAPLANAMADI (09.08.2026) — vardiya pencereli km (052) zaman
+            aşımına düştüğünde ESKİ araç-toplamı yoluna DÜŞÜLMEZ; o yol 1 gün
+            çalışan şoföre aracın 30 günlük km'sini yazıyordu. Skorlar "Veri yok"
+            olur ve sebebi burada yazar — sessizce şişik sayı göstermektense. */}
+        {shiftKmFailed && (
+          <p className="mb-3 flex items-start gap-1.5 rounded-lg border border-accent-coral/60 bg-accent-coral-soft px-3 py-2 text-xs font-medium text-accent-coral-text">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+            <span>{t("shift_km_unavailable")}</span>
+          </p>
+        )}
         {safetyRows.length === 0 ? (
           <EmptyState kind="none" title={t("section2_empty")} hint={t("section2_empty_hint")} />
         ) : (

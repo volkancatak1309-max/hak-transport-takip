@@ -12,6 +12,7 @@ import {
   drivenVehiclesFromEntries,
   workedDaysFromEntries,
   getWorkerShiftDistance,
+  shiftKmForScoring,
   scoreMinKmForWorkedDays,
   computeIdleWaste,
   computeMonthlyPivot,
@@ -23,6 +24,7 @@ import {
   type SafetyScoreRow,
 } from "@/lib/analytics";
 import { endOfTodayVienna } from "@/lib/format";
+import { mapBounded } from "@/lib/db-fanout";
 import {
   getLatestConfigEpoch,
   rangeStartsBeforeEpoch,
@@ -88,12 +90,17 @@ export default async function AnalizPage({
     }[];
     const drivenVehiclesByWorker = drivenVehiclesFromEntries(rangeEntryRows);
     const workedDaysByWorker = workedDaysFromEntries(rangeEntryRows);
-    // VARDİYA PENCERELİ km (052). null = migration yok → eski araç-toplamı yolu.
-    const shiftKmByWorker = await getWorkerShiftDistance(startISO, endISO);
+    // VARDİYA PENCERELİ km (052). Üç durum ayrışır: başarılı / migration yok /
+    // hesaplanamadı. Sonuncusunda eski yola DÜŞÜLMEZ — bkz. shiftKmForScoring.
+    const shiftKmRes = await getWorkerShiftDistance(startISO, endISO);
     // Span (km + ÖLÇÜM PENCERESİ). Pencere, skor kapısının şoför başına
     // ölçeklenmesi için gerekli (B kararı, 27.07.2026 — scoreMinKmForSpan).
-    const spanEntries = await Promise.all(
-      vehicles.map(async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const)
+    // Eşzamanlılık tavanı (09.08.2026): araç başına İKİ sorgu, sınırsız hâlinde
+    // 60 ifade. Ölçüm ve gerekçe lib/db-fanout.ts'te — sınırlamak duvar saatini
+    // uzatmıyor, kısaltıyor; asıl kazanç ifade başına zaman aşımı payı.
+    const spanEntries = await mapBounded(
+      vehicles,
+      async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
     );
     const spanByVehicle = new Map(spanEntries);
     const distanceByVehicle = new Map(
@@ -106,7 +113,8 @@ export default async function AnalizPage({
       spanByVehicle,
       drivenVehiclesByWorker,
       workedDaysByWorker,
-      shiftKmByWorker,
+      shiftKmByWorker: shiftKmForScoring(shiftKmRes),
+      shiftKmUnavailable: shiftKmRes.unavailable,
     };
   }
 
@@ -149,7 +157,7 @@ export default async function AnalizPage({
     current.distanceByVehicle,
     gateFor(range, current.spanByVehicle, current.workedDaysByWorker),
     current.drivenVehiclesByWorker,
-    current.shiftKmByWorker ?? undefined
+    current.shiftKmByWorker
   );
   const idleWaste = computeIdleWaste(current.idleEpisodes, vehiclesById, workersById);
 
@@ -201,7 +209,7 @@ export default async function AnalizPage({
       prev.distanceByVehicle,
       gateFor(prevRange, prev.spanByVehicle, prev.workedDaysByWorker),
       prev.drivenVehiclesByWorker,
-      prev.shiftKmByWorker ?? undefined
+      prev.shiftKmByWorker
     );
     const prevScoreByWorker = new Map(prevSafety.map((r) => [r.workerId, r.score]));
     safetyRowsWithTrend = safetyRows.map((r) => {
@@ -238,6 +246,10 @@ export default async function AnalizPage({
           customTo={sp.bitis ?? null}
           topByType={topByType}
           safetyRows={safetyRowsWithTrend}
+          shiftKmFailed={
+            current.shiftKmUnavailable === "timeout" ||
+            current.shiftKmUnavailable === "error"
+          }
           idleWaste={idleWaste}
           prevIdleWaste={prevIdleWaste}
           monthlyPivot={monthlyPivot}

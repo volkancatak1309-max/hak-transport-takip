@@ -13,6 +13,7 @@ import {
 } from "@/lib/format";
 import { IDLE_TRIGGER_S } from "@/lib/telemetry";
 import { SCORE_MIN_KM_PER_DAY, SAFETY_SCORE_K } from "@/lib/metric-thresholds";
+import { retryOnTimeout, isTimeoutError } from "@/lib/db-fanout";
 import type { VehicleEventWithPlate, IdleEpisodeWithPlate } from "@/lib/telemetry";
 import {
   SAFETY_SCORE_WEIGHTS,
@@ -354,16 +355,56 @@ export type VehicleDistanceSpan = {
  *
  * 052 uygulanmamışsa null döner ve çağıran eski (aralık uçlu) yola düşer —
  * kurulum sırası yüzünden hiçbir ekran boş kalmaz.
+ *
+ * ⚠️ AMA ZAMAN AŞIMI AYNI KAPIDAN GEÇEMEZ (09.08.2026). Eskiden her hata `null`
+ * dönüyordu ve `null` "052 yok" demekti — yani zaman aşımında ekran SESSİZCE
+ * 052 ÖNCESİNE, düzeltmenin kaldırdığı ŞİŞİRİLMİŞ km'ye dönüyordu. Ölçüldü
+ * (HAK61, 30 gün, arka arkaya dört çağrı):
+ *     1. 8.133 ms   2. 305 ms   3. 269 ms   4. 263 ms
+ * 30 katlık soğuk/sıcak farkı: saf disk. Tavan 8 sn olduğu için ilk çağrı bazen
+ * geçiyor bazen 57014 alıyor — yani "günün ilk açılışı" kumar oynuyordu ve
+ * kaybettiğinde YANLIŞ SAYI gösteriyordu, hata değil.
+ *
+ * İKİ SEBEP ARTIK AYRIŞIYOR:
+ *   • missing_function → 052 gerçekten yok. Eski yola düşmek DOĞRU (o kurulumda
+ *     zaten başka km yok) ve çağıran `undefined` alır.
+ *   • timeout/error    → 052 var ama hesaplanamadı. Eski yola düşmek YANLIŞ
+ *     olurdu: çağıran BOŞ harita alır, skorlar "Veri yok" olur. Yanlış rakam
+ *     göstermek, hata göstermekten kötüdür (Volkan, 09.08.2026).
+ *
+ * retryOnTimeout ilk çağrının ısıttığı sayfalarla ikinci turu kurtarır — ama
+ * kökü kesen şey migration 053'teki kapsayan indekstir (bkz. o dosya).
  */
+export type ShiftDistanceUnavailable = "missing_function" | "timeout" | "error";
+
+export type ShiftDistanceResult = {
+  /** Şoför → vardiya pencereli km. `unavailable` doluysa null. */
+  km: Map<string, number> | null;
+  /** null = başarılı. */
+  unavailable: ShiftDistanceUnavailable | null;
+};
+
 export async function getWorkerShiftDistance(
   startISO: string,
   endISO: string
-): Promise<Map<string, number> | null> {
-  const { data, error } = await supabaseAdmin.rpc("shift_odometer_spans", {
-    p_from: startISO,
-    p_to: endISO,
-  });
-  if (error) return null;
+): Promise<ShiftDistanceResult> {
+  const { data, error } = await retryOnTimeout(() =>
+    supabaseAdmin.rpc("shift_odometer_spans", {
+      p_from: startISO,
+      p_to: endISO,
+    })
+  );
+  if (error) {
+    if (isTimeoutError(error)) return { km: null, unavailable: "timeout" };
+    const code = (error.code ?? "").toUpperCase();
+    const msg = (error.message ?? "").toLowerCase();
+    const missing =
+      code === "PGRST202" ||
+      code === "42883" ||
+      msg.includes("could not find the function") ||
+      msg.includes("does not exist");
+    return { km: null, unavailable: missing ? "missing_function" : "error" };
+  }
   const rows = (data ?? []) as {
     worker_id: string;
     started_at: string;
@@ -384,7 +425,25 @@ export async function getWorkerShiftDistance(
     if (diff > spanDays * MAX_PLAUSIBLE_KM_PER_DAY) continue;
     km.set(r.worker_id, (km.get(r.worker_id) ?? 0) + diff);
   }
-  return km;
+  return { km, unavailable: null };
+}
+
+/**
+ * `getWorkerShiftDistance` sonucunu computeSafetyScores'un beklediği argümana
+ * çevirir — üç durumu TEK yerde kararlaştırır ki iki çağıran (Analiz sayfası ve
+ * Performans raporu) aynı şoför için farklı davranmasın.
+ *
+ *   başarılı           → harita
+ *   missing_function   → undefined  (052 yok; eski araç-toplamı yolu DOĞRU)
+ *   timeout / error    → BOŞ harita (052 var ama hesaplanamadı; şişik km yerine
+ *                        "Veri yok". Yanlış rakam, hatadan kötüdür.)
+ */
+export function shiftKmForScoring(
+  res: ShiftDistanceResult
+): Map<string, number> | undefined {
+  if (res.unavailable === null) return res.km!;
+  if (res.unavailable === "missing_function") return undefined;
+  return new Map<string, number>();
 }
 
 export async function getVehicleDistanceSpan(

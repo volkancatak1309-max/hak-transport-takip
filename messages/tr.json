@@ -177,7 +177,8 @@
       "overspeeding": "AŞR",
       "idling": "RÖL",
       "jamming": "SNY"
-    }
+    },
+    "shift_km_unavailable": "vardiya pencereli km bu turda hesaplanamadı (zaman aşımı). Skorlar ŞİŞİRİLMİŞ eski km ile DOLDURULMADI; ilgili şoförler \"Veri yok\" görünür. Sayfayı yenileyin."
   },
   "alarms": {
     "title": "Alarmlar",
@@ -1596,6 +1597,7 @@
     "fuel_unreliable_tooltip": "Bu aracın yakıt okumalarının %{pct}'i sıfır — sensör arızalı görünüyor. Tüketim, dolum ve kaçak değerleri hesaplanmadı.",
     "fuel_unreliable_note": "{n} araçta yakıt sensörü arızalı görünüyor (okumaların %10'undan fazlası sıfır). Bu araçların tüketim/dolum değerleri gösterilmiyor ve filo toplamlarına dahil edilmiyor.",
     "fuel_capacity_note": "{n} araçta depo hacmi girilmemiş — yüzde bazlı gösteriliyor. Litre ve L/100km için araç formundan \"Depo (L)\" girin.",
+    "fuel_partial_note": "⚠️ BU RAPOR EKSİK: {n} aracın verisi hesaplanamadı ({plates}). Aşağıdaki toplamlar bu araçları İÇERMİYOR. Sayfayı yenileyin; sürerse daha kısa bir tarih aralığı seçin.",
     "fuel_note": "Tüketim, depodaki azalma ve dolumlardan hesaplanan bir tahmindir. “Açıklanamayan düşüş” = araç hiç hareket etmeden azalan yakıt.",
     "col_tank": "Depo",
     "col_avg_fuel": "Ort. seviye",

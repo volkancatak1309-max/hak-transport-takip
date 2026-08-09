@@ -6,6 +6,7 @@ import {
   drivenVehiclesFromEntries,
   workedDaysFromEntries,
   getWorkerShiftDistance,
+  shiftKmForScoring,
   scoreMinKmForWorkedDays,
   getVehicleDistanceSpan,
   getVehicleFuelSpan,
@@ -31,6 +32,7 @@ import {
   SCORE_THRESHOLD_WORKED_DAYS,
 } from "@/lib/tenant";
 import { workedMs, kmDiff, viennaDayKey } from "@/lib/format";
+import { mapBounded, isTimeoutError } from "@/lib/db-fanout";
 import type { TimeEntry } from "@/lib/types";
 
 /**
@@ -145,10 +147,10 @@ async function loadBase(range: DateRange) {
   const [events, idleEpisodes, spanEntries] = await Promise.all([
     listEventsInRange(startISO, endISO),
     listIdleEpisodesInRange(startISO, endISO),
-    Promise.all(
-      vehicles.map(
-        async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
-      )
+    // Eşzamanlılık tavanı: araç başına İKİ sorgu (bkz. lib/db-fanout.ts).
+    mapBounded(
+      vehicles,
+      async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
     ),
   ]);
   return {
@@ -323,7 +325,12 @@ export async function buildPerformanceReport(
 
   // ÇALIŞILAN GÜN eşiği — Analiz sayfasıyla AYNI kapı, aynı kaynak (`entries`).
   const workedDaysByWorker = workedDaysFromEntries(entries);
-  const shiftKmByWorker = await getWorkerShiftDistance(range.start.toISOString(), range.end.toISOString());
+  // VARDİYA PENCERELİ km (052) — Analiz sayfasıyla AYNI üç-durum ayrımı:
+  // hesaplanamadıysa şişik eski km'ye DÜŞÜLMEZ (bkz. shiftKmForScoring).
+  const shiftKmRes = await getWorkerShiftDistance(
+    range.start.toISOString(),
+    range.end.toISOString()
+  );
 
   const safety = new Map<string, SafetyScoreRow>(
     computeSafetyScores(
@@ -348,7 +355,7 @@ export async function buildPerformanceReport(
       // FİİLEN SÜRÜLEN ARAÇ (09.08.2026): `entries` zaten bu aralığın
       // vardiyaları — ikinci bir sorgu gerekmiyor.
       drivenVehiclesFromEntries(entries),
-      shiftKmByWorker ?? undefined
+      shiftKmForScoring(shiftKmRes)
     ).map((r) => [r.workerId, r])
   );
 
@@ -559,6 +566,20 @@ export type FuelReport = {
   unreliableVehicles: number;
   /** Verisi olan ama kapasitesi girilmemiş araç sayısı (litre gösterilemez). */
   capacityMissing: number;
+  /**
+   * KISMİ RAPOR (09.08.2026) — istatistiği HESAPLANAMAYAN araçların plakaları.
+   *
+   * NEDEN plaka listesi, sayı değil: "3 araç hesaplanamadı" yöneticiye hangi
+   * aracı kontrol edeceğini söylemez; canlı olayda eksik olan 12 araçtı ve
+   * rapor 18 araçlık toplamı TAM gibi bastı. Ekranda uyarı çıkar ve o araçlar
+   * "Veri yok" satırı olarak kalır — toplamlara girmez.
+   *
+   * Boş dizi = her araç hesaplandı. `available` YİNE DE true'dur: elde olan
+   * veriyi göstermek doğru, onu tam sanmak yanlıştı.
+   */
+  partialVehicles: string[];
+  /** partialVehicles doluysa sebebi (timeout / error). */
+  partialReason: FuelUnavailableReason;
 };
 
 type FuelStatRow = {
@@ -719,6 +740,8 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     suspiciousVehicles: 0,
     unreliableVehicles: 0,
     capacityMissing: 0,
+    partialVehicles: [],
+    partialReason: null,
   });
 
   // 280 bin satır Postgres'te toplulaştırılır. Hata hâlinde rapor çökmez ama
@@ -738,19 +761,31 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   // GERİYE DÖNÜK: 050 uygulanmamış ortamda ilk araç PGRST202 döner ve tek
   // çağrılı eski yola düşeriz — Sendigo/demo kurulumları migration sırası
   // yüzünden raporsuz kalmaz.
-  const perVehicle = await Promise.all(
-    vehicles.map((v) =>
-      supabaseAdmin.rpc("report_fuel_stats_vehicle", {
-        p_from: startISO,
-        p_to: endISO,
-        p_vehicle_id: v.id,
-      })
-    )
+  //
+  // ── EŞZAMANLILIK TAVANI (09.08.2026) ──────────────────────────────────────
+  // "29 çağrı PARALEL gider" cümlesi doğruydu ama eksikti: 30 çağrı aynı anda
+  // gidince her ifadenin KENDİ süresi uzuyor ve statement timeout duvar saatine
+  // değil ifadeye uygulanıyor. Ölçüldü: 30 eşzamanlıda en kötü ifade 7.683 ms,
+  // tavan 8.000 ms — pay %4. Soğuk turda 12/30 araç 57014 aldı. mapBounded(6)
+  // ile en kötü ifade 1.443 ms (pay 5,5×) VE duvar saati %33 daha kısa.
+  // Gerekçenin tam ölçüm tablosu lib/db-fanout.ts'te.
+  const perVehicle = await mapBounded(vehicles, (v) =>
+    supabaseAdmin.rpc("report_fuel_stats_vehicle", {
+      p_from: startISO,
+      p_to: endISO,
+      p_vehicle_id: v.id,
+    })
   );
   const missingFn = perVehicle.find(
     (r) => r.error && classifyRpcError(r.error) === "missing_function"
   );
   let statRows: FuelStatRow[];
+  /**
+   * Hesaplanamayan araçlar. Rapor bunları SESSİZCE atlamaz — eksik rakam
+   * göstermek, hata göstermekten kötüdür (Volkan, 09.08.2026).
+   */
+  let failedPlates: string[] = [];
+  let failedReason: FuelUnavailableReason = null;
   if (missingFn) {
     const { data: statData, error } = await supabaseAdmin.rpc("report_fuel_stats", {
       p_from: startISO,
@@ -765,6 +800,29 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     const failed = perVehicle.filter((r) => r.error);
     if (failed.length === perVehicle.length && perVehicle.length > 0) {
       return empty(classifyRpcError(failed[0].error!));
+    }
+    // TEK SEFERLİK TEKRAR: zaman aşımı YÜKE bağlıdır, veriye değil. Yeniden
+    // deneme SIRAYLA gider (eşzamanlılık 1) — ilk turda ifadeyi tavana iten
+    // şeyin ta kendisi rekabetti, tekrar turunda rakip yok. Ölçüm: tek başına
+    // en pahalı araç 873 ms, tavanın 1/9'u.
+    // YALNIZ zaman aşımı tekrarlanır: başka hata tekrarla düzelmez, denemek
+    // yalnız sayfayı bekletir (aynı gerekçe lib/db-fanout.ts'te).
+    const retryIdx = perVehicle
+      .map((r, i) => (isTimeoutError(r.error) ? i : -1))
+      .filter((i) => i >= 0);
+    for (const i of retryIdx) {
+      perVehicle[i] = await supabaseAdmin.rpc("report_fuel_stats_vehicle", {
+        p_from: startISO,
+        p_to: endISO,
+        p_vehicle_id: vehicles[i].id,
+      });
+    }
+    const stillFailed = perVehicle
+      .map((r, i) => (r.error ? i : -1))
+      .filter((i) => i >= 0);
+    if (stillFailed.length > 0) {
+      failedPlates = stillFailed.map((i) => vehicles[i].plate);
+      failedReason = classifyRpcError(perVehicle[stillFailed[0]].error!);
     }
     statRows = perVehicle.flatMap((r) => ((r.data ?? []) as FuelStatRow[]));
   }
@@ -794,19 +852,19 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   // L/100km için mesafe — mesafe raporuyla AYNI kaynak (odometre uç-noktaları +
   // km-guard). Araç başına iki indeksli sorgu, telemetri satırı taşımaz.
   // 22.07.2026: artık ölçüm PENCERESİ de geliyor (aşağıdaki 3. kapı için).
-  const distEntries = await Promise.all(
-    vehicles.map(
-      async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
-    )
+  // Eşzamanlılık tavanı: bu fan-out araç başına İKİ sorgu açıyor, yani sınırsız
+  // hâlinde 60 ifade. Yakıt RPC'siyle aynı gerekçe (bkz. lib/db-fanout.ts).
+  const distEntries = await mapBounded(
+    vehicles,
+    async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
   );
   const distByVehicle = new Map(distEntries);
 
   // Yakıt okumalarının ölçüm penceresi — odometre penceresiyle kıyaslanacak.
   // Aynı desen: araç başına iki indeksli limit-1 sorgusu, satır taşımaz.
-  const fuelSpanEntries = await Promise.all(
-    vehicles.map(
-      async (v) => [v.id, await getVehicleFuelSpan(v.id, startISO, endISO)] as const
-    )
+  const fuelSpanEntries = await mapBounded(
+    vehicles,
+    async (v) => [v.id, await getVehicleFuelSpan(v.id, startISO, endISO)] as const
   );
   const fuelSpanByVehicle = new Map(fuelSpanEntries);
 
@@ -819,20 +877,18 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   // Ölçüm HAM veri üzerinden yapılır (de-glitch öncesi), çünkü soru "sensör
   // sağlıklı mı" — "temizlikten sonra ne kaldı" değil. Yalnız başlık sayısı
   // çekilir (head:true), satır taşınmaz.
-  const zeroEntries = await Promise.all(
-    vehicles.map(async (v) => {
-      const s = stats.get(v.id);
-      if (!s || Number(s.sample_count) === 0) return [v.id, 0] as const;
-      const { count } = await supabaseAdmin
-        .from("device_telemetry")
-        .select("id", { count: "exact", head: true })
-        .eq("vehicle_id", v.id)
-        .eq("fuel_level_pct", 0)
-        .gte("recorded_at", startISO)
-        .lte("recorded_at", endISO);
-      return [v.id, count ?? 0] as const;
-    })
-  );
+  const zeroEntries = await mapBounded(vehicles, async (v) => {
+    const s = stats.get(v.id);
+    if (!s || Number(s.sample_count) === 0) return [v.id, 0] as const;
+    const { count } = await supabaseAdmin
+      .from("device_telemetry")
+      .select("id", { count: "exact", head: true })
+      .eq("vehicle_id", v.id)
+      .eq("fuel_level_pct", 0)
+      .gte("recorded_at", startISO)
+      .lte("recorded_at", endISO);
+    return [v.id, count ?? 0] as const;
+  });
   const zeroByVehicle = new Map(zeroEntries);
 
   /**
@@ -1094,6 +1150,8 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     suspiciousVehicles,
     unreliableVehicles,
     capacityMissing,
+    partialVehicles: failedPlates,
+    partialReason: failedReason,
   };
 }
 

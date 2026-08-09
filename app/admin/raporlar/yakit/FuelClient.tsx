@@ -429,6 +429,23 @@ export function FuelClient({
           band ile tablo arasındaki aynı boşluğu paylaşır; ayrı ayrı 24px arayla
           dizilince üç bağımsız duyuru gibi okunuyorlardı. */}
       <div className="space-y-2">
+      {/* KISMİ RAPOR UYARISI (09.08.2026) — diğer üçüyle AYNI kümede ama AYNI
+          ağırlıkta DEĞİL: ötekiler "şu sayı neden yok" diyor, bu "gördüğün sayı
+          eksik" diyor. Canlı olayda 30 aracın 12'si zaman aşımına düşmüş, rapor
+          18 araçlık toplamı tam gibi basmıştı. Sessiz eksik, görünür hatadan
+          kötüdür — bu yüzden mercan çerçeveli, kısık değil. */}
+      {report.partialVehicles.length > 0 && (
+        <p className="flex items-start gap-1.5 rounded-lg border border-accent-coral/60 bg-accent-coral-soft px-3 py-2 text-xs font-medium text-accent-coral-text">
+          <AlertTriangle className="mt-px size-3.5 shrink-0" />
+          <span>
+            {t("fuel_partial_note", {
+              n: report.partialVehicles.length,
+              plates: report.partialVehicles.join(", "),
+            })}
+          </span>
+        </p>
+      )}
+
       {/* Kapasitesi girilmemiş araçlar %-bazlı gösterilir — yönetici forma girip
           litre metriklerini açabilir. Uydurma litre üretilmez. */}
       {report.capacityMissing > 0 && (

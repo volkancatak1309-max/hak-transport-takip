@@ -177,7 +177,8 @@
       "overspeeding": "TMP",
       "idling": "LRL",
       "jamming": "SIG"
-    }
+    },
+    "shift_km_unavailable": "Die schichtbezogene Kilometerberechnung ist in diesem Durchlauf fehlgeschlagen (Zeitüberschreitung). Die Bewertungen wurden NICHT mit den alten, überhöhten Kilometerwerten aufgefüllt; betroffene Fahrer erscheinen als „Keine Daten\". Bitte Seite neu laden."
   },
   "alarms": {
     "title": "Alarme",
@@ -1596,6 +1597,7 @@
     "fuel_unreliable_tooltip": "{pct} % der Kraftstoffmessungen dieses Fahrzeugs sind null — der Sensor scheint defekt. Verbrauch, Betankung und Verlust wurden nicht berechnet.",
     "fuel_unreliable_note": "Bei {n} Fahrzeug(en) scheint der Kraftstoffsensor defekt (mehr als 10 % der Messungen sind null). Verbrauchs- und Betankungswerte dieser Fahrzeuge werden nicht angezeigt und fließen nicht in die Flottensummen ein.",
     "fuel_capacity_note": "Bei {n} Fahrzeug(en) fehlt das Tankvolumen — Anzeige in Prozent. Für Liter und L/100km im Fahrzeugformular \"Tank (L)\" eintragen.",
+    "fuel_partial_note": "⚠️ DIESER BERICHT IST UNVOLLSTÄNDIG: Für {n} Fahrzeug(e) konnten keine Daten berechnet werden ({plates}). Die untenstehenden Summen enthalten diese Fahrzeuge NICHT. Bitte Seite neu laden; falls es bestehen bleibt, einen kürzeren Zeitraum wählen.",
     "fuel_note": "Der Verbrauch ist eine Schätzung aus Tankabnahme und Tankvorgängen. „Unerklärter Abfall“ = Kraftstoff sinkt, ohne dass das Fahrzeug fährt.",
     "col_tank": "Tank",
     "col_avg_fuel": "Ø Füllung",

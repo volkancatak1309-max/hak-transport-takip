@@ -762,6 +762,32 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   // çağrılı eski yola düşeriz — Sendigo/demo kurulumları migration sırası
   // yüzünden raporsuz kalmaz.
   //
+  //
+  // ── DE-GLITCH GEVŞETİLMEZ (09.08.2026, ölçümle kapandı) ───────────────────
+  //
+  // "Sistem %0'dan başlayan dolumları kaçırıyor, 7 günde ~98 L" iddiası
+  // ÖLÇÜLDÜ VE ÇÜRÜTÜLDÜ. İddia, HAM telemetri üzerinde koşan bir denetimden
+  // doğmuştu; o denetim de-glitch'in TEMİZLEDİĞİ çukurları "dolum" sanıyordu.
+  //
+  // Gerçek (7 gün, 189.517 okuma, tüm filo): de-glitch YALNIZCA 3 SATIR siliyor
+  // (%0,0016) ve üçü de TEK SATIRLIK. Sözde kayıp dolumların ham hâli:
+  //     DO-818HF 06.08 08:04 %67 → 08:27 %0 → 08:32 %67   odometre 45846 → 45846
+  //     DO-282HF 06.08 12:01 %34 → 12:19 %0 → 12:20 %34   odometre 39833 → 39833
+  //     DO-282HF 08.08 aynı desen
+  // Depo dolumdan ÖNCE de sonra da aynı seviyede ve araç hiç yol almamış. 23
+  // dakikada %67 tüketip tam aynı seviyeye dönmek fiziksel olarak imkânsız —
+  // bunlar dolum değil, tek örneklik sensör sıçraması. De-glitch'in var olma
+  // sebebi tam olarak budur ve işini cerrahi kesinlikte yapıyor.
+  //
+  // "%0'dan yükselişi dolum say" kuralı eklenseydi bu üç sıçrama YANLIŞ POZİTİF
+  // olur, rapora ~98 L hayalet yakıt girerdi. Eklenmedi ve eklenmemeli.
+  //
+  // 5 PUANLIK EŞİK de doğru yerde: temizlenmiş seride eşiğin altında kalan 848
+  // seri var (7 gün, toplam 708 L) ama ortalaması 0,8 L — sensör salınımı.
+  // ≥3 puana ulaşan yalnız 6 tanesi var (17,6 L) ve ALTISINDA DA odometre 0 km,
+  // ikişerli çiftler hâlinde ve depo neredeyse doluyken (%93-100): yakıt
+  // çalkalanması/oturması. Onları saymak da hayalet litre üretirdi.
+  //
   // ── EŞZAMANLILIK TAVANI (09.08.2026) ──────────────────────────────────────
   // "29 çağrı PARALEL gider" cümlesi doğruydu ama eksikti: 30 çağrı aynı anda
   // gidince her ifadenin KENDİ süresi uzuyor ve statement timeout duvar saatine

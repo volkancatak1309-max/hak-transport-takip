@@ -12,7 +12,11 @@ import {
   viennaDayKey,
 } from "@/lib/format";
 import { IDLE_TRIGGER_S } from "@/lib/telemetry";
-import { SCORE_MIN_KM_PER_DAY, SAFETY_SCORE_K } from "@/lib/metric-thresholds";
+import {
+  SCORE_MIN_KM_PER_DAY,
+  SCORE_MIN_KM_FLOOR,
+  SAFETY_SCORE_K,
+} from "@/lib/metric-thresholds";
 import { retryOnTimeout, isTimeoutError } from "@/lib/db-fanout";
 import type { VehicleEventWithPlate, IdleEpisodeWithPlate } from "@/lib/telemetry";
 import {
@@ -152,7 +156,12 @@ export function scoreMinKmForWorkedDays(
   range: DateRange,
   workedDays: number
 ): number {
-  return SCORE_MIN_KM_PER_DAY * Math.min(rangeElapsedDays(range), Math.max(1, workedDays));
+  const scaled =
+    SCORE_MIN_KM_PER_DAY * Math.min(rangeElapsedDays(range), Math.max(1, workedDays));
+  // MUTLAK TABAN (09.08.2026): gün ölçeklemesi çıtayı yalnız YUKARI çeker.
+  // Aşağı çekmesine izin verilince payda küçülüyor ve skor sürüşü değil
+  // ölçümün kısalığını yansıtıyordu (bkz. SCORE_MIN_KM_FLOOR).
+  return Math.max(SCORE_MIN_KM_FLOOR, scaled);
 }
 
 /** Kayan pencere uzunlukları (gün). Etiketler i18n'de bu sayılarla yazılı. */

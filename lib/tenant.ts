@@ -98,10 +98,22 @@ export const FUEL_PRICE_IS_CUSTOM =
  * aracın 30 günlük km'siyle 40 km'lik çıtaya karşı değerlendiriliyordu
  * (Mustafa Karakoç 809 km / 1 gün). Kök sorun migration 052 +
  * shift_odometer_spans ile kapandıktan ve yeniden ölçüldükten SONRA açılacak.
+ *
+ * ═══ AÇILDI — 09.08.2026, İKİ ÖN KOŞUL DA SAĞLANDIKTAN SONRA ═══
+ *
+ * 1) KM DÜZELDİ (052): km artık yalnız fiilen sürülen vardiyadan geliyor.
+ *    Ölçüldü: 25/28 şoförün km'si küçüldü (ort. −%53); Mustafa Karakoç
+ *    809→32, Bayram Çöymen 917→50. Şişirme kaynağı kesildi.
+ * 2) MUTLAK TABAN EKLENDİ (SCORE_MIN_KM_FLOOR = 300 km): ilk ölçümde bayrak
+ *    tek başına açılınca liste 4→10 büyüyor ama ORTALAMA SKOR 20→15 düşüyordu
+ *    — yeni girenlerin paydası küçük olduğu için tek bir sert fren skoru
+ *    uçuruyordu (Ekrem Gyuler 159 km / 3 gün → 5 puan). Taban o kapıyı kapattı.
+ *
+ * Eşik artık: max(300 km, 40 km × çalışılan gün). Env ile hâlâ kapatılabilir.
  */
 export const SCORE_THRESHOLD_WORKED_DAYS = envBool(
   process.env.SCORE_THRESHOLD_WORKED_DAYS,
-  false
+  true
 );
 
 function envEnum<T extends string>(

@@ -74,6 +74,28 @@ export const SAFETY_SCORE_K = 500;
 export const SCORE_MIN_KM_PER_DAY = 40;
 
 /**
+ * SKOR İÇİN MUTLAK KM TABANI (09.08.2026, Volkan kararı).
+ *
+ * Çalışılan-gün ölçeklemesi (scoreMinKmForWorkedDays) tek başına PAYDAYI
+ * küçültebiliyordu: 3 gün çalışan şoför 120 km'lik çıtayla listeye giriyor ve
+ * skoru 159 km'ye bölünüyordu. O paydada TEK sert fren 75 ceza/1000km demek —
+ * skor sürüşü değil, ölçümün kısalığını yansıtıyordu.
+ *
+ * ÖLÇÜLDÜ (HAK61, 30 gün, bayrak açıkken, taban YOKKEN): listeye 4 yerine 10
+ * şoför giriyordu ama ORTALAMA SKOR 20'den 15'e düşüyordu — yeni girenlerin
+ * çoğu 3-6 puanla dibe yapışıyordu. Ekrem Gyuler 159 km / 3 gün → 5 puan.
+ * Yani kapı gevşedikçe skorlar iyileşmiyor, GÜRÜLTÜLENİYORDU.
+ *
+ * 300 km neden: 1000 km başına ceza hesabında payda 300'ün altına inince tek
+ * bir olayın katkısı 1/3'ten büyük oluyor. 300 km, ölçülen filoda ~4-5 günlük
+ * normal sürüşe denk ve K=500 kalibrasyonunun anlamlı kaldığı en düşük payda.
+ *
+ * Eşik = max(SCORE_MIN_KM_FLOOR, SCORE_MIN_KM_PER_DAY × çalışılan gün).
+ * Yani gün ölçeklemesi yalnız YUKARI çeker, aşağı çekemez.
+ */
+export const SCORE_MIN_KM_FLOOR = 300;
+
+/**
  * "En iyi şoför" kartının çıkması için gereken EN AZ skorlanmış şoför sayısı.
  * 1 kişilik bir listede "en iyi" demek sıralama iddiası değil, tek adayı
  * ödüllendirmektir. Kart ayrıca beraberlik varsa ve en yüksek skor 0 ise de

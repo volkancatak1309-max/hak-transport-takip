@@ -62,6 +62,26 @@ export default async function RootLayout({
       data-tenant={BRAND.tenant}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/*
+          SPLASH KARARI — BOYAMADAN ÖNCE (09.08.2026). Bu betik <head>'de
+          SENKRON çalışır, yani <body> hiç boyanmadan önce `data-splash`
+          konur/konmaz. Splash katmanı SSR markup'ında zaten var; görünürlüğü
+          globals.css'teki tek kural belirliyor. Effect'e bırakıldığında ekran
+          üç kez değişiyordu: giriş formu → splash → giriş formu.
+
+          `dangerouslySetInnerHTML` burada zorunlu: <script> içeriği ancak böyle
+          satır içi gömülür ve harici bir dosya beklemeden çalışır — beklemek
+          zaten kaçınmaya çalıştığımız boyamayı geri getirirdi. İçerik sabit bir
+          dize, hiçbir kullanıcı/env girdisi enterpole edilmiyor.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(!sessionStorage.getItem('hak_splash_shown')){sessionStorage.setItem('hak_splash_shown','1');document.documentElement.setAttribute('data-splash','1')}}catch(e){}",
+          }}
+        />
+      </head>
       <body className="min-h-screen bg-background text-foreground">
         <Providers>
           <NextIntlClientProvider locale={locale} messages={messages} timeZone="Europe/Vienna">

@@ -660,6 +660,22 @@ body {
   animation: splash-emblem-in 420ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
 }
 
+/* SPLASH GÖRÜNÜRLÜĞÜ — kararı <head>'deki senkron betik verir (app/layout.tsx),
+   React DEĞİL. Katman SSR markup'ında her zaman var; `data-splash` yoksa hiç
+   boyanmaz. Böylece "giriş formu → splash → giriş formu" üçlü titremesi
+   ortadan kalkar: ilk boyama ya splash'tır ya da doğrudan uygulamadır.
+   `display:none` bilinçli — `opacity:0` katmanı yine boyar ve fixed inset-0
+   olduğu için ilk karede tıklamayı yer. Sönme sırasında öznitelik kalkar ama
+   React `opacity-0` sınıfını sürdüğü için geçiş görünür kalır (aşağıdaki
+   ikinci kural). */
+[data-splash-layer] {
+  display: none;
+}
+:root[data-splash] [data-splash-layer],
+[data-splash-layer].pointer-events-none {
+  display: flex;
+}
+
 /* Leaflet custom fleet marker */
 .hak-marker-wrap {
   background: transparent;

@@ -205,6 +205,14 @@ export function OpsStatGrid({
     accent?: boolean;
     /** "help" i18n uzayındaki anahtar; verilirse etiketin yanında (i) çıkar. */
     help?: string;
+    /**
+     * İKİNCİ SATIR (09.08.2026). Aynı kavramın ikinci bir ölçüsü — ayrı bir
+     * kart açmak yerine burada. Kullanımı DAR: yalnız birinci sayının eksik
+     * kaldığı, yanlış anlaşıldığı durumlar (örn. "Bugün sahada 0" doğru ama
+     * dünden açık 5 vardiya varken tek başına yanıltıcı). Verilmezse kart
+     * eskisi gibi tek satır kalır.
+     */
+    sub?: { label: string; value: React.ReactNode; help?: string; accent?: boolean };
   }[];
   className?: string;
 }) {
@@ -231,6 +239,25 @@ export function OpsStatGrid({
             {it.label}
             {it.help && <HelpTip tkey={it.help} />}
           </div>
+          {it.sub && (
+            /* İkinci satır kasıtlı olarak DAHA KÜÇÜK: birinci sayı hâlâ kartın
+               ana ölçüsü, bu onu nitelendiren ek bilgi — eşit ağırlık verseydik
+               kart iki KPI'lı olur ve ızgaranın ritmi bozulurdu. */
+            <div className="mt-2.5 flex items-baseline gap-1.5 border-t border-border pt-2.5">
+              <span
+                className={cn(
+                  "font-mono text-[15px] font-bold leading-none tabular-nums",
+                  it.sub.accent ? "text-accent-coral" : "text-foreground"
+                )}
+              >
+                {it.sub.value}
+              </span>
+              <span className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+                {it.sub.label}
+                {it.sub.help && <HelpTip tkey={it.sub.help} />}
+              </span>
+            </div>
+          )}
         </div>
       ))}
     </div>

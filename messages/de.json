@@ -1269,7 +1269,11 @@
     "boardFleetlessHint": "Ohne zugewiesenes Fahrzeug gehören sie zu keiner Flotte. Flottenleiter sehen diese Personen nicht.",
     "boardTempVehicle": "temporär",
     "boardSharedVehicle": "geteiltes Fahrzeug",
-    "boardSharedVehicleHint": "Dieses Fahrzeug wurde heute von mehreren Fahrern genutzt. Da die End-Kilometer vom Fahrzeugzähler stammen, erscheint dieselbe Strecke in beiden Schichten — die Gesamt-km können doppelt gezählt sein."
+    "boardSharedVehicleHint": "Dieses Fahrzeug wurde heute von mehreren Fahrern genutzt. Da die End-Kilometer vom Fahrzeugzähler stammen, erscheint dieselbe Strecke in beiden Schichten — die Gesamt-km können doppelt gezählt sein.",
+    "stripInFieldToday": "Heute im Einsatz",
+    "stripCarriedOver": "Von gestern offen",
+    "boardTabCarriedOver": "Von gestern offen",
+    "boardCarriedOverHint": "Diese Schichten wurden an früheren Tagen begonnen und sind noch offen. Das System schließt Schichten nicht automatisch — nur Mitarbeitende oder Verwaltung. Der Zähler \"Heute im Einsatz\" zählt die heute begonnenen Schichten; diese sind darin nicht enthalten."
   },
   "workers": {
     "title": "Mitarbeiterverwaltung",
@@ -1478,11 +1482,12 @@
     "ops_vehicles_delivering": "Anzahl der Fahrzeuge, die gerade unterwegs zustellen.",
     "ops_km_today": "Gesamt-km aus den heute abgeschlossenen Schichten.",
     "drv_summary": "Zusammenfassung deiner Schicht. Stimmt sie, unterschreibe; sonst sag deiner Leitung Bescheid.",
-    "strip_in_field": "Fahrer aktuell unterwegs / heute insgesamt erwartete Fahrer.",
+    "strip_in_field": "Anzahl der Fahrer mit HEUTE begonnener Schicht (inkl. Pause) / aktive Fahrer gesamt. Schichten aus Vortagen zählen hier NICHT mit — sie stehen separat und im Reiter \"Von gestern offen\".",
     "strip_not_started": "Fahrer, die heute noch keine Schicht begonnen haben. Urlauber zählen nicht mit.",
     "strip_closed": "Fahrer, die ihre Schicht heute beendet haben.",
     "strip_silent": "Fahrzeuge ohne Standortmeldung seit 24 Stunden. Kann ein Gerätefehler sein.",
-    "strip_loaded": "Heute in die Fahrzeuge geladene Pakete insgesamt."
+    "strip_loaded": "Heute in die Fahrzeuge geladene Pakete insgesamt.",
+    "strip_carried_over": "Anzahl der an Vortagen begonnenen und noch offenen Schichten. Da der automatische Schichtschluss deaktiviert ist, schließen sie sich nicht von selbst."
   },
   "reports": {
     "title": "Berichte",

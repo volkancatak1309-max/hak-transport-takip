@@ -186,6 +186,32 @@ export function AdminClient({
       : null;
 
   const boardCounts = useMemo(() => rosterCounts(dashboard.roster), [dashboard.roster]);
+  /**
+   * DÜNDEN AÇIK VARDİYALAR (09.08.2026, Volkan — çelişen sayılar).
+   *
+   * Günün Panosu ve "Sahada" sayacı BUGÜN başlayan vardiyaları sayar
+   * (buildTodayRoster todayEntries ile beslenir). Otomatik kapanış kaldırıldığı
+   * için (22.07) dün açılıp kapanmamış vardiya bugün hiçbir kovaya girmiyordu:
+   * ekranda "SAHADA 0/28" yazarken 5 vardiya gerçekten açıktı ve /admin/araclar
+   * onları "Sevkiyatta" gösteriyordu. Ölçüldü 09.08: 5 açık vardiyanın 5'i de
+   * 08.08 sabahı başlamış, bugün başlayan 0.
+   *
+   * activeShifts TÜM açık vardiyaları taşıyor (gün filtresi yok), yani ikinci
+   * bir sorgu gerekmiyor — ayrım burada, tek yerde yapılır.
+   */
+  const carriedOver = useMemo(() => {
+    // Viyana gün başı: sayfanın geri kalanıyla aynı gün tanımı.
+    const now = new Date();
+    const dayStart = new Date(
+      now.toLocaleString("en-US", { timeZone: "Europe/Vienna" })
+    );
+    dayStart.setHours(0, 0, 0, 0);
+    const offset = now.getTime() - new Date(
+      now.toLocaleString("en-US", { timeZone: "Europe/Vienna" })
+    ).getTime();
+    const cutoff = dayStart.getTime() + offset;
+    return activeShifts.filter((s) => new Date(s.started_at).getTime() < cutoff);
+  }, [activeShifts]);
   // Sessiz araç sayısı dikkat panosuyla AYNI kaynaktan (kind === "silent"),
   // böylece iki yerde farklı sayı çıkamaz.
   const silentVehicleCount = useMemo(
@@ -645,66 +671,37 @@ export function AdminClient({
               </>
             )}
 
-            {/* ARŞİV EKSENİ — bu ikisi YALNIZ vardiya kayıtları tablosunu
-                daraltır, panoyu değil. Grup başlığı bunu açıkça söyler;
-                filtrenin neyi filtrelediğini gizlemek en pahalı hatadır. */}
-            {!readOnly && (
-              <div className="border-t border-border pt-4">
-                <span className="mb-3 block text-[12px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
-                  {t("dash.shifts_title")}
-                </span>
-                <OpsFilter label={t("worker")} help="filter_worker">
-                  <Select value={workerFilter} onValueChange={(v) => setParam("worker", v ?? "all")}>
-                    <SelectTrigger className="h-9 w-full" aria-label={t("worker")}>
-                      <SelectValue>
-                        {workerFilter === "all"
-                          ? t("statusAll")
-                          : workers.find((w) => w.id === workerFilter)?.name ?? t("statusAll")}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("statusAll")}</SelectItem>
-                      {workers.map((w) => (
-                        <SelectItem key={w.id} value={w.id}>
-                          <UserAvatar name={w.name} size="xs" />
-                          <span>{w.name}</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </OpsFilter>
-                <OpsFilter label={t("status")} help="filter_status">
-                  <Select value={statusFilter} onValueChange={(v) => setParam("status", v ?? "all")}>
-                    <SelectTrigger className="h-9 w-full" aria-label={t("status")}>
-                      <SelectValue>
-                        {statusFilter === "active"
-                          ? t("statusActive")
-                          : statusFilter === "completed"
-                            ? t("statusCompleted")
-                            : statusFilter === "over"
-                              ? t("statusOver")
-                              : t("statusAll")}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">{t("statusAll")}</SelectItem>
-                      <SelectItem value="active">{t("statusActive")}</SelectItem>
-                      <SelectItem value="completed">{t("statusCompleted")}</SelectItem>
-                      <SelectItem value="over">{t("statusOver")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </OpsFilter>
-                <div className="pt-1">
-                  <DensityToggle />
-                </div>
-              </div>
-            )}
+            {/* ARŞİV EKSENİ BURADAN TAŞINDI (09.08.2026, Volkan).
+                Şoför + Durum + Yoğunluk seçicileri "Vardiya Kayıtları"
+                başlığının hemen üstüne indi: kullanıcı bu kutuyu çevirip
+                sağdaki Günün Panosu değişmeyince sistemi bozuk sanıyordu.
+                Filtre artık süzdüğü listenin yanında duruyor.
+                TARİH ARALIĞI YUKARIDA KALDI ve kalmalı — o SAYFA GENELİDİR
+                (dikkat kalemleri + arşiv ondan beslenir), yalnız arşivi
+                süzmez. Onu da aşağı indirmek, üstteki kalemleri yöneten
+                kontrolü onların ALTINA koymak olurdu. */}
           </div>
         }
       >
         <OpsStatGrid
           items={[
-            { key: "field", label: t("stripInField"), value: `${boardCounts.inField} / ${boardCounts.total}`, help: "strip_in_field" },
+            {
+              key: "field",
+              label: t("stripInFieldToday"),
+              value: `${boardCounts.inField} / ${boardCounts.total}`,
+              help: "strip_in_field",
+              // İKİNCİ SATIR yalnız gerçekten devreden vardiya varken çıkar:
+              // 0 iken göstermek her güne anlamsız bir "0" eklerdi.
+              sub:
+                carriedOver.length > 0
+                  ? {
+                      label: t("stripCarriedOver"),
+                      value: carriedOver.length,
+                      help: "strip_carried_over",
+                      accent: true,
+                    }
+                  : undefined,
+            },
             { key: "notStarted", label: t("stripNotStarted"), value: boardCounts.notStarted, accent: boardCounts.notStarted > 0, help: "strip_not_started" },
             { key: "closed", label: t("boardTabClosed"), value: boardCounts.closed, help: "strip_closed" },
             { key: "overLimit", label: t("stripOverLimit"), value: overLimitShifts, help: "ops_over_limit" },
@@ -723,6 +720,7 @@ export function AdminClient({
             yetki server action'da kendi filosuyla sınırlanır). */}
         <TodayBoard
           rows={dashboard.roster}
+          carriedOver={carriedOver}
           onStart={(row) => setStartWorker({ id: row.workerId, name: row.name })}
         />
       </OpsConsole>
@@ -827,6 +825,56 @@ export function AdminClient({
           operasyon, gecmis kayit arama degil. */}
       {!readOnly && (
       <section className="space-y-4 border-t border-border pt-6">
+        {/* ARŞİV FİLTRELERİ — süzdükleri tablonun hemen üstünde (09.08.2026).
+            Görünüm aynı: aynı OpsFilter bileşenleri, aynı sıra; yalnız konum
+            değişti. Dar ekranda alt alta, geniş ekranda yan yana. */}
+        <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
+                
+                <OpsFilter label={t("worker")} help="filter_worker">
+                  <Select value={workerFilter} onValueChange={(v) => setParam("worker", v ?? "all")}>
+                    <SelectTrigger className="h-9 w-full" aria-label={t("worker")}>
+                      <SelectValue>
+                        {workerFilter === "all"
+                          ? t("statusAll")
+                          : workers.find((w) => w.id === workerFilter)?.name ?? t("statusAll")}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("statusAll")}</SelectItem>
+                      {workers.map((w) => (
+                        <SelectItem key={w.id} value={w.id}>
+                          <UserAvatar name={w.name} size="xs" />
+                          <span>{w.name}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </OpsFilter>
+                <OpsFilter label={t("status")} help="filter_status">
+                  <Select value={statusFilter} onValueChange={(v) => setParam("status", v ?? "all")}>
+                    <SelectTrigger className="h-9 w-full" aria-label={t("status")}>
+                      <SelectValue>
+                        {statusFilter === "active"
+                          ? t("statusActive")
+                          : statusFilter === "completed"
+                            ? t("statusCompleted")
+                            : statusFilter === "over"
+                              ? t("statusOver")
+                              : t("statusAll")}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t("statusAll")}</SelectItem>
+                      <SelectItem value="active">{t("statusActive")}</SelectItem>
+                      <SelectItem value="completed">{t("statusCompleted")}</SelectItem>
+                      <SelectItem value="over">{t("statusOver")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </OpsFilter>
+                <div className="pt-1">
+                  <DensityToggle />
+                </div>
+        </div>
         <button
           type="button"
           onClick={() => setArchiveOpen((v) => !v)}

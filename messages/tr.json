@@ -1269,7 +1269,11 @@
     "boardFleetlessHint": "Atanmış aracı olmadığı için hiçbir filoya bağlı değiller. Filo şefleri bu kişileri görmez.",
     "boardTempVehicle": "geçici",
     "boardSharedVehicle": "paylaşılan araç",
-    "boardSharedVehicleHint": "Bu aracı bugün birden çok şoför kullandı. Bitiş kilometresi araç sayacından türediği için mesafe her iki vardiyada da aynı görünür — toplam km çift sayılmış olabilir."
+    "boardSharedVehicleHint": "Bu aracı bugün birden çok şoför kullandı. Bitiş kilometresi araç sayacından türediği için mesafe her iki vardiyada da aynı görünür — toplam km çift sayılmış olabilir.",
+    "stripInFieldToday": "Bugün sahada",
+    "stripCarriedOver": "Dünden açık",
+    "boardTabCarriedOver": "Dünden açık",
+    "boardCarriedOverHint": "Bu vardiyalar önceki günlerde açıldı ve hâlâ kapatılmadı. Sistem vardiyayı kendiliğinden kapatmaz — yalnız personel ya da yönetici kapatır. Üstteki \"Bugün sahada\" sayacı bugün başlayanları sayar, bunlar ona dahil değildir."
   },
   "workers": {
     "title": "Çalışan Yönetimi",
@@ -1478,11 +1482,12 @@
     "ops_vehicles_delivering": "Şu anda yolda, dağıtım yapan araç sayısı.",
     "ops_km_today": "Bugün kapanan vardiyalarda yapılan toplam kilometre.",
     "drv_summary": "Vardiyanın özeti. Doğruysa imzala; yanlış bir şey varsa yöneticine söyle.",
-    "strip_in_field": "Şu an sahada olan şoför / bugün vardiya açması beklenen toplam şoför.",
+    "strip_in_field": "BUGÜN vardiya açmış (molada olanlar dahil) şoför sayısı / toplam aktif şoför. Önceki günlerden açık kalan vardiyalar bu sayıya GİRMEZ — onlar ayrı satırda ve panodaki \"Dünden açık\" sekmesinde.",
     "strip_not_started": "Bugün henüz vardiya açmamış şoför sayısı. İzinliler bu sayıya girmez.",
     "strip_closed": "Bugün vardiyasını kapatmış şoför sayısı.",
     "strip_silent": "24 saattir konum göndermeyen araç sayısı. Cihaz sorunu olabilir.",
-    "strip_loaded": "Bugün araçlara yüklenen toplam paket sayısı."
+    "strip_loaded": "Bugün araçlara yüklenen toplam paket sayısı.",
+    "strip_carried_over": "Önceki günlerde açılmış ve hâlâ kapatılmamış vardiya sayısı. Otomatik kapanış kapalı olduğu için bunlar kendiliğinden kapanmaz."
   },
   "reports": {
     "title": "Raporlar",

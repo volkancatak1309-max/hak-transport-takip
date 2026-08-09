@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusChip } from "@/components/ui-v2";
 import { UserAvatar } from "@/components/UserAvatar";
-import { formatTime, formatDurationShort } from "@/lib/format";
+import { formatDate, formatTime, formatDurationShort } from "@/lib/format";
 import type { TodayRosterRow, RosterStatus } from "@/lib/admin-dashboard";
 
 /**
@@ -23,10 +23,30 @@ import type { TodayRosterRow, RosterStatus } from "@/lib/admin-dashboard";
  * sabah eylem gerektiren satırlar diğer iki sekmededir.
  */
 
-type Tab = "not_started" | "in_field" | "closed" | "on_leave";
+/** Roster'dan TÜREYEN kovalar — toplamları daima rows.length'tir. */
+type RosterTab = "not_started" | "in_field" | "closed" | "on_leave";
+/** Sekme şeridi = roster kovaları + kaynağı ayrı olan "dünden açık". */
+type Tab = RosterTab | "carried_over";
+
+/**
+ * DÜNDEN AÇIK — GRUPLAMANIN DIŞINDA (09.08.2026).
+ *
+ * Bu sekme roster satırlarından TÜRETİLMEZ; kaynağı ayrı (activeShifts). Sebep
+ * yapısal: roster BUGÜN başlayan vardiyaları taşır, dünden devreden vardiya
+ * orada hiç yoktur. groupRows'un "kovaların toplamı = rows.length" değişmezi
+ * bu yüzden BOZULMAZ — carried_over o toplamın dışındadır ve rosterCounts'a
+ * da girmez. Aynı desen kritik alarm bandında da kullanıldı.
+ */
+export type CarriedOverShift = {
+  id: string;
+  worker_name: string;
+  plate: string | null;
+  started_at: string;
+  elapsedMs: number;
+};
 
 /** Molada olan şoför "sahada" sayılır — ayrı sekme açmaz, rozetle ayrılır. */
-function tabOf(s: RosterStatus): Tab {
+function tabOf(s: RosterStatus): RosterTab {
   if (s === "not_started") return "not_started";
   if (s === "closed") return "closed";
   if (s === "on_leave") return "on_leave";
@@ -43,8 +63,8 @@ function tabOf(s: RosterStatus): Tab {
  * sabah o kişiyi de görmek zorundadır (25.07.2026). Aşağıdaki FİLOSUZ PERSONEL
  * bölümü bu satırları ayrıca listeler — eleme değil, ek vurgudur.
  */
-function groupRows(rows: TodayRosterRow[]): Record<Tab, TodayRosterRow[]> {
-  const g: Record<Tab, TodayRosterRow[]> = {
+function groupRows(rows: TodayRosterRow[]): Record<RosterTab, TodayRosterRow[]> {
+  const g: Record<RosterTab, TodayRosterRow[]> = {
     not_started: [],
     in_field: [],
     closed: [],
@@ -62,9 +82,12 @@ function useAgeLabel() {
 
 export function TodayBoard({
   rows,
+  carriedOver = [],
   onStart,
 }: {
   rows: TodayRosterRow[];
+  /** Dünden devreden açık vardiyalar — roster'dan DEĞİL, ayrı kaynaktan. */
+  carriedOver?: CarriedOverShift[];
   /** Verilirse "Başlamadı" satırlarında "Vardiya Başlat" butonu çıkar (patron+şef).
    *  Yetki server action'da denetlenir; buton yalnız kısayol. */
   onStart?: (row: TodayRosterRow) => void;
@@ -98,9 +121,20 @@ export function TodayBoard({
     { key: "in_field", label: t("boardTabInField"), count: groups.in_field.length },
     { key: "closed", label: t("boardTabClosed"), count: groups.closed.length },
     { key: "on_leave", label: t("boardTabOnLeave"), count: groups.on_leave.length },
+    // Yalnız gerçekten devreden vardiya varken görünür: her güne boş bir sekme
+    // eklemek şerit gürültüsü olurdu.
+    ...(carriedOver.length > 0
+      ? [
+          {
+            key: "carried_over" as Tab,
+            label: t("boardTabCarriedOver"),
+            count: carriedOver.length,
+          },
+        ]
+      : []),
   ];
 
-  const shown = groups[tab];
+  const shown = tab === "carried_over" ? [] : groups[tab as RosterTab];
   // Hücre-içi bar için ölçek: en çok yüklenen şoför %100.
   const maxLoaded = Math.max(1, ...rows.map((r) => r.loadedPackages ?? 0));
 
@@ -154,7 +188,34 @@ export function TodayBoard({
           })}
         </div>
 
-        {shown.length === 0 ? (
+        {tab === "carried_over" ? (
+          <div className="space-y-2">
+            <p className="pb-1 text-xs text-muted-foreground">
+              {t("boardCarriedOverHint")}
+            </p>
+            {carriedOver.map((c) => (
+              <div
+                key={c.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-border px-3 py-2.5"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <UserAvatar name={c.worker_name} size="xs" />
+                  <span className="truncate font-medium">{c.worker_name}</span>
+                  <StatusChip tone="neutral">{c.plate ?? "—"}</StatusChip>
+                </span>
+                <span className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="nums">
+                    {formatDate(c.started_at, locale)} {formatTime(c.started_at, locale)}
+                  </span>
+                  {/* Geçen süre vurgulu: "20 saattir açık" bu kartın asıl mesajı. */}
+                  <span className="nums font-semibold text-accent-coral">
+                    {formatDurationShort(c.elapsedMs, locale)}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : shown.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
             {tab === "not_started" ? t("boardEmptyAllStarted") : t("boardEmpty")}
           </p>

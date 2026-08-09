@@ -43,6 +43,7 @@ import { setLocaleAction } from "@/app/actions/preferences";
 import { FUEL_ENABLED, EXPENSE_ENABLED, LEAVES_ENABLED } from "@/lib/features";
 import { DRIVER_PANEL_ENABLED, ADMIN_DRIVER_PANEL_LINK } from "@/lib/tenant";
 import { brandCopyright } from "@/lib/brand";
+import { TENANT_TZ } from "@/lib/tz";
 
 export type HeaderUser = {
   id: string;
@@ -87,7 +88,7 @@ function Clock() {
   useEffect(() => {
     const fmt = () =>
       new Date().toLocaleTimeString(locale === "de" ? "de-AT" : "tr-TR", {
-        timeZone: "Europe/Vienna",
+        timeZone: TENANT_TZ,
         hour: "2-digit",
         minute: "2-digit",
       });

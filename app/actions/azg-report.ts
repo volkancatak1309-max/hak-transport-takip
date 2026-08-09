@@ -15,6 +15,7 @@ import {
   AZG_DAILY_MAX_MS,
   AZG_NIGHT_DAILY_MAX_MS,
 } from "@/lib/azg-rules";
+import { TENANT_TZ } from "@/lib/tz";
 
 export type AZGSeverity = "warning" | "violation" | "serious_violation";
 
@@ -83,7 +84,7 @@ const fmtH = (hours: number): string => hours.toFixed(2).replace(".", ",");
 // by the day they *started* — including shifts that run past midnight, which
 // are attributed to their start date (simple, defensible rule).
 function viennaDateKey(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-CA", { timeZone: "Europe/Vienna" });
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: TENANT_TZ });
 }
 
 function isoWeekKey(iso: string): string {

@@ -40,6 +40,7 @@
  */
 
 import { TENANT } from "@/lib/brand";
+import { TENANT_TZ, TENANT_TZ_INVALID } from "@/lib/tz";
 
 /** "true"/"1"/"yes" → true, "false"/"0"/"no" → false, tanımsız → varsayılan. */
 function envBool(value: string | undefined, fallback: boolean): boolean {
@@ -561,6 +562,17 @@ export const FLEET_EPOCH_ISO =
  * yerine kurulumda patlatıyoruz. Sunucu açılışında bir kez çağrılır.
  */
 export function assertTenantConfig(): void {
+  // Saat dilimi (09.08.2026). `lib/tz.ts` geçersiz env'i istemcide varsayılana
+  // düşürür — çünkü `Intl` bilinmeyen dilimde RangeError atar ve o, kullanıcının
+  // ekranını komple beyaza çevirirdi. Düşüş SESSİZ olmasın diye gürültü BURADA:
+  // sunucu açılışta patlar, yani kusur kurulumda görülür, üretimde değil.
+  if (TENANT_TZ_INVALID) {
+    throw new Error(
+      `Kurulum hatası: NEXT_PUBLIC_TENANT_TZ="${process.env.NEXT_PUBLIC_TENANT_TZ}" ` +
+        "geçerli bir IANA saat dilimi değil (ör. 'Europe/Vienna', 'Europe/Istanbul'). " +
+        `Panel ve mobil şu an varsayılana (${TENANT_TZ}) düşmüş durumda.`
+    );
+  }
   if (!DRIVER_PANEL_ENABLED && SHIFT_AUTO_END === "off") {
     throw new Error(
       "Kurulum hatası: NEXT_PUBLIC_DRIVER_PANEL_ENABLED=false iken SHIFT_AUTO_END='off' olamaz — " +

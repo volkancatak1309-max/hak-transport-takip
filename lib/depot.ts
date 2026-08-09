@@ -8,6 +8,7 @@ import {
   startOfDayVienna,
   addCalendarDaysVienna,
 } from "@/lib/format";
+import { TENANT_TZ } from "@/lib/tz";
 
 /**
  * DEPO-GİRİŞ VARDİYA ÖNERİSİ (Modül 3).
@@ -402,7 +403,7 @@ export type ResolvedShiftStart = {
 /** Bir ISO anın Viyana duvar-saatini gün-içi dakikaya çevirir (0–1439). */
 function viennaMinuteOfDay(iso: string): number | null {
   const hm = new Date(iso).toLocaleTimeString("en-GB", {
-    timeZone: "Europe/Vienna",
+    timeZone: TENANT_TZ,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,

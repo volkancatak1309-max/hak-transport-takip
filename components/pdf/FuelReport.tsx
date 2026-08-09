@@ -12,6 +12,7 @@ import {
   COMPANY_EXTRA_LINE,
   FILE_PREFIX_LOWER,
 } from "@/lib/report-de";
+import { TENANT_TZ } from "@/lib/tz";
 
 registerPdfFont();
 
@@ -117,7 +118,7 @@ function Doc({
   fleetL100: string;
   rows: FuelPdfRow[];
 }) {
-  const gen = new Date().toLocaleString("de-AT", { timeZone: "Europe/Vienna" });
+  const gen = new Date().toLocaleString("de-AT", { timeZone: TENANT_TZ });
   return (
     <Document {...fingerprintDocProps()}>
       <Page size="A4" orientation="landscape" style={styles.page} wrap>

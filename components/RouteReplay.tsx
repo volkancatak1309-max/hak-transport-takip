@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate } from "@/lib/format";
 import type { RouteDay } from "@/lib/route-history";
+import { TENANT_TZ } from "@/lib/tz";
 
 const RouteReplayMap = dynamic(
   () => import("@/components/RouteReplayMap").then((m) => m.RouteReplayMap),
@@ -118,7 +119,7 @@ export function RouteReplay({
   const curHeading = route.directional ? points[idx]?.heading ?? null : null;
   const timeLabel = curTime
     ? new Date(curTime).toLocaleTimeString(locale === "de" ? "de-AT" : "tr-TR", {
-        timeZone: "Europe/Vienna",
+        timeZone: TENANT_TZ,
         hour: "2-digit",
         minute: "2-digit",
       })

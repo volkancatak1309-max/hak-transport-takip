@@ -1,5 +1,6 @@
 import { getRequestConfig } from "next-intl/server";
 import { cookies } from "next/headers";
+import { TENANT_TZ } from "@/lib/tz";
 
 export const SUPPORTED_LOCALES = ["tr", "de"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
@@ -25,7 +26,7 @@ export default getRequestConfig(async () => {
   return {
     locale,
     messages: (await import(`../messages/${locale}.json`)).default,
-    timeZone: "Europe/Vienna",
+    timeZone: TENANT_TZ,
     now: new Date(),
   };
 });

@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { Splash } from "@/components/Splash";
 import { BRAND } from "@/lib/brand";
 import { assertTenantConfig } from "@/lib/tenant";
+import { TENANT_TZ } from "@/lib/tz";
 import "./globals.css";
 
 // Kurulum tutarlılık denetimi — modül yüklenirken bir kez. Yanlış env bileşimi
@@ -84,7 +85,7 @@ export default async function RootLayout({
       </head>
       <body className="min-h-screen bg-background text-foreground">
         <Providers>
-          <NextIntlClientProvider locale={locale} messages={messages} timeZone="Europe/Vienna">
+          <NextIntlClientProvider locale={locale} messages={messages} timeZone={TENANT_TZ}>
             <Splash />
             {children}
             <Toaster position="bottom-right" richColors closeButton duration={3000} />

@@ -14,6 +14,7 @@ import {
 import type { AZGData, AZGSeverity } from "@/app/actions/azg-report";
 import { noteExport } from "@/lib/audit-export-client";
 import { mintPdfFingerprint } from "@/lib/pdf-fingerprint-client";
+import { TENANT_TZ } from "@/lib/tz";
 
 registerPdfFont();
 
@@ -117,7 +118,7 @@ function StatBox({ num, label, color }: { num: number; label: string; color?: st
 function ReportDoc({ data }: { data: AZGData }) {
   const title = data.reportTitle;
   const genStr = new Date(data.generatedAt).toLocaleString("de-AT", {
-    timeZone: "Europe/Vienna",
+    timeZone: TENANT_TZ,
   });
   const warnColor = data.warningCount > 0 ? SEVERITY_COLOR.warning : "#94a3b8";
   const violColor = data.violationCount > 0 ? SEVERITY_COLOR.violation : "#059669";

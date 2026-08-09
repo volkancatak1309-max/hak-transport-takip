@@ -97,6 +97,7 @@ import {
 import type { TimeEntryWithWorker, WorkerPublic } from "@/lib/types";
 import { PACKAGES_ENABLED, EXPORT_ENABLED } from "@/lib/tenant";
 import { noteExport } from "@/lib/audit-export-client";
+import { TENANT_TZ } from "@/lib/tz";
 
 // 22.07.2026: satır vurgusu 9 saatte değil YASAL TAVANDA kırmızıya döner
 // (§ 9 Abs. 1 = 12 sa; gece çalışması varsa § 14 Abs. 2 = 10 sa). 9 saat bir
@@ -202,11 +203,11 @@ export function AdminClient({
     // Viyana gün başı: sayfanın geri kalanıyla aynı gün tanımı.
     const now = new Date();
     const dayStart = new Date(
-      now.toLocaleString("en-US", { timeZone: "Europe/Vienna" })
+      now.toLocaleString("en-US", { timeZone: TENANT_TZ })
     );
     dayStart.setHours(0, 0, 0, 0);
     const offset = now.getTime() - new Date(
-      now.toLocaleString("en-US", { timeZone: "Europe/Vienna" })
+      now.toLocaleString("en-US", { timeZone: TENANT_TZ })
     ).getTime();
     const cutoff = dayStart.getTime() + offset;
     return activeShifts.filter((s) => new Date(s.started_at).getTime() < cutoff);
@@ -428,7 +429,7 @@ export function AdminClient({
         period: `${SHIFT_REPORT_DE.period}: ${reportPeriodDe(range)}`,
         generatedAt: `${SHIFT_REPORT_DE.generatedAt}: ${new Date().toLocaleString(
           "de-AT",
-          { timeZone: "Europe/Vienna" }
+          { timeZone: TENANT_TZ }
         )}`,
         footer: SHIFT_REPORT_DE.footer,
         headers: SHIFT_REPORT_DE.headers,
@@ -1333,7 +1334,7 @@ function ShiftDetail({
 
 function toLocalInput(iso: string): string {
   const d = new Date(iso);
-  const tz = new Date(d.toLocaleString("en-US", { timeZone: "Europe/Vienna" }));
+  const tz = new Date(d.toLocaleString("en-US", { timeZone: TENANT_TZ }));
   const yyyy = tz.getFullYear();
   const mm = String(tz.getMonth() + 1).padStart(2, "0");
   const dd = String(tz.getDate()).padStart(2, "0");

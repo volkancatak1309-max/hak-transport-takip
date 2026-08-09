@@ -14,6 +14,7 @@ import {
 import type { CO2ReportData } from "@/lib/co2";
 import { noteExport } from "@/lib/audit-export-client";
 import { mintPdfFingerprint } from "@/lib/pdf-fingerprint-client";
+import { TENANT_TZ } from "@/lib/tz";
 
 registerPdfFont();
 
@@ -65,7 +66,7 @@ const styles = StyleSheet.create({
 });
 
 function Doc({ data, title }: { data: CO2ReportData; title: string }) {
-  const gen = new Date(data.generatedAt).toLocaleString("de-AT", { timeZone: "Europe/Vienna" });
+  const gen = new Date(data.generatedAt).toLocaleString("de-AT", { timeZone: TENANT_TZ });
   return (
     <Document {...fingerprintDocProps()}>
       <Page size="A4" style={styles.cover}>

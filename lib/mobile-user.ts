@@ -2,6 +2,7 @@ import "server-only";
 import { getManagedFleet } from "@/lib/fleet-scope";
 import { DEFAULT_LOCALE, type Locale } from "@/i18n/request";
 import { TENANT } from "@/lib/brand";
+import { TENANT_TZ } from "@/lib/tz";
 
 /**
  * Mobil yanıtlarındaki kullanıcı nesnesi — TEK KAYNAK.
@@ -49,7 +50,26 @@ export async function buildMobileUser(w: {
   };
 }
 
-/** /me'nin döndürdüğü kiracı kimliği — hangi dağıtıma bağlıyız. */
-export function mobileTenant(): { kod: string; dil: Locale } {
-  return { kod: TENANT, dil: DEFAULT_LOCALE };
+/** Mobil yanıtlardaki kiracı nesnesi — TEK KAYNAK (/login ve /me aynısını döner). */
+export type MobileTenant = {
+  kod: string;
+  dil: Locale;
+  /** IANA saat dilimi, ör. "Europe/Vienna". Bkz. `saatDilimi` notu aşağıda. */
+  saatDilimi: string;
+};
+
+/**
+ * /login ve /me'nin döndürdüğü kiracı kimliği — hangi dağıtıma bağlıyız.
+ *
+ * ── `saatDilimi` NEDEN BURADA (09.08.2026) ─────────────────────────────────
+ * Mobil uygulama saatleri CİHAZIN dilimine göre çiziyordu: panelde 06:17 olan
+ * vardiya UTC+3'teki bir telefonda 07:17 görünüyordu. Panelin sabitini mobil
+ * tarafa KOPYALAMAK ikinci bir gerçek kaynağı üretirdi; onun yerine dilim
+ * `lib/tz.ts`'ten — panelin de okuduğu tek kaynaktan — geçiliyor.
+ *
+ * ⚠️ HEM /login HEM /me DÖNER ve bu bilinçli: mobil yalnız /me'yi bekleseydi
+ * ilk açılışta saatler cihaz diliminde çizilip yanıt gelince ZIPLAYACAKTI.
+ */
+export function mobileTenant(): MobileTenant {
+  return { kod: TENANT, dil: DEFAULT_LOCALE, saatDilimi: TENANT_TZ };
 }

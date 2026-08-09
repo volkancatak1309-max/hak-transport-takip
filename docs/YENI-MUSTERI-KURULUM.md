@@ -127,6 +127,29 @@ tenant kodu için varlıklar zaten `public/brands/<tenant>/` altında aranır.
 Tam liste ve varsayılanlar `.env.example`'ın alt bloğunda. **Boş bırakılan her
 ayar HAK61 varsayılanına düşer** — yeni müşteride bilinçli olarak doldurulur.
 
+### ⚠️ Avusturya dışındaki müşteri: saat dilimi
+
+`NEXT_PUBLIC_TENANT_TZ` panelin **ve mobil uygulamanın** tek kaynağıdır — tüm
+saatler, gün anahtarları ve "bugün / bu hafta / bu ay" pencereleri buradan
+çözülür. Mobil uç aynı değeri `/api/mobile/auth/login` ve `/api/mobile/me`
+yanıtlarında `tenant.saatDilimi` olarak alır; mobil tarafta ikinci bir sabit
+TANIMLANMAZ.
+
+| Müşteri ülkesi | Değer |
+|---|---|
+| Avusturya (HAK61 · Sendigo · galzura-demo) | boş bırak → `Europe/Vienna` |
+| Türkiye | `Europe/Istanbul` |
+
+Geçersiz bir IANA adı sunucu açılışında hata verir (`assertTenantConfig`) —
+sessizce varsayılana düşmez.
+
+**Avusturya dışında ayrıca install SQL'i:** `db/install/<tenant>-full.sql`
+içindeki iki `at time zone 'Europe/Vienna'` yazımı (ifade indeksi
+`idx_time_entries_started_date` + `report_coolant_daily` RPC'si) da o dilime
+çevrilmelidir. Bugün ikisi de fiilen ölüdür — hiçbir canlı sorgu o ifadeyle
+filtrelemiyor, o RPC repoda çağrılmıyor — ama yeni bir sorgu onlara dayanırsa
+gün sınırı panelden ayrışır.
+
 ---
 
 ## 5. flespi

@@ -12,6 +12,7 @@ import {
   COMPANY_EXTRA_LINE,
   FILE_PREFIX_LOWER,
 } from "@/lib/report-de";
+import { TENANT_TZ } from "@/lib/tz";
 
 registerPdfFont();
 
@@ -110,7 +111,7 @@ function Doc({
   rows: PerformancePdfRow[];
   showScore: boolean;
 }) {
-  const gen = new Date().toLocaleString("de-AT", { timeZone: "Europe/Vienna" });
+  const gen = new Date().toLocaleString("de-AT", { timeZone: TENANT_TZ });
   // Skor kalibre edilene kadar sütun PDF'e de girmez (22.07.2026). Kâğıda
   // basılmış yanlış bir sayı ekrandakinden uzun yaşar ve geri alınamaz.
   const numCols: (keyof PerformancePdfRow)[] = [

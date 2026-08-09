@@ -20,7 +20,7 @@ import {
   workedMs,
 } from "@/lib/format";
 
-/** Rapor içindeki tarih/saat/süre biçimi de Almancadır (de-AT, Europe/Vienna). */
+/** Rapor içindeki tarih/saat/süre biçimi de Almancadır (de-AT, kiracı dilimi). */
 export const REPORT_LOCALE = "de";
 
 /** Veri olmayan hücrelerin gösterimi (tüm kolonlarda aynı). */

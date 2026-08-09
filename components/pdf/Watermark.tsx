@@ -2,6 +2,7 @@
 import { Text, StyleSheet } from "@react-pdf/renderer";
 import { PDF_WATERMARK } from "@/lib/tenant";
 import { getWatermarkUser } from "@/lib/pdf-watermark-user";
+import { TENANT_TZ } from "@/lib/tz";
 
 /**
  * PDF FİLİGRANI (045) — demo raporlarının dolaşıma girmesini caydırır.
@@ -36,7 +37,7 @@ export function Watermark({ at }: { at?: Date } = {}) {
   if (!PDF_WATERMARK) return null;
   const user = getWatermarkUser();
   const d = at ?? new Date();
-  const damga = d.toLocaleString("de-AT", { timeZone: "Europe/Vienna" });
+  const damga = d.toLocaleString("de-AT", { timeZone: TENANT_TZ });
   return (
     <Text style={styles.mark} fixed>
       {`${PDF_WATERMARK} — ${user ?? "—"} — ${damga}`}

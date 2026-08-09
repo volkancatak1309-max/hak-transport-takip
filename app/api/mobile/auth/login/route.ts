@@ -5,7 +5,7 @@ import {
   readTokenVersion,
   mobileError,
 } from "@/lib/mobile-auth";
-import { buildMobileUser } from "@/lib/mobile-user";
+import { buildMobileUser, mobileTenant } from "@/lib/mobile-user";
 import { openLoginSession } from "@/lib/security-log";
 import { evaluateAccess } from "@/lib/access-gates";
 
@@ -106,5 +106,9 @@ export async function POST(req: NextRequest) {
       is_admin: worker.is_admin,
       counts_as_driver: worker.counts_as_driver,
     }),
+    // Kiracı /me ile AYNI nesne. Burada da dönmesi bilinçli: mobil saat dilimini
+    // /me'ye kadar bekleseydi ilk ekran cihaz diliminde çizilip yanıt gelince
+    // saatler ZIPLARDI (09.08.2026 kararı, bkz. lib/mobile-user.ts).
+    tenant: mobileTenant(),
   });
 }

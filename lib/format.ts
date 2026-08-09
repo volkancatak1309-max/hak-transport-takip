@@ -1,3 +1,5 @@
+import { TENANT_TZ } from "@/lib/tz";
+
 export function formatDuration(ms: number): string {
   if (ms < 0) ms = 0;
   const totalSec = Math.floor(ms / 1000);
@@ -71,7 +73,7 @@ export function formatDateTime(iso: string | null | undefined, locale: string = 
   const d = new Date(iso);
   const tag = locale === "de" ? "de-AT" : "tr-TR";
   return d.toLocaleString(tag, {
-    timeZone: "Europe/Vienna",
+    timeZone: TENANT_TZ,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -85,7 +87,7 @@ export function formatTime(iso: string | null | undefined, locale: string = "tr"
   const d = new Date(iso);
   const tag = locale === "de" ? "de-AT" : "tr-TR";
   return d.toLocaleTimeString(tag, {
-    timeZone: "Europe/Vienna",
+    timeZone: TENANT_TZ,
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -113,7 +115,7 @@ export function formatDate(iso: string | null | undefined, locale: string = "tr"
   const d = new Date(iso);
   const tag = locale === "de" ? "de-AT" : "tr-TR";
   return d.toLocaleDateString(tag, {
-    timeZone: "Europe/Vienna",
+    timeZone: TENANT_TZ,
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -123,7 +125,7 @@ export function formatDate(iso: string | null | undefined, locale: string = "tr"
 export function formatWeekday(iso: string, locale: string = "tr"): string {
   const d = new Date(iso);
   const tag = locale === "de" ? "de-AT" : "tr-TR";
-  return d.toLocaleDateString(tag, { timeZone: "Europe/Vienna", weekday: "short" });
+  return d.toLocaleDateString(tag, { timeZone: TENANT_TZ, weekday: "short" });
 }
 
 export function workedMs(entry: {
@@ -154,22 +156,32 @@ export function kmDiff(entry: {
   return entry.end_km - entry.start_km;
 }
 
-/** Vienna calendar day key (YYYY-MM-DD) for an ISO timestamp — timezone-safe. */
+/**
+ * Tenant calendar day key (YYYY-MM-DD) for an ISO timestamp — timezone-safe.
+ *
+ * ADI DEĞİŞMEDİ: 65 dosya `viennaDayKey` içe aktarıyor ve dilim artık kiracıdan
+ * geldiği için "vienna" yalnız tarihsel bir ad. Yeniden adlandırma ayrı ve
+ * bu düzeltmeyle ilgisiz bir iştir; aynı kural aşağıdaki `*Vienna` sınır
+ * fonksiyonlarının hepsi için geçerlidir.
+ */
 export function viennaDayKey(iso: string | Date): string {
   const d = typeof iso === "string" ? new Date(iso) : iso;
-  return d.toLocaleDateString("en-CA", { timeZone: "Europe/Vienna" });
+  return d.toLocaleDateString("en-CA", { timeZone: TENANT_TZ });
 }
 
 // ---------------------------------------------------------------------------
-// Timezone-aware date boundaries (Europe/Vienna)
+// Timezone-aware date boundaries (tenant timezone — lib/tz.ts)
 //
 // The previous implementation built a Date from a Vienna *string* and then
 // called setHours(0,…), which snaps to the SERVER's local midnight — on a UTC
 // host (Vercel) that is 1–2 h off the real Vienna day boundary, so "today /
 // this week / this month" silently drifted. These helpers instead compute the
-// exact UTC instant that corresponds to a Vienna wall-clock time, DST-safe.
+// exact UTC instant that corresponds to a tenant wall-clock time, DST-safe.
+//
+// 09.08.2026: yerel `VIENNA_TZ` sabiti kalktı, dilim `TENANT_TZ`'den geliyor. Env'siz
+// kurulumda değer aynı ("Europe/Vienna") — yani üretilen her sınır bayt bayt
+// aynı (scripts/verify-tz-parity.mjs).
 // ---------------------------------------------------------------------------
-const VIENNA_TZ = "Europe/Vienna";
 
 /** Wall-clock parts of an instant as seen in `timeZone`. */
 function tzParts(date: Date, timeZone: string) {
@@ -228,7 +240,7 @@ function zonedWallTimeToUtc(
 
 /** Add `n` calendar days to a Vienna day-start instant (DST-safe). */
 export function addCalendarDaysVienna(dayStart: Date, n: number): Date {
-  const p = tzParts(dayStart, VIENNA_TZ);
+  const p = tzParts(dayStart, TENANT_TZ);
   const shifted = new Date(Date.UTC(p.year, p.month - 1, p.day + n));
   return zonedWallTimeToUtc(
     shifted.getUTCFullYear(),
@@ -237,14 +249,14 @@ export function addCalendarDaysVienna(dayStart: Date, n: number): Date {
     0,
     0,
     0,
-    VIENNA_TZ
+    TENANT_TZ
   );
 }
 
 /** Start of the Vienna calendar day containing `ref` (default now), as UTC. */
 export function startOfDayVienna(ref: Date = new Date()): Date {
-  const p = tzParts(ref, VIENNA_TZ);
-  return zonedWallTimeToUtc(p.year, p.month, p.day, 0, 0, 0, VIENNA_TZ);
+  const p = tzParts(ref, TENANT_TZ);
+  return zonedWallTimeToUtc(p.year, p.month, p.day, 0, 0, 0, TENANT_TZ);
 }
 
 /** Last millisecond of the Vienna calendar day containing `ref`. */
@@ -262,7 +274,7 @@ export function endOfTodayVienna(): Date {
 
 /** Monday 00:00 (Vienna) of the current week, as a UTC instant. */
 export function startOfWeekVienna(): Date {
-  const p = tzParts(new Date(), VIENNA_TZ);
+  const p = tzParts(new Date(), TENANT_TZ);
   const dow = (new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay() + 6) % 7; // Mon=0
   const monday = new Date(Date.UTC(p.year, p.month - 1, p.day - dow));
   return zonedWallTimeToUtc(
@@ -272,7 +284,7 @@ export function startOfWeekVienna(): Date {
     0,
     0,
     0,
-    VIENNA_TZ
+    TENANT_TZ
   );
 }
 
@@ -283,14 +295,14 @@ export function endOfWeekVienna(): Date {
 
 /** First day 00:00 (Vienna) of the current month, as a UTC instant. */
 export function startOfMonthVienna(): Date {
-  const p = tzParts(new Date(), VIENNA_TZ);
-  return zonedWallTimeToUtc(p.year, p.month, 1, 0, 0, 0, VIENNA_TZ);
+  const p = tzParts(new Date(), TENANT_TZ);
+  return zonedWallTimeToUtc(p.year, p.month, 1, 0, 0, 0, TENANT_TZ);
 }
 
 /** Last millisecond of the current Vienna month. */
 export function endOfMonthVienna(): Date {
-  const p = tzParts(new Date(), VIENNA_TZ);
-  const nextMonth = zonedWallTimeToUtc(p.year, p.month + 1, 1, 0, 0, 0, VIENNA_TZ);
+  const p = tzParts(new Date(), TENANT_TZ);
+  const nextMonth = zonedWallTimeToUtc(p.year, p.month + 1, 1, 0, 0, 0, TENANT_TZ);
   return new Date(nextMonth.getTime() - 1);
 }
 
@@ -298,7 +310,7 @@ export function endOfMonthVienna(): Date {
 export function startOfDayViennaFromYmd(s: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
   if (!m) return null;
-  return zonedWallTimeToUtc(+m[1], +m[2], +m[3], 0, 0, 0, VIENNA_TZ);
+  return zonedWallTimeToUtc(+m[1], +m[2], +m[3], 0, 0, 0, TENANT_TZ);
 }
 
 /** Parse a YYYY-MM-DD string as the end (last ms) of that Vienna day. */

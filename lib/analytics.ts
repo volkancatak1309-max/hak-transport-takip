@@ -343,6 +343,50 @@ export type VehicleDistanceSpan = {
  * yakıt düşüşü, 2,5 km'lik odometre penceresine bölündü → 80 L/100km).
  * Bu yüzden pencere sınırları da taşınır ve yakıt raporunda kıyaslanır.
  */
+/**
+ * VARDİYA PENCERELİ KM (migration 052) — şoför → o aralıkta gerçekten sürdüğü
+ * mesafe. Tek RPC çağrısı; JS'te vardiya başına 2 sorgu 373 vardiyada paralel
+ * bile 27-39 sn sürüyordu (ölçüldü).
+ *
+ * km-guard BURADA uygulanır (tek doğruluk kaynağı): negatif fark elenir,
+ * vardiya süresine göre MAX_PLAUSIBLE_KM_PER_DAY aşan fark elenir. Aynı aracı
+ * iki şoför paylaşırsa her biri YALNIZ kendi vardiya penceresinin farkını alır.
+ *
+ * 052 uygulanmamışsa null döner ve çağıran eski (aralık uçlu) yola düşer —
+ * kurulum sırası yüzünden hiçbir ekran boş kalmaz.
+ */
+export async function getWorkerShiftDistance(
+  startISO: string,
+  endISO: string
+): Promise<Map<string, number> | null> {
+  const { data, error } = await supabaseAdmin.rpc("shift_odometer_spans", {
+    p_from: startISO,
+    p_to: endISO,
+  });
+  if (error) return null;
+  const rows = (data ?? []) as {
+    worker_id: string;
+    started_at: string;
+    ended_at: string | null;
+    first_km: number | null;
+    last_km: number | null;
+  }[];
+  const km = new Map<string, number>();
+  for (const r of rows) {
+    if (r.first_km == null || r.last_km == null) continue;
+    const diff = r.last_km - r.first_km;
+    if (diff < 0) continue;
+    const endMs = r.ended_at ? Date.parse(r.ended_at) : Date.parse(endISO);
+    const spanDays = Math.max(
+      1 / 24,
+      (endMs - Date.parse(r.started_at)) / 86_400_000
+    );
+    if (diff > spanDays * MAX_PLAUSIBLE_KM_PER_DAY) continue;
+    km.set(r.worker_id, (km.get(r.worker_id) ?? 0) + diff);
+  }
+  return km;
+}
+
 export async function getVehicleDistanceSpan(
   vehicleId: string,
   startISO: string,
@@ -570,7 +614,13 @@ export function computeSafetyScores(
    * (hatalı) yola düşmez — `undefined` "veri sağlanamadı" demektir ve o zaman
    * ATAMA yoluna geri dönülür; iki çağıranın ikisi de bunu geçiyor.
    */
-  drivenVehiclesByWorker?: Map<string, Set<string>>
+  drivenVehiclesByWorker?: Map<string, Set<string>>,
+  /**
+   * VARDİYA PENCERELİ km (migration 052). Verilirse `distanceByVehicle`
+   * toplaması BYPASS edilir — km doğrudan buradan okunur. Bu, "aracı 3 gün
+   * sürdü ama 30 günlük km'si yazıldı" kusurunun kapandığı yer.
+   */
+  shiftKmByWorker?: Map<string, number>
 ): SafetyScoreRow[] {
   type Acc = { penalty: number; totalEvents: number; days: Set<string> };
   const acc = new Map<string, Acc>();
@@ -649,7 +699,10 @@ export function computeSafetyScores(
         anyKm = true;
       }
     }
-    const reliableKm = anyKm ? km : null;
+    // 052 varsa vardiya pencereli km kazanır; yoksa araç toplamına düşülür.
+    const shiftKm = shiftKmByWorker?.get(w.id);
+    const reliableKm =
+      shiftKmByWorker !== undefined ? (shiftKm ?? null) : anyKm ? km : null;
 
     // YETERLİ VERİ KAPISI: güvenilir km eşiğin altındaysa (ya da hiç yoksa) SKOR
     // YOK → null ("Veri yok"). Ne yeşil 100 ne kırmızı 0. Skor SADECE eşiği geçen

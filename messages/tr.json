@@ -1650,6 +1650,8 @@
     "calc_hint": "bu kayıtlardan hesaplanır",
     "stat_thirstiest_none": "En az {km} km giden araç yok",
     "fuel_price_note": "Maliyet {price} €/L üzerinden hesaplandı — kaynak: {source}, {date}. Kendi filo kartı fiyatınızı FUEL_PRICE_EUR_PER_L ile girebilirsiniz.",
-    "fuel_price_note_custom": "Maliyet, girdiğiniz {price} €/L fiyatı üzerinden hesaplandı."
+    "fuel_price_note_custom": "Maliyet, girdiğiniz {price} €/L fiyatı üzerinden hesaplandı.",
+    "stat_avg_vehicle_day": "Araç başına / gün",
+    "stat_avg_vehicle_scope": "{n}/{total} araçtan"
   }
 }

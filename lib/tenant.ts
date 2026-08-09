@@ -87,6 +87,23 @@ export const FUEL_PRICE_IS_CUSTOM =
   Number.isFinite(Number(process.env.FUEL_PRICE_EUR_PER_L?.trim())) &&
   Number(process.env.FUEL_PRICE_EUR_PER_L?.trim()) > 0;
 
+/**
+ * PUAN EŞİĞİ: ÇALIŞILAN GÜNE GÖRE Mİ? (09.08.2026) — VARSAYILAN KAPALI.
+ *
+ * Açıkken eşik = 40 km × şoförün o aralıkta çalıştığı gün; kapalıyken eski
+ * davranış (odometre penceresi / takvim günü).
+ *
+ * NEDEN KAPALI DOĞDU: ölçüm, eşiği tek başına gevşetmenin skorları ŞİŞİRDİĞİNİ
+ * gösterdi — km hâlâ aralığın uçlarından geliyordu, yani 1 gün çalışan şoför
+ * aracın 30 günlük km'siyle 40 km'lik çıtaya karşı değerlendiriliyordu
+ * (Mustafa Karakoç 809 km / 1 gün). Kök sorun migration 052 +
+ * shift_odometer_spans ile kapandıktan ve yeniden ölçüldükten SONRA açılacak.
+ */
+export const SCORE_THRESHOLD_WORKED_DAYS = envBool(
+  process.env.SCORE_THRESHOLD_WORKED_DAYS,
+  false
+);
+
 function envEnum<T extends string>(
   value: string | undefined,
   allowed: readonly T[],

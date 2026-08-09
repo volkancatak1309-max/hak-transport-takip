@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
+import { SCORE_THRESHOLD_WORKED_DAYS } from "@/lib/tenant";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
@@ -10,6 +11,7 @@ import {
   computeSafetyScores,
   drivenVehiclesFromEntries,
   workedDaysFromEntries,
+  getWorkerShiftDistance,
   scoreMinKmForWorkedDays,
   computeIdleWaste,
   computeMonthlyPivot,
@@ -86,6 +88,8 @@ export default async function AnalizPage({
     }[];
     const drivenVehiclesByWorker = drivenVehiclesFromEntries(rangeEntryRows);
     const workedDaysByWorker = workedDaysFromEntries(rangeEntryRows);
+    // VARDİYA PENCERELİ km (052). null = migration yok → eski araç-toplamı yolu.
+    const shiftKmByWorker = await getWorkerShiftDistance(startISO, endISO);
     // Span (km + ÖLÇÜM PENCERESİ). Pencere, skor kapısının şoför başına
     // ölçeklenmesi için gerekli (B kararı, 27.07.2026 — scoreMinKmForSpan).
     const spanEntries = await Promise.all(
@@ -102,6 +106,7 @@ export default async function AnalizPage({
       spanByVehicle,
       drivenVehiclesByWorker,
       workedDaysByWorker,
+      shiftKmByWorker,
     };
   }
 
@@ -119,7 +124,10 @@ export default async function AnalizPage({
     ) =>
     (vehicleIds: string[], workerId: string) => {
       const worked = workedDaysByWorker.get(workerId) ?? 0;
-      if (worked > 0) return scoreMinKmForWorkedDays(r, worked);
+      // BAYRAK: çalışılan-gün eşiği varsayılan KAPALI (bkz. lib/tenant.ts).
+      if (SCORE_THRESHOLD_WORKED_DAYS && worked > 0) {
+        return scoreMinKmForWorkedDays(r, worked);
+      }
       return scoreMinKmForSpan(
         r,
         vehicleIds.map((id) => spanByVehicle.get(id) ?? { firstAt: null, lastAt: null })
@@ -140,7 +148,8 @@ export default async function AnalizPage({
     workersById,
     current.distanceByVehicle,
     gateFor(range, current.spanByVehicle, current.workedDaysByWorker),
-    current.drivenVehiclesByWorker
+    current.drivenVehiclesByWorker,
+    current.shiftKmByWorker ?? undefined
   );
   const idleWaste = computeIdleWaste(current.idleEpisodes, vehiclesById, workersById);
 
@@ -191,7 +200,8 @@ export default async function AnalizPage({
       workersById,
       prev.distanceByVehicle,
       gateFor(prevRange, prev.spanByVehicle, prev.workedDaysByWorker),
-      prev.drivenVehiclesByWorker
+      prev.drivenVehiclesByWorker,
+      prev.shiftKmByWorker ?? undefined
     );
     const prevScoreByWorker = new Map(prevSafety.map((r) => [r.workerId, r.score]));
     safetyRowsWithTrend = safetyRows.map((r) => {

@@ -1650,6 +1650,8 @@
     "calc_hint": "daraus berechnet",
     "stat_thirstiest_none": "Kein Fahrzeug mit mindestens {km} km",
     "fuel_price_note": "Kosten berechnet mit {price} €/L — Quelle: {source}, {date}. Ihren eigenen Flottenkartenpreis können Sie über FUEL_PRICE_EUR_PER_L hinterlegen.",
-    "fuel_price_note_custom": "Kosten berechnet mit dem von Ihnen hinterlegten Preis von {price} €/L."
+    "fuel_price_note_custom": "Kosten berechnet mit dem von Ihnen hinterlegten Preis von {price} €/L.",
+    "stat_avg_vehicle_day": "Pro Fahrzeug / Tag",
+    "stat_avg_vehicle_scope": "aus {n}/{total} Fahrzeugen"
   }
 }

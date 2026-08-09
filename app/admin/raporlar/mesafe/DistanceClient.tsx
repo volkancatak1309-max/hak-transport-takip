@@ -108,6 +108,23 @@ export function DistanceClient({ report }: { report: DistanceReport }) {
             scope: t("stat_days", { n: report.days }),
           },
           {
+            // ARAÇ BAŞINA ORTALAMA — bölen ÖLÇÜLEBİLEN araç (09.08.2026).
+            // Toplam araca bölmek payı ve paydayı uyumsuz yapıyordu: km'si
+            // okunamayan 4 aracın mesafesi paya girmiyor ama kendileri
+            // bölende duruyordu (805/29 = 28 yerine 805/25 = 32 km/gün).
+            // Kapsam etiketi kaç araçtan hesaplandığını söyler — yakıt
+            // raporundaki "18/29 araçtan" ile aynı dil.
+            label: t("stat_avg_vehicle_day"),
+            value:
+              report.measured > 0
+                ? `${num(report.totalKm / report.days / report.measured)} km`
+                : "—",
+            scope: t("stat_avg_vehicle_scope", {
+              n: report.measured,
+              total: report.vehicleCount,
+            }),
+          },
+          {
             label: t("stat_measured"),
             value: `${report.measured}/${report.vehicleCount}`,
             scope: t("stat_measured_scope"),

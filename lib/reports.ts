@@ -5,6 +5,7 @@ import {
   computeSafetyScores,
   drivenVehiclesFromEntries,
   workedDaysFromEntries,
+  getWorkerShiftDistance,
   scoreMinKmForWorkedDays,
   getVehicleDistanceSpan,
   getVehicleFuelSpan,
@@ -27,6 +28,7 @@ import {
   FUEL_PRICE_SOURCE,
   FUEL_PRICE_AS_OF,
   FUEL_PRICE_IS_CUSTOM,
+  SCORE_THRESHOLD_WORKED_DAYS,
 } from "@/lib/tenant";
 import { workedMs, kmDiff, viennaDayKey } from "@/lib/format";
 import type { TimeEntry } from "@/lib/types";
@@ -321,6 +323,7 @@ export async function buildPerformanceReport(
 
   // ÇALIŞILAN GÜN eşiği — Analiz sayfasıyla AYNI kapı, aynı kaynak (`entries`).
   const workedDaysByWorker = workedDaysFromEntries(entries);
+  const shiftKmByWorker = await getWorkerShiftDistance(range.start.toISOString(), range.end.toISOString());
 
   const safety = new Map<string, SafetyScoreRow>(
     computeSafetyScores(
@@ -333,6 +336,7 @@ export async function buildPerformanceReport(
       // değil, şoförün araçlarının odometre penceresine göre ölçeklenir. İki
       // ekran aynı şoför için farklı karar veremez.
       (vehicleIds: string[], workerId: string) =>
+        SCORE_THRESHOLD_WORKED_DAYS &&
         (workedDaysByWorker.get(workerId) ?? 0) > 0
           ? scoreMinKmForWorkedDays(range, workedDaysByWorker.get(workerId)!)
           : scoreMinKmForSpan(
@@ -343,7 +347,8 @@ export async function buildPerformanceReport(
         ),
       // FİİLEN SÜRÜLEN ARAÇ (09.08.2026): `entries` zaten bu aralığın
       // vardiyaları — ikinci bir sorgu gerekmiyor.
-      drivenVehiclesFromEntries(entries)
+      drivenVehiclesFromEntries(entries),
+      shiftKmByWorker ?? undefined
     ).map((r) => [r.workerId, r])
   );
 

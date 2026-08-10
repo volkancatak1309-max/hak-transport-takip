@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
+import { fuelConsumedPct, pctToLiters } from "@/lib/fuel-math";
 import {
   computeSafetyScores,
   drivenVehiclesFromEntries,
@@ -746,7 +747,7 @@ const FUEL_MIN_CONSUMED_L = 5;
  *  • PGRST202 = PostgREST şema önbelleğinde fonksiyon yok
  *  • 42883  = undefined_function
  */
-function classifyRpcError(error: {
+export function classifyRpcError(error: {
   code?: string | null;
   message?: string | null;
 }): FuelUnavailableReason {
@@ -1156,10 +1157,10 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     const last = s.last_pct != null ? Number(s.last_pct) : 0;
     const refillPct = Number(s.refill_pct) || 0;
     const dropPct = Number(s.drop_pct) || 0;
-    // Yakıt dengesi kimliği: yakılan = alınan (dolum) + net düşüş (ilk − son).
-    // Küçük gürültüde negatife düşerse 0'a kırpılır (net dolu bitti demektir).
-    const consumedPct = Math.max(0, refillPct + (first - last));
-    const consumedLiters = cap != null ? (consumedPct / 100) * cap : null;
+    // Yakıt dengesi kimliği — tek kaynak lib/fuel-math.ts (mobil vardiya
+    // detayı da aynı fonksiyonu çağırır).
+    const consumedPct = fuelConsumedPct(first, last, refillPct);
+    const consumedLiters = pctToLiters(consumedPct, cap);
     const unreliable = zeroRatio > UNRELIABLE_ZERO_RATIO;
 
     // ÜÇ KAPI. Kapasitesi girilmemiş araçta litre yok → oran zaten hesaplanamaz;

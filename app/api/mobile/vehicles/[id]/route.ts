@@ -3,6 +3,8 @@ import { requireMobileAdmin } from "@/lib/mobile-scope";
 import { getVehicleDetail } from "@/lib/vehicles";
 import { mobileError } from "@/lib/mobile-auth";
 import { fleetLabeller } from "@/lib/mobile-labels";
+import { lookupDtc } from "@/lib/dtc-codes";
+import { DEFAULT_LOCALE } from "@/i18n/request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +15,24 @@ export const dynamic = "force-dynamic";
  * KAPI: requireMobileAdmin ↔ /admin/araclar/[id] sayfasının requireAdmin()'i.
  * VERİ: getVehicleDetail(id) — detay sayfasının okuduğu fonksiyonun aynısı.
  * Bugünün km / paket / vardiya özeti ve ceza listesi oradan olduğu gibi gelir.
+ *
+ * ── ARIZALAR (10.08.2026) ─────────────────────────────────────────────────
+ * `arizalar[]` mobilde arıza verisinin ilk kez araç ekseninde göründüğü yer;
+ * bugüne dek arıza YALNIZ panoda (dashboard `dtc[]`) yaşıyordu, oysa Dikkat
+ * listesindeki "N aktif arıza" satırı bu ekrana gidiyor.
+ *
+ * Satırlar getVehicleDetail'in `faults`'undan gelir — panel rozetiyle aynı
+ * kaynak, `kmSurulen` dahil. Sözlük metni BURADA iliştirilir: `lib/dtc-codes.ts`
+ * `server-only` ve 335 kodluk sözlük istemci paketine girmemeli (panel sayfası
+ * da tam olarak bunu yapıyor). Sözlükte olmayan kodda `aciklama: null` —
+ * uydurma tanım YOK; `detay` de null olur.
+ *
+ * DİL: `hak_locale` çerezi mobilde yok → kurulumun varsayılan dili
+ * (lib/mobile-labels.ts ile aynı gerekçe).
+ *
+ * TAVAN YOK: araç başına aktif kod sayısı tek haneli (panoda 10'luk tavan tüm
+ * filoyu tek yanıta sığdırmak içindi, burada öyle bir baskı yok). Kırpma
+ * olmadığı için `kodKirpildi` deseni de gerekmiyor.
  */
 export async function GET(
   req: NextRequest,
@@ -73,5 +93,20 @@ export async function GET(
       kapandi: r.ended,
     })),
     cezalar: d.penalties,
+    arizalar: d.faults.map((f) => {
+      const info = lookupDtc(f.code, DEFAULT_LOCALE);
+      return {
+        id: f.id,
+        kod: f.code,
+        standart: f.standard,
+        aciklama: info ? info.title : null,
+        ilkGorulme: f.first_seen,
+        sonGorulme: f.last_seen,
+        kmSurulen: f.km_driven,
+        detay: info
+          ? { parca: info.part, belirtiler: info.symptoms, risk: info.risk }
+          : null,
+      };
+    }),
   });
 }

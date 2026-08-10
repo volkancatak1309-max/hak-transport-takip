@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { startOfTodayVienna } from "@/lib/format";
 import { computeLiveStatus } from "@/lib/vehicle-ui";
+import { latestVehicleTelemetry, listActiveDtc, type VehicleDtcRow } from "@/lib/telemetry";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
 import { UNRESTRICTED, dropOtherFleets, type FleetScope } from "@/lib/fleet-scope";
 import { isFleetVisible } from "@/lib/tenant";
@@ -227,6 +228,22 @@ export type VehicleDetail = {
   }[];
   /** Penalties (Strafe) booked against this vehicle, newest first. */
   penalties: VehiclePenalty[];
+  /**
+   * Aktif (temizlenmemiş) arıza kodları — `listActiveDtc` ile aynı satırlar,
+   * üstüne panelin rozetiyle AYNI formülden çıkan `km_driven` (10.08.2026).
+   *
+   * Panelde bu rozet VehicleDetailClient içinde hesaplanıyordu
+   * (`odometer_km − first_seen_odometer_km`, biri null ise "—"). Mobil uçta o
+   * odometre yok; formülü uca kopyalamak ikinci bir kaynak yaratırdı, bu yüzden
+   * hesap buraya — iki yüzeyin de okuduğu tek fonksiyona — taşındı.
+   *
+   * ŞİDDET/SEVERITY YOK: `vehicle_dtc`'de böyle bir kolon yok (lib/telemetry.ts).
+   * Sözlük metni de burada iliştirilmez; `lib/dtc-codes.ts` `server-only` ve
+   * yalnız gösterim katmanı (panel sayfası / mobil uç) `lookupDtc` çağırır.
+   */
+  faults: (VehicleDtcRow & { km_driven: number | null })[];
+  /** Aracın en güncel odometresi (device_telemetry) — `km_driven`'ın kaynağı. */
+  odometerKm: number | null;
 };
 
 /** Full detail for one vehicle: status, today's figures, recent shifts. */
@@ -332,6 +349,24 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
     .order("penalty_date", { ascending: false });
   const penalties = (penData ?? []) as VehiclePenalty[];
 
+  // Aktif arızalar + odometre. İkisi de best-effort (migration 021 yoksa boş /
+  // null) — araç detayı arıza yüzünden ASLA düşmez, panelin bugünkü davranışı.
+  const [dtc, telemetry] = await Promise.all([
+    listActiveDtc(id),
+    latestVehicleTelemetry(id),
+  ]);
+  const odometerKm = telemetry?.odometer_km ?? null;
+  const faults = dtc.map((d) => ({
+    ...d,
+    // Panel rozetiyle BİREBİR (VehicleDetailClient DtcRailCard): iki uçtan biri
+    // null ise hesap YOK — negatife düşen fark 0'a kırpılır (odometre geriye
+    // gitmiş görünen cihazda "eksi km" basmamak için).
+    km_driven:
+      odometerKm !== null && d.first_seen_odometer_km !== null
+        ? Math.max(0, Math.round(odometerKm - d.first_seen_odometer_km))
+        : null,
+  }));
+
   return {
     vehicle: vehicleWithStatus,
     today: {
@@ -345,6 +380,8 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
     },
     recent,
     penalties,
+    faults,
+    odometerKm,
   };
 }
 

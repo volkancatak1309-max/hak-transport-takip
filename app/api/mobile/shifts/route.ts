@@ -107,6 +107,11 @@ export async function GET(req: NextRequest) {
     vardiyalar: rows.map((e) => ({
       id: e.id,
       soforId: e.worker_id,
+      // `aracId` (10.08.2026): vardiya detayındaki alarm/yakıt/rota'nın ÜÇÜNÜN
+      // de ön koşulu. Listede bugüne dek yalnız `plaka` vardı ve plaka bir
+      // araç kimliği DEĞİL (araç kaydı silinip yeniden açılırsa da, iki
+      // kurulumda aynı plaka olursa da eşleşme yanlış kurulurdu).
+      aracId: e.vehicle_id,
       plaka: e.plate,
       baslangic: e.started_at,
       bitis: e.ended_at,

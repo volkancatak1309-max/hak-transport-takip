@@ -247,6 +247,38 @@ export async function listVehicleEvents(
   return (data ?? []) as VehicleEventRow[];
 }
 
+/**
+ * TEK ARAÇ + ZAMAN PENCERESİ olayları, eskiden yeniye (vardiya detayı).
+ *
+ * `listEventsInRange` tüm filoyu tarar; vardiya detayı tek aracın birkaç
+ * saatini ister. `vehicle_events`'te `time_entry_id` YOK ve eklenmesi de
+ * gerekmiyor: (araç, [başlangıç, bitiş]) penceresi vardiyayı birebir seçer.
+ *
+ * 1000 SATIR: `fetchAllRows` ile sayfalanır — bir vardiyada onlarca olay olur,
+ * ama sessiz kırpma riski hiç doğmasın diye ham `.limit()` yazılmıyor.
+ * Migration 018 yoksa boş listeye düşer.
+ */
+export async function listVehicleEventsInWindow(
+  vehicleId: string,
+  startISO: string,
+  endISO: string
+): Promise<VehicleEventRow[]> {
+  const { data } = await fetchAllRows<VehicleEventRow>((from, to) =>
+    supabaseAdmin
+      .from("vehicle_events")
+      .select(
+        "id, vehicle_id, event_type, event_value, latitude, longitude, speed_kmh, occurred_at"
+      )
+      .eq("vehicle_id", vehicleId)
+      .gte("occurred_at", startISO)
+      .lte("occurred_at", endISO)
+      .order("occurred_at", { ascending: true })
+      .order("id")
+      .range(from, to)
+  );
+  return data;
+}
+
 export type VehicleEventWithPlate = VehicleEventRow & { plate: string };
 
 /**
@@ -524,6 +556,36 @@ export async function listIdleEpisodesInRange(
     ((vData ?? []) as { id: string; plate: string }[]).map((v) => [v.id, v.plate])
   );
   return rows.map((r) => ({ ...r, plate: plates.get(r.vehicle_id) ?? "—" }));
+}
+
+/**
+ * TEK ARAÇ + ZAMAN PENCERESİNDE BAŞLAYAN rölanti epizodları (vardiya detayı).
+ * `listVehicleEventsInWindow` ile aynı gerekçe: `idle_episodes` araç bazlı,
+ * `worker_id` YOK; vardiya bağı pencereyle kurulur. Epizod pencereden ÖNCE
+ * başlayıp içine sarkıyorsa listeye girmez — alarmlar sayfasının kuralı da bu
+ * (`started_at` üstünden aralık), iki yüzey aynı sayıyı basar.
+ * Tablo yoksa (024 uygulanmadıysa) boş liste.
+ */
+export async function listVehicleIdleEpisodesInWindow(
+  vehicleId: string,
+  startISO: string,
+  endISO: string
+): Promise<Omit<IdleEpisodeWithPlate, "plate">[]> {
+  type Row = Omit<IdleEpisodeWithPlate, "plate">;
+  const { data } = await fetchAllRows<Row>((from, to) =>
+    supabaseAdmin
+      .from("idle_episodes")
+      .select(
+        "id, vehicle_id, started_at, ended_at, last_seen_at, end_reason, latitude, longitude"
+      )
+      .eq("vehicle_id", vehicleId)
+      .gte("started_at", startISO)
+      .lte("started_at", endISO)
+      .order("started_at", { ascending: true })
+      .order("id")
+      .range(from, to)
+  );
+  return data;
 }
 
 export type TelemetryRow = {

@@ -31,7 +31,13 @@ import {
   FUEL_PRICE_IS_CUSTOM,
   SCORE_THRESHOLD_WORKED_DAYS,
 } from "@/lib/tenant";
-import { workedMs, kmDiff, viennaDayKey } from "@/lib/format";
+import {
+  workedMs,
+  kmDiff,
+  viennaDayKey,
+  startOfDayVienna,
+  addCalendarDaysVienna,
+} from "@/lib/format";
 import { mapBounded, isTimeoutError } from "@/lib/db-fanout";
 import type { TimeEntry } from "@/lib/types";
 
@@ -118,6 +124,35 @@ export type PerformanceRow = {
   overspeeding: number;
 };
 
+/**
+ * PERFORMANSIN GÜN KIRILIMI (10.08.2026) — aralığın her takvim günü için bir
+ * satır. Mobil Özet ekranı 7 günlük seriyi buradan okuyor.
+ *
+ * TOPLAMLARIN TÜREVİ, YENİ BİR ÖLÇÜM DEĞİL: aynı `entries` dizisinden, aynı
+ * şoför evreniyle (`base.workers`) ve aynı formüllerle (workedMs / kmDiff)
+ * toplanır. Bu yüzden ŞU ÜÇ EŞİTLİK HER ZAMAN SAĞLANIR:
+ *   Σ daily.shifts   === totalShifts
+ *   Σ daily.workedMs === totalWorkedMs
+ *   Σ daily.km       === totalKm
+ * Ayrı bir sorgu ya da ayrı bir eşik yok — aksi hâlde "rapor 412 diyor, grafik
+ * 409 diyor" durumu doğardı.
+ *
+ * GÜN: vardiyanın BAŞLANGIÇ anının kiracı takvim günü (viennaDayKey). Gece
+ * yarısını aşan vardiya başladığı güne yazılır — panelin her yerinde olduğu gibi.
+ */
+export type PerformanceDaily = {
+  /** Kiracı takvim günü, YYYY-MM-DD (lib/format.ts viennaDayKey). */
+  day: string;
+  shifts: number;
+  workedMs: number;
+  /**
+   * Ölçülebilen km toplamı; o gün hiçbir vardiyada km yoksa **null**.
+   * 0 ile null bilinçli ayrı: "çalıştı ama sayaç yok" ≠ "0 km sürdü"
+   * (PerformanceRow.km ile aynı kural).
+   */
+  km: number | null;
+};
+
 export type PerformanceReport = {
   rows: PerformanceRow[];
   /** Skoru hesaplanabilen şoförlerin ortalaması (null'lar sayılmaz). */
@@ -126,6 +161,8 @@ export type PerformanceReport = {
   totalWorkedMs: number;
   totalKm: number;
   scoredCount: number;
+  /** Aralığın her günü için vardiya/km/çalışma — toplamların kırılımı. */
+  daily: PerformanceDaily[];
 };
 
 function rangeDays(range: DateRange): number {
@@ -380,14 +417,22 @@ export async function buildPerformanceReport(
 
   type ShiftAcc = { shifts: number; ms: number; km: number; hasKm: boolean; delivered: number; undelivered: number };
   const shiftByWorker = new Map<string, ShiftAcc>();
+  // GÜN KIRILIMI aynı döngüde toplanır (bkz. PerformanceDaily). AYRI bir
+  // döngüde toplanamaz: `workedMs` AÇIK vardiyada `Date.now()` okur, yani iki
+  // döngü arasında geçen milisaniyeler kırılımı toplamdan ayırır. Canlıda
+  // ölçüldü (HAK61, 10.08.2026): iki döngülü ilk sürümde Σ gün = toplam + 30 ms.
+  // Tek döngüde her vardiya için `ms`/`km` BİR KEZ hesaplanıp ikisine de yazılır.
+  const dailyAcc = emptyDailyBuckets(range);
+  const driverIds = new Set(base.workers.map((w) => w.id));
   for (const e of entries) {
     if (!e.worker_id) continue;
+    const ms = workedMs(e);
+    const km = kmDiff(e);
     const a =
       shiftByWorker.get(e.worker_id) ??
       { shifts: 0, ms: 0, km: 0, hasKm: false, delivered: 0, undelivered: 0 };
     a.shifts += 1;
-    a.ms += workedMs(e);
-    const km = kmDiff(e);
+    a.ms += ms;
     if (km !== null) {
       a.km += km;
       a.hasKm = true;
@@ -397,6 +442,23 @@ export async function buildPerformanceReport(
     if (e.ended_at !== null && e.cargo_count !== null) a.delivered += e.cargo_count;
     if (e.undelivered_count !== null) a.undelivered += e.undelivered_count;
     shiftByWorker.set(e.worker_id, a);
+
+    // TOPLAMLARLA AYNI EVREN: satır toplamları `base.workers` üzerinde dönüyor
+    // ve o evrende olmayan bir vardiya `rows`'a hiç girmiyor (aşağıdaki döngü).
+    // Buradaki kapı tam olarak o elemeyi tekrarlar — olmasaydı iki evren
+    // ayrışıp Σ gün ≠ toplam durumunu doğururdu.
+    if (!driverIds.has(e.worker_id)) continue;
+    const key = viennaDayKey(e.started_at);
+    // Kova yoksa AÇILIR (satır düşürülmez): aralık sınırı ile gün anahtarı bir
+    // gün kayarsa bile kırılım toplamı tutmaya devam etsin.
+    const d = dailyAcc.get(key) ?? { shifts: 0, ms: 0, km: 0, hasKm: false };
+    d.shifts += 1;
+    d.ms += ms;
+    if (km !== null) {
+      d.km += km;
+      d.hasKm = true;
+    }
+    dailyAcc.set(key, d);
   }
 
   const rows: PerformanceRow[] = [];
@@ -441,7 +503,44 @@ export async function buildPerformanceReport(
     totalWorkedMs: rows.reduce((a, r) => a + r.workedMs, 0),
     totalKm: rows.reduce((a, r) => a + (r.km ?? 0), 0),
     scoredCount: scored.length,
+    daily: finalizeDaily(dailyAcc),
   };
+}
+
+type DailyAcc = { shifts: number; ms: number; km: number; hasKm: boolean };
+
+/**
+ * Aralığın HER takvim günü için boş kova (bkz. PerformanceDaily).
+ *
+ * BOŞ GÜN DE SATIRDIR: vardiya olmayan gün {0, 0, null} olarak çıkar, yoksa
+ * grafik "hiç çalışılmayan pazar"ı atlar ve seri bir gün kayar.
+ *
+ * Sınırlar kiracı dilimiyle yürüyor (lib/format.ts) — DST günlerinde de gün
+ * atlanmaz, çünkü ilerleme saat değil TAKVİM GÜNÜ ekliyor.
+ */
+function emptyDailyBuckets(range: DateRange): Map<string, DailyAcc> {
+  const acc = new Map<string, DailyAcc>();
+  const lastKey = viennaDayKey(range.end);
+  for (
+    let d = startOfDayVienna(range.start), key = viennaDayKey(d);
+    key <= lastKey;
+    d = addCalendarDaysVienna(d, 1), key = viennaDayKey(d)
+  ) {
+    acc.set(key, { shifts: 0, ms: 0, km: 0, hasKm: false });
+  }
+  return acc;
+}
+
+/** Kovaları güne göre sıralı diziye çevirir; km üç-durumlu kalır (bkz. tip). */
+function finalizeDaily(acc: Map<string, DailyAcc>): PerformanceDaily[] {
+  return [...acc.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([day, a]) => ({
+      day,
+      shifts: a.shifts,
+      workedMs: a.ms,
+      km: a.hasKm ? a.km : null,
+    }));
 }
 
 // ── YAKIT RAPORU (fuel) ─────────────────────────────────────────────────────

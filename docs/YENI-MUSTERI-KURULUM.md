@@ -49,6 +49,15 @@ Kuruluma başlamadan elde olması gerekenler — hiçbiri tahminle doldurulmaz:
 > gibidir. Alfabetik çalıştırmak da aynı sonucu verir, ama listeye bakarak
 > ilerlemek daha güvenli.
 
+> **041+ migration'lar BİLEREK dışarıda.** Yeni kurulum 040'ta durur. Somut
+> sonucu (10.08.2026): `report_fuel_stats_vehicle` migration **052** ile
+> geliyor, yani Sendigo ve Galzura'da **yok** — mobil vardiya detayının
+> (`GET /api/mobile/shifts/[id]`) yakıt bloğu oralarda `null` döner ve
+> `bloklar.yakit: "rpc_yok"` ile SEBEBİNİ söyler. Bu bilinçli bir karardır
+> (Volkan, 10.08.2026): 052 o kurulumlarda çalıştırılmayacak. Boş blok "bu
+> vardiyada yakıt harcanmadı" DEĞİL, "bu kurulumda yakıt hesabı yok" demektir;
+> ekran bunu ayırt edebilsin diye sebep alanı taşınıyor.
+
 > **028** boş veritabanında test şoförünü **kendisi yaratır** (31.07.2026'da
 > düzeltildi — önceden sabit bir UUID'ye bağlıydı ve yabancı anahtar hatasıyla
 > zinciri 028'de kırıyordu).

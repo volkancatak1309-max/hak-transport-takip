@@ -139,6 +139,9 @@ export async function GET(req: NextRequest) {
     roster: dash.roster.slice(0, ROSTER_TAVANI).map((r) => ({
       personelId: r.workerId,
       ad: r.name,
+      // Satırın vardiyası — /api/mobile/shifts/{id} ile detaya gidilir.
+      // Vardiya açmamış ve izinli satırlarda null (boş dizge DEĞİL).
+      vardiyaId: r.entryId,
       plaka: r.plate,
       model: r.model,
       kullanilanPlaka: r.usedPlate,

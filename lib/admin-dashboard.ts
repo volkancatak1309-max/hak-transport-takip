@@ -249,6 +249,14 @@ export type RosterStatus =
 export type TodayRosterRow = {
   workerId: string;
   name: string;
+  /**
+   * Satırın dayandığı BUGÜNKÜ vardiya kaydının id'si (time_entries.id) —
+   * mobilde satırdan `/shift/[id]` detayına gitmek için. Vardiya açmamış
+   * (not_started) ve izinli (on_leave) satırlarda null. Hangi vardiya
+   * seçildiği entryByWorker kuralına bağlıdır: açık olan, yoksa en geç
+   * başlayan.
+   */
+  entryId: string | null;
   /** vehicles.assigned_worker_id ile eşleşen araç; yoksa null. */
   plate: string | null;
   vehicleStatus: string | null;
@@ -1121,6 +1129,7 @@ function buildTodayRoster(
     rows.push({
       workerId: w.id,
       name: w.name,
+      entryId: entry?.id ?? null,
       plate: veh?.plate ?? null,
       vehicleStatus: (veh?.status as string) ?? null,
       usedPlate,

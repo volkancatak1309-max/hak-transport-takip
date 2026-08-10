@@ -1,5 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import type { LeaveTypeKey, LeaveStatus } from "@/lib/leave-types";
 import { TENANT_TZ } from "@/lib/tz";
 
@@ -94,6 +96,60 @@ export async function findOverlappingLeaves(
     const { data, error } = await q;
     if (error || !data) return [];
     return data as LeaveRow[];
+  } catch {
+    return [];
+  }
+}
+
+export type PendingLeave = LeaveRow & { worker_name: string };
+
+/**
+ * ONAY BEKLEYEN (status='pending') izin talepleri, EN YENİ TALEP ÖNCE —
+ * mobil bildirim çanının izin bloğu (10.08.2026). Panel karşılığı
+ * /admin/izinler takvimindeki "silik" pending kayıtlarıdır; oradaki sorguyla
+ * aynı eksenlerde daraltılır (test + şoför; talep İZNİ ALAN kişinindir).
+ *
+ * YETKİ ÇAĞIRANDA: onay patronda olduğu için bu listeyi yalnız patron yüzeyi
+ * ister; filo şefi yüzeyi bu fonksiyonu HİÇ çağırmaz (kendi açtığı talebi
+ * onaylayamaz — bkz. app/api/mobile/dashboard). Best-effort: tablo yoksa
+ * (031 öncesi kurulum) boş liste, çağıran akış bozulmaz.
+ */
+export async function listPendingLeaves(): Promise<PendingLeave[]> {
+  try {
+    const scope = await getTestScope();
+    const driverScope = await getDriverScope();
+    const { data, error } = await onlyDrivers(
+      withoutTestRows(
+        supabaseAdmin
+          .from("worker_leaves")
+          .select(LEAVE_COLS)
+          .eq("status", "pending")
+          .order("created_at", { ascending: false }),
+        "worker_id",
+        scope.workerIds
+      ),
+      "worker_id",
+      driverScope
+    );
+    if (error || !data) return [];
+    const rows = data as LeaveRow[];
+    if (rows.length === 0) return [];
+
+    // İsim çözümü — anahtarlı küçük sorgu; çözülemeyen isim '—' olur, satır düşmez.
+    const ids = [...new Set(rows.map((r) => r.worker_id))];
+    const names = new Map<string, string>();
+    try {
+      const { data: w } = await supabaseAdmin
+        .from("workers")
+        .select("id, name")
+        .in("id", ids);
+      for (const row of (w ?? []) as { id: string; name: string }[]) {
+        names.set(row.id, row.name);
+      }
+    } catch {
+      // isimsiz kalem, düşmüş kalemden iyidir.
+    }
+    return rows.map((r) => ({ ...r, worker_name: names.get(r.worker_id) ?? "—" }));
   } catch {
     return [];
   }

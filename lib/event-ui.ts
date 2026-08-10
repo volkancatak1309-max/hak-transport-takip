@@ -61,6 +61,32 @@ export function eventTone(type: string): ChipTone {
   return EVENT_TONE[type] ?? "neutral";
 }
 
+/* ── ALARM KADEMESİ — PANEL + MOBİL TEK KAYNAK (10.08.2026) ────────────────
+   Mobil alarm ekranının Kritik/Uyarı/Rutin kademesi. EVENT_TONE'dan BİLİNÇLİ
+   farkı: overspeeding burada KRİTİK (mobil ekran kuralı, galzura-fleet-app
+   lib/alarms-api.ts gerekçesiyle) — EVENT_TONE ise panelin GÖRSEL ton eşlemesi
+   olarak aynen kalıyor (chip renkleri değişmedi). Kademe listesi YALNIZ burada
+   yaşar: /api/mobile/dashboard `alarm.kritik` sayacı ve /api/mobile/alarms
+   `?kademe=` süzgeci buradan okur; app'teki kopya buna uymak zorundadır. */
+export type AlarmKademe = "kritik" | "uyari" | "rutin";
+
+export const ALARM_KADEME: Record<string, AlarmKademe> = {
+  crash: "kritik",
+  towing: "kritik",
+  jamming: "kritik",
+  unplug: "kritik",
+  overspeeding: "kritik",
+  harsh_braking: "uyari",
+  harsh_acceleration: "uyari",
+  harsh_cornering: "uyari",
+  idling: "rutin",
+};
+
+/** Bilinmeyen tür "uyari" sayılır: ne kritik alarmı şişirir ne sessizce rutine gömer. */
+export function alarmKademe(type: string): AlarmKademe {
+  return ALARM_KADEME[type] ?? "uyari";
+}
+
 /** Şiddet ağırlığı — sıralama/özet için (yüksek = daha kritik). */
 export const EVENT_TONE_RANK: Record<ChipTone, number> = {
   critical: 3,

@@ -871,6 +871,10 @@ export type FleetDtcVehicle = {
   vehicle_id: string;
   count: number;
   oldest: { code: string; first_seen: string } | null;
+  /** Aktif kodların kendisi, first_seen ARTAN (en eski/en ihmal edilmiş önce).
+   *  Sorgu zaten satır satır okuyordu; 10.08.2026'ya kadar toplarken atılıyordu
+   *  — mobil "Arızalı Araçlar" dökümü için artık taşınıyor. */
+  codes: { code: string; first_seen: string }[];
 };
 
 /**
@@ -895,16 +899,25 @@ export async function listFleetActiveDtc(): Promise<FleetDtcVehicle[]> {
   for (const r of data) {
     let row = byVehicle.get(r.vehicle_id);
     if (!row) {
-      row = { vehicle_id: r.vehicle_id, count: 0, oldest: null };
+      row = { vehicle_id: r.vehicle_id, count: 0, oldest: null, codes: [] };
       byVehicle.set(r.vehicle_id, row);
     }
     row.count++;
+    row.codes.push({ code: r.code, first_seen: r.first_seen });
     if (
       !row.oldest ||
       new Date(r.first_seen).getTime() < new Date(row.oldest.first_seen).getTime()
     ) {
       row.oldest = { code: r.code, first_seen: r.first_seen };
     }
+  }
+  // Kod listesi en eski önce — `oldest` her zaman listenin başıdır; tavan
+  // uygulanırsa (mobil, araç başına 10) en uzun ihmal edilenler listede kalır.
+  for (const row of byVehicle.values()) {
+    row.codes.sort(
+      (a, b) =>
+        new Date(a.first_seen).getTime() - new Date(b.first_seen).getTime()
+    );
   }
   // En çok arızası olan araç önce; eşitlikte en eski arıza öne.
   return [...byVehicle.values()].sort(

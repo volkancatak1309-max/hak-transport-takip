@@ -81,6 +81,8 @@ export type AttentionItem =
       /** Bu vardiyaya uygulanan tavan (gece ise 10 sa, değilse 12 sa). */
       capMs: number;
       night: boolean;
+      /** Vardiyanın başlangıç anı (time_entries.started_at) — mobil sıralama. */
+      started_at: string;
     }
   /** § 13c Abs. 1 — 9 saati aştı, molası 45 dakikanın altında kaldı. */
   | {
@@ -90,6 +92,8 @@ export type AttentionItem =
       ms: number;
       breakMin: number;
       requiredMin: number;
+      /** Vardiyanın başlangıç anı (time_entries.started_at) — mobil sıralama. */
+      started_at: string;
     }
   | {
       kind: "inspection" | "insurance";
@@ -113,6 +117,10 @@ export type AttentionItem =
       plate: string;
       count: number;
       amount: number | null; // total amount of the unpaid penalties (null if none priced)
+      /** EN YENİ ödenmemiş cezanın tarihi (vehicle_penalties.penalty_date).
+       *  Kalem araç başına TOPLANDIĞI için tek tarih taşınır: en yenisi —
+       *  "en yeni üstte" sıralamasında kalemin yeri onu belirler. */
+      latest_date: string | null;
     }
   | {
       kind: "license"; // şoför ehliyeti doldu / dolmak üzere (workers.license_expiry)
@@ -126,6 +134,8 @@ export type AttentionItem =
       id: string;
       plate: string;
       hours: number; // son kayıttan bu yana geçen saat
+      /** Son telemetri anı (positions.recorded_at) — `hours` zaten ondan türür. */
+      at: string;
     }
   | {
       // Araç ŞU AN kontak açık/taze ama o araçta AÇIK vardiya YOK (Modül 1).
@@ -135,6 +145,8 @@ export type AttentionItem =
       kind: "movingNoShift";
       id: string;
       plate: string;
+      /** Uyarıyı tetikleyen taze fix'in anı (positions.recorded_at). */
+      at: string;
     }
   | {
       // ATAMASIZ ARAÇ SAHADA (27.07.2026): assigned_worker_id NULL olduğu hâlde
@@ -145,6 +157,8 @@ export type AttentionItem =
       kind: "unassignedMoving";
       id: string;
       plate: string;
+      /** Uyarıyı tetikleyen taze fix'in anı (positions.recorded_at). */
+      at: string;
     }
   | {
       // AKTİF aracın atanmış şoförü İŞTEN AYRILDI (is_active=false/terminated)
@@ -154,6 +168,9 @@ export type AttentionItem =
       id: string;
       plate: string;
       worker_name: string;
+      /** Ayrılan şoförün son çalışma günü (workers.terminated_at, 032).
+       *  Kolon yoksa ya da tarih girilmemişse null — an uydurulmaz. */
+      terminated_at: string | null;
     }
   | {
       // ARAÇTAN SİNYAL YOK: vardiya açılırken depo kapısı konumu doğrulayamadı
@@ -163,6 +180,8 @@ export type AttentionItem =
       kind: "locationUnverified";
       id: string;
       worker_name: string;
+      /** Üretici vardiyanın başlangıç anı (time_entries.started_at). */
+      started_at: string;
     }
   | {
       // SAAT TAHMİNİ: araç depodaydı (konum doğrulandı) ama started_at depo
@@ -171,6 +190,8 @@ export type AttentionItem =
       kind: "startEstimated";
       id: string;
       worker_name: string;
+      /** Üretici vardiyanın başlangıç anı (time_entries.started_at). */
+      started_at: string;
     }
   | {
       // Auto vardiya ≥3h açık ama ARAÇ hiç hareket etmemiş (kontak kapalı, hız
@@ -179,6 +200,8 @@ export type AttentionItem =
       kind: "vehicleIdle";
       id: string;
       worker_name: string;
+      /** Üretici (auto) vardiyanın başlangıç anı (time_entries.started_at). */
+      started_at: string;
     }
   | {
       // Filo şefi bir personelin mesaisini ELLE başlattı (037) → panelde bildirim.
@@ -199,6 +222,9 @@ export type FleetDtcRow = {
   count: number;
   oldest_code: string | null;
   oldest_since: string | null;
+  /** Araçtaki aktif kodların kendisi (first_seen ARTAN — en eski önce).
+   *  listFleetActiveDtc zaten satır satır okuyordu, artık atmıyor (10.08.2026). */
+  codes: { code: string; first_seen: string }[];
 };
 
 /**
@@ -237,6 +263,8 @@ export type TodayRosterRow = {
   telemetryAgeMs: number | null;
   /** Son veri 24 saatten eskiyse true — araç "kör" demektir. */
   telemetryStale: boolean;
+  /** Atanmış aracın modeli (vehicles.model) — mobil "plaka · model" satırı. */
+  model: string | null;
   /**
    * Bu şoförün bugün kullandığı aracı BAŞKA bir şoför de kullandı mı?
    * (22.07.2026) Geçici araç seçimi serbest bırakıldı; aynı araca iki kişi
@@ -254,6 +282,13 @@ export type DashboardData = {
   attention: AttentionItem[];
   /** Günün panosu — her aktif şoför için bir satır. */
   roster: TodayRosterRow[];
+  /**
+   * ŞU AN açık vardiyası olan ARAÇ sayısı (openVehicleIds.size) — mobil
+   * "SAHADA n/N" halkasının payı. `todayOps.driversInField` (açık VARDİYA,
+   * aynı araca iki vardiya açılabilir) ve `fleet.counts.sevkiyatta` (canlı
+   * kontak/hız durumu) İKİSİ DE bu sayı değildir; üçü bilinçli ayrı.
+   */
+  openVehicleCount: number;
 };
 
 type LiteEntry = Pick<
@@ -436,10 +471,12 @@ export async function getDashboardData(
       fleetScope
     ),
     // Unpaid vehicle penalties (Strafe) → surfaced as action items.
+    // penalty_date 10.08.2026'da eklendi (mobil "an" alanı): kolon tablonun
+    // KENDİ migration'ında (014) tanımlı, üç kurulumda da tablo onsuz var olamaz.
     onlyFleet(
       supabaseAdmin
         .from("vehicle_penalties")
-        .select("vehicle_id, amount")
+        .select("vehicle_id, amount, penalty_date")
         .eq("paid", false),
       // ARAÇ verisi → araç ekseniyle daraltılır (vardiya verisi gibi şoför
       // ekseniyle DEĞİL). Ceza aracın borcudur, şoförün değil.
@@ -481,7 +518,7 @@ export async function getDashboardData(
         withoutTestRows(
           supabaseAdmin
             .from("time_entries")
-            .select("id, worker_id")
+            .select("id, worker_id, started_at")
             .eq("location_unverified", true)
             .gte("started_at", todayStart.toISOString()),
           "worker_id",
@@ -503,7 +540,7 @@ export async function getDashboardData(
         withoutTestRows(
           supabaseAdmin
             .from("time_entries")
-            .select("id, worker_id")
+            .select("id, worker_id, started_at")
             .eq("start_time_estimated", true)
             .gte("started_at", todayStart.toISOString()),
           "worker_id",
@@ -559,6 +596,7 @@ export async function getDashboardData(
   const unpaidPenalties = (penaltyRes.data ?? []) as {
     vehicle_id: string;
     amount: number | null;
+    penalty_date: string | null;
   }[];
   const licenses = (licenseRes.data ?? []) as {
     id: string;
@@ -578,21 +616,64 @@ export async function getDashboardData(
   const inactiveWorkerIds = new Set(
     workerRows.filter((w) => w.is_active === false).map((w) => w.id)
   );
+  // Şoförsüz araç kalemine "an" (workers.terminated_at, 032) — AYRI, best-effort
+  // sorgu: kolonu ana workers select'ine eklemek, 032 uygulanmamış bir kurulumda
+  // sorguyu error'a düşürüp TÜM panoyu (isim sözlüğü dahil) boşaltırdı. Burada
+  // anahtarlı (.in("id")) küçük bir okuma: kolon yok / hata → boş harita →
+  // kalem yalnız `terminated_at`siz çıkar, pano bozulmaz.
+  const driverlessCandidateIds = [
+    ...new Set(
+      vehicles
+        .filter(
+          (v) =>
+            v.status !== "inactive" &&
+            v.assigned_worker_id &&
+            inactiveWorkerIds.has(v.assigned_worker_id)
+        )
+        .map((v) => v.assigned_worker_id as string)
+    ),
+  ];
+  let terminatedAtByWorker = new Map<string, string | null>();
+  if (driverlessCandidateIds.length > 0) {
+    try {
+      const { data: tRows } = await supabaseAdmin
+        .from("workers")
+        .select("id, terminated_at")
+        .in("id", driverlessCandidateIds);
+      terminatedAtByWorker = new Map(
+        ((tRows ?? []) as { id: string; terminated_at: string | null }[]).map(
+          (w) => [w.id, w.terminated_at]
+        )
+      );
+    } catch {
+      // an'sız kalem, panosuz kalemden iyidir — sessizce boş bırak.
+    }
+  }
   // Bugün ARAÇTAN SİNYAL ALINAMADAN açılmış vardiyalar (Modül 6) → Dikkat kalemi.
   const locationUnverified = (
-    (unverifiedRes.data ?? []) as { id: string; worker_id: string | null }[]
+    (unverifiedRes.data ?? []) as {
+      id: string;
+      worker_id: string | null;
+      started_at: string;
+    }[]
   ).map((r) => ({
     id: r.id,
     worker_name: r.worker_id ? names.get(r.worker_id) ?? "—" : "—",
+    started_at: r.started_at,
   }));
   // Bugün başlangıç anı KESTİRİMLE yazılmış vardiyalar (038) → ayrı Dikkat kalemi.
   // Sinyalsiz kayıt ikisine birden düşebilir; bu bilinçli — iki farklı eylem
   // gerektirir (cihazı onart / saati gözden geçir).
   const startEstimated = (
-    (estimatedRes.data ?? []) as { id: string; worker_id: string | null }[]
+    (estimatedRes.data ?? []) as {
+      id: string;
+      worker_id: string | null;
+      started_at: string;
+    }[]
   ).map((r) => ({
     id: r.id,
     worker_name: r.worker_id ? names.get(r.worker_id) ?? "—" : "—",
+    started_at: r.started_at,
   }));
   // HAREKETSİZ ARAÇ (Modül 7 — 25.07.2026, eski "2h-soğuk panel" kuralının yerine).
   //
@@ -637,13 +718,17 @@ export async function getDashboardData(
           return {
             id: s.id,
             worker_name: names.get(s.worker_id as string) ?? "—",
+            started_at: s.started_at,
           };
         } catch {
           return null;
         }
       })
     )
-  ).filter((r): r is { id: string; worker_name: string } => r !== null);
+  ).filter(
+    (r): r is { id: string; worker_name: string; started_at: string } =>
+      r !== null
+  );
 
   // FİLO ŞEFİ MANUEL BAŞLATMALARI (037) → Dikkat panosu bildirimi. started_by
   // (şef) çoğu zaman kendi filo aracına atanmış değildir, dolayısıyla `names`
@@ -728,11 +813,13 @@ export async function getDashboardData(
       positions,
       openVehicleIds,
       inactiveWorkerIds,
+      terminatedAtByWorker,
       locationUnverified,
       startEstimated,
       vehicleIdle,
       manualStarts
     ),
+    openVehicleCount: openVehicleIds.size,
   };
 }
 
@@ -891,6 +978,7 @@ function attachPlatesToDtc(
     vehicle_id: string;
     count: number;
     oldest?: { code: string; first_seen: string } | null;
+    codes?: { code: string; first_seen: string }[];
   }[],
   vehicles: { id: string; plate: string }[]
 ): FleetDtcRow[] {
@@ -905,6 +993,7 @@ function attachPlatesToDtc(
         count: d.count,
         oldest_code: d.oldest?.code ?? null,
         oldest_since: d.oldest?.first_seen ?? null,
+        codes: d.codes ?? [],
       },
     ];
   });
@@ -943,6 +1032,8 @@ function buildTodayRoster(
     plate: string;
     status: string;
     assigned_worker_id: string | null;
+    /** vehicles.model — select("*") zaten taşıyor, satıra 10.08'de eklendi. */
+    model?: string | null;
   }[],
   todayEntries: LiteEntry[],
   positions: { vehicle_id: string; recorded_at: string }[],
@@ -1040,6 +1131,7 @@ function buildTodayRoster(
       loadedPackages: entry?.start_package_count ?? null,
       telemetryAgeMs: ageMs,
       telemetryStale: ageMs !== null && ageMs >= TELEMETRY_SILENT_HOURS * 3_600_000,
+      model: veh?.model ?? null,
     });
   }
 
@@ -1085,7 +1177,11 @@ function buildAttention(
   }[],
   names: Map<string, string>,
   todayStart: Date,
-  unpaidPenalties: { vehicle_id: string; amount: number | null }[],
+  unpaidPenalties: {
+    vehicle_id: string;
+    amount: number | null;
+    penalty_date: string | null;
+  }[],
   licenses: { id: string; name: string; license_expiry: string }[],
   positions: {
     vehicle_id: string;
@@ -1097,12 +1193,14 @@ function buildAttention(
   openVehicleIds: Set<string>,
   /** İşten ayrılan/pasif personel id'leri → "şoförsüz araç" (Modül 2). */
   inactiveWorkerIds: Set<string>,
+  /** Ayrılan şoför → son çalışma günü (best-effort; kolon yoksa boş harita). */
+  terminatedAtByWorker: Map<string, string | null>,
   /** Bugün ARAÇTAN SİNYAL ALINAMADAN açılmış vardiyalar (Modül 6). */
-  locationUnverified: { id: string; worker_name: string }[],
+  locationUnverified: { id: string; worker_name: string; started_at: string }[],
   /** Bugün başlangıç anı KESTİRİMLE yazılmış vardiyalar (038). */
-  startEstimated: { id: string; worker_name: string }[],
+  startEstimated: { id: string; worker_name: string; started_at: string }[],
   /** ≥3h açık auto vardiya, araçtan hiç hareket yok (Modül 7). */
-  vehicleIdle: { id: string; worker_name: string }[],
+  vehicleIdle: { id: string; worker_name: string; started_at: string }[],
   /** Filo şefinin bugün elle başlattığı vardiyalar (037) — panel bildirimi. */
   manualStarts: {
     id: string;
@@ -1142,6 +1240,7 @@ function buildAttention(
         ms: worked,
         capMs: cap,
         night,
+        started_at: e.started_at,
       });
       // Tavanı aşan vardiya zaten en ağır kalem; mola uyarısını üstüne
       // eklemek aynı vardiyayı listede iki kez gösterirdi.
@@ -1157,6 +1256,7 @@ function buildAttention(
         ms: worked,
         breakMin: e.break_minutes ?? 0,
         requiredMin: needBreak,
+        started_at: e.started_at,
       });
     }
   }
@@ -1194,13 +1294,23 @@ function buildAttention(
 
   // 4) Unpaid vehicle penalties (Strafe), aggregated per vehicle.
   const plateById = new Map(vehicles.map((v) => [v.id, v.plate]));
-  const penByVehicle = new Map<string, { count: number; amount: number; hasAmount: boolean }>();
+  const penByVehicle = new Map<
+    string,
+    { count: number; amount: number; hasAmount: boolean; latest: string | null }
+  >();
   for (const p of unpaidPenalties) {
-    const acc = penByVehicle.get(p.vehicle_id) ?? { count: 0, amount: 0, hasAmount: false };
+    const acc =
+      penByVehicle.get(p.vehicle_id) ??
+      { count: 0, amount: 0, hasAmount: false, latest: null };
     acc.count += 1;
     if (p.amount !== null) {
       acc.amount += p.amount;
       acc.hasAmount = true;
+    }
+    // Toplanan kalemin anı = EN YENİ ödenmemiş cezanın tarihi (date kolonu,
+    // sözlük sırası = kronolojik sıra).
+    if (p.penalty_date && (acc.latest === null || p.penalty_date > acc.latest)) {
+      acc.latest = p.penalty_date;
     }
     penByVehicle.set(p.vehicle_id, acc);
   }
@@ -1211,6 +1321,7 @@ function buildAttention(
       plate: plateById.get(vehicleId) ?? "—",
       count: acc.count,
       amount: acc.hasAmount ? acc.amount : null,
+      latest_date: acc.latest,
     });
   }
 
@@ -1256,6 +1367,7 @@ function buildAttention(
       id: `${p.vehicle_id}-silent`,
       plate,
       hours,
+      at: p.recorded_at,
     });
   }
 
@@ -1280,8 +1392,18 @@ function buildAttention(
     if (nowMs - new Date(p.recorded_at).getTime() > MOVING_FRESH_MS) continue;
     items.push(
       v.assigned_worker_id === null
-        ? { kind: "unassignedMoving", id: `${p.vehicle_id}-unassigned`, plate: v.plate }
-        : { kind: "movingNoShift", id: `${p.vehicle_id}-moving`, plate: v.plate }
+        ? {
+            kind: "unassignedMoving",
+            id: `${p.vehicle_id}-unassigned`,
+            plate: v.plate,
+            at: p.recorded_at,
+          }
+        : {
+            kind: "movingNoShift",
+            id: `${p.vehicle_id}-moving`,
+            plate: v.plate,
+            at: p.recorded_at,
+          }
     );
   }
 
@@ -1297,6 +1419,7 @@ function buildAttention(
       id: `${v.id}-driverless`,
       plate: v.plate,
       worker_name: names.get(wid) ?? "—",
+      terminated_at: terminatedAtByWorker.get(wid) ?? null,
     });
   }
 
@@ -1307,6 +1430,7 @@ function buildAttention(
       kind: "locationUnverified",
       id: `${u.id}-unverloc`,
       worker_name: u.worker_name,
+      started_at: u.started_at,
     });
   }
 
@@ -1317,12 +1441,18 @@ function buildAttention(
       kind: "startEstimated",
       id: `${s.id}-eststart`,
       worker_name: s.worker_name,
+      started_at: s.started_at,
     });
   }
 
   // 10) Hareketsiz araç (Modül 7) — auto vardiya açık ama araç hiç kıpırdamamış.
   for (const c of vehicleIdle) {
-    items.push({ kind: "vehicleIdle", id: `${c.id}-idle`, worker_name: c.worker_name });
+    items.push({
+      kind: "vehicleIdle",
+      id: `${c.id}-idle`,
+      worker_name: c.worker_name,
+      started_at: c.started_at,
+    });
   }
 
   // 11) Filo şefi manuel başlatması (037) — şef bir personelin mesaisini elle

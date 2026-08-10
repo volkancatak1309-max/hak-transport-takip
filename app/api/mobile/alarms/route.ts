@@ -7,7 +7,7 @@ import {
 } from "@/lib/telemetry";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { parsePage, pageInfo, parseRange } from "@/lib/mobile-list";
-import { eventTone } from "@/lib/event-ui";
+import { eventTone, alarmKademe, type AlarmKademe } from "@/lib/event-ui";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +39,14 @@ export async function GET(req: NextRequest) {
   const page = parsePage(url);
   const range = parseRange(url);
   const turFiltre = url.searchParams.get("tur");
+  // ?kademe=kritik|uyari|rutin (10.08.2026) — Özet'teki "Kritik N" hapı bu
+  // süzgeçle açılır. Tek kaynak lib/event-ui.ts ALARM_KADEME; `tur` süzgeciyle
+  // BİRLİKTE uygulanır (kesişim). Tanınmayan değer yok sayılır (süzgeçsiz liste).
+  const kademeParam = url.searchParams.get("kademe");
+  const kademeFiltre: AlarmKademe | null =
+    kademeParam === "kritik" || kademeParam === "uyari" || kademeParam === "rutin"
+      ? kademeParam
+      : null;
 
   const [events, episodes, vehicles] = await Promise.all([
     listEventsInRange(range.start.toISOString(), range.end.toISOString()),
@@ -88,6 +96,9 @@ export async function GET(req: NextRequest) {
   if (turFiltre) {
     const set = new Set(turFiltre.split(",").map((s) => s.trim()).filter(Boolean));
     rows = rows.filter((r) => set.has(r.event_type));
+  }
+  if (kademeFiltre) {
+    rows = rows.filter((r) => alarmKademe(r.event_type) === kademeFiltre);
   }
 
   const slice = rows.slice(page.offset, page.offset + page.limit);

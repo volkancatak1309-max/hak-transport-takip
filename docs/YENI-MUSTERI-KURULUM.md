@@ -58,6 +58,13 @@ Kuruluma başlamadan elde olması gerekenler — hiçbiri tahminle doldurulmaz:
 > vardiyada yakıt harcanmadı" DEĞİL, "bu kurulumda yakıt hesabı yok" demektir;
 > ekran bunu ayırt edebilsin diye sebep alanı taşınıyor.
 
+> **Mobil araç uçları (11.08.2026) yeni kurulumda ÇALIŞIR.** `…/gunler`,
+> `…/rota`, `…/olaylar`, `…/duraklar`, `…/metrikler` hiçbir RPC'ye dayanmaz;
+> okudukları tablolar `device_telemetry` (**014**), `vehicle_events` (**018**)
+> ve `idle_episodes` (**024**) — üçü de 040 öncesinde. Tek eksik `cihaz.ad`:
+> `vehicles.device_model` migration **055** ile gelir, o da 041+ olduğu için
+> yeni kurulumlarda YOK → alan `null` döner, uç çalışmaya devam eder.
+
 > **028** boş veritabanında test şoförünü **kendisi yaratır** (31.07.2026'da
 > düzeltildi — önceden sabit bir UUID'ye bağlıydı ve yabancı anahtar hatasıyla
 > zinciri 028'de kırıyordu).

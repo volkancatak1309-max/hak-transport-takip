@@ -69,6 +69,17 @@ export async function GET(
         flespiId: v.flespi_device_id,
         imei: v.imei,
         vin: v.vin,
+        /**
+         * Takip cihazının ADI, ör. "Teltonika FMC003" (migration 055).
+         *
+         * KOLON OLMAYABİLİR: `getVehicleDetail` `select("*")` yaptığı için
+         * kolon eklenince alan kendiliğinden dolar, eklenmemiş kurulumda
+         * `undefined` gelir ve BURADA null'a çevrilir — istemci tek şey okur.
+         * Cihaz modeli bugün depoda hiçbir yerde VERİ olarak durmuyor
+         * ("FMC003" yalnız kod yorumlarında geçiyor); uydurulmuyor, elle
+         * girilene kadar null kalıyor.
+         */
+        ad: (v as { device_model?: string | null }).device_model ?? null,
         var: v.flespi_device_id != null || !!v.imei,
       },
       depoLitre: v.tank_capacity_l,

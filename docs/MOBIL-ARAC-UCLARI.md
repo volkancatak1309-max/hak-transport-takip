@@ -275,16 +275,166 @@ doğrulamadan toplu yazmak uydurmayı veriye çevirmek olurdu.
 
 ---
 
+## U7 · `POST /api/mobile/vehicles/[id]/ariza-bildir`
+
+Elle arıza bildirimi — mobilin auth dışı **ikinci yazma ucu** (birincisi şoför
+paket girişi). Tablo: `vehicle_fault_reports`, **migration 056** (11.08.2026'da
+Volkan tarafından çalıştırıldı, canlıda).
+
+**Neden `vehicle_dtc`'ye yazmıyor:** o tablo cihazın gerçeğidir ve flespi akışı
+her anlık görüntüde onu uzlaştırır (`saveDtc` + `reconcileDtc`). Elle girilen
+satır bir sonraki senkron turunda `cleared_at` ile kapanır ya da kaybolur —
+bildirim **sessizce yok olurdu**. İki kaynak aynı ekranda yan yana
+gösterilebilir; aynı satırda değil.
+
+**Yazma anahtarlı:** `vehicle_id` **yoldan**, `reported_by` **oturumdan** gelir.
+Gövdenin tek alanı `aciklama`. `durum` gövdeden alınmaz — yeni bildirim tanım
+gereği `acik`tır. Yani "başkası adına, başka araca bildirim" isteği
+**kurulamaz**; alanları yok. **ÖLÇÜLDÜ:** gövdeye `durum:"kapali"`,
+`vehicle_id:"baska"`, `reported_by:"baska"` konarak istek atıldı — üçü de yok
+sayıldı, satır yoldan/oturumdan doldu.
+
+```jsonc
+// istek
+POST /api/mobile/vehicles/<uuid>/ariza-bildir
+{ "aciklama": "Rölantide titreşim ve şanzımandan ses geliyor." }
+
+// 201
+{ "ok": true,
+  "bildirim": {
+    "id": "70309a4b-…", "aracId": "0d0d8175-…", "plaka": "TEST-001",
+    "bildirenId": "a8e793e9-…",
+    "aciklama": "Rölantide titreşim ve şanzımandan ses geliyor.",
+    "durum": "acik", "olusturma": "2026-08-11T01:10:28.807324+00:00" } }
+```
+
+| ret | kod | not |
+|---|---|---|
+| token yok / bozuk | `401 missing_token` · `401 invalid_token` | |
+| yönetici değil | `403 admin_required` | kardeş araç uçlarıyla aynı kapı |
+| araç yok | `404 not_found` | FK hatasının 503'e düşmesini önler |
+| gövde JSON değil | `400 invalid_json` | |
+| `aciklama` alanı yok | `400 missing_fields` | |
+| string değil | `400 invalid` + `sebep:"tip"` | |
+| trim sonrası boş | `400 invalid` + `sebep:"bos"` | `"   "` boş bildirimdir |
+| 2000 karakterden uzun | `400 too_long` + `enFazla` + `uzunluk` | **kesilmez, reddedilir** |
+| tablo yok (056 uygulanmamış) | `503 db_error` + `sebep:"tablo_yok"` | `yazma_hatasi`'ndan ayrı |
+
+Sınır **şemada değil uçta** (`lib/fault-reports.ts` `ARIZA_ACIKLAMA_MAX`): bir
+ürün kararıdır, her fikir değişikliğinde migration gerektirmemeli. Karakterle
+sayılır, baytla değil — Türkçe bir bildirim İngilizcesinden erken reddedilmez.
+
+**ÖLÇÜLDÜ (canlı HAK61, `TEST-001`):** **41 iddia**, üç ucun da GERÇEK
+işleyicisi çağrılarak (kapı dahil uçtan uca) — yaz → oku → kapat → yeniden aç →
+sil döngüsü. Yazma 286 ms. Reddedilen 6 istek tabloya **hiçbir** satır yazmadı
+(0 → 0). 3 QA satırı yazıldı, araç detayı ucundan okundu, kapatıldı, geri
+açıldı, **silindi** ve tablonun 0'a döndüğü ölçüldü.
+
+### U7b · Okuma — `GET /api/mobile/vehicles/[id]` → `arizaBildirimleri[]`
+
+Bildirimler araç detayının yanıtına eklendi (11.08.2026). `arizalar[]`ın
+**yanında, içinde DEĞİL**: o dizi cihazın okuduğu DTC kodlarıdır (P0100 …) ve
+flespi akışıyla kendini uzlaştırır; bunlar insanın yazdığı serbest metin. Aynı
+diziye karıştırmak iki farklı güven düzeyini tek listeye koymak olurdu.
+
+```jsonc
+{ "arizaBildirimleri": [
+    { "id": "54c64752-…", "aciklama": "Rölantide titreşim…", "durum": "acik",
+      "olusturma": "2026-08-11T01:24:38.263074+00:00",
+      "bildirenId": "a8e793e9-…", "bildiren": "G*** Ç***" } ],
+  "arizaBildirimDurumu": "var",   // var | tablo_yok | hata
+  "arizaBildirimToplam": 3,
+  "arizaBildirimKirpildi": false }
+```
+
+**Yeniden eskiye** sıralı, tavan **50 satır** — aşılırsa `kirpildi:true` ve
+`toplam` gerçek sayıyı söyler (sessiz kırpma yok). Boş liste **üç ayrı şey**
+olabilir: bildirim yok · migration 056 bu kurulumda uygulanmamış · sorgu düştü;
+`arizaBildirimDurumu` hangisi olduğunu söyler. Bildirenin adı **türetilmiştir**
+(tabloda yok) ve ayrı bir anahtarlı sorgudan gelir — PostgREST gömme değil:
+ilişki çözülmezse gömme tüm sorguyu düşürürdü, oysa ad çözülemezse yalnız ad
+null olmalı, satır kaybolmamalı.
+
+### U7c · `PATCH /api/mobile/fault-reports/[id]` — kapat / yeniden aç
+
+Gövde `{ "durum": "kapali" }` ya da `{ "durum": "acik" }`. Kapı
+`requireMobileAdmin`. Yol araç altında **değil**: kaynak bildirimin kendisidir,
+kimliği tek başına yeterli; araç kimliğini ikinci kez taşıtmak, ikisi
+uyuşmadığında hangisinin doğru olduğu sorusunu doğururdu.
+
+**Tek yönlü değil.** `acik` de geçerli bir hedeftir: yanlışlıkla kapatılan
+bildirimi geri açmanın yolu olmasaydı tek çare kaydı silmek, yani geçmişi yok
+etmek olurdu. **Aynı durumu ikinci kez göndermek hata değil** — `200` +
+`degisti:false` (iki telefonun aynı düğmeye basması olağan).
+
+**Kısmi güncelleme:** yalnız `durum` yazılır. **ÖLÇÜLDÜ:** gövdeye `aciklama`
+konarak istek atıldı — yok sayıldı, metin değişmedi. Bildirim geçmişe dönük
+değiştirilemez.
+
+| ret | kod |
+|---|---|
+| token yok / yönetici değil | `401` · `403 admin_required` |
+| kayıt yok | `404 not_found` |
+| `durum` alanı yok | `400 missing_fields` |
+| string değil | `400 invalid` + `sebep:"tip"` |
+| kümede yok (`"islemde"`, `"Kapali"`, `"closed"`) | `400 invalid` + `sebep:"deger"` + `gecerli:["acik","kapali"]` |
+
+Büyük/küçük harf esnetilmez: şema CHECK'i de esnetmiyor, uç ondan gevşek
+olmamalı. Geçerli küme yanıtta söylenir.
+
+⚠️ **Kapatma ANI kaydedilmiyor:** 056'da `updated_at` / `kapatan` kolonu yok
+(şema Volkan'ın verdiği alan listesiydi). "Kim, ne zaman kapattı" sorusunun
+cevabı bugün YOK; gerekirse additive bir migration ister.
+
+⚠️ **Hız sınırı (rate limit) yok** — ayrı karar (Volkan, 11.08.2026).
+
+---
+
 ## Doğrulama
 
 | betik | ne yapar | çalıştır |
 |---|---|---|
 | `scripts/check-arac-uclari.mjs` | **ağ yok.** Uçların saf çekirdeğini (`lib/vehicle-day.ts`) ölçülmüş girdiyle çalıştırır + kaynak denetimi (kapı, saat dilimi sabiti, uydurma alan, kesin pencere). **103 denetim.** | `npm run lint:arac-uclari` (`verify` zincirinde) |
 | `scripts/verify-arac-uclari.mjs` | **canlı, salt okuma.** Beş ucun sorgu yolunu birebir tekrarlar, gövdeleri basar, iddiaları ölçer. | `npm run verify:arac-uclari -- <PLAKA> <YYYY-MM-DD>` |
+| `scripts/check-ariza-bildir.mjs` | **ağ yok.** U7'nin girdi + durum ayıklamasını (`lib/fault-reports.ts`) çalıştırır + üç yüzeyin kaynak denetimi + DDL. **94 denetim.** | `npm run lint:ariza-bildir` (`verify` zincirinde) |
+| `scripts/verify-ariza-bildir.mjs` | **canlı, YAZAR ve TEMİZLER.** Üç ucun da gerçek işleyicisini çağırır (token deponun `issueTokens`'ıyla mühürlenir): yaz → oku → kapat → yeniden aç → sil. **41 iddia.** | `npm run verify:ariza-bildir` |
 
-Muhafızın boş olmadığı **arıza enjeksiyonuyla** kanıtlandı: `motorDk`ın null
-kapısı kaldırılınca 3 denetim, `speed: r.speed_kmh` satırı silinince 1 denetim
-düştü; geri alınınca hepsi geçti.
+Sunucu modüllerini Node'da çalıştırmak `scripts/ts-server.mjs` ile. Dört
+derleme-anı bağı Node'da yeniden kuruluyor — hiçbiri kurgu değil, Next'in
+yaptığının aynısı:
+
+| bağ | neden |
+|---|---|
+| `server-only` → boş modül | Next'in derleme-anı işaretçisi, node_modules'da YOK |
+| `next/headers` → boş çerez deposu | `cookies()` istek kapsamı dışında fırlatır. Boş depo **üretimin kendisi**: mobil istemci token taşır, çerez taşımaz |
+| `next-intl/config` → `i18n/request.ts` | `next.config.ts` → `createNextIntlPlugin("./i18n/request.ts")` |
+| `next-intl` → `react-server` koşulu | koşulsuz İSTEMCİ derlemesi çözülüyor, `getTranslations` fırlıyor |
+
+Ayrıca depo içi `.json` içe aktarmaları bir ES modülüne sarılıyor (Node ESM
+`with { type: "json" }` şart koşar, bundler koşmaz) — içerik aynen geçer.
+
+**Muhafızların yükleyicisi (`ts-alias.mjs`) bunların HİÇBİRİNİ yapmaz, bilerek:**
+`check-*` betikleri saf katmana mahkûm kalmalı; saf katmana bir DB çağrısı
+sızarsa muhafız çalışmaz olur ve bunu hemen görürüz.
+
+⚠️ **`finally` içinde `process.exit()` istisnayı YUTAR.** İlk koşumda okuma
+bölümü sessizce atlandı ve betik "hepsi geçti" dedi. `catch` bloğu eklendi:
+istisna artık düşen iddia sayılıyor. Yazan bir doğrulama betiğinde temizlik
+`finally`de olmak zorunda, ama o blok hatayı gizleyebilir.
+
+Muhafızların boş olmadığı **arıza enjeksiyonuyla** kanıtlandı. U1–U5: `motorDk`ın
+null kapısı kaldırılınca 3 denetim, `speed: r.speed_kmh` satırı silinince 1
+denetim düştü. U7: boş-metin kapısı kaldırılıp kapı `requireMobileWorker`a
+gevşetilip `durum` gövdeden okunacak şekilde bozulunca **9 denetim** düştü.
+U7b/U7c: durum kümesine `islemde` eklenince, liste sıralaması ters çevrilince
+ve `update` nesnesine `aciklama` sızdırılınca **4 denetim** düştü.
+Geri alınınca hepsi geçti.
+
+**Enjeksiyon muhafızın kendisini üç kez düzeltti:** dar regex
+`(body as {...}).durum` ve `(body as {...}).aciklama` sarmallarını kaçırıyordu;
+bir denetim de `update`'i YANLIŞ DOSYADA arıyordu (yazma route'ta değil sorgu
+katmanında) ve enjekte edilen arıza sessizce geçmişti. Üçü de düzeltildi —
+enjeksiyon yapılmasaydı üç denetim de yalancı yeşil kalacaktı.
 
 Canlı betiğin U2 bölümü artık **dizi eşitliği** sınıyor: eski ±1 gün parantezi
 yolu yeniden kurulup yeni kesin pencereyle elemanı elemanına karşılaştırılıyor.

@@ -1,0 +1,40 @@
+-- 055_vehicle_device_model.sql — TAKİP CİHAZININ ADI (künye satırı)
+--
+-- ⚠️ BU DOSYA CLAUDE TARAFINDAN ÇALIŞTIRILMADI. Volkan Supabase SQL editöründe
+-- kendisi çalıştırır. Uç tarafı kolon olsa da olmasa da çalışır (aşağıya bak).
+--
+-- ── NE İÇİN ────────────────────────────────────────────────────────────────
+-- Mobil araç künyesindeki "Takip cihazı" satırı bugün ÜRETİLEMİYOR:
+--   flespi_device_id → bir sayı (ör. 6237914), cihaz adı değil
+--   imei             → bir seri numarası
+--   vin              → aracın şasi numarası, cihazla ilgisi yok
+-- Cihaz modeli ("Teltonika FMC003") depoda YALNIZ kod yorumlarında geçiyor —
+-- veri olarak hiçbir tabloda durmuyor (10.08.2026 ölçümü: `vehicles.device_model`
+-- kolonu YOK, hata 42703). Referans tasarımdaki "Galzura Tracker GT-4" satırı
+-- bu yüzden uydurma olurdu.
+--
+-- ── NEDEN KOLON, NEDEN SABİT DEĞİL ─────────────────────────────────────────
+-- Filodaki her cihaz aynı model DEĞİL (26 cihaza FMC003 kurulum komutu basıldı,
+-- toplam 29 cihazlı araç var). Kodda tek bir sabit yazmak üç aracı yanlış
+-- etiketlerdi ve yanlış olduğu hiçbir yerden anlaşılmazdı. Doğru yer kayıt
+-- bazında bir alandır.
+--
+-- ── GERİYE DÖNÜK ETKİ YOK ──────────────────────────────────────────────────
+-- Additive ve nullable: hiçbir sorgu, hiçbir sayı, hiçbir ekran değişmez.
+-- Kolon eklendiği anda `getVehicleDetail`in `select("*")`i onu getirmeye başlar
+-- ve `/api/mobile/vehicles/[id]` → `cihaz.ad` doldurulur. Kolon EKLENMEZSE uç
+-- aynı alanı null döndürür ve hiçbir yerde hata olmaz — mobil ekran o satırı
+-- boş satır çizmez, düşürür ("boş satır çizilmez" kuralı).
+--
+-- ── DOLDURMA ───────────────────────────────────────────────────────────────
+-- Elle. Kolon eklendikten sonra bilinen filoya toplu yazmak istenirse (ÖRNEK,
+-- çalıştırılmadı — hangi aracın hangi cihazı taşıdığı Volkan'da):
+--   update public.vehicles set device_model = 'Teltonika FMC003'
+--   where flespi_device_id is not null and device_model is null;
+-- Bu satır BİLEREK migration'ın dışında: 29 cihazın hepsinin FMC003 olduğu
+-- DOĞRULANMADI ve doğrulanmadan yazmak, uydurmayı veriye çevirmek olurdu.
+--
+-- Gizlilik: bu dosyada plaka/isim YOK.
+
+alter table public.vehicles
+  add column if not exists device_model text;

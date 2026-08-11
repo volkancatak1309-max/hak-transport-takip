@@ -10,13 +10,15 @@
     "lint:test-filters": "node scripts/check-test-filters.mjs",
     "lint:owner-scope": "node scripts/check-owner-scope.mjs",
     "lint:tenant-defaults": "node scripts/check-tenant-defaults.mjs",
+    "lint:arac-uclari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-alias.mjs scripts/check-arac-uclari.mjs",
+    "verify:arac-uclari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-alias.mjs scripts/verify-arac-uclari.mjs",
     "verify:test-hidden": "node scripts/verify-test-hidden.mjs",
     "verify:autoshift-parity": "node scripts/verify-autoshift-parity.mjs",
     "verify:plate-parity": "node scripts/verify-plate-parity.mjs",
     "verify:tz-parity": "node scripts/verify-tz-parity.mjs",
     "brand:assets": "node scripts/gen-brand-assets.mjs",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
-    "verify": "npm run lint && npm run lint:test-filters && npm run lint:owner-scope && npm run build && npm run lint:tenant-defaults"
+    "verify": "npm run lint && npm run lint:test-filters && npm run lint:owner-scope && npm run lint:arac-uclari && npm run build && npm run lint:tenant-defaults"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

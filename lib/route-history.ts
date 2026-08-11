@@ -1,7 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { listVehicleTrack } from "@/lib/telemetry";
-import { viennaDayKey } from "@/lib/format";
+import { gunPenceresi, seyrelt } from "@/lib/vehicle-day";
 
 export type RoutePoint = {
   lat: number;
@@ -10,6 +10,20 @@ export type RoutePoint = {
   /** Device course 0..359, when the source carries it (device GPS). Phone-GPS
    *  (driver_locations) routes leave it undefined. */
   heading?: number | null;
+  /**
+   * Speed at the fix, km/h — and ignition state, both straight off the device.
+   *
+   * 10.08.2026: `listVehicleTrack` has ALWAYS selected these two columns and
+   * `getVehicleDeviceRoute` was throwing them away in the `.map()` below. The
+   * replay scrubber therefore had no km/h to print and no way to tell a moving
+   * vehicle from a parked-with-engine-on one. Additive: the panel's RouteReplay
+   * reads neither field today, so nothing on that screen changes; the mobile
+   * route endpoint (/api/mobile/vehicles/[id]/rota) is the first consumer.
+   *
+   * Optional, not null-typed, because phone-GPS routes never had them.
+   */
+  speed?: number | null;
+  ignition?: boolean | null;
 };
 export type LatLng = [number, number];
 
@@ -32,16 +46,6 @@ export type RouteDay = {
 const OSRM_MATCH = "https://router.project-osrm.org/match/v1/driving/";
 const MATCH_INPUT_MAX = 180; // coords sent to OSRM (it returns a dense geometry)
 const MATCH_CHUNK = 90; // OSRM public demo coordinate cap per request
-
-/** Downsample to a fixed cap, always keeping first & last. */
-function cap(points: RoutePoint[], max: number): RoutePoint[] {
-  if (points.length <= max) return points;
-  const step = (points.length - 1) / (max - 1);
-  const out: RoutePoint[] = [];
-  for (let i = 0; i < max; i++) out.push(points[Math.round(i * step)]);
-  out[out.length - 1] = points[points.length - 1];
-  return out;
-}
 
 async function matchChunk(chunk: RoutePoint[]): Promise<LatLng[] | null> {
   if (chunk.length < 2) return null;
@@ -78,7 +82,7 @@ async function buildMatchedGeometry(
   const raw: LatLng[] = points.map((p) => [p.lat, p.lng]);
   if (points.length < 3) return { geometry: raw, matched: false };
 
-  const input = cap(points, MATCH_INPUT_MAX);
+  const input = seyrelt(points, MATCH_INPUT_MAX);
   const chunks: RoutePoint[][] = [];
   for (let i = 0; i < input.length; i += MATCH_CHUNK - 1) {
     chunks.push(input.slice(i, i + MATCH_CHUNK));
@@ -104,25 +108,18 @@ async function buildMatchedGeometry(
 
 const MAX_POINTS = 900; // keep replay smooth even on long days
 
-/** Evenly downsample, always preserving the first & last point. */
-function sample(points: RoutePoint[], max = MAX_POINTS): RoutePoint[] {
-  if (points.length <= max) return points;
-  const step = (points.length - 1) / (max - 1);
-  const out: RoutePoint[] = [];
-  for (let i = 0; i < max; i++) out.push(points[Math.round(i * step)]);
-  // guarantee the true last point
-  out[out.length - 1] = points[points.length - 1];
-  return out;
-}
-
-/** UTC window that safely brackets a Vienna calendar day (±1 day for DST/offset). */
-function dayWindow(date: string): { gte: string; lt: string } {
-  const base = new Date(`${date}T00:00:00Z`);
-  const gte = new Date(base);
-  gte.setUTCDate(gte.getUTCDate() - 1);
-  const lt = new Date(base);
-  lt.setUTCDate(lt.getUTCDate() + 2);
-  return { gte: gte.toISOString(), lt: lt.toISOString() };
+/** Empty day — unparseable date, or a vehicle with no fixes that day. */
+function bosGun(date: string, plate: string | null): RouteDay {
+  return {
+    date,
+    points: [],
+    geometry: [],
+    matched: false,
+    totalRaw: 0,
+    plate,
+    driverName: null,
+    driverId: null,
+  };
 }
 
 /*
@@ -142,21 +139,62 @@ function dayWindow(date: string): { gte: string; lt: string } {
  */
 export async function getVehicleDeviceRoute(
   vehicleId: string,
-  date: string
+  date: string,
+  /**
+   * `match: false` skips the OSRM road-snapping round-trip and returns the raw
+   * straight-line geometry. The panel keeps the default (true) — the mobile
+   * endpoint turns it off, because OSRM is a 6-second EXTERNAL dependency and a
+   * phone-sized preview line does not earn it (same call the shift-detail
+   * endpoint already made).
+   */
+  opts: { match?: boolean } = {}
 ): Promise<RouteDay> {
-  const { gte, lt } = dayWindow(date);
+  /**
+   * ── PENCERE: ±1 GÜN PARANTEZİ → KESİN KİRACI GÜNÜ (11.08.2026) ───────────
+   *
+   * Eskiden gün, ±1 günlük bir UTC parantezinde okunup `viennaDayKey` ile
+   * süzülüyordu — yani üç günün satırları çekilip ikisi atılıyordu. Kesin
+   * kiracı-gün sınırı (`gunPenceresi`, lib/format.ts'in DST-güvenli
+   * yardımcıları) aynı kümeyi doğrudan seçiyor. ÖLÇÜLDÜ (canlı HAK61, 5 araç-gün,
+   * her biri 3 tur): dönen nokta dizisi BİREBİR aynı, okunan satır 2,7× az,
+   * süre ~3,0 sn → ~0,9 sn. Panelin rota sayfası da bu fonksiyonu çağırıyor.
+   *
+   * Süzgeç KALDIRILDI çünkü artık hiçbir şeyi elemiyor — ve ucuz da değildi:
+   * satır başına bir `Intl` çağrısıydı (yoğun günde 4.000+ kez).
+   *
+   * ⚠️ Teorik tek fark: sorgu `.lte(gün sonu)` ile kapanıyor ve gün sonu
+   * milisaniye çözünürlüğünde (23:59:59.999). 23:59:59.9991-23:59:59.9999
+   * bandındaki bir satır eskiden gelirdi, artık gelmez. `device_telemetry`
+   * damgaları santisaniye çözünürlüğünde (ör. "04:50:08.01") — o bantta satır
+   * ÜRETİLEMEZ. Beş araç-günün beşinde de fark 0 ölçüldü.
+   */
+  const pencere = gunPenceresi(date);
+  // Plaka ve iz PARALEL okunur (eski davranış). Geçersiz tarihte iz sorgusu
+  // hiç açılmaz ama plaka yine gelir — boş gün ekranı başlığını yazabilsin.
   const [{ data: vehicle }, track] = await Promise.all([
     supabaseAdmin.from("vehicles").select("plate").eq("id", vehicleId).maybeSingle(),
-    listVehicleTrack(vehicleId, gte, lt),
+    pencere ? listVehicleTrack(vehicleId, pencere.baslangic, pencere.bitis) : [],
   ]);
   const plate = (vehicle?.plate as string) ?? null;
+  // Ayrıştırılamayan tarih artık BOŞ GÜN döndürür. Eskiden `new Date("çöp")`
+  // üzerinden `toISOString()` RangeError atıyor ve panel sayfasını komple
+  // düşürüyordu (`?date=` elle düzenlenebilir bir arama parametresi).
+  if (!pencere) return bosGun(date, plate);
 
-  const rawPts: RoutePoint[] = track
-    .filter((r) => viennaDayKey(r.recorded_at) === date)
-    .map((r) => ({ lat: r.latitude, lng: r.longitude, t: r.recorded_at, heading: r.heading }));
+  const rawPts: RoutePoint[] = track.map((r) => ({
+    lat: r.latitude,
+    lng: r.longitude,
+    t: r.recorded_at,
+    heading: r.heading,
+    speed: r.speed_kmh,
+    ignition: r.ignition_on,
+  }));
 
-  const points = sample(rawPts);
-  const { geometry, matched } = await buildMatchedGeometry(points);
+  const points = seyrelt(rawPts, MAX_POINTS);
+  const { geometry, matched } =
+    opts.match === false
+      ? { geometry: points.map((p) => [p.lat, p.lng] as LatLng), matched: false }
+      : await buildMatchedGeometry(points);
   // Show the heading arrow only if the device actually reported a course.
   const directional = rawPts.some((p) => p.heading !== null && p.heading !== undefined);
 

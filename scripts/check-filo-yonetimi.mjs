@@ -294,8 +294,16 @@ kontrol("059 hiçbir kolon DÜŞÜRMÜYOR", !/drop column/i.test(ddlKod));
 kontrol("059 filo indeksi kuruyor", /create index if not exists idx_vehicles_fleet/.test(ddlKod));
 kontrol("059 RLS'i açıkça kapatıyor", /alter table public\.fleets disable row level security/.test(ddlKod));
 kontrol("059 PostgREST önbelleğini tazeliyor", /notify pgrst, 'reload schema'/.test(ddlKod));
-// Bu dosya HENÜZ ÇALIŞTIRILMADI ve bunu söylemeli (058'in tersi durumu).
-kontrol("059 çalıştırılmadığını SÖYLÜYOR", /HENÜZ ÇALIŞTIRILMADI/.test(ddl));
+/**
+ * DDL KAYDI DURUMUNU SÖYLEMELİ. 11.08.2026'da çalıştırıldı; başlık "HENÜZ
+ * ÇALIŞTIRILMADI" derken bırakılsaydı bir sonraki tur onu bekleyen bir iş
+ * sanardı — ve daha kötüsü, yeni kurulum listesine alınıp alınmayacağı
+ * belirsiz kalırdı. 056/057/058 ile aynı başlık biçimi.
+ */
+kontrol("059 çalıştırıldığını kayda geçiriyor", /SUPABASE'DE ÇALIŞTIRILDI/.test(ddl));
+kontrol("059 bekliyor gibi görünmüyor", !/HENÜZ ÇALIŞTIRILMADI/.test(ddl));
+// Ölçülemeyen tek şey (indeks) SÖYLENMELİ — sessizce "hepsi doğrulandı" olmasın.
+kontrol("059 ölçülemeyen indeksi ÖLÇÜLMEDİ diye işaretliyor", /idx_vehicles_fleet: ÖLÇÜLMEDİ/.test(ddl));
 /**
  * Gizlilik: DDL dosyalarına gerçek plaka/kişi/e-posta yazılmaz (031'deki kural).
  */

@@ -1,11 +1,27 @@
 -- 059_fleets.sql — İSİMLİ FİLOLAR (kiracı başına en fazla 5)
 --
--- ⚠️⚠️ BU DOSYA HENÜZ ÇALIŞTIRILMADI. Claude ÇALIŞTIRMAZ — Volkan Supabase SQL
--- Editor'da elle çalıştırır. Çalıştırılana kadar:
+-- ⚠️ BU DDL VOLKAN TARAFINDAN 11.08.2026'DA SUPABASE'DE ÇALIŞTIRILDI ve HAK61
+-- canlısında UYGULANMIŞ durumdadır. Bu dosya deponun ŞEMA KAYDIDIR — yeni bir
+-- kurulum migration listesini buradan yürütecek. Claude tarafından çalıştırılmadı.
+--
+-- ── UYGULANDIKTAN SONRA CANLIDA ÖLÇÜLDÜ (11.08.2026) ──────────────────────
+-- PostgREST pg_catalog'a erişemediği için kısıtlar ADIYLA değil DAVRANIŞLARIYLA
+-- ölçüldü (CHECK satır düzeyinde, FK AFTER trigger → CHECK önce patlar; yani
+-- 23503 almak "eski CHECK düştü VE FK kuruldu" demektir):
+--   · fleets 2 satır — bordo/1/name=null · mavi/2/name=null            ✓
+--   · sort_order 6/0/-1 → 23514 · sıra 1 ikinci kez → 23505 (tavan yapısal) ✓
+--   · vehicles.fleet='yok'  → 23503 (23514 DEĞİL) → eski CHECK düştü, FK var ✓
+--   · üçüncü filo kodu açılıp araç oraya taşınabildi                    ✓
+--   · içinde aracı olan filo silinemedi → 23503 (on delete restrict)    ✓
+--   · workers.managed_fleet='yok' → 23503                               ✓
+--   · idx_vehicles_fleet: ÖLÇÜLMEDİ — PostgREST pg_catalog'u dışa açmıyor.
+--     SQL Editor'da doğrulanır:
+--       select indexname from pg_indexes where indexname = 'idx_vehicles_fleet';
+--
+-- Uygulanmamış kurulumda (Sendigo/galzura-demo) uçların davranışı:
 --   · GET  /api/mobile/fleets            ÇALIŞIR (filolar vehicles.fleet'ten türetilir)
---   · POST /api/mobile/fleets/[id]/atamalar ÇALIŞIR (yazdığı kolon bugün var)
+--   · POST /api/mobile/fleets/[id]/atamalar ÇALIŞIR (yazdığı kolon zaten var)
 --   · POST /api/mobile/fleets  ve  PATCH /api/mobile/fleets/[id]  →  503 tablo_yok
--- Yani okuma ve taşıma bugün canlı; YENİ FİLO ve YENİDEN ADLANDIRMA bu DDL'i bekler.
 --
 -- ═══════════════════════════════════════════════════════════════════════════
 --  ÖNCE ÖLÇÜLDÜ (canlı HAK61, 11.08.2026)

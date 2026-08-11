@@ -43,6 +43,12 @@ let olculmeyen = 0;
 const baslangicFilolari = new Map();
 /** Bu koşumda filosuna dokunulan araçlar. */
 const dokunulan = new Set();
+/** Bu koşumda AÇILAN filo kodları — hepsi `finally`de silinir. */
+const acilanFilolar = new Set();
+/** kod → koşum başındaki `fleets.name`. Adlandırma denemeleri bundan geri alınır. */
+const filoAdiEski = new Map();
+/** Koşum başındaki `fleets` satırları; tablo yoksa null. */
+let basFleets = null;
 
 function iddia(baslik, kosul, kanit) {
   console.log(`  ${kosul ? "✓" : "✗"} ${baslik}${kanit ? "  —  " + kanit : ""}`);
@@ -150,6 +156,22 @@ try {
 
   const basAraclar = await dagilim();
   for (const v of basAraclar) baslangicFilolari.set(v.id, v.fleet);
+
+  /**
+   * `fleets` anlık görüntüsü — TEMİZLİĞİN ÖLÇÜ TABANI. Koşum sonunda tablo bu
+   * hâline dönmüş olmalı: ne fazladan satır, ne değişmiş bir ad.
+   * Tablo yoksa (059 uygulanmamış kurulum) null kalır ve o bloklar atlanır.
+   */
+  {
+    const { data, error } = await supabaseAdmin
+      .from("fleets")
+      .select("code, name, sort_order")
+      .order("sort_order");
+    if (!error) {
+      basFleets = data ?? [];
+      for (const r of basFleets) filoAdiEski.set(r.code, r.name ?? null);
+    }
+  }
   const basSayim = {};
   for (const v of basAraclar) basSayim[v.fleet] = (basSayim[v.fleet] ?? 0) + 1;
   console.log(`║ patron  ${patron.name.slice(0, 3)}***`);
@@ -269,20 +291,78 @@ try {
   iddia("too_long sınırı ve uzunluğu söyler", uzunAd.json?.enFazla === FILO_ADI_MAX && uzunAd.json?.uzunluk === FILO_ADI_MAX + 1, `enFazla=${uzunAd.json?.enFazla} uzunluk=${uzunAd.json?.uzunluk}`);
 
   const bosGovde = await filoAc(undefined, patronToken);
-  if (tabloVar) {
-    iddia("adsız POST → 201 (varsayılan ad)", bosGovde.status === 201, String(bosGovde.status));
-    iddia("varsayılan ad 'N. Filo' kalıbında", /^\d+\. Filo$/.test(bosGovde.json?.filo?.ad ?? ""), bosGovde.json?.filo?.ad);
-    iddia("ad kiracıya ait DEĞİL (adOzel:false)", bosGovde.json?.filo?.adOzel === false, String(bosGovde.json?.filo?.adOzel));
-    // Açılan filo hemen SİLİNİR: bu koşum kalıcı iz bırakmaz.
-    if (bosGovde.json?.filo?.kod) {
-      await supabaseAdmin.from("fleets").delete().eq("code", bosGovde.json.filo.kod);
-      console.log(`  · açılan test filosu silindi: ${bosGovde.json.filo.kod}`);
-    }
-  } else {
+  if (!tabloVar) {
     // ⚠️ ASIL İDDİA: 059 yokken uç SESSİZCE başarısız olmuyor, SEBEBİNİ söylüyor.
     iddia("059 yokken adsız POST → 503 db_error", bosGovde.status === 503 && bosGovde.json?.error === "db_error", `${bosGovde.status} ${bosGovde.json?.error}`);
     iddia("sebep 'tablo_yok' (genel hata DEĞİL)", bosGovde.json?.sebep === "tablo_yok", String(bosGovde.json?.sebep));
+    olculmedi("adsız POST mutlu yolu", "migration 059 uygulanmamış");
     olculmedi("tavan aşımı → 400 limit_reached", "migration 059 uygulanmamış");
+  } else {
+    if (bosGovde.json?.filo?.kod) acilanFilolar.add(bosGovde.json.filo.kod);
+    iddia("adsız POST → 201", bosGovde.status === 201, String(bosGovde.status));
+    const ilk = bosGovde.json?.filo;
+    iddia("varsayılan ad 'N. Filo' kalıbında", /^\d+\. Filo$/.test(ilk?.ad ?? ""), ilk?.ad);
+    iddia("ad kiracıya ait DEĞİL (adOzel:false)", ilk?.adOzel === false, String(ilk?.adOzel));
+    // Kod SUNUCU üretir ve SIRADAN türer: ilk boş yuva 3 → 'filo3'.
+    iddia("kod sıradan türetildi", ilk?.kod === `filo${ilk?.sira}`, `${ilk?.kod} / sıra ${ilk?.sira}`);
+    iddia("sıra EN KÜÇÜK BOŞ yuva (3)", ilk?.sira === basFleets.length + 1, String(ilk?.sira));
+    iddia("varsayılan ad sırayla tutarlı", ilk?.ad === `${ilk?.sira}. Filo`, ilk?.ad);
+    // DB'de gerçekten ADSIZ duruyor: "3. Filo" metni tabloya YAZILMAZ, türetilir.
+    const { data: dbYeni } = await supabaseAdmin
+      .from("fleets")
+      .select("code, name, sort_order")
+      .eq("code", ilk?.kod ?? "")
+      .maybeSingle();
+    iddia("DB'de satır var", !!dbYeni, dbYeni?.code);
+    iddia("DB'de name NULL (varsayılan ad TÜRETİLİYOR, yazılmıyor)", dbYeni?.name === null, JSON.stringify(dbYeni?.name));
+
+    // ── ADLI AÇMA ────────────────────────────────────────────────────────
+    const adli = await filoAc({ ad: "  QA Kuzey Bölge  " }, patronToken);
+    if (adli.json?.filo?.kod) acilanFilolar.add(adli.json.filo.kod);
+    iddia("adlı POST → 201", adli.status === 201, String(adli.status));
+    iddia("ad TRIM edilerek yazıldı", adli.json?.filo?.ad === "QA Kuzey Bölge", adli.json?.filo?.ad);
+    iddia("adOzel:true", adli.json?.filo?.adOzel === true, String(adli.json?.filo?.adOzel));
+    iddia("sıra bir sonraki boş yuva", adli.json?.filo?.sira === (ilk?.sira ?? 0) + 1, String(adli.json?.filo?.sira));
+
+    // ── YENİ FİLO LİSTEDE GÖRÜNÜYOR VE BOŞ ───────────────────────────────
+    const araListe = await filolar(patronToken);
+    const yeniSatir = (araListe.json?.filolar ?? []).find((f) => f.kod === ilk?.kod);
+    iddia("yeni filo GET listesinde", !!yeniSatir, yeniSatir?.kod);
+    iddia("yeni filo boş (0 araç / 0 personel)", yeniSatir?.aracSayisi === 0 && yeniSatir?.personelSayisi === 0, `${yeniSatir?.aracSayisi}/${yeniSatir?.personelSayisi}`);
+    iddia("liste hâlâ sırada", (araListe.json?.filolar ?? []).every((f, i, a) => i === 0 || a[i - 1].sira < f.sira), (araListe.json?.filolar ?? []).map((f) => f.sira).join("<"));
+
+    // ══ TAVAN — daha önce ÖLÇÜLEMEYEN tek iddia ════════════════════════════
+    console.log(`\n── TAVAN (${FILO_TAVANI}) ──`);
+    let acilan = (araListe.json?.filolar ?? []).length;
+    let guvenlik = 0;
+    while (acilan < FILO_TAVANI && guvenlik++ < FILO_TAVANI + 2) {
+      const r = await filoAc({}, patronToken);
+      if (r.json?.filo?.kod) acilanFilolar.add(r.json.filo.kod);
+      iddia(`${acilan + 1}. filo açıldı → 201`, r.status === 201, `${r.status} ${r.json?.filo?.kod ?? r.json?.error}`);
+      if (r.status !== 201) break;
+      acilan++;
+    }
+    const doluListe = await filolar(patronToken);
+    iddia(`tavan doldu (${FILO_TAVANI} filo)`, (doluListe.json?.filolar ?? []).length === FILO_TAVANI, `${(doluListe.json?.filolar ?? []).length}/${FILO_TAVANI}`);
+    iddia("kodlar filo3..filo5 olarak üretildi", [...acilanFilolar].sort().join(",") === "filo3,filo4,filo5", [...acilanFilolar].sort().join(","));
+
+    // ⚠️ ASIL ÖLÇÜM: altıncı filo.
+    const tasan = await filoAc({}, patronToken);
+    iddia("6. filo → 400 limit_reached", tasan.status === 400 && tasan.json?.error === "limit_reached", `${tasan.status} ${tasan.json?.error}`);
+    iddia("yanıt tavanı ve mevcudu söylüyor", tasan.json?.enFazla === FILO_TAVANI && tasan.json?.mevcut === FILO_TAVANI, `enFazla=${tasan.json?.enFazla} mevcut=${tasan.json?.mevcut}`);
+    const { count: dbSayi } = await supabaseAdmin.from("fleets").select("code", { count: "exact", head: true });
+    iddia("REDDEDİLEN 6. filo tabloya satır YAZMADI", dbSayi === FILO_TAVANI, `${dbSayi} satır`);
+    // Adlı da olsa tavan aşılamaz — sınır ada değil SAYIYA ait.
+    const tasanAdli = await filoAc({ ad: "QA Altinci" }, patronToken);
+    iddia("adlı 6. filo da → 400 limit_reached", tasanAdli.status === 400 && tasanAdli.json?.error === "limit_reached", `${tasanAdli.status} ${tasanAdli.json?.error}`);
+
+    /**
+     * TAVANIN ASIL UYGULAYICISI ŞEMA: uç atlansa bile 6. satır girmemeli.
+     * Doğrudan tabloya yazmayı deniyoruz — 1..5 CHECK'i reddetmeli.
+     */
+    const { error: ciplak } = await supabaseAdmin.from("fleets").insert({ code: "qa-altinci", sort_order: 6 });
+    iddia("uç atlansa bile ŞEMA 6. sırayı reddediyor", (ciplak?.code ?? "") === "23514", `${ciplak?.code ?? "hata yok"}`);
+    if (!ciplak) await supabaseAdmin.from("fleets").delete().eq("code", "qa-altinci");
   }
 
   // ══ YENİDEN ADLANDIRMA ═══════════════════════════════════════════════════
@@ -295,22 +375,64 @@ try {
   iddia("uzun ad → 400 too_long", pUzun.status === 400 && pUzun.json?.error === "too_long", `${pUzun.status} ${pUzun.json?.error}`);
 
   if (tabloVar) {
-    const { data: onceki } = await supabaseAdmin.from("fleets").select("code, name").eq("code", "mavi").maybeSingle();
+    /**
+     * ESKİ FİLO ÜZERİNDE ölçülüyor (mavi): asıl kullanım odur ve i18n
+     * varsayılanına DÖNÜŞ yalnız burada görülebilir. Geri alma `finally`de —
+     * araya bir istisna girse bile ad eski hâline döner.
+     */
+    const oncekiAd = filoAdiEski.get("mavi") ?? null;
+    const listeOnce = (await filolar(patronToken)).json?.filolar ?? [];
+    const turetilmisAd = listeOnce.find((f) => f.kod === "mavi")?.ad;
+    iddia("mavi'nin adı bugün TÜRETİLMİŞ (i18n/env)", turetilmisAd === "Mavi Filo", String(turetilmisAd));
+
     const yeniAd = `QA ${Date.now().toString(36)}`;
     const r1 = await adlandir("mavi", { ad: `  ${yeniAd}  ` }, patronToken);
     iddia("adlandırma → 200 + degisti:true", r1.status === 200 && r1.json?.degisti === true, `${r1.status} degisti=${r1.json?.degisti}`);
     iddia("ad TRIM edilerek yazıldı", r1.json?.filo?.ad === yeniAd, r1.json?.filo?.ad);
+    iddia("adOzel:true oldu", r1.json?.filo?.adOzel === true, String(r1.json?.filo?.adOzel));
     const { data: sonra } = await supabaseAdmin.from("fleets").select("code, name, sort_order").eq("code", "mavi").maybeSingle();
     iddia("DB'de ad yeni", sonra?.name === yeniAd, sonra?.name);
     iddia("KOD değişmedi", sonra?.code === "mavi", sonra?.code);
+    iddia("SIRA değişmedi", sonra?.sort_order === 2, String(sonra?.sort_order));
+    // Yeni ad LİSTEDE de görünmeli — yoksa yalnız yanıt değişmiş olurdu.
+    const listeSonra = (await filolar(patronToken)).json?.filolar ?? [];
+    iddia("yeni ad GET listesinde", listeSonra.find((f) => f.kod === "mavi")?.ad === yeniAd, listeSonra.find((f) => f.kod === "mavi")?.ad);
+    // Araç/personel sayıları adlandırmadan ETKİLENMEZ.
+    iddia(
+      "adlandırma sayıları DEĞİŞTİRMEDİ",
+      listeSonra.find((f) => f.kod === "mavi")?.aracSayisi === listeOnce.find((f) => f.kod === "mavi")?.aracSayisi,
+      `${listeOnce.find((f) => f.kod === "mavi")?.aracSayisi} → ${listeSonra.find((f) => f.kod === "mavi")?.aracSayisi}`
+    );
+
     const r2 = await adlandir("mavi", { ad: yeniAd }, patronToken);
     iddia("aynı ad ikinci kez → 200 + degisti:false", r2.status === 200 && r2.json?.degisti === false, `${r2.status} degisti=${r2.json?.degisti}`);
+
+    // ── BOŞ AD = VARSAYILANA DÖN ─────────────────────────────────────────
     const r3 = await adlandir("mavi", { ad: "" }, patronToken);
-    iddia("boş ad → varsayılana dön (adOzel:false)", r3.status === 200 && r3.json?.filo?.adOzel === false, `${r3.status} adOzel=${r3.json?.filo?.adOzel}`);
-    // Eski hâline geri yaz.
-    await supabaseAdmin.from("fleets").update({ name: onceki?.name ?? null }).eq("code", "mavi");
+    iddia("boş ad → 200 + adOzel:false", r3.status === 200 && r3.json?.filo?.adOzel === false, `${r3.status} adOzel=${r3.json?.filo?.adOzel}`);
+    iddia("ad i18n varsayılanına DÖNDÜ", r3.json?.filo?.ad === "Mavi Filo", r3.json?.filo?.ad);
+    const { data: bosSonra } = await supabaseAdmin.from("fleets").select("name").eq("code", "mavi").maybeSingle();
+    iddia("DB'de name NULL'a döndü", bosSonra?.name === null, JSON.stringify(bosSonra?.name));
+    const r4 = await adlandir("mavi", { ad: null }, patronToken);
+    iddia("ad:null → 200 + degisti:false (zaten varsayılan)", r4.status === 200 && r4.json?.degisti === false, `${r4.status} degisti=${r4.json?.degisti}`);
+    // Ad eski hâline `finally`de dönecek; burada ölçüm bitti.
+    if (oncekiAd !== null) filoAdiEski.set("mavi", oncekiAd);
+
+    // ── YENİ FİLONUN ADI: varsayılan "N. Filo"ya dönüş ───────────────────
+    const qaKod = [...acilanFilolar][0];
+    if (qaKod) {
+      const q1 = await adlandir(qaKod, { ad: "QA Yeniden" }, patronToken);
+      iddia("yeni filo adlandırılabiliyor", q1.status === 200 && q1.json?.filo?.ad === "QA Yeniden", q1.json?.filo?.ad);
+      const q2 = await adlandir(qaKod, { ad: "   " }, patronToken);
+      iddia("yalnız boşluk → 'N. Filo' varsayılanına dönüyor", /^\d+\. Filo$/.test(q2.json?.filo?.ad ?? ""), q2.json?.filo?.ad);
+    } else {
+      olculmedi("yeni filoda varsayılan ada dönüş", "QA filosu açılamadı");
+    }
+
     const yok = await adlandir("boyle-bir-filo-yok", { ad: "x" }, patronToken);
     iddia("olmayan filo → 404 not_found", yok.status === 404 && yok.json?.error === "not_found", `${yok.status} ${yok.json?.error}`);
+    const buyuk = await adlandir("MAVI", { ad: "x" }, patronToken);
+    iddia("büyük harfli kod ESNETİLMİYOR → 404", buyuk.status === 404, `${buyuk.status} ${buyuk.json?.error}`);
   } else {
     const r = await adlandir("mavi", { ad: "Kuzey" }, patronToken);
     iddia("059 yokken adlandırma → 503 db_error", r.status === 503 && r.json?.error === "db_error", `${r.status} ${r.json?.error}`);
@@ -334,7 +456,14 @@ try {
   iddia("bozuk kimliği SÖYLÜYOR", (tKotuId.json?.gecersiz ?? []).join(",") === "abc", String(tKotuId.json?.gecersiz));
   const tUzun = await tasi("mavi", { aracIdleri: Array.from({ length: ATAMA_LISTE_TAVANI + 1 }, () => YOK_UUID) }, patronToken);
   iddia("liste tavanı aşıldı → 400 too_long", tUzun.status === 400 && tUzun.json?.error === "too_long", `${tUzun.status} ${tUzun.json?.error}`);
-  const tYokFilo = await tasi("filo3", { aracIdleri: [YOK_UUID] }, patronToken);
+  /**
+   * ⚠️ KOD ASLA ÜRETİLMEYEN BİR DEĞER OLMALI. İlk yazımda burada "filo3"
+   * kullanılıyordu ve 059 canlıya alındıktan sonra iddia DÜŞTÜ (11.08.2026):
+   * yukarıdaki tavan ölçümü filo3'ü GERÇEKTEN açmıştı, yani iddianın öncülü
+   * koşumun ortasında geçersizleşiyordu. Uç doğru davranıyordu, betik yanlış
+   * soruyordu. `filoKoduUret` bu değeri hiçbir sırada üretemez.
+   */
+  const tYokFilo = await tasi("boyle-bir-filo-yok", { aracIdleri: [YOK_UUID] }, patronToken);
   iddia("tanınmayan filo → 404 not_found", tYokFilo.status === 404 && tYokFilo.json?.error === "not_found", `${tYokFilo.status} ${tYokFilo.json?.error}`);
   const tBuyukHarf = await tasi("MAVI", { aracIdleri: [YOK_UUID] }, patronToken);
   iddia("büyük harfli kod ESNETİLMİYOR → 404", tBuyukHarf.status === 404, `${tBuyukHarf.status} ${tBuyukHarf.json?.error}`);
@@ -504,6 +633,34 @@ try {
   const sonSayim = {};
   for (const v of son ?? []) sonSayim[v.fleet] = (sonSayim[v.fleet] ?? 0) + 1;
   console.log(`  · son ham dağılım ${JSON.stringify(sonSayim)}`);
+
+  // ── FİLO TABLOSU: açılanları sil, adları geri yaz ────────────────────────
+  if (basFleets) {
+    for (const kod of acilanFilolar) {
+      const { error } = await supabaseAdmin.from("fleets").delete().eq("code", kod);
+      if (error) {
+        // 23503 = içinde araç kalmış (on delete restrict). Sessizce geçilemez.
+        console.error(`  ✗ FİLO SİLİNEMEDİ ${kod}: ${error.code} ${error.message}`);
+        dusen++;
+      }
+    }
+    for (const [kod, ad] of filoAdiEski) {
+      await supabaseAdmin.from("fleets").update({ name: ad }).eq("code", kod);
+    }
+
+    // "Temizledim" demek yetmez — ÖLÇÜLÜR.
+    const { data: sonFleets } = await supabaseAdmin
+      .from("fleets")
+      .select("code, name, sort_order")
+      .order("sort_order");
+    const bas = JSON.stringify(basFleets.map((r) => [r.code, r.name, r.sort_order]));
+    const sonJ = JSON.stringify((sonFleets ?? []).map((r) => [r.code, r.name, r.sort_order]));
+    iddia(
+      `${acilanFilolar.size} QA filosu SİLİNDİ, adlar geri yazıldı`,
+      bas === sonJ,
+      `${(sonFleets ?? []).length} satır · ${(sonFleets ?? []).map((r) => `${r.code}=${r.name ?? "∅"}`).join(",")}`
+    );
+  }
 
   const kuyruk = olculmeyen ? ` · ${olculmeyen} iddia ÖLÇÜLMEDİ` : "";
   console.log(`\n${dusen === 0 ? "✓ TÜM ÖLÇÜLEBİLİR İDDİALAR CANLI VERİDE DOĞRULANDI" : `✗ ${dusen} iddia düştü`}${kuyruk}\n`);

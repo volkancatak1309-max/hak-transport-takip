@@ -22,6 +22,7 @@ import {
   ARIZA_DURUMLARI,
   arizaAciklamasiniAyikla,
   arizaDurumunuAyikla,
+  kolonYokMu,
   tabloYokMu,
 } from "@/lib/fault-reports";
 
@@ -101,6 +102,33 @@ for (const e of [
 ]) {
   kontrol(`tablo yok DEĞİL: ${e.code ?? "kodsuz"}`, tabloYokMu(e) === false);
 }
+
+// ══ 7b · KOLON YOK AYRIMI (migration 057) ══════════════════════════════════
+// "057 uygulanmamış" ile "tablo yok" ve "sorgu düştü" ÜÇ AYRI şey. İlkinde uç
+// çalışmaya devam eder, yalnız kapatma izi tutulmaz ve bunu SÖYLER.
+for (const e of [
+  { code: "42703", message: 'column vehicle_fault_reports.closed_at does not exist' },
+  { code: "PGRST204", message: "Could not find the 'closed_by' column of 'vehicle_fault_reports'" },
+  { code: null, message: "column closed_at does not exist" },
+]) {
+  kontrol(`kolon yok tanınıyor: ${e.code ?? "kodsuz"}`, kolonYokMu(e) === true);
+}
+for (const e of [
+  { code: "42P01", message: 'relation "public.vehicle_fault_reports" does not exist' },
+  { code: "57014", message: "canceling statement due to statement timeout" },
+  { code: null, message: null },
+]) {
+  kontrol(`kolon yok DEĞİL: ${e.code ?? "kodsuz"}`, kolonYokMu(e) === false);
+}
+// İki ayrım BİRBİRİNE karışmamalı: tablo yokken "kolon yok" demek, yöneticiye
+// 057'yi çalıştırtır ve asıl eksik 056 gizlenirdi.
+kontrol(
+  "tablo yok ↔ kolon yok ayrımı karışmıyor",
+  tabloYokMu({ code: "42P01", message: "relation does not exist" }) === true &&
+    kolonYokMu({ code: "42P01", message: "relation does not exist" }) === false &&
+    kolonYokMu({ code: "42703", message: "column closed_at does not exist" }) === true &&
+    tabloYokMu({ code: "42703", message: "column closed_at does not exist" }) === false
+);
 
 // ══ 8 · DURUM AYIKLAMA (PATCH ucu) ═════════════════════════════════════════
 kontrol("durum kümesi iki değerli", ARIZA_DURUMLARI.length === 2, ARIZA_DURUMLARI.join("/"));
@@ -211,8 +239,36 @@ kontrol("liste tavanı var", /\.limit\(ARIZA_LISTE_TAVANI\)/.test(dbSrc));
  * edilen arıza sessizce geçti. İkinci alan gövdeden sızmış demektir: bildirim
  * geçmişe dönük DEĞİŞTİRİLEBİLİR olurdu.
  */
-const updateBlok = /\.update\(\{([^}]*)\}\)/.exec(dbSrc)?.[1] ?? "";
-kontrol("durum yazması YALNIZ durum içeriyor", updateBlok.trim() === "durum", JSON.stringify(updateBlok.trim()));
+// Yama nesnesi artık değişken (`yama`); içine YALNIZ durum + 057 izi girmeli.
+kontrol("yama nesnesi durum ile kuruluyor", /const yama[^=]*=\s*\{\s*durum\s*\}/.test(dbSrc));
+kontrol(
+  "yamaya aciklama/reported_by SIZMIYOR",
+  !/yama\.(aciklama|reported_by|vehicle_id)\s*=/.test(dbSrc) && !/\.update\(\{[^}]*aciklama/.test(dbSrc)
+);
+
+// ── Kapatma izi (migration 057) ────────────────────────────────────────────
+// Kapanışta iz YAZILIR, yeniden açılışta NULL'a döner. İkincisi unutulursa
+// açık bir bildirim "falanca kapattı" diye görünmeye devam ederdi.
+kontrol("kapanışta closed_at yazılıyor", /closed_at\s*=\s*kapaniyor\s*\?/.test(dbSrc));
+kontrol("kapanışta closed_by OTURUMDAN", /closed_by\s*=\s*kapaniyor\s*\?\s*workerId/.test(dbSrc));
+kontrol("yeniden açılışta ikisi de null", /closed_at\s*=\s*kapaniyor\s*\?[^:]*:\s*null/.test(dbSrc) && /closed_by\s*=\s*kapaniyor\s*\?[^:]*:\s*null/.test(dbSrc));
+/**
+ * DEĞİŞİKLİK YOKSA YAZMA YOK — yoksa aynı durumu ikinci kez göndermek
+ * `closed_at`i TAZELER ve İLK kapatma anı kaybolur. Sessiz veri kaybı.
+ */
+kontrol("durum aynıysa DB'ye dokunulmuyor", /if\s*\(oncekiSatir\.durum === durum\)/.test(dbSrc));
+kontrol("kolon yoksa geri düşülüyor", dbSrc.includes("kolonYokMu(") && /izVar/.test(dbSrc));
+kontrol("liste de kolon yoksa geri düşüyor", (dbSrc.match(/kolonYokMu\(/g) ?? []).length >= 2);
+kontrol("closed_by adı da çözülüyor", /r\.closed_by/.test(dbSrc) && /kapatan:/.test(dbSrc));
+kontrol("PATCH oturumdaki kişiyi geçiriyor", /setFaultReportStatus\(id,\s*ayikla\.durum,\s*guard\.actor\.worker\.id\)/.test(patchSrc));
+kontrol("PATCH kapatma izini yanıtta söylüyor", /kapatmaIzi:\s*sonuc\.kapatmaIzi/.test(patchSrc));
+kontrol("araç detayı kapatma izini söylüyor", /arizaBildirimKapatmaIzi:/.test(detaySrc));
+
+// Migration 057 kaydı deponun şema listesinde duruyor mu.
+const ddl57 = readFileSync(path.join(ROOT, "db/migrations/057_fault_report_closed.sql"), "utf8");
+kontrol("057 closed_at ekliyor", /add column if not exists closed_at timestamptz/.test(ddl57));
+kontrol("057 closed_by ekliyor", /add column if not exists closed_by uuid references public\.workers\(id\)/.test(ddl57));
+kontrol("057 CASCADE koymuyor", !/closed_by[^,;]*on delete cascade/.test(ddl57));
 // Gömme (`select("…, workers(name)")`) YOK: ilişki şema önbelleğinde
 // çözülmezse tüm sorgu düşerdi; ad çözülemezse yalnız ad null olmalı, satır
 // kaybolmamalı. Denetim SELECT dizelerine bakar — dosyanın yorumları da

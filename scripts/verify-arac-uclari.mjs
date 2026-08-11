@@ -217,15 +217,13 @@ console.log(`\n║ ölçüm günü  ${hedefGun}   pencere ${pencere.baslangic} �
 
 // ══ U2 · GET /vehicles/[id]/rota ═══════════════════════════════════════════
 console.log(`\n── U2  GET …/rota?tarih=${hedefGun}&eslesme=0 ──`);
-// getVehicleDeviceRoute'un okuma yolu: ±1 gün UTC parantezi + viennaDayKey süzgeci.
-const base = new Date(`${hedefGun}T00:00:00Z`);
-const gte = new Date(base); gte.setUTCDate(gte.getUTCDate() - 1);
-const lt = new Date(base); lt.setUTCDate(lt.getUTCDate() + 2);
+// BUGÜNKÜ okuma yolu (11.08.2026'dan beri): KESİN kiracı-gün penceresi.
 const t2 = Date.now();
-const genisIz = await listVehicleTrack(arac.id, gte.toISOString(), lt.toISOString());
-const rawPts = genisIz
-  .filter((r) => viennaDayKey(r.recorded_at) === hedefGun)
-  .map((r) => ({ lat: r.latitude, lng: r.longitude, t: r.recorded_at, heading: r.heading, speed: r.speed_kmh, ignition: r.ignition_on }));
+const kesinIz = await listVehicleTrack(arac.id, pencere.baslangic, pencere.bitis);
+const rawPts = kesinIz.map((r) => ({
+  lat: r.latitude, lng: r.longitude, t: r.recorded_at,
+  heading: r.heading, speed: r.speed_kmh, ignition: r.ignition_on,
+}));
 const cizilen = seyrelt(rawPts, 900);
 const u2sure = Date.now() - t2;
 const noktalar = cizilen.map((p) => ({ lat: p.lat, lng: p.lng, an: p.t, hizKmh: p.speed ?? null, yon: p.heading ?? null, kontak: p.ignition ?? null }));
@@ -236,7 +234,7 @@ console.log(kisa({
   baslangic: noktalar[0] ?? null, bitis: noktalar.at(-1) ?? null,
   noktalar: noktalar.slice(0, 3),
 }, 1200));
-console.log(`  ⏱  ${u2sure} ms · ${genisIz.length} satır okundu → ${rawPts.length} gün içi → ${noktalar.length} çizilen`);
+console.log(`  ⏱  ${u2sure} ms · ${kesinIz.length} satır okundu → ${noktalar.length} çizilen`);
 if (noktalar.length === 0) {
   olculmedi("hizKmh / kontak iz üzerinde taşınıyor", "bu araç-günde hiç nokta yok");
 } else {
@@ -246,17 +244,32 @@ if (noktalar.length === 0) {
 iddia("ilk ve son nokta korundu", noktalar.length === 0 || (noktalar[0].an === rawPts[0].t && noktalar.at(-1).an === rawPts.at(-1).t));
 iddia("seyreltme SÖYLENDİ", noktalar.length === rawPts.length || noktalar.length < rawPts.length);
 
-// KESİN SINIR ↔ ±1 GÜN PARANTEZİ: iki okuma yolu aynı kümeyi mi veriyor?
+/**
+ * GERİYE DÖNÜK DENKLİK — 11.08.2026 pencere değişikliğinin kalıcı muhafızı.
+ *
+ * Eski yol (±1 gün UTC parantezi + `viennaDayKey` süzgeci) burada YENİDEN
+ * kurulup yeni yolla karşılaştırılıyor. Sınama SAYI değil DİZİ: her noktanın
+ * anı, konumu, hızı, kontağı ve yönü elemanı elemanına eşleşmeli. Sayı
+ * eşitliği "aynı küme" demek değildir.
+ */
 const t2b = Date.now();
-const kesinIz = await listVehicleTrack(arac.id, pencere.baslangic, pencere.bitis);
+const base = new Date(`${hedefGun}T00:00:00Z`);
+const gte = new Date(base); gte.setUTCDate(gte.getUTCDate() - 1);
+const lt = new Date(base); lt.setUTCDate(lt.getUTCDate() + 2);
+const genisIz = await listVehicleTrack(arac.id, gte.toISOString(), lt.toISOString());
+const eskiPts = genisIz
+  .filter((r) => viennaDayKey(r.recorded_at) === hedefGun)
+  .map((r) => `${r.recorded_at}|${r.latitude}|${r.longitude}|${r.speed_kmh}|${r.ignition_on}|${r.heading}`);
 const u2bsure = Date.now() - t2b;
+const yeniPts = rawPts.map((p) => `${p.t}|${p.lat}|${p.lng}|${p.speed}|${p.ignition}|${p.heading}`);
+const ilkFark = yeniPts.findIndex((v, i) => v !== eskiPts[i]);
 iddia(
-  "kesin gün sınırı = ±1 gün parantezi + süzgeç",
-  kesinIz.length === rawPts.length,
-  `${kesinIz.length} ↔ ${rawPts.length}`
+  "kesin pencere = ±1 gün parantezi (DİZİ eşitliği)",
+  eskiPts.length === yeniPts.length && ilkFark === -1,
+  ilkFark === -1 ? `${yeniPts.length} nokta, elemanı elemanına` : `ilk fark #${ilkFark}: ${eskiPts[ilkFark]} ↔ ${yeniPts[ilkFark]}`
 );
 console.log(
-  `  ⓘ  okuma maliyeti: parantez ${genisIz.length} satır / ${u2sure} ms  ·  kesin pencere ${kesinIz.length} satır / ${u2bsure} ms`
+  `  ⓘ  okuma maliyeti: ESKİ parantez ${genisIz.length} satır / ${u2bsure} ms  →  YENİ kesin pencere ${kesinIz.length} satır / ${u2sure} ms`
 );
 
 // ══ U3 · GET /vehicles/[id]/olaylar ════════════════════════════════════════
@@ -343,7 +356,7 @@ if (dm.error) {
 
 // ── izGunleri saf çekirdeği, canlı iz üzerinde ─────────────────────────────
 const grup = izGunleri(genisIz);
-console.log(`\n── izGunleri (saf) · ±1 gün penceresindeki ${genisIz.length} satır → ${grup.length} gün`);
+console.log(`\n── izGunleri (saf) · 3 günlük ham pencerede ${genisIz.length} satır → ${grup.length} gün`);
 console.log(`  ${grup.map((g) => `${g.tarih}:${g.nokta}`).join("  ")}`);
 iddia("gruplama gün sayımıyla tutarlı", (grup.find((g) => g.tarih === hedefGun)?.nokta ?? 0) === rawPts.length);
 

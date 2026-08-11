@@ -1,8 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { listVehicleTrack } from "@/lib/telemetry";
-import { viennaDayKey } from "@/lib/format";
-import { seyrelt } from "@/lib/vehicle-day";
+import { gunPenceresi, seyrelt } from "@/lib/vehicle-day";
 
 export type RoutePoint = {
   lat: number;
@@ -109,14 +108,18 @@ async function buildMatchedGeometry(
 
 const MAX_POINTS = 900; // keep replay smooth even on long days
 
-/** UTC window that safely brackets a Vienna calendar day (±1 day for DST/offset). */
-function dayWindow(date: string): { gte: string; lt: string } {
-  const base = new Date(`${date}T00:00:00Z`);
-  const gte = new Date(base);
-  gte.setUTCDate(gte.getUTCDate() - 1);
-  const lt = new Date(base);
-  lt.setUTCDate(lt.getUTCDate() + 2);
-  return { gte: gte.toISOString(), lt: lt.toISOString() };
+/** Empty day — unparseable date, or a vehicle with no fixes that day. */
+function bosGun(date: string, plate: string | null): RouteDay {
+  return {
+    date,
+    points: [],
+    geometry: [],
+    matched: false,
+    totalRaw: 0,
+    plate,
+    driverName: null,
+    driverId: null,
+  };
 }
 
 /*
@@ -146,23 +149,46 @@ export async function getVehicleDeviceRoute(
    */
   opts: { match?: boolean } = {}
 ): Promise<RouteDay> {
-  const { gte, lt } = dayWindow(date);
+  /**
+   * ── PENCERE: ±1 GÜN PARANTEZİ → KESİN KİRACI GÜNÜ (11.08.2026) ───────────
+   *
+   * Eskiden gün, ±1 günlük bir UTC parantezinde okunup `viennaDayKey` ile
+   * süzülüyordu — yani üç günün satırları çekilip ikisi atılıyordu. Kesin
+   * kiracı-gün sınırı (`gunPenceresi`, lib/format.ts'in DST-güvenli
+   * yardımcıları) aynı kümeyi doğrudan seçiyor. ÖLÇÜLDÜ (canlı HAK61, 5 araç-gün,
+   * her biri 3 tur): dönen nokta dizisi BİREBİR aynı, okunan satır 2,7× az,
+   * süre ~3,0 sn → ~0,9 sn. Panelin rota sayfası da bu fonksiyonu çağırıyor.
+   *
+   * Süzgeç KALDIRILDI çünkü artık hiçbir şeyi elemiyor — ve ucuz da değildi:
+   * satır başına bir `Intl` çağrısıydı (yoğun günde 4.000+ kez).
+   *
+   * ⚠️ Teorik tek fark: sorgu `.lte(gün sonu)` ile kapanıyor ve gün sonu
+   * milisaniye çözünürlüğünde (23:59:59.999). 23:59:59.9991-23:59:59.9999
+   * bandındaki bir satır eskiden gelirdi, artık gelmez. `device_telemetry`
+   * damgaları santisaniye çözünürlüğünde (ör. "04:50:08.01") — o bantta satır
+   * ÜRETİLEMEZ. Beş araç-günün beşinde de fark 0 ölçüldü.
+   */
+  const pencere = gunPenceresi(date);
+  // Plaka ve iz PARALEL okunur (eski davranış). Geçersiz tarihte iz sorgusu
+  // hiç açılmaz ama plaka yine gelir — boş gün ekranı başlığını yazabilsin.
   const [{ data: vehicle }, track] = await Promise.all([
     supabaseAdmin.from("vehicles").select("plate").eq("id", vehicleId).maybeSingle(),
-    listVehicleTrack(vehicleId, gte, lt),
+    pencere ? listVehicleTrack(vehicleId, pencere.baslangic, pencere.bitis) : [],
   ]);
   const plate = (vehicle?.plate as string) ?? null;
+  // Ayrıştırılamayan tarih artık BOŞ GÜN döndürür. Eskiden `new Date("çöp")`
+  // üzerinden `toISOString()` RangeError atıyor ve panel sayfasını komple
+  // düşürüyordu (`?date=` elle düzenlenebilir bir arama parametresi).
+  if (!pencere) return bosGun(date, plate);
 
-  const rawPts: RoutePoint[] = track
-    .filter((r) => viennaDayKey(r.recorded_at) === date)
-    .map((r) => ({
-      lat: r.latitude,
-      lng: r.longitude,
-      t: r.recorded_at,
-      heading: r.heading,
-      speed: r.speed_kmh,
-      ignition: r.ignition_on,
-    }));
+  const rawPts: RoutePoint[] = track.map((r) => ({
+    lat: r.latitude,
+    lng: r.longitude,
+    t: r.recorded_at,
+    heading: r.heading,
+    speed: r.speed_kmh,
+    ignition: r.ignition_on,
+  }));
 
   const points = seyrelt(rawPts, MAX_POINTS);
   const { geometry, matched } =

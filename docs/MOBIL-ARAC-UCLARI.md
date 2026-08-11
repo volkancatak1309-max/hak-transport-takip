@@ -89,18 +89,40 @@ Düzeltme additive: panelin `RouteReplay`'i iki alanı da okumuyor, o ekran değ
 }
 ```
 
-⏳ **Açık maliyet (Volkan'ın kararı).** `getVehicleDeviceRoute` günü ±1 gün UTC
-parantezinde okuyup `viennaDayKey` ile süzüyor. İki okuma yolunun **aynı kümeyi**
-verdiği ölçüldü (4113 ↔ 4113), ama parantez **2,7× fazla satır** okuyor:
+### ✅ Pencere düzeltildi (11.08.2026, onaylandı)
 
-| okuma yolu | satır | süre |
-|---|---|---|
-| ±1 gün parantezi (bugünkü) | 10.954 | 2.966 ms |
-| kesin kiracı-gün penceresi | 4.113 | 662 ms |
+`getVehicleDeviceRoute` günü artık **kesin kiracı-gün penceresinde** okuyor
+(`gunPenceresi(date)`); eskiden ±1 günlük UTC parantezinde okuyup `viennaDayKey`
+ile süzüyordu — yani üç günün satırlarını çekip ikisini atıyordu. **Panelin rota
+sayfası da bu fonksiyonu çağırıyor**, o yüzden denklik dizi düzeyinde ölçüldü.
 
-Tek satırlık bir değişiklik (pencereyi `gunPenceresi(tarih)` yapmak), panelin rota
-sayfasını da hızlandırır. **Yapılmadı** — panelin paylaşılan fonksiyonuna dokunmak
-bu turun kapsamı dışında; kanıt burada duruyor.
+**ÖLÇÜLDÜ** — gerçek `getVehicleDeviceRoute` Node'da çağrıldı (sorgu yolu taklit
+edilmedi), 5 araç-gün, her biri 3 tur; karşılaştırma nokta **dizisi** üzerinden
+(an · konum · hız · kontak · yön, elemanı elemanına):
+
+| araç | gün | nokta önce/sonra | küme | süre (medyan) |
+|---|---|---|---|---|
+| DO-***HF | 2026-08-07 | 4113 / 4113 | **AYNI** | 2.180 → **686 ms** (3,2×) |
+| DO-***GR | 2026-07-31 | 3055 / 3055 | **AYNI** | 1.641 → **542 ms** (3,0×) |
+| DO-***GS | 2026-08-01 | 3085 / 3085 | **AYNI** | 669 → **542 ms** (1,2×) |
+| DO-***HF | 2026-08-11 | 2 / 2 | **AYNI** | 120 → **89 ms** |
+| DO-***GS | 2026-08-10 | 0 / 0 | **AYNI** | 123 → 127 ms |
+
+Okunan satır (yoğun gün): **10.954 → 4.113**. `viennaDayKey` süzgeci kaldırıldı —
+artık hiçbir şeyi elemiyor ve satır başına bir `Intl` çağrısıydı.
+
+Yan kazanç: ayrıştırılamayan tarih artık **boş gün** döndürüyor. Eskiden
+`new Date("çöp").toISOString()` `RangeError` atıyor ve `?date=` elle düzenlenince
+panel sayfası komple düşüyordu.
+
+⚠️ Teorik tek fark: sorgu `.lte(gün sonu)` ile kapanıyor, gün sonu milisaniye
+çözünürlüğünde. `23:59:59.9991`–`.9999` bandındaki bir satır eskiden gelirdi.
+`device_telemetry` damgaları santisaniye çözünürlüğünde (`"04:50:08.01"`) — o
+bantta satır üretilemez. Beş araç-günün beşinde de fark 0.
+
+**ÖLÇÜLMEDİ:** DST gününde denklik. `device_telemetry`'nin en eskisi 13.07.2026,
+en yakın geçişler 29.03 (geçmiş, veri yok) ve 25.10 (gelecek). DST sınırı
+`scripts/check-arac-uclari.mjs` içinde 23/24/25 saatlik pencerelerle sınanıyor.
 
 ---
 
@@ -232,13 +254,16 @@ demek olurdu ve o ayrı bir karardır.
 
 ## U6 · `cihaz.ad` — `GET /api/mobile/vehicles/[id]`
 
-Künyedeki "Takip cihazı" satırı. **ÖLÇÜLDÜ:** `vehicles.device_model` kolonu
-canlıda **YOK** (`42703`). Uç bugün `cihaz.ad: null` döndürüyor ve çökmüyor —
-`getVehicleDetail` `select("*")` yaptığı için kolon eklendiği an alan kendiliğinden
-dolar.
+Künyedeki "Takip cihazı" satırı.
 
-DDL `db/migrations/055_vehicle_device_model.sql` içinde **hazır ve
-ÇALIŞTIRILMADI** — Volkan Supabase'de kendisi çalıştırır:
+**ÖLÇÜLDÜ (11.08.2026, ikinci tur): `vehicles.device_model` kolonu artık CANLIDA
+VAR** — migration 055 çalıştırılmış. Doluluk **0/30**. Uçtan uca doğrulandı:
+gerçek `getVehicleDetail` çağrıldı, `device_model` anahtarı çıktıda **var**,
+değeri `null` → `cihaz.ad: null`. Yani hat açık, veri bekliyor.
+(İlk turda kolon yoktu — `42703` — ve uç yine `null` döndürüyordu; iki durumda da
+çökme yok, çünkü `getVehicleDetail` `select("*")` yapıyor.)
+
+DDL:
 
 ```sql
 alter table public.vehicles
@@ -254,9 +279,13 @@ doğrulamadan toplu yazmak uydurmayı veriye çevirmek olurdu.
 
 | betik | ne yapar | çalıştır |
 |---|---|---|
-| `scripts/check-arac-uclari.mjs` | **ağ yok.** Uçların saf çekirdeğini (`lib/vehicle-day.ts`) ölçülmüş girdiyle çalıştırır + kaynak denetimi (kapı, saat dilimi sabiti, uydurma alan). **101 denetim.** | `npm run lint:arac-uclari` (`verify` zincirinde) |
+| `scripts/check-arac-uclari.mjs` | **ağ yok.** Uçların saf çekirdeğini (`lib/vehicle-day.ts`) ölçülmüş girdiyle çalıştırır + kaynak denetimi (kapı, saat dilimi sabiti, uydurma alan, kesin pencere). **103 denetim.** | `npm run lint:arac-uclari` (`verify` zincirinde) |
 | `scripts/verify-arac-uclari.mjs` | **canlı, salt okuma.** Beş ucun sorgu yolunu birebir tekrarlar, gövdeleri basar, iddiaları ölçer. | `npm run verify:arac-uclari -- <PLAKA> <YYYY-MM-DD>` |
 
 Muhafızın boş olmadığı **arıza enjeksiyonuyla** kanıtlandı: `motorDk`ın null
 kapısı kaldırılınca 3 denetim, `speed: r.speed_kmh` satırı silinince 1 denetim
-düştü; geri alınınca 101'i de geçti.
+düştü; geri alınınca hepsi geçti.
+
+Canlı betiğin U2 bölümü artık **dizi eşitliği** sınıyor: eski ±1 gün parantezi
+yolu yeniden kurulup yeni kesin pencereyle elemanı elemanına karşılaştırılıyor.
+Sayı eşitliği "aynı küme" demek değildir.

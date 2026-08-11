@@ -313,6 +313,11 @@ kontrol("RoutePoint speed alanı taşıyor", /speed\?:\s*number/.test(rh));
 kontrol("RoutePoint ignition alanı taşıyor", /ignition\?:\s*boolean/.test(rh));
 kontrol("cihaz rotası speed_kmh'yi map'liyor", /speed:\s*r\.speed_kmh/.test(rh));
 kontrol("cihaz rotası ignition_on'u map'liyor", /ignition:\s*r\.ignition_on/.test(rh));
+// 11.08.2026: gün ±1 gün UTC parantezinde değil KESİN kiracı penceresinde
+// okunuyor. Parantez geri gelirse aynı sonuç için 2,7× fazla satır okunur
+// (canlı ölçüm: 10.954 ↔ 4.113 satır, 2.180 ms ↔ 686 ms).
+kontrol("rota kesin kiracı-gün penceresi kullanıyor", /gunPenceresi\(date\)/.test(rh));
+kontrol("±1 gün parantezi geri gelmemiş", !/setUTCDate\(/.test(rh));
 // Saf katman gerçekten saf mı — muhafızın çalışabilmesinin ön koşulu.
 const vd = oku("lib/vehicle-day.ts");
 // İMPORT satırına bak, metne değil: dosyanın kendi yorumları "supabaseAdmin"

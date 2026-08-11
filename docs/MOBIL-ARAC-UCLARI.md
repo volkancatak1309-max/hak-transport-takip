@@ -1,10 +1,11 @@
-# Mobil araç uçları (U1–U6) — sözleşme + canlı ölçüm
+# Mobil araç uçları (U1–U7) — sözleşme + canlı ölçüm
 
-> Dal: `feat/mobil-arac-uclari` · Ölçüm anı: **11.08.2026 02:0x Viyana** (10.08.2026 ~00:0x UTC)
-> Kaynak: canlı HAK61 (service-role, **salt okuma**). Ölçülemeyene **ÖLÇÜLMEDİ** yazıyor.
+> Durum: U1–U7 main'de, canlıda. Ölçüm anı: **11.08.2026 gece, Viyana**. Migration 056 + 057 uygulanmış.
+> Kaynak: canlı HAK61. Okuma uçları **salt okuma**; U7 doğrulaması test aracına YAZAR ve temizler.
+> Ölçülemeyene **ÖLÇÜLMEDİ** yazıyor.
 > Gizlilik: plakalar maskeli, koordinatlar nötr başlangıca taşınmış — sayı ilişkileri aynı.
 
-Beş yeni GET ucu + bir alan. Hepsinin kapısı **`requireMobileAdmin`** — kardeş uç
+Beş GET ucu + bir alan (U1–U6), üstüne U7 yazma/okuma/kapatma üçlüsü. Hepsinin kapısı **`requireMobileAdmin`** — kardeş uç
 `GET /api/mobile/vehicles/[id]` ile aynı katman; filo şefi panelde `/admin/araclar`a
 giremediği için burada da **403 `admin_required`** alır (bilinçli parite).
 
@@ -324,7 +325,7 @@ Sınır **şemada değil uçta** (`lib/fault-reports.ts` `ARIZA_ACIKLAMA_MAX`): 
 ürün kararıdır, her fikir değişikliğinde migration gerektirmemeli. Karakterle
 sayılır, baytla değil — Türkçe bir bildirim İngilizcesinden erken reddedilmez.
 
-**ÖLÇÜLDÜ (canlı HAK61, `TEST-001`):** **41 iddia**, üç ucun da GERÇEK
+**ÖLÇÜLDÜ (canlı HAK61, `TEST-001`):** **62 iddia**, üç ucun da GERÇEK
 işleyicisi çağrılarak (kapı dahil uçtan uca) — yaz → oku → kapat → yeniden aç →
 sil döngüsü. Yazma 286 ms. Reddedilen 6 istek tabloya **hiçbir** satır yazmadı
 (0 → 0). 3 QA satırı yazıldı, araç detayı ucundan okundu, kapatıldı, geri
@@ -339,12 +340,16 @@ diziye karıştırmak iki farklı güven düzeyini tek listeye koymak olurdu.
 
 ```jsonc
 { "arizaBildirimleri": [
-    { "id": "54c64752-…", "aciklama": "Rölantide titreşim…", "durum": "acik",
+    { "id": "54c64752-…", "aciklama": "Rölantide titreşim…", "durum": "kapali",
       "olusturma": "2026-08-11T01:24:38.263074+00:00",
-      "bildirenId": "a8e793e9-…", "bildiren": "G*** Ç***" } ],
+      "bildirenId": "a8e793e9-…", "bildiren": "G*** Ç***",
+      // Kapatma izi (migration 057). AÇIK satırda ÜÇÜ DE null.
+      "kapatmaAni": "2026-08-11T01:43:14.671+00:00",
+      "kapatanId": "a8e793e9-…", "kapatan": "G*** Ç***" } ],
   "arizaBildirimDurumu": "var",   // var | tablo_yok | hata
   "arizaBildirimToplam": 3,
-  "arizaBildirimKirpildi": false }
+  "arizaBildirimKirpildi": false,
+  "arizaBildirimKapatmaIzi": true }  // false → 057 bu kurulumda YOK
 ```
 
 **Yeniden eskiye** sıralı, tavan **50 satır** — aşılırsa `kirpildi:true` ve
@@ -382,9 +387,41 @@ değiştirilemez.
 Büyük/küçük harf esnetilmez: şema CHECK'i de esnetmiyor, uç ondan gevşek
 olmamalı. Geçerli küme yanıtta söylenir.
 
-⚠️ **Kapatma ANI kaydedilmiyor:** 056'da `updated_at` / `kapatan` kolonu yok
-(şema Volkan'ın verdiği alan listesiydi). "Kim, ne zaman kapattı" sorusunun
-cevabı bugün YOK; gerekirse additive bir migration ister.
+### U7d · Kapatma izi — migration 057 (`closed_at` + `closed_by`)
+
+057 Volkan tarafından 11.08.2026'da çalıştırıldı, HAK61 canlısında **VAR**
+(ölçüldü). Deponun şema kaydı: `db/migrations/057_fault_report_closed.sql`.
+
+| geçiş | `closed_at` | `closed_by` |
+|---|---|---|
+| → `kapali` | isteğin anı | isteği yapan yönetici |
+| → `acik` | **null** | **null** |
+| aynı durum ikinci kez | **dokunulmaz** | **dokunulmaz** |
+
+**Açık bir bildirimin kapatma anı YOKTUR** — yeniden açılınca ikisi de null'a
+döner. Açılıp kapanma döngüsünün geçmişi tutulmuyor: son kapanış geçerli.
+
+🔴 **Aynı durumu ikinci kez göndermek HİÇ YAZMAZ.** Yazsaydı `closed_at`
+tazelenir ve İLK kapatma anı sessizce kaybolurdu. Bu yüzden önce tam satır
+okunur; durum aynıysa satır olduğu gibi döner (`degisti:false`) ve DB'ye
+dokunulmaz. **ÖLÇÜLDÜ:** 1,1 sn bekleyip aynı isteği tekrarladım — an bayt
+bayt aynı kaldı. Yeniden kapatma ise YENİ an yazıyor (`…14.671` → `…17.352`).
+
+`closed_at` **uygulama** saatinden yazılır, `created_at` şema varsayılanıyla
+**veritabanı** saatinden. PostgREST gövdesine `now()` gibi bir SQL ifadesi
+konamaz; tek alternatif iki kolon için tetikleyici yazmaktı. İki saat de NTP'li.
+**ÖLÇÜLDÜ:** `closed_at` isteğin ±1 sn penceresinde ve `created_at`'ten sonra.
+
+**056'sı olup 057'si olmayan kurulumda uç ÇALIŞMAYA DEVAM EDER:** kolon hatası
+yakalanır, sorgu 057 kolonları olmadan tekrarlanır, yalnız `durum` yazılır ve
+yanıt `kapatmaIzi:false` (PATCH) / `arizaBildirimKapatmaIzi:false` (GET) ile
+izin tutulmadığını **söyler**. `readTokenVersion`in `token_version` için
+yaptığının aynısı.
+
+⚠️ **Muhafızın yakaladığı kusur:** `tabloYokMu` çıplak `"does not exist"`
+kalıbına bakıyordu ve `column … does not exist` (42703) de ona uyuyordu — eksik
+KOLON "tablo yok" diye raporlanıyor, yönetici 056'yı çalıştırmaya gidiyordu.
+Kalıp artık İLİŞKİ sözcüğünü arıyor ve `kolonYokMu` önce eleniyor.
 
 ⚠️ **Hız sınırı (rate limit) yok** — ayrı karar (Volkan, 11.08.2026).
 
@@ -396,8 +433,8 @@ cevabı bugün YOK; gerekirse additive bir migration ister.
 |---|---|---|
 | `scripts/check-arac-uclari.mjs` | **ağ yok.** Uçların saf çekirdeğini (`lib/vehicle-day.ts`) ölçülmüş girdiyle çalıştırır + kaynak denetimi (kapı, saat dilimi sabiti, uydurma alan, kesin pencere). **103 denetim.** | `npm run lint:arac-uclari` (`verify` zincirinde) |
 | `scripts/verify-arac-uclari.mjs` | **canlı, salt okuma.** Beş ucun sorgu yolunu birebir tekrarlar, gövdeleri basar, iddiaları ölçer. | `npm run verify:arac-uclari -- <PLAKA> <YYYY-MM-DD>` |
-| `scripts/check-ariza-bildir.mjs` | **ağ yok.** U7'nin girdi + durum ayıklamasını (`lib/fault-reports.ts`) çalıştırır + üç yüzeyin kaynak denetimi + DDL. **94 denetim.** | `npm run lint:ariza-bildir` (`verify` zincirinde) |
-| `scripts/verify-ariza-bildir.mjs` | **canlı, YAZAR ve TEMİZLER.** Üç ucun da gerçek işleyicisini çağırır (token deponun `issueTokens`'ıyla mühürlenir): yaz → oku → kapat → yeniden aç → sil. **41 iddia.** | `npm run verify:ariza-bildir` |
+| `scripts/check-ariza-bildir.mjs` | **ağ yok.** U7'nin girdi + durum + kolon-yok ayıklamasını (`lib/fault-reports.ts`) çalıştırır + üç yüzeyin kaynak denetimi + DDL (056 & 057). **115 denetim.** | `npm run lint:ariza-bildir` (`verify` zincirinde) |
+| `scripts/verify-ariza-bildir.mjs` | **canlı, YAZAR ve TEMİZLER.** Üç ucun da gerçek işleyicisini çağırır (token deponun `issueTokens`'ıyla mühürlenir): yaz → oku → kapat → izi doğrula → yeniden aç → sil. **62 iddia.** | `npm run verify:ariza-bildir` |
 
 Sunucu modüllerini Node'da çalıştırmak `scripts/ts-server.mjs` ile. Dört
 derleme-anı bağı Node'da yeniden kuruluyor — hiçbiri kurgu değil, Next'in

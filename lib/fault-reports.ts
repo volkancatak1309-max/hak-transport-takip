@@ -95,13 +95,38 @@ export function arizaDurumunuAyikla(body: unknown): ArizaDurumSonucu {
  * yaptırır (migration çalıştır / tekrar dene). Yakıt bloğundaki `rpc_yok`
  * ayrımıyla aynı gerekçe — 056 yeni kurulumların install SQL'inde YOK.
  */
-export function tabloYokMu(error: { code?: string | null; message?: string | null }): boolean {
+/**
+ * Sorgu, OLMAYAN BİR KOLONA mı takıldı? (migration 057 uygulanmamış kurulum.)
+ *
+ * `tabloYokMu`dan ayrı: tablo var ama kapatma izi kolonları (`closed_at`,
+ * `closed_by`) yok demektir. O durumda uç ÇALIŞMAYA DEVAM EDER — yalnız durum
+ * yazılır ve yanıt `kapatmaIzi:false` ile izin tutulmadığını söyler.
+ * `readTokenVersion`in `token_version` için yaptığının aynısı (lib/mobile-auth.ts).
+ */
+export function kolonYokMu(error: { code?: string | null; message?: string | null }): boolean {
   const code = (error.code ?? "").toUpperCase();
   const msg = (error.message ?? "").toLowerCase();
   return (
+    code === "42703" ||
+    code === "PGRST204" ||
+    (msg.includes("column") && (msg.includes("does not exist") || msg.includes("not find")))
+  );
+}
+
+export function tabloYokMu(error: { code?: string | null; message?: string | null }): boolean {
+  const code = (error.code ?? "").toUpperCase();
+  const msg = (error.message ?? "").toLowerCase();
+  /**
+   * ⚠️ Çıplak "does not exist" YETMEZ — 11.08.2026'da muhafız yakaladı:
+   * `column … does not exist` (42703) da o kalıba uyuyordu ve eksik KOLON
+   * "tablo yok" diye raporlanıyordu. Yönetici 056'yı çalıştırmaya giderdi,
+   * oysa eksik olan 057. Kalıp artık İLİŞKİ sözcüğünü arıyor.
+   */
+  if (kolonYokMu(error)) return false;
+  return (
     code === "42P01" ||
     code === "PGRST205" ||
-    msg.includes("does not exist") ||
+    (msg.includes("relation") && msg.includes("does not exist")) ||
     msg.includes("could not find the table")
   );
 }

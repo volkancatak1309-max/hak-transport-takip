@@ -122,6 +122,8 @@ export async function GET(
     arizaBildirimDurumu: bildirimler.durum,
     arizaBildirimToplam: bildirimler.toplam,
     arizaBildirimKirpildi: bildirimler.kirpildi,
+    /** migration 057 uygulanmış mı — false ise satırların kapatma izi hep null. */
+    arizaBildirimKapatmaIzi: bildirimler.kapatmaIzi,
     arizalar: d.faults.map((f) => {
       const info = lookupDtc(f.code, DEFAULT_LOCALE);
       return {

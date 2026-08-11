@@ -266,19 +266,71 @@ try {
   iddia("PATCH bilinmeyen durum → 400 invalid/deger", pDeger.status === 400 && pDeger.json?.sebep === "deger", `${pDeger.status} ${pDeger.json?.sebep}`);
   iddia("PATCH geçerli kümeyi söylüyor", Array.isArray(pDeger.json?.gecerli) && pDeger.json.gecerli.join(",") === "acik,kapali", String(pDeger.json?.gecerli));
 
+  const oncePencere = Date.now();
   const kapat = await yama(hedef, { durum: "kapali" }, patronToken);
+  const sonraPencere = Date.now();
   iddia("kapatma → 200 + degisti:true", kapat.status === 200 && kapat.json?.degisti === true && kapat.json?.bildirim?.durum === "kapali", `${kapat.status} degisti=${kapat.json?.degisti} durum=${kapat.json?.bildirim?.durum}`);
-  const { data: kSatir } = await supabaseAdmin.from("vehicle_fault_reports").select("durum, aciklama").eq("id", hedef).maybeSingle();
+  iddia("kapatma izi TUTULUYOR (057)", kapat.json?.kapatmaIzi === true, String(kapat.json?.kapatmaIzi));
+
+  // ── KAPATMA İZİ (migration 057) ─────────────────────────────────────────
+  const { data: kSatir } = await supabaseAdmin
+    .from("vehicle_fault_reports")
+    .select("durum, aciklama, closed_at, closed_by")
+    .eq("id", hedef)
+    .maybeSingle();
   iddia("DB'de durum 'kapali'", kSatir?.durum === "kapali", kSatir?.durum);
   iddia("açıklama DEĞİŞMEDİ", kSatir?.aciklama === metin);
+  iddia("closed_by OTURUMDAKİ yönetici", kSatir?.closed_by === patron.id, kSatir?.closed_by === patron.id ? "oturum" : String(kSatir?.closed_by));
+  const kapatmaMs = kSatir?.closed_at ? new Date(kSatir.closed_at).getTime() : null;
+  iddia(
+    "closed_at isteğin PENCERESİNDE",
+    kapatmaMs !== null && kapatmaMs >= oncePencere - 1000 && kapatmaMs <= sonraPencere + 1000,
+    kSatir?.closed_at
+  );
+  iddia("closed_at created_at'ten SONRA", kapatmaMs !== null && kapatmaMs >= new Date(ok.json.bildirim.olusturma).getTime());
+  iddia("PATCH yanıtı kapatma anını taşıyor", kapat.json?.bildirim?.kapatmaAni === kSatir?.closed_at && kapat.json?.bildirim?.kapatanId === patron.id, kapat.json?.bildirim?.kapatmaAni);
 
+  // Aynı durumu ikinci kez göndermek İLK kapatma anını TAZELEMEMELİ.
+  await new Promise((r) => setTimeout(r, 1100));
   const tekrar = await yama(hedef, { durum: "kapali" }, patronToken);
   iddia("aynı durum ikinci kez → 200 + degisti:false", tekrar.status === 200 && tekrar.json?.degisti === false, `${tekrar.status} degisti=${tekrar.json?.degisti}`);
+  const { data: kSatir2 } = await supabaseAdmin.from("vehicle_fault_reports").select("closed_at, closed_by").eq("id", hedef).maybeSingle();
+  iddia(
+    "İLK kapatma anı KORUNDU (tazelenmedi)",
+    kSatir2?.closed_at === kSatir?.closed_at && kSatir2?.closed_by === kSatir?.closed_by,
+    `${kSatir?.closed_at} → ${kSatir2?.closed_at}`
+  );
+
+  // Kapalı bildirim listede kapatan ADIYLA görünüyor mu?
+  const detayKapali = await aracDetay(testArac.id, patronToken);
+  const kapaliSatir = (detayKapali.json?.arizaBildirimleri ?? []).find((r) => r.id === hedef);
+  iddia("liste kapatma anını taşıyor", kapaliSatir?.kapatmaAni === kSatir?.closed_at, kapaliSatir?.kapatmaAni);
+  iddia("liste KAPATAN ADINI çözüyor", kapaliSatir?.kapatan === patron.name, kapaliSatir?.kapatan ? `${kapaliSatir.kapatan.slice(0, 3)}***` : "null");
+  iddia("liste kapatma izi bayrağını taşıyor", detayKapali.json?.arizaBildirimKapatmaIzi === true, String(detayKapali.json?.arizaBildirimKapatmaIzi));
+  // AÇIK satırlarda iz alanları null olmalı — kapatılmamış bildirimin kapatma anı YOK.
+  const acikSatirlar = (detayKapali.json?.arizaBildirimleri ?? []).filter((r) => r.durum === "acik");
+  iddia(
+    "AÇIK satırlarda kapatma izi null",
+    acikSatirlar.length > 0 && acikSatirlar.every((r) => r.kapatmaAni === null && r.kapatanId === null && r.kapatan === null),
+    `${acikSatirlar.length} açık satır`
+  );
 
   const ac = await yama(hedef, { durum: "acik" }, patronToken);
   iddia("YENİDEN AÇMA → 200 + degisti:true", ac.status === 200 && ac.json?.degisti === true && ac.json?.bildirim?.durum === "acik", `${ac.status} durum=${ac.json?.bildirim?.durum}`);
-  const { data: aSatir } = await supabaseAdmin.from("vehicle_fault_reports").select("durum").eq("id", hedef).maybeSingle();
+  const { data: aSatir } = await supabaseAdmin.from("vehicle_fault_reports").select("durum, closed_at, closed_by").eq("id", hedef).maybeSingle();
   iddia("DB'de durum geri 'acik'", aSatir?.durum === "acik", aSatir?.durum);
+  iddia("yeniden açılışta closed_at NULL'a döndü", aSatir?.closed_at === null, String(aSatir?.closed_at));
+  iddia("yeniden açılışta closed_by NULL'a döndü", aSatir?.closed_by === null, String(aSatir?.closed_by));
+  iddia("PATCH yanıtı da null döndürüyor", ac.json?.bildirim?.kapatmaAni === null && ac.json?.bildirim?.kapatanId === null);
+
+  // İkinci kapatma YENİ bir an yazmalı (son kapanış geçerli).
+  const ikinciKapat = await yama(hedef, { durum: "kapali" }, patronToken);
+  iddia(
+    "yeniden kapatma YENİ an yazıyor",
+    ikinciKapat.json?.bildirim?.kapatmaAni !== kSatir?.closed_at && !!ikinciKapat.json?.bildirim?.kapatmaAni,
+    `${kSatir?.closed_at} → ${ikinciKapat.json?.bildirim?.kapatmaAni}`
+  );
+  await yama(hedef, { durum: "acik" }, patronToken); // sonraki iddialar için geri aç
 
   // PATCH gövdesine açıklama koymak satırı değiştiriyor mu?
   await yama(hedef, { durum: "kapali", aciklama: "GEÇMİŞE DÖNÜK DEĞİŞTİRME DENEMESİ" }, patronToken);

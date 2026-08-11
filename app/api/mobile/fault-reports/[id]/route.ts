@@ -62,7 +62,7 @@ export async function PATCH(
     });
   }
 
-  const sonuc = await setFaultReportStatus(id, ayikla.durum);
+  const sonuc = await setFaultReportStatus(id, ayikla.durum, guard.actor.worker.id);
   if (!sonuc.ok) {
     // 404: kaydın varlığını doğrulamayan cevap (/shifts/[id] ile aynı gerekçe).
     if (sonuc.sebep === "yok") return mobileError(404, "not_found");
@@ -74,12 +74,19 @@ export async function PATCH(
   return Response.json({
     ok: true,
     degisti: sonuc.degisti,
+    /** migration 057 uygulanmış mı — false ise kapatma anı/kapatan tutulmuyor. */
+    kapatmaIzi: sonuc.kapatmaIzi,
     bildirim: {
       id: sonuc.satir.id,
       aracId: sonuc.satir.vehicle_id,
       aciklama: sonuc.satir.aciklama,
       durum: sonuc.satir.durum,
       olusturma: sonuc.satir.created_at,
+      // Yeniden açılan bildirimde ikisi de null döner — açık bir bildirimin
+      // kapatma anı YOKTUR. Kapatan ADI burada YOK: PATCH tek satır yazar,
+      // ad çözümü liste ucunun işi (GET /vehicles/[id] → `kapatan`).
+      kapatmaAni: sonuc.satir.closed_at ?? null,
+      kapatanId: sonuc.satir.closed_by ?? null,
     },
   });
 }

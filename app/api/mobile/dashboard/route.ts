@@ -14,6 +14,7 @@ import {
 import { alarmKademe } from "@/lib/event-ui";
 import { listPendingLeaves, type PendingLeave } from "@/lib/leaves";
 import { LEAVES_ENABLED } from "@/lib/features";
+import { listActiveSnoozes, ERTELEME_LISTE_TAVANI } from "@/lib/action-snoozes-db";
 import { lookupDtc } from "@/lib/dtc-codes";
 import { DEFAULT_LOCALE } from "@/i18n/request";
 import { startOfTodayVienna, endOfTodayVienna } from "@/lib/format";
@@ -47,6 +48,12 @@ export const dynamic = "force-dynamic";
  * `uyari.kalemler[].an`, `dtc[].kodlar` (+`kodKirpildi`, üst düzey
  * `dtcKodTavani`). Mevcut alanların adı/tipi/değeri değişmedi.
  *
+ * ── GERİYE UYUMLULUK, 3. TUR (11.08.2026 — erteleme, migration 058) ───────
+ * Yine YALNIZ ALAN EKLENDİ: `ertelemeler`, `ertelemeDurumu`, `ertelemeToplam`,
+ * `ertelemeTavani`, `ertelemeKirpildi`. Mevcut alanların adı/tipi/değeri
+ * değişmedi ve `uyari.kalemler` ile `onayBekleyen.izin` SÜZÜLMEDİ — erteleme
+ * bir GÖRÜNÜM kararıdır ve istemcide uygulanır.
+ *
  * YETKİ (panel paritesi, lib/mobile-scope.ts kuralı): `rolanti` ve `alarm`
  * PATRON verisidir — panel karşılıkları /admin/analiz ve /admin/alarmlar
  * requireAdmin() ile şefe KAPALI. Filo şefinde bu iki alan `null` döner
@@ -71,12 +78,13 @@ export async function GET(req: NextRequest) {
   // Rölanti "bugün" penceresi — Analiz sayfasının "Bugün" seçiminin aynısı.
   const gunRange = computeAnalyticsRange("gun");
 
-  const [dash, perf, patron] = await Promise.all([
+  const [dash, perf, patron, ertelemeler] = await Promise.all([
     getDashboardData(start.toISOString(), end.toISOString(), fleetScope),
     buildPerformanceReport(perfRange),
     // Patron blokları (rölanti + alarm + onay bekleyen izin) — şefte hiç
     // sorgulanmaz (panel paritesi; boşuna veri de çekilmez).
     isChief ? Promise.resolve(null) : loadPatronBlocks(gunRange, perfRange),
+    listActiveSnoozes(),
   ]);
 
   // Açık uyarı sayısı türü kırılımıyla — telefonda "12 uyarı" tek başına
@@ -97,6 +105,31 @@ export async function GET(req: NextRequest) {
     alinan[a.kind] = n + 1;
     kalemler.push(uyariKalemi(a));
   }
+
+  /**
+   * ── ETKİN ERTELEMELER (migration 058) — ŞEFTE DARALTILIR ────────────────
+   * Erteleme YAZMA ucu requireMobileAdmin: şef erteleme yapamaz. Ama patronun
+   * ertelediği bir DİKKAT KALEMİ şefin listesinde de durmamalı — yoksa iki
+   * yönetici aynı filoyu iki farklı listeyle yönetir, ki cihazda erteleme
+   * yapılmamasının sebebi tam olarak buydu.
+   *
+   * Şefe YALNIZ kendi dikkat listesinde karşılığı olan `attention` ertelemeleri
+   * döner. `alarm` ve `leave` blokları şefte zaten null/0 (panel paritesi);
+   * o kaynakların ertelemelerini taşımak, şefe GÖREMEDİĞİ kalemlerin
+   * kimliklerini sızdırmak olurdu. Kapsam ikinci bir sorguyla değil, ELDEKİ
+   * `dash.attention` kümesiyle kuruluyor — kapsam zaten orada uygulanmış
+   * (getDashboardData fleetScope alıyor), ikinci bir kapsam tanımı ayrışırdı.
+   *
+   * KİMLİK: istemci kaynak önekini ("dikkat:") KENDİ tarafında ekliyor;
+   * `kalemId` burada kaynağın HAM kimliğidir (AttentionItem.id), çünkü tür
+   * zaten `kaynak` alanında yazılı.
+   */
+  const kendiKalemleri = new Set(dash.attention.map((a) => a.id));
+  const gorunurErtelemeler = isChief
+    ? ertelemeler.satirlar.filter(
+        (e) => e.kaynak === "attention" && kendiKalemleri.has(e.kalemId)
+      )
+    : ertelemeler.satirlar;
 
   return Response.json({
     ok: true,
@@ -205,6 +238,18 @@ export async function GET(req: NextRequest) {
       tavan: IZIN_TAVANI,
       kirpildi: (patron?.pendingLeaves.length ?? 0) > IZIN_TAVANI,
     },
+    // ── ETKİN ERTELEMELER (migration 058) ─────────────────────────────────
+    // Süzmeyi İSTEMCİ yapıyor: `uyari.kalemler` ve `onayBekleyen.izin`
+    // SÜZÜLMEDEN dönüyor. Sunucuda süzmek "Ertelenen" sekmesinin göstereceği
+    // kalemi de yok ederdi (bkz. /api/mobile/alarms aynı notu).
+    ertelemeler: gorunurErtelemeler,
+    /** `var` · `tablo_yok` (058 uygulanmamış) · `hata` — boş liste üç ayrı şey. */
+    ertelemeDurumu: ertelemeler.durum,
+    /** Bu ÇAĞIRANA görünen etkin erteleme sayısı (şefte daraltılmış küme). */
+    ertelemeToplam: isChief ? gorunurErtelemeler.length : ertelemeler.toplam,
+    ertelemeTavani: ERTELEME_LISTE_TAVANI,
+    /** Tavan ALTTAKİ küme için aşıldı mı — şef süzgecinden ÖNCEKİ okuma. */
+    ertelemeKirpildi: ertelemeler.kirpildi,
     uyari: {
       toplam: dash.attention.length,
       tur: uyariKirilim,

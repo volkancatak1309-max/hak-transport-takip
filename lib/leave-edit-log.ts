@@ -62,13 +62,22 @@ function snapshot(row: Record<string, unknown> | null): string | null {
  *  • delete → tek satır (field '*', old = anlık görüntü)
  *  • update/approve/reject → değişen HER izlenen alan için bir satır; hiçbir alan
  *    değişmediyse (ör. approve) yine de bir 'status' satırı yazılır.
+ *
+ * ── KARAR NOTU (11.08.2026, mobil onay/ret ucu) ────────────────────────────
+ * `decisionNote` verilirse EK bir satır yazılır: `field='karar_notu'`,
+ * `new_value=<not>`. `worker_leaves.note` kolonuna YAZILMAZ — orası TALEBİ
+ * AÇANIN notudur ve kararın gerekçesiyle ezilirse talebin kendi metni sessizce
+ * kaybolurdu. Karar notu bir İZ'dir, izin verisinin parçası değil; bu yüzden
+ * izin tablosunda değil iz tablosunda yaşıyor ve migration gerektirmiyor
+ * (`field` serbest metin, `action` CHECK'i zaten approve/reject kabul ediyor).
  */
 export async function logLeaveEdit(
   leaveId: string,
   changedBy: string | null,
   action: LeaveEditAction,
   before: Record<string, unknown> | null,
-  after: Record<string, unknown> | null
+  after: Record<string, unknown> | null,
+  decisionNote?: string | null
 ): Promise<void> {
   const changedAt = new Date().toISOString();
   const rows: Omit<LeaveEditLogRow, "id" | "changed_by_name">[] = [];
@@ -120,6 +129,20 @@ export async function logLeaveEdit(
         new_value: norm(after?.status),
       });
     }
+  }
+
+  // Karar notu: alan değişikliklerinden AYRI bir satır. `create`/`delete`te
+  // anlamı yok (karar verilmiyor), o yüzden yalnız karar eylemlerinde yazılır.
+  if (decisionNote && (action === "approve" || action === "reject")) {
+    rows.push({
+      leave_id: leaveId,
+      changed_at: changedAt,
+      changed_by: changedBy,
+      action,
+      field: "karar_notu",
+      old_value: null,
+      new_value: decisionNote,
+    });
   }
 
   if (rows.length === 0) return;

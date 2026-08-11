@@ -8,6 +8,7 @@ import {
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { parsePage, pageInfo, parseRange } from "@/lib/mobile-list";
 import { eventTone, alarmKademe, type AlarmKademe } from "@/lib/event-ui";
+import { listActiveSnoozes, ERTELEME_LISTE_TAVANI } from "@/lib/action-snoozes-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,23 @@ export const dynamic = "force-dynamic";
  * listede. Epizod → satır dönüşümü ve süre formülü
  * (span + IDLE_TRIGGER_S) app/admin/alarmlar/page.tsx:143-160 ile BİREBİR aynı;
  * sabit oradan değil kaynağından (lib/telemetry.ts) okunuyor.
+ *
+ * ── GERİYE UYUMLULUK (11.08.2026 — erteleme, migration 058) ───────────────
+ * YALNIZ ALAN EKLENDİ: `ertelemeler`, `ertelemeDurumu`, `ertelemeToplam`,
+ * `ertelemeKirpildi`. Mevcut alanların adı, tipi ya da değeri DEĞİŞMEDİ ve
+ * `alarmlar` dizisi SÜZÜLMEDİ — süzmeyi istemci yapıyor.
+ *
+ * ── NEDEN SUNUCU SÜZMÜYOR ────────────────────────────────────────────────
+ * Mobildeki Aksiyon Merkezi üç kaynağı (alarm + dikkat kalemi + izin) TEK
+ * listede birleştiriyor ve erteleme kalem kimliğine bağlı. Tek bir
+ * `ertelemeler[]` bloğu üç kaynağı birden besler; sunucuda süzmek aynı
+ * süzgeci üç ayrı uca kopyalamak olurdu. Ayrıca ham liste elde kalır:
+ * "Ertelenen" sekmesi ertelenmiş kalemin KENDİSİNİ göstermek zorunda ve
+ * sunucu onu atmış olsaydı gösterecek bir şey kalmazdı.
+ *
+ * `sayfa`/`page` ertelemelerden ETKİLENMEZ: sayfalama ham küme üzerinde,
+ * `page.total` gerçek alarm sayısı. Ertelenmişleri düşen bir toplam,
+ * istemcinin süzgecini sunucunun yarım yapması olurdu.
  */
 export async function GET(req: NextRequest) {
   const guard = await requireMobileAdmin(req);
@@ -48,10 +66,11 @@ export async function GET(req: NextRequest) {
       ? kademeParam
       : null;
 
-  const [events, episodes, vehicles] = await Promise.all([
+  const [events, episodes, vehicles, ertelemeler] = await Promise.all([
     listEventsInRange(range.start.toISOString(), range.end.toISOString()),
     listIdleEpisodesInRange(range.start.toISOString(), range.end.toISOString()),
     listVehiclesWithStatus(),
+    listActiveSnoozes(),
   ]);
 
   // Şoför adı araç künyesinden türetilir — panelin yaptığının aynısı
@@ -112,6 +131,17 @@ export async function GET(req: NextRequest) {
     aralik: { start: range.start.toISOString(), end: range.end.toISOString() },
     page: pageInfo(page, rows.length),
     turDagilim,
+    // ── ETKİN ERTELEMELER (migration 058) ──────────────────────────────────
+    // ÜÇ KAYNAĞIN TAMAMI burada: alarm ucundan dönse de blok yalnız alarm
+    // ertelemelerini taşımıyor. Sebebi Aksiyon Merkezi'nin tek liste olması —
+    // istemci dikkat kalemlerini ve izin taleplerini de bu blokla süzüyor ve
+    // ikinci bir istek atmak zorunda kalmıyor.
+    ertelemeler: ertelemeler.satirlar,
+    /** `var` · `tablo_yok` (058 uygulanmamış) · `hata` — boş liste üç ayrı şey. */
+    ertelemeDurumu: ertelemeler.durum,
+    ertelemeToplam: ertelemeler.toplam,
+    ertelemeTavani: ERTELEME_LISTE_TAVANI,
+    ertelemeKirpildi: ertelemeler.kirpildi,
     alarmlar: slice.map((r) => ({
       id: r.id,
       tur: r.event_type,

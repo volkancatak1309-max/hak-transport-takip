@@ -14,6 +14,8 @@ import {
   type LeaveRow,
 } from "@/lib/leaves";
 import { logLeaveEdit } from "@/lib/leave-edit-log";
+import { decideLeave } from "@/lib/leave-decision-db";
+import type { LeaveKarar } from "@/lib/leave-decision";
 import { startOfDayViennaFromYmd, endOfDayViennaFromYmd } from "@/lib/format";
 
 /**
@@ -216,66 +218,42 @@ export async function submitLeaveAction(
   return { ok: true, id: (ins as LeaveRow).id };
 }
 
-/** Patron: bekleyen talebi ONAYLAR → status='approved'. */
-export async function approveLeaveAction(id: string): Promise<LeaveActionResult> {
+/**
+ * PANEL YÜZEYİNİN KARAR KAPISI — çerez oturumu + redirect'li requireAdmin.
+ *
+ * Kararın KENDİSİ burada DEĞİL: `lib/leave-decision-db.ts` `decideLeave`.
+ * Aynı çekirdeği mobil uç (app/api/mobile/leaves/[id]/onay) da çağırıyor;
+ * status eşlemesi, iz ve önbellek tazeleme tek yerde yaşıyor ki iki yüzey
+ * ayrışmasın. Burada kalan tek şey PANELE ÖZGÜ olan: hangi kapı ve hangi
+ * hata biçimi (`LeaveActionResult`).
+ *
+ * `LEAVES_ENABLED` denetimi requireAdmin'den ÖNCE — 11.08.2026 öncesi sırayla
+ * birebir aynı: modül kapalıysa yetkisiz kullanıcı /panel'e atılmaz, sessizce
+ * `disabled` alır.
+ */
+async function decideLeaveFromPanel(
+  id: string,
+  karar: LeaveKarar
+): Promise<LeaveActionResult> {
   if (!LEAVES_ENABLED) return { ok: false, error: "disabled" };
   const session = await requireAdmin();
-  const before = await getLeaveById(id);
-  if (!before) return { ok: false, error: "not_found" };
-  const nowIso = new Date().toISOString();
-  const { data: upd, error } = await supabaseAdmin
-    .from("worker_leaves")
-    .update({
-      status: "approved",
-      approved_by: session.worker_id ?? null,
-      decided_at: nowIso,
-      updated_at: nowIso,
-    })
-    .eq("id", id)
-    .select(LEAVE_COLS)
-    .maybeSingle();
-  if (error || !upd) return { ok: false, error: "db" };
-  await logLeaveEdit(
-    id,
-    session.worker_id ?? null,
-    "approve",
-    before as unknown as Record<string, unknown>,
-    upd as unknown as Record<string, unknown>
-  );
-  revalidatePath("/admin/izinler");
-  revalidatePath("/admin");
+  const sonuc = await decideLeave(id, karar, session.worker_id ?? null);
+  if (!sonuc.ok) {
+    if (sonuc.sebep === "yok") return { ok: false, error: "not_found" };
+    if (sonuc.sebep === "kapali") return { ok: false, error: "disabled" };
+    return { ok: false, error: "db" };
+  }
   return { ok: true, id };
+}
+
+/** Patron: bekleyen talebi ONAYLAR → status='approved'. */
+export async function approveLeaveAction(id: string): Promise<LeaveActionResult> {
+  return decideLeaveFromPanel(id, "onay");
 }
 
 /** Patron: talebi/iznii REDDEDER → status='rejected' (kayıt iz için DURUR). */
 export async function rejectLeaveAction(id: string): Promise<LeaveActionResult> {
-  if (!LEAVES_ENABLED) return { ok: false, error: "disabled" };
-  const session = await requireAdmin();
-  const before = await getLeaveById(id);
-  if (!before) return { ok: false, error: "not_found" };
-  const nowIso = new Date().toISOString();
-  const { data: upd, error } = await supabaseAdmin
-    .from("worker_leaves")
-    .update({
-      status: "rejected",
-      approved_by: session.worker_id ?? null,
-      decided_at: nowIso,
-      updated_at: nowIso,
-    })
-    .eq("id", id)
-    .select(LEAVE_COLS)
-    .maybeSingle();
-  if (error || !upd) return { ok: false, error: "db" };
-  await logLeaveEdit(
-    id,
-    session.worker_id ?? null,
-    "reject",
-    before as unknown as Record<string, unknown>,
-    upd as unknown as Record<string, unknown>
-  );
-  revalidatePath("/admin/izinler");
-  revalidatePath("/admin");
-  return { ok: true, id };
+  return decideLeaveFromPanel(id, "ret");
 }
 
 /** Silme: patron her izni; şef yalnız KENDİ pending talebini. İz önce yazılır. */

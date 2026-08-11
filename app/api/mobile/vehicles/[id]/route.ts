@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { requireMobileAdmin } from "@/lib/mobile-scope";
 import { getVehicleDetail } from "@/lib/vehicles";
+import { listVehicleFaultReports } from "@/lib/fault-reports-db";
 import { mobileError } from "@/lib/mobile-auth";
 import { fleetLabeller } from "@/lib/mobile-labels";
 import { lookupDtc } from "@/lib/dtc-codes";
@@ -46,7 +47,10 @@ export async function GET(
   if (!d) return mobileError(404, "not_found");
 
   const v = d.vehicle;
-  const fleetName = await fleetLabeller();
+  const [fleetName, bildirimler] = await Promise.all([
+    fleetLabeller(),
+    listVehicleFaultReports(id),
+  ]);
   return Response.json({
     ok: true,
     arac: {
@@ -104,6 +108,20 @@ export async function GET(
       kapandi: r.ended,
     })),
     cezalar: d.penalties,
+    /**
+     * ELLE BİLDİRİLEN arızalar (migration 056) — `arizalar[]`ın YANINDA, içinde
+     * DEĞİL. `arizalar[]` cihazın okuduğu DTC kodlarıdır (P0100 …) ve flespi
+     * akışıyla kendi kendini uzlaştırır; bunlar insanın yazdığı serbest metin.
+     * Aynı diziye karıştırmak iki farklı güven düzeyini tek listeye koymak olurdu.
+     *
+     * `arizaBildirimDurumu` boş listenin SEBEBİNİ söyler: `var` (gerçekten yok)
+     * · `tablo_yok` (056 bu kurulumda uygulanmamış) · `hata`. Üçü yöneticiye
+     * farklı iş yaptırır. `kirpildi`/`toplam` da tavanı sessiz bırakmaz.
+     */
+    arizaBildirimleri: bildirimler.satirlar,
+    arizaBildirimDurumu: bildirimler.durum,
+    arizaBildirimToplam: bildirimler.toplam,
+    arizaBildirimKirpildi: bildirimler.kirpildi,
     arizalar: d.faults.map((f) => {
       const info = lookupDtc(f.code, DEFAULT_LOCALE);
       return {

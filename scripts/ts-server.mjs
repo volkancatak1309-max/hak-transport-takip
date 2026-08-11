@@ -24,6 +24,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = path.resolve(HERE, "..");
 const STUB = path.join(HERE, "server-only-stub.mjs");
+const HEADERS_STUB = path.join(HERE, "next-headers-stub.mjs");
 
 // ── env: lib/supabase.ts'ten ÖNCE ──────────────────────────────────────────
 const ENV_FILE = path.resolve(ROOT, process.env.ENV_FILE ?? ".env.local");
@@ -49,11 +50,39 @@ function uzantiEkle(dosya) {
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
-    // node_modules'a HİÇ dokunma (ts-alias.mjs ile aynı gerekçe).
     const parent = context.parentURL ?? "";
+
+    /**
+     * ── DERLEYİCİ TAKMA ADLARI — KAYNAK FARKI GÖZETMEZ ─────────────────────
+     * Dördü de node_modules İÇİNDEN gelse bile yönlendirilir; bunlar Next'in
+     * derleme anında kurduğu bağlar ve Node'da karşılıkları yok. Erken
+     * `node_modules` çıkışının ÜSTÜNDE olmalılar: next-intl'in react-server
+     * derlemesi hem `next/headers`ı hem `next-intl/config`i KENDİ içinden
+     * içe aktarıyor (ikisi de ölçüldü — sırayı yanlış kurunca çözümleme düştü).
+     */
+    // `server-only`: Next'in derleme-anı işaretçisi, node_modules'da yok.
+    if (specifier === "server-only") return nextResolve(pathToFileURL(STUB).href, context);
+    // `next/headers`: istek kapsamı olmadan fırlatır. Boş çerez deposu mobil
+    // uçların ÜRETİMDEKİ durumudur (token var, çerez yok) — bkz. stub notu.
+    if (specifier === "next/headers") return nextResolve(pathToFileURL(HEADERS_STUB).href, context);
+    // `next-intl/config`: next.config.ts → createNextIntlPlugin("./i18n/request.ts").
+    // Aynı hedefe bağlanıyor — kurgu değil, derleyicinin yaptığının aynısı.
+    if (specifier === "next-intl/config") {
+      return nextResolve(pathToFileURL(path.join(ROOT, "i18n/request.ts")).href, context);
+    }
+    // next-intl: `react-server` koşulu olmadan İSTEMCİ derlemesi çözülüyor ve
+    // `getTranslations` "Client Components'ta desteklenmiyor" diye fırlıyor.
+    // Koşulu ekleyerek uçların GERÇEKTEN çalıştırdığı sunucu derlemesi yükleniyor.
+    if (specifier.startsWith("next-intl")) {
+      return nextResolve(specifier, {
+        ...context,
+        conditions: [...(context.conditions ?? []), "react-server"],
+      });
+    }
+
+    // Geri kalanında node_modules'a HİÇ dokunma (ts-alias.mjs ile aynı gerekçe).
     if (parent.includes("/node_modules/")) return nextResolve(specifier, context);
 
-    if (specifier === "server-only") return nextResolve(pathToFileURL(STUB).href, context);
     if (specifier.startsWith("@/")) {
       const hedef = uzantiEkle(path.resolve(ROOT, specifier.slice(2)));
       if (hedef) return nextResolve(pathToFileURL(hedef).href, context);
@@ -81,5 +110,28 @@ registerHooks({
       }
       throw e;
     }
+  },
+  /**
+   * DEPO İÇİ `.json` içe aktarmaları — `i18n/request.ts` dil sözlüğünü
+   * `await import("../messages/tr.json")` ile alıyor. Bundler bunu sorunsuz
+   * çözer; Node ESM `with { type: "json" }` şart koşar ve kaynağa o niteliği
+   * eklemek yalnız bu betik için yapılmış bir değişiklik olurdu. Onun yerine
+   * dosya burada bir ES modülüne sarılıyor — içerik AYNEN geçer.
+   *
+   * Yalnız depo içindeki dosyalar: node_modules'ın kendi `package.json`
+   * okumalarına dokunulmaz.
+   */
+  load(url, context, nextLoad) {
+    if (url.startsWith("file:") && url.endsWith(".json") && !url.includes("/node_modules/")) {
+      const dosya = fileURLToPath(url);
+      if (dosya.startsWith(ROOT)) {
+        return {
+          format: "module",
+          shortCircuit: true,
+          source: `export default ${readFileSync(dosya, "utf8")};`,
+        };
+      }
+    }
+    return nextLoad(url, context);
   },
 });

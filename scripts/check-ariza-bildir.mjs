@@ -19,7 +19,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   ARIZA_ACIKLAMA_MAX,
+  ARIZA_DURUMLARI,
   arizaAciklamasiniAyikla,
+  arizaDurumunuAyikla,
   tabloYokMu,
 } from "@/lib/fault-reports";
 
@@ -100,7 +102,36 @@ for (const e of [
   kontrol(`tablo yok DEĞİL: ${e.code ?? "kodsuz"}`, tabloYokMu(e) === false);
 }
 
-// ══ 8 · KAYNAK DENETİMİ ════════════════════════════════════════════════════
+// ══ 8 · DURUM AYIKLAMA (PATCH ucu) ═════════════════════════════════════════
+kontrol("durum kümesi iki değerli", ARIZA_DURUMLARI.length === 2, ARIZA_DURUMLARI.join("/"));
+kontrol("küme 'acik' ve 'kapali'", ARIZA_DURUMLARI.includes("acik") && ARIZA_DURUMLARI.includes("kapali"));
+// Ara durum eklenirse (Volkan 11.08: EKLENMEYECEK) bu denetim düşer ve karar
+// yeniden konuşulur — sessizce genişlemesin.
+kontrol("ara durum EKLENMEMİŞ", !ARIZA_DURUMLARI.includes("islemde"));
+
+for (const gövde of [{}, { baska: "x" }, null, undefined]) {
+  const r = arizaDurumunuAyikla(gövde);
+  kontrol(`durum alanı yok → missing_fields: ${JSON.stringify(gövde)}`, !r.ok && r.kod === "missing_fields");
+}
+for (const v of [1, true, null, [], {}, ["kapali"]]) {
+  const r = arizaDurumunuAyikla({ durum: v });
+  kontrol(`durum tipi yanlış → invalid/tip: ${JSON.stringify(v)}`, !r.ok && r.kod === "invalid" && r.sebep === "tip");
+}
+// Şema CHECK'i bu değerleri reddediyor; uç ondan GEVŞEK olmamalı, yoksa
+// yazma 23514 ile düşer ve kullanıcı "sunucu arızası" görür.
+for (const v of ["", " ", "Kapali", "KAPALI", "islemde", "kapandi", "closed", "acik ve kapali"]) {
+  const r = arizaDurumunuAyikla({ durum: v });
+  kontrol(`geçersiz durum → invalid/deger: ${JSON.stringify(v)}`, !r.ok && r.kod === "invalid" && r.sebep === "deger");
+}
+for (const v of ["acik", "kapali", "  kapali  "]) {
+  const r = arizaDurumunuAyikla({ durum: v });
+  kontrol(`geçerli durum KABUL: ${JSON.stringify(v)}`, r.ok && r.durum === v.trim(), r.ok ? r.durum : "reddedildi");
+}
+// TEK YÖNLÜ DEĞİL: yeniden açma da geçerli. Kapalıyı geri açmanın yolu
+// olmasaydı tek çare kaydı silmek, yani geçmişi yok etmek olurdu.
+kontrol("yeniden açma ('acik') geçerli", arizaDurumunuAyikla({ durum: "acik" }).ok === true);
+
+// ══ 9 · KAYNAK DENETİMİ ════════════════════════════════════════════════════
 const UC = "app/api/mobile/vehicles/[id]/ariza-bildir/route.ts";
 const src = readFileSync(path.join(ROOT, UC), "utf8");
 
@@ -141,6 +172,58 @@ const lib = readFileSync(path.join(ROOT, "lib/fault-reports.ts"), "utf8");
 kontrol("lib/fault-reports.ts server-only DEĞİL", !/^\s*import\s+["']server-only["']/m.test(lib));
 kontrol("lib/fault-reports.ts supabase içe aktarmıyor", !/^\s*import\s.*@\/lib\/supabase["']/m.test(lib));
 
+// ── PATCH ucu (kapatma / yeniden açma) ─────────────────────────────────────
+const patchSrc = readFileSync(path.join(ROOT, "app/api/mobile/fault-reports/[id]/route.ts"), "utf8");
+kontrol("PATCH kapısı requireMobileAdmin", patchSrc.includes("requireMobileAdmin("));
+kontrol("PATCH daha gevşek kapı KULLANMIYOR", !/requireMobileWorker\(|requireMobileFleetView\(/.test(patchSrc));
+kontrol("PATCH ayıklaması lib/fault-reports.ts'ten", patchSrc.includes("arizaDurumunuAyikla("));
+kontrol("PATCH kendi durum listesini yazmıyor", !/\[\s*["']acik["']\s*,\s*["']kapali["']\s*\]/.test(patchSrc));
+// KISMİ güncelleme: yalnız `durum` yazılır. `aciklama`/`reported_by` gövdeden
+// güncellenebilseydi bildirim geçmişe dönük olarak DEĞİŞTİRİLEBİLİRDİ.
+// Değerin TAMAMINA bakılır, ilk kelimesine değil: `(body as {...}).aciklama`
+// sarmalını dar desen kaçırıyordu (arıza enjeksiyonu gösterdi, 11.08.2026).
+kontrol(
+  "PATCH yalnız durum yazıyor",
+  !/\baciklama:\s*[^,\n}]*\b(input|body|ayikla|req)\b/.test(patchSrc) && !/reported_by:/.test(patchSrc)
+);
+kontrol("PATCH kayıt yoksa 404", /mobileError\(404, "not_found"\)/.test(patchSrc));
+kontrol("PATCH geçerli kümeyi yanıtta söylüyor", /gecerli:\s*ARIZA_DURUMLARI/.test(patchSrc));
+kontrol("PATCH degisti bayrağı taşıyor", /degisti:\s*sonuc\.degisti/.test(patchSrc));
+// Yalnız PATCH: bu yol GET/POST/DELETE kabul etmemeli.
+kontrol("PATCH dosyası başka yöntem dışa açmıyor", !/export async function (GET|POST|PUT|DELETE)\b/.test(patchSrc));
+
+// ── Okuma yüzeyi: araç detayında liste ─────────────────────────────────────
+const detaySrc = readFileSync(path.join(ROOT, "app/api/mobile/vehicles/[id]/route.ts"), "utf8");
+kontrol("araç detayı bildirimleri okuyor", detaySrc.includes("listVehicleFaultReports("));
+kontrol("yanıtta arizaBildirimleri var", /arizaBildirimleri:/.test(detaySrc));
+// Boş liste ÜÇ ayrı şey olabilir (yok / tablo_yok / hata) — sebep taşınmalı.
+kontrol("boş listenin SEBEBİ taşınıyor", /arizaBildirimDurumu:/.test(detaySrc));
+kontrol("tavan sessiz değil", /arizaBildirimKirpildi:/.test(detaySrc) && /arizaBildirimToplam:/.test(detaySrc));
+// Cihazın DTC'leriyle KARIŞMAMALI: iki farklı güven düzeyi, iki ayrı dizi.
+kontrol("elle bildirimler DTC dizisine karışmamış", !/arizalar:\s*\[\s*\.\.\.bildirimler/.test(detaySrc));
+
+const dbSrc = readFileSync(path.join(ROOT, "lib/fault-reports-db.ts"), "utf8");
+kontrol("liste YENİDEN ESKİYE sıralı", /order\("created_at",\s*\{\s*ascending:\s*false/.test(dbSrc));
+kontrol("liste tavanı var", /\.limit\(ARIZA_LISTE_TAVANI\)/.test(dbSrc));
+/**
+ * Güncelleme nesnesinde TEK alan olmalı. Yazma BURADA yapılıyor (route değil,
+ * sorgu katmanı) — ilk denemede denetim yanlış dosyaya bakıyordu ve enjekte
+ * edilen arıza sessizce geçti. İkinci alan gövdeden sızmış demektir: bildirim
+ * geçmişe dönük DEĞİŞTİRİLEBİLİR olurdu.
+ */
+const updateBlok = /\.update\(\{([^}]*)\}\)/.exec(dbSrc)?.[1] ?? "";
+kontrol("durum yazması YALNIZ durum içeriyor", updateBlok.trim() === "durum", JSON.stringify(updateBlok.trim()));
+// Gömme (`select("…, workers(name)")`) YOK: ilişki şema önbelleğinde
+// çözülmezse tüm sorgu düşerdi; ad çözülemezse yalnız ad null olmalı, satır
+// kaybolmamalı. Denetim SELECT dizelerine bakar — dosyanın yorumları da
+// "workers(name)" kelimesini geçiriyor ve düz arama onu gömme sanmıştı.
+const selectler = [...dbSrc.matchAll(/\.select\(\s*"([^"]*)"/g)].map((m) => m[1]);
+kontrol(
+  "bildiren adı AYRI sorgudan (select'te gömme yok)",
+  selectler.length > 0 && selectler.every((s) => !s.includes("(")) && dbSrc.includes('.from("workers")'),
+  selectler.join(" | ")
+);
+
 // Migration dosyası duruyor mu (uç onsuz çalışmaz).
 const ddl = readFileSync(path.join(ROOT, "db/migrations/056_vehicle_fault_reports.sql"), "utf8");
 kontrol("056 tabloyu tanımlıyor", /create table if not exists public\.vehicle_fault_reports/.test(ddl));
@@ -155,12 +238,14 @@ if (dusen.length === 0) {
 console.error(`\n✗ ARIZA BİLDİRİMİ MUHAFIZI — ${dusen.length}/${gecen + dusen.length} denetim düştü:\n`);
 for (const d of dusen) console.error(`  · ${d.baslik}${d.kanit ? `   [${d.kanit}]` : ""}`);
 console.error(`
-  Bu denetimler ucun SÖZLERİDİR:
+  Bu denetimler uçların SÖZLERİDİR:
     · boş / yalnız-boşluklu açıklama tabloya GİRMEZ
     · uzun metin sessizce KESİLMEZ, reddedilir ve uzunluğu söylenir
     · hedef araç yoldan, bildiren oturumdan — gövdeden DEĞİL
-    · durum gövdeden alınmaz (yeni bildirim daima 'acik')
-    · kapı requireMobileAdmin
-    · yanıt kayıt kimliğini taşır
+    · yeni bildirim daima 'acik'; durum YALNIZ PATCH ile değişir
+    · durum kümesi iki değerli, uç şema CHECK'inden gevşek olamaz
+    · PATCH yalnız durumu yazar — açıklama geçmişe dönük DEĞİŞTİRİLEMEZ
+    · üç kapı da requireMobileAdmin
+    · boş listenin sebebi (yok / tablo_yok / hata) ve tavan SÖYLENİR
 `);
 process.exit(1);

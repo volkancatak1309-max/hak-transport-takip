@@ -306,11 +306,50 @@ export function endOfMonthVienna(): Date {
   return new Date(nextMonth.getTime() - 1);
 }
 
-/** Parse a YYYY-MM-DD string as the start of that Vienna day (UTC instant). */
+/**
+ * Parse a YYYY-MM-DD string as the start of that Vienna day (UTC instant).
+ *
+ * ── TAKVİM DENETİMİ (12.08.2026) ───────────────────────────────────────────
+ * Eskiden yalnız BİÇİM denetleniyordu. Altındaki `Date.UTC` taşan alanı
+ * SESSİZCE devrediyor, yani var olmayan bir gün başka bir güne kayıyordu:
+ *     "2026-02-31" → 3 Mart      "2026-13-01" → 2027 Ocak
+ *     "2026-02-29" → 1 Mart      (2026 artık yıl değil)
+ * Sonuç bir hata değil, YANLIŞ VERİYDİ: kullanıcı yazdığı tarihin raporuna
+ * baktığını sanırken başka bir günün/haftanın sayılarını görüyordu. Kayma
+ * hiçbir yerde kırmızıya dönmüyordu.
+ *
+ * Kusur `lib/vehicle-day.ts` başlığında 10.08.2026'da zaten belgelenmişti ve
+ * orada `gecerliGun` ile ÇAĞIRAN TARAFTA kapatılmıştı — ama "sınırı üreten
+ * fonksiyonun kendisi de kapalı olmalı, ikinci bir çağıran o kapıyı unutabilir"
+ * notu düşülmüştü. Nitekim unutulmuştu (panelin özel aralık seçicisi, mobil
+ * liste sözleşmesi, yönetici panosu tarih filtresi). Kapı artık burada.
+ *
+ * ── DÖNÜŞ SÖZLEŞMESİ DEĞİŞMEDİ ─────────────────────────────────────────────
+ * `Date | null` zaten böyleydi (biçim tutmayınca null dönüyordu), dolayısıyla
+ * TÜM çağıranlar null'ı halihazırda ele alıyor. Bu değişiklik yalnızca null
+ * dönen girdi KÜMESİNİ genişletir ve o kümedeki her girdi bugün de ZATEN
+ * yanlış cevap üretiyordu.
+ *
+ * ── ÖN EK TOLERANSI KORUNDU ────────────────────────────────────────────────
+ * Regex bilerek `$` ile bitmiyor: "2026-08-12T10:00:00Z" gibi tam ISO damgalar
+ * da kabul edilir (tarih ön eki okunur). Denetim STRING KARŞILAŞTIRMASIYLA
+ * değil, ayrıştırılan y/m/g ALANLARIYLA yapılıyor — aksi hâlde bu tolerans
+ * sessizce kalkardı.
+ */
 export function startOfDayViennaFromYmd(s: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
   if (!m) return null;
-  return zonedWallTimeToUtc(+m[1], +m[2], +m[3], 0, 0, 0, TENANT_TZ);
+  const [y, mo, d] = [+m[1], +m[2], +m[3]];
+  // Taşan tarih: UTC'de kurup geri okuyunca alanlar tutmaz (31 Şubat → 3 Mart).
+  const probe = new Date(Date.UTC(y, mo - 1, d));
+  if (
+    probe.getUTCFullYear() !== y ||
+    probe.getUTCMonth() !== mo - 1 ||
+    probe.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return zonedWallTimeToUtc(y, mo, d, 0, 0, 0, TENANT_TZ);
 }
 
 /** Parse a YYYY-MM-DD string as the end (last ms) of that Vienna day. */

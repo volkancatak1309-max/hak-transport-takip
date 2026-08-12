@@ -62,16 +62,25 @@ export function seyrelt<T>(items: readonly T[], max: number): T[] {
   return out;
 }
 
-/** `YYYY-MM-DD` mi — ve gerçekten var olan bir takvim günü mü? */
+/**
+ * `YYYY-MM-DD` mi — ve gerçekten var olan bir takvim günü mü?
+ *
+ * TAKVİM DENETİMİ ARTIK BURADA DEĞİL: 12.08.2026'da `startOfDayViennaFromYmd`
+ * (lib/format.ts) kendi kapısını kurdu ve bu fonksiyon oraya devretti. İki ayrı
+ * takvim uygulaması tutmak, ikisinin bir gün ayrışması demekti — nitekim bu
+ * dosyadaki kopya, sınırı ÜRETEN fonksiyonun hâlâ açık olduğunu belgeleyen
+ * uyarıyla birlikte yaşıyordu.
+ *
+ * Burada kalan tek şey ÇAPA: bu fonksiyonun çağıranları saf bir gün dizesi
+ * bekler, ön ekli tam ISO damga değil. `startOfDayViennaFromYmd` ön eke
+ * bilerek toleranslı olduğu için `$` denetimi burada duruyor.
+ *
+ * Davranış girdi girdi AYNI — yalnız takvim kararının kaynağı tek.
+ */
 export function gecerliGun(s: string | null | undefined): s is string {
   if (!s) return false;
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!m) return false;
-  const [y, mo, d] = [+m[1], +m[2], +m[3]];
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
-  // 31 Şubat gibi taşan tarihler: UTC'de kurup geri okuyunca gün kayar.
-  const probe = new Date(Date.UTC(y, mo - 1, d));
-  return probe.getUTCFullYear() === y && probe.getUTCMonth() === mo - 1 && probe.getUTCDate() === d;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  return startOfDayViennaFromYmd(s) !== null;
 }
 
 /**

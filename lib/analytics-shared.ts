@@ -10,16 +10,44 @@ export type AnalyticsRangeKey = "gun" | "hafta" | "ay" | "ozel" | "tumzaman";
 export type DateRange = { start: Date; end: Date };
 
 /**
- * Güvenlik skoru ceza ağırlıkları — 100 puandan bu ağırlıklarla düşülür.
- * Aşırı hız + sinyal karıştırma en ağır (25), sert fren/hızlanma/viraj orta
- * (12), uzun rölanti hafif (5). AYARLANABİLİR — firma politikasına göre
- * değiştirilebilir, tek kaynak burası.
+ * Güvenlik skoru ceza ağırlıkları — ceza bu ağırlıklarla toplanır ve
+ * `100 × K/(K + ceza/1000km)` eğrisine girer (lib/analytics.ts).
+ * AYARLANABİLİR — firma politikasına göre değiştirilebilir, tek kaynak burası.
+ *
+ * ═══ harsh_acceleration 12 → 3 (12.08.2026, Volkan kararı — ÖLÇÜMLE) ═══
+ *
+ * SORUN: ağırlıklar EŞİTKEN (üç harsh_* de 12) skor fiilen TEK OLAY TİPİNİN
+ * SAYACINA dönüşmüştü. Canlı ölçüm (30 gün, HAK61):
+ *     harsh_acceleration  2.605 olay × 12 = 31.260 ceza  → toplamın %48,5'i
+ *     harsh_cornering       954        12 = 11.448       → %17,8
+ *     overspeeding          377        25 =  9.425       → %14,6
+ *     harsh_braking         638        12 =  7.656       → %11,9
+ *     idling                800         5 =  4.000       → %6,2
+ *     jamming                28        25 =    700       → %1,1
+ * Bir şoförün 986 km'de aldığı 5.948 cezanın 4.764'ü (%80) tek tipten geliyordu.
+ *
+ * ÖLÇÜLEN FREKANS ORANI: hızlanma / fren = 2.605 / 638 = 4,1×. Ağırlık o oranla
+ * ters ölçeklendi: 12 / 4,1 = 2,9 → 3. Sonuç hızlanmayı frenle EŞİT toplam
+ * katkıya getiriyor (%19,0'a karşı %18,7) — amaç buydu.
+ *
+ * ⚠️ AĞIRLIK KİMİN SKORLANACAĞINI DEĞİŞTİRMEZ: kapı km tabanlıdır
+ * (SCORE_MIN_KM_*). Ölçüldü — her ağırlıkta aynı sayıda şoför skorlanıyor,
+ * yalnız puan DEĞERLERİ değişiyor.
+ *
+ * ⚠️ SIRADAKİ: hızlanma inince en büyük katkı harsh_cornering'e geçiyor (%27,9).
+ * Aynı sınıf bir kusur DEĞİL — viraj frenin 1,5 katı, hızlanma 4,1 katıydı;
+ * 1,5× normal dağılım, 4,1× tahakküm. İlkeli tam çözüm TÜM ağırlıkları temel
+ * orana göre normalize etmektir ve her skoru oynatır — ayrı karar, ayrı tur.
+ *
+ * ⚠️ AĞIRLIK ≠ CİHAZ EŞİĞİ: bir olayın ne zaman "sert hızlanma" sayılacağı
+ * Teltonika FMC003'ün setparam'larında (AVL 253/254), bu repoda DEĞİL. Buradaki
+ * sayı yalnız cihazın verdiği kararın skora katkısını belirler.
  */
 export const SAFETY_SCORE_WEIGHTS: Record<string, number> = {
   overspeeding: 25,
   jamming: 25,
   harsh_braking: 12,
-  harsh_acceleration: 12,
+  harsh_acceleration: 3,
   harsh_cornering: 12,
   idling: 5,
 };

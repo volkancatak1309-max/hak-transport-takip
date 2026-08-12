@@ -71,7 +71,25 @@ export const SAFETY_SCORE_K = 500;
  *
  * (22.07.2026'da lib/analytics.ts'ten BURAYA taşındı — davranış aynı.)
  */
-export const SCORE_MIN_KM_PER_DAY = 40;
+/**
+ * ═══ 40 → 20 (12.08.2026, Volkan kararı — ÖLÇÜMLE) ═══
+ *
+ * SORUN: 40 km/gün, filonun ölçülen MEDYANININ TA KENDİSİYDİ. Canlı ölçüm
+ * (30 gün, HAK61): medyan 40,1 km/çalışılan gün, eşik 40 → oran 1,00×.
+ * Yani kapı bir "yeterli veri" eşiği değil, fiilen bir MEDYAN AYIRICIYDI ve
+ * tasarımı gereği filonun yarısını eliyordu — 28 şoförün 14'ü altında kalıyor,
+ * 29 şoförün 18'i "yetersiz veri" düşüyordu. Elenenlerin medyan doluluğu %71,
+ * en yükseği %98: bir şoför 9 km eksikle eleniyordu. Bu bir ölçüm yetersizliği
+ * değil, kalibrasyon hatasıydı.
+ *
+ * 20 km/gün ≈ medyanın yarısı: "yarım günlük normal sürüş" çıtası. Ölçülen
+ * sonuç 11/29 → 19/29 skorlanan; ortalama 23'te KALIYOR (yeni girenler
+ * ortalamayı aşağı çekmiyor).
+ *
+ * TAVAN AYNI: eşik hâlâ aralığın geçen gün sayısıyla sınırlı, yani veri
+ * biriktikçe çıta kendiliğinden sıkılaşır.
+ */
+export const SCORE_MIN_KM_PER_DAY = 20;
 
 /**
  * SKOR İÇİN MUTLAK KM TABANI (09.08.2026, Volkan kararı).
@@ -92,6 +110,25 @@ export const SCORE_MIN_KM_PER_DAY = 40;
  *
  * Eşik = max(SCORE_MIN_KM_FLOOR, SCORE_MIN_KM_PER_DAY × çalışılan gün).
  * Yani gün ölçeklemesi yalnız YUKARI çeker, aşağı çekemez.
+ *
+ * ═══ 300'DE KALDI (12.08.2026, PER_DAY 40→20 kararıyla birlikte) ═══
+ *
+ * Çarpan yarıya inerken taban ORANTILI DÜŞÜRÜLMEDİ — bilerek. İkisi AYRI
+ * soruya cevap veriyor:
+ *   • PER_DAY → "çalıştığı süreye göre yeterince sürdü mü" (yoğunluk/adalet)
+ *   • FLOOR   → "payda, oranı anlamlı kılacak kadar büyük mü" (geçerlilik)
+ * Yoğunluk çıtasını gevşetmek, paydanın istatistiksel geçerliliği hakkında
+ * hiçbir şey söylemez.
+ *
+ * ÖLÇÜLDÜ (30 gün, PER_DAY=20 ile): taban 300 → 19/29 skorlanan, aralık 3–63.
+ * Taban 150 → 22/29, ama kazanılan üç şoför 145–159 km'lik paydalarla geliyor.
+ * Taban 0 → biri 100 alıyor: küçük paydalı, olayı olmayan şoför "kusursuz"
+ * ilan ediliyor — tabanın kurulma sebebinin ta kendisi (yukarıdaki not).
+ * 300 km'de tek bir aşırı hız olayı 83 ceza/1000km, 150 km'de 167 eder.
+ *
+ * ⚠️ YAN ETKİ: PER_DAY=20 ile taban artık 15 GÜNE kadar bağlayıcı (300/20);
+ * eskiden 8 gündü. Az çalışan şoförde çıtayı çarpan değil TABAN belirliyor —
+ * bilinçli, çünkü paydayı koruyan kısıt odur.
  */
 export const SCORE_MIN_KM_FLOOR = 300;
 

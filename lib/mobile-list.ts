@@ -58,6 +58,19 @@ export function pageInfo(p: PageParams, total: number): PageInfo {
  * `?range=gun|hafta|ay|tumzaman` (varsayılan `hafta` = son 7 gün, KAYAN pencere).
  * Hepsi lib/analytics.ts computeAnalyticsRange üzerinden geçer — yönetici panosu,
  * Analiz ve raporlar da o fonksiyonu kullanıyor, ikinci bir pencere tanımı yok.
+ *
+ * ── TAKVİMDE OLMAYAN TARİH (12.08.2026) ───────────────────────────────────
+ * `?from=2026-02-31` gibi biçimi doğru ama takvimde olmayan bir gün ARTIK
+ * VARSAYILAN PENCEREYE düşer. Eskiden sessizce KAYIYORDU (3 Mart'tan başlayan
+ * bir pencere kuruluyordu) — yani istemci yazdığı tarihin verisine baktığını
+ * sanıyordu. Kapı lib/format.ts startOfDayViennaFromYmd'de; computeAnalyticsRange
+ * null gördüğü an `fallback`a düşer.
+ *
+ * ⚠️ DÜŞÜŞ HÂLÂ SESSİZ: bu fonksiyonun hata kanalı yok (DateRange döner) ve tek
+ * çağıranı `/api/mobile/alarms`. Yanlış pencere yerine varsayılan pencere
+ * göstermek daha az zararlı, ama istemciye "tarihin geçersizdi" DEMİYOR.
+ * 400 döndürmek o ucun sözleşmesini değiştirir — ayrı karar. Yeni uçlar
+ * (`/driver-scores`) bu yüzden kendi katı ayrıştırıcısını kullanıyor.
  */
 export function parseRange(url: URL): DateRange {
   const from = url.searchParams.get("from");
@@ -69,7 +82,18 @@ export function parseRange(url: URL): DateRange {
   return computeAnalyticsRange(k);
 }
 
-/** `YYYY-MM-DD` → Viyana gün başı/sonu; geçersizse null. */
+/**
+ * `YYYY-MM-DD` → Viyana gün başı/sonu; geçersizse null.
+ *
+ * "Geçersiz" artık TAKVİMİ de kapsıyor (12.08.2026, lib/format.ts): `2026-02-31`
+ * null döner, eskiden 3 Mart sınırı üretiyordu. Buradaki `ymd` denetimi ÇAPA
+ * içindir (ön ekli ISO damga gün sınırı sayılmasın); takvim kararı tek kaynakta.
+ *
+ * ⚠️ null = "SINIR YOK" demek. Tek çağıran `/api/mobile/shifts`: geçersiz bir
+ * `?from=` artık pencereyi KAYDIRMIYOR ama sınırı da DÜŞÜRÜYOR, yani sonuç
+ * kümesi daralmak yerine genişliyor. Yanlış pencereden iyi, sessizlikten kötü —
+ * o ucu 400'e çevirmek sözleşme değişikliğidir, ayrı karar.
+ */
 export function parseYmdRange(
   from: string | null,
   to: string | null

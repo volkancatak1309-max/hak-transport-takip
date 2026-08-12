@@ -9,9 +9,12 @@ import { requireAdmin } from "@/lib/session";
 import {
   createWorkerSchema,
   updateWorkerSchema,
-  adminSetPinSchema,
   DEFAULT_TEMP_PIN,
 } from "@/lib/validation";
+// PIN atama ve aktiflik çevirme MANTIĞI artık burada değil: panel ile mobil
+// uçlar aynı çekirdeği çağırıyor (bkz. lib/worker-account-db.ts başlığı).
+// Bu dosyada kalan tek şey KAPI (requireAdmin), hata metinleri ve revalidate.
+import { setWorkerPin, setWorkerActive } from "@/lib/worker-account-db";
 import { canonicalPhone, phoneVariants } from "@/lib/phone";
 import { clearLoginLock } from "@/lib/login-lock";
 import { bumpTokenVersion } from "@/lib/mobile-auth";
@@ -356,59 +359,34 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
   return { ok: true };
 }
 
+/**
+ * Çalışanı pasife alır / geri açar — Çalışanlar listesindeki aç-kapa düğmesi.
+ *
+ * DAVRANIŞ DEĞİŞMEDİ (12.08.2026). Yazma mantığı `lib/worker-account-db.ts`
+ * setWorkerActive'e taşındı ve buraya `"toggle"` ile geliyor: fonksiyon kaydı
+ * kendisi okuyup mevcut değeri çeviriyor — yani eskiden burada olan
+ * `!worker.is_active` hesabının aynısı, aynı tek okumayla. Patron kapısı,
+ * terminated_at kuralı, token iptali ve iz de çekirdekte, aynı sırayla.
+ *
+ * Burada kalanlar: oturum kapısı, KULLANICIYA GÖRÜNEN HATA METİNLERİ ve
+ * revalidate. Metinler bilerek burada — çekirdek arayüz dili taşımaz.
+ */
 export async function toggleActiveAction(workerId: string): Promise<WorkerResult> {
   const session = await requireAdmin();
-  // PATRON KORUMASI (045): görünmezlik yazma koruması olmadan yarımdır —
-  // liste gizlense de id bir kez öğrenilirse bu action doğrudan çağrılabilir.
-  // "Bulunamadı" diyoruz, "yasak" değil: yasak demek kaydın VAR olduğunu
-  // doğrulardı. Katman kapalıyken (HAK61/Sendigo) hiç sorgu atmaz.
-  if (!(await assertOwnerWritable(session.worker_id, workerId)).ok) {
-    return { ok: false, error: "Çalışan bulunamadı" };
+
+  const r = await setWorkerActive(session.worker_id, workerId, "toggle");
+  if (!r.ok) {
+    // "Bulunamadı" diyoruz, "yasak" değil: yasak demek kaydın VAR olduğunu
+    // doğrulardı (patron koruması, 045).
+    return {
+      ok: false,
+      error: r.sebep === "write_failed" ? "Güncelleme başarısız" : "Çalışan bulunamadı",
+    };
   }
 
-  const { data: worker } = await supabaseAdmin
-    .from("workers")
-    .select("id, name, is_active, terminated_at")
-    .eq("id", workerId)
-    .maybeSingle();
-  if (!worker) return { ok: false, error: "Çalışan bulunamadı" };
-
-  const nextActive = !worker.is_active;
-
-  /**
-   * AKTİFLEŞTİRME, İŞTEN ÇIKIŞI DA GERİ ALIR (28.07.2026).
-   *
-   * Eskiden yalnız is_active çevriliyordu, terminated_at olduğu gibi kalıyordu.
-   * Sonuç bir HAYALET DURUM: "çalışıyor ama işten çıkmış". İzin Takvimi bu
-   * kaydı İKİ ayrı sorguyla birden yakalıyordu — aktif kadro (is_active=true)
-   * ve ayrılanlar (terminated_at dolu) — ve aynı kişi takvimde İKİ SATIR
-   * olarak, biri normal biri gri, yan yana çıkıyordu.
-   *
-   * terminated_at yalnız AKTİFLEŞTİRİRKEN temizlenir. Pasifleştirme ona
-   * DOKUNMAZ: "işten çıkar" akışı (terminateWorkerAction) ayrı bir karardır ve
-   * çıkış tarihini oraya yazar; buradaki basit aç/kapa onu ezmemeli.
-   */
-  const patch: Record<string, unknown> = { is_active: nextActive };
-  if (nextActive) patch.terminated_at = null;
-
-  const { error } = await supabaseAdmin
-    .from("workers")
-    .update(patch)
-    .eq("id", workerId);
-
-  if (error) return { ok: false, error: "Güncelleme başarısız" };
-
-  // PASİFE ALINDIYSA mobil anahtarları da düşür. Tarayıcı tarafında karşılığı
-  // is_active kontrolüdür; mobilde token 30 gün yaşadığı için sayacı artırmak
-  // şart. Aktifleştirmede de artırıyoruz: eski bir token'ın hesap geri açılınca
-  // canlanması istenmez. Migration 044 yoksa sessiz no-op.
-  await bumpTokenVersion(workerId);
-
-  await auditChange(session.worker_id ?? null, "update", "workers", workerId,
-    worker as Record<string, unknown> | null, { is_active: nextActive });
   revalidatePath("/admin/workers");
-  // İzin Takvimi kadro listesini bu iki alandan kuruyor — çift satır hatasının
-  // düzeldiği anında görünmesi için o sayfa da tazelenir.
+  // İzin Takvimi kadro listesini is_active + terminated_at'ten kuruyor — çift
+  // satır hatasının düzeldiği anında görünmesi için o sayfa da tazelenir.
   revalidatePath("/admin/izinler");
   return { ok: true };
 }
@@ -538,6 +516,10 @@ export async function clearLoginLockAction(
  * kalıcı PIN'ini belirlemeye zorlanır; yöneticinin verdiği geçici PIN böylece
  * kalıcı olmaz. Yönetici bilinçli olarak kapatabilir (ekranı çeviremeyen şoför
  * için PIN sabit kalsın istenebilir) — bu yüzden bayrak zorlanmıyor, soruluyor.
+ *
+ * DAVRANIŞ DEĞİŞMEDİ (12.08.2026): doğrulama, hash'leme, yazma ve token iptali
+ * `lib/worker-account-db.ts` setWorkerPin'e taşındı — adım sırası ve şema aynı.
+ * Burada kalanlar oturum kapısı, hata metinleri ve revalidate.
  */
 export async function setWorkerPinAction(
   workerId: string,
@@ -545,40 +527,16 @@ export async function setWorkerPinAction(
   mustChange: boolean
 ): Promise<WorkerResult> {
   const session = await requireAdmin();
-  // PATRON KORUMASI (045): görünmezlik yazma koruması olmadan yarımdır —
-  // liste gizlense de id bir kez öğrenilirse bu action doğrudan çağrılabilir.
-  // "Bulunamadı" diyoruz, "yasak" değil: yasak demek kaydın VAR olduğunu
-  // doğrulardı. Katman kapalıyken (HAK61/Sendigo) hiç sorgu atmaz.
-  if (!(await assertOwnerWritable(session.worker_id, workerId)).ok) {
-    return { ok: false, error: "Çalışan bulunamadı" };
+
+  const r = await setWorkerPin(session.worker_id, workerId, pin, mustChange);
+  if (!r.ok) {
+    // Metinler BİREBİR korundu — SetPinDialog bunları i18n anahtarı olarak
+    // kullanıyor, değişirse ekranda ham anahtar görünürdü.
+    if (r.sebep === "owner_protected") return { ok: false, error: "Çalışan bulunamadı" };
+    if (r.sebep === "invalid_pin") return { ok: false, error: r.pinKod ?? "errPin" };
+    if (r.sebep === "not_found") return { ok: false, error: "notFound" };
+    return { ok: false, error: "pinUpdateFailed" };
   }
-
-  const parsed = adminSetPinSchema.safeParse(pin);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "errPin" };
-  }
-
-  const { data: worker } = await supabaseAdmin
-    .from("workers")
-    .select("id")
-    .eq("id", workerId)
-    .maybeSingle();
-  if (!worker) return { ok: false, error: "notFound" };
-
-  const pin_hash = await bcrypt.hash(parsed.data, 10);
-
-  const { error } = await supabaseAdmin
-    .from("workers")
-    .update({ pin_hash, must_change_pin: mustChange })
-    .eq("id", workerId);
-
-  if (error) return { ok: false, error: "pinUpdateFailed" };
-
-  // PIN'i yönetici sıfırladı → eski PIN'le alınmış mobil token'lar ölmeli.
-  // Telefonu kaybolan şoför için asıl kurtarma yolu budur: patron PIN'i
-  // sıfırlar, kayıp cihazdaki anahtar aynı anda geçersizleşir.
-  // Migration 044 yoksa sessiz no-op.
-  await bumpTokenVersion(workerId);
 
   revalidatePath("/admin/workers");
   revalidatePath(`/admin/workers/${workerId}`);

@@ -53,6 +53,7 @@ import {
   LENKZEIT_WARNING_ENABLED,
   PACKAGES_ENABLED,
   DRIVER_VEHICLE_CHOICE,
+  SHIFT_PER_DAY,
 } from "@/lib/tenant";
 import { TelegramLink } from "@/components/TelegramLink";
 import { tryServerAction } from "@/lib/offline-aware";
@@ -217,6 +218,14 @@ export function PanelClient({
    * 'assigned' (HAK61 varsayılanı) → hayır, atanmış aracıyla açar.
    */
   const freeVehicleChoice = DRIVER_VEHICLE_CHOICE === "free";
+
+  /**
+   * Aynı gün ikinci vardiya açılabilir mi? (14.08.2026)
+   * 'many' (Sendigo) → gün kapandığında "YENİ VARDİYA AÇ" çıkar; sunucu YENİ
+   * SATIR yazar. 'one' (HAK61 varsayılanı) → ekran aynen kalır: tek eylem
+   * "yeniden aç", yani o günün satırını sürdürmek.
+   */
+  const manyShiftsPerDay = SHIFT_PER_DAY === "many";
 
   /** Seçicide gösterilecek araçlar — plaka/marka/model araması uygulanmış. */
   const visiblePickable = (() => {
@@ -761,23 +770,43 @@ export function PanelClient({
               </p>
             </div>
             {/* İkincil eylem: dev yeşil "başlat" değil — bu bir düzeltme yolu,
-                günün normal akışı değil. Bordo/outline ton hiyerarşiyi korur. */}
+                günün normal akışı değil. Bordo/outline ton hiyerarşiyi korur.
+
+                'many' kiracısında (Sendigo) ANLAM DEĞİŞİR: gün kapandıktan
+                sonra ikinci vardiya açmak bir düzeltme değil, işin NORMAL
+                akışıdır (gece vardiyası + gündüz çağrı işi). O yüzden metin
+                "yeniden aç" değil "yeni vardiya", ve serbest seçim kiracısında
+                önce ARAÇ SEÇİCİ açılır — çünkü ikinci vardiya çoğu zaman
+                başka plakayladır (canlıda: Can 20:2x'te DO-MDC3, 07:1x'te
+                DO-MDC1). Seçici olmadan buton sabahki aracı varsayardı. */}
             <div className="space-y-2">
               <Button
                 variant="outline"
-                onClick={() => handleManualStart()}
-                disabled={pending}
+                onClick={() =>
+                  manyShiftsPerDay && freeVehicleChoice
+                    ? openVehiclePicker()
+                    : handleManualStart()
+                }
+                disabled={pending || pickerLoading}
                 className="mx-auto h-14 w-full max-w-xs text-base"
               >
-                {pending ? (
+                {pending || pickerLoading ? (
                   <Loader2 className="size-5 animate-spin" aria-hidden />
+                ) : manyShiftsPerDay && freeVehicleChoice ? (
+                  <Truck className="size-5" aria-hidden />
                 ) : (
                   <PlayCircle className="size-5" aria-hidden />
                 )}
-                {t("v2DayDoneReopen")}
+                {manyShiftsPerDay
+                  ? freeVehicleChoice
+                    ? t("v2PickVehicleAndStart")
+                    : t("v2DayDoneNewShift")
+                  : t("v2DayDoneReopen")}
               </Button>
               <p className="mx-auto max-w-xs text-xs text-muted-foreground">
-                {t("v2DayDoneReopenHint")}
+                {manyShiftsPerDay
+                  ? t("v2DayDoneNewShiftHint")
+                  : t("v2DayDoneReopenHint")}
               </p>
             </div>
           </CardContent>

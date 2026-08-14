@@ -248,6 +248,14 @@ export type ActiveDriver = {
   name: string;
   plate: string | null;
   shift_started_at: string;
+  /**
+   * Şoförün BUGÜN zaten kapattığı vardiyaların toplam çalışma süresi (ms).
+   * Yan paneldeki AZG tavan rozeti bunu açık vardiyanın süresine ekler —
+   * § 9 Abs. 1 tavanı GÜNE aittir, tek vardiyaya değil (14.08.2026).
+   * Opsiyonel: eski bir çağıran alanı doldurmazsa rozet eski davranışına
+   * (yalnız açık vardiya) düşer, patlamaz.
+   */
+  prior_today_ms?: number;
   time_entry_id: string;
   // Konum artık opsiyonel: vardiyası açık ama aracı o an sinyal vermeyen şoför de
   // listede kalır (harita şoför sekmesi = açık vardiya sayacıyla aynı küme).

@@ -21,7 +21,7 @@ import {
   MAX_PER_SHIFT_KM,
   MAX_COUNT,
 } from "@/lib/validation";
-import { PACKAGES_ENABLED } from "@/lib/tenant";
+import { PACKAGES_ENABLED, SHIFT_PER_DAY } from "@/lib/tenant";
 import {
   workedMs,
   formatDurationShort,
@@ -124,24 +124,39 @@ export async function startShiftManualAction(
 
   // 1) Araç. Şoför geçici araç seçtiyse O, seçmediyse atanmış aracı.
   //    "active" katılığı iki yolda da aynı: bakımdaki araçla vardiya açılmaz.
-  let veh: { id: string; plate: string; status: string } | null = null;
-  if (overrideVehicleId) {
-    const { data } = await supabaseAdmin
-      .from("vehicles")
-      .select("id, plate, status, is_test")
-      .eq("id", overrideVehicleId)
-      .maybeSingle();
-    // Test aracı seçiciye hiç gelmiyor; yine de sunucu son sözü söyler.
-    if (!data || data.is_test === true) return { ok: false, error: "no_vehicle" };
-    if ((data.status as string) !== "active") {
-      return { ok: false, error: "vehicle_unavailable" };
+  //
+  //    ÇÖZÜM ERTELENDİ, ÇAĞRI YERİ AŞAĞIDA (14.08.2026). Eskiden bu blok burada
+  //    ÇALIŞIYOR ve `no_vehicle` ile ERKEN DÖNÜYORDU — yani yeniden açma dalına
+  //    (madde 2b) hiç varılamıyordu. Ataması olmayan şoförde (Sendigo,
+  //    DRIVER_VEHICLE_CHOICE='free': canlıda 5 aracın yalnız test aracı atanmış)
+  //    "VARDİYAYI YENİDEN AÇ" düğmesi bu yüzden "Sana atanmış araç yok" diyordu:
+  //    yeniden açılacak satırın ARACI ZATEN BELLİYKEN kod onu aramaya gidiyordu.
+  //    Artık çözüm ihtiyaç anında yapılır ve yeniden açmada satırın kendi aracı
+  //    yedektir. HAK61'de (atamalı mod) sorgu aynı sorgu, sonuç aynı sonuç.
+  const resolveVehicle = async (): Promise<
+    | { ok: true; veh: { id: string; plate: string; status: string } }
+    | { ok: false; error: string }
+  > => {
+    if (overrideVehicleId) {
+      const { data } = await supabaseAdmin
+        .from("vehicles")
+        .select("id, plate, status, is_test")
+        .eq("id", overrideVehicleId)
+        .maybeSingle();
+      // Test aracı seçiciye hiç gelmiyor; yine de sunucu son sözü söyler.
+      if (!data || data.is_test === true) return { ok: false, error: "no_vehicle" };
+      if ((data.status as string) !== "active") {
+        return { ok: false, error: "vehicle_unavailable" };
+      }
+      return {
+        ok: true,
+        veh: {
+          id: data.id as string,
+          plate: data.plate as string,
+          status: data.status as string,
+        },
+      };
     }
-    veh = {
-      id: data.id as string,
-      plate: data.plate as string,
-      status: data.status as string,
-    };
-  } else {
     const { data } = await supabaseAdmin
       .from("vehicles")
       .select("id, plate, status")
@@ -154,12 +169,15 @@ export async function startShiftManualAction(
     if ((data.status as string) !== "active") {
       return { ok: false, error: "vehicle_unavailable" };
     }
-    veh = {
-      id: data.id as string,
-      plate: data.plate as string,
-      status: data.status as string,
+    return {
+      ok: true,
+      veh: {
+        id: data.id as string,
+        plate: data.plate as string,
+        status: data.status as string,
+      },
     };
-  }
+  };
 
   // 2) Çift açık vardiya guard'ı (startShiftAction ile aynı). DB tarafında
   //    uq_time_entries_one_open partial unique index son sözü söyler.
@@ -194,10 +212,19 @@ export async function startShiftManualAction(
   //     km/kapanış sebebi ve watchdog sayacı. break_minutes ve start_km korunur —
   //     aynı vardiyanın devamıdır. undelivered_count sıfırlanır ki kapanış formu
   //     yeniden sorsun; cargo_count kapanışta zaten yeniden türetilir.
-  if (await hasShiftToday(session.worker_id!)) {
+  //
+  //     SHIFT_PER_DAY='many' (Sendigo, 14.08.2026): kural BU KİRACIDA YOK.
+  //     Gece vardiyası + gündüz çağrı işi aynı güne düşüyor ve ikincisi
+  //     GERÇEKTEN ayrı bir vardiyadır. Yeniden açma o gün için YANLIŞ cevaptır:
+  //     started_at/ended_at üzerine yazar, yani birinci vardiyayı SİLER. Canlıda
+  //     görüldü (14.08.2026, Sendigo): Can Özsavaş'ın 07:10→09:28 vardiyası
+  //     yönetici "yeniden aç" dediğinde 20:00 başlangıcıyla ezildi, satır
+  //     created_at=05:10 damgasıyla tek başına kaldı ve sabahki 2 sa 18 dk
+  //     kayboldu. 'many' modda bu dal ATLANIR, aşağıda YENİ SATIR açılır.
+  if (SHIFT_PER_DAY === "one" && (await hasShiftToday(session.worker_id!))) {
     const { data: todays } = await supabaseAdmin
       .from("time_entries")
-      .select("id")
+      .select("id, vehicle_id, plate")
       .eq("worker_id", session.worker_id!)
       .gte("started_at", startOfTodayVienna().toISOString())
       .not("ended_at", "is", null)
@@ -208,6 +235,20 @@ export async function startShiftManualAction(
     // Kapanmış vardiya bulunamadıysa kural gerçekten uygulanır (savunmacı: açık
     // vardiya ihtimali yukarıdaki guard'da zaten elendi).
     if (!todays) return { ok: false, error: "day_done" };
+
+    // ARAÇ: seçilen/atanan, yoksa SATIRIN KENDİ ARACI. Yeniden açma yeni bir
+    // araç ilişkisi kurmuyor — var olanı sürdürüyor; şoför araç seçmediyse
+    // ve ataması da yoksa doğru cevap "hata" değil, sabahki araçtır.
+    // `vehicle_unavailable` YEDEKLENMEZ: bakımdaki araçla vardiya sürdürülmez.
+    const rv = await resolveVehicle();
+    let veh: { id: string; plate: string };
+    if (rv.ok) {
+      veh = rv.veh;
+    } else if (rv.error === "no_vehicle" && !overrideVehicleId && todays.vehicle_id) {
+      veh = { id: todays.vehicle_id as string, plate: (todays.plate as string) ?? "—" };
+    } else {
+      return { ok: false, error: rv.error };
+    }
 
     // ARAÇ da yazılır (03.08.2026). Eskiden yeniden açma vehicle_id ve plate'e
     // HİÇ dokunmuyordu: şoför günün ikinci açılışında BAŞKA araç seçse bile
@@ -248,6 +289,12 @@ export async function startShiftManualAction(
     revalidatePath("/admin");
     return { ok: true, reopened: true };
   }
+
+  // YENİ SATIR yolu — araç burada çözülür (yeniden açmanın yedeği yok: yeni
+  // vardiya gerçek bir araç ister).
+  const rvNew = await resolveVehicle();
+  if (!rvNew.ok) return { ok: false, error: rvNew.error };
+  const veh = rvNew.veh;
 
   // DEPO KAPISI (Modül 6) — YALNIZ yeni vardiya için (yeniden-açma yukarıda döndü;
   // yolda olan şoför devam ederken depoda olması beklenmez). Mesai depoda başlar:
@@ -454,7 +501,10 @@ export async function startShiftForWorkerAction(input: {
   if (active) return { ok: false, error: "active" };
 
   // GÜNDE TEK VARDİYA: bugün kapanmış vardiya varsa YENİDEN AÇ (yeni satır üretme).
-  if (await hasShiftToday(input.workerId)) {
+  // SHIFT_PER_DAY='many' kiracısında bu dal ATLANIR — bkz. startShiftManualAction
+  // madde 2b: yeniden açma started_at'in üzerine yazdığı için ikinci vardiyayı
+  // eklemez, birincisini SİLER.
+  if (SHIFT_PER_DAY === "one" && (await hasShiftToday(input.workerId))) {
     const { data: todays } = await supabaseAdmin
       .from("time_entries")
       .select("id")

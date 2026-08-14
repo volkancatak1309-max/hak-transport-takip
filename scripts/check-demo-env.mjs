@@ -134,6 +134,9 @@ const EXPECTED = {
 
   "tenant.DRIVER_PANEL_ENABLED": true,
   "tenant.DRIVER_VEHICLE_CHOICE": "free",
+  // Günde tek vardiya kilidi demoda AÇIK kalır: 'many' Sendigo'nun iş modeline
+  // ait (gece vardiyası + gündüz çağrı işi), demo filosunun değil.
+  "tenant.SHIFT_PER_DAY": "one",
   "tenant.PACKAGES_ENABLED": false,
   "tenant.FLEET_EPOCH_ISO": "2026-08-07T00:00:00.000Z",
 
@@ -210,6 +213,7 @@ process.stdout.write(JSON.stringify({
   "tenant.FLEET_LABELS": JSON.stringify(tenant.FLEET_LABELS),
   "tenant.DRIVER_PANEL_ENABLED": tenant.DRIVER_PANEL_ENABLED,
   "tenant.DRIVER_VEHICLE_CHOICE": tenant.DRIVER_VEHICLE_CHOICE,
+  "tenant.SHIFT_PER_DAY": tenant.SHIFT_PER_DAY,
   "tenant.PACKAGES_ENABLED": tenant.PACKAGES_ENABLED,
   "tenant.FLEET_EPOCH_ISO": tenant.FLEET_EPOCH_ISO,
   "tenant.FUEL_ENABLED": tenant.FUEL_ENABLED,

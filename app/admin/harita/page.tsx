@@ -8,6 +8,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { LiveTrackingClient } from "./LiveTrackingClient";
 import { listLatestVehiclePositions } from "@/lib/telemetry";
 import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
+import { startOfTodayVienna, workedMs } from "@/lib/format";
 import type { ActiveDriver } from "@/lib/types";
 import { audit } from "@/lib/security-log";
 
@@ -66,6 +67,38 @@ export default async function HaritaPage() {
   );
   const shifts = (shiftsData ?? []) as ShiftRow[];
 
+  // Şoförün BUGÜN zaten KAPATTIĞI süre — açık vardiyanın gün tavanına eklenir
+  // (şoför-gün ekseni, 14.08.2026). Aynı elemeler uygulanır ki KPI ile alttaki
+  // liste aynı evreni konuşsun.
+  const { data: closedToday } = await onlyFleet(
+    onlyDrivers(
+      withoutTestRows(
+        supabaseAdmin
+          .from("time_entries")
+          .select("worker_id, started_at, ended_at, break_minutes")
+          .gte("started_at", startOfTodayVienna().toISOString())
+          .not("ended_at", "is", null),
+        "worker_id",
+        scope.workerIds
+      ),
+      "worker_id",
+      driverScope
+    ),
+    "worker_id",
+    fleetScope.workerIds,
+    fleetScope
+  );
+  const priorTodayMs = new Map<string, number>();
+  for (const e of (closedToday ?? []) as {
+    worker_id: string | null;
+    started_at: string;
+    ended_at: string | null;
+    break_minutes: number | null;
+  }[]) {
+    if (!e.worker_id) continue;
+    priorTodayMs.set(e.worker_id, (priorTodayMs.get(e.worker_id) ?? 0) + workedMs(e));
+  }
+
   const workerIds = [...new Set(shifts.map((s) => s.worker_id))];
 
   // 2) Worker info (separate query — avoids fragile embed joins)
@@ -97,6 +130,9 @@ export default async function HaritaPage() {
       name: w?.name ?? "—",
       plate: w?.plate ?? null,
       shift_started_at: s.started_at,
+      // Şoförün bugün ZATEN kapattığı süre — yan paneldeki tavan rozeti bunu
+      // açık vardiyanın süresine ekler (şoför-gün ekseni, 14.08.2026).
+      prior_today_ms: s.worker_id ? (priorTodayMs.get(s.worker_id) ?? 0) : 0,
       time_entry_id: s.id,
       latitude: pos?.latitude ?? null,
       longitude: pos?.longitude ?? null,
@@ -124,7 +160,12 @@ export default async function HaritaPage() {
   for (const s of shifts) {
     const ms = nowMs - new Date(s.started_at).getTime();
     if (ms > longestMs) longestMs = ms;
-    if (ms > dailyCapMs(touchesNightWindow(s.started_at, null))) overLimit++;
+    // ŞOFÖR-GÜN EKSENİ (14.08.2026): tavan GÜNE aittir. Şoförün bugün zaten
+    // kapattığı vardiyalar da tavana sayılır — 'many' kiracısında (Sendigo)
+    // 6 sa + 7 sa çalışan şoför, açık vardiyası 7 saatte olduğu için temiz
+    // görünürdü. `longestMs` gösterilen süre olarak açık vardiyanınki kalır.
+    const prior = s.worker_id ? (priorTodayMs.get(s.worker_id) ?? 0) : 0;
+    if (ms + prior > dailyCapMs(touchesNightWindow(s.started_at, null))) overLimit++;
   }
 
   const t = await getTranslations("map");

@@ -4,7 +4,12 @@ import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin, fetchAllRows, chunkIds } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, dropNonDrivers, onlyDrivers } from "@/lib/driver-scope";
-import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
+import {
+  dailyCapMs,
+  touchesNightWindow,
+  overLimitDayCount,
+  overLimitEntryIds,
+} from "@/lib/azg-rules";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AdminClient } from "./AdminClient";
 import {
@@ -184,10 +189,12 @@ export default async function AdminPage({
       workers: w ? { id: w.id, name: w.name, plate: w.plate } : null,
     } as TimeEntryWithWorker;
   });
+  // ŞOFÖR-GÜN EKSENİ (14.08.2026, lib/azg-rules.ts). § 9 Abs. 1 tavanı GÜNE
+  // aittir; süzgeç satır başına baksaydı aynı gün 8 sa + 6 sa çalışan şoför
+  // "tavan aşımı" süzgecinde hiç çıkmazdı — AZG PDF'i ise o günü ihlal sayıyor.
+  const overIds = overLimitEntryIds(entriesData);
   if (statusFilter === "over") {
-    entriesData = entriesData.filter(
-      (e) => workedMs(e) > dailyCapMs(touchesNightWindow(e.started_at, e.ended_at))
-    );
+    entriesData = entriesData.filter((e) => overIds.has(e.id));
   }
 
   // Totals reflect the SELECTED range. Hours/KM come from COMPLETED shifts only.
@@ -196,16 +203,17 @@ export default async function AdminPage({
   // truth in getDashboardData (every open shift, regardless of window).
   let totalMs = 0;
   let totalKm = 0;
-  let overLimit = 0;
   for (const e of entriesData) {
     if (e.ended_at !== null) {
       totalMs += workedMs(e);
       const km = kmDiff(e);
       if (km !== null) totalKm += km;
     }
-    if (workedMs(e) > dailyCapMs(touchesNightWindow(e.started_at, e.ended_at)))
-      overLimit++;
   }
+  // İHLAL SAYISI = tavanı aşan ŞOFÖR-GÜN sayısı, aşan satır sayısı değil. Bir
+  // günün iki vardiyası tek ihlaldir. Canlı ölçüm (14.08.2026, son 120 gün):
+  // HAK61 78 (satır ekseniyle AYNI), Sendigo 3 (aynı).
+  const overLimit = overLimitDayCount(entriesData);
   const activeCount = dashboard.todayOps.driversInField;
 
   // v2 (migration 020) — admin görünürlüğü: açık şoför bildirimleri (SORUN
@@ -333,6 +341,17 @@ export default async function AdminPage({
   );
 
   const nowMs = Date.now();
+  // Şoförün BUGÜN zaten kapattığı vardiyaların toplamı — açık vardiyanın gün
+  // tavanı hesabına eklenir (aşağıda). Kaynak Günün Panosu'nun bugün penceresi;
+  // ayrı bir sorgu açmaya gerek yok.
+  const priorTodayMsByWorker = new Map<string, number>();
+  for (const e of dashboard.todayEntries) {
+    if (!e.worker_id || e.ended_at === null) continue;
+    priorTodayMsByWorker.set(
+      e.worker_id,
+      (priorTodayMsByWorker.get(e.worker_id) ?? 0) + workedMs(e, nowMs)
+    );
+  }
   // Açık vardiyada "dünden kalmış mı" YANLIŞ sinyaldi (23.07.2026): 22:00'de
   // başlayan gece vardiyası ertesi güne sarkar ve tamamen normaldir; o ölçüt
   // her gece şoförünü uyarı listesine sokuyordu. Tek gerçek sinyal yasal
@@ -351,6 +370,13 @@ export default async function AdminPage({
     const startedMs = new Date(e.started_at).getTime();
     const elapsedMs = Math.max(0, nowMs - startedMs);
     const capMs = dailyCapMs(touchesNightWindow(e.started_at, null));
+    // ŞOFÖR-GÜN EKSENİ (14.08.2026): tavan güne aittir. Aynı şoför bugün daha
+    // önce KAPANMIŞ bir vardiya çalıştıysa (SHIFT_PER_DAY='many' kiracısında
+    // olağan) o süre de tavana sayılır — yoksa 6 sa + 7 sa çalışan şoför açık
+    // vardiyası 7 saatte olduğu için temiz görünürdü. `elapsedMs` GÖSTERİLEN
+    // süre olarak açık vardiyanınki kalır: kart "bu vardiya ne kadar sürdü"
+    // sorusunu cevaplıyor, rozet ise "gün tavanı aşıldı mı" sorusunu.
+    const priorMs = e.worker_id ? (priorTodayMsByWorker.get(e.worker_id) ?? 0) : 0;
     return {
       id: e.id,
       worker_name: e.worker_id ? workerMap.get(e.worker_id)?.name ?? "—" : "—",
@@ -358,7 +384,7 @@ export default async function AdminPage({
       started_at: e.started_at,
       elapsedMs,
       capMs,
-      overLimit: elapsedMs > capMs,
+      overLimit: elapsedMs + priorMs > capMs,
     };
   });
   // Tavanı aşanlar en üstte, her iki grup kendi içinde en uzundan kısaya.
@@ -400,6 +426,7 @@ export default async function AdminPage({
              gostermemek icin. */
           readOnly={isChief}
           entries={entriesData}
+          overLimitIds={[...overIds]}
           workers={driverWorkers}
           range={range}
           from={sp.from ?? ""}

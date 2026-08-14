@@ -440,6 +440,8 @@ type UyariKalemi = {
   tutar?: number | null;
   /** Mesaiyi elle başlatan filo şefi (manualStart.by_name). */
   baslatan?: string;
+  /** Günün TOPLAM çalışma süresi (dk) — secondShift kalemi. */
+  toplamDk?: number;
 };
 
 function uyariKalemi(a: AttentionItem): UyariKalemi {
@@ -511,6 +513,15 @@ function uyariKalemi(a: AttentionItem): UyariKalemi {
         id: a.id,
         sofor: a.worker_name,
         baslatan: a.by_name,
+        an: a.started_at,
+      };
+    case "secondShift":
+      return {
+        tur: a.kind,
+        id: a.id,
+        sofor: a.worker_name,
+        adet: a.count,
+        toplamDk: Math.round(a.totalMs / 60_000),
         an: a.started_at,
       };
   }

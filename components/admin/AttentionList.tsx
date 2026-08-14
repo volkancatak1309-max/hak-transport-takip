@@ -154,6 +154,20 @@ export function AttentionList({
           meta: formatTime(item.started_at, locale),
           overdue: false,
         };
+      case "secondShift":
+        // İHLAL DEĞİL → overdue:false, bordo yok. Meta gün TOPLAMINI taşır:
+        // yöneticinin ilk sorusu "kaç saat oldu", "saat kaçta başladı" değil.
+        return {
+          icon: PlayCircle,
+          text: t("dash.attn_second_shift", {
+            name: item.worker_name,
+            count: item.count,
+          }),
+          meta: t("dash.attn_second_shift_meta", {
+            total: formatDurationShort(item.totalMs, locale),
+          }),
+          overdue: false,
+        };
       case "inspection":
       case "insurance": {
         const overdue = item.days < 0;

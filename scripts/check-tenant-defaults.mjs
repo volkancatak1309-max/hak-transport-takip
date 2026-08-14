@@ -102,6 +102,12 @@ const EXPECTED = {
   // duruyordu (PanelClient.tsx). 'assigned' o davranışın birebir kendisidir —
   // bu satır kayarsa HAK61 şoförüne serbest plaka seçimi açılır.
   "tenant.DRIVER_VEHICLE_CHOICE": "assigned",
+  // Bir şoför bir Viyana gününde kaç vardiya açabilir. 14.08.2026 öncesi böyle
+  // bir ayar yoktu: kural koda gömülüydü (lib/shift-day.ts) ve gün kapandıktan
+  // sonraki her başlatma denemesi o günün satırını YENİDEN AÇIYORDU. 'one' o
+  // davranışın birebir kendisidir — bu satır kayarsa HAK61 şoförü aynı gün
+  // ikinci bir vardiya SATIRI açabilir ve günlük saat muhasebesi değişir.
+  "tenant.SHIFT_PER_DAY": "one",
   // Yönetici üst çubuğunda "Şoför Paneli" geçişi. 03.08.2026 öncesi böyle bir
   // buton YOKTU (DashboardShell'deki geçiş yalnız filo şefine görünüyordu);
   // false o davranışın birebir kendisidir.
@@ -235,6 +241,7 @@ const out = {
   "tenant.EXPORT_ENABLED": tenant.EXPORT_ENABLED,
   "tenant.PDF_WATERMARK": tenant.PDF_WATERMARK,
   "tenant.DRIVER_VEHICLE_CHOICE": tenant.DRIVER_VEHICLE_CHOICE,
+  "tenant.SHIFT_PER_DAY": tenant.SHIFT_PER_DAY,
   "tenant.ADMIN_DRIVER_PANEL_LINK": tenant.ADMIN_DRIVER_PANEL_LINK,
   "tenant.PACKAGES_ENABLED": tenant.PACKAGES_ENABLED,
   "tenant.LENKZEIT_WARNING_ENABLED": tenant.LENKZEIT_WARNING_ENABLED,

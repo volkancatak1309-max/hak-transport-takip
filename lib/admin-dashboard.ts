@@ -19,6 +19,7 @@ import {
   requiredBreakMin,
   touchesNightWindow,
   dailyCapMs,
+  workerDayBuckets,
 } from "@/lib/azg-rules";
 import type { TimeEntry, Worker, VehicleLiveStatus } from "@/lib/types";
 import { LEAVES_ENABLED } from "@/lib/features";
@@ -93,6 +94,25 @@ export type AttentionItem =
       breakMin: number;
       requiredMin: number;
       /** Vardiyanın başlangıç anı (time_entries.started_at) — mobil sıralama. */
+      started_at: string;
+    }
+  /**
+   * Aynı şoför aynı Viyana gününde İKİNCİ (ya da sonraki) vardiyayı açtı
+   * (14.08.2026, SHIFT_PER_DAY='many'). İHLAL DEĞİL — Sendigo'nun iş modeli
+   * bu (gece vardiyası + gündüz çağrı işi). Kalem, "günde tek vardiya"
+   * kilidi kalkan kiracıda günün gerçekten çift olduğunu yöneticiye GÖRÜNÜR
+   * kılar. Telegram YOK: bildirim yalnız panelde (Volkan kararı, 037'deki
+   * şef-manuel-başlatma kalemiyle aynı desen).
+   */
+  | {
+      kind: "secondShift";
+      id: string;
+      worker_name: string;
+      /** Günün kaçıncı vardiyası (2, 3, …). */
+      count: number;
+      /** Günün TÜM vardiyalarının toplam çalışma süresi. */
+      totalMs: number;
+      /** Son vardiyanın başlangıcı — mobil sıralama + "ne zaman" sorusu. */
       started_at: string;
     }
   | {
@@ -297,6 +317,13 @@ export type DashboardData = {
    * kontak/hız durumu) İKİSİ DE bu sayı değildir; üçü bilinçli ayrı.
    */
   openVehicleCount: number;
+  /**
+   * BUGÜNKÜ ham vardiya satırları. /admin "Kapanmamış Vardiyalar" kartı, açık
+   * vardiyanın AZG gün tavanını hesaplarken şoförün bugün ZATEN kapattığı
+   * süreyi eklemek zorunda (şoför-gün ekseni, 14.08.2026); ikinci bir sorgu
+   * aynı pencereyi iki kez okumak olurdu.
+   */
+  todayEntries: LiteEntry[];
 };
 
 type LiteEntry = Pick<
@@ -828,6 +855,11 @@ export async function getDashboardData(
       manualStarts
     ),
     openVehicleCount: openVehicleIds.size,
+    // BUGÜNKÜ ham vardiya satırları. /admin "Kapanmamış Vardiyalar" kartı açık
+    // vardiyanın gün tavanını hesaplarken şoförün bugün ZATEN kapattığı süreyi
+    // eklemek zorunda (şoför-gün ekseni, 14.08.2026) ve bunun için ikinci bir
+    // sorgu açmak aynı pencereyi iki kez okumak olurdu.
+    todayEntries,
   };
 }
 
@@ -1235,39 +1267,80 @@ function buildAttention(
   for (const e of todayEntries) azgEntries.set(e.id, e);
   for (const e of rangeEntries) if (e.ended_at === null) azgEntries.set(e.id, e);
 
-  for (const e of azgEntries.values()) {
-    const worked = workedMs(e);
-    const night = touchesNightWindow(e.started_at, e.ended_at);
-    const cap = dailyCapMs(night);
-    const workerName = e.worker_id ? names.get(e.worker_id) ?? "—" : "—";
+  // ŞOFÖR-GÜN EKSENİ (14.08.2026, lib/azg-rules.ts workerDayBuckets). § 9 Abs. 1
+  // tavanı GÜNE aittir. Eskiden burada tavan SATIR başına uygulanıyordu: aynı
+  // gün 8 sa + 6 sa çalışan şoför Dikkat listesinde HİÇ çıkmazken AZG PDF'i
+  // (azg-report.ts:288-297) o günü ihlal sayıyordu — panel ile yasal belge aynı
+  // soruya iki cevap veriyordu. Kalem GÜN başına tekilleştirilir; günün en geç
+  // başlayan vardiyası kalemi taşır (listede "en son ne oldu" okunur).
+  const azgList = [...azgEntries.values()];
+  const buckets = workerDayBuckets(azgList);
+  const entryById = new Map(azgList.map((e) => [e.id, e]));
 
-    if (worked > cap) {
+  for (const acc of buckets.values()) {
+    // Kalemi taşıyan satır: günün EN GEÇ başlayanı.
+    const last = acc.ids
+      .map((id) => entryById.get(id)!)
+      .reduce((a, b) => (b.started_at > a.started_at ? b : a));
+    const cap = dailyCapMs(acc.night);
+    const workerName = last.worker_id ? names.get(last.worker_id) ?? "—" : "—";
+
+    if (acc.ms > cap) {
       items.push({
         kind: "overLimit",
-        id: e.id,
+        id: last.id,
         worker_name: workerName,
-        ms: worked,
+        ms: acc.ms,
         capMs: cap,
-        night,
-        started_at: e.started_at,
+        night: acc.night,
+        started_at: last.started_at,
       });
-      // Tavanı aşan vardiya zaten en ağır kalem; mola uyarısını üstüne
-      // eklemek aynı vardiyayı listede iki kez gösterirdi.
+      // Tavanı aşan gün zaten en ağır kalem; mola uyarısını üstüne eklemek
+      // aynı günü listede iki kez gösterirdi.
       continue;
     }
 
-    const needBreak = requiredBreakMin(worked);
-    if (worked > BREAK45_THRESHOLD_MS && (e.break_minutes ?? 0) < needBreak) {
+    // MOLA § 13c Abs. 1 — kademe gün toplamından, mola dakikaları gün
+    // toplamından. Tek vardiyalı günde eski davranışın birebir aynısı.
+    const needBreak = requiredBreakMin(acc.ms);
+    const breakMin = acc.ids.reduce(
+      (s, id) => s + (entryById.get(id)!.break_minutes ?? 0),
+      0
+    );
+    if (acc.ms > BREAK45_THRESHOLD_MS && breakMin < needBreak) {
       items.push({
         kind: "break45",
-        id: e.id,
+        id: last.id,
         worker_name: workerName,
-        ms: worked,
-        breakMin: e.break_minutes ?? 0,
+        ms: acc.ms,
+        breakMin,
         requiredMin: needBreak,
-        started_at: e.started_at,
+        started_at: last.started_at,
       });
     }
+  }
+
+  // ── İKİNCİ VARDİYA (14.08.2026) ────────────────────────────────────────────
+  // YALNIZ BUGÜN penceresinden türer: rangeEntries'ten türeseydi "ay" seçilince
+  // liste geçmiş günlerin ikinci vardiyalarıyla dolardı (aynı tuzak overLimit'te
+  // 23.07'de yaşanmıştı). Kilit AÇIK OLMAYAN kiracıda (SHIFT_PER_DAY='one')
+  // bu kova zaten hiç dolmaz — kalem kendiliğinden görünmez, bayrak okumaya
+  // gerek yok.
+  const todayBuckets = workerDayBuckets(todayEntries);
+  const todayById = new Map(todayEntries.map((e) => [e.id, e]));
+  for (const acc of todayBuckets.values()) {
+    if (acc.ids.length < 2) continue;
+    const last = acc.ids
+      .map((id) => todayById.get(id)!)
+      .reduce((a, b) => (b.started_at > a.started_at ? b : a));
+    items.push({
+      kind: "secondShift",
+      id: last.id,
+      worker_name: last.worker_id ? names.get(last.worker_id) ?? "—" : "—",
+      count: acc.ids.length,
+      totalMs: acc.ms,
+      started_at: last.started_at,
+    });
   }
 
   // 2) Vehicle documents due soon or overdue (§57a inspection + insurance).
@@ -1502,6 +1575,11 @@ function buildAttention(
         return 80; // auto vardiya + araç hiç hareket etmemiş — orta öncelik
       case "manualStart":
         return 78; // şef manuel başlattı — bilgi bildirimi, vehicleIdle'ın hemen ardında
+      case "secondShift":
+        // İHLAL DEĞİL, bilgi bildirimi: 'many' kiracısında günün ikinci
+        // vardiyası normaldir. manualStart ile aynı bantta — ikisi de "bugün
+        // olağandışı bir şey oldu, haberin olsun" diyor.
+        return 77;
       case "penalty":
         return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "overLimit":

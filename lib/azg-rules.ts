@@ -1,4 +1,9 @@
-import { startOfDayViennaFromYmd, addCalendarDaysVienna, viennaDayKey } from "@/lib/format";
+import {
+  startOfDayViennaFromYmd,
+  addCalendarDaysVienna,
+  viennaDayKey,
+  workedMs,
+} from "@/lib/format";
 
 /**
  * AZG ÇALIŞMA SÜRESİ EŞİKLERİ — tek kaynak.
@@ -124,6 +129,81 @@ export function touchesNightWindow(
  */
 export function dailyCapMs(night: boolean): number {
   return night ? AZG_NIGHT_DAILY_MAX_MS : AZG_DAILY_MAX_MS;
+}
+
+/**
+ * ŞOFÖR-GÜN EKSENİ — § 9 Abs. 1 tavanı bir GÜNE aittir, tek vardiyaya değil.
+ *
+ * 14.08.2026'ya kadar panelin altı yüzeyi tavanı SATIR başına uyguluyordu:
+ * aynı gün 8 saat + 6 saat çalışan şoför panelde temiz görünürken AZG PDF'i
+ * (app/actions/azg-report.ts:288-297, gün toplayıcısı) aynı günü ihlal
+ * sayıyordu. İki yüzey aynı yasal soruya iki farklı cevap veriyordu. Günde
+ * birden çok vardiya Sendigo'da normal hâle gelince (SHIFT_PER_DAY='many')
+ * bu ayrışma sessiz bir uyum boşluğuna dönüşürdü.
+ *
+ * Toplama kuralı PDF'inkiyle BİREBİR: aynı şoför + aynı Viyana günü (vardiya
+ * BAŞLANGICININ günü) toplanır; günün HERHANGİ bir vardiyası gece penceresine
+ * değiyorsa o gün için tavan 10 saate iner (§ 14 Abs. 2).
+ *
+ * Canlı ölçüm (14.08.2026, son 120 gün): HAK61'de aşan şoför-gün 78 — satır
+ * ekseninin verdiği 78 ile AYNI. Yalnız işaretlenen satır sayısı 78→81 çıkıyor,
+ * çünkü zaten aşan bir günün ikinci vardiyası da o ihlale aittir. Sendigo 3→3.
+ */
+export type CapEntry = {
+  id: string;
+  worker_id: string | null;
+  started_at: string;
+  ended_at: string | null;
+  break_minutes: number | null;
+};
+
+type DayAcc = { ms: number; night: boolean; ids: string[] };
+
+/** Şoför+gün kovaları. Anahtar `${worker_id}|${viennaDayKey(started_at)}`. */
+export function workerDayBuckets(
+  entries: CapEntry[],
+  now: number = Date.now()
+): Map<string, DayAcc> {
+  const byDay = new Map<string, DayAcc>();
+  for (const e of entries) {
+    // worker_id'siz satır bir ŞOFÖR-gününe ait olamaz; kendi başına değerlendirilir
+    // (kovaya girseydi hepsi tek sahte kovada toplanırdı).
+    const key = `${e.worker_id ?? `-${e.id}`}|${viennaDayKey(e.started_at)}`;
+    const a = byDay.get(key) ?? { ms: 0, night: false, ids: [] };
+    a.ms += workedMs(e, now);
+    if (touchesNightWindow(e.started_at, e.ended_at, new Date(now))) a.night = true;
+    a.ids.push(e.id);
+    byDay.set(key, a);
+  }
+  return byDay;
+}
+
+/** Tavanı aşan ŞOFÖR-GÜN sayısı — kartlardaki "ihlal" rakamı. */
+export function overLimitDayCount(
+  entries: CapEntry[],
+  now: number = Date.now()
+): number {
+  let n = 0;
+  for (const a of workerDayBuckets(entries, now).values()) {
+    if (a.ms > dailyCapMs(a.night)) n++;
+  }
+  return n;
+}
+
+/**
+ * Tavanı aşan şoför-günlere ait vardiya id'leri — satır rozeti/süzgeci için.
+ * Aşan bir günün HER vardiyası işaretlenir: ihlal güne aittir, ikinci vardiya
+ * ihlalin dışında sayılamaz.
+ */
+export function overLimitEntryIds(
+  entries: CapEntry[],
+  now: number = Date.now()
+): Set<string> {
+  const out = new Set<string>();
+  for (const a of workerDayBuckets(entries, now).values()) {
+    if (a.ms > dailyCapMs(a.night)) for (const id of a.ids) out.add(id);
+  }
+  return out;
 }
 
 // ── Panel/rapor eşikleri, okunur adlarla ───────────────────────────────────

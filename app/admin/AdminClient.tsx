@@ -44,7 +44,6 @@ import {
   workedMs,
   kmDiff,
 } from "@/lib/format";
-import { dailyCapMs, touchesNightWindow } from "@/lib/azg-rules";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AttentionList } from "@/components/admin/AttentionList";
 import { LiveWorked } from "@/components/admin/LiveWorked";
@@ -117,6 +116,11 @@ type Props = {
   activeShifts: ActiveShiftRow[];
   overLimitShifts: number;
   photoEntryIds: string[];
+  /**
+   * Tavanı aşan ŞOFÖR-GÜNLERE ait vardiya id'leri (lib/azg-rules.ts
+   * overLimitEntryIds). Sunucuda kurulur — bkz. shiftState.
+   */
+  overLimitIds: string[];
   /** Elle düzeltilmiş vardiyalar — listede "düzenlendi" rozeti çıkar. */
   editedEntryIds: string[];
   /**
@@ -138,6 +142,7 @@ export function AdminClient({
   workerFilter,
   statusFilter,
   summary,
+  overLimitIds,
   dashboard,
   reports,
   activeShifts,
@@ -444,11 +449,15 @@ export function AdminClient({
   }
 
   // ── Vardiya tablosu kolonları ────────────────────────────────────────────
+  // ŞOFÖR-GÜN EKSENİ (14.08.2026): rozet artık satırın kendi süresine değil,
+  // satırın ait olduğu ŞOFÖR-GÜNÜNÜN toplamına bakar. Aşan bir günün HER
+  // vardiyası işaretlenir — ihlal güne aittir. Küme sunucuda kuruldu
+  // (app/admin/page.tsx), istemci yalnız üyelik sorar: tabloda satır başına
+  // yeniden hesaplamak aynı işi her render'da tekrarlardı.
   const shiftState = (e: TimeEntryWithWorker) => {
     const active = e.ended_at === null;
     const onBreak = active && !!e.break_started_at;
-    const over =
-      workedMs(e) > dailyCapMs(touchesNightWindow(e.started_at, e.ended_at));
+    const over = overLimitIds.includes(e.id);
     return { active, onBreak, over };
   };
   const stripeFor = (e: TimeEntryWithWorker) => {

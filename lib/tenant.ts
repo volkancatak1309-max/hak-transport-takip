@@ -213,6 +213,39 @@ export const DRIVER_VEHICLE_CHOICE: DriverVehicleChoice = envEnum(
   "assigned"
 );
 
+export type ShiftPerDay = "one" | "many";
+
+/**
+ * BİR ŞOFÖR BİR GÜNDE KAÇ VARDİYA AÇABİLİR? (14.08.2026)
+ *
+ *  • `one` — HAK61'in BUGÜNKÜ davranışı ve VARSAYILAN. Bir Viyana gününde en
+ *    fazla BİR vardiya SATIRI olur (lib/shift-day.ts). Gün kapandıktan sonra
+ *    başlatma denemesi yeni satır yazmaz, o günün satırını YENİDEN AÇAR.
+ *
+ *  • `many` — Sendigo'nun iş modeli: gece vardiyası + gündüz çağrı işi. Aynı
+ *    şoför aynı gün ikinci kez vardiya açabilir ve bu YENİ BİR SATIRDIR.
+ *    Yönetici panosunda "Dikkat/Aksiyon" kalemi olarak görünür (Telegram yok).
+ *
+ * ⚠️ GEVŞEME YALNIZ İNSAN EYLEMLİ İKİ YOLDA GEÇERLİDİR: şoför panelindeki
+ * başlatma (startShiftManualAction) ve yönetici/şef dialogu
+ * (startShiftForWorkerAction). OTOMATİK VARDİYA MOTORU (lib/auto-shift.ts:432,
+ * workersWithShiftToday) bu bayrağı OKUMAZ ve kilidi ASLA açılmaz — çöp
+ * vardiyanın kaynağı tam olarak orasıydı: kontak açılıp kapandıkça gün içinde
+ * 5-10 satır birikiyordu (21.07.2026 canlı ölçümü: kapanmış onaysız
+ * vardiyaların yarısı 25 dakikadan kısaydı). İnsan eylemi o gürültüyü
+ * üretmiyor; kontak üretiyor.
+ *
+ * ⚠️ ÖN KOŞULU VAR: AZG günlük tavanı panelde ŞOFÖR-GÜN ekseninde
+ * hesaplanmalıdır (lib/azg-rules.ts overLimitDayCount). Satır ekseninde
+ * kalsaydı 8 sa + 6 sa çalışan şoför panelde temiz, AZG PDF'inde ihlal
+ * görünürdü.
+ */
+export const SHIFT_PER_DAY: ShiftPerDay = envEnum(
+  process.env.NEXT_PUBLIC_SHIFT_PER_DAY,
+  ["one", "many"] as const,
+  "one"
+);
+
 /**
  * PAKET SAYACI (alınan / teslim edilen / teslim edilemeyen).
  *

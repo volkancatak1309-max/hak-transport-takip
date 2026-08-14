@@ -287,8 +287,12 @@ export function LiveTrackingClient({
             <ul className="p-2">
               {drivers.map((d) => {
                 const activeMs = Math.max(0, now - new Date(d.shift_started_at).getTime());
+                // ŞOFÖR-GÜN EKSENİ (14.08.2026): tavan güne aittir, tek vardiyaya
+                // değil. Gösterilen süre açık vardiyanınki kalır; rozet gün
+                // toplamına bakar (bugün kapanmış vardiyalar dahil).
                 const over =
-                  activeMs > dailyCapMs(touchesNightWindow(d.shift_started_at, null));
+                  activeMs + (d.prior_today_ms ?? 0) >
+                  dailyCapMs(touchesNightWindow(d.shift_started_at, null));
                 return (
                   <li key={d.worker_id}>
                     <Link

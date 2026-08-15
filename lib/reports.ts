@@ -25,6 +25,7 @@ import {
 } from "@/lib/metric-thresholds";
 import { getTestScope, dropTestRows, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
+import { markKmMeasured } from "@/lib/km-quality";
 import {
   FUEL_PRICE_EUR_PER_L,
   FUEL_PRICE_SOURCE,
@@ -161,6 +162,14 @@ export type PerformanceReport = {
   totalShifts: number;
   totalWorkedMs: number;
   totalKm: number;
+  /**
+   * KM KAPSAMASI (15.08.2026). `totalKm` yalnız ölçülebilen vardiyaların
+   * toplamıdır; bu iki sayı olmadan eksik bir toplam "tam" gibi okunuyordu.
+   * Cihazı sessiz vardiyada `end_km - start_km` bayat odometreden 0 çıkıyor ve
+   * bu 0 bir ölçüm değil (bkz. lib/km-quality.ts).
+   */
+  kmMeasuredShifts: number;
+  kmUnmeasuredShifts: number;
   scoredCount: number;
   /** Aralığın her günü için vardiya/km/çalışma — toplamların kırılımı. */
   daily: PerformanceDaily[];
@@ -344,7 +353,7 @@ export async function buildPerformanceReport(
           supabaseAdmin
             .from("time_entries")
             .select(
-              "id, worker_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count"
+              "id, worker_id, vehicle_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count"
             )
             .gte("started_at", base.startISO)
             .lte("started_at", base.endISO)
@@ -359,7 +368,9 @@ export async function buildPerformanceReport(
       ),
     "buildPerformanceReport/time_entries"
   );
-  const entries = (entryData ?? []) as TimeEntry[];
+  // km_measured: cihazı sessiz vardiyanın 0 km'si ölçüm değildir → kmDiff null
+  // döner → satır "—" olur ve toplama girmez (bkz. lib/km-quality.ts).
+  const entries = await markKmMeasured((entryData ?? []) as TimeEntry[]);
 
   // ÇALIŞILAN GÜN eşiği — Analiz sayfasıyla AYNI kapı, aynı kaynak (`entries`).
   const workedDaysByWorker = workedDaysFromEntries(entries);
@@ -503,6 +514,15 @@ export async function buildPerformanceReport(
     totalShifts: rows.reduce((a, r) => a + r.shifts, 0),
     totalWorkedMs: rows.reduce((a, r) => a + r.workedMs, 0),
     totalKm: rows.reduce((a, r) => a + (r.km ?? 0), 0),
+    /**
+     * Km'si ÖLÇÜLEBİLEN / TOPLAM vardiya. Eskiden cihazı sessiz vardiyalar
+     * toplama 0 katıyor ve rapor "tam ölçüldü" görünüyordu; artık eksik olduğu
+     * bandın kendisinde yazılı.
+     */
+    kmMeasuredShifts: entries.filter((e) => kmDiff(e) !== null).length,
+    kmUnmeasuredShifts: entries.filter(
+      (e) => e.end_km !== null && e.start_km !== null && kmDiff(e) === null
+    ).length,
     scoredCount: scored.length,
     daily: finalizeDaily(dailyAcc),
   };

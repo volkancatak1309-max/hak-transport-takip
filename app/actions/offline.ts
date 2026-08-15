@@ -81,7 +81,8 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
         active.vehicle_id as string,
         { started_at: active.started_at, start_km: active.start_km },
         whenIso,
-        latest?.odometer_km
+        latest?.odometer_km,
+        latest?.recorded_at
       );
     }
 

@@ -715,6 +715,7 @@
       "current_driver": "Bağlı Şoför",
       "no_active_driver": "Şu an bağlı şoför yok",
       "today": "Bugün",
+      "km_no_signal": "cihaz sinyalsiz — ölçülemedi",
       "today_km": "Bugünkü KM",
       "start_end_km": "Çıkış / Varış KM",
       "times": "Çıkış / Varış Saati",
@@ -898,6 +899,8 @@
     "breakAutoDone": "Molanız doldu ({min} dk). Vardiyaya devam edebilirsiniz.",
     "today": "Bugün",
     "thisWeek": "Bu Hafta",
+    "kmUnmeasuredShifts": "{count} vardiya ölçülemedi",
+    "kmNoSignal": "cihaz sinyalsiz",
     "hours": "Saat",
     "workedHours": "Çalışılan Saat",
     "totalKm": "Toplam KM",
@@ -1217,6 +1220,8 @@
       "attn_penalty": "{plate} — {count} ödenmemiş ceza",
       "attn_license_expired": "{name} — ehliyeti doldu · {date}",
       "attn_license": "{name} — ehliyet bitiyor · {date}",
+      "attn_km_unmeasured": "{name} · {plate} — km ölçülemedi, cihazdan veri yok",
+      "attn_km_unmeasured_never": "cihaz hiç veri göndermemiş",
       "attn_silent": "{plate} — konum göndermiyor",
       "attn_silent_hours": "{hours} saattir",
       "attn_silent_days": "{days} gündür",
@@ -1281,6 +1286,7 @@
     "boardCarriedOverHint": "Bu vardiyalar önceki günlerde açıldı ve hâlâ kapatılmadı. Sistem vardiyayı kendiliğinden kapatmaz — yalnız personel ya da yönetici kapatır. Üstteki \"Bugün sahada\" sayacı bugün başlayanları sayar, bunlar ona dahil değildir."
   },
   "workers": {
+    "kmUnmeasuredShifts": "{count} vardiya ölçülemedi",
     "title": "Çalışan Yönetimi",
     "tblName": "Ad",
     "tblPhone": "Telefon",

@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
-import { startOfTodayVienna } from "@/lib/format";
+import { startOfTodayVienna, kmDiff } from "@/lib/format";
+import { markKmMeasured } from "@/lib/km-quality";
 import { computeLiveStatus } from "@/lib/vehicle-ui";
 import { latestVehicleTelemetry, listActiveDtc, type VehicleDtcRow } from "@/lib/telemetry";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
@@ -210,6 +211,8 @@ export type VehicleDetail = {
   vehicle: VehicleWithStatus;
   today: {
     km: number | null;
+    /** Cihaz sessiz olduğu için km'si ölçülemeyen bugünkü vardiya sayısı. */
+    kmUnmeasured: number;
     startKm: number | null;
     endKm: number | null;
     firstStart: string | null;
@@ -260,23 +263,28 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
   const { data: entries } = await supabaseAdmin
     .from("time_entries")
     .select(
-      "id, worker_id, started_at, ended_at, start_km, end_km, break_started_at, start_package_count, cargo_count"
+      "id, worker_id, vehicle_id, started_at, ended_at, start_km, end_km, break_started_at, start_package_count, cargo_count"
     )
     .eq("vehicle_id", id)
     .order("started_at", { ascending: false })
     .limit(15);
-  const shifts = (entries ?? []) as (Pick<
-    TimeEntry,
-    | "id"
-    | "worker_id"
-    | "started_at"
-    | "ended_at"
-    | "start_km"
-    | "end_km"
-    | "break_started_at"
-    | "start_package_count"
-    | "cargo_count"
-  >)[];
+  // km_measured: cihazı sessiz vardiyada `end_km - start_km` bir ölçüm değildir
+  // (bkz. lib/km-quality.ts). Bu araç ölü cihazlı ise satırların hepsi
+  // işaretlenir ve aşağıdaki km hesapları "0" yerine null üretir.
+  const shifts = await markKmMeasured(
+    (entries ?? []) as (Pick<
+      TimeEntry,
+      | "id"
+      | "worker_id"
+      | "started_at"
+      | "ended_at"
+      | "start_km"
+      | "end_km"
+      | "break_started_at"
+      | "start_package_count"
+      | "cargo_count"
+    > & { vehicle_id: string | null })[]
+  );
 
   const workerIds = new Set<string>();
   if (vehicle.assigned_worker_id) workerIds.add(vehicle.assigned_worker_id);
@@ -316,12 +324,18 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
   let startPackages: number | null = null;
   let endPackages: number | null = null;
   // Oldest-first within today for sensible start/end.
+  let kmUnmeasured = 0;
   for (const s of [...todays].reverse()) {
     if (startKm === null) startKm = s.start_km;
     if (s.end_km !== null) {
       endKm = s.end_km;
-      km += s.end_km - s.start_km;
-      hasKm = true;
+      // kmDiff cihazı sessiz vardiyada null döner → hasKm true OLMAZ → "—".
+      const d = kmDiff(s);
+      if (d === null) kmUnmeasured++;
+      else {
+        km += d;
+        hasKm = true;
+      }
     }
     if (!firstStart) firstStart = s.started_at;
     if (s.ended_at) lastEnd = s.ended_at;
@@ -336,7 +350,7 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
     driver_name: s.worker_id ? names.get(s.worker_id) ?? null : null,
     start_km: s.start_km,
     end_km: s.end_km,
-    km: s.end_km !== null ? s.end_km - s.start_km : null,
+    km: kmDiff(s),
     ended: s.ended_at !== null,
   }));
 
@@ -371,6 +385,8 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
     vehicle: vehicleWithStatus,
     today: {
       km: hasKm ? km : null,
+      /** Cihaz sessiz olduğu için bugün km'si ölçülemeyen vardiya sayısı. */
+      kmUnmeasured,
       startKm,
       endKm,
       firstStart,

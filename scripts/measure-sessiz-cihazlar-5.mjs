@@ -21,7 +21,6 @@ async function G(y) {
   return { ok: r.ok, s: r.status, hata: j?.errors ?? null, j };
 }
 const q = (o) => encodeURIComponent(JSON.stringify(o));
-const z = (t) => (t ? new Date(t * 1000).toISOString().replace("T", " ").slice(0, 19) + "Z" : "—");
 const U = (s) => Math.floor(new Date(s).getTime() / 1000);
 
 console.log(`\n╔══ BEŞİNCİ TUR · GECE ÇİZELGESİ + VARDİYA KALİBRASYONU ═════════════\n`);

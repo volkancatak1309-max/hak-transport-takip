@@ -3,6 +3,7 @@ import { verifyMobileRequest, mobileError } from "@/lib/mobile-auth";
 import { getManagedFleet, getFleetScope, UNRESTRICTED } from "@/lib/fleet-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { workedMs, kmDiff } from "@/lib/format";
+import { isKmMeasured } from "@/lib/km-quality";
 import {
   listVehicleEventsInWindow,
   listVehicleIdleEpisodesInWindow,
@@ -103,6 +104,9 @@ export async function GET(
     started_by?: string | null;
     start_source?: string | null;
   };
+
+  // Km ölçüm bayrağı: cihazı sessiz vardiyada `km` null döner, 0 değil.
+  const kmMeasured = await isKmMeasured(e);
 
   const isAdmin = auth.worker.is_admin;
   const isSelf = e.worker_id === auth.worker.id;
@@ -288,7 +292,7 @@ export async function GET(
       molaBasladi: e.break_started_at,
       baslangicKm: e.start_km,
       bitisKm: e.end_km,
-      km: kmDiff(e),
+      km: kmDiff({ ...e, km_measured: kmMeasured }),
       paketAlinan: e.start_package_count,
       paketTeslim: e.cargo_count,
       paketTeslimEdilemeyen: e.undelivered_count,

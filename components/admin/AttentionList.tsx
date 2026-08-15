@@ -99,6 +99,24 @@ export function AttentionList({
           overdue: item.hours >= 48,
         };
       }
+      // KM ÖLÇÜLEMEDİ — vardiya boyunca araçtan hiç telemetri gelmemiş.
+      // İhlal DEĞİL, veri boşluğu: "0 km" yazmak yerine yöneticiye km'nin
+      // ölçülemediğini söyler ki elle düzeltebilsin.
+      case "kmUnmeasured":
+        return {
+          icon: SatelliteDish,
+          text: t("dash.attn_km_unmeasured", {
+            name: item.worker_name,
+            plate: item.plate,
+          }),
+          meta:
+            item.hours === null
+              ? t("dash.attn_km_unmeasured_never")
+              : item.hours >= 48
+                ? t("dash.attn_silent_days", { days: Math.floor(item.hours / 24) })
+                : t("dash.attn_silent_hours", { hours: item.hours }),
+          overdue: false,
+        };
       case "movingNoShift":
         return {
           icon: Navigation,

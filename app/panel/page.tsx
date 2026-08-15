@@ -7,6 +7,7 @@ import { startOfTodayVienna, startOfWeekVienna } from "@/lib/format";
 import { needsSummarySignature } from "@/lib/shift-summary";
 import { getDepotPanel } from "@/lib/depot";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
+import { markKmMeasured, kmCoverage, type WithKmMeasured } from "@/lib/km-quality";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,11 @@ export default async function PanelPage() {
     .gte("started_at", since.toISOString())
     .order("started_at", { ascending: false });
 
-  const all = (entries ?? []) as TimeEntry[];
+  // km_measured: cihazı sessiz vardiyada `end_km - start_km` bir ÖLÇÜM DEĞİL
+  // (bkz. lib/km-quality.ts). Yalnız farkı 0 olan satırlar için sorgu atılır.
+  const all = (await markKmMeasured(
+    (entries ?? []) as TimeEntry[]
+  )) as WithKmMeasured<TimeEntry>[];
   const active = all.find((e) => e.ended_at === null) ?? null;
   const past = all.filter((e) => e.ended_at !== null);
 
@@ -107,11 +112,13 @@ export default async function PanelPage() {
     }
     return total;
   }
-  function sumKm(arr: TimeEntry[]) {
-    let total = 0;
-    for (const e of arr)
-      if (e.end_km !== null && e.start_km !== null) total += e.end_km - e.start_km;
-    return total;
+  /**
+   * Km toplamı + KAÇ VARDİYANIN ÖLÇÜLEMEDİĞİ. Eskiden yalnız bir sayı dönüyordu:
+   * cihazı sessiz vardiyalar 0 ekliyor, toplam sessizce eksiliyor ve eksik
+   * olduğu hiçbir yere taşınmıyordu. Artık eksiklik sayılıp ekrana çıkar.
+   */
+  function sumKm(arr: WithKmMeasured<TimeEntry>[]) {
+    return kmCoverage(arr);
   }
   function sumCargo(arr: TimeEntry[]) {
     let total = 0;

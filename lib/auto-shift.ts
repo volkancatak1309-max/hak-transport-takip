@@ -205,15 +205,41 @@ async function newestTime(
 }
 
 /**
- * Vardiya başlangıç km'si: odometre → aracın son biten vardiyası → 0.
+ * ODOMETRE TAZELİK SINIRI (15.08.2026).
+ *
+ * `latestVehicleTelemetry` yaş sınırı taşımaz; cihaz aylar önce sussa bile son
+ * satırı döndürür. O bayat odometre hem açılışta start_km'e hem kapanışta
+ * end_km'e yazılınca fark tam 0 çıkıyor ve rapor "0 km" diyor — uydurma bir
+ * sayı, "ölçülemedi" değil. 6 saat, en uzun vardiyadan (12 sa tavan) kısa ama
+ * cihazın park hâlindeki SAATLİK atımından uzun: sağlıklı bir cihaz bu pencerede
+ * en az 5 kez konuşur, ölü cihaz hiç konuşmaz.
+ */
+export const ODO_MAX_AGE_MS = 6 * 3_600_000;
+
+/** Okuma bu yaştan eskiyse odometre YOK sayılır. */
+function odometreTaze(recordedAt: string | null | undefined, now: number): boolean {
+  if (!recordedAt) return true; // zaman damgası verilmediyse eski davranış
+  const t = new Date(recordedAt).getTime();
+  if (!Number.isFinite(t)) return true;
+  return now - t <= ODO_MAX_AGE_MS;
+}
+
+/**
+ * Vardiya başlangıç km'si: TAZE odometre → aracın son biten vardiyası → 0.
  * Manuel başlatma (startShiftManualAction) da bunu kullanır — iki yol arasında
  * km kuralı çatallanmasın diye tek kaynak.
+ *
+ * `odometerAt` verilirse bayat okuma reddedilir; verilmezse eski davranış sürer.
  */
 export async function resolveStartKm(
   vehicleId: string,
-  odometerKm: number | null | undefined
+  odometerKm: number | null | undefined,
+  odometerAt?: string | null,
+  now: number = Date.now()
 ): Promise<number> {
-  const norm = normalizeOdometerKm(odometerKm);
+  const norm = odometreTaze(odometerAt, now)
+    ? normalizeOdometerKm(odometerKm)
+    : null;
   if (norm !== null) return norm;
 
   const { data } = await supabaseAdmin
@@ -238,17 +264,33 @@ export async function resolveStartKm(
  * Sıra bilinçli: cihaz odometresi aracın GERÇEK sayacıdır, GPS haversine'ı
  * (sinyal boşluklarında eksik sayar) yenemez. GPS yalnız odometre yoksa ya da
  * makul aralık dışındaysa devreye girer.
+ *
+ * ⚠️ İKİ YENİ KAPI (15.08.2026) — sahte "0 km"nin kaynağı buradaydı:
+ *  ① TAZELİK: bayat odometre (bkz. ODO_MAX_AGE_MS) reddedilir. Cihaz ölüyken
+ *    dönen eski değer start_km ile ÖZDEŞ olduğu için hem `norm >= start_km` hem
+ *    `fark <= MAX_PER_SHIFT_KM` sağlanıyor, guard'a takılmıyor ve GPS yedeğine
+ *    HİÇ düşülmüyordu.
+ *  ② EŞİTLİK: `>=` yerine `>`. Bitiş okuması başlangıçla birebir aynıysa bu bir
+ *    "0 km ölçümü" değil, aynı satırın iki kez okunmasıdır — GPS'e düşülür, o da
+ *    boşsa end_km null kalır ve rapor dürüstçe "—" gösterir.
+ * Gerçekten hiç hareket etmemiş bir araçta GPS izi vardır (park atımları) ve
+ * `computeDistanceKm` 0 km döndürür → end_km = start_km + 0 yazılır. Yani
+ * "park etti, 0 km" hâlâ ölçülebiliyor; ayrılan tek şey CİHAZSIZ 0.
  */
 export async function resolveEndKm(
   vehicleId: string,
   shift: { started_at: string; start_km: number },
   endedAtIso: string,
-  odometerKm: number | null | undefined
+  odometerKm: number | null | undefined,
+  odometerAt?: string | null,
+  now: number = Date.now()
 ): Promise<number | null> {
-  const norm = normalizeOdometerKm(odometerKm);
+  const norm = odometreTaze(odometerAt, now)
+    ? normalizeOdometerKm(odometerKm)
+    : null;
   if (
     norm !== null &&
-    norm >= shift.start_km &&
+    norm > shift.start_km &&
     norm - shift.start_km <= MAX_PER_SHIFT_KM
   ) {
     return norm;
@@ -494,7 +536,7 @@ export async function processAutoShifts(
             startedAt = trig ? trig.startAt : null;
           }
           if (!startedAt) continue;
-          const startKm = await resolveStartKm(v.id, latest.odometer_km);
+          const startKm = await resolveStartKm(v.id, latest.odometer_km, latest.recorded_at);
 
           // BAŞLATMA YOLU İZİ (037): start_source='auto'. 25.07.2026'ya kadar bu
           // alan HİÇ yazılmıyordu ve kolonun `default 'self'` değeri düşüyordu —
@@ -645,7 +687,8 @@ export async function processAutoShifts(
           v.id,
           vehicleShift,
           endedAtIso,
-          latest.odometer_km
+          latest.odometer_km,
+          latest.recorded_at
         );
 
         const update: Record<string, unknown> = {

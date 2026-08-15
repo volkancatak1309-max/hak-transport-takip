@@ -642,9 +642,17 @@ const LATEST_COALESCE_WINDOW = 40; // rows scanned back to fill sparse CAN field
  * age via recorded_at — so a parked/offline tracker still renders its last
  * position instead of vanishing. Served cheaply by the
  * (vehicle_id, recorded_at) index.
+ *
+ * ⚠️ YAŞ SINIRI GEREKEN TEK YOL VARDİYA KM'SİDİR (15.08.2026). Sınırsız davranış
+ * haritada/detay kartında DOĞRU (son bilinen konum yaşıyla birlikte gösterilir),
+ * ama vardiya açılış/kapanışında BAYAT odometreyi "güncel" diye kabul ettiriyor
+ * ve iki uca aynı sayı yazılınca km sahte bir 0 çıkıyordu. `maxAgeMs` verilirse
+ * bu yaştan eski satır YOKMUŞ gibi davranılır (null döner). Varsayılan
+ * DEĞİŞMEDİ — hiçbir mevcut çağıran etkilenmez.
  */
 export async function latestVehicleTelemetry(
-  vehicleId: string
+  vehicleId: string,
+  opts?: { maxAgeMs?: number }
 ): Promise<TelemetryRow | null> {
   // Fetch the newest window (not just row 1): position/heading come from the very
   // latest fix, but the sparse CAN/OBD fields (fuel, rpm, coolant, …) are
@@ -661,6 +669,16 @@ export async function latestVehicleTelemetry(
 
   const rows = (data ?? []) as TelemetryRow[];
   if (rows.length === 0) return null;
+
+  // Yaş sınırı — yalnız istendiğinde. Bayat satır YOK sayılır; coalesce penceresi
+  // de kırpılır ki eski bir satırdan odometre yamalanmasın.
+  if (opts?.maxAgeMs !== undefined) {
+    const esik = Date.now() - opts.maxAgeMs;
+    const taze = rows.filter((r) => new Date(r.recorded_at).getTime() >= esik);
+    if (taze.length === 0) return null;
+    rows.length = 0;
+    rows.push(...taze);
+  }
 
   // Base = newest fix (position, heading, recorded_at come from here as-is).
   const latest: TelemetryRow = { ...rows[0] };

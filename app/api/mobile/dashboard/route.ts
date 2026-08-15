@@ -492,6 +492,17 @@ function uyariKalemi(a: AttentionItem): UyariKalemi {
       return { tur: a.kind, id: a.id, sofor: a.worker_name, sonTarih: a.due, kalanGun: a.days };
     case "silent":
       return { tur: a.kind, id: a.id, plaka: a.plate, saat: a.hours, an: a.at };
+    case "kmUnmeasured":
+      return {
+        tur: a.kind,
+        id: a.id,
+        sofor: a.worker_name,
+        plaka: a.plate,
+        // Uç sözleşmesi null taşımıyor: bilinmiyorsa alan HİÇ gönderilmez
+        // (cihaz hiç konuşmamış vardiyada `saat`/`an` yok).
+        ...(a.hours !== null ? { saat: a.hours } : {}),
+        ...(a.last_seen !== null ? { an: a.last_seen } : {}),
+      };
     case "movingNoShift":
     case "unassignedMoving":
       return { tur: a.kind, id: a.id, plaka: a.plate, an: a.at };

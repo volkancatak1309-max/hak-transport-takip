@@ -148,10 +148,28 @@ export function rawDurationMs(entry: {
   return Math.max(0, endTs - startTs);
 }
 
+/**
+ * Vardiyada kat edilen km — ölçülemediyse null.
+ *
+ * İKİ null SEBEBİ VAR ve ikisi de "—" basılır:
+ *  • uçlardan biri yok  → vardiya açık ya da kapanışta odometre alınamadı;
+ *  • km_measured=false  → iki uç dolu ama vardiya boyunca araçtan HİÇ telemetri
+ *    gelmemiş. Cihaz susunca aynı BAYAT odometre iki uca da yazıldığı için fark
+ *    tam 0 çıkıyor ve bu 0 bir ölçüm değil. Bayrağı `markKmMeasured`
+ *    (lib/km-quality.ts) üretir; ham veriye dokunmaz.
+ *
+ * Bayrak GELMEZSE (undefined) eski davranış sürer — çağıran henüz taşınmamış
+ * demektir, sessizce yanlış sonuç vermek yerine olduğu gibi hesaplar.
+ *
+ * ⚠️ Ham farkı GÖRMESİ GEREKEN tek yer km düzeltme diyaloğudur (yönetici iki ucu
+ * elle düzeltir); o yol `start_km`/`end_km` alanlarını doğrudan okur.
+ */
 export function kmDiff(entry: {
   start_km: number | null;
   end_km: number | null;
+  km_measured?: boolean;
 }): number | null {
+  if (entry.km_measured === false) return null;
   if (entry.end_km === null || entry.start_km === null) return null;
   return entry.end_km - entry.start_km;
 }

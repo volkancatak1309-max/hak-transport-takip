@@ -278,8 +278,13 @@ export async function depotArrivalTrigger(
  * Erken çıkış: geliş anı tipik olarak ilk sayfada bulunur ve kalan sayfalar hiç
  * okunmaz; bulunamazsa aralığın SONUNA kadar taranır. `probe` birikmiş satırların
  * tamamını alır, çünkü 3 dakikalık histerezis sayfa sınırına denk gelebilir.
+ *
+ * DIŞA AÇIK (15.08.2026) — yalnız geriye dönük ÖLÇÜM betikleri için
+ * (scripts/measure-depo-geridonuk.mjs). Üretimde çağıran hâlâ yalnız bu dosya.
+ * Alternatif "ölçüm betiği algoritmayı kopyalasın" olurdu ve o kopya ilk
+ * değişiklikte üretimden sapıp yanlış rapor üretirdi.
  */
-async function firstDepotEntryInRange(
+export async function firstDepotEntryInRange(
   vehicleId: string,
   fromIso: string,
   toIso: string,

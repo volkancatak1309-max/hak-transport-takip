@@ -24,6 +24,8 @@ import {
   workedDaysFromEntries,
   getWorkerShiftDistance,
   shiftKmForScoring,
+  shiftWindowsForScoring,
+  workerDrivingAt,
   scoreMinKmForWorkedDays,
   scoreMinKmForSpan,
   getVehicleDistanceSpan,
@@ -97,7 +99,16 @@ const { data: entryData } = await fetchAllRows(
 const entries = entryData ?? [];
 const workedDaysByWorker = workedDaysFromEntries(entries);
 const drivenVehicles = drivenVehiclesFromEntries(entries);
-const shiftKm = shiftKmForScoring(await getWorkerShiftDistance(startISO, endISO));
+const shiftKmRes = await getWorkerShiftDistance(startISO, endISO);
+const shiftKm = shiftKmForScoring(shiftKmRes);
+/**
+ * EKSEN (15.08.2026): olay atfı da vardiya penceresinden. Üretim iki çağıranda
+ * da bunu geçiyor; geçirmezsek bu betik ARTIK EKRANDA OLMAYAN bir ekseni ölçer.
+ * ⚠️ Bu yüzden buradaki mutlak sayılar 12–13.08 kayıtlarıyla AYNI DEĞİLDİR
+ * (o gün pay ATAMA ekseninden geliyordu). Senaryolar arası KARŞILAŞTIRMA —
+ * betiğin asıl işi — geçerliliğini korur: eksen tüm senaryolarda aynıdır.
+ */
+const shiftWindows = shiftWindowsForScoring(shiftKmRes);
 const vehiclesById = new Map(vehicles.map((v) => [v.id, v]));
 const workersById = new Map(workers.map((w) => [w.id, w]));
 const gecenGun = rangeElapsedDays(range);
@@ -105,8 +116,11 @@ const gecenGun = rangeElapsedDays(range);
 /** Rapora giren evren: aralıkta vardiyası VEYA olayı olanlar (reports.ts:472). */
 const olayliWorker = new Set();
 for (const e of events) {
-  const v = vehiclesById.get(e.vehicle_id);
-  if (v?.assigned_worker_id) olayliWorker.add(v.assigned_worker_id);
+  // Üretimle AYNI eksen (bkz. shiftWindows notu).
+  const wid = shiftWindows
+    ? workerDrivingAt(shiftWindows, e.vehicle_id, e.occurred_at)
+    : vehiclesById.get(e.vehicle_id)?.assigned_worker_id ?? null;
+  if (wid) olayliWorker.add(wid);
 }
 const vardiyaliWorker = new Set(entries.map((e) => e.worker_id).filter(Boolean));
 const raporda = (rows) => rows.filter((r) => vardiyaliWorker.has(r.workerId) || olayliWorker.has(r.workerId));
@@ -138,7 +152,7 @@ function skorla({ perDay, floor, accel }) {
     return raporda(
       computeSafetyScores(
         events, idleEpisodes, vehiclesById, workersById, distanceByVehicle,
-        esikFn(perDay, floor), drivenVehicles, shiftKm
+        esikFn(perDay, floor), drivenVehicles, shiftKm, shiftWindows
       )
     );
   } finally {
@@ -311,11 +325,13 @@ console.log(`\n── 6. ANİ HIZLANMASI EN ÇOK OLAN ŞOFÖR ──`);
 {
   const evByWorker = new Map();
   for (const e of events) {
-    const v = vehiclesById.get(e.vehicle_id);
-    if (!v?.assigned_worker_id) continue;
-    const a = evByWorker.get(v.assigned_worker_id) ?? {};
+    const wid = shiftWindows
+      ? workerDrivingAt(shiftWindows, e.vehicle_id, e.occurred_at)
+      : vehiclesById.get(e.vehicle_id)?.assigned_worker_id ?? null;
+    if (!wid) continue;
+    const a = evByWorker.get(wid) ?? {};
     a[e.event_type] = (a[e.event_type] ?? 0) + 1;
-    evByWorker.set(v.assigned_worker_id, a);
+    evByWorker.set(wid, a);
   }
   const adaylar = [...evByWorker.entries()]
     .filter(([, ev]) => (ev.harsh_acceleration ?? 0) > 0)

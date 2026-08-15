@@ -8,6 +8,8 @@ import {
   workedDaysFromEntries,
   getWorkerShiftDistance,
   shiftKmForScoring,
+  shiftWindowsForScoring,
+  workerDrivingAt,
   scoreMinKmForWorkedDays,
   getVehicleDistanceSpan,
   getVehicleFuelSpan,
@@ -380,6 +382,10 @@ export async function buildPerformanceReport(
     range.start.toISOString(),
     range.end.toISOString()
   );
+  // EKSEN BİRLİĞİ (15.08.2026): olay atfı da km'nin geldiği SATIRLARDAN türer.
+  // Analiz sayfasıyla AYNI çağrı, aynı üç-durum ayrımı — iki ekran aynı şoför
+  // için farklı olay sayısı gösteremez.
+  const shiftWindows = shiftWindowsForScoring(shiftKmRes);
 
   const safety = new Map<string, SafetyScoreRow>(
     computeSafetyScores(
@@ -404,19 +410,28 @@ export async function buildPerformanceReport(
       // FİİLEN SÜRÜLEN ARAÇ (09.08.2026): `entries` zaten bu aralığın
       // vardiyaları — ikinci bir sorgu gerekmiyor.
       drivenVehiclesFromEntries(entries),
-      shiftKmForScoring(shiftKmRes)
+      shiftKmForScoring(shiftKmRes),
+      shiftWindows
     ).map((r) => [r.workerId, r])
   );
 
-  // Olay sayıları şoföre ARAÇ ÜZERİNDEN bağlanır — güvenlik skorunun kullandığı
-  // eşlemenin aynısı (atanmamış araç şoför istatistiğine girmez).
+  // Olay sayıları şoföre GÜVENLİK SKORUYLA AYNI EKSENDEN bağlanır: olay, o
+  // araçta o saatte VARDİYADA olan şoförün. 052 yoksa (shiftWindows undefined)
+  // eski ATAMA eşlemesine düşer — skorun düştüğü yerin aynısı.
+  //
+  // Bu kolon skorun GEREKÇESİDİR: "1050 olay ama skor 772 olaydan hesaplandı"
+  // aynı ekranda iki gerçek anlamına gelirdi. 15.08.2026'ya kadar öyleydi.
   const vehicleWorker = new Map(
     base.vehicles.map((v) => [v.id, v.assigned_worker_id ?? null])
   );
+  const olayinSofuru = (vehicleId: string, atISO: string): string | null =>
+    shiftWindows
+      ? workerDrivingAt(shiftWindows, vehicleId, atISO)
+      : vehicleWorker.get(vehicleId) ?? null;
   type EvAcc = { total: number; braking: number; accel: number; speeding: number };
   const evByWorker = new Map<string, EvAcc>();
   for (const e of base.events) {
-    const wid = vehicleWorker.get(e.vehicle_id);
+    const wid = olayinSofuru(e.vehicle_id, e.occurred_at);
     if (!wid) continue;
     const a =
       evByWorker.get(wid) ?? { total: 0, braking: 0, accel: 0, speeding: 0 };

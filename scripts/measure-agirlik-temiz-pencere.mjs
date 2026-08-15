@@ -23,6 +23,8 @@ import {
   workedDaysFromEntries,
   getWorkerShiftDistance,
   shiftKmForScoring,
+  shiftWindowsForScoring,
+  workerDrivingAt,
   scoreMinKmForWorkedDays,
   scoreMinKmForSpan,
   getVehicleDistanceSpan,
@@ -89,15 +91,25 @@ const { data: entryData } = await fetchAllRows(
 const entries = entryData ?? [];
 const workedDaysByWorker = workedDaysFromEntries(entries);
 const drivenVehicles = drivenVehiclesFromEntries(entries);
-const shiftKm = shiftKmForScoring(await getWorkerShiftDistance(startISO, endISO));
+const shiftKmRes = await getWorkerShiftDistance(startISO, endISO);
+const shiftKm = shiftKmForScoring(shiftKmRes);
+/**
+ * EKSEN (15.08.2026): olay atfı da vardiya penceresinden — üretimin geçtiğinin
+ * aynısı. ⚠️ Mutlak sayılar 12–13.08 kayıtlarıyla AYNI DEĞİLDİR (o gün pay
+ * ATAMA ekseninden geliyordu); ağırlık senaryoları arası KARŞILAŞTIRMA geçerli
+ * kalır, çünkü eksen tüm senaryolarda aynıdır.
+ */
+const shiftWindows = shiftWindowsForScoring(shiftKmRes);
 const vehiclesById = new Map(vehicles.map((v) => [v.id, v]));
 const workersById = new Map(workers.map((w) => [w.id, w]));
 const gecenGun = rangeElapsedDays(range);
 
 const olayliWorker = new Set();
 for (const e of events) {
-  const v = vehiclesById.get(e.vehicle_id);
-  if (v?.assigned_worker_id) olayliWorker.add(v.assigned_worker_id);
+  const wid = shiftWindows
+    ? workerDrivingAt(shiftWindows, e.vehicle_id, e.occurred_at)
+    : vehiclesById.get(e.vehicle_id)?.assigned_worker_id ?? null;
+  if (wid) olayliWorker.add(wid);
 }
 const vardiyaliWorker = new Set(entries.map((e) => e.worker_id).filter(Boolean));
 const raporda = (rows) => rows.filter((r) => vardiyaliWorker.has(r.workerId) || olayliWorker.has(r.workerId));
@@ -112,7 +124,7 @@ function skorla(agirliklar) {
   Object.assign(SAFETY_SCORE_WEIGHTS, agirliklar);
   try {
     return raporda(
-      computeSafetyScores(events, idleEpisodes, vehiclesById, workersById, distanceByVehicle, esikFn, drivenVehicles, shiftKm)
+      computeSafetyScores(events, idleEpisodes, vehiclesById, workersById, distanceByVehicle, esikFn, drivenVehicles, shiftKm, shiftWindows)
     );
   } finally {
     Object.assign(SAFETY_SCORE_WEIGHTS, eski);

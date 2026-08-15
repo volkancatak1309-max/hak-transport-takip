@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { HistoryClient } from "./HistoryClient";
 import type { TimeEntry } from "@/lib/types";
+import { markKmMeasured } from "@/lib/km-quality";
 import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +41,8 @@ export default async function HistoryPage({
     .order("started_at", { ascending: false })
     .range(offset, offset + PAGE_SIZE - 1);
 
-  const entries = (data ?? []) as TimeEntry[];
+  // Cihazı sessiz vardiyada km bir ölçüm değil → kmDiff null döner → "—".
+  const entries = await markKmMeasured((data ?? []) as TimeEntry[]);
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
   return (

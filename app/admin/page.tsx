@@ -1,4 +1,5 @@
 import { requireFleetView, isOwnerCached } from "@/lib/session";
+import { markKmMeasured } from "@/lib/km-quality";
 import { audit } from "@/lib/security-log";
 import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin, fetchAllRows, chunkIds } from "@/lib/supabase";
@@ -182,7 +183,10 @@ export default async function AdminPage({
   // GEÇMİŞ KAYIT filtresi, eski vardiyaları aranabilmeli.
   const driverWorkers = dropNonDrivers(workersData, (w) => w.id, driverScope);
 
-  let entriesData = ((entriesResult.data ?? []) as TimeEntry[]).map((e) => {
+  // km_measured: cihazı sessiz vardiyanın 0 km'si ÖLÇÜM DEĞİL — tablo, Excel
+  // ve Almanca PDF üçü de bu bayrağı okuyan kmDiff'ten geçer (lib/km-quality.ts).
+  const markedEntries = await markKmMeasured((entriesResult.data ?? []) as TimeEntry[]);
+  let entriesData = markedEntries.map((e) => {
     const w = workerMap.get(e.worker_id);
     return {
       ...e,

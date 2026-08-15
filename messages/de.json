@@ -715,6 +715,7 @@
       "current_driver": "Aktueller Fahrer",
       "no_active_driver": "Derzeit kein Fahrer",
       "today": "Heute",
+      "km_no_signal": "kein Gerätesignal — nicht messbar",
       "today_km": "Heutige KM",
       "start_end_km": "Start / Ende KM",
       "times": "Start / Ende Zeit",
@@ -898,6 +899,8 @@
     "breakAutoDone": "Ihre Pause ist vorbei ({min} Min). Sie können die Schicht fortsetzen.",
     "today": "Heute",
     "thisWeek": "Diese Woche",
+    "kmUnmeasuredShifts": "{count} Schichten nicht messbar",
+    "kmNoSignal": "kein Gerätesignal",
     "hours": "Std.",
     "workedHours": "Arbeitsstunden",
     "totalKm": "Gesamtkilometer",
@@ -1217,6 +1220,8 @@
       "attn_penalty": "{plate} — {count} offene Strafe(n)",
       "attn_license_expired": "{name} — Führerschein abgelaufen · {date}",
       "attn_license": "{name} — Führerschein läuft ab · {date}",
+      "attn_km_unmeasured": "{name} · {plate} — km nicht messbar, keine Gerätedaten",
+      "attn_km_unmeasured_never": "Gerät hat nie gesendet",
       "attn_silent": "{plate} — keine Position",
       "attn_silent_hours": "seit {hours} Std.",
       "attn_silent_days": "seit {days} Tagen",
@@ -1281,6 +1286,7 @@
     "boardCarriedOverHint": "Diese Schichten wurden an früheren Tagen begonnen und sind noch offen. Das System schließt Schichten nicht automatisch — nur Mitarbeitende oder Verwaltung. Der Zähler \"Heute im Einsatz\" zählt die heute begonnenen Schichten; diese sind darin nicht enthalten."
   },
   "workers": {
+    "kmUnmeasuredShifts": "{count} Schichten nicht messbar",
     "title": "Mitarbeiterverwaltung",
     "tblName": "Name",
     "tblPhone": "Telefon",

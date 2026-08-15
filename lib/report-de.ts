@@ -198,6 +198,13 @@ export type ShiftReportEntry = {
   cargo_count: number | null;
   undelivered_count: number | null;
   plate: string | null;
+  /**
+   * false → vardiya boyunca araçtan telemetri gelmemiş; `end_km - start_km`
+   * bayat odometreden 0 çıkar ve bu bir ölçüm DEĞİLDİR. PDF'e "0" değil
+   * REPORT_EMPTY basılır (bkz. lib/km-quality.ts). Kâğıda basılan sayı
+   * ekrandakinden daha kalıcıdır; uydurma 0 oraya hiç girmemeli.
+   */
+  km_measured?: boolean;
 };
 
 /**

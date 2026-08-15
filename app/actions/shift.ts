@@ -307,7 +307,11 @@ export async function startShiftManualAction(
   // 3) Başlangıç km: odometre → aracın son biten vardiyası → 0. Şoför
   //    "Ayarlar → Başlangıç KM"den düzeltebilir.
   const latest = await latestVehicleTelemetry(veh.id as string);
-  const startKm = await resolveStartKm(veh.id as string, latest?.odometer_km);
+  const startKm = await resolveStartKm(
+    veh.id as string,
+    latest?.odometer_km,
+    latest?.recorded_at
+  );
 
   // 3a) BAŞLANGIÇ ANI — "şimdi" DEĞİL (25.07.2026). Mesai depoda başlar, şoför
   //     ise depoya vardıktan bir süre sonra butona basıyor; butona basma anını
@@ -562,7 +566,7 @@ export async function startShiftForWorkerAction(input: {
 
   // Yeni satır. km: odometre → aracın son biten vardiyası → 0 (resolveStartKm).
   const latest = await latestVehicleTelemetry(veh.id);
-  const startKm = await resolveStartKm(veh.id, latest?.odometer_km);
+  const startKm = await resolveStartKm(veh.id, latest?.odometer_km, latest?.recorded_at);
 
   const insertBase: Record<string, unknown> = {
     worker_id: input.workerId,
@@ -698,7 +702,8 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
       active.vehicle_id as string,
       { started_at: active.started_at, start_km: active.start_km },
       endedIso,
-      latest?.odometer_km
+      latest?.odometer_km,
+      latest?.recorded_at
     );
   }
   const finalBreak =
@@ -1002,7 +1007,8 @@ export async function adminCloseShiftAction(entryId: string): Promise<ShiftResul
       entry.vehicle_id as string,
       { started_at: entry.started_at as string, start_km: entry.start_km as number },
       endedIso,
-      latest?.odometer_km
+      latest?.odometer_km,
+      latest?.recorded_at
     );
   }
 

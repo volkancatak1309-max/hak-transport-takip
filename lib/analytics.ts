@@ -391,6 +391,11 @@ export type ShiftDistanceUnavailable = "missing_function" | "timeout" | "error";
 export type ShiftDistanceResult = {
   /** Şoför → vardiya pencereli km. `unavailable` doluysa null. */
   km: Map<string, number> | null;
+  /**
+   * Şoför → { ölçülen, toplam } vardiya. Kısmen ölçülen bir şoförde payda
+   * eksik kalır; SCORE_MIN_COVERAGE altındaki kapsamada skor üretilmez.
+   */
+  coverage: Map<string, { olculen: number; toplam: number }> | null;
   /** null = başarılı. */
   unavailable: ShiftDistanceUnavailable | null;
 };
@@ -406,7 +411,7 @@ export async function getWorkerShiftDistance(
     })
   );
   if (error) {
-    if (isTimeoutError(error)) return { km: null, unavailable: "timeout" };
+    if (isTimeoutError(error)) return { km: null, coverage: null, unavailable: "timeout" };
     const code = (error.code ?? "").toUpperCase();
     const msg = (error.message ?? "").toLowerCase();
     const missing =
@@ -414,7 +419,7 @@ export async function getWorkerShiftDistance(
       code === "42883" ||
       msg.includes("could not find the function") ||
       msg.includes("does not exist");
-    return { km: null, unavailable: missing ? "missing_function" : "error" };
+    return { km: null, coverage: null, unavailable: missing ? "missing_function" : "error" };
   }
   const rows = (data ?? []) as {
     worker_id: string;
@@ -424,19 +429,43 @@ export async function getWorkerShiftDistance(
     last_km: number | null;
   }[];
   const km = new Map<string, number>();
+  /**
+   * KAPSAMA (15.08.2026): şoför başına "km'si ölçülebilen / toplam" vardiya.
+   * Eski hâlde ölçülemeyen satır SESSİZCE atlanıyordu; şoförün 10 vardiyasının
+   * 4'ünde cihaz ölüyse ceza 10 vardiyanın OLAYLARINDAN, km ise 6 vardiyadan
+   * geliyor ve ceza/1000km yapay olarak şişiyordu. Sayaç olmadan bu fark
+   * hiçbir yerde görünmüyordu.
+   */
+  const kapsam = new Map<string, { olculen: number; toplam: number }>();
+  const say = (wid: string, olculdu: boolean) => {
+    const c = kapsam.get(wid) ?? { olculen: 0, toplam: 0 };
+    c.toplam++;
+    if (olculdu) c.olculen++;
+    kapsam.set(wid, c);
+  };
   for (const r of rows) {
-    if (r.first_km == null || r.last_km == null) continue;
+    if (r.first_km == null || r.last_km == null) {
+      if (r.worker_id) say(r.worker_id, false);
+      continue;
+    }
     const diff = r.last_km - r.first_km;
-    if (diff < 0) continue;
+    if (diff < 0) {
+      if (r.worker_id) say(r.worker_id, false);
+      continue;
+    }
     const endMs = r.ended_at ? Date.parse(r.ended_at) : Date.parse(endISO);
     const spanDays = Math.max(
       1 / 24,
       (endMs - Date.parse(r.started_at)) / 86_400_000
     );
-    if (diff > spanDays * MAX_PLAUSIBLE_KM_PER_DAY) continue;
+    if (diff > spanDays * MAX_PLAUSIBLE_KM_PER_DAY) {
+      say(r.worker_id, false);
+      continue;
+    }
+    say(r.worker_id, true);
     km.set(r.worker_id, (km.get(r.worker_id) ?? 0) + diff);
   }
-  return { km, unavailable: null };
+  return { km, coverage: kapsam, unavailable: null };
 }
 
 /**
@@ -449,12 +478,47 @@ export async function getWorkerShiftDistance(
  *   timeout / error    → BOŞ harita (052 var ama hesaplanamadı; şişik km yerine
  *                        "Veri yok". Yanlış rakam, hatadan kötüdür.)
  */
+/**
+ * KISMİ ÖLÇÜM EŞİĞİ (15.08.2026). Şoförün vardiyalarının en az bu oranı
+ * ölçülebilmiş olmalı; altında km paydası eksiktir ve skor üretmek YANLIŞTIR:
+ * ceza TÜM olaylardan, km ise yalnız ölçülebilen vardiyalardan gelir, yani
+ * ceza/1000km yapay olarak şişer ve şoför hak etmediği düşük skoru alır.
+ * ═══ DEĞER NEDEN 0,8 ═══
+ *
+ * Eşik duyarlılığı canlıda ölçüldü (60 gün, HAK61 — scripts/verify-km-null-2.mjs).
+ * Eşiksiz 28 şoför skorlanabiliyor; eşik yükseldikçe düşen şoför sayısı:
+ *     %30 → 0    %40 → 1    %50 → 2    %60 → 3
+ *     %70 → 5    %80 → 7    %90 → 11
+ * En düşük kapsamalar: Bayram Çöymen 1/3 (%33), Sinan Bayrak 10/24 (%42),
+ * Muhammed Copur 13/22 (%59), Cumhur Karataş 14/23 (%61), Ümit Alıcı 15/22
+ * (%68), Ali Özdemir 7/10 (%70), Sercan Kalkanli 10/14 (%71).
+ *
+ * 0,8 SEÇİLDİ (Volkan, 15.08.2026): kısmi ölçümde skor HAKSIZ çıkıyor ve
+ * "yanlış skor göstermektense hiç göstermemek doğru". Skorlanan kadro 28 → 21;
+ * bu bilinçli bir bedel, kusur değil. Beş vardiyanın en fazla biri ölçülemez.
+ *
+ * Kadronun küçülmesi kalıcı DEĞİL: 15.08 düzeltmesi bayat odometrenin uçlara
+ * yazılmasını kestiği için kapsama ilerleyen günlerde kendiliğinden artar —
+ * eşiği düşürerek değil, cihazları onararak.
+ */
+export const SCORE_MIN_KM_COVERAGE = 0.8;
+
 export function shiftKmForScoring(
   res: ShiftDistanceResult
 ): Map<string, number> | undefined {
-  if (res.unavailable === null) return res.km!;
   if (res.unavailable === "missing_function") return undefined;
-  return new Map<string, number>();
+  if (res.unavailable !== null) return new Map<string, number>();
+  const km = new Map(res.km!);
+  // Kapsaması eşiğin altında kalan şoför haritadan DÜŞER → reliableKm null →
+  // skor null ("Yetersiz veri"). Eksik paydayla hesaplanmış bir skor,
+  // hesaplanmamış skordan kötüdür.
+  if (res.coverage) {
+    for (const [wid, c] of res.coverage) {
+      if (c.toplam === 0) continue;
+      if (c.olculen / c.toplam < SCORE_MIN_KM_COVERAGE) km.delete(wid);
+    }
+  }
+  return km;
 }
 
 export async function getVehicleDistanceSpan(

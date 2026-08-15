@@ -25,7 +25,8 @@ import {
 import type { TimeEntry } from "@/lib/types";
 
 type Props = {
-  entries: TimeEntry[];
+  /** km_measured: cihazı sessiz vardiyada km bir ölçüm değil (lib/km-quality.ts). */
+  entries: (TimeEntry & { km_measured?: boolean })[];
   page: number;
   totalPages: number;
   from: string;
@@ -106,7 +107,20 @@ export function HistoryClient({ entries, page, totalPages, from, to }: Props) {
                         <TableCell>{formatDurationShort(w, locale)}</TableCell>
                         <TableCell className="nums">{e.break_minutes ?? 0}</TableCell>
                         <TableCell className="nums">
-                          {km !== null ? km.toLocaleString(locale === "de" ? "de-AT" : "tr-TR") : "—"}
+                          {km !== null ? (
+                            km.toLocaleString(locale === "de" ? "de-AT" : "tr-TR")
+                          ) : (
+                            /* "—" iki sebepten olur: vardiya açık ya da cihaz
+                               sessizdi. İkincisinde sebep başlıkta yazar —
+                               şoför 0 km'yi gerçek sanmasın. */
+                            <span
+                              title={
+                                e.km_measured === false ? tp("kmNoSignal") : undefined
+                              }
+                            >
+                              —
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="nums">{e.cargo_count ?? "—"}</TableCell>
                         <TableCell className="nums">{e.plate ?? "—"}</TableCell>

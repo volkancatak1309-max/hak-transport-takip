@@ -240,7 +240,9 @@ export function VehicleDetailClient({
               s.driver_name ? (
                 <span className="font-mono text-[11px] tabular-nums text-text-tertiary">
                   {fmtKm(s.start_km, nf)} → {fmtKm(s.end_km, nf)}
-                  {s.km !== null && ` · ${fmtKm(s.km, nf)} km`}
+                  {s.km !== null
+                    ? ` · ${fmtKm(s.km, nf)} km`
+                    : s.ended && ` · ${td("km_no_signal")}`}
                 </span>
               ) : undefined
             }
@@ -530,7 +532,15 @@ export function VehicleDetailClient({
         <SpecGroup title={td("group_today")} action={<HelpTip tkey="veh_status" />}>
           <SpecRow label={td("today_km")} mono>
             {today.km === null ? (
-              <span className="text-text-tertiary">{DASH}</span>
+              /* "0 km" ile "ölçemedik" AYNI GÖRÜNMEZ: cihaz sessizken sebebi
+                 yazılır, yönetici aracı mı yoksa cihazı mı kontrol edeceğini
+                 bilsin. */
+              <span className="text-text-tertiary">
+                {DASH}
+                {today.kmUnmeasured > 0 && (
+                  <span className="ml-2 text-[11px]">{td("km_no_signal")}</span>
+                )}
+              </span>
             ) : (
               // Sayfanın öne çıkan sayısı — mercan (DESIGN.md §2.2).
               <span className="text-[15px] font-semibold text-accent-coral-text">

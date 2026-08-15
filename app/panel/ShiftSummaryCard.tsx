@@ -20,7 +20,11 @@ import { PACKAGES_ENABLED } from "@/lib/tenant";
 
 type Props = {
   entry: TimeEntry;
-  week: { ms: number; km: number; shifts: number };
+  week: {
+    ms: number;
+    km: { km: number; olculen: number; sinyalsiz: number; acik: number };
+    shifts: number;
+  };
   onLater: () => void;
 };
 
@@ -151,7 +155,17 @@ export function ShiftSummaryCard({ entry, week, onLater }: Props) {
 
       <p className="text-center text-xs text-muted-foreground">
         {t("thisWeek")}: {formatDurationShort(week.ms, locale)} ·{" "}
-        {week.km.toLocaleString(numLocale)} km · {week.shifts} {t("shiftCount")}
+        {week.km.km.toLocaleString(numLocale)} km · {week.shifts} {t("shiftCount")}
+        {week.km.sinyalsiz > 0 && (
+          /* Eksik toplamı SESSİZCE göstermeyiz: cihazı sessiz vardiyalar
+             toplama girmez ve kaç tanesi olduğu burada yazar. */
+          <>
+            {" · "}
+            <span className="text-accent-amber-text">
+              {t("kmUnmeasuredShifts", { count: week.km.sinyalsiz })}
+            </span>
+          </>
+        )}
       </p>
     </div>
   );

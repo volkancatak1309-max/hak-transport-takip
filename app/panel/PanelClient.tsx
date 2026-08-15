@@ -80,7 +80,11 @@ import { HelpTip } from "@/components/help/HelpTip";
 type Totals = {
   todayClosedPackages: number;
   weekMs: number;
-  weekKm: number;
+  /**
+   * Haftalık km artık tek sayı DEĞİL: cihazı sessiz vardiyalar toplamdan çıkar
+   * ve kaç tanesinin ölçülemediği ayrıca taşınır (bkz. lib/km-quality.ts).
+   */
+  weekKm: { km: number; olculen: number; sinyalsiz: number; acik: number };
   weekShifts: number;
 };
 

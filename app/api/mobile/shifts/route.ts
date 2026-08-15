@@ -6,6 +6,7 @@ import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { parsePage, pageInfo, parseYmdRange } from "@/lib/mobile-list";
 import { workedMs, kmDiff } from "@/lib/format";
+import { markKmMeasured } from "@/lib/km-quality";
 import type { TimeEntry } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -98,7 +99,9 @@ export async function GET(req: NextRequest) {
   );
   if (error) return mobileError(503, "db_error");
 
-  const rows = (data ?? []) as TimeEntry[];
+  // km_measured: cihazı sessiz vardiyada `km` alanı null döner (0 DEĞİL) —
+  // uç sözleşmesi zaten `number | null` (bkz. lib/km-quality.ts).
+  const rows = await markKmMeasured((data ?? []) as TimeEntry[]);
 
   return Response.json({
     ok: true,

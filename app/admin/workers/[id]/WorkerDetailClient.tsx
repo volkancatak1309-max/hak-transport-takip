@@ -38,7 +38,14 @@ type Props = {
   /** Giriş kilidi durumu (lib/login-lock.ts) — kilitliyse kaldırma düğmesi çıkar. */
   loginLock: LoginLockState;
   entries: TimeEntry[];
-  monthSummary: { shifts: number; ms: number; km: number; cargo: number };
+  monthSummary: {
+    shifts: number;
+    ms: number;
+    km: number;
+    /** Cihazı sessiz olduğu için km'si ölçülemeyen vardiya sayısı. */
+    kmUnmeasured: number;
+    cargo: number;
+  };
 };
 
 /**
@@ -126,13 +133,27 @@ export function WorkerDetailClient({
   }
 
   const stats = [
-    { k: "shifts", label: t("totalShifts"), value: monthSummary.shifts.toLocaleString(nf) },
-    { k: "hours", label: t("totalHours"), value: formatDuration(monthSummary.ms) },
-    { k: "km", label: t("totalKm"), value: monthSummary.km.toLocaleString(nf) },
+    { k: "shifts", label: t("totalShifts"), value: monthSummary.shifts.toLocaleString(nf), note: null },
+    { k: "hours", label: t("totalHours"), value: formatDuration(monthSummary.ms), note: null },
+    {
+      k: "km",
+      label: t("totalKm"),
+      /* Ayın TAMAMI ölçülemediyse sayı yerine "—": 0 km, cihaz sessizken
+         "araç kullanmamış" diye okunuyordu (Emrullah Arslan, 11 vardiyanın
+         10'u DO-505GS ile, ekranda 54 km). */
+      value:
+        monthSummary.kmUnmeasured >= monthSummary.shifts && monthSummary.shifts > 0
+          ? "—"
+          : monthSummary.km.toLocaleString(nf),
+      note:
+        monthSummary.kmUnmeasured > 0
+          ? t("kmUnmeasuredShifts", { count: monthSummary.kmUnmeasured })
+          : null,
+    },
     // Paket sayacı kapalı kurulumda (lib/tenant.ts) bu kutu her zaman 0 gösterir
     // ve dört sütunluk şeritte anlamsız bir sütun kalır.
     ...(PACKAGES_ENABLED
-      ? [{ k: "cargo", label: t("totalCargo"), value: monthSummary.cargo.toLocaleString(nf) }]
+      ? [{ k: "cargo", label: t("totalCargo"), value: monthSummary.cargo.toLocaleString(nf), note: null }]
       : []),
   ];
 
@@ -221,6 +242,11 @@ export function WorkerDetailClient({
             <div className="mt-2 text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
               {s.label}
             </div>
+            {"note" in s && s.note ? (
+              /* Eksik ölçüm SAYIYLA BİRLİKTE görünür — sessizce eksilen bir
+                 toplam "az km yapmış" diye okunuyordu. */
+              <div className="mt-1 text-[11px] text-accent-amber-text">{s.note}</div>
+            ) : null}
           </div>
         ))}
       </div>

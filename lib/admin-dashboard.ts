@@ -5,6 +5,7 @@ import {
   workedMs,
   kmDiff,
 } from "@/lib/format";
+import { markKmMeasured } from "@/lib/km-quality";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { listFleetActiveDtc, listLatestVehiclePositions } from "@/lib/telemetry";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
@@ -148,6 +149,20 @@ export type AttentionItem =
       worker_name: string;
       due: string;
       days: number; // dolmasına kaç gün (negatif = doldu)
+    }
+  | {
+      // KM ÖLÇÜLEMİYOR (15.08.2026): BUGÜN açılmış vardiya, cihazı sessiz bir
+      // araçla. Vardiya boyunca araçtan hiç telemetri gelmediği için km bir
+      // ölçüm değil — bayat odometre iki uca da yazılınca fark 0 çıkıyor ve
+      // rapor "0 km" diyordu. Kalem "veri yok" der, sayı uydurmaz.
+      kind: "kmUnmeasured";
+      id: string;
+      worker_name: string;
+      plate: string;
+      /** Aracın son telemetri anı — null ise cihaz HİÇ konuşmamış. */
+      last_seen: string | null;
+      /** Son telemetriden bu yana geçen saat; last_seen null ise null. */
+      hours: number | null;
     }
   | {
       kind: "silent"; // cihazlı aktif araç uzun süredir hiç telemetri göndermiyor
@@ -613,8 +628,12 @@ export async function getDashboardData(
     ),
   ]);
 
-  const todayEntries = (todayRes.data ?? []) as LiteEntry[];
-  const rangeEntries = (rangeRes.data ?? []) as LiteEntry[];
+  // km_measured: cihazı sessiz vardiyanın 0 km'si ölçüm DEĞİL — Operasyon
+  // Özeti'ndeki "Toplam KM" bu 0'ları sessizce topluyordu (bkz. lib/km-quality.ts).
+  const [todayEntries, rangeEntries] = await Promise.all([
+    markKmMeasured((todayRes.data ?? []) as LiteEntry[]),
+    markKmMeasured((rangeRes.data ?? []) as LiteEntry[]),
+  ]);
   const activeShifts = (activeRes.data ?? []) as {
     id: string;
     worker_id: string | null;
@@ -1527,6 +1546,41 @@ function buildAttention(
     });
   }
 
+  // 9c) KM ÖLÇÜLEMEYEN BUGÜNKÜ VARDİYALAR (15.08.2026).
+  //
+  //     Vardiya başladığından beri araçtan TEK bir telemetri satırı bile
+  //     gelmemişse o vardiyanın km'si ölçülemez. Eskiden bu durum sessizdi:
+  //     cihaz sustuğunda aynı bayat odometre hem start_km hem end_km'e
+  //     yazılıyor, fark tam 0 çıkıyor ve rapor "0 km" diyordu — uydurma bir
+  //     sayı, "ölçülemedi" değil. Canlıda ölçüldü (60 gün): 28 vardiya böyle.
+  //
+  //     `silent` kaleminden farkı EKSEN: o kalem ARACI (24 saattir sessiz)
+  //     bildirir, bu kalem VARDİYAYI (bugün o araçla çalışan kişinin km'si
+  //     kayıp) bildirir. Aynı araç ikisine birden düşebilir; eylem farklı —
+  //     biri cihazı tamir ettirmek, diğeri o günün km'sini elle düzeltmek.
+  {
+    const lastSeenAt = new Map(positions.map((p) => [p.vehicle_id, p.recorded_at]));
+    for (const e of todayEntries) {
+      if (!e.vehicle_id) continue;
+      const seen = lastSeenAt.get(e.vehicle_id) ?? null;
+      // Son fix vardiya başlangıcından ÖNCEYSE pencere içinde hiç satır yoktur.
+      if (seen !== null && new Date(seen).getTime() >= new Date(e.started_at).getTime()) {
+        continue;
+      }
+      items.push({
+        kind: "kmUnmeasured",
+        id: `${e.id}-kmunmeasured`,
+        worker_name: e.worker_id ? names.get(e.worker_id) ?? "—" : "—",
+        plate: e.plate ?? plateById.get(e.vehicle_id) ?? "—",
+        last_seen: seen,
+        hours:
+          seen === null
+            ? null
+            : Math.floor((Date.now() - new Date(seen).getTime()) / 3_600_000),
+      });
+    }
+  }
+
   // 10) Hareketsiz araç (Modül 7) — auto vardiya açık ama araç hiç kıpırdamamış.
   for (const c of vehicleIdle) {
     items.push({
@@ -1571,6 +1625,11 @@ function buildAttention(
         return 85; // araçtan sinyal yok — gerçek doğrulanamama, gold
       case "startEstimated":
         return 86; // saat tahmini — sinyalsizin hemen ardında, daha düşük aciliyet
+      case "kmUnmeasured":
+        // locationUnverified (85) ile aynı aileden: ikisi de "bu vardiyada
+        // cihazdan veri yok" diyor. Hemen ardına konur ki yönetici ikisini
+        // birlikte görsün — aynı aracın iki belirtisi olabilir.
+        return 85.5;
       case "vehicleIdle":
         return 80; // auto vardiya + araç hiç hareket etmemiş — orta öncelik
       case "manualStart":

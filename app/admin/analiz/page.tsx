@@ -13,6 +13,7 @@ import {
   workedDaysFromEntries,
   getWorkerShiftDistance,
   shiftKmForScoring,
+  shiftWindowsForScoring,
   scoreMinKmForWorkedDays,
   computeIdleWaste,
   computeMonthlyPivot,
@@ -114,6 +115,9 @@ export default async function AnalizPage({
       drivenVehiclesByWorker,
       workedDaysByWorker,
       shiftKmByWorker: shiftKmForScoring(shiftKmRes),
+      // EKSEN BİRLİĞİ (15.08.2026): olay atfı da km'nin geldiği SATIRLARDAN.
+      // İkisi tek `shiftKmRes`ten türüyor — ayrı sorgu olsaydı yine ayrışırdı.
+      shiftWindowsByVehicle: shiftWindowsForScoring(shiftKmRes),
       shiftKmUnavailable: shiftKmRes.unavailable,
     };
   }
@@ -157,7 +161,8 @@ export default async function AnalizPage({
     current.distanceByVehicle,
     gateFor(range, current.spanByVehicle, current.workedDaysByWorker),
     current.drivenVehiclesByWorker,
-    current.shiftKmByWorker
+    current.shiftKmByWorker,
+    current.shiftWindowsByVehicle
   );
   const idleWaste = computeIdleWaste(current.idleEpisodes, vehiclesById, workersById);
 
@@ -209,7 +214,8 @@ export default async function AnalizPage({
       prev.distanceByVehicle,
       gateFor(prevRange, prev.spanByVehicle, prev.workedDaysByWorker),
       prev.drivenVehiclesByWorker,
-      prev.shiftKmByWorker
+      prev.shiftKmByWorker,
+      prev.shiftWindowsByVehicle
     );
     const prevScoreByWorker = new Map(prevSafety.map((r) => [r.workerId, r.score]));
     safetyRowsWithTrend = safetyRows.map((r) => {

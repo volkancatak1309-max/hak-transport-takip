@@ -388,6 +388,22 @@ export type VehicleDistanceSpan = {
  */
 export type ShiftDistanceUnavailable = "missing_function" | "timeout" | "error";
 
+/**
+ * BİR VARDİYANIN ZAMAN PENCERESİ — "bu araçta, bu saatte, direksiyonda kimdi".
+ *
+ * km ile AYNI SATIRDAN türer (shift_odometer_spans). Ayrı bir sorgu değil,
+ * çünkü ayrı olsaydı iki sorgu zamanla ayrışabilirdi — 15.08.2026'da düzeltilen
+ * kusurun kökü tam olarak buydu (bkz. computeSafetyScores).
+ */
+export type ShiftWindow = {
+  workerId: string;
+  vehicleId: string;
+  /** started_at (ms). */
+  startMs: number;
+  /** ended_at ?? aralık sonu (ms) — 052'nin coalesce(ended_at, p_to) kuralı. */
+  endMs: number;
+};
+
 export type ShiftDistanceResult = {
   /** Şoför → vardiya pencereli km. `unavailable` doluysa null. */
   km: Map<string, number> | null;
@@ -396,6 +412,15 @@ export type ShiftDistanceResult = {
    * eksik kalır; SCORE_MIN_COVERAGE altındaki kapsamada skor üretilmez.
    */
   coverage: Map<string, { olculen: number; toplam: number }> | null;
+  /**
+   * Aralıkla kesişen TÜM vardiya pencereleri — km'si ölçülemeyenler DAHİL.
+   *
+   * Neden dahil: pencere "kim direksiyondaydı" sorusunu cevaplar, "km ölçüldü
+   * mü" sorusunu değil. Cihazı sessiz bir vardiyada şoför yine de araçtaydı ve
+   * yaptığı ihlal ONUN ihlalidir. Km'nin eksik kalmasından doğan orantısızlığı
+   * kapatan şey bu listeyi budamak değil, SCORE_MIN_KM_COVERAGE kapısıdır.
+   */
+  windows: ShiftWindow[] | null;
   /** null = başarılı. */
   unavailable: ShiftDistanceUnavailable | null;
 };
@@ -411,7 +436,8 @@ export async function getWorkerShiftDistance(
     })
   );
   if (error) {
-    if (isTimeoutError(error)) return { km: null, coverage: null, unavailable: "timeout" };
+    if (isTimeoutError(error))
+      return { km: null, coverage: null, windows: null, unavailable: "timeout" };
     const code = (error.code ?? "").toUpperCase();
     const msg = (error.message ?? "").toLowerCase();
     const missing =
@@ -419,16 +445,24 @@ export async function getWorkerShiftDistance(
       code === "42883" ||
       msg.includes("could not find the function") ||
       msg.includes("does not exist");
-    return { km: null, coverage: null, unavailable: missing ? "missing_function" : "error" };
+    return {
+      km: null,
+      coverage: null,
+      windows: null,
+      unavailable: missing ? "missing_function" : "error",
+    };
   }
   const rows = (data ?? []) as {
     worker_id: string;
+    vehicle_id: string;
     started_at: string;
     ended_at: string | null;
     first_km: number | null;
     last_km: number | null;
   }[];
   const km = new Map<string, number>();
+  const windows: ShiftWindow[] = [];
+  const rangeEndMs = Date.parse(endISO);
   /**
    * KAPSAMA (15.08.2026): şoför başına "km'si ölçülebilen / toplam" vardiya.
    * Eski hâlde ölçülemeyen satır SESSİZCE atlanıyordu; şoförün 10 vardiyasının
@@ -444,6 +478,16 @@ export async function getWorkerShiftDistance(
     kapsam.set(wid, c);
   };
   for (const r of rows) {
+    // PENCERE km'DEN BAĞIMSIZ toplanır — bkz. ShiftWindow notu. Aşağıdaki
+    // `continue`ların hiçbiri pencereyi düşürmemeli, o yüzden en başta.
+    if (r.worker_id && r.vehicle_id) {
+      windows.push({
+        workerId: r.worker_id,
+        vehicleId: r.vehicle_id,
+        startMs: Date.parse(r.started_at),
+        endMs: r.ended_at ? Date.parse(r.ended_at) : rangeEndMs,
+      });
+    }
     if (r.first_km == null || r.last_km == null) {
       if (r.worker_id) say(r.worker_id, false);
       continue;
@@ -465,7 +509,7 @@ export async function getWorkerShiftDistance(
     say(r.worker_id, true);
     km.set(r.worker_id, (km.get(r.worker_id) ?? 0) + diff);
   }
-  return { km, coverage: kapsam, unavailable: null };
+  return { km, coverage: kapsam, windows, unavailable: null };
 }
 
 /**
@@ -519,6 +563,65 @@ export function shiftKmForScoring(
     }
   }
   return km;
+}
+
+/**
+ * ARAÇ → o aralıktaki vardiya pencereleri, başlangıca göre sıralı.
+ *
+ * `shiftKmForScoring` ile AYNI ÜÇ DURUM (kasıtlı ayna — pay ve payda aynı
+ * kaynaktan gelmezse skor yine ayrışır):
+ *   başarılı           → harita
+ *   missing_function   → undefined  (052 yok; olay atfı eski ATAMA yoluna döner,
+ *                                    km de aynı satırda araç toplamına dönüyor)
+ *   timeout / error    → BOŞ harita (052 var ama hesaplanamadı; km de boş harita
+ *                                    olduğu için zaten hiçbir skor üretilmez)
+ */
+export function shiftWindowsForScoring(
+  res: ShiftDistanceResult
+): Map<string, ShiftWindow[]> | undefined {
+  if (res.unavailable === "missing_function") return undefined;
+  const byVehicle = new Map<string, ShiftWindow[]>();
+  if (res.unavailable !== null || !res.windows) return byVehicle;
+  for (const w of res.windows) {
+    const arr = byVehicle.get(w.vehicleId);
+    if (arr) arr.push(w);
+    else byVehicle.set(w.vehicleId, [w]);
+  }
+  // Deterministik sıra: başlangıç, sonra bitiş, sonra şoför kimliği. Aşağıdaki
+  // "en geç başlayan kazanır" kuralı ancak sıra sabitse tekrarlanabilir olur.
+  for (const arr of byVehicle.values()) {
+    arr.sort(
+      (a, b) =>
+        a.startMs - b.startMs || a.endMs - b.endMs || a.workerId.localeCompare(b.workerId)
+    );
+  }
+  return byVehicle;
+}
+
+/**
+ * "Bu araçta, bu anda direksiyonda kimdi" — pencere yoksa null.
+ *
+ * ÇAKIŞMADA EN GEÇ BAŞLAYAN KAZANIR. Canlıda ölçüldü (HAK61, 30 gün): 4.892
+ * olayın 25'i birden fazla pencereye düşüyor ve HEPSİ aynı şoförün üst üste
+ * binmiş iki vardiyası (ör. DO-775GS · Ali Özdemir ×14). Yani kural bugün
+ * hiçbir atfı değiştirmiyor; farklı iki şoför çakışırsa devralanı seçer, ki
+ * devir sırasında doğru olan odur. Olay ASLA iki şoföre birden yazılmaz.
+ */
+export function workerDrivingAt(
+  windowsByVehicle: Map<string, ShiftWindow[]>,
+  vehicleId: string,
+  atISO: string
+): string | null {
+  const arr = windowsByVehicle.get(vehicleId);
+  if (!arr) return null;
+  const t = Date.parse(atISO);
+  if (Number.isNaN(t)) return null;
+  let hit: string | null = null;
+  for (const w of arr) {
+    if (w.startMs > t) break; // sıralı — bundan sonrası da geç başlıyor
+    if (t <= w.endMs) hit = w.workerId; // en geç başlayan kazanır
+  }
+  return hit;
 }
 
 export async function getVehicleDistanceSpan(
@@ -754,7 +857,16 @@ export function computeSafetyScores(
    * toplaması BYPASS edilir — km doğrudan buradan okunur. Bu, "aracı 3 gün
    * sürdü ama 30 günlük km'si yazıldı" kusurunun kapandığı yer.
    */
-  shiftKmByWorker?: Map<string, number>
+  shiftKmByWorker?: Map<string, number>,
+  /**
+   * ARAÇ → VARDİYA PENCERELERİ (15.08.2026 — EKSEN UYUŞMAZLIĞI).
+   *
+   * Verilirse OLAY ATFI da vardiya penceresinden yapılır; verilmezse eski
+   * ATAMA yolu (`vehicles.assigned_worker_id`) korunur. `shiftKmForScoring` ile
+   * AYNI kaynaktan (`getWorkerShiftDistance`) üretilmelidir — bkz.
+   * `shiftWindowsForScoring`.
+   */
+  shiftWindowsByVehicle?: Map<string, ShiftWindow[]>
 ): SafetyScoreRow[] {
   type Acc = { penalty: number; totalEvents: number; days: Set<string> };
   const acc = new Map<string, Acc>();
@@ -767,17 +879,49 @@ export function computeSafetyScores(
     acc.set(workerId, cur);
   }
 
+  /**
+   * ── EKSEN UYUŞMAZLIĞI (15.08.2026, Volkan) ────────────────────────────────
+   *
+   * 09.08'de km ATAMA ekseninden VARDİYA eksenine taşındı (052) ama OLAY atfı
+   * atamada kaldı. Sonuç: pay ile payda farklı gerçekleri anlatıyordu.
+   *   · km      = şoförün gerçekten sürdüğü vardiyalar
+   *   · ceza    = aracın kağıt üzerindeki sahibinin üstüne yazılan HER olay
+   * Şoför atandığı araçtan başkasını sürdüğünde cezası kayboluyor, km'si
+   * kalıyordu → sahte yüksek puan. Canlı vaka (HAK61, 30 gün): Hamdi Kurubaş
+   * DO-746GU'ya atanmışken DO-992GO'yu sürdü; DO-992GO'nun olayları o sırada
+   * ARACIN sahibi görünen Bayram Çöymen'e yazıldı (12 olay).
+   *
+   * ARTIK: olay, O ARAÇTA O SAATTE VARDİYADA OLAN şoföre yazılır — km ile
+   * BİREBİR aynı satırlardan (shift_odometer_spans), ki ikisi bir daha
+   * ayrışamasın.
+   *
+   * HİÇBİR VARDİYAYA DÜŞMEYEN OLAY HİÇ KİMSEYE YAZILMAZ. Uydurma atıf yok:
+   * "araç bu kişinin üstüne kayıtlı, öyleyse o sürmüştür" bir varsayımdı ve
+   * ölçümde yanlış çıktı. Canlıda 4.892 olayın 1.897'si (%38,8) hiçbir vardiya
+   * penceresine düşmüyor — bunların %72'si o araçta O GÜN HİÇ vardiya
+   * açılmamışken oluşmuş (bkz. scripts/measure-skor-eksen-2.mjs). Bu olaylar
+   * kaybolmaz: Top-10, Rölanti Panosu ve Aylık Pivot onları ATAMA ekseninde
+   * saymaya devam eder — yalnız KİŞİSEL SKOR'a girmezler, çünkü hangi kişinin
+   * olduğu bilinmiyor.
+   */
+  const vardiyaEkseni = shiftWindowsByVehicle !== undefined;
+  const sahibi = (vehicleId: string, atISO: string): string | null => {
+    if (vardiyaEkseni) return workerDrivingAt(shiftWindowsByVehicle!, vehicleId, atISO);
+    // atanmamış araç şoför liginde yer almaz
+    return vehiclesById.get(vehicleId)?.assigned_worker_id ?? null;
+  };
+
   for (const e of events) {
-    const v = vehiclesById.get(e.vehicle_id);
-    if (!v?.assigned_worker_id) continue; // atanmamış araç şoför liginde yer almaz
     const weight = SAFETY_SCORE_WEIGHTS[e.event_type];
     if (weight === undefined) continue;
-    bump(v.assigned_worker_id, weight, viennaDayKey(e.occurred_at));
+    const wid = sahibi(e.vehicle_id, e.occurred_at);
+    if (!wid) continue;
+    bump(wid, weight, viennaDayKey(e.occurred_at));
   }
   for (const ep of idleEpisodes) {
-    const v = vehiclesById.get(ep.vehicle_id);
-    if (!v?.assigned_worker_id) continue;
-    bump(v.assigned_worker_id, SAFETY_SCORE_WEIGHTS.idling ?? 0, viennaDayKey(ep.started_at));
+    const wid = sahibi(ep.vehicle_id, ep.started_at);
+    if (!wid) continue;
+    bump(wid, SAFETY_SCORE_WEIGHTS.idling ?? 0, viennaDayKey(ep.started_at));
   }
 
   // Şoför → km'si ona yazılacak araç(lar).

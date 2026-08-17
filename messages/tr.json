@@ -640,7 +640,8 @@
     "progress": "İlerleme",
     "points": "{n} nokta",
     "sampled": "örneklendi",
-    "back": "Geri"
+    "back": "Geri",
+    "stationary": "Bu araç bu tarihte hareket etmedi"
   },
   "vehicles": {
     "title": "Araçlar",

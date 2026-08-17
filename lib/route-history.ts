@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { listVehicleTrack } from "@/lib/telemetry";
+import { computeDistanceKm } from "@/lib/metrics-distance";
 import { gunPenceresi, seyrelt } from "@/lib/vehicle-day";
 
 export type RoutePoint = {
@@ -41,7 +42,40 @@ export type RouteDay = {
   /** When true the replay marker is a heading arrow (the source has course
    *  data, i.e. device GPS) instead of a plain pin. Driver routes leave unset. */
   directional?: boolean;
+
+  /**
+   * ── ÖZET ŞERİDİ (17.08.2026) ──────────────────────────────────────────────
+   *
+   * Neden eklendi: oynatıcıdaki tek sayı o anki noktanın SAATİydi ve yanında
+   * hiçbir bağlam yoktu — kullanıcı onu "süre" sanıp "her gün aynı, bozuk"
+   * sonucuna vardı (canlı gözlem, 17.08.2026). Bağlam artık ekranda.
+   *
+   * Dördü de OPSİYONEL: yoksa şerit hiç basılmaz ve eski davranış birebir
+   * korunur. HAM izden hesaplanır — `points` 900'de örneklendiği için ondan
+   * hesaplamak mesafeyi eksik gösterirdi.
+   */
+  /** Günün ilk fix'i (ISO) — özet şeridinin başlangıç saati. */
+  firstAt?: string | null;
+  /** Günün son fix'i (ISO) — özet şeridinin bitiş saati. */
+  lastAt?: string | null;
+  /** Ham izden GPS mesafesi (km, 1 ondalık). `computeDistanceKm` ile: park
+   *  titremesi ve veri boşlukları o fonksiyonda zaten eleniyor. */
+  distanceKm?: number | null;
+  /**
+   * Araç o gün fiilen HAREKET ETMEDİ (park + saatlik heartbeat).
+   *
+   * Ölçülen desen (17.08.2026, galzura-demo): park günü 24 nokta üretiyor ve
+   * 24'ünün de koordinatı BİREBİR aynı → çizilecek yol yok; oynatıcı doğru
+   * çalışsa bile ekranda hiçbir şey kıpırdamıyor ve kullanıcı bunu kırık
+   * özellik sanıyor. Bayrak, ekranın "bu araç bu tarihte hareket etmedi"
+   * diyebilmesi için var — boş durumda sessiz kalmak arızaya dönüşüyor.
+   */
+  stationary?: boolean;
 };
+
+/** Bu mesafenin altındaki gün "hareket etmedi" sayılır (km). Depo içi manevra
+ *  ve GPS titremesi bu bandın altında kalır; gerçek bir çıkış kalmaz. */
+const STATIONARY_KM = 0.2;
 
 const OSRM_MATCH = "https://router.project-osrm.org/match/v1/driving/";
 const MATCH_INPUT_MAX = 180; // coords sent to OSRM (it returns a dense geometry)
@@ -198,6 +232,16 @@ export async function getVehicleDeviceRoute(
   // Show the heading arrow only if the device actually reported a course.
   const directional = rawPts.some((p) => p.heading !== null && p.heading !== undefined);
 
+  // ── Özet şeridi + hareketsizlik (17.08.2026) ──────────────────────────────
+  // HAM iz üzerinden: `points` 900'de örneklenmiş olabilir, mesafe ondan
+  // hesaplanırsa eksik çıkar. `computeDistanceKm` park titremesini (D_MIN_M) ve
+  // veri boşluklarını (GAP_MAX_MS) zaten eliyor, yani "gerçekten kat edilen"i
+  // veriyor — hareketsizlik eşiği de bu yüzden ona dayanıyor.
+  const mesafe = computeDistanceKm(track);
+  const distanceKm = mesafe.points > 0 ? Math.round(mesafe.km * 10) / 10 : null;
+  const stationary =
+    rawPts.length > 0 && distanceKm !== null && distanceKm < STATIONARY_KM;
+
   return {
     date,
     points,
@@ -208,5 +252,9 @@ export async function getVehicleDeviceRoute(
     driverName: null, // vehicle-centric track — no driver label
     driverId: vehicleId, // replay reset key
     directional,
+    firstAt: rawPts.length ? rawPts[0].t : null,
+    lastAt: rawPts.length ? rawPts[rawPts.length - 1].t : null,
+    distanceKm,
+    stationary,
   };
 }

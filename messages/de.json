@@ -640,7 +640,8 @@
     "progress": "Fortschritt",
     "points": "{n} Punkte",
     "sampled": "abgetastet",
-    "back": "Zurück"
+    "back": "Zurück",
+    "stationary": "Dieses Fahrzeug hat sich an diesem Tag nicht bewegt"
   },
   "vehicles": {
     "title": "Fahrzeuge",

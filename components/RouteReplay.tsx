@@ -5,10 +5,10 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeft, Play, Pause, RotateCcw, Gauge, MapPin } from "lucide-react";
+import { ArrowLeft, Play, Pause, RotateCcw, Gauge, MapPin, ParkingCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDurationShort } from "@/lib/format";
 import type { RouteDay } from "@/lib/route-history";
 import { TENANT_TZ } from "@/lib/tz";
 
@@ -117,13 +117,40 @@ export function RouteReplay({
   const curTime = points[idx]?.t ?? null;
   // Device heading at the current replay instant (only when the route is directional).
   const curHeading = route.directional ? points[idx]?.heading ?? null : null;
-  const timeLabel = curTime
-    ? new Date(curTime).toLocaleTimeString(locale === "de" ? "de-AT" : "tr-TR", {
-        timeZone: TENANT_TZ,
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "--:--";
+  const saatBicimi = (iso: string) =>
+    new Date(iso).toLocaleTimeString(locale === "de" ? "de-AT" : "tr-TR", {
+      timeZone: TENANT_TZ,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  const timeLabel = curTime ? saatBicimi(curTime) : "--:--";
+
+  /**
+   * ÖZET ŞERİDİ (17.08.2026) — "05:12 → 18:44 · 8s 32dk · 142 km".
+   *
+   * Sorunu şuydu: kontrol satırındaki tek sayı o anki noktanın SAATİ ama ekranda
+   * bunu söyleyen bir şey yoktu; kullanıcı onu "süre" sanıyor ve park günlerinde
+   * her gün aynı değeri görünce "bozuk" diyordu. Alanlar OPSİYONEL — sunucu
+   * göndermezse şerit hiç basılmaz, eski görünüm birebir korunur.
+   */
+  const ozet = (() => {
+    if (!route.firstAt || !route.lastAt) return null;
+    const bas = new Date(route.firstAt).getTime();
+    const bit = new Date(route.lastAt).getTime();
+    if (!Number.isFinite(bas) || !Number.isFinite(bit) || bit < bas) return null;
+    const parcalar = [
+      `${saatBicimi(route.firstAt)} → ${saatBicimi(route.lastAt)}`,
+      formatDurationShort(bit - bas, locale),
+    ];
+    if (typeof route.distanceKm === "number") {
+      parcalar.push(
+        `${route.distanceKm.toLocaleString(locale === "de" ? "de-AT" : "tr-TR", {
+          maximumFractionDigits: 1,
+        })} km`
+      );
+    }
+    return parcalar.join(" · ");
+  })();
 
   return (
     <div className="mx-auto max-w-[1200px] space-y-4 px-4 py-6 sm:px-6">
@@ -170,6 +197,22 @@ export function RouteReplay({
             </span>
           </div>
         )}
+        {/*
+          HAREKETSİZ GÜN (17.08.2026) — veri VAR ama araç hiç kıpırdamamış.
+          Rozet ÜSTTE duruyor, ortada değil: aracın o günkü tek konumu haritada
+          görünmeye devam etmeli; ortalanmış bir rozet tam onun üstüne otururdu.
+          `hasRoute` hâlâ true olduğu için oynatma/kaydırma DEVRE DIŞI BIRAKILMADI
+          — davranış değişmiyor, yalnız ekran neden hiçbir şeyin kıpırdamadığını
+          söylüyor.
+        */}
+        {hasRoute && route.stationary && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-[1000] flex justify-center p-3">
+            <span className="flex items-center gap-2 rounded-[10px] border border-border bg-background/90 px-4 py-2 text-sm text-muted-foreground elevate">
+              <ParkingCircle className="size-4 text-text-tertiary" />
+              {t("stationary")}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
@@ -211,8 +254,13 @@ export function RouteReplay({
           />
         </div>
 
-        <div className="mt-2.5 flex items-center justify-between text-xs text-text-tertiary">
-          <span>{formatDate(route.date, locale)}</span>
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-text-tertiary">
+          {/* Özet şeridi kontrol satırının ALTINDA: saat etiketiyle aynı kartta ve
+              hemen bitişiğinde, ama kaydırıcıyı dar ekranda ezmiyor. */}
+          <span className="nums">
+            {formatDate(route.date, locale)}
+            {ozet ? ` · ${ozet}` : ""}
+          </span>
           {hasRoute && (
             <span className="nums">
               {t("points", { n: route.totalRaw })}

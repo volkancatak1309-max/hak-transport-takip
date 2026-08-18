@@ -1,10 +1,7 @@
 import "server-only";
 import { getTranslations } from "next-intl/server";
-import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
-import { getTestScope, withoutTestRows } from "@/lib/test-data";
-import { getDriverScope, onlyDrivers, dropNonDrivers } from "@/lib/driver-scope";
-import { markKmMeasured } from "@/lib/km-quality";
 import { buildDistanceReport, buildFuelReport } from "@/lib/reports";
+import { loadRangeShifts, persNrHaritasi } from "@/lib/report-shifts";
 import { FUEL_MIN_KM, FUEL_MIN_CONSUMED_PCT } from "@/lib/metric-thresholds";
 import { PACKAGES_ENABLED } from "@/lib/tenant";
 import { DEFAULT_LOCALE } from "@/i18n/request";
@@ -15,11 +12,6 @@ import {
   formatTime,
   formatDurationShort,
 } from "@/lib/format";
-import {
-  WORKER_PUBLIC_COLUMNS,
-  type TimeEntry,
-  type WorkerPublic,
-} from "@/lib/types";
 import type { DateRange } from "@/lib/analytics-shared";
 
 /**
@@ -116,61 +108,11 @@ function utf8Bom(metin: string): Buffer {
  */
 export async function buildShiftsCsv(range: DateRange): Promise<CsvCikti> {
   const t = await getTranslations({ locale: DEFAULT_LOCALE, namespace: "admin" });
-  const scope = await getTestScope();
-  const driverScope = await getDriverScope();
-
-  const [entriesRes, workersRes] = await Promise.all([
-    // SAYFALI: uzun aralıklar 1000 satır tavanını aşar ve dışa aktarım sessizce
-    // eksik kalırdı (panelin kendi notu, app/admin/page.tsx).
-    fetchAllRows<TimeEntry>((from, to) =>
-      // test-filtered + driver-scoped: panonun uyguladığı iki eleme. Yönetici
-      // hesabından açılmış iki demo vardiya tek başına 20.100 km taşıyordu.
-      onlyDrivers(
-        withoutTestRows(
-          supabaseAdmin
-            .from("time_entries")
-            .select("*")
-            .gte("started_at", range.start.toISOString())
-            .lte("started_at", range.end.toISOString())
-            .order("started_at", { ascending: false })
-            .order("id")
-            .range(from, to),
-          "worker_id",
-          scope.workerIds
-        ),
-        "worker_id",
-        driverScope
-      ),
-    "buildShiftsCsv/time_entries"
-    ),
-    // test-filtered: İSİM HARİTASI bilerek GENİŞ kalır — daraltılırsa eski bir
-    // vardiyanın adı "—" olur (satır düşmez, kimlik kaybolur). Şoför evreni
-    // aşağıda dropNonDrivers ile ayrıca türetiliyor.
-    withoutTestRows(
-      supabaseAdmin.from("workers").select(WORKER_PUBLIC_COLUMNS).order("name"),
-      "id",
-      scope.workerIds
-    ),
-  ]);
-
-  const workersData = (workersRes.data ?? []) as WorkerPublic[];
-  const workerMap = new Map(workersData.map((w) => [w.id, w]));
-
-  // driver-scoped: YALNIZ Pers.-Nr numaralandırması için. Yöneticiler sırada
-  // yer kaplarsa employee_number'ı boş olan şoförlerin yedek numaraları kayar.
-  const soforler = dropNonDrivers(workersData, (w) => w.id, driverScope);
-  const harman = DEFAULT_LOCALE === "de" ? "de" : "tr";
-  const sirali = [...soforler].sort((a, b) =>
-    (a.name ?? "").localeCompare(b.name ?? "", harman)
-  );
-  const persNr = new Map<string, string>();
-  sirali.forEach((w, i) =>
-    persNr.set(w.id, (w.employee_number ?? "").trim() || String(i + 1))
-  );
-
-  // km_measured: cihazı sessiz vardiyanın 0 km'si ÖLÇÜM DEĞİL → kmDiff null
-  // döner ve hücre BOŞ kalır (lib/km-quality.ts). Panelin Excel'i de öyle.
-  const entries = await markKmMeasured((entriesRes.data ?? []) as TimeEntry[]);
+  // Sorgu + elemeler + km_measured + isim sözlüğü ORTAK yükleyicide
+  // (lib/report-shifts.ts) — Schichtbericht PDF'i de aynı satırları okuyor ve
+  // iki resmî çıktının ayrışmaması için sorgu tek yerde durur.
+  const { entries, workerMap, soforler, harman } = await loadRangeShifts(range);
+  const persNr = persNrHaritasi(soforler, harman);
 
   const baslik = [
     t("tblPersNr"), t("tblWorker"), t("tblDate"), t("tblStart"), t("tblEnd"),

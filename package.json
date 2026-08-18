@@ -27,7 +27,8 @@
     "verify:filo-yonetimi": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-filo-yonetimi.mjs",
     "verify:mobil-analiz": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-mobil-analiz.mjs",
     "verify:rapor-pdf": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-pdf.mjs",
-    "verify:rapor-csv": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-csv.mjs"
+    "verify:rapor-csv": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-csv.mjs",
+    "verify:rapor-pdf-tur3": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-pdf-tur3.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

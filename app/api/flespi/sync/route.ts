@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { flespiAuthorized } from "@/lib/flespi-auth";
 import { fetchDeviceMessages } from "@/lib/flespi";
 import {
+  idleCursorsBatch,
   lastRecordedAt,
   lastRecordedAtBatch,
   maybeBackfillVin,
@@ -79,6 +80,22 @@ async function runSync() {
    */
   const imlecler = await lastRecordedAtBatch(vehicles.map((v) => v.id));
 
+  /**
+   * RÖLANTİ İMLEÇLERİ — DÖNGÜDEN ÖNCE, TEK SORGUDA (#84 Adım 2, migration 061).
+   *
+   * `saveIdleEpisodes` araç başına İKİ okuma yapıyordu (açık epizod + son
+   * kapalının bitişi): 29 araçta 58 gidiş-dönüş. Adım 1'den sonra bu, turun
+   * en büyük kalemiydi (141 sorgunun 59'u).
+   *
+   * ⚠️ 23505 YARIŞ KORUMASI ETKİLENMEZ: `saveIdleEpisodes` içindeki tekil
+   * ihlal sonrası yeniden okuma CANLI kalır (bkz. lib/telemetry.ts). Burada
+   * toplanan yalnız TUR BAŞINDAKİ ilk okumadır.
+   *
+   * GERİ DÜŞÜŞ (Adım 5): null dönerse `seed` verilmez ve `saveIdleEpisodes`
+   * araç-araç eski yola düşer — davranış birebir aynı.
+   */
+  const rolantiImlecleri = await idleCursorsBatch(vehicles.map((v) => v.id));
+
   for (const v of vehicles) {
     try {
       // Map'te YOKLUK "bu aracın hiç kaydı yok" demektir (RPC kaydı olmayan
@@ -104,7 +121,7 @@ async function runSync() {
       // ASLA düşürmez.
       if (idle.length > 0) {
         try {
-          await saveIdleEpisodes(v.id, idle);
+          await saveIdleEpisodes(v.id, idle, rolantiImlecleri?.get(v.id));
         } catch (err) {
           console.error(
             `[flespi/sync] ${v.plate}: idle_episodes yazılamadı:`,

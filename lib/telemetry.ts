@@ -432,6 +432,66 @@ async function latestClosedEndMs(vehicleId: string): Promise<number | null> {
   return data?.ended_at ? new Date(data.ended_at as string).getTime() : null;
 }
 
+/** Bir aracın tur BAŞINDAKİ rölanti imleçleri (migration 061). */
+export type IdleCursor = {
+  open: OpenEpisode | null;
+  latestClosedMs: number | null;
+};
+
+/**
+ * RÖLANTİ İMLEÇLERİ TOPLU — araç başına 2 sorgu yerine TUR BAŞINA 1 (#84 Adım 2).
+ *
+ * `saveIdleEpisodes` her araçta `getOpenEpisode` + `latestClosedEndMs` çağırıyor;
+ * 29 araçta 58 gidiş-dönüş. Adım 1'den sonra `idle_episodes` turun en büyük
+ * kalemi hâline geldi (141 sorgunun 59'u).
+ *
+ * ⚠️ BU YALNIZ TUR BAŞINDAKİ İLK OKUMAYI TOPLULAŞTIRIR. `saveIdleEpisodes`
+ * içindeki 23505 (tekil ihlal) yarış korumasının yeniden okuması BURAYA
+ * BAĞLANMAZ ve canlı kalır — yarışı kaybettiğimiz an karşı tarafın az önce
+ * yazdığı satırı öğrenmek isteriz, tur başında çekilmiş bayat değeri değil.
+ *
+ * Geri düşüş (Adım 5): `null` dönerse çağıran araç-araç eski yola düşer.
+ */
+export async function idleCursorsBatch(
+  vehicleIds: string[]
+): Promise<Map<string, IdleCursor> | null> {
+  if (vehicleIds.length === 0) return new Map();
+  const { data, error } = await supabaseAdmin.rpc("idle_episode_cursors_batch", {
+    p_vehicle_ids: vehicleIds,
+  });
+  if (error) {
+    console.warn(
+      `[telemetry] idle_episode_cursors_batch kullanılamadı (${error.message}) — araç-araç eski yola dönülüyor`
+    );
+    return null;
+  }
+  const rows = (data ?? []) as {
+    vehicle_id: string;
+    open_id: string | null;
+    open_started_at: string | null;
+    open_last_seen_at: string | null;
+    latest_closed_end: string | null;
+  }[];
+  return new Map(
+    rows.map((r) => [
+      r.vehicle_id,
+      {
+        open:
+          r.open_id && r.open_started_at && r.open_last_seen_at
+            ? {
+                id: r.open_id,
+                started_at: r.open_started_at,
+                last_seen_at: r.open_last_seen_at,
+              }
+            : null,
+        latestClosedMs: r.latest_closed_end
+          ? new Date(r.latest_closed_end).getTime()
+          : null,
+      },
+    ])
+  );
+}
+
 /**
  * idle.status geçişlerini idle_episodes durum makinesine uygular. Araç başına
  * KRONOLOJİK işlenir; en son epizod sınırından (açık epizodun last_seen'i veya
@@ -442,13 +502,19 @@ async function latestClosedEndMs(vehicleId: string): Promise<number | null> {
  */
 export async function saveIdleEpisodes(
   vehicleId: string,
-  readings: IdleReading[]
+  readings: IdleReading[],
+  /**
+   * Tur başında toplu okunmuş imleç (#84 Adım 2, migration 061). Verilirse bu
+   * aracın İKİ açılış sorgusu atlanır. VERİLMEZSE davranış birebir eskisi —
+   * geri düşüş yolu budur (Adım 5), o yüzden opsiyonel.
+   */
+  seed?: IdleCursor
 ): Promise<number> {
   if (readings.length === 0) return 0;
   const sorted = [...readings].sort((a, b) => a.ts - b.ts);
 
-  let open = await getOpenEpisode(vehicleId);
-  const closedMs = await latestClosedEndMs(vehicleId);
+  let open = seed ? seed.open : await getOpenEpisode(vehicleId);
+  const closedMs = seed ? seed.latestClosedMs : await latestClosedEndMs(vehicleId);
   let cursorMs = Math.max(
     open ? new Date(open.last_seen_at).getTime() : -Infinity,
     closedMs ?? -Infinity

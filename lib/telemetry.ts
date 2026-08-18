@@ -90,20 +90,19 @@ export async function lastRecordedAtBatch(
 }
 
 /**
- * Idempotently write flespi points for one vehicle. The conflict target
- * (vehicle_id, recorded_at) makes re-polling an overlapping window a no-op, so
- * the table never accumulates duplicates. Returns the number of rows written.
+ * Bir aracın noktalarını satır nesnelerine çevirir — TEK KAYNAK (#84 Adım 3).
+ *
+ * Tekil ve toplu yazma yolu AYNI kurucudan beslenir; alan listesi iki yere
+ * kopyalansaydı biri yeni bir kolon eklendiğinde sessizce geride kalırdı.
+ * Aynı `recorded_at` batch içinde tekrarlanırsa ilk kayıt tutulur (ON CONFLICT
+ * DO NOTHING da tolere eder, ama istek küçük kalsın).
  */
-export async function saveTelemetry(
+function telemetriSatirlari(
   vehicleId: string,
   points: FlespiPoint[]
-): Promise<number> {
-  if (points.length === 0) return 0;
-
-  // Drop in-batch duplicate timestamps up front (ON CONFLICT DO NOTHING also
-  // tolerates them, but this keeps the request smaller).
+): Record<string, unknown>[] {
   const seen = new Set<string>();
-  const rows = [];
+  const rows: Record<string, unknown>[] = [];
   for (const p of points) {
     if (seen.has(p.recorded_at)) continue;
     seen.add(p.recorded_at);
@@ -116,7 +115,7 @@ export async function saveTelemetry(
       heading: p.heading,
       ignition_on: p.ignition_on,
       fuel_level_pct: p.fuel_level_pct,
-      // can.fuel.volume, HAM litre (migration 039). Kolon yoksa aşağıdaki
+      // can.fuel.volume, HAM litre (migration 039). Kolon yoksa yazma yolundaki
       // fallback bu alanı düşürüp tekrar dener — telemetri ASLA yeni bir kolon
       // yüzünden kaybolmaz.
       fuel_volume_l: p.fuel_volume_l,
@@ -135,6 +134,115 @@ export async function saveTelemetry(
       recorded_at: p.recorded_at,
     });
   }
+  return rows;
+}
+
+/**
+ * PARTİ SINIRI (#84 Adım 3). 29 aracın noktaları tek istekte gönderilirse
+ * gövde beklenmedik biçimde büyür; PostgREST/Supabase istek boyutu sınırına
+ * takılmak, telemetriyi turun en kritik yazma yolunda kaybetmek demektir.
+ * 500 satır ≈ 150 KB — sınırın çok altında, ama 29 aracın tipik turunu (~30
+ * satır) tek partide bitirecek kadar geniş.
+ */
+const TELEMETRI_PARTI_SINIRI = 500;
+
+/**
+ * TOPLU TELEMETRİ YAZMA — araç başına 1 upsert yerine TUR BAŞINA birkaç parti.
+ *
+ * ── GERİ OKUMA MUHAFIZI (Volkan'ın şartı) ──────────────────────────────────
+ * `ignoreDuplicates: true` ile dönen satırlar YALNIZ yeni eklenenlerdir, yani
+ * "gönderdiğim 500, döndü 12" TAMAMEN NORMALDİR (48'i sınır mesajı, gerisi
+ * zaten yazılmış). Bu yüzden "dönen == gönderilen" diye bir muhafız kurmak
+ * yanlış alarm üretirdi. Asıl korkulan SESSİZ KIRPMA: isteğin bir kısmının
+ * hiç işlenmemesi ve bunun hata vermemesi.
+ * Muhafız bu yüzden GERİ OKUR: yazma bitince gönderdiğimiz (araç, an)
+ * penceresinde DB'de kaç satır olduğu sayılır ve gönderdiğimiz benzersiz
+ * çiftten AZ ise yüksek sesle loglanır. Fazla olması sorun değil (stream
+ * ingest aynı pencereye yazmış olabilir); EKSİK olması veri kaybıdır.
+ *
+ * ── GERİ DÜŞÜŞ (Adım 5) ────────────────────────────────────────────────────
+ * Herhangi bir parti hata verirse `null` döner ve çağıran araç-araç
+ * `saveTelemetry`'ye düşer. Kısmen yazılmış partiler zarar vermez: upsert
+ * idempotent, tekrar yazmak no-op.
+ */
+export async function saveTelemetryBatch(
+  aracNoktalari: { vehicleId: string; points: FlespiPoint[] }[]
+): Promise<Map<string, number> | null> {
+  const tumu: Record<string, unknown>[] = [];
+  for (const a of aracNoktalari) {
+    if (a.points.length === 0) continue;
+    tumu.push(...telemetriSatirlari(a.vehicleId, a.points));
+  }
+  const yazilan = new Map<string, number>();
+  if (tumu.length === 0) return yazilan;
+
+  const upsert = (r: Record<string, unknown>[]) =>
+    supabaseAdmin
+      .from("device_telemetry")
+      .upsert(r, { onConflict: "vehicle_id,recorded_at", ignoreDuplicates: true })
+      .select("id, vehicle_id");
+
+  for (let i = 0; i < tumu.length; i += TELEMETRI_PARTI_SINIRI) {
+    const parti = tumu.slice(i, i + TELEMETRI_PARTI_SINIRI);
+    let { data, error } = await upsert(parti);
+    // 039 uygulanmamış ortam: fuel_volume_l kolonu yok → alanı düşürüp tekrar
+    // dene (tekil yoldaki fallback'in aynısı).
+    if (error && /fuel_volume_l|column/i.test(error.message)) {
+      const stripped = parti.map((r) => {
+        const copy: Record<string, unknown> = { ...r };
+        delete copy.fuel_volume_l;
+        return copy;
+      });
+      ({ data, error } = await upsert(stripped));
+    }
+    if (error) {
+      console.warn(
+        `[telemetry] toplu yazma başarısız (${error.message}) — araç-araç eski yola dönülüyor`
+      );
+      return null;
+    }
+    for (const r of (data ?? []) as { vehicle_id: string }[]) {
+      yazilan.set(r.vehicle_id, (yazilan.get(r.vehicle_id) ?? 0) + 1);
+    }
+  }
+
+  await geriOkumaMuhafizi(tumu);
+  return yazilan;
+}
+
+/**
+ * Gönderilen her (araç, an) çifti gerçekten DB'de mi? Tek sorgu, tur başına.
+ * EKSİK çıkarsa yüksek sesle loglar — sessiz kırpma bu projede daha önce
+ * canlı hataya yol açtı (PostgREST 1000 satır tavanı), o yüzden sessiz
+ * kalmak seçenek değil.
+ */
+async function geriOkumaMuhafizi(rows: Record<string, unknown>[]): Promise<void> {
+  try {
+    const anlar = rows.map((r) => String(r.recorded_at)).sort();
+    const araclar = [...new Set(rows.map((r) => String(r.vehicle_id)))];
+    const { count, error } = await supabaseAdmin
+      .from("device_telemetry")
+      .select("*", { count: "exact", head: true })
+      .in("vehicle_id", araclar)
+      .gte("recorded_at", anlar[0])
+      .lte("recorded_at", anlar[anlar.length - 1]);
+    if (error) return; // muhafız sessizce devre dışı; yazma zaten başarılıydı
+    if ((count ?? 0) < rows.length) {
+      console.error(
+        `[telemetry] ⚠️ GERİ OKUMA UYUŞMAZLIĞI: ${rows.length} satır gönderildi, ` +
+          `aynı pencerede DB'de ${count} satır var. SESSİZ KIRPMA OLASI.`
+      );
+    }
+  } catch {
+    /* muhafız asla turu düşürmez */
+  }
+}
+export async function saveTelemetry(
+  vehicleId: string,
+  points: FlespiPoint[]
+): Promise<number> {
+  if (points.length === 0) return 0;
+  const rows = telemetriSatirlari(vehicleId, points);
 
   const upsert = (r: Record<string, unknown>[]) =>
     supabaseAdmin

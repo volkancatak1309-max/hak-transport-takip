@@ -36,6 +36,21 @@ export async function getSession() {
 }
 
 /**
+ * ÇEREZ RENDER SIRASINDA SİLİNEMEZ — YIKIM UCA DEVREDİLİR (17 Ağu 2026 olayı).
+ *
+ * Aşağıdaki iki kapı da sayfa RENDER'ı sırasında çalışır ve Next.js'te çerez
+ * yazmak yalnız Server Action / Route Handler'da serbesttir. Eskiden burada
+ * `session.destroy()` çağrılıyordu; bu bir istisna atıyor, istisna
+ * `app/error.tsx`e düşüyor ve kullanıcı ÇIKIŞI OLMAYAN bir döngüde kalıyordu
+ * (`/` → `/admin` → hata → `/`). Çerezi temizleyecek kod, çerezi
+ * temizleyemediği için çöküyordu.
+ *
+ * Çözüm: silmiyoruz, YÖNLENDİRİYORUZ. `redirect()` render sırasında serbest;
+ * uç nokta çerezi yasal yerde siler ve `/`e bırakır.
+ */
+const OTURUM_KAPAT_YOLU = "/api/oturum/kapat";
+
+/**
  * OTURUM DENETİMİ + CANLILIK (migration 045) — her korumalı kapının ilk işi.
  *
  * İki şey yapar:
@@ -57,8 +72,7 @@ async function enforceSessionVersion(session: Awaited<ReturnType<typeof getSessi
   if (!SECURITY_LAYER_ENABLED || !session.worker_id) return;
   const { isSessionRevoked, touchLoginSession } = await import("@/lib/security-log");
   if (await isSessionRevoked(session.worker_id, session.session_version)) {
-    session.destroy();
-    redirect("/");
+    redirect(OTURUM_KAPAT_YOLU);
   }
   // İptal denetiminden SONRA: ölmüş bir oturumu canlı damgalamak yanlış olurdu.
   await touchLoginSession(session.login_session_id);
@@ -72,7 +86,7 @@ async function enforceSessionVersion(session: Awaited<ReturnType<typeof getSessi
  * anında uygulasaydık, sabah giren biri gece yarısından sonra da içeride
  * kalırdı ve anahtar çekildiğinde hiçbir şey olmazdı.
  *
- * RED (anahtar/saat) → çerez yok edilir, giriş ekranına.
+ * RED (anahtar/saat) → oturum yıkım ucuna, oradan giriş ekranına.
  * BEKLET (cihaz/ülke) → çerez korunur, /erisim ekranına.
  *
  * `ACCESS_GATES_ENABLED` kapalıyken İLK SATIRDA çıkar: HAK61 ve Sendigo bu
@@ -89,24 +103,19 @@ async function enforceAccessGates(
   const karar = await evaluateAccess(session.worker_id, await headers());
 
   if (karar.ok) {
-    // Kapı açıldı (patron onayladı) → işaret temizlenir, kullanıcı normale döner.
-    if (session.access_gate) {
-      session.access_gate = undefined;
-      await session.save();
-    }
+    // Kapı açıldı (patron onayladı) → kullanıcı normale döner. Çerezdeki bayat
+    // `access_gate` işareti burada SİLİNMEZ: render sırasında çerez yazmak
+    // yasak. Silmeye gerek de yok — /erisim artık kapıyı çerezden değil
+    // evaluateAccess'ten okuyor, bayat işaret kimseyi yanlış yere göndermez.
     return;
   }
 
   if (karar.mode === "reject") {
-    session.destroy();
-    redirect("/");
+    redirect(OTURUM_KAPAT_YOLU);
   }
 
-  // Tip artık burada 'kill'/'hours' olamayacağını garanti ediyor (ayrık birleşim).
-  if (session.access_gate !== karar.gate) {
-    session.access_gate = karar.gate;
-    await session.save();
-  }
+  // BEKLET → /erisim. İşaret çereze YAZILMIYOR (yasak); o ekran kapıyı
+  // kendisi değerlendiriyor, yani tek kaynak evaluateAccess.
   redirect("/erisim");
 }
 

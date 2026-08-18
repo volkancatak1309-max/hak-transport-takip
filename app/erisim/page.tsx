@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { LogOut } from "lucide-react";
 import { getSession } from "@/lib/session";
 import { logoutAction } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
-import { ownerDisplayName } from "@/lib/access-gates";
+import { evaluateAccess, ownerDisplayName } from "@/lib/access-gates";
 import { ACCESS_GATES_ENABLED } from "@/lib/tenant";
 import { BrandLogo } from "@/components/BrandLogo";
 
@@ -46,12 +47,31 @@ export default async function ErisimPage() {
   if (!session.worker_id) redirect("/");
 
   // Bayrak kapalıysa bu ekranın var olma sebebi yok — kullanıcı normale döner.
-  if (!ACCESS_GATES_ENABLED || !session.access_gate) {
+  if (!ACCESS_GATES_ENABLED) {
     redirect(session.is_admin ? "/admin" : "/panel");
   }
 
+  // KAPI ÇEREZDEN DEĞİL KAYNAĞINDAN OKUNUR (17 Ağu 2026 düzeltmesi).
+  //
+  // Eskiden burada `session.access_gate` okunuyordu. O işareti güncel tutan tek
+  // yer `lib/session.ts`teki kapılardı ve orası render sırasında çereze
+  // YAZAMAZ — yazmaya çalışması zaten bu düzeltmenin sebebi olan çökmeydi.
+  // Dolayısıyla işaret bayatlıyordu ve yukarıdaki yorumun anlattığı kurtuluş
+  // (onay gelince 20 saniyelik yenilemede içeri düşmek) FİİLEN ÇALIŞMIYORDU:
+  // kullanıcı onaylansa bile bu ekranda kalırdı. Kapıyı burada yeniden
+  // değerlendirmek hem çökmeyi imkânsız kılar hem de o kurtuluşu gerçek yapar.
+  const karar = await evaluateAccess(session.worker_id, await headers());
+  if (karar.ok) {
+    redirect(session.is_admin ? "/admin" : "/panel");
+  }
+  // RED (anahtar/saat) buraya düşerse bekletilecek bir şey yok — oturum yıkım
+  // ucuna. Bu ekran yalnız BEKLET kapıları içindir.
+  if (karar.mode === "reject") {
+    redirect("/api/oturum/kapat");
+  }
+
   const patron = await ownerDisplayName();
-  const kapi = session.access_gate;
+  const kapi = karar.gate;
 
   return (
     <>

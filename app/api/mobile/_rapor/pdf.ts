@@ -10,23 +10,14 @@ import { TENANT_TZ } from "@/lib/tz";
  *
  * ⚠️ BU DOSYA ROUTE DEĞİLDİR (`_` ön eki — Next yönlendirmeden muaf tutar).
  *
- * ── BAYRAK KAPISI BURADAN YENİDEN DIŞA VERİLİYOR ──────────────────────────
- * `disaAktarimKapali()` CSV turunda `./csv.ts` içinde doğdu ama işi BİÇİMDEN
- * BAĞIMSIZ: `EXPORT_ENABLED` bayrağını denetliyor. PDF uçlarının `./csv`
- * import etmek zorunda kalmaması için buradan geçiriliyor; tek uygulama, tek
- * kapı.
- *
- * ⚠️ ÖLÇÜM NOTU (18.08.2026): panelde `EXPORT_ENABLED` YALNIZ CSV düğmelerini
- * kapatıyor (AdminClient.tsx:606, FuelClient.tsx:489); PDF düğmelerinde bu
- * bayrak HİÇ okunmuyor. Yani bu kapı mobili panelden BİR TIK KATI yapıyor —
- * Volkan'ın açık isteği (Tur 3). Varsayılan `true` olduğu için HAK61 ve
- * Sendigo'da bugün hiçbir davranış değişmiyor. Panel paritesi tercih edilirse
- * uçlardaki iki satır silinir.
- * ⚠️ Tur 1'in `/workers/[id]/rapor.pdf` ucu bu kapıyı TAŞIMIYOR — bilinçli
- * tutarsızlık, hizalanması ayrı karar.
+ * ── BAYRAK KAPISI BURADA YOK — PANEL PARİTESİ (18.08.2026, Volkan kararı) ──
+ * PDF uçları `EXPORT_ENABLED` OKUMAZ. Ölçüldü: panelde o bayrak YALNIZ CSV
+ * düğmelerini kapatıyor (AdminClient.tsx:606, FuelClient.tsx:489); PDF
+ * düğmelerinde hiç okunmuyor. Uçlara eklenmişti ve KALDIRILDI — mobilin
+ * panelden katı olması, kapalı sanılan bir özelliğin aslında panelde açık
+ * olması demekti. Kapı CSV uçlarında (`./csv.ts`) kalmaya devam ediyor;
+ * orada panelin davranışının aynısı.
  */
-export { disaAktarimKapali } from "./csv";
-
 /** Belgenin TEK üretim anı, de-AT + kiracı dilimi. */
 export function uretimAniDamgasi(an: Date): string {
   return an.toLocaleString("de-AT", { timeZone: TENANT_TZ });

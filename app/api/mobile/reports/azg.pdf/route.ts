@@ -7,7 +7,6 @@ import { registerServerPdfFont, renderPdfToBuffer } from "@/lib/pdf-server";
 import { AZGDoc } from "@/components/pdf/server/AZGDoc";
 import { FILE_PREFIX_UPPER } from "@/lib/report-de";
 import {
-  disaAktarimKapali,
   isaretUret,
   pdfIziYaz,
   pdfYaniti,
@@ -61,9 +60,6 @@ const AY = /^\d{4}-(0[1-9]|1[0-2])$/;
 export async function GET(req: NextRequest) {
   const guard = await requireMobileAdmin(req);
   if (!guard.ok) return guard.response;
-
-  const kapali = disaAktarimKapali();
-  if (kapali) return kapali;
 
   const url = new URL(req.url);
 

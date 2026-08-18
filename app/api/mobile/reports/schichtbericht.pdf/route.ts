@@ -14,7 +14,6 @@ import {
 } from "@/lib/report-de";
 import { aralikCoz, aralikHataAlanlari } from "../../_rapor/aralik";
 import {
-  disaAktarimKapali,
   isaretUret,
   pdfIziYaz,
   pdfYaniti,
@@ -71,9 +70,6 @@ const DONEM_ANAHTARI: Record<string, string> = {
 export async function GET(req: NextRequest) {
   const guard = await requireMobileAdmin(req);
   if (!guard.ok) return guard.response;
-
-  const kapali = disaAktarimKapali();
-  if (kapali) return kapali;
 
   const cozum = aralikCoz(new URL(req.url));
   if (!cozum.ok) return mobileError(400, cozum.kod, aralikHataAlanlari(cozum.kod));

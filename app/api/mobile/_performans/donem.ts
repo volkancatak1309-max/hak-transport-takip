@@ -191,5 +191,30 @@ export function performansSatiri(
       aniHizlanma: r.harshAcceleration,
       asiriHiz: r.overspeeding,
     },
+    /**
+     * ── SKOR KAPISININ GEREKÇESİ (18.08.2026) ─────────────────────────────
+     *
+     * `yetersizVeri: true` bugüne kadar SESSİZ bir bayraktı: ekran "Yetersiz
+     * veri" yazıyor, kullanıcı da bunu çoğu zaman "az çalıştı" diye okuyordu.
+     * Canlıda ölçülen karşı örnek: 1.354 km sürmüş bir şoför de aynı etiketi
+     * alıyor — sebebi km azlığı değil, vardiyalarının ölçülemeyen kısmı.
+     * Dört alan o cümleyi tamamlar ve istemci artık "eksik olan ne" sorusunu
+     * cevaplayabilir.
+     *
+     * DEĞERLER RAPORUN KARAR NOKTASINDAN GELİR (lib/reports.ts), burada
+     * yeniden hesaplanmaz — hesaplansaydı ekran ile kapı ayrışabilirdi.
+     */
+    /** Bu şoför için hesaplanan km eşiği. Sabit DEĞİL — kişiye göre ölçeklenir. */
+    esikKm: r.scoreMinKm,
+    /** Skorun paydası olan ölçülen km; null = ölçülemedi ("0 km sürdü" DEĞİL). */
+    olculenKm: r.scoreKm,
+    /** Km'si ölçülebilen vardiya oranı 0–1; ölçüm penceresi yoksa null. */
+    kapsama: r.scoreCoverage,
+    /**
+     * Skor neden yok: `km_yetersiz` | `kapsama_dusuk` | `vardiya_yok` | null.
+     * `yetersizVeri === (sebep !== null)` — biri diğerinin gerekçesidir, ikisi
+     * asla çelişemez çünkü ikisi de aynı `safetyScore` alanından türer.
+     */
+    sebep: r.scoreGate,
   };
 }

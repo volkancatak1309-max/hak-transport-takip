@@ -1010,6 +1010,8 @@ export function computeSafetyScores(
       penalty,
       basis: "km",
       distanceKm: reliableKm,
+      // Kapının kendisi — kararı veren sayı, türetilmiş bir tahmin değil.
+      minKm: effectiveMinKm,
       activeDays,
       trend: null,
       prevScore: null,

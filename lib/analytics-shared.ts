@@ -125,6 +125,21 @@ export type SafetyScoreRow = {
   /** Ceza hangi birimle normalize edildi — skor artık yalnız km bazlı. */
   basis: "km" | "gun";
   distanceKm: number | null;
+  /**
+   * BU ŞOFÖR İÇİN HESAPLANAN KM EŞİĞİ — kapının kendisi (18.08.2026, eklendi).
+   *
+   * `score` null olduğunda "neden" sorusunun cevabı bugüne kadar hiçbir yüzeye
+   * taşınmıyordu: ekranda yalnız "Yetersiz veri" yazıyor, kapının nerede olduğu
+   * ve şoförün ne kadar uzakta kaldığı görünmüyordu. `distanceKm` (skorun
+   * paydası) ile birlikte okununca cümle tamamlanır: "260 km ölçüldü, eşik 300".
+   *
+   * Eşik ŞOFÖRE GÖRE değişir — sabit değildir (bkz. scoreMinKmForWorkedDays /
+   * scoreMinKmForSpan). Bu yüzden istemci onu bir sabitten türetemez; kararı
+   * veren fonksiyon ne kullandıysa o taşınmalıdır.
+   *
+   * SALT RAPORLAMA: skoru hesaplayan hiçbir dal bu alanı okumaz.
+   */
+  minKm: number;
   activeDays: number;
   trend: "up" | "down" | "flat" | null;
   prevScore: number | null;

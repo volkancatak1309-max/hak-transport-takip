@@ -24,7 +24,8 @@
     "lint:aksiyon-erteleme": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-alias.mjs scripts/check-aksiyon-erteleme.mjs",
     "verify:aksiyon-erteleme": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-aksiyon-erteleme.mjs",
     "lint:filo-yonetimi": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-alias.mjs scripts/check-filo-yonetimi.mjs",
-    "verify:filo-yonetimi": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-filo-yonetimi.mjs"
+    "verify:filo-yonetimi": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-filo-yonetimi.mjs",
+    "verify:mobil-analiz": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-mobil-analiz.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

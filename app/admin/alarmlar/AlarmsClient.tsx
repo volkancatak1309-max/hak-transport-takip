@@ -248,10 +248,76 @@ export function AlarmsClient({
   );
 
   const columns: Column<AlarmRow>[] = [
+    /**
+     * MOBİL SATIR — 18.08.2026, referans: Jobber "Activity Feed" +
+     * Squarespace "Activity Log".
+     *
+     * SORUN (ölçüldü, 393 px): dört kolonluk tablo 362 px'lik kaba sıkışıyordu
+     * — plaka+şoför 139 px, olay 139 px, tarih+saat 108 px; hepsi eşit
+     * ağırlıkta ve satırda 5 veri yan yana. Hiyerarşi yoktu: yönetici neye
+     * bakacağını bilemiyordu.
+     *
+     * ÇÖZÜM: mobilde tek kolon, ÜÇ KADEME halinde yığılmış —
+     *   ① kalın: OLAY + varsa değeri (Aşırı Hız · 96 km/h / Uzun Rölanti · 8 dk)
+     *   ② gri:   PLAKA + şoför  (kim/hangi araç)
+     *   ③ küçük: SAAT
+     * Neden olay en üstte: liste "alarm kaydı", yani birinci soru "ne oldu".
+     * Plaka masaüstünde ilk kolondu çünkü orada göz yatay tarıyor; dikey
+     * kartta ise en üst satır en güçlü konumdur.
+     *
+     * VERİ TEKRARI YOK: bu kolon `hideAbove:"md"`, aşağıdaki üç kolon
+     * `hideBelow:"md"` → hiçbir genişlikte ikisi birden görünmez.
+     * MASAÜSTÜ (md+) BİREBİR AYNI KALIR.
+     *
+     * Sıralama: zamana göre sıralanabilir bırakıldı (kayıtta en değerli sıra).
+     * Plakaya/şiddete göre sıralama mobilde YOK — bilinçli: dört sıralama
+     * düğmesi 393 px'te başlığı yeniden kalabalıklaştırırdı.
+     */
+    {
+      key: "mobil",
+      header: t("col_time"),
+      hideAbove: "md",
+      sortable: true,
+      sortValue: (e) => e.occurred_at,
+      cell: (e) => {
+        const badge = idleBadge(e);
+        return (
+          <span className="block min-w-0 py-0.5">
+            <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+              <StatusChip tone={eventTone(e.event_type)}>
+                {t(`type.${e.event_type}`)}
+              </StatusChip>
+              {badge && <span className="nums text-xs text-muted-foreground">{badge}</span>}
+              {e.event_type !== "idling" &&
+                SPEED_EVENTS.has(e.event_type) &&
+                e.speed_kmh !== null && (
+                  <span className="nums text-xs font-medium">
+                    {Math.round(e.speed_kmh)} km/h
+                  </span>
+                )}
+            </span>
+            <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+              <Link
+                href={`/admin/araclar/${e.vehicle_id}`}
+                onClick={(ev) => ev.stopPropagation()}
+                className="nums font-medium uppercase tracking-wide text-foreground hover:underline"
+              >
+                {e.plate}
+              </Link>
+              <DriverName name={driverOf(e)} {...driverText} />
+            </span>
+            <span className="nums mt-0.5 block text-[11px] text-text-tertiary">
+              {formatDateTime(e.occurred_at, locale)}
+            </span>
+          </span>
+        );
+      },
+    },
     {
       key: "plate",
       header: t("col_vehicle"),
       help: "alarms_col_vehicle",
+      hideBelow: "md",
       // KİMLİK: plaka + ŞOFÖR. Yönetici "DO-945HL" değil "Ümit" diye düşünür;
       // ad ayrı kolon değil, plakanın altında — dar ekranda da kaybolmasın.
       cell: (e) => (
@@ -278,6 +344,7 @@ export function AlarmsClient({
       key: "type",
       header: t("col_type"),
       help: "alarms_col_type",
+      hideBelow: "md",
       // Rozetin YANINDA süre (migration 024) — chip'in içine gömülmez.
       cell: (e) => {
         const badge = idleBadge(e);
@@ -295,6 +362,7 @@ export function AlarmsClient({
       key: "time",
       header: t("col_time"),
       help: "alarms_col_time",
+      hideBelow: "md",
       cell: (e) => formatDateTime(e.occurred_at, locale),
       nums: true,
       sortable: true,
@@ -314,7 +382,10 @@ export function AlarmsClient({
         ),
       align: "right",
       nums: true,
-      hideBelow: "sm",
+      // "sm" değil "md" (18.08.2026): mobil yığılmış kolon `md`nin ALTINDA
+      // görünüyor ve hızı kendi içinde taşıyor. "sm" bırakılsaydı 640–767 px
+      // arasında ikisi birden görünür, hız iki yerde yazardı.
+      hideBelow: "md",
     },
   ];
 

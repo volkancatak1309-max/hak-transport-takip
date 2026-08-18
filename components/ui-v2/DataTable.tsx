@@ -28,6 +28,22 @@ export type Column<T> = {
   /** Mobil kolon önceliklendirme: bu kırılımın ALTINDA gizlenir. */
   hideBelow?: "sm" | "md" | "lg";
   /**
+   * `hideBelow`ün SİMETRİĞİ: bu kırılımın ÜSTÜNDE gizlenir (18.08.2026).
+   *
+   * Kullanımı: aynı veriyi dar ekranda TEK yığılmış kolon, geniş ekranda birkaç
+   * ayrı kolon olarak göstermek. Mobil kolona `hideAbove:"md"`, masaüstü
+   * kolonlarına `hideBelow:"md"` verilir; ikisi hiçbir genişlikte aynı anda
+   * görünmez, dolayısıyla veri de tekrarlanmaz.
+   *
+   * NEDEN `className` YETMEDİ: mevcut `className` yalnız `<td>`'ye uygulanıyor,
+   * `<th>`'ye uygulanmıyor (aşağıya bakın). Oraya `md:hidden` vermek hücreyi
+   * gizleyip BAŞLIĞI bırakırdı ve tablo kayardı. Bu alan ikisine de uygulanır.
+   *
+   * Eklemeli alan: hiçbir mevcut kolon bunu geçmiyor, o yüzden diğer 8 tablonun
+   * davranışı değişmez.
+   */
+  hideAbove?: "sm" | "md" | "lg";
+  /**
    * "help" i18n uzayındaki anahtar. Verilirse kolon başlığının yanında (i)
    * çıkar (27.07.2026 — info balonları seferi). Kolon adı tek başına yetmiyor:
    * "Okuma", "Mesafe", "Bazis" gibi başlıkları ilk kez gören anlamıyor.
@@ -51,6 +67,13 @@ const HIDE: Record<string, string> = {
   sm: "hidden sm:table-cell",
   md: "hidden md:table-cell",
   lg: "hidden lg:table-cell",
+};
+
+/** `hideAbove` karşılığı — verilen kırılımın üstünde gizler. */
+const HIDE_ABOVE: Record<string, string> = {
+  sm: "sm:hidden",
+  md: "md:hidden",
+  lg: "lg:hidden",
 };
 
 type DisplayItem<T> = { type: "row"; row: T } | { type: "group"; key: string; rows: T[] };
@@ -179,6 +202,7 @@ export function DataTable<T>({
           col.align === "right" && "text-right",
           col.nums && "nums",
           col.hideBelow && HIDE[col.hideBelow],
+          col.hideAbove && HIDE_ABOVE[col.hideAbove],
           col.className
         )}
       >
@@ -204,7 +228,8 @@ export function DataTable<T>({
                     className={cn(
                       "px-3 py-2.5 text-left text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground",
                       col.align === "right" && "text-right",
-                      col.hideBelow && HIDE[col.hideBelow]
+                      col.hideBelow && HIDE[col.hideBelow],
+                      col.hideAbove && HIDE_ABOVE[col.hideAbove]
                     )}
                   >
                     {/* (i) sıralama BUTONUNUN DIŞINDA durur: içine konsaydı

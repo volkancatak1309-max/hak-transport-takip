@@ -241,36 +241,64 @@ export function WorkersClient({ workers }: Props) {
                     </span>
                   </Link>
 
-                  <span className="w-[72px] shrink-0 font-mono text-[12px] font-medium uppercase tabular-nums sm:w-[96px]">
-                    {w.assignedPlate ?? <span className="text-text-tertiary">—</span>}
-                  </span>
+                  {/* ② META GRUBU — 18.08.2026 mobil hizalama düzeltmesi.
+                      SORUN (ölçüldü, 393 px): kimlik hücresi mobilde tam satır
+                      olduğu için ad/telefon avatarın sağında, yani x=80'de
+                      başlıyor; aşağıdaki meta span'ler ise li'nin kendi içerik
+                      kenarından, yani x=40'tan. Kartta İKİ RAKİP SOL EKSEN
+                      oluyordu (80 ve 40) ve sabit genişlikler 128/236 gibi
+                      keyfi ara duraklar üretiyordu — sayfada 12 farklı sol
+                      kenar, 7'si tek elemanlık.
+                      ÇÖZÜM: mobilde meta'yı tek kaba alıp `pl-10` (avatar 28px
+                      + gap 12px = 40px) ile ADIN EKSENİNE getiriyoruz →
+                      avatar oluğu + tek metin ekseni (Discord "Members"
+                      deseni). MASAÜSTÜ HİÇ DEĞİŞMİYOR: `md:contents` sarmalayıcıyı
+                      flex düzeninden şeffaf kılar, çocuklar yine li'nin doğrudan
+                      flex öğeleri olur. */}
+                  <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 pl-10 md:contents md:w-auto md:pl-0">
+                    <span className="w-[72px] shrink-0 font-mono text-[12px] font-medium uppercase tabular-nums sm:w-[96px]">
+                      {w.assignedPlate ?? <span className="text-text-tertiary">—</span>}
+                    </span>
 
-                  <span className="w-[92px] shrink-0">
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium",
-                        w.is_active
-                          ? "bg-accent-sky/15 text-accent-sky-text"
-                          : "bg-surface-panel text-muted-foreground"
-                      )}
-                    >
+                    <span className="w-[92px] shrink-0">
                       <span
                         className={cn(
-                          "size-1.5 rounded-full",
-                          w.is_active ? "bg-accent-sky" : "bg-muted-foreground"
+                          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium",
+                          w.is_active
+                            ? "bg-accent-sky/15 text-accent-sky-text"
+                            : "bg-surface-panel text-muted-foreground"
                         )}
-                      />
-                      {w.is_active ? tc("active") : tc("passive")}
+                      >
+                        <span
+                          className={cn(
+                            "size-1.5 rounded-full",
+                            w.is_active ? "bg-accent-sky" : "bg-muted-foreground"
+                          )}
+                        />
+                        {w.is_active ? tc("active") : tc("passive")}
+                      </span>
                     </span>
-                  </span>
 
-                  <span className="w-[84px] shrink-0 font-mono text-[12px] tabular-nums text-muted-foreground sm:w-[92px]">
-                    {w.lastShiftAt ? formatDate(w.lastShiftAt, locale) : "—"}
-                  </span>
+                    {/* MOBİLDE ETİKET ŞART: kolon başlıkları `md:flex` ile gizli,
+                        yani telefonda bu iki sayı ÇIPLAK duruyordu. "11.08.2026"
+                        (işe giriş? ehliyet? son vardiya?) ve "1s 10dk" (neyin
+                        saati?) tahmin edilemiyordu. Etiketler masaüstünde
+                        gizlenir — orada kolon başlığı zaten var, tekrar olurdu.
+                        Yeni çeviri anahtarı yok: kolon başlıklarının kendisi. */}
+                    <span className="flex shrink-0 items-baseline gap-1 font-mono text-[12px] tabular-nums text-muted-foreground sm:w-[92px] md:w-[92px]">
+                      <span className="font-sans text-[10px] uppercase tracking-[0.06em] text-text-tertiary md:hidden">
+                        {t("tblLastShift")}
+                      </span>
+                      {w.lastShiftAt ? formatDate(w.lastShiftAt, locale) : "—"}
+                    </span>
 
-                  <span className="w-[76px] shrink-0 text-right font-mono text-[12px] tabular-nums">
-                    {formatDurationShort(w.monthHoursMs, locale)}
-                  </span>
+                    <span className="flex shrink-0 items-baseline gap-1 font-mono text-[12px] tabular-nums md:w-[76px] md:justify-end md:text-right">
+                      <span className="font-sans text-[10px] uppercase tracking-[0.06em] text-text-tertiary md:hidden">
+                        {t("tblMonthHours")}
+                      </span>
+                      {formatDurationShort(w.monthHoursMs, locale)}
+                    </span>
+                  </div>
 
                   {/* ④ Sessiz tek eylem */}
                   <span className="w-8 shrink-0 text-right">

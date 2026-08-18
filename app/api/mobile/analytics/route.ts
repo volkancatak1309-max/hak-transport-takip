@@ -2,8 +2,6 @@ import type { NextRequest } from "next/server";
 import { requireMobileAdmin } from "@/lib/mobile-scope";
 import { mobileError } from "@/lib/mobile-auth";
 import {
-  computeAnalyticsRange,
-  previousPeriod,
   computeTopDriversByType,
   computeIdleWaste,
   listVehiclesAndWorkers,
@@ -13,7 +11,6 @@ import {
   TOP10_EVENT_TYPES,
   IDLE_FUEL_L_PER_HOUR,
   DIESEL_EUR_PER_L,
-  type AnalyticsRangeKey,
   type DateRange,
   type VehicleLite,
   type WorkerLite,
@@ -25,8 +22,8 @@ import {
   rangeStartsBeforeEpoch,
   comparisonCrossesEpoch,
 } from "@/lib/config-epoch";
-import { startOfDayViennaFromYmd, endOfDayViennaFromYmd } from "@/lib/format";
 import { SAFETY_SCORE_CALIBRATED } from "@/lib/tenant";
+import { aralikCoz, aralikHataAlanlari } from "../_rapor/aralik";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -107,44 +104,12 @@ export const dynamic = "force-dynamic";
  * kapsamında değil.
  */
 
-const RANGE_KEYS = ["gun", "hafta", "ay", "tumzaman", "ozel"] as const;
-const YMD = /^\d{4}-\d{2}-\d{2}$/;
-
-type Cozum = {
-  tur: AnalyticsRangeKey;
-  range: DateRange;
-  onceki: DateRange | null;
-  from: string | null;
-  to: string | null;
-};
-
-type Sonuc =
-  | { ok: true; cozum: Cozum }
-  | { ok: false; kod: "invalid_range" | "invalid_tarih" };
-
-function rangeCoz(url: URL): Sonuc {
-  const ham = url.searchParams.get("range");
-  const tur = (ham ?? "hafta") as AnalyticsRangeKey;
-  if (!(RANGE_KEYS as readonly string[]).includes(tur)) {
-    return { ok: false, kod: "invalid_range" };
-  }
-
-  const from = url.searchParams.get("from") || null;
-  const to = url.searchParams.get("to") || null;
-
-  // ÇAPA: tam ISO damga ("2026-08-12T10:00Z") gün olarak kabul edilmesin —
-  // startOfDayViennaFromYmd ön eke bilerek toleranslı. Takvim denetimi (var
-  // olmayan gün: 2026-02-31) KAYNAKTA; burada yalnız null'ı 400'e çeviriyoruz.
-  if (from !== null && (!YMD.test(from) || !startOfDayViennaFromYmd(from))) {
-    return { ok: false, kod: "invalid_tarih" };
-  }
-  if (to !== null && (!YMD.test(to) || !endOfDayViennaFromYmd(to))) {
-    return { ok: false, kod: "invalid_tarih" };
-  }
-
-  const range = computeAnalyticsRange(tur, from, to);
-  return { ok: true, cozum: { tur, range, onceki: previousPeriod(range), from, to } };
-}
+/**
+ * ⚠️ ARALIK ÇÖZÜMLEYİCİSİ BURADAN TAŞINDI (18.08.2026) → `../_rapor/aralik.ts`.
+ * Sebep: CSV uçları da AYNI pencere dilini konuşmak zorunda ve iki kopya bir
+ * gün ayrışırdı. Davranış birebir aynı — beş anahtar, aynı hata kodları, aynı
+ * doğrulama sırası (bkz. o dosyanın başlığı).
+ */
 
 /** Bir dönemin TÜM toplamları — iki dönem için de aynı fonksiyon çağrılır. */
 async function donemToplami(
@@ -243,15 +208,11 @@ export async function GET(req: NextRequest) {
   if (!guard.ok) return guard.response;
 
   const url = new URL(req.url);
-  const cozum = rangeCoz(url);
+  const cozum = aralikCoz(url);
   if (!cozum.ok) {
     // Geçerli küme yanıtta: istemci hangi değerin kabul edildiğini dokümana
     // bakmadan görsün (`/driver-scores` ile aynı sözleşme).
-    return mobileError(400, cozum.kod, {
-      ...(cozum.kod === "invalid_range"
-        ? { alan: "range", gecerli: RANGE_KEYS }
-        : { alan: "from|to", bicim: "YYYY-MM-DD" }),
-    });
+    return mobileError(400, cozum.kod, aralikHataAlanlari(cozum.kod));
   }
   const c = cozum.cozum;
 

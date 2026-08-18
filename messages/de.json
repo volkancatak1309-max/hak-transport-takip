@@ -1513,6 +1513,7 @@
     "route_c2": "Kartengematchte Linie",
     "route_c3": "Haltepunkte",
     "distance_title": "Distanz & Motorstunden",
+    "distance_page_desc": "Gefahrene Kilometer je Fahrzeug und Tagesdurchschnitt · aus den Kilometerstand-Eckwerten; ohne Messwert bleibt die Zeile leer",
     "distance_desc": "Tägliche Fahrstrecke, Motorlaufzeit und Leerlauf je Fahrzeug.",
     "distance_c1": "GPS-Distanz",
     "distance_c2": "Motorstunden",

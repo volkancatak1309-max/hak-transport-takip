@@ -1513,6 +1513,7 @@
     "route_c2": "Yol eşlemeli çizgi",
     "route_c3": "Duraklama noktaları",
     "distance_title": "Mesafe & Motor Saati",
+    "distance_page_desc": "Araç başına kat edilen kilometre ve günlük ortalama · odometre uç noktalarından ölçülür, okunamayan araçta satır boş kalır",
     "distance_desc": "Araç başına günlük kat edilen yol, motor çalışma süresi ve rölanti.",
     "distance_c1": "GPS mesafesi",
     "distance_c2": "Motor saati",

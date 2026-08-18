@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
+import { sorguKaydet } from "./query-counter";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -10,8 +11,41 @@ if (!url || !serviceKey) {
   );
 }
 
-export const supabaseAdmin = createClient(url, serviceKey, {
+const hamIstemci = createClient(url, serviceKey, {
   auth: { persistSession: false, autoRefreshToken: false },
+});
+
+/**
+ * SAYAÇLI İSTEMCİ — #84 Adım 0 (18.08.2026).
+ *
+ * `from()` ve `rpc()` çağrıları sayılır; başka HİÇBİR davranış değişmez
+ * (Proxy yalnız bu ikisini sarar, kalan her şey ham istemciye düşer).
+ *
+ * Sayaç yalnız `sayacIle()` kabının İÇİNDE yazar — şu an tek kullanan
+ * `/api/flespi/sync`. Diğer tüm sorgular `getStore()` undefined döndüğü için
+ * ilk satırda çıkar: ölçüm ne başka rotaları yavaşlatır ne de onların
+ * sorgularını turun rakamına karıştırır.
+ *
+ * ⚠️ Sayılan şey PostgREST ÇAĞRISIDIR, satır değil. `fetchPagesUntil` gibi
+ * sayfalı okumalar her sayfa için bir çağrı üretir ve doğru şekilde çoklu
+ * sayılır — zaten maliyeti yaratan da bu.
+ */
+export const supabaseAdmin = new Proxy(hamIstemci, {
+  get(hedef, ozellik, alici) {
+    if (ozellik === "from") {
+      return (tablo: string) => {
+        sorguKaydet(tablo);
+        return hedef.from(tablo);
+      };
+    }
+    if (ozellik === "rpc") {
+      return (...args: Parameters<typeof hedef.rpc>) => {
+        sorguKaydet(`rpc:${String(args[0])}`);
+        return hedef.rpc(...args);
+      };
+    }
+    return Reflect.get(hedef, ozellik, alici);
+  },
 });
 
 /** PostgREST'in sunucu tarafı sayfa boyu. Sorgudaki `.limit()` bunu AŞAMAZ. */

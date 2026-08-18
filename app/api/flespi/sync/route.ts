@@ -13,6 +13,7 @@ import {
   saveVehicleEvents,
 } from "@/lib/telemetry";
 import { processAutoShifts, type AutoShiftSummary } from "@/lib/auto-shift";
+import { sayacIle } from "@/lib/query-counter";
 
 // Service-role Supabase + outbound flespi fetch → must run on Node, never edge.
 export const runtime = "nodejs";
@@ -194,12 +195,35 @@ async function runSync() {
   };
 }
 
+/**
+ * Turu SORGU SAYACI kabında koşturur (#84 Adım 0, 18.08.2026).
+ *
+ * Sayaç yalnız ölçer; turun davranışına dokunmaz. Cevaba `sorgu` alanı eklenir:
+ * `{ toplam, kaynak: { tablo: adet } }`. Kaynak dökümü şart — hangi adımın
+ * neyi düşürdüğünü toplam rakam söylemez, tablo bazlı döküm söyler.
+ *
+ * ⚠️ Sayılan şey PostgREST ÇAĞRISI, satır değil. Sayfalı okumalar her sayfa
+ * için ayrı sayılır; maliyeti yaratan da o.
+ */
+async function turuOlc() {
+  return sayacIle(async (oku) => {
+    const sonuc = await runSync();
+    const sorgu = oku();
+    // Ölçüm loga da düşer: cevap gövdesi cron tarafından okunmuyor, ama
+    // Vercel logundan geçmişe dönük karşılaştırma yapılabilsin.
+    console.log(
+      `[flespi/sync] SORGU toplam=${sorgu.toplam} kaynak=${JSON.stringify(sorgu.kaynak)}`
+    );
+    return { ...sonuc, sorgu };
+  });
+}
+
 export async function GET(req: NextRequest) {
   if (!flespiAuthorized(req)) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
   try {
-    return NextResponse.json(await runSync());
+    return NextResponse.json(await turuOlc());
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : "error" },

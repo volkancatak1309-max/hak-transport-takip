@@ -33,7 +33,14 @@ export const IDLE_TRIGGER_S = 300;
  * which this module NEVER touches.
  */
 
-/** Newest telemetry instant for a vehicle — the polling cursor for that device. */
+/**
+ * Newest telemetry instant for a vehicle — the polling cursor for that device.
+ *
+ * ⚠️ SİLİNMEDİ VE SİLİNMEYECEK (#84 Adım 5 kuralı): `lastRecordedAtBatch`
+ * toplu yola geçti ama bu tekil sürüm GERİ DÜŞÜŞ yoludur. Toplu okuma
+ * herhangi bir sebeple başarısız olursa (migration 060 koşmamış, RPC hata
+ * verdi) tur bununla araç-araç devam eder ve DAVRANIŞ DEĞİŞMEZ.
+ */
 export async function lastRecordedAt(vehicleId: string): Promise<string | null> {
   const { data } = await supabaseAdmin
     .from("device_telemetry")
@@ -43,6 +50,43 @@ export async function lastRecordedAt(vehicleId: string): Promise<string | null> 
     .limit(1)
     .maybeSingle();
   return data?.recorded_at ?? null;
+}
+
+/**
+ * İMLEÇ OKUMASI TOPLU — araç başına 1 sorgu yerine TUR BAŞINA 1 (#84 Adım 1).
+ *
+ * ── NEDEN RPC ──────────────────────────────────────────────────────────────
+ * PostgREST "araç başına max(recorded_at)" kuramaz (GROUP BY / DISTINCT ON
+ * yok). Son N satırı çekip bellekte gruplamak SESSİZ KIRPMAYA açıktı: yoğun
+ * tek bir araç 1000 satırlık tavanı doldurursa başka aracın imleci hiç
+ * görünmez, o araç için pencere yanlış hesaplanır ve bunu hiçbir hata
+ * bildirmez. Toplama bu yüzden SQL tarafında (migration 060, LATERAL).
+ *
+ * ── GERİ DÜŞÜŞ (Adım 5) ────────────────────────────────────────────────────
+ * `null` dönerse çağıran taraf araç-araç `lastRecordedAt`'e döner. Migration
+ * koşmamış olsa bile tur bugünküyle birebir aynı çalışır; yalnız kazanç
+ * gerçekleşmez. Deploy sırası bu yüzden serbest.
+ *
+ * ── "KAYIT YOK" ile "SORGU PATLADI" AYRI ───────────────────────────────────
+ * Fonksiyon kaydı olmayan araç için SATIR DÖNDÜRMEZ; o araç Map'te bulunmaz
+ * ve çağıran onu `null` imleçle (ilk pencere) işler. Hata hâlinde ise Map'in
+ * kendisi `null` döner — ikisi karışmaz.
+ */
+export async function lastRecordedAtBatch(
+  vehicleIds: string[]
+): Promise<Map<string, string> | null> {
+  if (vehicleIds.length === 0) return new Map();
+  const { data, error } = await supabaseAdmin.rpc("last_recorded_at_batch", {
+    p_vehicle_ids: vehicleIds,
+  });
+  if (error) {
+    console.warn(
+      `[telemetry] last_recorded_at_batch kullanılamadı (${error.message}) — araç-araç eski yola dönülüyor`
+    );
+    return null;
+  }
+  const rows = (data ?? []) as { vehicle_id: string; recorded_at: string }[];
+  return new Map(rows.map((r) => [r.vehicle_id, r.recorded_at]));
 }
 
 /**

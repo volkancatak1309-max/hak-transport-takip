@@ -4,6 +4,7 @@ import { flespiAuthorized } from "@/lib/flespi-auth";
 import { fetchDeviceMessages } from "@/lib/flespi";
 import {
   lastRecordedAt,
+  lastRecordedAtBatch,
   maybeBackfillVin,
   reconcileDtc,
   reconcileIdleEpisodes,
@@ -64,9 +65,28 @@ async function runSync() {
   }[] = [];
   let totalSaved = 0;
 
+  /**
+   * İMLEÇLER — DÖNGÜDEN ÖNCE, TEK SORGUDA (#84 Adım 1, 18.08.2026).
+   *
+   * Eskiden döngü içinde araç başına `lastRecordedAt(v.id)` çağrılıyordu:
+   * 29 araç = 29 gidiş-dönüş. Ölçüldü (Adım 0 sayacı): tur başına 169 sorgu,
+   * 92'si `device_telemetry` ve büyük kısmı buydu.
+   *
+   * GERİ DÜŞÜŞ KORUNDU (Adım 5): toplu okuma `null` dönerse (migration 060
+   * koşmamış ya da RPC hata verdi) `imlecler` null kalır ve döngü aynen eski
+   * yola, araç-araç `lastRecordedAt`'e döner. Tur davranışı DEĞİŞMEZ, yalnız
+   * kazanç gerçekleşmez — yani bu deploy migration'dan ÖNCE de güvenli.
+   */
+  const imlecler = await lastRecordedAtBatch(vehicles.map((v) => v.id));
+
   for (const v of vehicles) {
     try {
-      const last = await lastRecordedAt(v.id);
+      // Map'te YOKLUK "bu aracın hiç kaydı yok" demektir (RPC kaydı olmayan
+      // araç için satır döndürmez) → aşağıdaki ilk-pencere dalı çalışır.
+      // Map'in KENDİSİ null ise toplu okuma başarısız olmuştur → tekil sorgu.
+      const last = imlecler
+        ? imlecler.get(v.id) ?? null
+        : await lastRecordedAt(v.id);
       // Inclusive at the exact last timestamp (sub-second precision kept): the
       // single boundary message is re-fetched but dropped by the upsert, so no
       // point is ever skipped between polls.

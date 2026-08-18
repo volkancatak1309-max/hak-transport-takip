@@ -12,6 +12,7 @@ import {
   saveDtc,
   saveIdleEpisodes,
   saveTelemetry,
+  saveTelemetryBatch,
   saveVehicleEvents,
 } from "@/lib/telemetry";
 import { processAutoShifts, type AutoShiftSummary } from "@/lib/auto-shift";
@@ -96,6 +97,18 @@ async function runSync() {
    */
   const rolantiImlecleri = await idleCursorsBatch(vehicles.map((v) => v.id));
 
+  /**
+   * İKİ GEÇİŞ (#84 Adım 3). Geçiş 1 flespi'den çeker ve telemetri DIŞINDAKİ
+   * yazmaları yapar; sonra telemetri TEK partide yazılır; Geçiş 2 yalnız
+   * telemetriye BAĞIMLI işleri (DTC) yapar.
+   */
+  const toplananlar: {
+    v: VehRow;
+    points: Awaited<ReturnType<typeof fetchDeviceMessages>>["points"];
+    dtc: Awaited<ReturnType<typeof fetchDeviceMessages>>["dtc"];
+    dtcNumber: number | null;
+  }[] = [];
+
   for (const v of vehicles) {
     try {
       // Map'te YOKLUK "bu aracın hiç kaydı yok" demektir (RPC kaydı olmayan
@@ -115,8 +128,20 @@ async function runSync() {
         v.flespi_device_id,
         sinceTs
       );
-      const saved = await saveTelemetry(v.id, points);
-      totalSaved += saved;
+      /**
+       * TELEMETRİ YAZMASI ERTELENDİ (#84 Adım 3).
+       *
+       * Noktalar burada yalnız TOPLANIR; yazma döngüden sonra tek partide
+       * yapılır. `saved` bu yüzden şimdilik 0; gerçek sayı toplu yazmadan
+       * sonra `perVehicle`e işlenir.
+       *
+       * ⚠️ SIRA KORUNDU: `saveDtc` en güncel km'yi `device_telemetry`den
+       * OKUYOR ve kendi yorumunda "saveTelemetry bu batch'i ÖNCE yazdığı için
+       * güncel km zaten DB'de" diyor. Bu yüzden DTC işleri (saveDtc +
+       * reconcileDtc) BU DÖNGÜDE KALMADI, toplu yazmadan SONRAKİ ikinci
+       * geçişe alındı. Yazmayı ertelemek DTC'yi bayat km'yle beslerdi.
+       */
+      const saved = 0;
       // Rölanti epizodu (migration 024) — kendi try/catch'inde; GPS senkronunu
       // ASLA düşürmez.
       if (idle.length > 0) {
@@ -142,18 +167,9 @@ async function runSync() {
           );
         }
       }
-      // Arıza kodları (migration 021) — kendi try/catch'inde; GPS akışını ASLA
-      // düşürmez (tablo yoksa / snapshot işlenemezse sadece loglanır).
-      if (dtc.length > 0) {
-        try {
-          await saveDtc(v.id, dtc);
-        } catch (err) {
-          console.error(
-            `[flespi/sync] ${v.plate}: vehicle_dtc yazılamadı:`,
-            err instanceof Error ? err.message : err
-          );
-        }
-      }
+      // DTC işleri BU DÖNGÜDE DEĞİL — telemetri yazıldıktan sonraki ikinci
+      // geçişte (#84 Adım 3, sıra bağımlılığı yukarıda anlatıldı). Girdileri
+      // burada toplanır.
       // VIN tek seferlik backfill — kendi try/catch'inde; GPS akışını düşürmez.
       const vin = points.find((p) => p.vin)?.vin ?? null;
       if (vin) {
@@ -166,10 +182,8 @@ async function runSync() {
           );
         }
       }
-      // DTC bekçisi (öz-iyileşme): bu batch'in EN YENİ dtc_number değeri aktif
-      // vehicle_dtc satır sayısıyla uyuşmuyorsa flespi telemetry'deki son
-      // bilinen liste normal snapshot gibi işlenir (bayat-liste koruması
-      // reconcileDtc içinde). Kendi try/catch'inde — GPS akışını ASLA düşürmez.
+      // DTC bekçisinin girdisi: bu batch'in EN YENİ dtc_number değeri.
+      // Kullanımı ikinci geçişte (telemetri yazıldıktan sonra).
       let dtcNumber: number | null = null;
       for (let i = points.length - 1; i >= 0; i--) {
         if (points[i].dtc_number !== null) {
@@ -177,16 +191,8 @@ async function runSync() {
           break;
         }
       }
-      if (dtcNumber !== null) {
-        try {
-          await reconcileDtc(v.id, v.flespi_device_id, dtcNumber);
-        } catch (err) {
-          console.error(
-            `[flespi/sync] ${v.plate}: DTC bekçisi başarısız:`,
-            err instanceof Error ? err.message : err
-          );
-        }
-      }
+      // Toplu yazma + ikinci geçiş için taşınan iş
+      toplananlar.push({ v, points, dtc, dtcNumber });
       perVehicle.push({
         plate: v.plate,
         device: v.flespi_device_id,
@@ -202,6 +208,68 @@ async function runSync() {
         saved: 0,
         error: e instanceof Error ? e.message : "error",
       });
+    }
+  }
+
+  /**
+   * TELEMETRİ TEK PARTİDE YAZILIR (#84 Adım 3) — döngüden sonra, DTC'den önce.
+   *
+   * GERİ DÜŞÜŞ (Adım 5): toplu yazma `null` dönerse araç-araç `saveTelemetry`
+   * çalışır. Kısmen yazılmış parti zarar vermez — upsert idempotent, tekrar
+   * yazmak no-op.
+   */
+  const yazilanlar = await saveTelemetryBatch(
+    toplananlar.map((t) => ({ vehicleId: t.v.id, points: t.points }))
+  );
+  for (const t of toplananlar) {
+    let saved: number;
+    if (yazilanlar) {
+      saved = yazilanlar.get(t.v.id) ?? 0;
+    } else {
+      try {
+        saved = await saveTelemetry(t.v.id, t.points);
+      } catch (err) {
+        console.error(
+          `[flespi/sync] ${t.v.plate}: telemetri yazılamadı:`,
+          err instanceof Error ? err.message : err
+        );
+        saved = 0;
+      }
+    }
+    totalSaved += saved;
+    const satir = perVehicle.find((p) => p.plate === t.v.plate);
+    if (satir) satir.saved = saved;
+  }
+
+  /**
+   * GEÇİŞ 2 — YALNIZ TELEMETRİYE BAĞIMLI İŞLER.
+   *
+   * `saveDtc` en güncel km'yi `device_telemetry`den okuyor ve kendi yorumunda
+   * "saveTelemetry bu batch'i ÖNCE yazdığı için güncel km zaten DB'de" diyor.
+   * `reconcileDtc` de sonunda `saveDtc` çağırıyor. Bu yüzden ikisi de toplu
+   * yazmadan SONRAYA alındı — sıra bağımlılığı korundu.
+   * Her ikisi de kendi try/catch'inde: GPS akışını ASLA düşürmezler.
+   */
+  for (const t of toplananlar) {
+    if (t.dtc.length > 0) {
+      try {
+        await saveDtc(t.v.id, t.dtc);
+      } catch (err) {
+        console.error(
+          `[flespi/sync] ${t.v.plate}: vehicle_dtc yazılamadı:`,
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
+    if (t.dtcNumber !== null) {
+      try {
+        await reconcileDtc(t.v.id, t.v.flespi_device_id, t.dtcNumber);
+      } catch (err) {
+        console.error(
+          `[flespi/sync] ${t.v.plate}: DTC bekçisi başarısız:`,
+          err instanceof Error ? err.message : err
+        );
+      }
     }
   }
 

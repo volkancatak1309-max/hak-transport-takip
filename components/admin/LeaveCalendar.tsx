@@ -70,6 +70,20 @@ function ymd(y: number, m1: number, d: number): string {
   return `${y}-${String(m1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
+/**
+ * İzin gün sayısı — İKİ UÇ DA DAHİL (23.08 → 27.08 = 5 gün, 4 değil).
+ *
+ * Tarihler saatsiz 'YYYY-MM-DD'. UTC'de ayrıştırıp UTC'de çıkarıyoruz: yerel
+ * saat diliminde ayrıştırmak yaz saati geçişini kapsayan bir izinde sonucu
+ * 1 gün kaydırabilirdi (o gün 23 ya da 25 saat sürer).
+ */
+function leaveDayCount(start: string, end: string): number {
+  const bas = Date.parse(`${start}T00:00:00Z`);
+  const bit = Date.parse(`${end}T00:00:00Z`);
+  if (Number.isNaN(bas) || Number.isNaN(bit)) return 1;
+  return Math.max(1, Math.round((bit - bas) / 86_400_000) + 1);
+}
+
 type DrawerState =
   | { mode: "add"; workerId: string; date: string }
   | { mode: "edit"; leave: CalLeave }
@@ -317,36 +331,58 @@ export function LeaveCalendar({
               {pendingLeaves.map((l) => {
                 const def = leaveTypeDef(l.leave_type);
                 return (
+                  /* ONAY KARTI — 18.08.2026 yeniden düzen.
+                     Referans: Remote Global HR izin onayı + Instacart onay kartı.
+                     ÜÇ ÖLÇÜLMÜŞ KUSUR KAPATILDI:
+                     ① Düğmeler 81×28 px'di. Apple'ın asgari dokunma hedefi 44 px;
+                        geri dönüşü olan İKİ KARŞIT eylem 6 px arayla duruyordu.
+                        → h-11 (44 px), aralarında gap-2 (8 px).
+                     ② İkisi de sönük varyanttaydı (outline + ghost) — hangisinin
+                        birincil olduğu belli değildi. → Onayla `default`
+                        (btn-primary, dolu), Reddet `destructive` (yumuşak kırmızı).
+                        Asimetri yanlış dokunmayı zorlaştırır.
+                     ③ Tarihler HAM ISO basılıyordu (2026-08-23). Aynı dosyanın
+                        arşiv tablosu zaten formatDate kullanıyordu — kart kendi
+                        bileşeniyle tutarsızdı. Artık 23.08.2026 + gün sayısı.
+                     MASAÜSTÜ DÜZENİ KORUNDU: sm+ ekranda kimlik solda, düğmeler
+                     sağda kalır; değişen tek şey düğmelerin yükselmesi. */
                   <li
                     key={l.id}
-                    className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-surface-panel px-3 py-2 text-sm"
+                    className="rounded-[10px] bg-surface-panel px-3 py-3 text-sm sm:flex sm:items-center sm:justify-between sm:gap-3"
                   >
-                    <span className="flex items-center gap-2">
+                    <span className="flex min-w-0 items-start gap-2">
                       <LeaveSwatch def={def} />
-                      <span className="font-medium">
-                        {nameById.get(l.worker_id) ?? "—"}
-                      </span>
-                      <span className="nums text-muted-foreground">
-                        · {leaveTypeLabel(def, locale)} · {l.start_date} → {l.end_date}
+                      <span className="min-w-0">
+                        <span className="block font-medium">
+                          {nameById.get(l.worker_id) ?? "—"}
+                        </span>
+                        <span className="block text-muted-foreground">
+                          {leaveTypeLabel(def, locale)}
+                        </span>
+                        <span className="nums block text-muted-foreground">
+                          {formatDate(l.start_date, locale)} →{" "}
+                          {formatDate(l.end_date, locale)} ·{" "}
+                          {t("dayCount", {
+                            n: leaveDayCount(l.start_date, l.end_date),
+                          })}
+                        </span>
                       </span>
                     </span>
-                    <span className="flex items-center gap-1.5">
+                    <span className="mt-3 flex gap-2 sm:mt-0 sm:shrink-0">
                       <Button
-                        size="sm"
-                        variant="outline"
+                        className="h-11 flex-1 sm:flex-none sm:px-4"
                         disabled={pending}
                         onClick={() => decide(() => approveLeaveAction(l.id))}
                       >
-                        <Check className="size-3.5" /> {t("approve")}
+                        <Check className="size-4" /> {t("approve")}
                       </Button>
                       <Button
-                        size="sm"
-                        variant="ghost"
+                        variant="destructive"
+                        className="h-11 flex-1 sm:flex-none sm:px-4"
                         disabled={pending}
-                        className="text-muted-foreground hover:text-destructive"
                         onClick={() => decide(() => rejectLeaveAction(l.id))}
                       >
-                        <X className="size-3.5" /> {t("reject")}
+                        <X className="size-4" /> {t("reject")}
                       </Button>
                     </span>
                   </li>

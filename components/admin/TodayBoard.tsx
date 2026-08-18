@@ -74,10 +74,29 @@ function groupRows(rows: TodayRosterRow[]): Record<RosterTab, TodayRosterRow[]> 
   return g;
 }
 
-/** Telemetri yaşını insan diline çevirir; veri yoksa null (tire basılır). */
+/**
+ * Telemetri YAŞINI insan diline çevirir; veri yoksa null (tire basılır).
+ *
+ * NEDEN formatDurationShort DEĞİL (18.08.2026): o bir SÜRE formatlayıcısı ve
+ * "0s 19dk" basıyordu. Değer ise bir YAŞ — "19 dakika önce". İkisi aynı karta
+ * alt alta düşünce ("GİRİŞ 04:27 → 04:45" = 18 dk vardiya, hemen altında
+ * "ARAÇ SİNYALİ 0s 19dk") yönetici bunları ilişkili sanıyordu; hiç ilgileri
+ * yok. Ayrıca 24 saati aşınca "170s 42dk" çıkıyordu — bunu 7 güne çevirmek
+ * okuyucunun işi olmamalı.
+ *
+ * Kademeler: <60 dk → dakika · <48 sa → saat · üstü → gün. Tek kademe yeter,
+ * "7 gün 3 saat" demek bu ekranda hiçbir kararı değiştirmez.
+ */
 function useAgeLabel() {
-  const locale = useLocale();
-  return (ms: number | null) => (ms === null ? null : formatDurationShort(ms, locale));
+  const t = useTranslations("admin");
+  return (ms: number | null) => {
+    if (ms === null) return null;
+    const dk = Math.floor(ms / 60000);
+    if (dk < 60) return t("boardSignalAgeMin", { n: Math.max(0, dk) });
+    const sa = Math.floor(dk / 60);
+    if (sa < 48) return t("boardSignalAgeHour", { n: sa });
+    return t("boardSignalAgeDay", { n: Math.floor(sa / 24) });
+  };
 }
 
 export function TodayBoard({
@@ -115,6 +134,20 @@ export function TodayBoard({
   const [tab, setTab] = useState<Tab>(() =>
     groups.not_started.length > 0 ? "not_started" : "in_field"
   );
+
+  /**
+   * ARAÇ SİNYALİ SÜTUNU YALNIZ İKİ SEKMEDE (18.08.2026, Volkan kararı A).
+   *
+   * Sütun "cihazdan en son ne zaman veri geldi"yi gösterir ve bu VARDİYADAN
+   * BAĞIMSIZDIR: takip cihazı vardiya kapandıktan sonra da park hâlinde yayın
+   * yapar. Ölçüldü — Kapandı sekmesinde 14 kartın 14'ü de 1 saatin altındaydı,
+   * yani sütun orada her satırda aynı şeyi söylüyordu: "cihaz çalışıyor".
+   * Mobilde ise her kartta bir tam satır yiyordu.
+   *
+   * Başlamadı + Sahada'da KALIR: orada gerçek bir soru cevaplıyor — "sevkiyata
+   * çıkacak/çıkmış aracın cihazı ölü mü". Ölçümde bir kart 7 gün sessiz çıktı.
+   */
+  const sinyalGoster = tab === "not_started" || tab === "in_field";
 
   const TABS: { key: Tab; label: string; count: number }[] = [
     { key: "not_started", label: t("boardTabNotStarted"), count: groups.not_started.length },
@@ -236,7 +269,9 @@ export function TodayBoard({
                     <th className="py-2.5 pr-3 font-medium">{t("boardColStatus")}</th>
                     <th className="py-2.5 pr-3 font-medium">{t("boardColStart")}</th>
                     <th className="py-2.5 pr-3 text-right font-medium">{t("boardColPackages")}</th>
-                    <th className="py-2.5 text-right font-medium">{t("boardColSignal")}</th>
+                    {sinyalGoster && (
+                      <th className="py-2.5 text-right font-medium">{t("boardColSignal")}</th>
+                    )}
                     {onStart && <th className="py-2.5 pl-3 text-right font-medium" aria-label={t("boardStartShift")} />}
                   </tr>
                 </thead>
@@ -287,9 +322,11 @@ export function TodayBoard({
                           </>
                         )}
                       </td>
-                      <td className="py-2 text-right">
-                        <SignalCell row={r} t={t} ageLabel={ageLabel} />
-                      </td>
+                      {sinyalGoster && (
+                        <td className="py-2 text-right">
+                          <SignalCell row={r} t={t} ageLabel={ageLabel} />
+                        </td>
+                      )}
                       {onStart && (
                         <td className="py-2 pl-3 text-right">
                           {r.status === "not_started" && (
@@ -338,9 +375,11 @@ export function TodayBoard({
                     <Field label={t("boardColPackages")}>
                       <span className="nums">{r.loadedPackages ?? "—"}</span>
                     </Field>
-                    <Field label={t("boardColSignal")}>
-                      <SignalCell row={r} t={t} ageLabel={ageLabel} />
-                    </Field>
+                    {sinyalGoster && (
+                      <Field label={t("boardColSignal")}>
+                        <SignalCell row={r} t={t} ageLabel={ageLabel} />
+                      </Field>
+                    )}
                   </dl>
                   {onStart && r.status === "not_started" && (
                     <Button

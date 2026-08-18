@@ -126,6 +126,40 @@ export type PerformanceRow = {
   harshBraking: number;
   harshAcceleration: number;
   overspeeding: number;
+  /**
+   * ═══ SKOR KAPISININ GEREKÇESİ (18.08.2026) — SALT RAPORLAMA ═══
+   *
+   * Aşağıdaki dört alan hiçbir hesabı DEĞİŞTİRMEZ; `safetyScore`ün nasıl
+   * hesaplandığını (ya da neden hesaplanamadığını) anlatır. Eklenme sebebi
+   * ölçülebilir bir soru: canlıda 1.354 km sürmüş bir şoför "Yetersiz veri"
+   * düşüyor ve ekran bunun km azlığından mı, ölçülemeyen vardiyalardan mı
+   * olduğunu söyleyemiyordu. Sayı yerine boşluk göstermek bir karar; boşluğun
+   * SEBEBİNİ göstermemek bir kusurdur (bkz. lib/metric-thresholds.ts başlığı).
+   *
+   * DEĞERLER KARARIN KENDİSİNDEN GELİR, TAHMİNDEN DEĞİL:
+   *   scoreMinKm   ← computeSafetyScores'un o şoför için çağırdığı kapı
+   *   scoreKm      ← skorun paydası (SafetyScoreRow.distanceKm)
+   *   scoreCoverage← getWorkerShiftDistance'ın kapsama sayacı
+   *   scoreGate    ← yukarıdaki üçünden türeyen, kapının hangi kolunda
+   *                  elendiğini söyleyen kod
+   */
+  /** Bu şoför için hesaplanan km eşiği — sabit değil, kişiye göre ölçeklenir. */
+  scoreMinKm: number;
+  /** Skorun paydası olan ölçülen km; null = ölçülemedi (0 km sürdü DEĞİL). */
+  scoreKm: number | null;
+  /**
+   * Km'si ölçülebilen vardiya oranı (0–1). Vardiya penceresi hiç yoksa null —
+   * migration 052 uygulanmamış kurulumda da null (kapsama ölçülemez).
+   */
+  scoreCoverage: number | null;
+  /**
+   * Skor NEDEN yok? `safetyScore` doluysa null.
+   *   km_yetersiz    → km ölçüldü ama eşiğin altında (scoreKm < scoreMinKm)
+   *   kapsama_dusuk  → payda eksik: vardiyaların ölçülebilen oranı
+   *                    SCORE_MIN_KM_COVERAGE altında (ya da hiç ölçülemedi)
+   *   vardiya_yok    → aralıkta hiç vardiya yok; km atfedilecek sürüş yok
+   */
+  scoreGate: "km_yetersiz" | "kapsama_dusuk" | "vardiya_yok" | null;
 };
 
 /**
@@ -488,6 +522,29 @@ export async function buildPerformanceReport(
     dailyAcc.set(key, d);
   }
 
+  /**
+   * SKOR KAPISININ HANGİ KOLUNDA ELENDİ? — karar noktalarının SIRASI önemli.
+   *
+   * computeSafetyScores'ta tek bir satır var:
+   *     qualifies = reliableKm != null && reliableKm >= effectiveMinKm
+   * ve `null` iki AYRI sebepten gelebiliyor. Ayrımı orada yapamıyoruz çünkü
+   * kapsama süzgeci (shiftKmForScoring) haritadan DÜŞMÜŞ şoförü, hiç vardiyası
+   * olmayan şoförden ayırt edilemez hâle getiriyor — ikisi de "kayıt yok".
+   * Ayrımı yapabilen tek yer, kapsama sayacını da elinde tutan BURASI.
+   *
+   * SIRA:
+   *  1. skor varsa sebep yoktur (null);
+   *  2. km ÖLÇÜLDÜYSE (scoreKm != null) tek olası sebep eşiğin altında kalmak —
+   *     en güçlü delil sayının kendisidir;
+   *  3. hiç vardiya yoksa km atfedilecek sürüş de yoktur;
+   *  4. kalan her durumda payda eksiktir → kapsama.
+   *
+   * ⚠️ 4. KOL 052'SİZ KURULUMDA DA BURAYA DÜŞER. O kurulumda kapsama sayacı hiç
+   * üretilmez (coverage null) ve km araç toplamından gelir; "ölçülemedi" ile
+   * "kapsama düşük" aynı cümleyi kurar: PAYDA EKSİK. Ayrı bir kod uydurmak,
+   * ölçülmemiş bir ayrımı ölçülmüş gibi göstermek olurdu.
+   */
+  const kapsamaByWorker = shiftKmRes.coverage;
   const rows: PerformanceRow[] = [];
   for (const w of base.workers) {
     const s = shiftByWorker.get(w.id);
@@ -496,6 +553,17 @@ export async function buildPerformanceReport(
     // Aralıkta ne vardiyası ne olayı olan şoför rapora girmez — 0'larla dolu
     // satır, "çalışmadı" ile "veri yok"u karıştırır.
     if (!s && !ev) continue;
+    const kap = kapsamaByWorker?.get(w.id) ?? null;
+    const scoreCoverage = kap && kap.toplam > 0 ? kap.olculen / kap.toplam : null;
+    const scoreKm = sc?.distanceKm ?? null;
+    const scoreGate: PerformanceRow["scoreGate"] =
+      (sc?.score ?? null) !== null
+        ? null
+        : scoreKm !== null
+          ? "km_yetersiz"
+          : (s?.shifts ?? 0) === 0
+            ? "vardiya_yok"
+            : "kapsama_dusuk";
     rows.push({
       workerId: w.id,
       name: w.name,
@@ -509,6 +577,14 @@ export async function buildPerformanceReport(
       harshBraking: ev?.braking ?? 0,
       harshAcceleration: ev?.accel ?? 0,
       overspeeding: ev?.speeding ?? 0,
+      // Kapı DEĞERİ computeSafetyScores'un o şoför için çağırdığı sayının ta
+      // kendisi (SafetyScoreRow.minKm) — burada yeniden hesaplanmaz.
+      // `sc` HER ZAMAN doludur: computeSafetyScores `base.workers`ın TAMAMI için
+      // satır üretir (skoru null olsa bile). `?? 0` yalnız tür kapısıdır.
+      scoreMinKm: sc?.minKm ?? 0,
+      scoreKm,
+      scoreCoverage,
+      scoreGate,
     });
   }
 

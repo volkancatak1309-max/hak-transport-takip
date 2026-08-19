@@ -885,7 +885,25 @@ export async function latestVehicleTelemetry(
     .order("recorded_at", { ascending: false })
     .limit(LATEST_COALESCE_WINDOW);
 
-  const rows = (data ?? []) as TelemetryRow[];
+  return pencereyiBirlestir((data ?? []) as TelemetryRow[], opts);
+}
+
+/**
+ * PENCEREYİ TEK SATIRA İNDİRGE — TEK KAYNAK (#116b).
+ *
+ * Yaş sınırı + seyrek CAN alanlarının tamamlanması. Tekil yol
+ * (`latestVehicleTelemetry`) ve toplu yol (`latestTelemetryBatch`) BU AYNI
+ * fonksiyondan geçer. Kural iki yere kopyalansaydı ilk değişiklikte biri
+ * geride kalır ve iki yüzey aynı araç için farklı "canlı konum" gösterirdi.
+ *
+ * Aynı gerekçeyle migration 065 birleştirmeyi SQL'e taşımadı: kural burada,
+ * tek yerde.
+ */
+export function pencereyiBirlestir(
+  pencere: TelemetryRow[],
+  opts?: { maxAgeMs?: number }
+): TelemetryRow | null {
+  const rows = [...pencere];
   if (rows.length === 0) return null;
 
   // Yaş sınırı — yalnız istendiğinde. Bayat satır YOK sayılır; coalesce penceresi
@@ -913,6 +931,71 @@ export async function latestVehicleTelemetry(
     }
   }
   return latest;
+}
+
+/**
+ * CANLI TELEMETRİ TOPLU — araç başına 1 sorgu yerine TUR BAŞINA BİRKAÇ ÇAĞRI.
+ *
+ * `processAutoShifts` döngüsünün ilk satırı `latestVehicleTelemetry(v.id)`
+ * çağırıyordu: koşulsuz, araç başına 1 → ölçüldü, yoğun turda
+ * `device_telemetry` 37'nin 29'u buydu.
+ *
+ * ── ⚠️ NEDEN TEK ÇAĞRI DEĞİL, PARÇALI ──────────────────────────────────────
+ * 29 araç × 40 satırlık pencere = 1160 satır. PostgREST sonuçları **1000'de
+ * SESSİZCE keser**: tek çağrıda tüm filoyu istemek bazı araçların penceresini
+ * yarıda kırpar, CAN alanları eksik tamamlanır ve bunu HİÇBİR HATA BİLDİRMEZ.
+ * Bu yüzden araç listesi parçalanıyor ve parça boyu SABİT DEĞİL, pencereden
+ * TÜRETİLİYOR — pencere bir gün büyürse formül kendini ayarlar, sabit bir
+ * sayı o günü sessiz kırpmaya çevirirdi.
+ *
+ * ── EMNİYET ────────────────────────────────────────────────────────────────
+ * Bir parça beklenen tavana dayanırsa yüksek sesle loglanır: sessiz kırpma
+ * bu projede daha önce canlı hataya yol açtı.
+ *
+ * Geri düşüş (Adım 5): `null` dönerse çağıran araç-araç eski yola düşer.
+ */
+export async function latestTelemetryBatch(
+  vehicleIds: string[]
+): Promise<Map<string, TelemetryRow> | null> {
+  if (vehicleIds.length === 0) return new Map();
+  // 900 = 1000'lik tavanın altında bilinçli pay; parça boyu pencereden türer.
+  const parcaBoyu = Math.max(1, Math.floor(900 / LATEST_COALESCE_WINDOW));
+  const out = new Map<string, TelemetryRow>();
+
+  for (let i = 0; i < vehicleIds.length; i += parcaBoyu) {
+    const parca = vehicleIds.slice(i, i + parcaBoyu);
+    const { data, error } = await supabaseAdmin.rpc("latest_telemetry_batch", {
+      p_vehicle_ids: parca,
+      p_window: LATEST_COALESCE_WINDOW,
+    });
+    if (error) {
+      console.warn(
+        `[telemetry] latest_telemetry_batch kullanılamadı (${error.message}) — araç-araç eski yola dönülüyor`
+      );
+      return null;
+    }
+    const rows = (data ?? []) as TelemetryRow[];
+    const beklenenTavan = parca.length * LATEST_COALESCE_WINDOW;
+    if (rows.length >= 1000 && rows.length < beklenenTavan) {
+      console.error(
+        `[telemetry] ⚠️ latest_telemetry_batch KIRPILMIŞ OLABİLİR: ${parca.length} araç × ` +
+          `${LATEST_COALESCE_WINDOW} = ${beklenenTavan} beklenirken ${rows.length} satır döndü.`
+      );
+    }
+    // Araç başına pencereyi topla — RPC zaten recorded_at DESC sıralı döndürüyor.
+    const perVehicle = new Map<string, TelemetryRow[]>();
+    for (const r of rows) {
+      const list = perVehicle.get(r.vehicle_id);
+      if (list) list.push(r);
+      else perVehicle.set(r.vehicle_id, [r]);
+    }
+    for (const [vid, pencere] of perVehicle) {
+      // TEK KAYNAK: tekil yolun kullandığı birleştirmenin aynısı.
+      const birlesik = pencereyiBirlestir(pencere);
+      if (birlesik) out.set(vid, birlesik);
+    }
+  }
+  return out;
 }
 
 /**

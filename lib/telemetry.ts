@@ -1054,6 +1054,49 @@ export type VehicleDtcRow = {
 type ActiveDtc = { id: string; code: string; last_seen: string };
 
 /**
+ * AKTİF ARIZA KODLARI TOPLU — araç başına 1 sorgu yerine TUR BAŞINA 1 (#116).
+ *
+ * Ölçüldü (Adım 4 sonrası, yoğun tur): `vehicle_dtc` tur başına **29** sorgu —
+ * `saveDtc` her araç için aktif listeyi ayrı ayrı okuyordu.
+ *
+ * ── NEDEN MIGRATION GEREKMEDİ ──────────────────────────────────────────────
+ * 060/061'den farkı: burada "araç başına EN YENİ satır" gerekmiyor, **tüm
+ * aktif satırlar** gerekiyor. Bu düz bir filtre (`cleared_at is null`) ve
+ * PostgREST bunu tek sorguda döndürebilir; gruplama bellekte yapılır.
+ * Aktif arıza sayısı küçük (ölçüldü: 14 satır / 7 araç), yani sayfalama
+ * tavanına yaklaşmıyor — yine de tavan aşılırsa `fetchAllRows` deseni
+ * gerekirdi; şimdilik tek sayfa fazlasıyla yeter ve satır sayısı loglanmıyor
+ * çünkü tavan (1000) ile arasında iki kat büyüklük farkı var.
+ *
+ * Geri düşüş (Adım 5): `null` dönerse çağıran tohum vermez ve `saveDtc`
+ * araç-araç eski yola düşer.
+ */
+export async function activeDtcBatch(
+  vehicleIds: string[]
+): Promise<Map<string, ActiveDtc[]> | null> {
+  if (vehicleIds.length === 0) return new Map();
+  const { data, error } = await supabaseAdmin
+    .from("vehicle_dtc")
+    .select("id, code, last_seen, vehicle_id")
+    .in("vehicle_id", vehicleIds)
+    .is("cleared_at", null);
+  if (error) {
+    console.warn(
+      `[telemetry] activeDtcBatch kullanılamadı (${error.message}) — araç-araç eski yola dönülüyor`
+    );
+    return null;
+  }
+  const out = new Map<string, ActiveDtc[]>();
+  // Kaydı olmayan araç için BOŞ DİZİ konur: "aktif kodu yok" ile "okunamadı"
+  // çağıran tarafta karışmasın (Map'in kendisi null ise okunamadı demektir).
+  for (const id of vehicleIds) out.set(id, []);
+  for (const r of (data ?? []) as (ActiveDtc & { vehicle_id: string })[]) {
+    out.get(r.vehicle_id)?.push({ id: r.id, code: r.code, last_seen: r.last_seen });
+  }
+  return out;
+}
+
+/**
  * Reconcile a device's active DTC list against `vehicle_dtc` from the snapshots
  * found in a poll/stream batch. Each snapshot (see extractDtc) is authoritative:
  * codes it lists are upserted as active, active codes it omits are marked
@@ -1063,7 +1106,16 @@ type ActiveDtc = { id: string; code: string; last_seen: string };
  */
 export async function saveDtc(
   vehicleId: string,
-  snapshots: FlespiDtcSnapshot[]
+  snapshots: FlespiDtcSnapshot[],
+  /**
+   * Tur başında toplu okunmuş AKTİF arıza satırları (#116). Verilirse bu aracın
+   * İLK okuması atlanır. Verilmezse davranış birebir eskisi — geri düşüş yolu.
+   *
+   * ⚠️ YALNIZ İLK ANLIK GÖRÜNTÜ İÇİN. Aynı çağrıda birden çok snapshot varsa
+   * ikinci ve sonrakiler CANLI okunur: ilk snapshot yazma yapmış olabilir ve
+   * bayat bir aktif liste, az önce temizlenmiş bir kodu yeniden "aktif" sayar.
+   */
+  aktifSeed?: ActiveDtc[]
 ): Promise<number> {
   const snaps = snapshots
     .filter((s) => s.present)
@@ -1093,16 +1145,23 @@ export async function saveDtc(
   };
 
   let written = 0;
+  // Tohum YALNIZ ilk turda kullanılır; sonrasında canlı okunur (yukarıdaki not).
+  let tohum: ActiveDtc[] | undefined = aktifSeed;
   for (const snap of snaps) {
     const at = snap.occurred_at;
-    const { data } = await supabaseAdmin
-      .from("vehicle_dtc")
-      .select("id, code, last_seen")
-      .eq("vehicle_id", vehicleId)
-      .is("cleared_at", null);
-    const active = new Map(
-      ((data ?? []) as ActiveDtc[]).map((r) => [r.code, r])
-    );
+    let satirlar: ActiveDtc[];
+    if (tohum) {
+      satirlar = tohum;
+      tohum = undefined;
+    } else {
+      const { data } = await supabaseAdmin
+        .from("vehicle_dtc")
+        .select("id, code, last_seen")
+        .eq("vehicle_id", vehicleId)
+        .is("cleared_at", null);
+      satirlar = (data ?? []) as ActiveDtc[];
+    }
+    const active = new Map(satirlar.map((r) => [r.code, r]));
     const wanted = new Set(snap.codes.map((c) => c.code));
 
     for (const c of snap.codes) {

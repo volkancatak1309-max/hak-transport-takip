@@ -289,9 +289,30 @@ export async function ziyaretPlaniniYaz(planlar: ZiyaretPlani[]): Promise<{
   silinen: number;
 }> {
   const yeni = planlar.flatMap((p) => p.yeni);
-  const guncel = planlar.flatMap((p) => p.guncel);
-  const silinecek = planlar.flatMap((p) => p.silinecek);
   const sonuc = { acilan: 0, kapanan: 0, ilerleyen: 0, silinen: 0 };
+
+  /**
+   * AYNI SATIR İKİ KEZ GİRERSE PARTİ TÜMDEN DÜŞER.
+   *
+   * Gerçek senaryo: bir ziyaretin `last_seen_at`i 40 dakika eskimişken bu tur
+   * aracın çıkış noktasını getirir. Aynı `id` hem araç planında (`exit`) hem
+   * gap bekçisinde (`gap_timeout`) belirir. Postgres bunu
+   * "ON CONFLICT DO UPDATE command cannot affect row a second time" ile
+   * REDDEDER ve partideki DİĞER ziyaretler de yazılamaz.
+   *
+   * Çözüm sırayla: araç planları listede gap bekçisinden ÖNCE geldiği için ilk
+   * kayıt kazanır — gözlenmiş çıkış, tahmini sinyal kesintisinden daha
+   * doğrudur. Silme listesi de aynı mantıkla güncellenenleri dışlar: bir satır
+   * hem kapanıp hem silinemez.
+   */
+  const guncelHarita = new Map<string, GuncelZiyaret>();
+  for (const g of planlar.flatMap((p) => p.guncel)) {
+    if (!guncelHarita.has(g.id)) guncelHarita.set(g.id, g);
+  }
+  const guncel = [...guncelHarita.values()];
+  const silinecek = [
+    ...new Set(planlar.flatMap((p) => p.silinecek).filter((id) => !guncelHarita.has(id))),
+  ];
 
   if (yeni.length > 0) {
     const { data, error } = await supabaseAdmin.from("zone_visits").insert(yeni).select("id");

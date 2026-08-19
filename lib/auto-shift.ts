@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
-import { latestVehicleTelemetry, listVehicleTrack } from "@/lib/telemetry";
+import { latestTelemetryBatch, latestVehicleTelemetry, listVehicleTrack } from "@/lib/telemetry";
 import { computeDistanceKm } from "@/lib/metrics-distance";
 import { MAX_ODOMETER, MAX_PER_SHIFT_KM } from "@/lib/validation";
 import { sendTelegramMessage } from "@/lib/telegram";
@@ -489,10 +489,32 @@ export async function processAutoShifts(
 
     let admins: { chat: string; locale: string | null }[] | null = null;
 
+    /**
+     * CANLI TELEMETRİ — DÖNGÜDEN ÖNCE, PARÇALI TOPLU OKUMA (#116b, migration 065).
+     *
+     * Aşağıdaki döngünün ilk satırı `latestVehicleTelemetry(v.id)` çağırıyordu:
+     * koşulsuz, araç başına 1. Ölçüldü — yoğun turda `device_telemetry` 37
+     * sorgunun 29'u buydu, yani #84 Adım 0-4'ten sonra turun en büyük kalemi.
+     *
+     * Toplu okuma araç listesini PENCEREDEN TÜREYEN parçalara bölüyor
+     * (29 araç → 2 çağrı): 29 × 40 satır tek çağrıda istenirse PostgREST
+     * 1000'de sessizce keser ve bazı araçların CAN alanları eksik tamamlanır.
+     *
+     * GERİ DÜŞÜŞ (Adım 5): `null` dönerse döngü aynen eski yola, araç-araç
+     * `latestVehicleTelemetry`'ye döner — davranış birebir aynı, yalnız kazanç
+     * gerçekleşmez. Migration 065 koşmadan da güvenli.
+     */
+    const canliTelemetri = await latestTelemetryBatch(vehicles.map((v) => v.id));
+
     for (const v of vehicles) {
       summary.checked++;
       try {
-        const latest = await latestVehicleTelemetry(v.id);
+        // Map'te YOKLUK "bu aracın hiç telemetrisi yok" demektir (tekil yol da
+        // null döndürürdü). Map'in KENDİSİ null ise toplu okuma başarısız
+        // olmuştur → tekil sorguya düşülür.
+        const latest = canliTelemetri
+          ? canliTelemetri.get(v.id) ?? null
+          : await latestVehicleTelemetry(v.id);
         if (!latest) continue;
 
         const latestMs = new Date(latest.recorded_at).getTime();

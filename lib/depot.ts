@@ -9,6 +9,7 @@ import {
   addCalendarDaysVienna,
 } from "@/lib/format";
 import { TENANT_TZ } from "@/lib/tz";
+import { turMemo } from "@/lib/query-counter";
 
 /**
  * DEPO-GİRİŞ VARDİYA ÖNERİSİ (Modül 3).
@@ -51,19 +52,34 @@ type DepotZone = {
   radius_m: number;
 };
 
-/** Aktif depo bölgeleri (worker-safe: requireAdmin YOK, hassas veri değil). */
+/**
+ * Aktif depo bölgeleri (worker-safe: requireAdmin YOK, hassas veri değil).
+ *
+ * TUR İÇİNDE TEK SORGU (#84 Adım 4 / Bekleyen-Isler #83, 19.08.2026).
+ * Bu fonksiyon 7 ayrı yerden çağrılıyor ve bazıları araç döngüsünün içinde;
+ * her çağrı DB'ye gidiyordu. Ölçüldü: senkron turu başına 6-7 `geofences`
+ * sorgusu. Depo bölgeleri bir tur boyunca DEĞİŞMEZ, dolayısıyla tekrar okumak
+ * saf israftı.
+ *
+ * `turMemo` yalnız senkron turunun kabı içinde önbellekler; panel sayfaları ve
+ * diğer rotalar için davranış BİREBİR aynı kalır (kap yoksa doğrudan okur).
+ * Önbellek tek tur kadar yaşar → iki tur arasında taşınmaz, bayat veri riski
+ * yok.
+ */
 export async function activeDepotZones(): Promise<DepotZone[]> {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("geofences")
-      .select("id, name, center_lat, center_lng, radius_m")
-      .eq("active", true)
-      .eq("purpose", "depot");
-    if (error || !data) return [];
-    return data as DepotZone[];
-  } catch {
-    return [];
-  }
+  return turMemo("activeDepotZones", async () => {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from("geofences")
+        .select("id, name, center_lat, center_lng, radius_m")
+        .eq("active", true)
+        .eq("purpose", "depot");
+      if (error || !data) return [];
+      return data as DepotZone[];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /**

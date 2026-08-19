@@ -52,7 +52,9 @@ const GeofencePickerMap = dynamic(
 );
 
 const RULE_KINDS: GeofenceRuleKind[] = ["forbidden", "allowed_only"];
-const PURPOSES: GeofencePurpose[] = ["rule", "depot"];
+const PURPOSES: GeofencePurpose[] = ["rule", "depot", "customer"];
+/** Bölge içinde sayılmak için varsayılan bekleme (064). */
+const VARSAYILAN_ESIK_SN = 120;
 
 /** Filtre bandı seçenekleri (REVEAL-CLONE-SPEC H). */
 type RuleFilter = "all" | GeofenceRuleKind;
@@ -82,6 +84,9 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
   const [radius, setRadius] = useState("200");
   const [ruleKind, setRuleKind] = useState<GeofenceRuleKind>("forbidden");
   const [purpose, setPurpose] = useState<GeofencePurpose>("rule");
+  // Müşteri bölgesi alanları (064) — yalnız purpose='customer' iken görünür.
+  const [customerName, setCustomerName] = useState("");
+  const [minDwell, setMinDwell] = useState(String(VARSAYILAN_ESIK_SN));
   const [busy, setBusy] = useState(false);
 
   function openNew() {
@@ -91,6 +96,8 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
     setRadius("200");
     setRuleKind("forbidden");
     setPurpose("rule");
+    setCustomerName("");
+    setMinDwell(String(VARSAYILAN_ESIK_SN));
     setOpen(true);
   }
   function openEdit(z: Geofence) {
@@ -100,6 +107,8 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
     setRadius(String(Math.round(z.radius_m)));
     setRuleKind(z.rule_kind);
     setPurpose(z.purpose ?? "rule");
+    setCustomerName(z.customer_name ?? "");
+    setMinDwell(String(z.min_dwell_s ?? VARSAYILAN_ESIK_SN));
     setOpen(true);
   }
 
@@ -126,6 +135,8 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
     fd.set("radius_m", String(Math.round(r)));
     fd.set("rule_kind", ruleKind);
     fd.set("purpose", purpose);
+    fd.set("customer_name", customerName.trim());
+    fd.set("min_dwell_s", minDwell);
 
     setBusy(true);
     try {
@@ -428,8 +439,45 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-text-tertiary">{t(`purpose_hint.${purpose}`)}</p>
               </div>
             </div>
+
+            {/* MÜŞTERİ BÖLGESİ ALANLARI — yalnız amaç 'customer' iken.
+                Her zaman göstermek, kural bölgesi tanımlayan yöneticiye
+                anlamsız iki alan sorardı; gizlemek yerine KOŞULLU açmak
+                formu kısa tutuyor. Alanlar boşken bile kayıt geçerli:
+                müşteri adı boşsa raporda bölge adı kullanılır. */}
+            {purpose === "customer" && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="gf-customer">{t("customer_name_label")}</Label>
+                  <Input
+                    id="gf-customer"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder={t("customer_name_ph")}
+                    maxLength={80}
+                    className="btn-outline-ring h-11 rounded-[10px] border-0 bg-transparent"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="gf-dwell">{t("min_dwell_label")}</Label>
+                  <Input
+                    id="gf-dwell"
+                    type="number"
+                    inputMode="numeric"
+                    min={30}
+                    max={14400}
+                    step={30}
+                    value={minDwell}
+                    onChange={(e) => setMinDwell(e.target.value)}
+                    className="nums btn-outline-ring h-11 rounded-[10px] border-0 bg-transparent"
+                  />
+                  <p className="text-xs text-text-tertiary">{t("min_dwell_hint")}</p>
+                </div>
+              </div>
+            )}
 
             <Button type="submit" className="btn-primary h-11 w-full rounded-full" disabled={busy}>
               {busy && <Loader2 className="size-4 animate-spin" />}

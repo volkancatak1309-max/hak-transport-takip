@@ -291,9 +291,19 @@
       "allowed_only": "Sadece burada (çıkılmamalı)"
     },
     "purpose_label": "Amaç",
+    "purpose_hint": {
+      "rule": "Araç bu alana girip çıkınca ihlal olayı üretilir.",
+      "depot": "Vardiya otomatiğini yönetir: depoya varış mesaiyi başlatır.",
+      "customer": "Bu alanda geçirilen süre ölçülür ve Bölge Süreleri raporuna işlenir — faturaya ek olarak verilebilir."
+    },
+    "customer_name_label": "Müşteri adı (isteğe bağlı)",
+    "customer_name_ph": "Raporda görünecek ad",
+    "min_dwell_label": "En az kalış (sn)",
+    "min_dwell_hint": "Bu süreden kısa duruşlar ziyaret sayılmaz — yoldan geçen araç faturaya girmesin.",
     "purpose": {
       "rule": "Kural bölgesi",
-      "depot": "Depo (vardiya önerisi)"
+      "depot": "Depo (vardiya önerisi)",
+      "customer": "Müşteri bölgesi (süre ölçümü)"
     },
     "passive": "Pasif",
     "activate": "Aktifleştir",

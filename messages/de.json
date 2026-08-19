@@ -291,9 +291,19 @@
       "allowed_only": "Nur hier (nicht verlassen)"
     },
     "purpose_label": "Zweck",
+    "purpose_hint": {
+      "rule": "Beim Ein- und Ausfahren wird ein Verstoß erfasst.",
+      "depot": "Steuert die Schichtautomatik: Ankunft im Depot startet die Schicht.",
+      "customer": "Die Zeit in dieser Zone wird gemessen und im Bericht „Aufenthaltszeiten“ ausgewiesen — als Rechnungsbeilage nutzbar."
+    },
+    "customer_name_label": "Kundenname (optional)",
+    "customer_name_ph": "Name für den Bericht",
+    "min_dwell_label": "Mindestaufenthalt (Sek.)",
+    "min_dwell_hint": "Kürzere Stopps zählen nicht als Aufenthalt — Vorbeifahren soll nicht in die Rechnung geraten.",
     "purpose": {
       "rule": "Regelzone",
-      "depot": "Depot (Schichtvorschlag)"
+      "depot": "Depot (Schichtvorschlag)",
+      "customer": "Kundenzone (Zeitmessung)"
     },
     "passive": "Inaktiv",
     "activate": "Aktivieren",

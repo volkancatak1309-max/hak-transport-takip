@@ -448,8 +448,17 @@ export type SessionData = {
 };
 
 export type GeofenceRuleKind = "forbidden" | "allowed_only";
-/** Bölgenin amacı (migration 034). 'depot' → panelde "mesaiyi başlat?" önerisi. */
-export type GeofencePurpose = "rule" | "depot";
+/**
+ * Bölgenin amacı = DAVRANIŞ anahtarı (migration 034, 'customer' → 064).
+ *  • 'rule'     → ihlal olayı üretir (yasak / sadece-burada).
+ *  • 'depot'    → panelde "mesaiyi başlat?" önerisi + otomatik vardiya tetiği.
+ *  • 'customer' → müşteri sahasi: ziyaret SÜRESİ ölçülür (fatura kanıtı).
+ *
+ * Üçü de KURAL DEĞİL DAVRANIŞ seçer ve bilinçli olarak `category`den ayrıdır:
+ * `category` mobilden serbestçe değişen bir ROZET; ölçüm ona bağlansaydı
+ * telefondaki bir menü dokunuşu faturalama kanıtını sessizce durdururdu.
+ */
+export type GeofencePurpose = "rule" | "depot" | "customer";
 
 /** A circular geofence zone (db/migrations/015_geofences.sql). */
 export type Geofence = {
@@ -463,4 +472,11 @@ export type Geofence = {
   purpose: GeofencePurpose;
   active: boolean;
   created_at: string;
+  /** purpose='customer' — raporda görünen müşteri adı (migration 064). */
+  customer_name?: string | null;
+  /**
+   * Ziyaret sayılmak için içeride kesintisiz kalınması gereken saniye (064).
+   * Yoksa bölgenin yanından geçen her araç faturaya girerdi. Varsayılan 120.
+   */
+  min_dwell_s?: number | null;
 };

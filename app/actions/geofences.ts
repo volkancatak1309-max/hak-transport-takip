@@ -12,13 +12,26 @@ export type GeofenceResultAction = { ok: boolean; error?: string; id?: string };
 const COLS_BASE =
   "id, name, type, center_lat, center_lng, radius_m, rule_kind, active, created_at";
 const COLS = COLS_BASE + ", purpose";
+const COLS_FULL = COLS + ", customer_name, min_dwell_s";
 
 /**
- * Bölgeleri okur. `purpose` kolonu yoksa (migration 034 öncesi) base kolonlarla
- * DÜŞER ve purpose='rule' varsayar — Bölgeler sayfası ve metrics-geofence
- * kolon gelene kadar boşalmaz (migration-öncesi dayanıklılık deseni).
+ * Bölgeleri okur — ÜÇ KADEMELİ düşüş (migration-öncesi dayanıklılık deseni).
+ *
+ *   064 var → COLS_FULL (müşteri alanları dahil)
+ *   034 var → COLS      (purpose var, müşteri alanları yok)
+ *   ikisi de yok → COLS_BASE, purpose='rule' varsayılır
+ *
+ * Kademeyi ATLAMAK sessiz bir hata olurdu: 064 koşulmamış bir veritabanında
+ * doğrudan COLS_BASE'e düşseydik `purpose` de kaybolur, DEPO bölgeleri normal
+ * kural bölgesine dönüşür ve vardiya otomatiği sessizce ölürdü.
  */
 async function selectZones(activeOnly: boolean): Promise<Geofence[]> {
+  const q0 = supabaseAdmin.from("geofences").select(COLS_FULL);
+  const { data: d0, error: e0 } = await (activeOnly ? q0.eq("active", true) : q0).order(
+    "created_at",
+    { ascending: false }
+  );
+  if (!e0 && d0) return d0 as unknown as Geofence[];
   const q1 = supabaseAdmin.from("geofences").select(COLS);
   const { data, error } = await (activeOnly ? q1.eq("active", true) : q1).order(
     "created_at",
@@ -57,7 +70,22 @@ function parse(formData: FormData) {
     radius_m: formData.get("radius_m"),
     rule_kind: formData.get("rule_kind"),
     purpose: formData.get("purpose") ?? undefined,
+    customer_name: formData.get("customer_name") ?? undefined,
+    min_dwell_s: formData.get("min_dwell_s") ?? undefined,
   });
+}
+
+/**
+ * Müşteri alanları — amaç 'customer' DEĞİLSE temizlenir.
+ *
+ * Temizlemek (null/varsayılan yazmak) atlamaktan daha doğru: bir bölge
+ * müşteriden kurala çevrildiğinde eski müşteri adı satırda kalsaydı, rapor
+ * onu artık okumasa bile denetim izinde yanlış bir gerçek gibi dururdu.
+ */
+function musteriAlanlari(d: { purpose: string; customer_name: string | null; min_dwell_s: number }) {
+  return d.purpose === "customer"
+    ? { customer_name: d.customer_name, min_dwell_s: d.min_dwell_s }
+    : { customer_name: null, min_dwell_s: 120 };
 }
 
 export async function createGeofence(
@@ -78,6 +106,9 @@ export async function createGeofence(
       radius_m: parsed.data.radius_m,
       rule_kind: parsed.data.rule_kind,
       purpose: parsed.data.purpose,
+      // Müşteri alanları YALNIZ purpose='customer' iken yazılır: bir kural
+      // bölgesine müşteri adı iliştirmek raporda hayalet satır üretirdi.
+      ...musteriAlanlari(parsed.data),
       active: true,
     })
     .select("id")
@@ -117,6 +148,7 @@ export async function updateGeofence(
       radius_m: parsed.data.radius_m,
       rule_kind: parsed.data.rule_kind,
       purpose: parsed.data.purpose,
+      ...musteriAlanlari(parsed.data),
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };

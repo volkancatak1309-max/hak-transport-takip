@@ -309,8 +309,28 @@ export const geofenceSchema = z.object({
   // realistically trigger — reject it instead of silently never firing.
   radius_m: z.coerce.number().int().min(50, "errRadius").max(100_000, "errRadius"),
   rule_kind: z.enum(["forbidden", "allowed_only"]),
-  // Amaç (migration 034). 'depot' → panelde vardiya-başlatma önerisi tetikler.
-  purpose: z.enum(["rule", "depot"]).optional().default("rule"),
+  // Amaç (034; 'customer' → 064). 'depot' vardiya-başlatma önerisi tetikler,
+  // 'customer' ziyaret süresi ölçümünü açar.
+  purpose: z.enum(["rule", "depot", "customer"]).optional().default("rule"),
+  // Yalnız purpose='customer' için anlamlı. Boş string → null (form her zaman
+  // gönderir; boş bırakılırsa raporda bölge adı kullanılır).
+  customer_name: z
+    .string()
+    .trim()
+    .max(80)
+    .optional()
+    .nullable()
+    .transform((v) => (v ? v : null)),
+  // ALT SINIR 30 sn: bundan kısası GPS örnekleme aralığının altına düşer ve
+  // "içeride kesintisiz kaldı" ölçülemez hâle gelir. ÜST SINIR 4 saat: daha
+  // uzunu eşik değil, ziyaretin kendisi olur.
+  min_dwell_s: z.coerce
+    .number()
+    .int()
+    .min(30, "errDwell")
+    .max(14_400, "errDwell")
+    .optional()
+    .default(120),
 });
 
 // Vehicle create/edit. Only plate is truly required (DB: plate unique not null;

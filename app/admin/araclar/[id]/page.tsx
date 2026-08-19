@@ -81,11 +81,13 @@ export default async function VehicleDetailPage({
   const engineHours = computeEngineHours(track);
   const distance = computeDistanceKm(track);
   const idle = computeIdleTime(track);
-  // Depo bölgeleri (purpose='depot') KURAL değerlendirmesine GİRMEZ — yoksa araç
-  // her depodan çıkışta sahte "ihlal" olayı üretirdi (Modül 3).
+  // Depo ve MÜŞTERİ bölgeleri KURAL değerlendirmesine GİRMEZ — ikisi de ölçüm
+  // bölgesi, kural bölgesi değil. Yoksa araç her depodan/müşteriden çıkışta
+  // sahte "ihlal" olayı üretirdi (Modül 3). Müşteri bölgesi 064'te geldi:
+  // filtreye eklenmeseydi teslimat yapılan HER MÜŞTERİ bir ihlal kaynağı olurdu.
   const geofence = computeGeofenceEvents(
     track,
-    zones.filter((z) => z.purpose !== "depot")
+    zones.filter((z) => z.purpose !== "depot" && z.purpose !== "customer")
   );
 
   // DTC zenginleştirme SUNUCUDA: sözlük (lib/dtc-codes) client bundle'a girmez;

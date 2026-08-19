@@ -285,15 +285,20 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
                   >
                     <MoreHorizontal className="size-5 text-text-tertiary" />
                   </DropdownMenuTrigger>
+                  {/* Menü ögeleri 44 px: ölçümde 28 px çıktılar. Tetiği 44'e
+                      büyütüp menüyü 28'de bırakmak işi YARIM yapardı — asıl
+                      dokunulan yer burası ve "Sil" bu listenin içinde.
+                      Menü zaten yalnız mobilde açılıyor (tetik md:hidden),
+                      dolayısıyla masaüstü yoğunluğu etkilenmiyor. */}
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => toggle(z)}>
+                    <DropdownMenuItem className="min-h-11" onClick={() => toggle(z)}>
                       {z.active ? t("deactivate") : t("activate")}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => openEdit(z)}>
+                    <DropdownMenuItem className="min-h-11" onClick={() => openEdit(z)}>
                       <Pencil className="size-4" /> {t("edit")}
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="text-destructive"
+                      className="min-h-11 text-destructive"
                       onClick={() => remove(z)}
                     >
                       <Trash2 className="size-4" /> {t("delete")}

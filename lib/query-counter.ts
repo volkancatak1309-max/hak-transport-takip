@@ -29,6 +29,8 @@ export type SorguSayaci = {
   toplam: number;
   /** Tablo/fonksiyon bazında döküm — hangi adımın ne kadar düşürdüğü görünsün. */
   kaynak: Record<string, number>;
+  /** Tur içi memoizasyon (#84 Adım 4) — bkz. `turMemo`. */
+  memo: Map<string, Promise<unknown>>;
 };
 
 const depo = new AsyncLocalStorage<SorguSayaci>();
@@ -40,7 +42,7 @@ const depo = new AsyncLocalStorage<SorguSayaci>();
 export function sayacIle<T>(
   is: (oku: () => SorguSayaci) => Promise<T>
 ): Promise<T> {
-  const sayac: SorguSayaci = { toplam: 0, kaynak: {} };
+  const sayac: SorguSayaci = { toplam: 0, kaynak: {}, memo: new Map() };
   return depo.run(sayac, () => is(() => sayac));
 }
 
@@ -50,4 +52,37 @@ export function sorguKaydet(kaynak: string): void {
   if (!s) return;
   s.toplam++;
   s.kaynak[kaynak] = (s.kaynak[kaynak] ?? 0) + 1;
+}
+
+/**
+ * TUR İÇİ MEMOİZASYON (#84 Adım 4).
+ *
+ * Aynı tur boyunca DEĞİŞMEYEN bir okumayı bir kez yapıp tekrar kullanmak için.
+ * İlk kullanan: `activeDepotZones()` — depo bölgeleri tur içinde değişmez ama
+ * fonksiyon 7 ayrı yerden çağrılıyor ve her çağrı DB'ye gidiyordu
+ * ([[Bekleyen-Isler]] #83, ölçüldü: tur başına 6-7 `geofences` sorgusu).
+ *
+ * ── NEDEN React `cache()` DEĞİL ────────────────────────────────────────────
+ * Depoda `cache()` deseni var (`lib/session.ts:342 isOwnerCached`) ama o
+ * Server Component bağlamında çalışıyor. Senkron turu bir Route Handler ve
+ * orada React istek kapsamının varlığı garanti değil; olmayınca `cache()`
+ * ya hiç dedupe etmez ya da davranışı sürprizli olur. Bu kap ise turu
+ * BİZİM açtığımız `sayacIle()` sağlıyor — garantili.
+ *
+ * ── KAP YOKSA DAVRANIŞ DEĞİŞMEZ ────────────────────────────────────────────
+ * Tur dışındaki her çağrı (panel sayfaları, diğer rotalar) doğrudan `uret()`e
+ * düşer, yani BUGÜNKÜ davranış. Önbellek yalnız tek bir senkron turu kadar
+ * yaşar; iki tur arasında taşınmaz, bayat veri riski yoktur.
+ *
+ * Promise saklanır (değer değil): aynı tur içinde eşzamanlı iki çağrı tek
+ * sorguya iner, ikincisi ilkinin sonucunu bekler.
+ */
+export function turMemo<T>(anahtar: string, uret: () => Promise<T>): Promise<T> {
+  const s = depo.getStore();
+  if (!s) return uret();
+  const mevcut = s.memo.get(anahtar);
+  if (mevcut) return mevcut as Promise<T>;
+  const p = uret();
+  s.memo.set(anahtar, p as Promise<unknown>);
+  return p;
 }

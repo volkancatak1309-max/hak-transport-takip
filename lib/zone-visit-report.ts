@@ -64,6 +64,7 @@ type HamZiyaret = {
   worker_id: string | null;
   started_at: string;
   ended_at: string | null;
+  last_seen_at: string;
   end_reason: string | null;
 };
 
@@ -75,10 +76,15 @@ export async function buildZoneVisitReport(range: DateRange): Promise<ZoneVisitR
   // Müşteri bölgeleri — ölçüm `purpose='customer'`e bağlı (karar B).
   const { data: zoneData, error: zoneErr } = await supabaseAdmin
     .from("geofences")
-    .select("id, name, customer_name")
+    .select("id, name, customer_name, min_dwell_s")
     .eq("purpose", "customer");
   if (zoneErr) return bos;
-  const zones = (zoneData ?? []) as { id: string; name: string; customer_name: string | null }[];
+  const zones = (zoneData ?? []) as {
+    id: string;
+    name: string;
+    customer_name: string | null;
+    min_dwell_s: number | null;
+  }[];
   if (zones.length === 0) return bos;
   bos.bolgeTanimliMi = true;
   const zoneById = new Map(zones.map((z) => [z.id, z]));
@@ -88,7 +94,7 @@ export async function buildZoneVisitReport(range: DateRange): Promise<ZoneVisitR
     (from, to) =>
       supabaseAdmin
         .from("zone_visits")
-        .select("id, zone_id, vehicle_id, worker_id, started_at, ended_at, end_reason")
+        .select("id, zone_id, vehicle_id, worker_id, started_at, ended_at, last_seen_at, end_reason")
         .in("zone_id", [...zoneById.keys()])
         .gte("started_at", range.start.toISOString())
         .lte("started_at", range.end.toISOString())
@@ -98,7 +104,22 @@ export async function buildZoneVisitReport(range: DateRange): Promise<ZoneVisitR
     "zone_visits"
   );
   if (visitErr) return { ...bos, bolgeTanimliMi: true };
-  const visits = visitData ?? [];
+  /**
+   * HENÜZ ZİYARET SAYILMAYAN AÇIK SATIRLAR ELENİR.
+   *
+   * Motor ziyareti içeri girilen İLK noktada açar; eşik (min_dwell_s)
+   * kapanışta toplam süreye uygulanır ve dolduramayan satır SİLİNİR
+   * (lib/zone-visits.ts). Arada kalan tek durum: araç şu an içeride ve daha
+   * eşiği doldurmadı. Onu raporda "ziyaret" diye göstermek, bölgenin
+   * kenarında 20 saniye duran aracı müşteri ziyareti gibi sayardı.
+   * Kapanmış satırlar zaten eşiği geçmiştir — onlara dokunulmaz.
+   */
+  const esik = new Map(zones.map((z) => [z.id, (z.min_dwell_s ?? 120) * 1000]));
+  const visits = (visitData ?? []).filter((v) => {
+    if (v.ended_at) return true;
+    const gorulen = new Date(v.last_seen_at).getTime() - new Date(v.started_at).getTime();
+    return gorulen >= (esik.get(v.zone_id) ?? 120_000);
+  });
   if (visits.length === 0) return { ...bos, bolgeTanimliMi: true };
 
   // Plaka + şoför adı sözlüğü — iki toplu sorgu, ziyaret başına değil.

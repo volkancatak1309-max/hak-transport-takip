@@ -29,7 +29,8 @@
     "verify:rapor-pdf": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-pdf.mjs",
     "verify:rapor-csv": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-csv.mjs",
     "verify:rapor-pdf-tur3": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-pdf-tur3.mjs",
-    "verify:bolge-uclari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-bolge-uclari.mjs"
+    "verify:bolge-uclari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-bolge-uclari.mjs",
+    "verify:bolge-ziyaret": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-bolge-ziyaret.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

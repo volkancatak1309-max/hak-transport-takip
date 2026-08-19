@@ -359,14 +359,13 @@ async function runSync() {
    * Ziyaret ölçümü GPS akışının önüne ASLA geçmez — kendi hata yolunda,
    * turu düşürmez.
    */
-  let ziyaret = { acilan: 0, kapanan: 0, ilerleyen: 0 };
+  let ziyaret = { acilan: 0, kapanan: 0, ilerleyen: 0, silinen: 0 };
   if (musteriBolgeleri.length > 0 && acikZiyaretListesi) {
     try {
-      const gapPlani: ZiyaretPlani = {
-        acilacak: [],
-        kapanacak: gapTimeoutKapanislari(acikZiyaretListesi),
-        ilerletilecek: [],
-      };
+      const gapPlani: ZiyaretPlani = gapTimeoutKapanislari(
+        acikZiyaretListesi,
+        musteriBolgeleri
+      );
       ziyaret = await ziyaretPlaniniYaz([...ziyaretPlanlari, gapPlani]);
     } catch (err) {
       console.error(

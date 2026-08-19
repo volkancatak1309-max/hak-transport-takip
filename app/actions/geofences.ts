@@ -88,6 +88,36 @@ function musteriAlanlari(d: { purpose: string; customer_name: string | null; min
     : { customer_name: null, min_dwell_s: 120 };
 }
 
+/**
+ * 064 YOKSA YAZMA DA DÜŞMELİ — okuma tarafındaki kademeli düşüşün karşılığı.
+ *
+ * 19.08.2026'da ölçüldü: `customer_name` / `min_dwell_s` kolonları HER yazmaya
+ * ekleniyordu. 064 koşulmamış bir kurulumda (demo) bu, **kural bölgesi bile
+ * oluşturulamaz** hâle getirdi — üstelik kullanıcıya yalnız "Kaydedilemedi"
+ * diyerek, sebebini söylemeden. Bir müşteri bölgesi ÖZELLİĞİ eklerken mevcut
+ * bölge yönetimini kırmak kabul edilemez.
+ *
+ * Kural: yeni kolonlar yalnız VARSA yazılır. Kolon yoksa (`42703` /
+ * PostgREST `PGRST204`) aynı satır o alanlar olmadan yeniden denenir ve eski
+ * davranış aynen sürer. Yalnız `purpose='customer'` gerçekten 064'e muhtaçtır;
+ * o durumda sessizce kural bölgesine düşmek YANLIŞ olurdu (kullanıcı ölçüm
+ * açtığını sanır, hiç ölçüm olmaz) → ayrı hata koduyla reddedilir.
+ */
+function kolonYok(e: { code?: string; message?: string } | null): boolean {
+  if (!e) return false;
+  if (e.code === "42703" || e.code === "PGRST204") return true;
+  const m = (e.message ?? "").toLowerCase();
+  return m.includes("customer_name") || m.includes("min_dwell_s");
+}
+
+/** Müşteri alanları çıkarılmış kopya — 064 öncesi kurulumlar için. */
+function musterisiz<T extends Record<string, unknown>>(satir: T): Record<string, unknown> {
+  const kalan: Record<string, unknown> = { ...satir };
+  delete kalan.customer_name;
+  delete kalan.min_dwell_s;
+  return kalan;
+}
+
 export async function createGeofence(
   formData: FormData
 ): Promise<GeofenceResultAction> {
@@ -96,23 +126,33 @@ export async function createGeofence(
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
   }
-  const { data, error } = await supabaseAdmin
+  const satir = {
+    name: parsed.data.name,
+    type: "circle",
+    center_lat: parsed.data.center_lat,
+    center_lng: parsed.data.center_lng,
+    radius_m: parsed.data.radius_m,
+    rule_kind: parsed.data.rule_kind,
+    purpose: parsed.data.purpose,
+    // Müşteri alanları YALNIZ purpose='customer' iken dolar: bir kural
+    // bölgesine müşteri adı iliştirmek raporda hayalet satır üretirdi.
+    ...musteriAlanlari(parsed.data),
+    active: true,
+  };
+  let { data, error } = await supabaseAdmin
     .from("geofences")
-    .insert({
-      name: parsed.data.name,
-      type: "circle",
-      center_lat: parsed.data.center_lat,
-      center_lng: parsed.data.center_lng,
-      radius_m: parsed.data.radius_m,
-      rule_kind: parsed.data.rule_kind,
-      purpose: parsed.data.purpose,
-      // Müşteri alanları YALNIZ purpose='customer' iken yazılır: bir kural
-      // bölgesine müşteri adı iliştirmek raporda hayalet satır üretirdi.
-      ...musteriAlanlari(parsed.data),
-      active: true,
-    })
+    .insert(satir)
     .select("id")
     .maybeSingle();
+  if (kolonYok(error)) {
+    // 064 yok. Müşteri bölgesi gerçekten imkânsız; diğer amaçlar eskisi gibi.
+    if (parsed.data.purpose === "customer") return { ok: false, error: "musteri_kapali" };
+    ({ data, error } = await supabaseAdmin
+      .from("geofences")
+      .insert(musterisiz(satir))
+      .select("id")
+      .maybeSingle());
+  }
   if (error || !data) return { ok: false, error: error?.message ?? "insert" };
   // Değişiklik izi: bölge sınırı vardiya OTOMATININ girdisidir (depo tetiği),
   // yani buradaki bir değişiklik vardiya kayıtlarını dolaylı olarak etkiler.
@@ -139,18 +179,20 @@ export async function updateGeofence(
     .select("*")
     .eq("id", id)
     .maybeSingle();
-  const { error } = await supabaseAdmin
-    .from("geofences")
-    .update({
-      name: parsed.data.name,
-      center_lat: parsed.data.center_lat,
-      center_lng: parsed.data.center_lng,
-      radius_m: parsed.data.radius_m,
-      rule_kind: parsed.data.rule_kind,
-      purpose: parsed.data.purpose,
-      ...musteriAlanlari(parsed.data),
-    })
-    .eq("id", id);
+  const yama = {
+    name: parsed.data.name,
+    center_lat: parsed.data.center_lat,
+    center_lng: parsed.data.center_lng,
+    radius_m: parsed.data.radius_m,
+    rule_kind: parsed.data.rule_kind,
+    purpose: parsed.data.purpose,
+    ...musteriAlanlari(parsed.data),
+  };
+  let { error } = await supabaseAdmin.from("geofences").update(yama).eq("id", id);
+  if (kolonYok(error)) {
+    if (parsed.data.purpose === "customer") return { ok: false, error: "musteri_kapali" };
+    ({ error } = await supabaseAdmin.from("geofences").update(musterisiz(yama)).eq("id", id));
+  }
   if (error) return { ok: false, error: error.message };
   await auditChange(session.worker_id ?? null, "update", "geofences", id,
     once as Record<string, unknown> | null, parsed.data);

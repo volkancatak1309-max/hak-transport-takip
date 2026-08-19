@@ -142,7 +142,10 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
     try {
       const res = editing ? await updateGeofence(fd) : await createGeofence(fd);
       if (!res.ok) {
-        toast.error(t("save_error"));
+        // "Kaydedilemedi" tek başına sebebi söylemiyor. 064 koşulmamış bir
+        // kurulumda müşteri bölgesi GERÇEKTEN açılamaz; bunu genel hataya
+        // gömmek yöneticiyi kendi verisinde hata aramaya gönderirdi.
+        toast.error(res.error === "musteri_kapali" ? t("err_musteri_kapali") : t("save_error"));
         return;
       }
       toast.success(t("saved"));

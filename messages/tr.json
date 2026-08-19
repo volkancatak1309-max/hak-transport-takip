@@ -297,6 +297,7 @@
       "customer": "Bu alanda geçirilen süre ölçülür ve Bölge Süreleri raporuna işlenir — faturaya ek olarak verilebilir."
     },
     "customer_name_label": "Müşteri adı (isteğe bağlı)",
+    "err_musteri_kapali": "Bu kurulumda müşteri bölgesi henüz açık değil (veritabanı güncellemesi gerekiyor). Diğer bölge türleri çalışıyor.",
     "customer_name_ph": "Raporda görünecek ad",
     "min_dwell_label": "En az kalış (sn)",
     "min_dwell_hint": "Bu süreden kısa duruşlar ziyaret sayılmaz — yoldan geçen araç faturaya girmesin.",

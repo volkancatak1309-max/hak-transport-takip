@@ -18,6 +18,14 @@ import {
 } from "@/lib/telemetry";
 import { processAutoShifts, type AutoShiftSummary } from "@/lib/auto-shift";
 import { sayacIle } from "@/lib/query-counter";
+import {
+  acikZiyaretler,
+  aktifMusteriBolgeleri,
+  gapTimeoutKapanislari,
+  ziyaretPlaniHesapla,
+  ziyaretPlaniniYaz,
+  type ZiyaretPlani,
+} from "@/lib/zone-visits";
 
 // Service-role Supabase + outbound flespi fetch → must run on Node, never edge.
 export const runtime = "nodejs";
@@ -39,7 +47,13 @@ const FIRST_WINDOW_MS = 60 * 60 * 1000; // 1 h
  * `Authorization: Bearer <secret>` (Vercel cron). Comparison is timing-safe.
  * The auth check is shared with /api/flespi/ingest via lib/flespi-auth.
  */
-type VehRow = { id: string; plate: string; flespi_device_id: number };
+type VehRow = {
+  id: string;
+  plate: string;
+  flespi_device_id: number;
+  /** Ziyaret satırına donduruluyor (FAZ C) — araç el değiştirirse geçmiş bozulmasın. */
+  assigned_worker_id: string | null;
+};
 
 async function runSync() {
   // test-visible: YAZMA yolu — cron'un telemetri çekeceği cihazlı araçlar.
@@ -48,7 +62,7 @@ async function runSync() {
   // o aracın telemetrisini sessizce durdururdu.
   const { data, error } = await supabaseAdmin
     .from("vehicles")
-    .select("id, plate, flespi_device_id")
+    .select("id, plate, flespi_device_id, assigned_worker_id")
     .not("flespi_device_id", "is", null);
   if (error) {
     // Don't swallow a vehicles-query failure as a silent { ok:true, vehicles:0 }:
@@ -109,6 +123,25 @@ async function runSync() {
     dtc: Awaited<ReturnType<typeof fetchDeviceMessages>>["dtc"];
     dtcNumber: number | null;
   }[] = [];
+
+  /**
+   * MÜŞTERİ BÖLGESİ ZİYARETLERİ (FAZ C, migration 064) — TUR BAŞINA +3 SORGU.
+   *
+   * Döngüden ÖNCE iki okuma (bölgeler + açık ziyaretler), döngü İÇİNDE
+   * **sıfır** sorgu (saf geometri, noktalar zaten bellekte), döngüden SONRA
+   * iki toplu yazma. Araç sayısından bağımsız — #84'ün kazandığını geri
+   * vermez.
+   *
+   * Ölçüm YALNIZ `purpose='customer'` bölgelerde yapılır, `category`'de değil
+   * (Volkan kararı B): fatura kanıtı telefon menüsünden değişemez.
+   *
+   * Bölge yoksa `bolgeler` boş döner ve tüm ziyaret yolu sessizce atlanır —
+   * HAK61'de bugün müşteri bölgesi tanımlı değil, yani davranış değişmiyor.
+   */
+  const musteriBolgeleri = await aktifMusteriBolgeleri();
+  const acikZiyaretListesi =
+    musteriBolgeleri.length > 0 ? await acikZiyaretler() : [];
+  const ziyaretPlanlari: ZiyaretPlani[] = [];
 
   for (const v of vehicles) {
     try {
@@ -192,6 +225,30 @@ async function runSync() {
           break;
         }
       }
+      /**
+       * ZİYARET PLANI — SAF HESAP, SIFIR SORGU (FAZ C).
+       * Bölge yoksa ya da açık ziyaret listesi okunamadıysa hiç çalışmaz.
+       * `worker_id` ziyaret anında donduruluyor: araç sonradan el değiştirirse
+       * geçmiş ziyaretin şoförü değişmesin.
+       */
+      if (musteriBolgeleri.length > 0 && acikZiyaretListesi) {
+        ziyaretPlanlari.push(
+          ziyaretPlaniHesapla(
+            v.id,
+            v.assigned_worker_id ?? null,
+            points
+              .filter((p) => p.latitude !== null && p.longitude !== null)
+              .map((p) => ({
+                latitude: p.latitude,
+                longitude: p.longitude,
+                recorded_at: p.recorded_at,
+              })),
+            musteriBolgeleri,
+            acikZiyaretListesi.filter((z) => z.vehicle_id === v.id)
+          )
+        );
+      }
+
       // Toplu yazma + ikinci geçiş için taşınan iş
       toplananlar.push({ v, points, dtc, dtcNumber });
       perVehicle.push({
@@ -290,6 +347,35 @@ async function runSync() {
     }
   }
 
+  /**
+   * ZİYARETLERİ YAZ — döngüden SONRA, toplu (FAZ C).
+   *
+   * Gap bekçisi aynı partiye katılır: sinyali kesilmiş açık ziyaretler
+   * `last_seen_at` ile kapanır (`gap_timeout`). GÖZLEMLENMEMİŞ SÜRE ASLA
+   * SAYILMAZ — cihaz susmuşsa aracın hâlâ müşteride olduğunu bilmiyoruz,
+   * süre son doğrulanmış anda durur. Ek sorgu YOK: açık ziyaretlerin tamamı
+   * tur başında zaten okundu.
+   *
+   * Ziyaret ölçümü GPS akışının önüne ASLA geçmez — kendi hata yolunda,
+   * turu düşürmez.
+   */
+  let ziyaret = { acilan: 0, kapanan: 0, ilerleyen: 0 };
+  if (musteriBolgeleri.length > 0 && acikZiyaretListesi) {
+    try {
+      const gapPlani: ZiyaretPlani = {
+        acilacak: [],
+        kapanacak: gapTimeoutKapanislari(acikZiyaretListesi),
+        ilerletilecek: [],
+      };
+      ziyaret = await ziyaretPlaniniYaz([...ziyaretPlanlari, gapPlani]);
+    } catch (err) {
+      console.error(
+        "[flespi/sync] ziyaret yazımı başarısız:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
   // Rölanti bekçisi (migration 024): sinyali kesilmiş açık epizodları
   // last_seen_at ile kapat. throw etmez — GPS senkronunu düşürmez.
   let idleClosed = 0;
@@ -313,6 +399,7 @@ async function runSync() {
     totalSaved,
     perVehicle,
     idleClosed,
+    ziyaret,
     autoShifts,
   };
 }

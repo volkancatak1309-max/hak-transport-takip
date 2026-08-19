@@ -49,6 +49,7 @@ const nokta = (sn, yer) => ({ ...yer, recorded_at: an(sn) });
 
 const BOLGE = {
   id: "z1",
+  created_at: an(-3600), // bir saat once tanimlanmis: tum test noktalari sonrasinda
   name: "Test müşteri",
   center_lat: 47.4,
   center_lng: 9.7,
@@ -208,6 +209,38 @@ console.log("\n── A) SAF DAVRANIŞ ─────────────�
   );
 }
 
+// A10 — REGRESYON: bolgeden ESKI noktalar olculmez.
+// Canlida yakalandi (demo, 20.08.2026): bolge 21:01'de tanimlandi, ziyaretin
+// basi 20:07 cikti — tanimlanmadan onceki 54 dakika faturaya girecekti.
+{
+  const gencBolge = { ...BOLGE, created_at: an(100) }; // 100. saniyede dogdu
+  const p = ziyaretPlaniHesapla(
+    "a1", "w1",
+    [nokta(0, ICERI), nokta(50, ICERI), nokta(150, ICERI), nokta(400, ICERI)],
+    [gencBolge], []
+  );
+  ok(
+    "A10 bölge doğmadan önceki noktalar sayılmaz — başlangıç ilk YENİ nokta",
+    p.yeni.length === 1 && p.yeni[0].started_at === an(150),
+    `beklenen ${an(150)}, gelen ${p.yeni[0]?.started_at}`
+  );
+}
+
+// A11 — dogumdan once iceride olan arac: sure yalniz gozlemlenen kisim.
+{
+  const gencBolge = { ...BOLGE, created_at: an(100), min_dwell_s: 60 };
+  const p = ziyaretPlaniHesapla(
+    "a1", "w1",
+    [nokta(0, ICERI), nokta(200, ICERI), nokta(400, DISARI)],
+    [gencBolge], []
+  );
+  ok(
+    "A11 doğumdan önce içerideyken ziyaret 200'de başlar, 400'de biter",
+    p.yeni.length === 1 && p.yeni[0].started_at === an(200) && p.yeni[0].ended_at === an(400),
+    JSON.stringify(p.yeni)
+  );
+}
+
 console.log("\n── B) GERÇEK VERİYLE TEKRAR OYNATMA ────────────────────────");
 
 const BASLANGIC = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
@@ -282,16 +315,50 @@ if (!secilen || noktalar.length < 30) {
       center_lng: merkez.longitude,
       radius_m: 200,
       min_dwell_s: 180, // eski kodun ASLA dolduramadığı eşik
+      created_at: noktalar[0].recorded_at, // izin tamamı bölgeden sonra sayılsın
       customer_name: "Kanıt A.Ş.",
     };
 
-    // BAĞIMSIZ GERÇEK: bölge içindeki ilk ve son noktanın arası (motoru
-    // kullanmadan, doğrudan noktalardan).
-    const icerdekiler = noktalar.filter(
-      (p) => metre(p, { latitude: bolge.center_lat, longitude: bolge.center_lng }) <= bolge.radius_m
+    /**
+     * BAĞIMSIZ GERÇEK — motorun HİÇBİR kodunu kullanmadan, doğrudan noktalardan.
+     *
+     * ⚠️ İLK SÜRÜM YANLIŞTI ve 20.08.2026'da düştü: "bölgedeki ilk nokta →
+     * bölgedeki son nokta" diyordu. Araç gün içinde bölgeye İKİ KEZ girmişse bu
+     * aralık, aradaki ayrılığı da içine alır ve motorun (doğru olarak) ikiye
+     * böldüğü ziyaretle kıyaslanamaz. Kusur ölçüm kurgusundaydı, motorda değil.
+     *
+     * Doğrusu: noktaları zaman sırasıyla gez, KESİNTİSİZ içeride kalınan
+     * parçaları çıkar. Parça, dışarıdaki İLK noktada biter — motorun `exit`
+     * anını seçtiği yerin aynısı, ama bağımsız yazılmış bir döngüyle.
+     */
+    const icerdeMi = (p) =>
+      metre(p, { latitude: bolge.center_lat, longitude: bolge.center_lng }) <= bolge.radius_m;
+    const parcalar = [];
+    let acikParca = null;
+    for (const p of noktalar) {
+      if (Date.parse(p.recorded_at) < Date.parse(bolge.created_at)) continue;
+      if (icerdeMi(p)) {
+        if (!acikParca) acikParca = { bas: p.recorded_at, sonIceri: p.recorded_at, bit: null };
+        else acikParca.sonIceri = p.recorded_at;
+      } else if (acikParca) {
+        acikParca.bit = p.recorded_at;
+        parcalar.push(acikParca);
+        acikParca = null;
+      }
+    }
+    if (acikParca) parcalar.push(acikParca); // hâlâ içeride
+    const esikMs = bolge.min_dwell_s * 1000;
+    const sayilan = parcalar.filter(
+      (x) => Date.parse(x.bit ?? x.sonIceri) - Date.parse(x.bas) >= esikMs
     );
-    const gercekBas = icerdekiler[0]?.recorded_at;
-    const gercekSon = icerdekiler[icerdekiler.length - 1]?.recorded_at;
+    const enUzunParca = [...sayilan].sort(
+      (a, b) =>
+        Date.parse(b.bit ?? b.sonIceri) - Date.parse(b.bas) -
+        (Date.parse(a.bit ?? a.sonIceri) - Date.parse(a.bas))
+    )[0];
+    console.log(
+      `  bağımsız: ${parcalar.length} içeride-parça, eşiği geçen ${sayilan.length}`
+    );
 
     // ── CRON SİMÜLASYONU: 2 dakikalık dilimler, DB durumu bellekte tutulur.
     const DILIM_MS = 2 * 60 * 1000;
@@ -355,36 +422,37 @@ if (!secilen || noktalar.length < 30) {
       "hiç ziyaret üretilmedi"
     );
 
-    const olculen = enUzun ?? acikKalan;
-    if (olculen) {
-      const motorBas = olculen.started_at;
+    ok(
+      "B2 ziyaret SAYISI bağımsız hesapla aynı",
+      tamamlanan.length + acik.length === sayilan.length,
+      `bağımsız ${sayilan.length} · motor ${tamamlanan.length} tamamlanan + ${acik.length} açık`
+    );
+
+    if (enUzunParca) {
+      const olculen = enUzun ?? acikKalan;
       ok(
-        "B2 ziyaretin başlangıcı, bölgeye giren İLK gerçek noktadır",
-        motorBas === gercekBas,
-        `bağımsız ${gercekBas} · motor ${motorBas}`
+        "B3 en uzun ziyaretin BAŞLANGICI bağımsız hesapla birebir aynı",
+        olculen?.started_at === enUzunParca.bas,
+        `bağımsız ${enUzunParca.bas} · motor ${olculen?.started_at}`
       );
-      if (enUzun) {
+      if (enUzun && enUzunParca.bit) {
         const motorSure = Date.parse(enUzun.ended_at) - Date.parse(enUzun.started_at);
-        const gercekSure = Date.parse(gercekSon) - Date.parse(gercekBas);
-        // Motor çıkışı, bölge DIŞINDAKİ ilk noktada kapatır; bağımsız hesap ise
-        // içerideki SON noktayı alır. Aradaki fark tam olarak bir örnekleme
-        // aralığıdır — 5 dakikayı aşmamalı.
-        const fark = Math.abs(motorSure - gercekSure);
+        const gercekSure = Date.parse(enUzunParca.bit) - Date.parse(enUzunParca.bas);
         ok(
-          "B3 süre bağımsız hesapla örtüşüyor (fark ≤ 1 örnekleme aralığı)",
-          fark <= 5 * 60000,
-          `motor ${Math.round(motorSure / 60000)} dk · bağımsız ${Math.round(gercekSure / 60000)} dk`
+          "B4 en uzun ziyaretin SÜRESİ bağımsız hesapla birebir aynı",
+          motorSure === gercekSure,
+          `motor ${Math.round(motorSure / 1000)} sn · bağımsız ${Math.round(gercekSure / 1000)} sn`
         );
         console.log(
-          `  motor süresi ${Math.round(motorSure / 60000)} dk · bağımsız ${Math.round(gercekSure / 60000)} dk`
+          `  motor ${Math.round(motorSure / 60000)} dk · bağımsız ${Math.round(gercekSure / 60000)} dk`
         );
       } else {
-        console.log(`  (araç hâlâ içeride — süre YOK, doğru davranış)`);
+        console.log("  (en uzun parça hâlâ açık — süre YOK, doğru davranış)");
       }
     }
 
     ok(
-      "B4 eşik(180 sn) tur penceresinden(120 sn) uzunken de ölçüm çalıştı",
+      "B5 eşik(180 sn) tur penceresinden(120 sn) uzunken de ölçüm çalıştı",
       tamamlanan.length > 0 || acikKalan !== null
     );
   }

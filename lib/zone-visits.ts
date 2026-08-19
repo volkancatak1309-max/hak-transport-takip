@@ -46,6 +46,8 @@ export type MusteriBolgesi = {
   radius_m: number;
   min_dwell_s: number;
   customer_name: string | null;
+  /** Ölçüm bu andan ÖNCE başlayamaz — bkz. `ziyaretPlaniHesapla`. */
+  created_at: string;
 };
 
 export type AcikZiyaret = {
@@ -80,7 +82,7 @@ export async function aktifMusteriBolgeleri(): Promise<MusteriBolgesi[]> {
     try {
       const { data, error } = await supabaseAdmin
         .from("geofences")
-        .select("id, name, center_lat, center_lng, radius_m, min_dwell_s, customer_name")
+        .select("id, name, center_lat, center_lng, radius_m, min_dwell_s, customer_name, created_at")
         .eq("active", true)
         .eq("purpose", "customer");
       if (error || !data) return [];
@@ -171,6 +173,21 @@ export function ziyaretPlaniHesapla(
 
   for (const b of bolgeler) {
     const esikMs = Math.max(1, b.min_dwell_s) * 1000;
+    /**
+     * ── ÖLÇÜM BÖLGE TANIMLANDIĞI AN BAŞLAR (canlıda ölçüldü, 20.08.2026) ──
+     *
+     * Bir tur, flespi'den `lastRecordedAt`ten beri biriken noktaları çeker; bu
+     * yığın bölgenin doğduğu andan ESKİ noktalar içerebilir. Demo testinde tam
+     * bu oldu: bölge 21:01'de tanımlandı, açılan ziyaretin başlangıcı 20:07
+     * çıktı — yani müşteri sahası tanımlanmadan önceki 54 dakika faturaya
+     * girecekti. Sessiz ve yanlış: ekranın kendi metni *"ölçüm o andan itibaren
+     * başlar"* diye söz veriyor.
+     *
+     * Bölgeden eski noktalar bu yüzden HİÇ değerlendirilmez. Araç bölge
+     * tanımlanırken zaten içerideyse ziyareti ilk YENİ noktada başlar — ondan
+     * öncesini gözlemlemiş sayılmayız.
+     */
+    const dogum = new Date(b.created_at).getTime();
     // DB'de duran açık ziyaret (varsa) — bu tur onu sürdürür ya da kapatır.
     let acikSatir: AcikZiyaret | null = acik.find((z) => z.zone_id === b.id) ?? null;
     // Bu turda başlayan, henüz DB'de olmayan ziyaretin başlangıcı.
@@ -178,6 +195,7 @@ export function ziyaretPlaniHesapla(
     let sonIceri: string | null = null;
 
     for (const n of sirali) {
+      if (Number.isFinite(dogum) && ms(n.recorded_at) < dogum) continue;
       const icerde = pointInCircleM(
         n.latitude,
         n.longitude,

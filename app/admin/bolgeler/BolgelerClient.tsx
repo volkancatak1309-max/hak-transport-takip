@@ -5,7 +5,9 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Loader2, Plus, Hexagon, Pencil, Trash2, Ban, ShieldCheck } from "lucide-react";
+import {
+  Loader2, Plus, Hexagon, Pencil, Trash2, Ban, ShieldCheck, MoreHorizontal,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,6 +17,12 @@ import {
   StatusChip,
 } from "@/components/ui-v2";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -52,6 +60,7 @@ type StateFilter = "all" | "active" | "passive";
 
 export function BolgelerClient({ zones }: { zones: Geofence[] }) {
   const t = useTranslations("zones");
+  const tc = useTranslations("common");
   const router = useRouter();
 
   const [ruleFilter, setRuleFilter] = useState<RuleFilter>("all");
@@ -241,27 +250,73 @@ export function BolgelerClient({ zones }: { zones: Geofence[] }) {
                   <span className="min-w-0 break-words text-sm font-medium">{z.name}</span>
                   {!z.active && <StatusChip tone="neutral">{t("passive")}</StatusChip>}
                 </div>
+                {/* HAM KOORDİNAT MOBİLDE GİZLİ (19.08.2026, referans: Apple
+                    Maps "Saved Places" / Careem "Saved addresses").
+                    Ölçüldü, 393 px: "Sadece burada (çıkılmamalı) · 500 m ·
+                    47.45576, 9.74036" satırın yarısını yiyordu ve koordinatı
+                    kimse listede okumuyor — insan konumu HARİTADA görür.
+                    Masaüstünde KALIYOR: orada yer bol ve yönetici bazen
+                    koordinatı kopyalıyor. */}
                 <p className="nums mt-0.5 text-xs text-text-tertiary">
-                  {t(`rule.${z.rule_kind}`)} · {Math.round(z.radius_m)} m ·{" "}
-                  {z.center_lat.toFixed(5)}, {z.center_lng.toFixed(5)}
+                  {t(`rule.${z.rule_kind}`)} · {Math.round(z.radius_m)} m
+                  <span className="hidden md:inline">
+                    {" · "}
+                    {z.center_lat.toFixed(5)}, {z.center_lng.toFixed(5)}
+                  </span>
                 </p>
               </div>
-              <div className="flex items-center gap-1.5">
-                <Button variant="outline" size="sm" onClick={() => toggle(z)}>
-                  {z.active ? t("deactivate") : t("activate")}
-                </Button>
-                <Button variant="ghost" size="icon-sm" aria-label={t("edit")} onClick={() => openEdit(z)}>
-                  <Pencil className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t("delete")}
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => remove(z)}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
+              {/* EYLEMLER — mobilde tek "···" menüsü, masaüstünde AYNEN eskisi.
+                  Ölçüldü, 393 px: üç düğme de 28 px yüksekliğindeydi (Apple
+                  asgarisi 44) ve bunlardan biri SİL — geri dönüşü olmayan bir
+                  eylem, yanlış dokunmaya en açık boyutta. Üstelik satıra
+                  sığmayıp alta sarıyor, satırı 126 px'e çıkarıyorlardı.
+                  `md:contents` sarmalayıcıyı masaüstünde düzenden ŞEFFAF
+                  kılar → orada üç düğme yine li'nin doğrudan flex öğesi. */}
+              <div className="md:contents">
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        className="size-11 shrink-0 p-0 md:hidden"
+                        aria-label={tc("actions")}
+                      />
+                    }
+                  >
+                    <MoreHorizontal className="size-5 text-text-tertiary" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => toggle(z)}>
+                      {z.active ? t("deactivate") : t("activate")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openEdit(z)}>
+                      <Pencil className="size-4" /> {t("edit")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={() => remove(z)}
+                    >
+                      <Trash2 className="size-4" /> {t("delete")}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <div className="hidden items-center gap-1.5 md:flex">
+                  <Button variant="outline" size="sm" onClick={() => toggle(z)}>
+                    {z.active ? t("deactivate") : t("activate")}
+                  </Button>
+                  <Button variant="ghost" size="icon-sm" aria-label={t("edit")} onClick={() => openEdit(z)}>
+                    <Pencil className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t("delete")}
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() => remove(z)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
               </div>
             </li>
           ))}

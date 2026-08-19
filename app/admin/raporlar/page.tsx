@@ -9,6 +9,7 @@ import {
   Milestone,
   TrendingUp,
   Fuel,
+  MapPinned,
 } from "lucide-react";
 import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
@@ -59,7 +60,10 @@ export default async function ReportsPage() {
   // Kart altyazılarındaki hacimler — head:true ile yalnız sayım döner (satır
   // taşınmaz). Sayım başarısızsa kart yine görünür, yalnız hacim "—" olur.
   const scope = await getTestScope();
-  const [events, idle, shifts, vehicles] = await Promise.all([
+  // Bölge Süreleri kartı KOŞULLU: müşteri bölgesi tanımlı değilse kart hiç
+  // çıkmaz (yukarıdaki kural — boş bir modül, olmayan bir yeteneği varmış gibi
+  // gösterir). Ölçüm `purpose='customer'`e bağlı, `category`ye değil.
+  const [events, idle, shifts, vehicles, customerZones, zoneVisits] = await Promise.all([
     supabaseAdmin.from("vehicle_events").select("id", { count: "exact", head: true }),
     supabaseAdmin.from("idle_episodes").select("id", { count: "exact", head: true }),
     withoutTestRows(
@@ -75,6 +79,11 @@ export default async function ReportsPage() {
       "id",
       scope.vehicleIds
     ),
+    supabaseAdmin
+      .from("geofences")
+      .select("id", { count: "exact", head: true })
+      .eq("purpose", "customer"),
+    supabaseAdmin.from("zone_visits").select("id", { count: "exact", head: true }),
   ]);
   const n = (c: number | null) => (c === null ? "—" : c.toLocaleString("tr-TR"));
 
@@ -162,6 +171,18 @@ export default async function ReportsPage() {
               metaValue={n(events.count)}
               metaLabel={t("unit_events")}
             />
+            {(customerZones.count ?? 0) > 0 && (
+              <ReportCard
+                href="/admin/raporlar/bolge-sureleri"
+                icon={MapPinned}
+                title={t("zone_title")}
+                description={t("zone_desc")}
+                contains={[t("zone_c1"), t("zone_c2"), t("zone_c3")]}
+                metaValue={n(zoneVisits.count)}
+                metaLabel={t("unit_visits")}
+                hint={t("zone_hint")}
+              />
+            )}
           </div>
         </section>
 

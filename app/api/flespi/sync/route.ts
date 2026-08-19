@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { flespiAuthorized } from "@/lib/flespi-auth";
 import { fetchDeviceMessages } from "@/lib/flespi";
 import {
+  activeDtcBatch,
   idleCursorsBatch,
   lastRecordedAt,
   lastRecordedAtBatch,
@@ -250,10 +251,26 @@ async function runSync() {
    * yazmadan SONRAYA alındı — sıra bağımlılığı korundu.
    * Her ikisi de kendi try/catch'inde: GPS akışını ASLA düşürmezler.
    */
+  /**
+   * AKTİF ARIZA KODLARI — GEÇİŞ 2'DEN ÖNCE, TEK SORGUDA (#116).
+   *
+   * `saveDtc` her araç için aktif listeyi ayrı okuyordu: ölçüldü, yoğun turda
+   * `vehicle_dtc` **29** sorgu. Migration gerekmedi — "araç başına en yeni
+   * satır" değil "tüm aktif satırlar" istendiği için düz bir filtre yetiyor.
+   *
+   * Okuma burada, GEÇİŞ 2'nin başında yapılır: her aracın `saveDtc`'si yalnız
+   * KENDİ satırlarına dokunduğu için araçlar arası bayatlama olmaz. Aynı araçta
+   * birden çok anlık görüntü varsa ikinci ve sonrakiler `saveDtc` içinde CANLI
+   * okunur (bkz. lib/telemetry.ts).
+   *
+   * GERİ DÜŞÜŞ (Adım 5): null dönerse tohum verilmez, eski yol çalışır.
+   */
+  const aktifDtc = await activeDtcBatch(toplananlar.map((t) => t.v.id));
+
   for (const t of toplananlar) {
     if (t.dtc.length > 0) {
       try {
-        await saveDtc(t.v.id, t.dtc);
+        await saveDtc(t.v.id, t.dtc, aktifDtc?.get(t.v.id));
       } catch (err) {
         console.error(
           `[flespi/sync] ${t.v.plate}: vehicle_dtc yazılamadı:`,

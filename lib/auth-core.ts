@@ -229,11 +229,31 @@ export async function verifyCredentials(input: {
   }
   const worker = (matches?.[0] ?? null) as AuthWorker | null;
   const kanonik = parsed.data.phone;
+  /**
+   * HASH BİÇİMİ — DEĞERİ DEĞİL. Basılan tek şey sınıf adı ve UZUNLUK.
+   * Neden gerekli: "PIN yanlış" ile "kayıtta PIN yok / PIN düz metin yazılmış /
+   * hash bozuk" birbirinden AYIRT EDİLEMİYOR — üçü de bcrypt.compare=false
+   * verir. Uzunluk 60 → bcrypt; 6 → düz metin PIN yazılmış demektir.
+   */
+  const hashSinifi = (h: unknown): string => {
+    if (h === null || h === undefined) return "NULL";
+    if (typeof h !== "string") return "tip-" + typeof h;
+    if (h.length === 0) return "BOS";
+    if (/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(h)) return "bcrypt-gecerli";
+    if (/^\$2[aby]\$/.test(h)) return "bcrypt-BOZUK";
+    return "BCRYPT-DEGIL";
+  };
   teshis("KAYIT-ARAMA", {
     kanonikSon4: canonicalPhone(kanonik).slice(-4),
     varyantSayisi: phoneVariants(kanonik).length,
     eslesenKayit: matches?.length ?? 0,
     workerAktif: worker?.is_active ?? null,
+    yonetici: worker?.is_admin ?? null,
+    mustChangePin: worker?.must_change_pin ?? null,
+    soforSayilir: worker?.counts_as_driver ?? null,
+    hashSinif: worker ? hashSinifi(worker.pin_hash) : "-",
+    hashUzunluk:
+      typeof worker?.pin_hash === "string" ? worker.pin_hash.length : null,
   });
 
   // Always run exactly one bcrypt compare — against the real hash, or a dummy
@@ -248,7 +268,41 @@ export async function verifyCredentials(input: {
   teshis("PIN-KARSILASTIRMA", { pinOk, kayitVar: !!worker, sonuc: authed });
 
   if (!authed || !worker) {
-    return failureResult(await registerFailure(identifier));
+    /**
+     * GÖLGE KAYIT AVI — aynı numaranın ikinci, "kirli" bir kopyası var mı?
+     * Giriş sorgusu SANITIZE EDİLMİŞ varyantlarla arıyor; görünmez karakter
+     * taşıyan bir kopya o listeye HİÇ düşmez — ama yönetici panelinde
+     * düzenlenen kayıt O olabilir: PIN doğru yazılır, giriş başka satıra bakar.
+     * Basılan: kaç satır, her birinin UZUNLUĞU ve RAKAM OLMAYAN karakterleri.
+     * Numaraların kendisi yine basılmaz.
+     */
+    const son7 = canonicalPhone(kanonik).slice(-7);
+    const { data: benzer, error: benzerErr } = await supabaseAdmin
+      .from("workers")
+      .select("phone, is_active, is_admin")
+      .ilike("phone", "%" + son7 + "%");
+    teshis("BENZER-KAYIT", {
+      son7Eslesen: benzer?.length ?? 0,
+      hata: benzerErr?.message?.slice(0, 40) ?? null,
+      bicimler: (
+        (benzer ?? []) as {
+          phone: string | null;
+          is_active: boolean;
+          is_admin: boolean;
+        }[]
+      ).map((b) => ({
+        uz: (b.phone ?? "").length,
+        rd: rakamDisi(b.phone ?? ""),
+        aktif: b.is_active,
+        yon: b.is_admin,
+      })),
+    });
+    const basarisiz = await registerFailure(identifier);
+    teshis("KILIT", {
+      deneme: basarisiz.attempts,
+      kilitBitis: basarisiz.lockedUntil,
+    });
+    return failureResult(basarisiz);
   }
 
   // ŞOFÖR PANELİ KAPALI MÜŞTERİ (Sendigo): şoförün gideceği bir yer yok.

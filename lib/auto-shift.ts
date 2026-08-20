@@ -371,6 +371,49 @@ async function lastActivityMs(vehicleId: string, shift: OpenShift): Promise<numb
   );
 }
 
+/** Otomatik vardiya kapısının okuduğu şoför alanları — tekil ve toplu yol AYNI küme. */
+type SoforKunyesi = {
+  id: string;
+  name: string | null;
+  is_active: boolean | null;
+  telegram_chat_id: string | null;
+  telegram_locale: string | null;
+};
+
+/**
+ * ŞOFÖR KÜNYELERİ TOPLU — araç başına 1 sorgu yerine TUR BAŞINA 1 (#131a).
+ *
+ * Otomatik başlatma kapısını geçen her araç için döngü içinde tek bir şoför
+ * satırı okunuyordu. Cron'un KENDİ logunda ölçüldü (20.08.2026): gece turunda
+ * `workers` 22 sorgu — turun 57 sorgusunun 22'si. El çağrısıyla yapılan
+ * ölçümlerde bu yol 8'de kaldığı için #84 boyunca hiç göze batmadı.
+ *
+ * Döngü zaten şoför bağlamının geri kalanını (`openByWorker`, `startedToday`,
+ * `onLeaveToday`) toplu kuruyor; eksik olan tek şey künyeydi. Migration
+ * GEREKTİRMEZ — düz bir `.in()` okuması.
+ *
+ * GERİ DÜŞÜŞ: `null` dönerse döngü araç-araç eski yola döner, davranış birebir
+ * aynı kalır (Adım 5 deseni).
+ */
+async function workersByIdBatch(
+  workerIds: string[]
+): Promise<Map<string, SoforKunyesi> | null> {
+  if (workerIds.length === 0) return new Map();
+  const { data, error } = await supabaseAdmin
+    .from("workers")
+    .select("id, name, is_active, telegram_chat_id, telegram_locale")
+    .in("id", workerIds);
+  if (error) {
+    console.warn(
+      `[auto-shift] şoför künyeleri toplu okunamadı (${error.message}) — araç-araç eski yola dönülüyor`
+    );
+    return null;
+  }
+  const harita = new Map<string, SoforKunyesi>();
+  for (const w of (data ?? []) as SoforKunyesi[]) harita.set(w.id, w);
+  return harita;
+}
+
 /** Telegram'a bağlı tüm adminler (best-effort bildirimler için). */
 async function linkedAdmins(): Promise<{ chat: string; locale: string | null }[]> {
   // test-visible: alıcı listesi (is_admin). Özne elemesi araç taramasında —
@@ -506,6 +549,22 @@ export async function processAutoShifts(
      */
     const canliTelemetri = await latestTelemetryBatch(vehicles.map((v) => v.id));
 
+    /**
+     * ŞOFÖR KÜNYELERİ — DÖNGÜDEN ÖNCE, TEK SORGU (#131a).
+     *
+     * Aday kümesi döngü içindeki ucuz guard'lardan geçenler; onları burada
+     * daraltmıyoruz çünkü guard'lar araç durumuna bakıyor ve toplu okuma zaten
+     * araç sayısından bağımsız TEK sorgu. Atanmış şoförü olan tüm araçların
+     * künyesi bir kerede okunur, döngü haritadan bakar.
+     */
+    const soforKunyeleri = await workersByIdBatch([
+      ...new Set(
+        vehicles
+          .map((v) => v.assigned_worker_id)
+          .filter((x): x is string => typeof x === "string" && x.length > 0)
+      ),
+    ]);
+
     for (const v of vehicles) {
       summary.checked++;
       try {
@@ -537,11 +596,18 @@ export async function processAutoShifts(
           !startedToday.has(v.assigned_worker_id) &&
           !onLeaveToday.has(v.assigned_worker_id)
         ) {
-          const { data: w } = await supabaseAdmin
-            .from("workers")
-            .select("id, name, is_active, telegram_chat_id, telegram_locale")
-            .eq("id", v.assigned_worker_id)
-            .maybeSingle();
+          // Haritada YOKLUK "böyle bir şoför kaydı yok" demektir (tekil yol da
+          // null döndürürdü). Haritanın KENDİSİ null ise toplu okuma
+          // başarısız olmuştur → tekil sorguya düşülür.
+          const w = soforKunyeleri
+            ? soforKunyeleri.get(v.assigned_worker_id) ?? null
+            : (
+                await supabaseAdmin
+                  .from("workers")
+                  .select("id, name, is_active, telegram_chat_id, telegram_locale")
+                  .eq("id", v.assigned_worker_id)
+                  .maybeSingle()
+              ).data;
           if (!w || w.is_active !== true) continue;
 
           // TETİKLEYİCİ MÜŞTERİ AYARI (lib/tenant.ts):

@@ -65,7 +65,21 @@ export const adminSetPinSchema = z
 // Login is more lenient DURING the transition so workers whose PIN is still the
 // old 4-digit one are not locked out before an admin resets them to 6 digits.
 // Once everyone is migrated this can be tightened to /^\d{6}$/.
-export const loginPinSchema = z.string().regex(/^\d{4,6}$/, "errPin");
+/**
+ * ⚠️ `.trim()` ZORUNLU (20.08.2026, telefonda yaşandı).
+ *
+ * `phoneSchema` kırpıyordu, bu kırpmıyordu. Mobil klavye / şifre yöneticisi
+ * sona bir boşluk eklediğinde regex düşüyor, `verifyCredentials` "validation"
+ * dönüyor ve ekran **"Telefon veya PIN hatalı"** diyor — yani kullanıcı
+ * PIN'ini doğru yazdığı hâlde "yanlış PIN" görüyor ve hatayı asla
+ * çözemiyor. Masaüstünde ve `curl` ile hiç görünmez; yalnız gerçek telefonda
+ * çıkar. Aynı formdaki iki alandan birinin kırpıp diğerinin kırpmaması
+ * başlı başına bir tutarsızlıktı.
+ */
+export const loginPinSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4,6}$/, "errPin");
 
 export const loginSchema = z.object({
   phone: phoneSchema,

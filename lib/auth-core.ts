@@ -2,7 +2,7 @@ import "server-only";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
 import { loginSchema } from "@/lib/validation";
-import { phoneVariants } from "@/lib/phone";
+import { canonicalPhone, phoneVariants } from "@/lib/phone";
 import { DRIVER_PANEL_ENABLED } from "@/lib/tenant";
 import {
   MAX_FAILURES,
@@ -156,8 +156,37 @@ export async function verifyCredentials(input: {
   pin: unknown;
   ip: string;
 }): Promise<CredentialResult> {
+  /**
+   * ══ GEÇİCİ TEŞHİS (20.08.2026) — İŞ BİTİNCE KALDIRILACAK ══════════════
+   *
+   * Neden var: şoför girişi GERÇEK TELEFONDA iki kez düştü, oysa aynı gövde
+   * `curl` ile 200 dönüyordu. Emülasyon ve masaüstü bu farkı göremiyor;
+   * gerçekte uçtan ne geldiğini görmenin başka yolu yok.
+   *
+   * ⚠️ NE LOGLANIR, NE LOGLANMAZ:
+   *   • Telefon ve PIN'in KENDİSİ ASLA loglanmaz.
+   *   • Yalnız RAKAM OLMAYAN karakterlerin kodları basılır — görünmez
+   *     karakter/boşluk avı için yeter, numarayı ele vermez.
+   *   • PIN'den yalnız uzunluk ve "hepsi rakam mı" bilgisi çıkar.
+   *   • Kanonik numaradan yalnız SON 4 hane.
+   * Kasadaki kural: sırrı koda, kasaya, loga yazma.
+   */
+  const hamTel = typeof input.phone === "string" ? input.phone : "";
+  const hamPin = typeof input.pin === "string" ? input.pin : "";
+  const rakamDisi = (v: string) =>
+    [...v].map((c, i) => (/\d/.test(c) ? null : `${i}:${c.charCodeAt(0)}`)).filter(Boolean);
+  const teshis = (asama: string, ek: Record<string, unknown> = {}) =>
+    console.log(
+      `[login-teshis] ${asama} | telUzunluk=${hamTel.length} telRakamDisi=${JSON.stringify(rakamDisi(hamTel))}` +
+        ` pinUzunluk=${hamPin.length} pinRakamDisi=${JSON.stringify(rakamDisi(hamPin))}` +
+        ` ${Object.entries(ek).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ")}`
+    );
+
   const parsed = loginSchema.safeParse({ phone: input.phone, pin: input.pin });
-  if (!parsed.success) return { ok: false, reason: "validation" };
+  if (!parsed.success) {
+    teshis("ZOD-DUSTU", { alanlar: parsed.error.issues.map((i) => i.path.join(".")) });
+    return { ok: false, reason: "validation" };
+  }
 
   // Kilit sayacı kanonik numaraya bağlanır: aynı şoförün "+43660…" ve
   // "+430660…" yazımları tek bir sayaçta toplanır, ayrı ayrı hak kazanmaz.
@@ -194,8 +223,18 @@ export async function verifyCredentials(input: {
     .in("phone", phoneVariants(parsed.data.phone))
     .limit(2);
 
-  if (error) return { ok: false, reason: "db" };
+  if (error) {
+    teshis("DB-HATASI", { mesaj: error.message.slice(0, 60) });
+    return { ok: false, reason: "db" };
+  }
   const worker = (matches?.[0] ?? null) as AuthWorker | null;
+  const kanonik = parsed.data.phone;
+  teshis("KAYIT-ARAMA", {
+    kanonikSon4: canonicalPhone(kanonik).slice(-4),
+    varyantSayisi: phoneVariants(kanonik).length,
+    eslesenKayit: matches?.length ?? 0,
+    workerAktif: worker?.is_active ?? null,
+  });
 
   // Always run exactly one bcrypt compare — against the real hash, or a dummy
   // when the phone is unknown — so timing doesn't reveal whether the phone
@@ -206,6 +245,7 @@ export async function verifyCredentials(input: {
     worker?.pin_hash ?? DUMMY_PIN_HASH
   );
   const authed = !!worker && worker.is_active && pinOk;
+  teshis("PIN-KARSILASTIRMA", { pinOk, kayitVar: !!worker, sonuc: authed });
 
   if (!authed || !worker) {
     return failureResult(await registerFailure(identifier));

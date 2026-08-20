@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/session";
 import { geofenceSchema } from "@/lib/validation";
 import type { Geofence } from "@/lib/types";
 import { auditChange } from "@/lib/audit-change";
+import { bolgeZiyaretleriniKapat } from "@/lib/zone-visits";
 
 export type GeofenceResultAction = { ok: boolean; error?: string; id?: string };
 
@@ -215,6 +216,9 @@ export async function toggleGeofence(
     .update({ active })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+  // Bölge ölçümden çıkıyorsa açık ziyaretleri ASKIDA BIRAKMA (#136): ölçüm
+  // durduğu an onlar da kapanmalı, yoksa rapor süresiz "devam ediyor" gösterir.
+  if (!active) await bolgeZiyaretleriniKapat(id);
   await auditChange(session.worker_id ?? null, "update", "geofences", id,
     once as Record<string, unknown> | null, { active });
   revalidatePath("/admin/bolgeler");

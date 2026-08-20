@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import type { Geofence, GeofencePurpose } from "@/lib/types";
+import { bolgeZiyaretleriniKapat } from "@/lib/zone-visits";
 
 /**
  * BÖLGE VERİ KATMANI — panelin ve mobilin ORTAK kaynağı.
@@ -166,6 +167,8 @@ export async function setGeofenceActive(
     .select(COLS)
     .maybeSingle();
   if (error) throw new Error(`geofences_active:${error.code}:${error.message}`);
+  // #136 — kapanan bölgenin açık ziyaretleri askıda kalmaz.
+  if (!active) await bolgeZiyaretleriniKapat(id);
   return (data as unknown as GeofenceRow) ?? null;
 }
 
@@ -195,6 +198,8 @@ export async function setGeofenceArchived(
     .select(COLS)
     .maybeSingle();
   if (error) throw new Error(`geofences_archive:${error.code}:${error.message}`);
+  // #136 — arşiv bölgeyi AYNI ANDA kapatıyor; açık ziyaretleri de kapatmalı.
+  if (arsiv) await bolgeZiyaretleriniKapat(id);
   return (data as unknown as GeofenceRow) ?? null;
 }
 

@@ -33,8 +33,10 @@ export type ZoneVisitRow = {
   /** ms — açık ziyarette null (gözlemlenmemiş süre sayılmaz). */
   durationMs: number | null;
   endReason: string | null;
-  /** Sinyal kesildiği için kapandı → süre EKSİK olabilir. */
+  /** Süre EKSİK olabilir — sinyal kesintisi ya da ölçümün durdurulması. */
   belirsiz: boolean;
+  /** 'gap_timeout' | 'zone_closed' — rozetin metnini bu belirler. */
+  belirsizSebep: "sinyal" | "bolge" | null;
 };
 
 export type ZoneVisitSummary = {
@@ -136,7 +138,16 @@ export async function buildZoneVisitReport(range: DateRange): Promise<ZoneVisitR
 
   const rows: ZoneVisitRow[] = visits.map((v) => {
     const z = zoneById.get(v.zone_id);
-    const belirsiz = v.end_reason === "gap_timeout";
+    // İKİ AYRI EKSİKLİK, İKİ AYRI ROZET (#136):
+    //  gap_timeout → cihaz sustu, araç hâlâ içeride olabilirdi
+    //  zone_closed → biz ölçümü durdurduk, araç hâlâ içerideydi
+    // İkisi de "bu süre eksik olabilir" der ama SEBEBİ farklı; aynı rozete
+    // koymak, ölçümü kendi kararımızla kestiğimizi gizlerdi.
+    const belirsizSebep =
+      v.end_reason === "gap_timeout" ? ("sinyal" as const)
+      : v.end_reason === "zone_closed" ? ("bolge" as const)
+      : null;
+    const belirsiz = belirsizSebep !== null;
     return {
       id: v.id,
       zoneName: z?.name ?? "—",
@@ -151,6 +162,7 @@ export async function buildZoneVisitReport(range: DateRange): Promise<ZoneVisitR
         : null,
       endReason: v.end_reason,
       belirsiz,
+      belirsizSebep,
     };
   });
 

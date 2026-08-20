@@ -1537,6 +1537,8 @@
     "zone_col_note": "Not",
     "zone_uncertain": "Sinyal kesildi — süre eksik olabilir",
     "zone_uncertain_short": "Sinyal kesik",
+    "zone_closed": "Ölçüm durduruldu — bölge kapatıldı, süre eksik olabilir",
+    "zone_closed_short": "Ölçüm durdu",
     "zone_stat_total": "Toplam süre",
     "zone_stat_visits": "Ziyaret",
     "zone_stat_visits_scope": "tamamlanan + süren",

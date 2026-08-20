@@ -1537,6 +1537,8 @@
     "zone_col_note": "Hinweis",
     "zone_uncertain": "Signalabbruch — Dauer möglicherweise unvollständig",
     "zone_uncertain_short": "Signal weg",
+    "zone_closed": "Messung gestoppt — Zone deaktiviert, Dauer evtl. unvollständig",
+    "zone_closed_short": "Messung gestoppt",
     "zone_stat_total": "Gesamtdauer",
     "zone_stat_visits": "Aufenthalte",
     "zone_stat_visits_scope": "beendet + laufend",

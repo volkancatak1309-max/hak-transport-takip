@@ -375,6 +375,52 @@ export async function ziyaretPlaniniYaz(planlar: ZiyaretPlani[]): Promise<{
   return sonuc;
 }
 
+/**
+ * BÖLGE ÖLÇÜMDEN ÇIKINCA AÇIK ZİYARETLERİ KAPAT (#136).
+ *
+ * Canlı testte görüldü (20.08.2026): test bölgesi pasifleştirilince 6 açık
+ * ziyaret **askıda kaldı**. Sebebi yapısal — hem ölçüm hem gap bekçisi
+ * `active=true` müşteri bölgeleri kapısının ARDINDA çalışıyor; bölge kapanınca
+ * o ziyaretleri kapatacak hiçbir yol kalmıyor ve fatura eki süresiz
+ * "devam ediyor" satırı taşıyor.
+ *
+ * Kapanış anı `last_seen_at`: GÖZLEMLENMEMİŞ SÜRE ASLA SAYILMAZ. "Şimdi" ile
+ * kapatmak, ölçümü durdurduğumuz andan geriye kalan zamanı da faturaya
+ * yazardı — oysa aracın hâlâ içeride olduğunu doğrulayan son an o.
+ *
+ * ⚠️ `end_reason='zone_closed'` migration 068'i ister. 068 koşulmamışsa
+ * veritabanı CHECK ile reddeder (23514); o durumda satır **sebepsiz** kapanır —
+ * kapanmamış bırakmaktan iyidir, çünkü asıl arıza askıda kalmasıdır.
+ */
+export async function bolgeZiyaretleriniKapat(zoneId: string): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from("zone_visits")
+    .select("id, last_seen_at")
+    .eq("zone_id", zoneId)
+    .is("ended_at", null);
+  if (error || !data || data.length === 0) {
+    if (error) console.warn(`[zone-visits] bölge kapanışı okunamadı: ${error.message}`);
+    return 0;
+  }
+  const satirlar = data as { id: string; last_seen_at: string }[];
+  let kapanan = 0;
+  for (const z of satirlar) {
+    const { error: e1 } = await supabaseAdmin
+      .from("zone_visits")
+      .update({ ended_at: z.last_seen_at, end_reason: "zone_closed" })
+      .eq("id", z.id);
+    if (!e1) { kapanan++; continue; }
+    // 068 yoksa CHECK reddeder — sebepsiz kapat, askıda bırakma.
+    const { error: e2 } = await supabaseAdmin
+      .from("zone_visits")
+      .update({ ended_at: z.last_seen_at })
+      .eq("id", z.id);
+    if (!e2) kapanan++;
+    else console.error(`[zone-visits] bölge kapanışı yazılamadı: ${e2.message}`);
+  }
+  return kapanan;
+}
+
 /** Sinyali kesilmiş açık ziyaretleri kapatan eşik. */
 const ZIYARET_GAP_MS = 30 * 60 * 1000;
 

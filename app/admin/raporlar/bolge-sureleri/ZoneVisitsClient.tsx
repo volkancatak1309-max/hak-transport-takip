@@ -55,7 +55,7 @@ export function ZoneVisitsClient({ report }: { report: ZoneVisitReport }) {
         // Açık ziyaret CSV'de de BOŞ kalır — Excel'de 0 görünmesin.
         r.durationMs === null ? "" : Math.round(r.durationMs / 60000),
         // Belirsizlik CSV'ye de taşınır: fatura ekini açan kişi ekranı görmüyor.
-        r.belirsiz ? t("zone_uncertain") : "",
+        r.belirsizSebep === "bolge" ? t("zone_closed") : r.belirsiz ? t("zone_uncertain") : "",
       ].join(";")
     );
     // BOM + ";" ayraç: Excel'in Avusturya yerelinde doğrudan açılır (diğer
@@ -72,10 +72,16 @@ export function ZoneVisitsClient({ report }: { report: ZoneVisitReport }) {
     await noteExport("csv", "zone_visits");
   }
 
-  const belirsizRozet = (
+  /**
+   * İKİ AYRI EKSİKLİK, İKİ AYRI ROZET (#136):
+   *  "sinyal" → cihaz sustu; araç hâlâ içeride olabilirdi.
+   *  "bölge"  → ölçümü BİZ durdurduk (bölge pasifleştirildi/arşivlendi).
+   * İkisini tek etikete koymak, süreyi kendi kararımızla kestiğimizi gizlerdi.
+   */
+  const belirsizRozet = (r: ZoneVisitRow) => (
     <StatusChip tone="warning">
       <AlertTriangle className="size-3" aria-hidden />
-      {t("zone_uncertain_short")}
+      {r.belirsizSebep === "bolge" ? t("zone_closed_short") : t("zone_uncertain_short")}
     </StatusChip>
   );
 
@@ -100,7 +106,7 @@ export function ZoneVisitsClient({ report }: { report: ZoneVisitReport }) {
               {formatTime(r.startedAt, locale)} → {r.endedAt ? formatTime(r.endedAt, locale) : "—"}
             </span>
           </div>
-          {r.belirsiz && <div>{belirsizRozet}</div>}
+          {r.belirsiz && <div>{belirsizRozet(r)}</div>}
         </div>
       ),
       sortable: true,
@@ -161,7 +167,7 @@ export function ZoneVisitsClient({ report }: { report: ZoneVisitReport }) {
       cell: (r) => (
         <span className="inline-flex items-center justify-end gap-1.5">
           <span className="nums font-medium">{sure(r.durationMs)}</span>
-          {r.belirsiz && belirsizRozet}
+          {r.belirsiz && belirsizRozet(r)}
         </span>
       ),
       sortable: true,

@@ -1,22 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getTranslations } from "next-intl/server";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
-import { getTestScope } from "@/lib/test-data";
 import { requireWorker, requireAdmin } from "@/lib/session";
 import { createExpenseSchema } from "@/lib/validation";
 import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storage";
-import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
 import { formatDate } from "@/lib/format";
 import type { ExpenseEntry, ExpenseEntryWithWorker } from "@/lib/types";
 import { EXPORT_ENABLED } from "@/lib/tenant";
 import { audit } from "@/lib/security-log";
 
 const BUCKET = "expense-receipts";
-const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL || "https://hak-transport-takip.vercel.app";
-const eur = (n: number) => n.toFixed(2).replace(".", ",");
 
 export type ExpenseResult = { ok: boolean; error?: string; id?: string };
 export type PayrollCsvResult =
@@ -28,59 +22,7 @@ function revalidateExpenses() {
   revalidatePath("/admin/masraflar");
 }
 
-async function notifyAdminsExpenseSubmitted(p: {
-  workerId: string;
-  name: string;
-  category: string;
-  amount: number;
-}): Promise<void> {
-  const scope = await getTestScope();
-  if (scope.isTestWorker(p.workerId)) return;
-  // test-visible: alıcı listesi (is_admin) — özne yukarıda elendi.
-  const { data: admins } = await supabaseAdmin
-    .from("workers")
-    .select("telegram_chat_id, telegram_locale")
-    .eq("is_admin", true)
-    .not("telegram_chat_id", "is", null);
-  for (const a of admins ?? []) {
-    const locale = (a.telegram_locale as string) === "de" ? "de" : "tr";
-    const t = await getTranslations({ locale, namespace: "expense" });
-    const text = [
-      `🧾 ${t("tg_new")}`,
-      `👤 ${p.name}`,
-      `🏷 ${t(`category.${p.category}`)}`,
-      `💶 ${eur(p.amount)} €`,
-    ].join("\n");
-    const kb: InlineButton[][] = [[{ text: t("tg_btn_approvals"), url: `${APP_URL}/admin/masraflar` }]];
-    await sendTelegramMessage(a.telegram_chat_id as string, text, null, kb);
-  }
-}
 
-async function notifyDriverExpenseDecision(entryId: string, approved: boolean): Promise<void> {
-  const { data: e } = await supabaseAdmin
-    .from("expense_entries")
-    .select("worker_id, category, amount, spent_at, rejection_reason")
-    .eq("id", entryId)
-    .maybeSingle();
-  if (!e?.worker_id) return;
-  const { data: w } = await supabaseAdmin
-    .from("workers")
-    .select("telegram_chat_id, telegram_locale")
-    .eq("id", e.worker_id)
-    .maybeSingle();
-  if (!w?.telegram_chat_id) return;
-
-  const locale = (w.telegram_locale as string) === "de" ? "de" : "tr";
-  const t = await getTranslations({ locale, namespace: "expense" });
-  const lines = [
-    approved ? `✅ ${t("tg_approved")}` : `❌ ${t("tg_rejected")}`,
-    `🏷 ${t(`category.${e.category}`)} · ${eur(Number(e.amount))} €`,
-    `📅 ${formatDate(e.spent_at as string, locale)}`,
-  ];
-  if (!approved && e.rejection_reason) lines.push(`${t("tg_reason")}: ${e.rejection_reason}`);
-  const kb: InlineButton[][] = [[{ text: t("tg_btn_panel"), url: `${APP_URL}/panel/masraflar` }]];
-  await sendTelegramMessage(w.telegram_chat_id as string, lines.join("\n"), null, kb);
-}
 
 export async function createExpenseEntry(formData: FormData): Promise<ExpenseResult> {
   const session = await requireWorker();
@@ -120,12 +62,6 @@ export async function createExpenseEntry(formData: FormData): Promise<ExpenseRes
 
   if (error || !inserted) return { ok: false, error: error?.message ?? "insert" };
 
-  await notifyAdminsExpenseSubmitted({
-    workerId: session.worker_id!,
-    name: session.name ?? "—",
-    category: parsed.data.category,
-    amount: parsed.data.amount,
-  });
 
   revalidateExpenses();
   return { ok: true, id: inserted.id as string };
@@ -146,7 +82,6 @@ export async function approveExpenseEntry(id: string): Promise<ExpenseResult> {
     .select("id");
   if (error) return { ok: false, error: error.message };
   if (!rows || rows.length === 0) return { ok: false, error: "not_pending" };
-  await notifyDriverExpenseDecision(id, true);
   revalidateExpenses();
   return { ok: true, id };
 }
@@ -166,7 +101,6 @@ export async function rejectExpenseEntry(id: string, reason: string): Promise<Ex
     .select("id");
   if (error) return { ok: false, error: error.message };
   if (!rows || rows.length === 0) return { ok: false, error: "not_pending" };
-  await notifyDriverExpenseDecision(id, false);
   revalidateExpenses();
   return { ok: true, id };
 }

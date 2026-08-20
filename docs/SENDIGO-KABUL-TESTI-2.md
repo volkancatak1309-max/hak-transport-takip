@@ -232,7 +232,6 @@ düğümde olduğu okunamıyor.
 | `/admin/raporlar` | ✅ temiz |
 | `/admin/bolgeler` | ✅ temiz |
 | `/admin/seferler` | ✅ temiz |
-| `/admin/telegram` | ✅ temiz |
 | `/admin/harita` | ✅ temiz (yalnız maplibre `circle-11` uyarısı — 1. turda da vardı) |
 
 **Bilinenler:**
@@ -272,7 +271,6 @@ Hepsi **HTTP 200**, çökme yok, boş ekran yok.
 | `/admin/seferler` | ✅ | "Noch keine Aufträge zugewiesen" |
 | `/admin/workers` | ✅ | 1 kayıt (Volkan, VERWALTUNG); test şoförü gizli |
 | `/admin/izinler` | ✅ | Lejant Almanca; "Keine Mitarbeiter" |
-| `/admin/telegram` | ✅ | "Webhook nicht konfiguriert (Token oder Secret fehlt)" |
 
 **Sunucu HTML taraması (11 sayfa):** Türkçe sızıntı **yok**, `NaN` /
 `undefined` / `[object Object]` **yok**.
@@ -438,7 +436,7 @@ paketinde doğuyor.
 |---|---|
 | `/admin` | ✅ temiz |
 | `/admin/workers/[id]` | ✅ temiz |
-| `/admin/workers` · `/admin/araclar` · `/admin/alarmlar` · `/admin/analiz` · `/admin/raporlar` · `/admin/bolgeler` · `/admin/seferler` · `/admin/izinler` · `/admin/telegram` | ✅ temiz |
+| `/admin/workers` · `/admin/araclar` · `/admin/alarmlar` · `/admin/analiz` · `/admin/raporlar` · `/admin/bolgeler` · `/admin/seferler` · `/admin/izinler` | ✅ temiz |
 | `/admin/harita` | 🟡 yalnız maplibre `circle-11` uyarısı (1. ve 2. turda da vardı) |
 
 **Not — kapanmamış bir soru:** sunucu 3 kutu, istemci 4 kutu basmasına rağmen

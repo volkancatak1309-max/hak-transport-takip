@@ -102,7 +102,7 @@ export type AttentionItem =
    * (14.08.2026, SHIFT_PER_DAY='many'). İHLAL DEĞİL — Sendigo'nun iş modeli
    * bu (gece vardiyası + gündüz çağrı işi). Kalem, "günde tek vardiya"
    * kilidi kalkan kiracıda günün gerçekten çift olduğunu yöneticiye GÖRÜNÜR
-   * kılar. Telegram YOK: bildirim yalnız panelde (Volkan kararı, 037'deki
+   * kılar. DIŞ BİLDİRİM YOK: uyarı yalnız panelde (Volkan kararı, 037'deki
    * şef-manuel-başlatma kalemiyle aynı desen).
    */
   | {

@@ -1,22 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getTranslations } from "next-intl/server";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
 import { requireWorker, requireAdmin } from "@/lib/session";
 import { createFuelSchema } from "@/lib/validation";
 import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storage";
-import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
-import { formatDate } from "@/lib/format";
 import { CO2_FACTORS, type CO2ReportData, type CO2Vehicle } from "@/lib/co2";
-import { triggerMaintenanceReminder } from "@/app/actions/maintenance";
 import type { FuelEntry, FuelEntryWithWorker, FuelType } from "@/lib/types";
 
 const BUCKET = "fuel-receipts";
-const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL || "https://hak-transport-takip.vercel.app";
-const eur = (n: number) => n.toFixed(2).replace(".", ",");
 
 export type FuelResult = { ok: boolean; error?: string; id?: string };
 
@@ -25,61 +18,7 @@ function revalidateFuel() {
   revalidatePath("/admin/yakit");
 }
 
-/** Notify all linked admins that a new fuel entry is awaiting approval. */
-async function notifyAdminsFuelSubmitted(p: {
-  name: string;
-  plate: string;
-  liters: number;
-  cost: number;
-}): Promise<void> {
-  const scope = await getTestScope();
-  if (scope.isTestPlate(p.plate)) return;
-  // test-visible: alıcı listesi (is_admin) — özne yukarıda elendi.
-  const { data: admins } = await supabaseAdmin
-    .from("workers")
-    .select("telegram_chat_id, telegram_locale")
-    .eq("is_admin", true)
-    .not("telegram_chat_id", "is", null);
-  for (const a of admins ?? []) {
-    const locale = (a.telegram_locale as string) === "de" ? "de" : "tr";
-    const t = await getTranslations({ locale, namespace: "fuel" });
-    const text = [
-      `🧾 ${t("tg_new")}`,
-      `👤 ${p.name}`,
-      `🚛 ${p.plate}`,
-      `⛽ ${eur(p.liters)} L · ${eur(p.cost)} €`,
-    ].join("\n");
-    const kb: InlineButton[][] = [[{ text: t("tg_btn_approvals"), url: `${APP_URL}/admin/yakit` }]];
-    await sendTelegramMessage(a.telegram_chat_id as string, text, null, kb);
-  }
-}
 
-/** Notify the driver that their fuel entry was approved or rejected. */
-async function notifyDriverFuelDecision(entryId: string, approved: boolean): Promise<void> {
-  const { data: e } = await supabaseAdmin
-    .from("fuel_entries")
-    .select("worker_id, liters, total_cost, fueled_at, rejection_reason")
-    .eq("id", entryId)
-    .maybeSingle();
-  if (!e?.worker_id) return;
-  const { data: w } = await supabaseAdmin
-    .from("workers")
-    .select("telegram_chat_id, telegram_locale")
-    .eq("id", e.worker_id)
-    .maybeSingle();
-  if (!w?.telegram_chat_id) return;
-
-  const locale = (w.telegram_locale as string) === "de" ? "de" : "tr";
-  const t = await getTranslations({ locale, namespace: "fuel" });
-  const lines = [
-    approved ? `✅ ${t("tg_approved")}` : `❌ ${t("tg_rejected")}`,
-    `⛽ ${eur(Number(e.liters))} L · ${eur(Number(e.total_cost))} €`,
-    `📅 ${formatDate(e.fueled_at as string, locale)}`,
-  ];
-  if (!approved && e.rejection_reason) lines.push(`${t("tg_reason")}: ${e.rejection_reason}`);
-  const kb: InlineButton[][] = [[{ text: t("tg_btn_panel"), url: `${APP_URL}/panel/yakit` }]];
-  await sendTelegramMessage(w.telegram_chat_id as string, lines.join("\n"), null, kb);
-}
 
 /** Driver or admin submits a fuel entry (pending approval) with a receipt photo. */
 export async function createFuelEntry(formData: FormData): Promise<FuelResult> {
@@ -124,16 +63,6 @@ export async function createFuelEntry(formData: FormData): Promise<FuelResult> {
 
   if (error || !inserted) return { ok: false, error: error?.message ?? "insert" };
 
-  await notifyAdminsFuelSubmitted({
-    name: session.name ?? "—",
-    plate: parsed.data.vehicle_plate.toUpperCase(),
-    liters: parsed.data.liters,
-    cost: parsed.data.total_cost,
-  });
-  await triggerMaintenanceReminder(
-    parsed.data.vehicle_plate.toUpperCase(),
-    parsed.data.odometer_km
-  );
 
   revalidateFuel();
   return { ok: true, id: inserted.id as string };
@@ -154,7 +83,6 @@ export async function approveFuelEntry(id: string): Promise<FuelResult> {
     .select("id");
   if (error) return { ok: false, error: error.message };
   if (!rows || rows.length === 0) return { ok: false, error: "not_pending" };
-  await notifyDriverFuelDecision(id, true);
   revalidateFuel();
   return { ok: true, id };
 }
@@ -174,7 +102,6 @@ export async function rejectFuelEntry(id: string, reason: string): Promise<FuelR
     .select("id");
   if (error) return { ok: false, error: error.message };
   if (!rows || rows.length === 0) return { ok: false, error: "not_pending" };
-  await notifyDriverFuelDecision(id, false);
   revalidateFuel();
   return { ok: true, id };
 }

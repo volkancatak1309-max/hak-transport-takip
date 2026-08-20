@@ -24,8 +24,8 @@ export type MobileUser = {
 /**
  * DİL hakkında dürüst not: bu depoda kullanıcı BAŞINA uygulama dili tutan bir
  * kolon YOK. Tarayıcıda dil `hak_locale` çerezinden geliyor (i18n/request.ts),
- * mobilde öyle bir çerez olmayacak. `workers.telegram_locale` var ama o
- * ÖZELLİKLE Telegram bot dilidir; uygulama dili olarak kullanmak varsayım olur.
+ * mobilde öyle bir çerez olmayacak. Personel kaydında uygulama dili tutan
+ * bir alan da yok; varsayarak seçmek ölçülmemiş bir karar olurdu.
  * Bu yüzden kurulumun varsayılan dili döndürülüyor (HAK61 → tr, Sendigo → de).
  * Kullanıcı başına dil gerekirse yeni bir kolon ister — katman 1'in işi değil.
  */

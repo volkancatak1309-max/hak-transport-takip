@@ -12,7 +12,6 @@ import {
   Route,
   Truck,
   Users,
-  Send,
   Fuel,
   Receipt,
   Hexagon,
@@ -173,7 +172,6 @@ export function DashboardShell({
         ...(LEAVES_ENABLED
           ? [{ href: "/admin/izinler", label: t("leaves"), icon: CalendarOff }]
           : []),
-        { href: "/admin/telegram", label: t("telegram"), icon: Send },
         ...(user.isOwner
           ? [{ href: "/admin/guvenlik", label: t("security"), icon: ShieldCheck }]
           : []),

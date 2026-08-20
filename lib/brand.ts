@@ -45,7 +45,7 @@ type BrandAssets = {
 };
 
 type BrandDescriptor = {
-  /** Kısa ad — başlıklar, Telegram mesaj başlığı, bildirim başlığı. */
+  /** Kısa ad — başlıklar ve bildirim başlığı. */
   name: string;
   /** Tam ticari unvan — footer telif satırı. */
   legalName: string;

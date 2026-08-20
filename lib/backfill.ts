@@ -358,7 +358,7 @@ export async function buildShiftsHistorical(
       start_source: "auto",
       confirmation_status: "confirmed",
       confirmed_at: start.recorded_at,
-      summary_notified_at: new Date().toISOString(), // özet Telegram'ı tetiklenmesin
+      summary_notified_at: new Date().toISOString(), // özet imza akışı tetiklenmesin
     });
     // 23505 = aynı gün başka bir yol vardiya açmış; sessizce geç.
     if (insErr && insErr.code !== "23505") throw new Error(insErr.message);

@@ -48,16 +48,6 @@ export default async function PanelPage() {
     ? null
     : past.find((e) => needsSummarySignature(e, nowMs)) ?? null;
 
-  const { data: me } = await supabaseAdmin
-    .from("workers")
-    .select("telegram_chat_id, telegram_username")
-    .eq("id", session.worker_id!)
-    .maybeSingle();
-  const telegram = {
-    linked: !!me?.telegram_chat_id,
-    username: (me?.telegram_username as string) ?? null,
-  };
-
   // İş 1 — bekleme ekranı: şoförün atandığı araç (kontak bu aracı izler).
   // Şoför↔araç ilişkisinin TEK kaynağı vehicles.assigned_worker_id'dir;
   // workers.plate yalnızca eski kayıtlar için tutulan bir aynadır.
@@ -145,7 +135,6 @@ export default async function PanelPage() {
         <PanelClient
           active={active}
           pendingSummary={pendingSummary}
-          telegram={telegram}
           /* Günde tek vardiya (lib/shift-day.ts): bugün açılmış bir vardiya
              varsa panel "bugünkü vardiyan tamamlandı" der ve başlat butonunu
              göstermez. `past` üzerinden hesaplanır — açık vardiya zaten

@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
  * BAĞLI DEĞİLDİR. İkisi ayrı kavramdır:
  *   • `is_active=false`  → GEÇİCİ. Hastalık, uzun izin, telefonu kayıp.
  *                          Kişi kadroda durur, geri açılır.
- *   • `terminated_at`    → KALICI. Son çalışma günü, Telegram bağı kopar,
+ *   • `terminated_at`    → KALICI. Son çalışma günü,
  *                          filo şefliği düşer, kişi "Ayrılanlar"a geçer.
  * Karışırsa Personel listesindeki "Ayrılanlar" bölümü sessizce yanlışa döner:
  * hasta olan biri işten çıkmış görünür ya da tersi. İşten çıkış AYRI bir

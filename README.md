@@ -160,21 +160,19 @@ create unique index if not exists idx_workers_employee_number
 
 > Mevcut çalışanlara otomatik `0001, 0002, …` atanır. `004` çalıştırılmadan DATEV/BMD export'larında PersNr boş gelir; yeni çalışan eklerken numara boş bırakılırsa bir sonraki numara otomatik üretilir.
 
-### Faz 3 migration — ⚠️ DEPLOY ÖNCESİ ÇALIŞTIR
+### Faz 3 migration
 
-Telegram bildirim sistemi için Supabase SQL Editor'da `db/migrations/005_telegram.sql` içeriğini çalıştır. Eklenenler:
-
-- `workers`: `telegram_chat_id`, `telegram_username`, `telegram_linked_at`, `telegram_locale`
-- `telegram_link_codes` tablosu (15 dk geçerli tek kullanımlık eşleştirme kodları)
-- `time_entries`: `nine_hour_notified_at`, `lenkzeit_notified_at`, `summary_notified_at` (bildirim tekrarını engeller)
-
-> `005` çalıştırılmadan Telegram bağlama ve bildirimler çalışmaz (eşleştirme kodu yazılamaz).
+Bu fazın getirdiği dış bildirim katmanı **20.08.2026'da tamamen söküldü**
+(kod, ekranlar, env ve kolonlar). `005` tarihsel bir migration olarak duruyor;
+yeni kurulumda çalıştırılması gerekmez — sökümün DDL'i onu geri alır.
+`time_entries.summary_notified_at` KALICIDIR: bugün özet/imza döngüsünü
+besliyor ve bildirimle ilgisi kalmadı.
 
 ### Faz 4 migration — ⚠️ DEPLOY ÖNCESİ ÇALIŞTIR
 
 Sefer atama sistemi için Supabase SQL Editor'da `db/migrations/006_assignments.sql` içeriğini çalıştır. Eklenenler:
 
-- `assignments` tablosu (şoför, zamanlama, çoklu durak `stops` jsonb, KM, kategori, durum, `assignment_notified_at` yarış-güvenli bildirim flag'i, audit)
+- `assignments` tablosu (şoför, zamanlama, çoklu durak `stops` jsonb, KM, kategori, durum, `assignment_notified_at` (kullanılmayan bildirim flag'i), audit)
 - İndexler (worker+tarih, aktif durum+tarih, bekleyen bildirim) + `updated_at` otomatik güncelleme trigger'ı
 
 > `006` çalıştırılmadan `/admin/seferler`, `/panel` sefer kartı ve `/panel/seferler` takvimi 500 verir. Migration tamamen additive; mevcut tablolara dokunmaz.
@@ -189,50 +187,6 @@ Yakıt, masraf, bakım ve CO₂ modülleri için Supabase SQL Editor'da `db/migr
 
 > Migration storage bucket'larını da oluşturur. İstersen Supabase Dashboard → Storage'dan manuel de açabilirsin (private, 5 MB, `image/jpeg,png,webp,heic`). Fiş yükleme/okuma sunucu tarafında **service-role** ile yapılır (RLS bypass), bu yüzden ek object policy gerekmez.
 > `007` çalıştırılmadan `/panel/yakit`, `/panel/masraflar`, `/admin/yakit`, `/admin/masraflar` 500 verir. Tamamen additive.
-
-> İsteğe bağlı env: `NEXT_PUBLIC_APP_URL` (Telegram "Panele Git" butonları için; tanımsızsa vercel.app varsayılanı).
-
-## Telegram Bot Kurulumu (tek seferlik — Volkan)
-
-1. **Vercel → Settings → Environment Variables** (Production + Preview):
-   - `TELEGRAM_BOT_TOKEN` = BotFather token'ı (biçim: `123456789:AAH-xxxxxxxxxxxxxxxxxxxxxxxxxxxx`) — repoya koyma, sadece Vercel'e gir
-   - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` = `hak_transport_bildirim_bot`
-   - `TELEGRAM_WEBHOOK_SECRET` = rastgele uzun bir string (örn. `openssl rand -hex 24`)
-2. **005 migration**'ı Supabase'de çalıştır.
-3. Deploy sonrası **webhook'u kaydet** (bir kez, terminalden). Secret'ı URL'e
-   gömme — Telegram'ın `secret_token` özelliğini kullan: secret her istekte
-   `X-Telegram-Bot-Api-Secret-Token` header'ında gelir, URL'de/loglarda görünmez.
-   `secret_token`, Vercel'deki `TELEGRAM_WEBHOOK_SECRET` ile **birebir aynı**
-   olmalı (yalnızca `A-Z a-z 0-9 _ -`, 1-256 karakter; `openssl rand -hex 24`
-   uygundur). `allowed_updates`'e **`callback_query`** eklemeyi unutma — yoksa
-   inline buton (vardiya "Evet/Hayır") basışları Telegram tarafından hiç
-   gönderilmez ve watchdog butonları çalışmaz:
-
-```bash
-curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://hak-transport-takip.vercel.app/api/telegram/webhook",
-    "secret_token": "<TELEGRAM_WEBHOOK_SECRET>",
-    "allowed_updates": ["message", "callback_query"]
-  }'
-```
-
-   Doğrulama (kayıtlı URL, `allowed_updates` ve son hata için):
-
-```bash
-curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
-```
-
-   > `last_error_message`'ta "401 Unauthorized" görüyorsan secret uyuşmuyor
-   > demektir (Telegram'ın gönderdiği ≠ uygulamanın beklediği); `allowed_updates`
-   > içinde `callback_query` yoksa buton basışları hiç gelmiyordur. İkisini de
-   > yukarıdaki `setWebhook` çağrısı düzeltir. Eski `?secret=...` query yöntemi
-   > kod tarafından geriye dönük kabul edilir ama önerilmez.
-
-4. Şoför/admin panelde **"Telegram Bildirimleri Bağla"** → QR/link ile bota `/start` → bildirimler aktif.
-
-> Token **asla** repoya commit edilmez (`.env*` gitignore'da). `TELEGRAM_BOT_TOKEN` tanımlı değilse uygulama çalışır, sadece mesaj göndermez (sessiz no-op).
 
 ## Test Hesapları (seed)
 
@@ -250,7 +204,6 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `SESSION_PASSWORD`
-   - `TELEGRAM_BOT_TOKEN`, `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET` (bkz. Telegram Bot Kurulumu)
 5. Deploy.
 
 Tüm sayfalar dinamik (`force-dynamic`); build'de DB'ye bağlanmaz.

@@ -21,7 +21,6 @@ type WorkerRow = {
   counts_as_driver: boolean | null;
   terminated_at: string | null;
   license_expiry: string | null;
-  telegram_chat_id: string | null;
   created_at: string;
 };
 
@@ -154,7 +153,6 @@ export async function GET(req: NextRequest) {
       soforSayilir: w.counts_as_driver === true,
       ayrilisTarihi: w.terminated_at,
       ehliyetSon: w.license_expiry,
-      telegramBagli: !!w.telegram_chat_id,
       kayitAni: w.created_at,
     })),
   });

@@ -146,26 +146,20 @@ const hasPlate = (d, p) => (d ?? []).some(r => (r.plate ?? r.vehicle_plate) === 
   const b = await q(); const a = await without(q(), "worker_id", W);
   check("11. Performans raporu", "time_entries", hasW(b.data, TEST_WORKER), hasW(a.data, TEST_WORKER));
 }
-// 12) Telegram — bağlı hesaplar (app/admin/telegram/page.tsx:13)
-{
-  const q = () => sb.from("workers").select("id, name, telegram_chat_id").not("telegram_chat_id", "is", null);
-  const b = await q(); const a = await without(q(), "id", W);
-  check("12. Telegram (bağlı hesaplar)", "workers", has(b.data, TEST_WORKER), has(a.data, TEST_WORKER));
-}
-// 13) PDF/CSV — AZG (time_entries) + CO2 (plaka)
+// 12) PDF/CSV — AZG (time_entries) + CO2 (plaka)
 {
   const q = () => sb.from("time_entries").select("id, worker_id").not("ended_at", "is", null);
   const b = await q(); const a = await without(q(), "worker_id", W);
-  check("13. AZG PDF", "time_entries", hasW(b.data, TEST_WORKER), hasW(a.data, TEST_WORKER));
+  check("12. AZG PDF", "time_entries", hasW(b.data, TEST_WORKER), hasW(a.data, TEST_WORKER));
   const bf = await sb.from("fuel_entries").select("vehicle_plate").eq("status", "approved");
   const af = { data: (bf.data ?? []).filter(r => !TEST_PLATES.includes(r.vehicle_plate)) };
   check("13b. CO2 PDF (plaka bazlı)", "fuel_entries", TEST_PLATES.some(p => hasPlate(bf.data, p)), TEST_PLATES.some(p => hasPlate(af.data, p)));
 }
-// 14) ⌘K araç dizini — app/actions/vehicles.ts:333
+// 13) ⌘K araç dizini — app/actions/vehicles.ts:333
 {
   const b = await sb.from("vehicles").select("id, plate").order("plate");
   const a = { data: (b.data ?? []).filter(v => !V.includes(v.id)) };
-  check("14. ⌘K araç dizini", "vehicles", V.some(id => hasV(b.data, id)), V.some(id => hasV(a.data, id)));
+  check("13. ⌘K araç dizini", "vehicles", V.some(id => hasV(b.data, id)), V.some(id => hasV(a.data, id)));
 }
 
 const w = [Math.max(...rows.map(r => r.surface.length)), 14, 8, 9];

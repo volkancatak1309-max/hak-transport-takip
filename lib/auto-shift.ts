@@ -3,18 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { latestTelemetryBatch, latestVehicleTelemetry, listVehicleTrack } from "@/lib/telemetry";
 import { computeDistanceKm } from "@/lib/metrics-distance";
 import { MAX_ODOMETER, MAX_PER_SHIFT_KM } from "@/lib/validation";
-import { sendTelegramMessage } from "@/lib/telegram";
-import {
-  autoShiftStartedAdminMessage,
-  autoShiftStartedDriverMessage,
-  shiftSummaryMessage,
-} from "@/lib/telegram-messages";
-import {
-  workedMs,
-  formatDurationShort,
-  formatTime,
-  startOfTodayVienna,
-} from "@/lib/format";
+import { startOfTodayVienna } from "@/lib/format";
 import { workersWithShiftToday } from "@/lib/shift-day";
 import { approvedLeaveWorkerIdsForDay } from "@/lib/leaves";
 import { activeDepotZones, depotArrivalTrigger, lastFixInDepot } from "@/lib/depot";
@@ -376,8 +365,6 @@ type SoforKunyesi = {
   id: string;
   name: string | null;
   is_active: boolean | null;
-  telegram_chat_id: string | null;
-  telegram_locale: string | null;
 };
 
 /**
@@ -401,7 +388,7 @@ async function workersByIdBatch(
   if (workerIds.length === 0) return new Map();
   const { data, error } = await supabaseAdmin
     .from("workers")
-    .select("id, name, is_active, telegram_chat_id, telegram_locale")
+    .select("id, name, is_active")
     .in("id", workerIds);
   if (error) {
     console.warn(
@@ -414,20 +401,6 @@ async function workersByIdBatch(
   return harita;
 }
 
-/** Telegram'a bağlı tüm adminler (best-effort bildirimler için). */
-async function linkedAdmins(): Promise<{ chat: string; locale: string | null }[]> {
-  // test-visible: alıcı listesi (is_admin). Özne elemesi araç taramasında —
-  // test aracının cihazı yok, otomatik vardiya döngüsüne hiç girmiyor.
-  const { data } = await supabaseAdmin
-    .from("workers")
-    .select("telegram_chat_id, telegram_locale")
-    .eq("is_admin", true)
-    .not("telegram_chat_id", "is", null);
-  return (data ?? []).map((a) => ({
-    chat: a.telegram_chat_id as string,
-    locale: (a.telegram_locale as string) ?? null,
-  }));
-}
 
 /**
  * Ana giriş noktası. `vehicleIds` verilirse yalnız o araçlar taranır
@@ -530,8 +503,6 @@ export async function processAutoShifts(
       open.filter((s) => s.vehicle_id).map((s) => [s.vehicle_id as string, s])
     );
 
-    let admins: { chat: string; locale: string | null }[] | null = null;
-
     /**
      * CANLI TELEMETRİ — DÖNGÜDEN ÖNCE, PARÇALI TOPLU OKUMA (#116b, migration 065).
      *
@@ -604,7 +575,7 @@ export async function processAutoShifts(
             : (
                 await supabaseAdmin
                   .from("workers")
-                  .select("id, name, is_active, telegram_chat_id, telegram_locale")
+                  .select("id, name, is_active")
                   .eq("id", v.assigned_worker_id)
                   .maybeSingle()
               ).data;
@@ -685,31 +656,9 @@ export async function processAutoShifts(
               plate: v.plate,
             });
 
-            // Best-effort Telegram: şoföre "panelden onayla", adminlere bilgi.
-            try {
-              if (w.telegram_chat_id) {
-                await sendTelegramMessage(
-                  w.telegram_chat_id as string,
-                  autoShiftStartedDriverMessage(
-                    (w.telegram_locale as string) ?? null,
-                    { plate: v.plate, time: formatTime(startedAt, (w.telegram_locale as string) ?? "tr") }
-                  )
-                );
-              }
-              admins = admins ?? (await linkedAdmins());
-              for (const a of admins) {
-                await sendTelegramMessage(
-                  a.chat,
-                  autoShiftStartedAdminMessage(a.locale, {
-                    name: (w.name as string) ?? "—",
-                    plate: v.plate,
-                    time: formatTime(startedAt, a.locale ?? "tr"),
-                  })
-                );
-              }
-            } catch {
-              // bildirim hatası vardiyayı etkilemez
-            }
+            // DIS BILDIRIM KATMANI SOKULDU (20.08.2026): otomatik baslatma
+            // sofore ve yoneticilere ayrica bildiriliyordu. Vardiyanin ACILMASI
+            // degismedi; bilgi paneldeki Dikkat/Roster yuzeylerinde duruyor.
           }
           continue;
         }
@@ -726,7 +675,7 @@ export async function processAutoShifts(
         //
         // Otomatik BAŞLATMA (yukarısı) DURUYOR — kural yalnız kapanış hakkında.
         // Kapanış yolları artık yalnız insan eliyle: panel (endShiftAction),
-        // çevrimdışı kuyruk replay'i, Telegram watchdog "Hayır" yanıtı ve
+        // çevrimdışı kuyruk replay'i, watchdog "Hayır" yanıtı ve
         // yönetici (adminCloseShiftAction / editEntryAction).
         //
         // Aşağıdaki blok AUTO_END_ENABLED=false ile kapatıldı (silinmedi):
@@ -806,37 +755,8 @@ export async function processAutoShifts(
         openByVehicle.delete(v.id);
         openByWorker.delete(vehicleShift.worker_id);
 
-        // Best-effort: şoföre vardiya özeti (manuel kapanışla aynı mesaj).
-        try {
-          const { data: me } = await supabaseAdmin
-            .from("workers")
-            .select("telegram_chat_id, telegram_locale")
-            .eq("id", vehicleShift.worker_id)
-            .maybeSingle();
-          if (me?.telegram_chat_id) {
-            const loc = (me.telegram_locale as string) ?? "tr";
-            const ms = workedMs({
-              started_at: vehicleShift.started_at,
-              ended_at: endedAtIso,
-              break_minutes: vehicleShift.break_minutes ?? 0,
-            });
-            const { count } = await supabaseAdmin
-              .from("shift_packages")
-              .select("id", { count: "exact", head: true })
-              .eq("time_entry_id", vehicleShift.id);
-            await sendTelegramMessage(
-              me.telegram_chat_id as string,
-              shiftSummaryMessage(loc, {
-                hours: formatDurationShort(ms, loc),
-                km: endKm !== null ? String(endKm - vehicleShift.start_km) : "—",
-                cargo: String(count ?? 0),
-                breakMin: String(vehicleShift.break_minutes ?? 0),
-              })
-            );
-          }
-        } catch {
-          // bildirim hatası kapanışı etkilemez
-        }
+        // DIS BILDIRIM KATMANI SOKULDU (20.08.2026): otomatik kapanista
+        // sofore ozet mesaji gidiyordu. Kapanisin KENDISI degismedi.
       } catch (e) {
         summary.errors.push(
           `${v.plate}: ${e instanceof Error ? e.message : "error"}`

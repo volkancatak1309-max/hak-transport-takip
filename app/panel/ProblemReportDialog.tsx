@@ -29,7 +29,7 @@ const OPTIONS: { type: DriverReportType; tkey: string; icon: typeof Wrench }[] =
 
 /**
  * İş 2 — "SORUN BİLDİR": 4 dev ikonlu hazır seçenek, yazı yazma zorunluluğu
- * yok. Seçim yöneticiye kayıt düşer (driver_reports + Telegram). Çevrimdışıysa
+ * yok. Seçim yöneticiye kayıt düşer (driver_reports). Çevrimdışıysa
  * kuyruğa alınır ve bağlantı gelince gönderilir.
  */
 export function ProblemReportDialog({ open, onOpenChange }: Props) {

@@ -67,7 +67,6 @@ const KEYED = [
   '.eq("worker_id"',
   '.eq("vehicle_id"',
   '.eq("assigned_worker_id"',
-  '.eq("telegram_chat_id"',
   '.eq("plate"',
   '.eq("imei"',
   '.eq("flespi_device_id"',
@@ -116,7 +115,7 @@ const FLEET_FILTERED = ["onlyFleet(", "dropOtherFleets(", "// fleet-scoped:"];
  * "kim sayılıyor".
  *
  * Yalnız ŞOFÖR SAYAN/LİSTELEYEN yüzeyler denetlenir. Çalışanlar sayfası,
- * personel dosyası, giriş, PIN ve Telegram alıcı listeleri BİLEREK dışarıda:
+ * personel dosyası, giriş ve PIN akışları BİLEREK dışarıda:
  * oralarda yönetici GÖRÜNMEYE DEVAM ETMELİ (kural: "yönetici personeldir,
  * şoför değildir"). Listeye eklenen her yeni dosya, o dosyadaki ANAHTARSIZ
  * `workers`/`time_entries` okumalarının şoför kapsamını uygulamasını zorunlu

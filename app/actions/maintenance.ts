@@ -1,19 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getTranslations } from "next-intl/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getTestScope } from "@/lib/test-data";
-import { requireAdmin, requireWorker } from "@/lib/session";
+import { requireAdmin } from "@/lib/session";
 import { createMaintenanceSchema } from "@/lib/validation";
 import { uploadReceipt, signedReceiptUrl, signedReceiptUrls } from "@/lib/storage";
-import { sendTelegramMessage, type InlineButton } from "@/lib/telegram";
 import type { VehicleMaintenance, MaintenanceType } from "@/lib/types";
 
 const BUCKET = "maintenance-receipts";
 
-const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL || "https://hak-transport-takip.vercel.app";
 
 export type MaintenanceInput = {
   vehicle_plate: string;
@@ -139,7 +134,7 @@ export async function getDueMaintenance(): Promise<VehicleMaintenance[]> {
  * verip hem /admin/yakit hem /panel/yakit route'una kaydediyor. Server action'lar
  * sayfa ve layout guard'larından ÖNCE koştuğu için /panel/yakit'in requireWorker()
  * kapısı bu ucu KORUMAZ — kapı fonksiyonun kendi başında olmak zorunda.
- * Kapısızken oturumsuz bir çağrı tüm yöneticilere Telegram bildirimi düşürebiliyordu.
+ * Kapısızken oturumsuz bir çağrı tüm yöneticilere bildirim düşürebiliyordu.
  *
  * Neden requireWorker: tek meşru çağıran createFuelEntry (app/actions/fuel.ts:133)
  * ve o da requireWorker() ile korunuyor — yani bu yol bir ŞOFÖR akışıdır.
@@ -148,50 +143,3 @@ export async function getDueMaintenance(): Promise<VehicleMaintenance[]> {
  * requireWorker çağıranın gerçek yetki seviyesiyle birebir aynı; davranış korunur,
  * yalnız kimliksiz çağrı kapanır.
  */
-export async function triggerMaintenanceReminder(
-  plate: string,
-  currentKm: number
-): Promise<void> {
-  await requireWorker();
-
-  const { data: m } = await supabaseAdmin
-    .from("vehicle_maintenance")
-    .select("next_service_km")
-    .eq("vehicle_plate", plate)
-    .not("next_service_km", "is", null)
-    .order("serviced_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const nextKm = (m?.next_service_km as number | null) ?? null;
-  if (!nextKm) return;
-
-  const threshold = nextKm - 1000;
-  const { data: prev } = await supabaseAdmin
-    .from("fuel_entries")
-    .select("odometer_km")
-    .eq("vehicle_plate", plate)
-    .lt("odometer_km", currentKm)
-    .order("odometer_km", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const prevKm = (prev?.odometer_km as number | null) ?? 0;
-
-  // Only fire on the entry that crosses the threshold.
-  if (!(prevKm < threshold && currentKm >= threshold)) return;
-
-  const scope = await getTestScope();
-  if (scope.isTestPlate(plate)) return;
-  // test-visible: alıcı listesi (is_admin) — özne yukarıda elendi.
-  const { data: admins } = await supabaseAdmin
-    .from("workers")
-    .select("telegram_chat_id, telegram_locale")
-    .eq("is_admin", true)
-    .not("telegram_chat_id", "is", null);
-  for (const a of admins ?? []) {
-    const locale = (a.telegram_locale as string) === "de" ? "de" : "tr";
-    const t = await getTranslations({ locale, namespace: "maintenance" });
-    const text = `🔧 ${t("tg_reminder", { plate, current: currentKm, next: nextKm })}`;
-    const kb: InlineButton[][] = [[{ text: t("tg_btn_panel"), url: `${APP_URL}/admin/yakit` }]];
-    await sendTelegramMessage(a.telegram_chat_id as string, text, null, kb);
-  }
-}

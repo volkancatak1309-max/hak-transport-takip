@@ -9,7 +9,7 @@ import { SECURITY_LAYER_ENABLED } from "@/lib/tenant";
  * ── NE ÇÖZÜYOR ─────────────────────────────────────────────────────────────
  * Güvenlik ekranını yalnız patron açabiliyor (requireOwner), ama patronun
  * KENDİSİ panelin personel listelerinde sıradan bir kayıt olarak duruyordu:
- * Çalışanlar sayfası, mobil /workers ucu, Telegram alıcıları. Yani izlenen
+ * Çalışanlar sayfası, mobil /workers ucu. Yani izlenen
  * kişi, izleyeni listede görebiliyordu.
  *
  * ── ÜÇÜNCÜ EKSEN ───────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ import { SECURITY_LAYER_ENABLED } from "@/lib/tenant";
  *
  * ── NEREYE UYGULANIR: KİMLİK YÜZEYLERİ ─────────────────────────────────────
  * "Bu kişi bir kullanıcıdır" diyen listeler: Çalışanlar, personel dosyası,
- * şoför/atama seçicileri, izin listeleri, Telegram alıcıları, mobil /workers.
+ * şoför/atama seçicileri, izin listeleri, mobil /workers.
  *
  * ── NEREYE UYGULANMAZ: İŞLETME VE HUKUK KAYITLARI ──────────────────────────
  * Vardiya geçmişi, AZG, CO₂, yakıt, performans, mesafe raporları ve harita

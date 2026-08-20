@@ -141,7 +141,6 @@ Ortak kural: **A2 başlık bloğu** (H1 28px semibold + açıklama) + **A3 filtr
 | Masraflar | Durum | Sekme → dropdown. KPI'lar StatCard'a; Bordro Excel sağda |
 | Bölgeler | Kural + Durum | Sayfada hiç H1 yoktu; intro açıklama oldu. Boş-durum ikiye ayrıldı (hiç yok ≠ filtre eşleşmedi) |
 | Çalışanlar | Durum | Buton grubu → dropdown |
-| Telegram | **YOK** | Ayar/durum ekranı; filtrelenecek liste yok → boş bant koymak süs olurdu |
 
 **KPI dili:** serbest `Card`+ikon kopyaları tek kaynak **StatCard**'a taşındı — kapsam etiketi zorunlu ("Bu ay" / "Tümü"), böylece "hangi aralık?" ikiliği tekrar doğmaz.
 

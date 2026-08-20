@@ -203,7 +203,7 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
     }
   } else if (item.type === "report") {
     // Çevrimdışı "SORUN BİLDİR": aynı action'ı sunucu tarafında yeniden çağır
-    // (vardiya bağlama + Telegram bildirimi orada). Vardiyasız da kaydedilir.
+    // (vardiya bağlama orada). Vardiyasız da kaydedilir.
     const type = String(item.payload.report_type ?? "") as DriverReportType;
     const r = await reportProblemAction({
       type,

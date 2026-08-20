@@ -92,11 +92,6 @@ export async function GET(
       },
       ehliyet: { no: worker.license_no, sonTarih: worker.license_expiry },
       iletisim: { email: worker.email },
-      telegram: {
-        bagli: !!worker.telegram_chat_id,
-        kullaniciAdi: worker.telegram_username,
-        bagliAni: worker.telegram_linked_at,
-      },
     },
     girisKilidi: {
       kilitli: lock.locked,

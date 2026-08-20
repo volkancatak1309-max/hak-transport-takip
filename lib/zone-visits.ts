@@ -85,9 +85,19 @@ export async function aktifMusteriBolgeleri(): Promise<MusteriBolgesi[]> {
         .select("id, name, center_lat, center_lng, radius_m, min_dwell_s, customer_name, created_at")
         .eq("active", true)
         .eq("purpose", "customer");
-      if (error || !data) return [];
-      return data as MusteriBolgesi[];
-    } catch {
+      if (error) {
+        // #133 — ESKİDEN SESSİZDİ. Bu okuma boş dönerse ÖZELLİĞİN TAMAMI
+        // (ziyaret açma, ilerletme, gap bekçisi) hatasızca ölür; kardeşi
+        // `acikZiyaretler()` uyarı basıyordu, bu basmıyordu ve 20.08'de
+        // saatlerce yanlış yerde arandı.
+        console.warn(`[zone-visits] müşteri bölgeleri okunamadı: ${error.message}`);
+        return [];
+      }
+      return (data ?? []) as MusteriBolgesi[];
+    } catch (err) {
+      console.warn(
+        `[zone-visits] müşteri bölgeleri okunamadı (istisna): ${err instanceof Error ? err.message : err}`
+      );
       return [];
     }
   });
@@ -363,6 +373,13 @@ export async function ziyaretPlaniniYaz(planlar: ZiyaretPlani[]): Promise<{
     }
   }
 
+  if (guncel.length > 0 || yeni.length > 0) {
+    // Yazmanın SONUCU da görünsün: plan üretildi ama yazılmadıysa fark burada.
+    console.log(
+      `[zone-visits] yazma: yeni ${yeni.length} · güncel ${guncel.length} (kapanan ${guncel.filter((g) => g.ended_at !== null).length}) · silinecek ${silinecek.length}`
+    );
+  }
+
   if (silinecek.length > 0) {
     const { error } = await supabaseAdmin.from("zone_visits").delete().in("id", silinecek);
     if (error) {
@@ -443,7 +460,20 @@ export function gapTimeoutKapanislari(
 ): ZiyaretPlani {
   const plan = bosPlan();
   const esikSn = new Map(bolgeler.map((b) => [b.id, Math.max(1, b.min_dwell_s)]));
+  /**
+   * #134 — BEKÇİ NE GÖRDÜĞÜNÜ SÖYLER.
+   *
+   * 20.08.2026: demo'da bir ziyaret **14,5 saat** boyunca `last_seen_at`i bayat
+   * hâlde açık kaldı ve bekçi onu kapatmadı; 31 ziyaretin hiçbiri `gap_timeout`
+   * ile kapanmamıştı. Saf fonksiyon testlerde doğru çalışıyor (A9) ve yazma yolu
+   * canlı şemaya karşı doğrulandı — yani arıza ikisinin arasında bir yerde ve
+   * DIŞARIDAN GÖRÜNMÜYORDU. Bir sonraki vakada tahmin etmek zorunda kalmayalım:
+   * kaç açık ziyaret görüldü, kaçı bayat, en bayatı kaç dakika.
+   */
+  let enBayatDk = 0;
   for (const z of acik) {
+    const bayatDk = Math.round((simdiMs - ms(z.last_seen_at)) / 60000);
+    if (bayatDk > enBayatDk) enBayatDk = bayatDk;
     if (simdiMs - ms(z.last_seen_at) <= ZIYARET_GAP_MS) continue;
     const sure = ms(z.last_seen_at) - ms(z.started_at);
     if (sure >= (esikSn.get(z.zone_id) ?? 120) * 1000) {
@@ -460,6 +490,11 @@ export function gapTimeoutKapanislari(
     } else {
       plan.silinecek.push(z.id);
     }
+  }
+  if (acik.length > 0) {
+    console.log(
+      `[zone-visits] gap bekçisi: açık ${acik.length} · kapanacak ${plan.guncel.length} · silinecek ${plan.silinecek.length} · en bayat ${enBayatDk} dk · eşik ${ZIYARET_GAP_MS / 60000} dk · bölge ${bolgeler.length}`
+    );
   }
   return plan;
 }

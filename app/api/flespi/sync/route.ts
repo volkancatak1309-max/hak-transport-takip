@@ -17,6 +17,7 @@ import {
   saveVehicleEvents,
 } from "@/lib/telemetry";
 import { processAutoShifts, type AutoShiftSummary } from "@/lib/auto-shift";
+import { seferVarisKoprusu, type KopruOzeti } from "@/lib/sefer-bridge";
 import { sayacIle } from "@/lib/query-counter";
 import {
   acikZiyaretler,
@@ -375,6 +376,23 @@ async function runSync() {
     }
   }
 
+  /**
+   * SEFER VARIŞ KÖPRÜSÜ (Tur 3, migration 069) — ziyaretler YAZILDIKTAN sonra.
+   *
+   * Burada olmasının sebebi: ziyaretleri açan TEK yer bu tur. Damga, ziyaretin
+   * açıldığı turda düşer ve yeni bir zamanlayıcı kaydı gerekmez (bu repoda
+   * cron'lar dışarıdan tetikleniyor — periyodik bir iş hem kurulum ister hem
+   * de sync'ten her zaman geç kalırdı).
+   *
+   * SALT OKUMA + yalnız `seferler`e yazar; ziyaret motoruna dokunmaz.
+   * Kendi hata yolunda: throw etmez, turu düşürmez. Günün seferi yoksa tek bir
+   * ucuz sorgu atıp çıkar.
+   */
+  const seferVaris: KopruOzeti = await seferVarisKoprusu();
+  if (seferVaris.hata) {
+    console.error("[flespi/sync] sefer varış köprüsü:", seferVaris.hata);
+  }
+
   // Rölanti bekçisi (migration 024): sinyali kesilmiş açık epizodları
   // last_seen_at ile kapat. throw etmez — GPS senkronunu düşürmez.
   let idleClosed = 0;
@@ -399,6 +417,7 @@ async function runSync() {
     perVehicle,
     idleClosed,
     ziyaret,
+    seferVaris,
     autoShifts,
   };
 }

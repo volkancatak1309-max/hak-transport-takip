@@ -30,6 +30,7 @@ import {
 } from "@/lib/format";
 import { checkUndelivered } from "@/lib/package-limits";
 import { logShiftEdit, listShiftEdits } from "@/lib/shift-edit-log";
+import { seferePaketBaglaVardiyadan } from "@/lib/sefer-bridge";
 import { evaluateDepotGate, resolveShiftStartAt } from "@/lib/depot";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { resolveStartKm, resolveEndKm } from "@/lib/auto-shift";
@@ -764,6 +765,11 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
 
   if (error) return { ok: false, error: error.message };
 
+  // SEFER PAKET KÖPRÜSÜ (Tur 3) — "akşam paket sayısı" burada kesinleşiyor
+  // (teslim = alınan − teslim edilemeyen). Yan görev: throw etmez, kapanışı
+  // hiçbir koşulda geri döndürmez; giriş akışı aynen kalır.
+  await seferePaketBaglaVardiyadan(active.id as string);
+
   // Başlangıç onayı hiç verilmeden kapanan vardiya "onaysız" işaretlenir →
   // yönetici panelinde uyarı rozeti (İş 1). Best-effort: migration 020
   // uygulanmadıysa sessiz no-op (kapanışı asla geri döndürmez).
@@ -1142,6 +1148,11 @@ export async function editEntryAction(formData: FormData): Promise<ShiftResult> 
   if (error) return { ok: false, error: error.message };
 
   await logShiftEdit(parsed.data.id, session.worker_id ?? null, before ?? null, update);
+
+  // SEFER PAKET KÖPRÜSÜ (Tur 3) — yönetici teslim sayısını düzeltirse seferin
+  // taşıdığı rakam da tazelensin; yoksa sefer düzeltilmiş vardiyanın YANLIŞ
+  // sayısını taşımaya devam ederdi.
+  await seferePaketBaglaVardiyadan(parsed.data.id);
 
   revalidatePath("/admin");
   revalidatePath("/panel");

@@ -73,12 +73,16 @@ export type SeferRow = {
   yolda_at: string | null;
   tamamlandi_at: string | null;
   iptal_at: string | null;
+  /** OTOMATİK (Tur 3, migration 069) — hedef bölgeye varış anı. */
+  vardi_at: string | null;
+  /** OTOMATİK (Tur 3) — o günün vardiyasından bağlanan teslim sayısı. */
+  paket_gerceklesen: number | null;
   created_by: string | null;
   created_at: string;
 };
 
 const COLS =
-  "id, tarih, worker_id, vehicle_id, zone_id, paket_hedef, notlar, durum, atandi_at, kabul_at, yolda_at, tamamlandi_at, iptal_at, created_by, created_at";
+  "id, tarih, worker_id, vehicle_id, zone_id, paket_hedef, notlar, durum, atandi_at, kabul_at, yolda_at, tamamlandi_at, iptal_at, vardi_at, paket_gerceklesen, created_by, created_at";
 
 export async function getSeferById(id: string): Promise<SeferRow | null> {
   const { data, error } = await supabaseAdmin
@@ -282,6 +286,13 @@ export function seferGovdesi(s: SeferRow) {
       tamamlandi: s.tamamlandi_at,
       iptal: s.iptal_at,
     },
+    /**
+     * OTOMATİK KÖPRÜLER (Tur 3). İkisi de `damgalar` DIŞINDA duruyor: o blok
+     * ŞOFÖRÜN bastığı durum çizgisinin damgaları, bunlar sistemin türettiği
+     * bilgi. Aynı torbaya koymak "şoför vardı'ya bastı" izlenimi verirdi.
+     */
+    vardiAt: s.vardi_at,
+    paketGerceklesen: s.paket_gerceklesen,
     olusturan: s.created_by,
     olusturuldu: s.created_at,
   };

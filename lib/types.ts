@@ -307,7 +307,6 @@ export type Assignment = {
   notes: string | null;
   status: AssignmentStatus;
   cancel_reason: string | null;
-  assignment_notified_at: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

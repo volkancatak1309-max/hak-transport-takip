@@ -16,7 +16,7 @@ function todayYmdVienna(): string {
 
 /**
  * İŞTEN ÇIKIŞ diyaloğu (Modül 2). Son çalışma gününü sorar, onay ister.
- * terminateWorkerAction: terminated_at + is_active=false + Telegram temizle.
+ * terminateWorkerAction: terminated_at + is_active=false + filo şefliği bırak.
  * Araç ataması boşaltılmaz — "şoförsüz araç" Dikkat kalemi devreye girer.
  */
 export function TerminateWorkerDialog({

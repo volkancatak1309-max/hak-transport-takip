@@ -224,7 +224,7 @@ export type ShiftPerDay = "one" | "many";
  *
  *  • `many` — Sendigo'nun iş modeli: gece vardiyası + gündüz çağrı işi. Aynı
  *    şoför aynı gün ikinci kez vardiya açabilir ve bu YENİ BİR SATIRDIR.
- *    Yönetici panosunda "Dikkat/Aksiyon" kalemi olarak görünür (Telegram yok).
+ *    Yönetici panosunda "Dikkat/Aksiyon" kalemi olarak görünür (dış bildirim yok).
  *
  * ⚠️ GEVŞEME YALNIZ İNSAN EYLEMLİ İKİ YOLDA GEÇERLİDİR: şoför panelindeki
  * başlatma (startShiftManualAction) ve yönetici/şef dialogu

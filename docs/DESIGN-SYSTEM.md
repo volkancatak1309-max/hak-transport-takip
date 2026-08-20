@@ -111,7 +111,7 @@ Kural: rutin olaylar renkle BAĞIRMAZ; kritik olan tek başına parlar (Samsara 
 - **Ağırlık:** 400 gövde · 500–600 başlık/vurgu · **700 yalnız KPI değeri.** (`font-bold` başlıklarda yasak — FAZ 0 §2.6 ihlalleri FAZ 3'te temizlenir.)
 - **`.nums` kimliği:** Tüm sayısal veri (saat, km, €, hız, adet) ve **plaka** `.nums` (tabular-nums + mono) kullanır. Plaka ayrıca `uppercase tracking-wide`. İstisnasız — FAZ 0'da bulunan aykırı yerler (seferler kartı, workers tablosu) FAZ 3'te düzeltilir.
 - **Sayı hizalama:** Tabloda sayısal kolon **daima sağa hizalı** + `.nums`; tarih/saat hücreleri de `.nums`. Metin kolonları sola.
-- **Tek h1 kuralı:** Sayfanın h1'i DashboardShell topbar başlığıdır. Sayfa gövdesi h2'den başlar. Çift h1 (yakıt/masraf/telegram/seferler) FAZ 3'te PageHeader ile çözülür.
+- **Tek h1 kuralı:** Sayfanın h1'i DashboardShell topbar başlığıdır. Sayfa gövdesi h2'den başlar. Çift h1 (yakıt/masraf/seferler) FAZ 3'te PageHeader ile çözülür.
 - **Boş değer sözlüğü (tek kural):** `—` = veri yok/girilmedi · `0` = gerçek sıfır · tam cümle yalnız EmptyState içinde. "Girilmedi" gibi kelime değerleri yasak.
 
 ---
@@ -123,7 +123,7 @@ Kural: rutin olaylar renkle BAĞIRMAZ; kritik olan tek başına parlar (Samsara 
 
 | Sayfa sınıfı | Konteyner | Sayfalar |
 |---|---|---|
-| Liste/dashboard | `max-w-6xl` | Yönetici, Alarmlar, Araçlar, Seferler, Yakıt, Masraflar, Çalışanlar, Telegram, Bölgeler |
+| Liste/dashboard | `max-w-6xl` | Yönetici, Alarmlar, Araçlar, Seferler, Yakıt, Masraflar, Çalışanlar, Bölgeler |
 | Detay | `max-w-5xl` | Araç detay, Çalışan detay |
 | Tam genişlik | `max-w-none` (kenar boşluğu `px-4 sm:px-6`) | Harita, araç rota (`araclar/[id]/rota`), rota replay (`/admin/rota`) |
 

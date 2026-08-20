@@ -42,7 +42,7 @@ export type SummaryCandidate = {
  *    kayıtlar için duruyor)
  *  • admin              → yönetici kapattı (Kapanmamış Vardiyalar kartı)
  * 'watchdog' KASITLI olarak dışarıda: onu şoförün kendisi tetikliyor
- * (Telegram'daki "Hayır" dokunuşu), yani imzalayabileceği kendi eylemidir.
+ * (watchdog sorusuna verilen "Hayır" yanıtı), yani imzalayabileceği kendi eylemidir.
  */
 function isSystemClosed(e: SummaryCandidate): boolean {
   return (

@@ -38,7 +38,7 @@ Kuruluma başlamadan elde olması gerekenler — hiçbiri tahminle doldurulmaz:
 
 ```
 001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 → 010 → 011 → 012
-013_telegram_chat_unique → 013_vehicles_flespi_device
+013_vehicles_flespi_device
 014_device_telemetry     → 014_vehicle_penalties
 015 → 016 → 017 → 018 → 019 → 020 → 021 → 022 → 023 → 024 → 025
 026 → 027 → 028 → 029 → 030 → 031 → 032 → 033 → 034 → 035 → 036
@@ -132,11 +132,9 @@ tenant kodu için varlıklar zaten `public/brands/<tenant>/` altında aranır.
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase proje URL'i |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role JWT — **yalnız sunucu** |
 | `SESSION_PASSWORD` | 32+ rastgele karakter (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) |
-| `NEXT_PUBLIC_APP_URL` | canlı adres (Telegram butonları) |
 | `FLESPI_TOKEN` | flespi REST token'ı |
 | `FLESPI_SYNC_SECRET` | `/api/flespi/sync` ve `/api/flespi/ingest` koruması |
 | `CRON_SECRET` | `/api/cron/shift-watchdog` koruması |
-| `TELEGRAM_BOT_TOKEN` · `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` · `TELEGRAM_WEBHOOK_SECRET` | Telegram (müşteriye **ayrı bot**) |
 
 ### Marka + kurulum modu env
 
@@ -187,17 +185,6 @@ gün sınırı panelden ayrışır.
 
 ---
 
-## 6. Telegram
-
-Bir botun webhook adresi **tektir** — müşteriler bot paylaşamaz.
-
-1. @BotFather → yeni bot → token.
-2. Webhook: `https://<domain>/api/telegram/webhook?secret=<TELEGRAM_WEBHOOK_SECRET>`
-   (`scripts/telegram-webhook.ps1` aynı işi teşhisle birlikte yapar).
-3. Yöneticiler panelden (`/admin/telegram`) kod alıp bota `/start <kod>` yazar.
-
----
-
 ## 7. İlk veri (panelden)
 
 Sıra önemli — her adım bir öncekine dayanıyor:
@@ -213,7 +200,6 @@ Sıra önemli — her adım bir öncekine dayanıyor:
    > çalışır.
 3. **Depo** (`/admin/bolgeler`): yeni bölge, amaç **depot**, yarıçapı çiz
    (200–500 m tipik).
-4. **Telegram eşleştirme** (`/admin/telegram`).
 
 ---
 

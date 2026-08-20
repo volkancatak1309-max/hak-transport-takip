@@ -65,7 +65,7 @@ import { getTestScope } from "@/lib/test-data";
  *
  * ── Nereye filtre KONMAZ ───────────────────────────────────────────────────
  * Çalışanlar sayfası, personel dosyası, giriş/auth, PIN yönetimi, yetki
- * kontrolleri, Telegram alıcı listeleri ve izin ONAY akışı TÜM personeli
+ * kontrolleri, bildirim alıcı listeleri ve izin ONAY akışı TÜM personeli
  * görmeye devam eder. Yönetici oralarda GİZLENMEZ — yalnız ŞOFÖR
  * METRİKLERİNDEN düşer. Kural: "yönetici personeldir, şoför değildir."
  */

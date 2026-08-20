@@ -13,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDuration } from "@/lib/format";
-import { notifyLenkzeit } from "@/app/actions/telegram";
 import { BRAND } from "@/lib/brand";
 
 const WARN_MIN = 240; // 4h — pre-warning
@@ -21,7 +20,6 @@ const VIOLATION_MIN = 270; // 4.5h — mandatory break
 const SNOOZE_MS = 5 * 60 * 1000;
 
 type Props = {
-  timeEntryId: string;
   startedAt: string;
   isOnBreak: boolean;
   breakMinutes: number;
@@ -29,7 +27,6 @@ type Props = {
 };
 
 export function LenkzeitWarning({
-  timeEntryId,
   startedAt,
   isOnBreak,
   breakMinutes,
@@ -100,8 +97,11 @@ export function LenkzeitWarning({
     setModalOpen(true);
     showNotification();
     playSound();
-    // Also push a Telegram alert (server de-dupes per shift; fire-and-forget).
-    void notifyLenkzeit(timeEntryId).catch(() => {});
+    // BİLDİRİM KATMANI SÖKÜLDÜ (20.08.2026): burada bir de sunucuya gidip
+    // dış bildirim tetikleniyordu. Uyarının GÖRÜNEN kısmı (modal + ses +
+    // tarayıcı bildirimi) zaten tamamen istemcide; sunucu damgası
+    // (lenkzeit_notified_at) yalnız o dış mesajın tekrarını engelliyordu ve
+    // BAŞKA HİÇBİR YERDE okunmuyordu. Çağrı kalktı, görünen davranış aynı.
   }
 
   // React to break start/end transitions

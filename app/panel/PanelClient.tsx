@@ -55,7 +55,6 @@ import {
   DRIVER_VEHICLE_CHOICE,
   SHIFT_PER_DAY,
 } from "@/lib/tenant";
-import { TelegramLink } from "@/components/TelegramLink";
 import { tryServerAction } from "@/lib/offline-aware";
 import { ConfirmShiftCard } from "./ConfirmShiftCard";
 import { ShiftSummaryCard } from "./ShiftSummaryCard";
@@ -99,7 +98,6 @@ type AssignedVehicle = {
 type Props = {
   active: TimeEntry | null;
   pendingSummary: TimeEntry | null;
-  telegram: { linked: boolean; username: string | null };
   totals: Totals;
   assignedVehicle: AssignedVehicle | null;
   /** Bugün (Viyana günü) bir vardiya açılmış mı — günde tek vardiya kuralı. */
@@ -116,7 +114,6 @@ type Props = {
 export function PanelClient({
   active,
   pendingSummary,
-  telegram,
   totals,
   assignedVehicle,
   shiftDoneToday,
@@ -579,7 +576,6 @@ export function PanelClient({
       {active && LENKZEIT_WARNING_ENABLED && (
         <>
           <LenkzeitWarning
-            timeEntryId={active.id}
             startedAt={active.started_at}
             isOnBreak={onBreak}
             breakMinutes={totalBreakSoFar}
@@ -1015,7 +1011,7 @@ export function PanelClient({
         </button>
       </div>
 
-      {/* Ayarlar: Telegram bağlantısı + başlangıç km düzeltme */}
+      {/* Ayarlar: başlangıç km düzeltme */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -1024,9 +1020,6 @@ export function PanelClient({
           {/* Başlangıç KM düzeltme kaldırıldı: km cihazdan geliyor, şoför
               sayaç girmiyor. Yanlış türetilmiş bir değeri yönetici düzeltir
               (çalışan detayındaki KM düzenle). */}
-          <div className="space-y-4">
-            <TelegramLink linked={telegram.linked} username={telegram.username} />
-          </div>
         </DialogContent>
       </Dialog>
 

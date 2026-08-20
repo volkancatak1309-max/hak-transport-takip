@@ -21,7 +21,6 @@
 | Masraflar | 81 | **100** | **100** | 100 | 4,9 s | 0 |
 | Bölgeler | 78 | **100** | **100** | 100 | 5,8 s | 0 |
 | Çalışanlar | 76 | **100** | **100** | 100 | 5,9 s | 0 |
-| Telegram | 82 | **100** | **100** | 100 | 5,0 s | 0 |
 
 **CLS 10/10 sıfır** (harita 0,002 — kayan harita döşemeleri, eşiğin çok altında).
 
@@ -61,7 +60,6 @@ Leaflet'in varsayılan link rengi (#0078A8) atıf şeridinde **3,23:1**. Atıf *
 ### 3.5 Erişilebilir adı olmayan butonlar (`button-name`)
 - **Yönetici**: üç filtre select'i (Tarih Aralığı / Çalışan / Durum) — `<Label>` görsel, `htmlFor` yok, trigger'da `aria-label` yok → ekran okuyucuda adsız.
 - **Çalışanlar**: "PIN sıfırla" butonunun metni `hidden md:inline` — **dar ekranda gizlenince buton tamamen adsız kalıyordu**. Lighthouse mobil profilde koştuğu için ancak burada yakalandı.
-- **Telegram**: satır butonu yalnız ikon içeriyordu; select trigger'ı etiketsizdi.
 → Hepsine `aria-label` eklendi. **Yönetici erişilebilirlik 84 → 100.**
 
 ### 3.6 `label-content-name-mismatch` (WCAG 2.5.3 Label in Name)

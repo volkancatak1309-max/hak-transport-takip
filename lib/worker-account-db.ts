@@ -138,7 +138,7 @@ export type AktiflikSonuc =
  * Bu fonksiyon `terminated_at`e İŞTEN ÇIKIŞ YAZMAZ ve `terminateWorkerAction`
  * ile İLİŞKİLİ DEĞİLDİR:
  *   • `is_active=false` → GEÇİCİ (hastalık, uzun izin, kayıp telefon)
- *   • `terminated_at`   → KALICI (son çalışma günü, Telegram kopar, şeflik düşer)
+ *   • `terminated_at`   → KALICI (son çalışma günü, şeflik düşer)
  * Karışırsa Personel listesindeki "Ayrılanlar" bölümü sessizce yanlışa döner.
  *
  * TEK İSTİSNA — GERİ AÇARKEN `terminated_at` TEMİZLENİR (28.07.2026):

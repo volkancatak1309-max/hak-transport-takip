@@ -128,9 +128,6 @@ satır tipleri de tam (Worker 26, TimeEntry 27, Vehicle 16 alan). Yani
 | `CRON_SECRET` | 🔑 | Rastgele — komut §3.5 |
 | `FLESPI_SYNC_SECRET` | 🔑 | Rastgele — komut §3.5 |
 | `FLESPI_TOKEN` | 🕓 | flespi'de Sendigo cihaz grubu açılınca (§6) |
-| `TELEGRAM_BOT_TOKEN` | 🕓 | @BotFather'dan **ayrı bot** (§6) |
-| `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | 🕓 | Botun kullanıcı adı (§6) |
-| `TELEGRAM_WEBHOOK_SECRET` | 🕓 | Bot kurulunca üret (§6) |
 
 ### 3.2 Marka
 
@@ -267,7 +264,7 @@ Bunlar **şimdi** doğrulanabilir:
 | 8 | PDF anteti | `/admin/raporlar` → herhangi bir PDF → **Sendigo GmbH · Bildgasse 10 · FN 681377a · Geschäftsführer: Gökhan Kalkanlı** |
 
 Bunlar **şimdi doğrulanamaz** (veri yok, beklenen): araç haritası, telemetri,
-vardiya açılması/kapanması, Telegram.
+vardiya açılması/kapanması.
 
 ---
 
@@ -318,20 +315,6 @@ Yeni bölge → amaç **depot** → merkez + yarıçap (200-500 m tipik).
 GET https://<domain>/api/flespi/sync?secret=<FLESPI_SYNC_SECRET>     — her 60 sn
 GET https://<domain>/api/cron/shift-watchdog?secret=<CRON_SECRET>     — saatlik
 ```
-
-### 6.6 Telegram — ayrı bot
-
-Bir botun webhook adresi **tektir**; müşteriler bot paylaşamaz.
-
-1. @BotFather → yeni bot → token → `TELEGRAM_BOT_TOKEN`,
-   `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET` (üret).
-2. Env'leri gir → **Redeploy**.
-3. Webhook: `https://<domain>/api/telegram/webhook?secret=<TELEGRAM_WEBHOOK_SECRET>`
-   (`scripts/telegram-webhook.ps1` bunu teşhisle birlikte yapar).
-4. Yöneticiler `/admin/telegram`'dan kod alıp bota `/start <kod>` yazar.
-
-> Bot kurmak aslında müşteri verisi gerektirmiyor — istersen 1. aşamada da
-> yapılabilir. Sıralamada burada duruyor çünkü bildirim gidecek kimse yok.
 
 ### 6.7 Kabul testi (veri geldikten sonra)
 

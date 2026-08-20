@@ -47,7 +47,6 @@ const ROOT = process.cwd();
 const OWNER_SURFACES = [
   "app/admin/workers/page.tsx",
   "app/admin/workers/[id]/page.tsx",
-  "app/admin/telegram/page.tsx",
   "app/admin/izinler/page.tsx",
   "app/admin/seferler/page.tsx",
   "app/admin/araclar/page.tsx",

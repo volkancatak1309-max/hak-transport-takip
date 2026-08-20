@@ -394,7 +394,7 @@ export async function toggleActiveAction(workerId: string): Promise<WorkerResult
 /**
  * İŞTEN ÇIKIŞ (Modül 2). Personeli "ayrıldı" olarak işaretler: terminated_at
  * (son çalışma günü) + is_active=false (canlı yüzeyler is_active ile kendiliğinden
- * düşürür) + Telegram bağını temizler (artık bildirim gitmesin) + filo şefliğini
+ * düşürür) + filo şefliğini
  * bırakır (managed_fleet=null).
  *
  * KASITLI olarak `vehicles.assigned_worker_id` BOŞALTILMAZ: araç "şoförsüz kaldı"
@@ -432,8 +432,6 @@ export async function terminateWorkerAction(
     .update({
       terminated_at: lastDay,
       is_active: false,
-      telegram_chat_id: null,
-      telegram_linked_at: null,
       // FİLO ŞEFLİĞİ DE BIRAKILIR (28.07.2026). Eskiden managed_fleet olduğu
       // gibi kalıyordu: ayrılan kişi veride hâlâ "bordo filosunun şefi"
       // görünüyordu. Bugün zararsız çünkü lib/fleet-scope.ts is_active=false

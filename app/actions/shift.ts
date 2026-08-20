@@ -22,12 +22,7 @@ import {
   MAX_COUNT,
 } from "@/lib/validation";
 import { PACKAGES_ENABLED, SHIFT_PER_DAY } from "@/lib/tenant";
-import {
-  workedMs,
-  formatDurationShort,
-  formatTime,
-  startOfTodayVienna,
-} from "@/lib/format";
+import { startOfTodayVienna } from "@/lib/format";
 import { checkUndelivered } from "@/lib/package-limits";
 import { logShiftEdit, listShiftEdits } from "@/lib/shift-edit-log";
 import { seferePaketBaglaVardiyadan } from "@/lib/sefer-bridge";
@@ -35,12 +30,6 @@ import { evaluateDepotGate, resolveShiftStartAt } from "@/lib/depot";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { resolveStartKm, resolveEndKm } from "@/lib/auto-shift";
 import { hasShiftToday } from "@/lib/shift-day";
-import { getTestScope } from "@/lib/test-data";
-import { sendTelegramMessage } from "@/lib/telegram";
-import {
-  shiftSummaryMessage,
-  shiftStartedMessage,
-} from "@/lib/telegram-messages";
 
 export type ShiftResult = {
   ok: boolean;
@@ -49,41 +38,6 @@ export type ShiftResult = {
   reopened?: boolean;
 };
 
-/**
- * Notify every linked admin that a driver just started a shift. Best-effort:
- * runs after the shift row is committed and never blocks or fails the action.
- */
-async function notifyAdminsShiftStarted(
-  workerId: string,
-  workerName: string,
-  plate: string,
-  startedIso: string
-): Promise<void> {
-  // Test vardiyası yöneticilere bildirim ATMAZ. Telegram, panelden bağımsız
-  // ikinci bir yüzey — burada elemezsek test hesabı ekranlarda gizliyken
-  // herkesin telefonuna düşer.
-  const scope = await getTestScope();
-  if (scope.isTestWorker(workerId)) return;
-
-  // test-visible: alıcı listesi (is_admin) — özne yukarıda elendi.
-  const { data: admins } = await supabaseAdmin
-    .from("workers")
-    .select("telegram_chat_id, telegram_locale")
-    .eq("is_admin", true)
-    .not("telegram_chat_id", "is", null);
-
-  for (const a of admins ?? []) {
-    const loc = (a.telegram_locale as string) ?? "tr";
-    await sendTelegramMessage(
-      a.telegram_chat_id as string,
-      shiftStartedMessage(loc, {
-        name: workerName,
-        plate,
-        time: formatTime(startedIso, loc),
-      })
-    );
-  }
-}
 
 /**
  * Manuel vardiya başlatma (şoför paneli bekleme ekranı).
@@ -385,12 +339,6 @@ export async function startShiftManualAction(
     }
   }
 
-  await notifyAdminsShiftStarted(
-    session.worker_id!,
-    session.name ?? "—",
-    (veh.plate as string) ?? "—",
-    startedIso
-  );
 
   revalidatePath("/panel");
   revalidatePath("/admin");
@@ -707,9 +655,6 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
       latest?.recorded_at
     );
   }
-  const finalBreak =
-    parsed.data.break_minutes ?? active.break_minutes ?? 0;
-
   // Paket muhasebesi (yeni akış, +1 sayaç yok):
   //  • alınan  = start_package_count (şoför gün içinde manuel girdi)
   //  • teslim edilemeyen = undelivered_count (kapanışta girilir, zorunlu)
@@ -783,30 +728,9 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
       () => {}
     );
 
-  // Telegram end-of-shift summary to the driver (best-effort, never blocks).
-  const { data: me } = await supabaseAdmin
-    .from("workers")
-    .select("telegram_chat_id, telegram_locale")
-    .eq("id", session.worker_id!)
-    .maybeSingle();
-  if (me?.telegram_chat_id) {
-    const loc = (me.telegram_locale as string) ?? "tr";
-    const ms = workedMs({
-      started_at: active.started_at,
-      ended_at: endedIso,
-      break_minutes: finalBreak,
-    });
-    await sendTelegramMessage(
-      me.telegram_chat_id as string,
-      shiftSummaryMessage(loc, {
-        hours: formatDurationShort(ms, loc),
-        // Cihazdan km çözülemediyse "—" — otomatik kapanış özetiyle aynı dil.
-        km: endKm !== null ? String(endKm - active.start_km) : "—",
-        cargo: String(delivered ?? 0),
-        breakMin: String(finalBreak),
-      })
-    );
-  }
+  // DIS BILDIRIM KATMANI SOKULDU (20.08.2026): kapanista sofore ayrica
+  // ozet mesaji gonderiliyordu. Ozetin KENDISI degismedi — panel/mobil ozet
+  // ve imza dongusu (summary_notified_at) aynen calisiyor.
 
   revalidatePath("/panel");
   revalidatePath("/admin");
@@ -969,14 +893,15 @@ export async function adminUpdateKmAction(
  * Yönetici, KAPANMAMIŞ bir vardiyayı kapatır ("Kapanmamış Vardiyalar" kartı).
  *
  * Neden gerekli (22.07.2026): otomatik kapanış kaldırıldı, yani unutulan
- * vardiyayı kapatacak tek mekanizma watchdog'un Telegram sorusuydu — ve o
- * fiilen ölü: 31 aktif şoförün HİÇBİRİ Telegram'a bağlı değil, watchdog yalnız
- * adminlere haber verip `still_active_asked_at` damgalıyor. Telafi yolu
+ * vardiyayı kapatacak tek mekanizma watchdog'un şoföre sorduğu soruydu — ve o
+ * fiilen ölüydü: hiçbir şoför o kanala bağlı değildi, watchdog yalnız
+ * yöneticilere haber verip damga atıyordu (katman 20.08.2026'da tamamen
+ * söküldü). Telafi yolu
  * olmadan "vardiyayı sadece personel kapatır" kuralı, unutulan vardiyanın
  * günlerce açık kalması demekti (canlı: 27 saat açık kayıt).
  *
- * Bitiş anı "şimdi" DEĞİL: aracın son telemetri kaydı tercih edilir — watchdog
- * kapanışıyla (app/api/telegram/webhook) birebir aynı kural. 27 saattir açık
+ * Bitiş anı "şimdi" DEĞİL: aracın son telemetri kaydı tercih edilir — sökülen
+ * watchdog kapanışıyla birebir aynı kural. 27 saattir açık
  * duran bir vardiyayı "şimdi"ye kapatmak 27 saatlik çalışma yazardı.
  * Bitiş km'si de manuel kapanışla aynı kaynaktan türetilir (resolveEndKm).
  */

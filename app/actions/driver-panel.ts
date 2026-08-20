@@ -3,12 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 import { listVehiclesForDriverPick, type PickableVehicle } from "@/lib/vehicles";
-import { getTestScope } from "@/lib/test-data";
 import { requireWorker } from "@/lib/session";
 import { uploadReceipt, signedReceiptUrls } from "@/lib/storage";
 import { recountShiftPackages } from "@/lib/shift-packages";
-import { sendTelegramMessage } from "@/lib/telegram";
-import { driverReportMessage } from "@/lib/telegram-messages";
 import { SUMMARY_WINDOW_MS } from "@/lib/shift-summary";
 import type { DriverReportType } from "@/lib/types";
 
@@ -259,7 +256,7 @@ const REPORT_TYPES: DriverReportType[] = [
 
 /**
  * İş 2 — "SORUN BİLDİR": 4 hazır seçenekten biri, yazı zorunluluğu yok.
- * Kayıt admin paneline düşer; bağlı adminlere best-effort Telegram gider.
+ * Kayıt admin paneline düşer.
  * Aktif vardiya opsiyonel (vardiya dışı arıza bildirimi de kaydedilir).
  */
 export async function reportProblemAction(input: {
@@ -288,31 +285,9 @@ export async function reportProblemAction(input: {
   });
   if (error) return { ok: false, error: error.message };
 
-  // Best-effort Telegram → adminler; bildirim hatası kaydı etkilemez.
-  try {
-    // Test şoförünün bildirimi yöneticilerin telefonuna DÜŞMEZ.
-    const scope = await getTestScope();
-    if (scope.isTestWorker(session.worker_id)) return { ok: true };
-    const plate = active?.plate ?? session.plate ?? "—";
-    // test-visible: alıcı listesi (is_admin) — özne yukarıda elendi.
-    const { data: admins } = await supabaseAdmin
-      .from("workers")
-      .select("telegram_chat_id, telegram_locale")
-      .eq("is_admin", true)
-      .not("telegram_chat_id", "is", null);
-    for (const a of admins ?? []) {
-      await sendTelegramMessage(
-        a.telegram_chat_id as string,
-        driverReportMessage((a.telegram_locale as string) ?? null, {
-          name: session.name ?? "—",
-          plate,
-          type: input.type,
-        })
-      );
-    }
-  } catch {
-    // sessiz geç
-  }
+  // DIŞ BİLDİRİM KATMANI SÖKÜLDÜ (20.08.2026): arıza bildirimi buradan
+  // yöneticilere ayrıca gönderiliyordu. Kayıt YAZIMI değişmedi — bildirim
+  // yalnız panelde/mobilde görünüyor (Dikkat panosu + arıza uçları).
 
   revalidatePath("/panel");
   revalidatePath("/admin");

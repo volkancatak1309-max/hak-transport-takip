@@ -412,16 +412,42 @@ export async function ziyaretPlaniniYaz(planlar: ZiyaretPlani[]): Promise<{
 export async function bolgeZiyaretleriniKapat(zoneId: string): Promise<number> {
   const { data, error } = await supabaseAdmin
     .from("zone_visits")
-    .select("id, last_seen_at")
+    .select("id, started_at, last_seen_at")
     .eq("zone_id", zoneId)
     .is("ended_at", null);
   if (error || !data || data.length === 0) {
     if (error) console.warn(`[zone-visits] bölge kapanışı okunamadı: ${error.message}`);
     return 0;
   }
-  const satirlar = data as { id: string; last_seen_at: string }[];
+  /**
+   * ⚠️ EŞİK BURADA DA GEÇERLİ (20.08.2026, canlıda yakalandı).
+   *
+   * İlk sürüm açık ziyaretlerin HEPSİNİ kapatıyordu. Demo'da bölge 4 dakika
+   * açık kalınca yeni açılmış üç ziyaret kapandı ve raporda **"0 dk"** satırı
+   * olarak göründü — yani bölgenin yanından geçmiş sayılan araçlar fatura
+   * ekine girdi. Motorun her yerde uyguladığı kural burada atlanmıştı:
+   * eşiği dolduramamış bir kayıt ziyaret DEĞİLDİR, kapatılmaz — SİLİNİR.
+   * `gapTimeoutKapanislari` bunu zaten böyle yapıyordu.
+   */
+  const { data: bolge } = await supabaseAdmin
+    .from("geofences")
+    .select("min_dwell_s")
+    .eq("id", zoneId)
+    .maybeSingle();
+  const esikMs = Math.max(1, (bolge?.min_dwell_s as number | null) ?? 120) * 1000;
+
+  const satirlar = data as { id: string; started_at: string; last_seen_at: string }[];
+  const kisa = satirlar.filter((z) => ms(z.last_seen_at) - ms(z.started_at) < esikMs);
+  const uzun = satirlar.filter((z) => ms(z.last_seen_at) - ms(z.started_at) >= esikMs);
+  if (kisa.length > 0) {
+    const { error: eSil } = await supabaseAdmin
+      .from("zone_visits")
+      .delete()
+      .in("id", kisa.map((z) => z.id));
+    if (eSil) console.error(`[zone-visits] kısa ziyaret silinemedi: ${eSil.message}`);
+  }
   let kapanan = 0;
-  for (const z of satirlar) {
+  for (const z of uzun) {
     const { error: e1 } = await supabaseAdmin
       .from("zone_visits")
       .update({ ended_at: z.last_seen_at, end_reason: "zone_closed" })
@@ -435,6 +461,9 @@ export async function bolgeZiyaretleriniKapat(zoneId: string): Promise<number> {
     if (!e2) kapanan++;
     else console.error(`[zone-visits] bölge kapanışı yazılamadı: ${e2.message}`);
   }
+  console.log(
+    `[zone-visits] bölge kapanışı: kapanan ${kapanan} · silinen ${kisa.length} (eşik ${esikMs / 1000} sn)`
+  );
   return kapanan;
 }
 

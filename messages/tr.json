@@ -179,7 +179,18 @@
       "idling": "RÖL",
       "jamming": "SNY"
     },
-    "shift_km_unavailable": "vardiya pencereli km bu turda hesaplanamadı (zaman aşımı). Skorlar ŞİŞİRİLMİŞ eski km ile DOLDURULMADI; ilgili şoförler \"Veri yok\" görünür. Sayfayı yenileyin."
+    "shift_km_unavailable": "vardiya pencereli km bu turda hesaplanamadı (zaman aşımı). Skorlar ŞİŞİRİLMİŞ eski km ile DOLDURULMADI; ilgili şoförler \"Veri yok\" görünür. Sayfayı yenileyin.",
+    "ownerless_title": "Sahipsiz olay",
+    "ownerless_hint": "Araç vardiyasız kullanılırken üretilen olaylar. O anda direksiyonda kimin olduğu bilinmediği için hiçbir şoförün skoruna yazılmaz.",
+    "ownerless_bridge": "Toplam {toplam} olay = şoförlere yazılan {yazilan} + sahipsiz {sahipsiz}",
+    "ownerless_outofroster": "Ayrıca {n} olay, vardiyası bulunan ama kadroda görünmeyen bir kişiye düştü.",
+    "ownerless_breakdown": "Araç kırılımı ({n} araç)",
+    "ownerless_breakdown_hint": "En çok sahipsiz olay üreten araçlar. \"Vardiya\" sütunu, seçili aralıkta o araç için açılmış vardiya sayısıdır.",
+    "ownerless_col_count": "sahipsiz",
+    "ownerless_col_shifts": "vardiya",
+    "ownerless_col_assigned": "atanmış",
+    "ownerless_no_shift": "hiç vardiya yok",
+    "ownerless_rest": "Kalan {n} araçta {adet} olay daha."
   },
   "alarms": {
     "title": "Alarmlar",
@@ -1545,7 +1556,7 @@
     "zone_stat_customers": "Müşteri bölgesi",
     "zone_stat_customers_scope": "ziyaret alan",
     "zone_stat_uncertain": "İşaretli satır",
-    "zone_stat_uncertain_scope": "sinyal kesintisiyle kapandı",
+    "zone_stat_uncertain_scope": "kapanışı işaretli — sinyal kesik ya da ölçüm durdu",
     "zone_summary_title": "Müşteri özeti",
     "zone_summary_visits": "{n} ziyaret",
     "zone_summary_uncertain": "{n} işaretli",

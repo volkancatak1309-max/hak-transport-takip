@@ -118,9 +118,15 @@ export async function buildZoneVisitReport(range: DateRange): Promise<ZoneVisitR
    */
   const esik = new Map(zones.map((z) => [z.id, (z.min_dwell_s ?? 120) * 1000]));
   const visits = (visitData ?? []).filter((v) => {
-    if (v.ended_at) return true;
-    const gorulen = new Date(v.last_seen_at).getTime() - new Date(v.started_at).getTime();
-    return gorulen >= (esik.get(v.zone_id) ?? 120_000);
+    const e = esik.get(v.zone_id) ?? 120_000;
+    // KAPANMIŞ satır da eşiği geçmek zorunda. Normalde motor eşiği geçemeyeni
+    // zaten siler; bu ikinci kapı, geçmişte yazılmış ya da başka bir yoldan
+    // kapatılmış kısa kayıtların fatura ekinde "0 dk" satırı olarak
+    // görünmesini engeller (20.08.2026'da canlıda üç tane çıktı).
+    if (v.ended_at) {
+      return new Date(v.ended_at).getTime() - new Date(v.started_at).getTime() >= e;
+    }
+    return new Date(v.last_seen_at).getTime() - new Date(v.started_at).getTime() >= e;
   });
   if (visits.length === 0) return { ...bos, bolgeTanimliMi: true };
 

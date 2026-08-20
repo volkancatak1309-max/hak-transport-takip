@@ -179,7 +179,18 @@
       "idling": "LRL",
       "jamming": "SIG"
     },
-    "shift_km_unavailable": "Die schichtbezogene Kilometerberechnung ist in diesem Durchlauf fehlgeschlagen (Zeitüberschreitung). Die Bewertungen wurden NICHT mit den alten, überhöhten Kilometerwerten aufgefüllt; betroffene Fahrer erscheinen als „Keine Daten\". Bitte Seite neu laden."
+    "shift_km_unavailable": "Die schichtbezogene Kilometerberechnung ist in diesem Durchlauf fehlgeschlagen (Zeitüberschreitung). Die Bewertungen wurden NICHT mit den alten, überhöhten Kilometerwerten aufgefüllt; betroffene Fahrer erscheinen als „Keine Daten\". Bitte Seite neu laden.",
+    "ownerless_title": "Ereignisse ohne Fahrer",
+    "ownerless_hint": "Ereignisse, die entstanden sind, während das Fahrzeug ohne Schicht genutzt wurde. Da nicht bekannt ist, wer am Steuer saß, fließen sie in keine Fahrerbewertung ein.",
+    "ownerless_bridge": "Gesamt {toplam} Ereignisse = Fahrern zugeordnet {yazilan} + ohne Fahrer {sahipsiz}",
+    "ownerless_outofroster": "Zusätzlich entfielen {n} Ereignisse auf eine Person mit Schicht, die nicht im Personalstand geführt wird.",
+    "ownerless_breakdown": "Aufschlüsselung nach Fahrzeug ({n} Fahrzeuge)",
+    "ownerless_breakdown_hint": "Fahrzeuge mit den meisten Ereignissen ohne Fahrer. Die Spalte „Schichten“ zeigt die im gewählten Zeitraum für dieses Fahrzeug eröffneten Schichten.",
+    "ownerless_col_count": "ohne Fahrer",
+    "ownerless_col_shifts": "Schichten",
+    "ownerless_col_assigned": "zugewiesen",
+    "ownerless_no_shift": "keine Schicht",
+    "ownerless_rest": "Weitere {adet} Ereignisse auf {n} Fahrzeugen."
   },
   "alarms": {
     "title": "Alarme",
@@ -1545,7 +1556,7 @@
     "zone_stat_customers": "Kundenzonen",
     "zone_stat_customers_scope": "mit Aufenthalt",
     "zone_stat_uncertain": "Markierte Zeilen",
-    "zone_stat_uncertain_scope": "durch Signalabbruch beendet",
+    "zone_stat_uncertain_scope": "markiert beendet — Signalabbruch oder Messung gestoppt",
     "zone_summary_title": "Kundenübersicht",
     "zone_summary_visits": "{n, plural, one {# Aufenthalt} other {# Aufenthalte}}",
     "zone_summary_uncertain": "{n} markiert",

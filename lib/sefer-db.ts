@@ -73,7 +73,7 @@ export type SeferRow = {
   yolda_at: string | null;
   tamamlandi_at: string | null;
   iptal_at: string | null;
-  /** OTOMATİK (Tur 3, migration 069) — hedef bölgeye varış anı. */
+  /** OTOMATİK (Tur 3, migration 070) — hedef bölgeye varış anı. */
   vardi_at: string | null;
   /** OTOMATİK (Tur 3) — o günün vardiyasından bağlanan teslim sayısı. */
   paket_gerceklesen: number | null;

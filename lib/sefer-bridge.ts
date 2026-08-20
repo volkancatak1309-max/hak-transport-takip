@@ -4,7 +4,7 @@ import { viennaDayKey, startOfDayViennaFromYmd, endOfDayViennaFromYmd } from "@/
 import { ACIK_DURUMLAR, type SeferDurum } from "@/lib/sefer-db";
 
 /**
- * SEFER OTOMATİK KÖPRÜLERİ (Tur 3, migration 069).
+ * SEFER OTOMATİK KÖPRÜLERİ (Tur 3, migration 070 — canlıda 069 olarak koştu).
  *
  * İki köprü, iki ayrı tetikleyici:
  *   1. VARIŞ  → `seferVarisKoprusu()`  · telemetri turunun sonunda (flespi/sync)
@@ -222,7 +222,7 @@ export async function seferVarisKoprusu(now: Date = new Date()): Promise<KopruOz
  * ilk yazımda dondursaydık sefer, düzeltilmiş vardiyanın YANLIŞ sayısını
  * taşımaya devam ederdi. Çözüm noktası aynı kaldığı sürece değer tazelenir;
  * BAŞKA hiçbir seferin değeri elle sürülmez.
- * (⚠️ 069'un başlık yorumu ilk taslakta "dondurulur" diyordu — DDL aynı, yorum
+ * (⚠️ 070'in başlık yorumu ilk taslakta "dondurulur" diyordu — DDL aynı, yorum
  * bu davranışa göre düzeltildi.)
  *
  * @param workerId Paketi girilen vardiyanın şoförü

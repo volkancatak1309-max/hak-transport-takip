@@ -377,7 +377,7 @@ async function runSync() {
   }
 
   /**
-   * SEFER VARIŞ KÖPRÜSÜ (Tur 3, migration 069) — ziyaretler YAZILDIKTAN sonra.
+   * SEFER VARIŞ KÖPRÜSÜ (Tur 3, migration 070) — ziyaretler YAZILDIKTAN sonra.
    *
    * Burada olmasının sebebi: ziyaretleri açan TEK yer bu tur. Damga, ziyaretin
    * açıldığı turda düşer ve yeni bir zamanlayıcı kaydı gerekmez (bu repoda

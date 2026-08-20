@@ -1,4 +1,4 @@
--- HAK61 — Migration 069 (SEFER TUR 3 — OTOMATİK KÖPRÜLER)
+-- HAK61 — Migration 070 (SEFER TUR 3 — OTOMATİK KÖPRÜLER)
 -- =====================================================================
 -- Seferin iki alanı ARTIK ELLE DOLDURULMUYOR:
 --   · vardi_at         → araç hedef bölgeye VARDI (zone_visits'ten okunur)
@@ -8,9 +8,13 @@
 -- zone_visits ve shift_packages YALNIZ OKUNUR. Supabase SQL Editor'da
 -- çalıştırın.
 --
--- ⚠️ NUMARA: 067/068 diğer zincirde (first_ignition partisi + zone_visit
--- end_reason). Bu dosya onlardan BAĞIMSIZ; yalnız 066'nın (seferler) ve
--- 064'ün (zone_visits) var olmasını bekler.
+-- ⚠️ NUMARA: bu dosya Volkan'a "069" olarak verildi ve canlıda O HÂLİYLE
+-- çalıştırıldı. Aynı anda diğer zincir de 069'u aldı
+-- (069_geofence_category_repair.sql, main'e önce girdi), o yüzden REPO
+-- DOSYASI 070'e taşındı. ⚠️ DDL BAYT BAYT AYNI — veritabanında değişen
+-- hiçbir şey yok, yalnız kurulum sırası tekilleşti.
+-- 067/068 de diğer zincirde. Bu dosya onlardan BAĞIMSIZ; yalnız 066'nın
+-- (seferler) ve 064'ün (zone_visits) var olmasını bekler.
 --
 -- ═══ NEDEN YENİ DURUM DEĞİL, BİLGİ DAMGASI ═══
 --

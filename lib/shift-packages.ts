@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
+import { seferePaketBaglaVardiyadan } from "@/lib/sefer-bridge";
 
 /**
  * shift_packages → time_entries.cargo_count senkronu (Şoför Paneli v2, İş 2).
@@ -22,5 +23,11 @@ export async function recountShiftPackages(timeEntryId: string): Promise<number>
     .update({ cargo_count: n })
     .eq("id", timeEntryId);
   if (upErr) throw new Error(upErr.message);
+
+  // SEFER PAKET KÖPRÜSÜ (Tur 3) — sayı kesinleştiği anda günün seferine bağla.
+  // Giriş akışına DOKUNMAZ: throw etmez, sonucu beklenmez bir yan görevdir;
+  // bağlama olmasa da paket sayımı aynen tamamlanır.
+  await seferePaketBaglaVardiyadan(timeEntryId);
+
   return n;
 }

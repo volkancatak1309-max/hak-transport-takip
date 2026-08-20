@@ -6,6 +6,7 @@ import { requireWorker } from "@/lib/session";
 import { MAX_COUNT } from "@/lib/validation";
 import { checkUndelivered } from "@/lib/package-limits";
 import { recountShiftPackages } from "@/lib/shift-packages";
+import { seferePaketBaglaVardiyadan } from "@/lib/sefer-bridge";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { resolveEndKm } from "@/lib/auto-shift";
 import { reportProblemAction } from "@/app/actions/driver-panel";
@@ -127,6 +128,10 @@ export async function processQueuedShift(item: Item): Promise<QueueProcessResult
         .eq("worker_id", workerId));
     }
     if (error) return { ok: false, error: error.message };
+
+    // SEFER PAKET KÖPRÜSÜ (Tur 3) — çevrimdışı kuyruktan gelen kapanış da
+    // günün seferine bağlansın; online kapanışla aynı kural, aynı yer.
+    await seferePaketBaglaVardiyadan(active.id as string);
   } else if (item.type === "break") {
     const add = num(item.payload.minutes) ?? 0;
     const { data: active } = await supabaseAdmin

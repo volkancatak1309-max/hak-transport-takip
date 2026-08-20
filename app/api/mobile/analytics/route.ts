@@ -4,6 +4,9 @@ import { mobileError } from "@/lib/mobile-auth";
 import {
   computeTopDriversByType,
   computeIdleWaste,
+  computeOwnerlessEvents,
+  getWorkerShiftDistance,
+  shiftWindowsForScoring,
   listVehiclesAndWorkers,
   rangeElapsedDays,
 } from "@/lib/analytics";
@@ -134,6 +137,23 @@ async function donemToplami(
   const idle = computeIdleWaste(idleEpisodes, vehiclesById, workersById);
 
   /**
+   * SAHİPSİZ OLAY (20.08.2026) — panelin /admin/analiz kartıyla AYNI fonksiyon.
+   *
+   * ⚠️ EK MALİYET: bir `getWorkerShiftDistance` çağrısı (052 RPC'si). Rapor
+   * kendi içinde de çağırıyor ama sonucu dışarı vermiyor; ikinci bir çağrı,
+   * `buildPerformanceReport`ın imzasını değiştirmekten ucuz ve risksiz.
+   * 052'siz kiracıda (Sendigo/Galzura) `shiftWindowsForScoring` undefined döner
+   * ve sayaç ESKİ ATAMA eksenine düşer — yani sahipsiz ≈ 0, panelle aynı.
+   */
+  const sahipsiz = computeOwnerlessEvents(
+    events,
+    idleEpisodes,
+    vehiclesById,
+    workersById,
+    shiftWindowsForScoring(await getWorkerShiftDistance(startISO, endISO))
+  );
+
+  /**
    * TÜR KIRILIMI — panelin Top-10 başlıklarındaki sayının AYNISI.
    * `idling` sayısı `vehicle_events`ten DEĞİL, rölanti EPİZODLARINDAN gelir:
    * cihazın idle bayrağı rölanti sürdükçe tekrar geliyor ve nokta-olay modeli
@@ -192,6 +212,33 @@ async function donemToplami(
       tur,
       /** Skora/kırılıma girmeyen bilinmeyen tipteki olay sayısı. 0 olmalı. */
       kapsamDisi,
+    },
+    /**
+     * SAHİPSİZ OLAY — `alarm.toplam` ile skor tablosunun topladığı sayı
+     * arasındaki köprü. YENİ ALAN (20.08.2026); mevcut alanların hiçbiri
+     * değişmedi.
+     *
+     * KİMLİK: `skorlanabilir === yazilan + sahipsiz + kadroDisi`. İstemci
+     * "toplam neden tutmuyor" sorusunu artık kendi başına cevaplayabilir.
+     * ⚠️ `skorlanabilir` ile `alarm.toplam` aynı evreni sayar (ağırlığı olan
+     * alarmlar + rölanti epizodları) ama ikisi FARKLI fonksiyondan gelir;
+     * eşitliği scripts/verify-sahipsiz-olay.mjs canlıda denetler.
+     */
+    sahipsizOlay: {
+      skorlanabilir: sahipsiz.scorable,
+      yazilan: sahipsiz.attributed,
+      sahipsiz: sahipsiz.ownerless,
+      /** Vardiyası var ama kadroda yok — canlıda 0 beklenir. */
+      kadroDisi: sahipsiz.outOfRoster,
+      /** Sahipsiz olayların araç kırılımı, çoktan aza. İlk 5 panelde katlanır. */
+      araclar: sahipsiz.vehicles.map((v) => ({
+        aracId: v.vehicleId,
+        plaka: v.plate,
+        adet: v.count,
+        /** Aralıkta bu araç için açılmış vardiya sayısı; 0 = hiç kayda girmemiş. */
+        vardiya: v.shifts,
+        atanmisAd: v.assignedName,
+      })),
     },
     rolanti: {
       toplamMs: idle.totalMs,

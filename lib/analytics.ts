@@ -35,6 +35,8 @@ import {
   type IdleWasteRow,
   type IdleWasteSummary,
   type MonthlyPivot,
+  type OwnerlessEventsSummary,
+  type OwnerlessVehicleRow,
 } from "@/lib/analytics-shared";
 import { TENANT_TZ } from "@/lib/tz";
 
@@ -624,6 +626,104 @@ export function workerDrivingAt(
   return hit;
 }
 
+/**
+ * BİR OLAYIN SAHİBİ — TEK KARAR NOKTASI.
+ *
+ * `computeSafetyScores` (cezayı kime yazacağını) ve `computeOwnerlessEvents`
+ * (kaçının sahipsiz kaldığını) AYNI kuralı kullanmak zorunda; iki kopya bir gün
+ * ayrışsaydı ekrandaki "toplam = yazılan + sahipsiz" köprüsü sessizce yalan
+ * söylerdi. Bu yüzden kural bir closure'dan buraya çıkarıldı (20.08.2026) —
+ * davranış birebir aynı, yalnız artık paylaşılıyor.
+ *
+ * `shiftWindowsByVehicle` verilmezse ESKİ ATAMA yolu: 052'siz kurulumlarda
+ * (Sendigo/Galzura) tek doğru davranış budur.
+ */
+export function eventOwnerAt(
+  vehiclesById: Map<string, VehicleLite>,
+  shiftWindowsByVehicle: Map<string, ShiftWindow[]> | undefined,
+  vehicleId: string,
+  atISO: string
+): string | null {
+  if (shiftWindowsByVehicle !== undefined) {
+    return workerDrivingAt(shiftWindowsByVehicle, vehicleId, atISO);
+  }
+  // atanmamış araç şoför liginde yer almaz
+  return vehiclesById.get(vehicleId)?.assigned_worker_id ?? null;
+}
+
+/**
+ * SAHİPSİZ OLAY KÖPRÜSÜ — Analiz KPI'ı ile skor tablosu arasındaki farkı sayar.
+ *
+ * ⚠️ SKOR HESABINA DOKUNMAZ. Burada tek bir ceza puanı hesaplanmaz; bu fonksiyon
+ * yalnız SAYAR. `computeSafetyScores` ile aynı iki döngüyü, aynı ağırlık
+ * süzgecini ve aynı `eventOwnerAt` kararını kullanır — sayılar bu yüzden
+ * birbirini tutar, ikinci bir tanım yazıldığı için değil.
+ *
+ * ── ÜÇ KOVA, TEK KİMLİK ───────────────────────────────────────────────────
+ *   scorable = attributed + ownerless + outOfRoster
+ * `outOfRoster` ayrı duruyor çünkü "vardiyası var ama kadroda yok" bambaşka bir
+ * sebep (test hesabı, kapsam dışı personel) ve onu `ownerless`a katmak
+ * "araç vardiyasız kullanıldı" cümlesini yanlış yapardı. Canlıda 0 ölçüldü.
+ *
+ * ── NEDEN `idling` events'ten DEĞİL epizodlardan ──────────────────────────
+ * `computeSafetyScores` ile birebir: rölanti `idle_episodes`ten gelir. Ağırlık
+ * süzgeci (`SAFETY_SCORE_WEIGHTS`) alarmlara uygulanır; epizodun kendisi zaten
+ * skorlanabilir bir olaydır.
+ */
+export function computeOwnerlessEvents(
+  events: VehicleEventWithPlate[],
+  idleEpisodes: IdleEpisodeWithPlate[],
+  vehiclesById: Map<string, VehicleLite>,
+  workersById: Map<string, WorkerLite>,
+  shiftWindowsByVehicle?: Map<string, ShiftWindow[]>
+): OwnerlessEventsSummary {
+  let scorable = 0;
+  let attributed = 0;
+  let ownerless = 0;
+  let outOfRoster = 0;
+  const perVehicle = new Map<string, number>();
+
+  const say = (vehicleId: string, atISO: string) => {
+    scorable++;
+    const wid = eventOwnerAt(vehiclesById, shiftWindowsByVehicle, vehicleId, atISO);
+    if (!wid) {
+      ownerless++;
+      perVehicle.set(vehicleId, (perVehicle.get(vehicleId) ?? 0) + 1);
+      return;
+    }
+    // Kadroda olmayan şoföre yazılan olay skor satırı üretmez; ayrı kovada.
+    if (!workersById.has(wid)) {
+      outOfRoster++;
+      return;
+    }
+    attributed++;
+  };
+
+  for (const e of events) {
+    if (SAFETY_SCORE_WEIGHTS[e.event_type] === undefined) continue;
+    say(e.vehicle_id, e.occurred_at);
+  }
+  for (const ep of idleEpisodes) {
+    say(ep.vehicle_id, ep.started_at);
+  }
+
+  const vehicles: OwnerlessVehicleRow[] = [...perVehicle]
+    .map(([vehicleId, count]) => {
+      const v = vehiclesById.get(vehicleId);
+      const assignedId = v?.assigned_worker_id ?? null;
+      return {
+        vehicleId,
+        plate: v?.plate ?? "—",
+        count,
+        shifts: shiftWindowsByVehicle?.get(vehicleId)?.length ?? 0,
+        assignedName: assignedId ? (workersById.get(assignedId)?.name ?? null) : null,
+      };
+    })
+    .sort((a, b) => b.count - a.count || a.plate.localeCompare(b.plate));
+
+  return { scorable, attributed, ownerless, outOfRoster, vehicles };
+}
+
 export async function getVehicleDistanceSpan(
   vehicleId: string,
   startISO: string,
@@ -904,12 +1004,8 @@ export function computeSafetyScores(
    * saymaya devam eder — yalnız KİŞİSEL SKOR'a girmezler, çünkü hangi kişinin
    * olduğu bilinmiyor.
    */
-  const vardiyaEkseni = shiftWindowsByVehicle !== undefined;
-  const sahibi = (vehicleId: string, atISO: string): string | null => {
-    if (vardiyaEkseni) return workerDrivingAt(shiftWindowsByVehicle!, vehicleId, atISO);
-    // atanmamış araç şoför liginde yer almaz
-    return vehiclesById.get(vehicleId)?.assigned_worker_id ?? null;
-  };
+  const sahibi = (vehicleId: string, atISO: string): string | null =>
+    eventOwnerAt(vehiclesById, shiftWindowsByVehicle, vehicleId, atISO);
 
   for (const e of events) {
     const weight = SAFETY_SCORE_WEIGHTS[e.event_type];

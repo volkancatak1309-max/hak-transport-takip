@@ -155,3 +155,44 @@ export type IdleWasteRow = {
 };
 
 export type IdleWasteSummary = { rows: IdleWasteRow[]; totalMs: number; totalEuro: number };
+
+/**
+ * SAHİPSİZ OLAY KÖPRÜSÜ (20.08.2026) — "sessiz eksik yasak" kuralının gereği.
+ *
+ * Analiz sayfasının KPI'ı "toplam olay" der; skor tablosu bundan AZINI toplar.
+ * Aradaki fark, 15.08 eksen düzeltmesinden beri hiçbir şoföre yazılmayan
+ * olaylardır: araç vardiya açılmadan kullanılmışsa o anda direksiyonda kimin
+ * olduğu BİLİNMİYOR ve uydurma atıf yapılmıyor (bkz. computeSafetyScores).
+ * Doğru davranış, ama fark ekranda yazılı olmadığı sürece "sayılar tutmuyor"
+ * gibi görünüyordu.
+ *
+ * ⚠️ KİMLİK: `scorable === attributed + ownerless + outOfRoster`. Üç kova da
+ * döner ki toplam her zaman kapansın; ekranda ikisini gösterip üçüncüsünü
+ * yutmak, kapatmaya çalıştığımız kusurun aynısı olurdu.
+ */
+export type OwnerlessVehicleRow = {
+  vehicleId: string;
+  plate: string;
+  /** Bu araçta sahipsiz kalan olay sayısı. */
+  count: number;
+  /** Aralıkta bu araç için AÇILMIŞ vardiya sayısı — 0 ise araç hiç kayda girmemiş. */
+  shifts: number;
+  /** Aracın kağıt üzerindeki şoförü; atanmamışsa null. Atıf İÇİN KULLANILMAZ. */
+  assignedName: string | null;
+};
+
+export type OwnerlessEventsSummary = {
+  /** Skorlanabilir olay (ağırlığı olan alarm + rölanti epizodu). */
+  scorable: number;
+  /** Bir şoförün vardiya penceresine düşen ve skor satırına giren olay. */
+  attributed: number;
+  /** Hiçbir vardiya penceresine düşmeyen olay — kimseye yazılmaz. */
+  ownerless: number;
+  /**
+   * Penceresi bulundu ama şoför kadroda değil (test/kapsam dışı). Canlıda 0
+   * olması beklenir; 0 değilse kimlik yine kapanır ama sebep GÖRÜNÜR olur.
+   */
+  outOfRoster: number;
+  /** Sahipsiz olayların araç kırılımı, çoktan aza sıralı. */
+  vehicles: OwnerlessVehicleRow[];
+};

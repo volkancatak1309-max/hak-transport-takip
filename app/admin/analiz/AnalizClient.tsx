@@ -8,6 +8,7 @@ import {
   ArrowRight,
   ArrowUp,
   BarChart3,
+  ChevronRight,
   Fuel,
 } from "lucide-react";
 import {
@@ -35,6 +36,7 @@ import type {
   EventTypeAgg,
   IdleWasteSummary,
   MonthlyPivot,
+  OwnerlessEventsSummary,
   SafetyScoreRow,
   Top10EventType,
 } from "@/lib/analytics-shared";
@@ -51,6 +53,7 @@ export function AnalizClient({
   customTo,
   topByType,
   safetyRows,
+  ownerless,
   shiftKmFailed,
   idleWaste,
   prevIdleWaste,
@@ -64,6 +67,8 @@ export function AnalizClient({
   customTo: string | null;
   topByType: Record<Top10EventType, EventTypeAgg>;
   safetyRows: SafetyScoreRow[];
+  /** KPI "toplam olay" ile skor tablosu arasındaki köprü — sahipsiz olaylar. */
+  ownerless: OwnerlessEventsSummary;
   /** Vardiya pencereli km hesaplanamadı (052 var ama zaman aşımı) — skorlar
       "Veri yok" gösterilir, şişik eski km'ye DÜŞÜLMEZ. */
   shiftKmFailed: boolean;
@@ -391,6 +396,100 @@ export function AnalizClient({
           <EmptyState kind="none" title={t("tile_empty")} />
         ) : (
           <MiniTrend data={typeBuckets} height={180} />
+        )}
+      </div>
+
+      {/* ── SAHİPSİZ OLAY KÖPRÜSÜ (20.08.2026) ──────────────────────────────
+          KPI "toplam olay" der, skor tablosu daha AZINI toplar; fark 15.08
+          eksen düzeltmesinden beri hiçbir şoföre yazılmayan olaylardır. Doğru
+          davranış ama ekranda yazılı olmadığı sürece "sayılar tutmuyor" gibi
+          görünüyordu (DEPO KURALI: sessiz eksik yasak).
+
+          Kart GRAFİĞİN HEMEN ALTINDA: köprünün sol tarafındaki sayı (toplam
+          olay) tam üstteki kartta yazıyor, okuyan kişi gözünü kaydırmadan
+          eşitliği görebiliyor. KPI şeridine 5. kart olarak eklenmedi — şerit
+          4'lü ızgara ve köprü tek bir sayı değil, bir CÜMLE. */}
+      <div className="surface-card rounded-[14px] p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 className="text-[16px] font-semibold">{t("ownerless_title")}</h2>
+          <span className="font-mono text-[20px] font-semibold tabular-nums">
+            {formatNumber(ownerless.ownerless, locale)}
+          </span>
+        </div>
+        <p className="mt-1 text-[13px] text-muted-foreground">{t("ownerless_hint")}</p>
+
+        {/* KÖPRÜ: toplam = yazılan + sahipsiz. Sayılar tek satırda ve aynı
+            mono yüzde — okuyan kişi toplamı kafadan doğrulayabilsin. */}
+        <p className="mt-3 font-mono text-[13px] tabular-nums text-text-secondary">
+          {t("ownerless_bridge", {
+            toplam: formatNumber(ownerless.scorable, locale),
+            yazilan: formatNumber(ownerless.attributed, locale),
+            sahipsiz: formatNumber(ownerless.ownerless, locale),
+          })}
+        </p>
+
+        {/* Dördüncü kova yalnız DOLUYSA yazılır: normalde 0 ve boş bir satır
+            "bir şey eksik mi" sorusu doğururdu. 0 değilse kimlik yine kapansın
+            diye MUTLAKA görünmeli. */}
+        {ownerless.outOfRoster > 0 && (
+          <p className="mt-1 text-[12px] text-muted-foreground">
+            {t("ownerless_outofroster", {
+              n: formatNumber(ownerless.outOfRoster, locale),
+            })}
+          </p>
+        )}
+
+        {ownerless.vehicles.length > 0 && (
+          <details className="mt-4 overflow-hidden rounded-[12px] border border-border/60">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-[13px] font-medium">
+              <ChevronRight className="size-3.5 text-text-tertiary transition-transform" aria-hidden />
+              {t("ownerless_breakdown", { n: ownerless.vehicles.length })}
+            </summary>
+            <div className="border-t border-border/60 px-4 py-3">
+              <p className="mb-3 text-xs text-muted-foreground">
+                {t("ownerless_breakdown_hint")}
+              </p>
+              <ul className="divide-y divide-border/50">
+                {/* İLK 5 (görevin kapsamı). Kaç aracın kaldığı aşağıda YAZILI —
+                    listeyi sessizce kesmek deponun kuralına aykırı. */}
+                {ownerless.vehicles.slice(0, 5).map((v) => (
+                  <li
+                    key={v.vehicleId}
+                    className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono font-medium tabular-nums">{v.plate}</span>
+                      {v.shifts === 0 && (
+                        <StatusChip tone="warning">{t("ownerless_no_shift")}</StatusChip>
+                      )}
+                    </span>
+                    <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span className="font-mono tabular-nums">
+                        {t("ownerless_col_count")}: {formatNumber(v.count, locale)}
+                      </span>
+                      <span className="font-mono tabular-nums">
+                        {t("ownerless_col_shifts")}: {formatNumber(v.shifts, locale)}
+                      </span>
+                      <span>
+                        {t("ownerless_col_assigned")}: {v.assignedName ?? "—"}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {ownerless.vehicles.length > 5 && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {t("ownerless_rest", {
+                    n: ownerless.vehicles.length - 5,
+                    adet: formatNumber(
+                      ownerless.vehicles.slice(5).reduce((a, b) => a + b.count, 0),
+                      locale
+                    ),
+                  })}
+                </p>
+              )}
+            </div>
+          </details>
         )}
       </div>
 

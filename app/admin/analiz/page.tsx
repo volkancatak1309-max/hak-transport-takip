@@ -9,6 +9,7 @@ import {
   previousPeriod,
   computeTopDriversByType,
   computeSafetyScores,
+  computeOwnerlessEvents,
   drivenVehiclesFromEntries,
   workedDaysFromEntries,
   getWorkerShiftDistance,
@@ -164,6 +165,21 @@ export default async function AnalizPage({
     current.shiftKmByWorker,
     current.shiftWindowsByVehicle
   );
+  /**
+   * SAHİPSİZ OLAY KÖPRÜSÜ (20.08.2026) — KPI ile skor tablosu arasındaki fark.
+   *
+   * Yeni sorgu YOK: `current` zaten sayfada olan olaylar, epizodlar ve vardiya
+   * pencereleridir. `computeSafetyScores` ile AYNI `eventOwnerAt` kararını
+   * kullanır, o yüzden `scorable === attributed + ownerless + outOfRoster`
+   * kimliği tanım gereği kapanır (bkz. lib/analytics-shared.ts).
+   */
+  const ownerless = computeOwnerlessEvents(
+    current.events,
+    current.idleEpisodes,
+    vehiclesById,
+    workersById,
+    current.shiftWindowsByVehicle
+  );
   const idleWaste = computeIdleWaste(current.idleEpisodes, vehiclesById, workersById);
 
   // AYLIK PİVOT ARŞİVİ — aralık seçicisinden BAĞIMSIZ, filo başlangıcından
@@ -252,6 +268,7 @@ export default async function AnalizPage({
           customTo={sp.bitis ?? null}
           topByType={topByType}
           safetyRows={safetyRowsWithTrend}
+          ownerless={ownerless}
           shiftKmFailed={
             current.shiftKmUnavailable === "timeout" ||
             current.shiftKmUnavailable === "error"

@@ -442,6 +442,24 @@ export async function processAutoShifts(
   vehicleIds?: string[]
 ): Promise<AutoShiftSummary> {
   const summary: AutoShiftSummary = { checked: 0, started: 0, ended: 0, errors: [] };
+  /**
+   * ══ GEÇİCİ TEŞHİS (21.08.2026) — İŞ BİTİNCE KALDIRILACAK ═══════════════
+   * galzura-demo iş gününün ortasında SIFIR açık vardiya gösteriyor. Motor
+   * koşuyor (sorgu sayacı görüyor) ama hiçbir vardiya açmıyor. "Neden"in
+   * cevabı YALNIZ verinin kendisinde: hangi kapı kaç aracı eliyor.
+   * Yalnız SAYI basılır — plaka, ad, koordinat YOK.
+   */
+  const huni = {
+    telemetriYok: 0, acikVardiya: 0, atamaYok: 0, pasifArac: 0, otoKapali: 0,
+    soforMesgul: 0, bugunBasladi: 0, izinli: 0, depoYok: 0, soforPasif: 0,
+    tetikYok: 0, digerGuard: 0,
+  };
+  let enYeniTelemetriDk: number | null = null;
+  let depoBolgeSayisi = -1;
+  let acikVardiyaSayisi = -1;
+  let bugunBaslayanSayisi = -1;
+  let izinliSayisi = -1;
+  let enEskiTelemetriDk: number | null = null;
   const now = Date.now();
   const idleMs = autoEndIdleMinutes() * 60 * 1000;
 
@@ -499,6 +517,10 @@ export async function processAutoShifts(
     // Depo bölgeleri (Modül 7). Boşsa depo-tetikli auto devre dışı — hiçbir araç
     // otomatik açılmaz (depo tanımlı değil). Tek sorgu, döngü dışında.
     const depotZones = await activeDepotZones();
+    depoBolgeSayisi = depotZones.length;
+    acikVardiyaSayisi = open.length;
+    bugunBaslayanSayisi = startedToday.size;
+    izinliSayisi = onLeaveToday.size;
     const openByVehicle = new Map(
       open.filter((s) => s.vehicle_id).map((s) => [s.vehicle_id as string, s])
     );
@@ -545,9 +567,17 @@ export async function processAutoShifts(
         const latest = canliTelemetri
           ? canliTelemetri.get(v.id) ?? null
           : await latestVehicleTelemetry(v.id);
-        if (!latest) continue;
+        if (!latest) {
+          huni.telemetriYok++;
+          continue;
+        }
 
         const latestMs = new Date(latest.recorded_at).getTime();
+        {
+          const yasDk = Math.round((now - latestMs) / 60000);
+          if (enYeniTelemetriDk === null || yasDk < enYeniTelemetriDk) enYeniTelemetriDk = yasDk;
+          if (enEskiTelemetriDk === null || yasDk > enEskiTelemetriDk) enEskiTelemetriDk = yasDk;
+        }
         const vehicleShift = openByVehicle.get(v.id) ?? null;
 
         // ── OTOMATİK BAŞLAT — DEPO TETİĞİ (Modül 7) ─────────────────────
@@ -579,7 +609,10 @@ export async function processAutoShifts(
                   .eq("id", v.assigned_worker_id)
                   .maybeSingle()
               ).data;
-          if (!w || w.is_active !== true) continue;
+          if (!w || w.is_active !== true) {
+            huni.soforPasif++;
+            continue;
+          }
 
           // TETİKLEYİCİ MÜŞTERİ AYARI (lib/tenant.ts):
           //  • depot_entry    — bugün depoya girip ≥3dk kaldı mı? Başlangıç =
@@ -594,7 +627,10 @@ export async function processAutoShifts(
             const trig = await depotArrivalTrigger(v.id);
             startedAt = trig ? trig.startAt : null;
           }
-          if (!startedAt) continue;
+          if (!startedAt) {
+            huni.tetikYok++;
+            continue;
+          }
           const startKm = await resolveStartKm(v.id, latest.odometer_km, latest.recorded_at);
 
           // BAŞLATMA YOLU İZİ (037): start_source='auto'. 25.07.2026'ya kadar bu
@@ -661,6 +697,18 @@ export async function processAutoShifts(
             // degismedi; bilgi paneldeki Dikkat/Roster yuzeylerinde duruyor.
           }
           continue;
+        } else if (AUTO_START_ENABLED) {
+          /* GEÇİCİ TEŞHİS — hangi kapı eledi (sırayla ilk uyan). Yazma yok. */
+          if (vehicleShift) huni.acikVardiya++;
+          else if (!(SHIFT_START_TRIGGER === "first_ignition" || depotZones.length > 0))
+            huni.depoYok++;
+          else if (!v.assigned_worker_id) huni.atamaYok++;
+          else if (v.status !== "active") huni.pasifArac++;
+          else if (v.auto_start_enabled === false) huni.otoKapali++;
+          else if (openByWorker.has(v.assigned_worker_id)) huni.soforMesgul++;
+          else if (startedToday.has(v.assigned_worker_id)) huni.bugunBasladi++;
+          else if (onLeaveToday.has(v.assigned_worker_id)) huni.izinli++;
+          else huni.digerGuard++;
         }
 
         // ── OTOMATİK BİTİR — KAPALI (Volkan, 22.07.2026) ────────────────
@@ -767,5 +815,19 @@ export async function processAutoShifts(
     summary.errors.push(e instanceof Error ? e.message : "error");
   }
 
+  /* ══ GEÇİCİ TEŞHİS — İŞ BİTİNCE KALDIRILACAK (21.08.2026) ══ */
+  console.log(
+    "[oto-vardiya-teshis] tetik=" + SHIFT_START_TRIGGER +
+      " otoAcik=" + AUTO_START_ENABLED +
+      " gunBasi=" + startOfTodayVienna().toISOString() +
+      " simdi=" + new Date(now).toISOString() +
+      " depoBolge=" + depoBolgeSayisi +
+      " acikVardiya=" + acikVardiyaSayisi +
+      " bugunBaslayanSofor=" + bugunBaslayanSayisi +
+      " izinliSofor=" + izinliSayisi +
+      " telemetriYasDk=[" + enYeniTelemetriDk + "," + enEskiTelemetriDk + "]" +
+      " huni=" + JSON.stringify(huni) +
+      " ozet=" + JSON.stringify({ checked: summary.checked, started: summary.started, ended: summary.ended, hata: summary.errors.length })
+  );
   return summary;
 }

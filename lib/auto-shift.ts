@@ -855,6 +855,8 @@ export async function processAutoShifts(
   console.log(
     "[oto-vardiya-teshis] tetik=" + SHIFT_START_TRIGGER +
       " otoAcik=" + AUTO_START_ENABLED +
+      " otoBitir=" + SHIFT_AUTO_END +
+      " esikDk=" + autoEndIdleMinutes() +
       " gunBasi=" + startOfTodayVienna().toISOString() +
       " simdi=" + new Date(now).toISOString() +
       " depoBolge=" + depoBolgeSayisi +

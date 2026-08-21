@@ -179,6 +179,22 @@ try {
       iddia(`   ${dil} · kendi dilinin sözcükleri VAR`, kendinden.length > 0,
         kendinden.slice(0, 4).join(", ") || "hiçbiri");
     }
+    // ⚠️ AZG İHLAL TABLOSU · TÜR SÜTUNU (21.08.2026 regresyonu).
+    // "Art" başlığı üç dilde de Almanca kalmıştı: diğer başlıklar etiket
+    // kümesinden geliyordu, bu biri sabit dizeydi ve göze çarpmadı. Genel
+    // sözcük taraması onu YAKALAYAMAZ (kısa, tek sözcük) — bu yüzden ayrı
+    // ve ADI GEÇEN bir iddia.
+    if (ad === "azg.pdf" && cikti.de && cikti.tr && cikti.en) {
+      const beklenen = { de: "Art", tr: "Tür", en: "Type" };
+      for (const dil of ["de", "tr", "en"]) {
+        iddia(`   ${dil} · ihlal tablosu TÜR sütunu = "${beklenen[dil]}"`,
+          cikti[dil].includes(beklenen[dil]), null);
+      }
+      iddia("   TR/EN'de Almanca \"Art\" başlığı KALMADI",
+        !/(^|[^a-zA-ZäöüßÄÖÜ])Art([^a-zA-ZäöüßÄÖÜ]|$)/.test(cikti.tr) &&
+        !/(^|[^a-zA-ZäöüßÄÖÜ])Art([^a-zA-ZäöüßÄÖÜ]|$)/.test(cikti.en), null);
+    }
+
     if (cikti.de && cikti.tr && cikti.en) {
       iddia(`   üç dilin çıktısı da FARKLI`,
         new Set([cikti.de, cikti.tr, cikti.en]).size === 3, null);

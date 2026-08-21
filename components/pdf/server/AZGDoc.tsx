@@ -47,9 +47,17 @@ const SEVERITY_TR: Record<AZGSeverity, string> = {
   serious_violation: "Ağır ihlal",
 };
 
+const SEVERITY_EN: Record<AZGSeverity, string> = {
+  warning: "Warning",
+  violation: "Violation",
+  serious_violation: "Serious violation",
+};
+
 /** Dil -> siddet etiketi. Bilinmeyen/bos dilde Almanca (eski hal). */
 function severityEtiket(dil?: string | null): Record<AZGSeverity, string> {
-  return dil === "tr" ? SEVERITY_TR : SEVERITY_DE;
+  if (dil === "tr") return SEVERITY_TR;
+  if (dil === "en") return SEVERITY_EN;
+  return SEVERITY_DE;
 }
 
 const SEVERITY_COLOR: Record<AZGSeverity, string> = {
@@ -199,15 +207,44 @@ const AZG_DOC_TR = {
   suspicious: "Şüpheli kayıtlar",
 } as const;
 
+const AZG_DOC_EN = {
+  createdAt: "Created",
+  shiftsTotal: "Shifts in total",
+  workers: "Employees",
+  hoursTotal: "Hours in total",
+  warnings: "Warnings",
+  violations: "Violations",
+  serious: "Serious violations",
+  perWorker: "Summary per employee",
+  worker: "Employee",
+  shifts: "Shifts",
+  worstKind: "Most serious type",
+  noData: "No data in the selected period.",
+  detailed: "Violations in detail",
+  noViolations: "No violations found.",
+  date: "Date",
+  start: "Start",
+  end: "End",
+  duration: "Duration",
+  severity: "Severity",
+  description: "Description",
+  legalBasis: "Legal basis",
+  suspicious: "Suspicious records",
+} as const;
+
 type AzgDocEtiket = {
   [K in keyof typeof AZG_DOC_DE]: string;
 };
-/** Derleme anı kontrolü: TR'de eksik/fazla anahtar varsa burada patlar. */
+/** Derleme anı kontrolü: ikizlerde eksik/fazla anahtar varsa burada patlar. */
 const AZG_DOC_TR_KONTROL: AzgDocEtiket = AZG_DOC_TR;
+const AZG_DOC_EN_KONTROL: AzgDocEtiket = AZG_DOC_EN;
 void AZG_DOC_TR_KONTROL;
+void AZG_DOC_EN_KONTROL;
 
 function azgDocEtiket(dil?: string | null): AzgDocEtiket {
-  return dil === "tr" ? AZG_DOC_TR : AZG_DOC_DE;
+  if (dil === "tr") return AZG_DOC_TR;
+  if (dil === "en") return AZG_DOC_EN;
+  return AZG_DOC_DE;
 }
 
 export type AZGDocProps = {
@@ -313,7 +350,9 @@ export function AZGDoc({ data, uretimAni, kullanici, isaret, dil }: AZGDocProps)
             <Text>
               {dil === "tr"
                 ? `Bu dönemde ${data.editedCount} kayıt elle düzeltildi. Değişiklikler sistemde iz olarak tutuluyor (alan, eski değer, yeni değer, düzelten, zaman).`
-                : `In diesem Zeitraum wurden ${data.editedCount} Aufzeichnung(en) manuell korrigiert. Die Änderungen sind im System protokolliert (Feld, alter Wert, neuer Wert, Bearbeiter, Zeitpunkt).`}
+                : dil === "en"
+                  ? `${data.editedCount} record(s) were corrected manually in this period. The changes are logged in the system (field, old value, new value, editor, time).`
+                  : `In diesem Zeitraum wurden ${data.editedCount} Aufzeichnung(en) manuell korrigiert. Die Änderungen sind im System protokolliert (Feld, alter Wert, neuer Wert, Bearbeiter, Zeitpunkt).`}
             </Text>
           </View>
         )}
@@ -393,12 +432,16 @@ export function AZGDoc({ data, uretimAni, kullanici, isaret, dil }: AZGDocProps)
           <Text>
             {dil === "tr"
               ? "Bu rapor § 26 AZG kayıt ve bilgi verme yükümlülüğünün gereklerini karşılar. Saklama süresi: 2 yıl."
-              : "Dieser Bericht erfüllt die Anforderungen gemäß § 26 AZG zur Aufzeichnungs- und Auskunftspflicht. Aufbewahrungspflicht: 2 Jahre."}
+              : dil === "en"
+                ? "This report meets the recording and disclosure requirements of § 26 AZG. Retention period: 2 years."
+                : "Dieser Bericht erfüllt die Anforderungen gemäß § 26 AZG zur Aufzeichnungs- und Auskunftspflicht. Aufbewahrungspflicht: 2 Jahre."}
           </Text>
           <Text style={styles.signature}>
             {dil === "tr"
               ? "Galzura Intelligence — otomatik üretilmiş uyum raporu"
-              : "Galzura Intelligence — automatisch generierter Compliance-Bericht"}
+              : dil === "en"
+                ? "Galzura Intelligence — automatically generated compliance report"
+                : "Galzura Intelligence — automatisch generierter Compliance-Bericht"}
           </Text>
         </View>
 

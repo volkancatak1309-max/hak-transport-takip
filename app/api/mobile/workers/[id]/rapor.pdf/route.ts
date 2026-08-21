@@ -98,8 +98,9 @@ function asciiSlug(ad: string): string {
  * Almanca olsaydı düzeltmeye çalıştığımız KARMA çıktının aynısını üretirdik.
  * Dil verilmezse Avusturya biçimi — eski davranış birebir.
  */
+const BICIM_DILI: Record<string, string> = { tr: "tr-TR", en: "en-GB", de: "de-AT" };
 const belgeTarihi = (d: Date, dil?: string | null) =>
-  d.toLocaleDateString(dil === "tr" ? "tr-TR" : "de-AT", { timeZone: TENANT_TZ });
+  d.toLocaleDateString(BICIM_DILI[dil ?? ""] ?? "de-AT", { timeZone: TENANT_TZ });
 
 export async function GET(
   req: NextRequest,
@@ -191,7 +192,7 @@ export async function GET(
       dil,
       adSoyad: w.name as string,
       donem: `${belgeTarihi(d.range.start, dil)} – ${belgeTarihi(d.range.end, dil)}`,
-      uretimAni: simdi.toLocaleString(dil === "tr" ? "tr-TR" : "de-AT", { timeZone: TENANT_TZ }),
+      uretimAni: simdi.toLocaleString(BICIM_DILI[dil ?? ""] ?? "de-AT", { timeZone: TENANT_TZ }),
       showScore: SAFETY_SCORE_CALIBRATED,
       satir:
         row === null

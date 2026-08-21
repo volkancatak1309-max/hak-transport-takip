@@ -14,7 +14,7 @@ import { DEFAULT_LOCALE } from "@/i18n/request";
  * yani bu değişiklik mevcut istemcilerin çıktısını DEĞİŞTİRMEZ.
  */
 function csvDili(dil?: string | null): string {
-  return dil === "tr" || dil === "de" ? dil : DEFAULT_LOCALE;
+  return dil === "tr" || dil === "de" || dil === "en" ? dil : DEFAULT_LOCALE;
 }
 import {
   workedMs,
@@ -207,7 +207,7 @@ export async function buildDistanceCsv(range: DateRange, dil?: string | null): P
 export async function buildFuelCsv(range: DateRange, dil?: string | null): Promise<CsvCikti> {
   const t = await getTranslations({ locale: csvDili(dil), namespace: "reports" });
   const rapor = await buildFuelReport(range);
-  const nf = csvDili(dil) === "de" ? "de-AT" : "tr-TR";
+  const nf = csvDili(dil) === "de" ? "de-AT" : csvDili(dil) === "en" ? "en-GB" : "tr-TR";
   const num = (v: number, d = 0) =>
     v.toLocaleString(nf, { minimumFractionDigits: d, maximumFractionDigits: d });
 

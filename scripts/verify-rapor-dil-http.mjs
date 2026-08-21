@@ -106,6 +106,7 @@ function pdfMetniDuz(buf) {
 
 const ALMANCA = ["Mitarbeiter", "Zeitraum", "Erstellt", "Arbeitszeit", "Schicht", "Bericht", "Zugestellt", "Kennzeichen"];
 const TURKCE = ["Personel", "Dönem", "Oluşturulma", "Çalışma", "Vardiya", "Rapor", "Teslim", "Plaka"];
+const INGILIZCE = ["Employee", "Period", "Created", "Shift", "Report", "Delivered", "Plate", "Driver"];
 
 console.log(`\n╔══ RAPOR DİLİ · UÇTAN UCA (HTTP) ════════════════════════════════`);
 console.log(`║ an     ${new Date().toISOString()}`);
@@ -138,9 +139,9 @@ try {
   // ══ 1. GEÇERSİZ DİL ═════════════════════════════════════════════════════
   console.log("\n── 1. GEÇERSİZ DİL → 400 ──");
   for (const [ad, yol] of UCLAR) {
-    const res = await cek(`${yol}&dil=fr`);
+    const res = await cek(`${yol}&dil=es`);
     const j = await res.json().catch(() => null);
-    iddia(`${ad.padEnd(20)} ?dil=fr → 400 invalid_dil`,
+    iddia(`${ad.padEnd(20)} ?dil=es → 400 invalid_dil`,
       res.status === 400 && j?.error === "invalid_dil",
       `${res.status} ${j?.error ?? ""} gecerli=${JSON.stringify(j?.gecerli ?? null)}`);
   }
@@ -149,7 +150,7 @@ try {
   console.log("\n── 2. AYNI RAPOR · ?dil=tr vs ?dil=de ──");
   for (const [ad, yol, tur] of UCLAR) {
     const cikti = {};
-    for (const dil of ["de", "tr"]) {
+    for (const dil of ["de", "tr", "en"]) {
       const res = await cek(`${yol}&dil=${dil}`);
       if (res.status !== 200) {
         iddia(`${ad} ?dil=${dil} → 200`, false, `${res.status} ${(await res.text()).slice(0, 90)}`);
@@ -164,7 +165,11 @@ try {
       cikti[dil] = metin;
       iddia(`${ad.padEnd(20)} ?dil=${dil} → 200`, true, `${buf.length} bayt`);
     }
-    for (const [dil, karsi, kendi] of [["de", TURKCE, ALMANCA], ["tr", ALMANCA, TURKCE]]) {
+    for (const [dil, karsi, kendi] of [
+      ["de", TURKCE, ALMANCA],
+      ["tr", ALMANCA, TURKCE],
+      ["en", [...ALMANCA, ...TURKCE], INGILIZCE],
+    ]) {
       const m = cikti[dil];
       if (!m) continue;
       const sizan = karsi.filter((w) => m.includes(w));
@@ -174,10 +179,12 @@ try {
       iddia(`   ${dil} · kendi dilinin sözcükleri VAR`, kendinden.length > 0,
         kendinden.slice(0, 4).join(", ") || "hiçbiri");
     }
-    if (cikti.de && cikti.tr) {
-      iddia(`   iki dilin çıktısı FARKLI`, cikti.de !== cikti.tr, null);
+    if (cikti.de && cikti.tr && cikti.en) {
+      iddia(`   üç dilin çıktısı da FARKLI`,
+        new Set([cikti.de, cikti.tr, cikti.en]).size === 3, null);
       bilgi(`de: ${cikti.de.replace(/\s+/g, " ").slice(0, 96)}`);
       bilgi(`tr: ${cikti.tr.replace(/\s+/g, " ").slice(0, 96)}`);
+      bilgi(`en: ${cikti.en.replace(/\s+/g, " ").slice(0, 96)}`);
     }
   }
 

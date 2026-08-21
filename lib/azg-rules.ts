@@ -248,7 +248,40 @@ export const AZG_REF_TR = {
   weeklyNormal: "§ 3 AZG (normal çalışma haftada 40 saat)",
 } as const;
 
+/**
+ * YASA ATIFLARI · INGILIZCE IKIZ (21.08.2026).
+ *
+ * TR ikiziyle ayni kural: `§` numarasi CEVRILMEZ (maddenin kimligi,
+ * denetimde onunla araniyor); yalniz parantez ici aciklama cevrilir.
+ */
+export const AZG_REF_EN = {
+  dailyMax: "§ 9 Abs. 1 AZG (maximum 12 hours per day)",
+  nightMax: "§ 14 Abs. 2 AZG (night work — maximum 10 hours per day)",
+  break30: "§ 13c Abs. 1 AZG (at least 30 min break over 6 hours)",
+  break45: "§ 13c Abs. 1 AZG (at least 45 min break over 9 hours)",
+  rest11: "§ 12 Abs. 1 AZG (uninterrupted rest of at least 11 hours)",
+  weeklyMax: "§ 13b Abs. 2 AZG (maximum 60 hours per week)",
+  weeklyAvg: "§ 13b Abs. 2 AZG (48 hours on average over 17 weeks)",
+  weeklyNormal: "§ 3 AZG (normal working time 40 hours per week)",
+} as const;
+
+/**
+ * ANAHTAR KÜMESİ sabit, DEĞER serbest metin. `typeof AZG_REF` kullanmak
+ * `as const` yüzünden Almanca METNİ de tipe sabitler ve TR/EN ikizlerini
+ * reddederdi; amaç değeri değil ANAHTARI zorlamak.
+ */
+export type AzgRefKumesi = { [K in keyof typeof AZG_REF]: string };
+
+/** Derleme anı kontrolü: ikizlerde eksik/fazla anahtar varsa burada patlar. */
+const AZG_REF_TR_KONTROL: AzgRefKumesi = AZG_REF_TR;
+const AZG_REF_EN_KONTROL: AzgRefKumesi = AZG_REF_EN;
+void AZG_REF_TR_KONTROL;
+void AZG_REF_EN_KONTROL;
+
 /** Dil → yasa atıf kümesi. Bilinmeyen/boş dilde Almanca (eski hâl). */
-export function azgRef(dil?: string | null): typeof AZG_REF {
-  return (dil === "tr" ? AZG_REF_TR : AZG_REF) as typeof AZG_REF;
+export function azgRef(dil?: string | null): AzgRefKumesi {
+  if (dil === "tr") return AZG_REF_TR;
+  if (dil === "en") return AZG_REF_EN;
+  return AZG_REF;
 }
+

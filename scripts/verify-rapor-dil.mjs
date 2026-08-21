@@ -48,8 +48,13 @@ try {
   {
     const de = await getTranslations({ locale: "de", namespace: "azg" });
     const tr = await getTranslations({ locale: "tr", namespace: "azg" });
+    const en = await getTranslations({ locale: "en", namespace: "azg" });
     const mDe = de("report_title");
     const mTr = tr("report_title");
+    const mEn = en("report_title");
+    iddia("en gerçekten İngilizce geldi", /report|compliance/i.test(mEn), `"${mEn}"`);
+    iddia("ÜÇ dil de birbirinden farklı", new Set([mDe, mTr, mEn]).size === 3,
+      `de="${mDe}" tr="${mTr}" en="${mEn}"`);
     iddia("aynı anahtar iki dilde FARKLI metin veriyor", mDe !== mTr, `de="${mDe}" · tr="${mTr}"`);
     iddia("de gerçekten Almanca geldi", /bericht|Arbeitszeit|Verstoss|Verstöß/i.test(mDe), `"${mDe}"`);
 
@@ -66,6 +71,12 @@ try {
   {
     const de = shiftReportEtiketleri("de");
     const tr = shiftReportEtiketleri("tr");
+    const en = shiftReportEtiketleri("en");
+    iddia("EN etiketleri ayrı ve İngilizce", en.title === "Shift Report", `"${en.title}"`);
+    iddia("EN anahtar kümesi TR/DE ile birebir",
+      JSON.stringify(Object.keys(en.headers).sort()) ===
+        JSON.stringify(Object.keys(de.headers).sort()), null);
+    iddia("EN künyesi de çevrilmedi", en.company === de.company && en.uid === de.uid, en.company);
     iddia("vardiya raporu etiketleri iki dilde farklı", de.title !== tr.title, `"${de.title}" / "${tr.title}"`);
     iddia("anahtar kümeleri BİREBİR aynı",
       JSON.stringify(Object.keys(de).sort()) === JSON.stringify(Object.keys(tr).sort()) &&
@@ -89,7 +100,8 @@ try {
     iddia("?dil yok → null (mevcut davranış korunur)", dilCoz(u("")).ok === true && dilCoz(u("")).dil === null, null);
     iddia("?dil=tr → tr", dilCoz(u("?dil=tr")).dil === "tr", null);
     iddia("?dil=de → de", dilCoz(u("?dil=de")).dil === "de", null);
-    for (const kotu of ["fr", "en", "TR", "tr-TR", "xx", "0"]) {
+    iddia("?dil=en → en (YENİ)", dilCoz(u("?dil=en")).dil === "en", null);
+    for (const kotu of ["fr", "es", "TR", "tr-TR", "xx", "0"]) {
       const r = dilCoz(u(`?dil=${kotu}`));
       iddia(`?dil=${kotu.padEnd(5)} → invalid_dil`, r.ok === false && r.kod === "invalid_dil", null);
     }
@@ -104,12 +116,18 @@ try {
     const ay = "2026-07";
     const de = await buildAZGReport(ay, "de");
     const tr = await buildAZGReport(ay, "tr");
+    const en = await buildAZGReport(ay, "en");
     iddia("iki dilde de hesap başarılı", de.ok && tr.ok, de.ok && tr.ok ? "ok" : `${de.error ?? ""} ${tr.error ?? ""}`);
     if (de.ok && tr.ok) {
       // Belgenin ÇEVRİLEN tüm metin alanlarını topla (sayılar değil).
       const metin = (d) => JSON.stringify(d).replace(/"[a-zA-Z_]+":/g, " ");
-      const mDe = metin(de.data), mTr = metin(tr.data);
-      for (const [dil, m, karsi, kendi] of [["de", mDe, TURKCE, ALMANCA], ["tr", mTr, ALMANCA, TURKCE]]) {
+      const mDe = metin(de.data), mTr = metin(tr.data), mEn = metin(en.data);
+      const INGILIZCE = ["Violation", "working time", "Rest", "week", "break"];
+      for (const [dil, m, karsi, kendi] of [
+        ["de", mDe, TURKCE, ALMANCA],
+        ["tr", mTr, ALMANCA, TURKCE],
+        ["en", mEn, [...ALMANCA, ...TURKCE], INGILIZCE],
+      ]) {
         const sizan = karsi.filter((w) => m.includes(w));
         const kendinden = kendi.filter((w) => m.includes(w));
         iddia(`dil=${dil} · KARŞI dilin sözcüğü YOK (karma değil)`, sizan.length === 0,
@@ -118,6 +136,7 @@ try {
       }
       bilgi(`başlık de: "${de.data.reportTitle}"`);
       bilgi(`başlık tr: "${tr.data.reportTitle}"`);
+      bilgi(`başlık en: "${en.data.reportTitle}"`);
     }
   }
 
@@ -128,6 +147,7 @@ try {
     for (const [ad, f] of [["shifts", buildShiftsCsv], ["distance", buildDistanceCsv]]) {
       const de = await f(r, "de");
       const tr = await f(r, "tr");
+      const en = await f(r, "en");
       // Kodlamayi ciktinin KENDISI soyluyor: shifts.csv Excel uyumu icin
       // UTF-16LE uretiyor, digerleri UTF-8. Yanlis okumak basligi bos gosterir.
       const LF = String.fromCharCode(10);
@@ -138,9 +158,11 @@ try {
         const metin = c.govde.toString(utf16 ? "utf16le" : "utf8");
         return metin.split(LF)[0].split(CR)[0].split(BOM).join("").slice(0, 88);
       };
-      iddia(`${ad}.csv başlık satırı iki dilde FARKLI`, bas(de) !== bas(tr), null);
+      iddia(`${ad}.csv başlık satırı ÜÇ dilde FARKLI`,
+        new Set([bas(de), bas(tr), bas(en)]).size === 3, null);
       bilgi(`de: ${bas(de)}`);
       bilgi(`tr: ${bas(tr)}`);
+      bilgi(`en: ${bas(en)}`);
     }
   }
 

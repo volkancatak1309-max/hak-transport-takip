@@ -1025,6 +1025,8 @@
     "v2OtherVehicleErr": "Araç listesi alınamadı, tekrar dene.",
     "v2OwnVehicle": "kendi aracın",
     "v2VehicleInUse": "kullanımda",
+    "v2VehicleGroupFree": "Boştaki araçlar",
+    "v2VehicleGroupBusy": "Şu an kullanımda",
     "v2VehicleBusyWarn": "Bu aracı şu an {name} kullanıyor. Aynı araca iki kişi binemez — o kişinin de kendi panelinden bindiği aracın plakasını girmesi gerekiyor.",
     "v2VehicleBusyProceed": "Yine de devam et"
   },

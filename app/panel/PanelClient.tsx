@@ -32,6 +32,7 @@ import { formatDuration, formatTime, workedMs } from "@/lib/format";
 import { listPickableVehiclesAction } from "@/app/actions/driver-panel";
 import { pingPanelAction } from "@/app/actions/depot";
 import type { PickableVehicle } from "@/lib/vehicles";
+import { VehiclePickerList } from "./VehiclePickerList";
 import { breakTargetMin, AZG_BREAK_AFTER_6H_MIN } from "@/lib/break-rules";
 import { classifyUndelivered, type UndeliveredCheck } from "@/lib/package-limits";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
@@ -1351,31 +1352,14 @@ export function PanelClient({
               className="nums h-11 pl-9 uppercase"
             />
           </div>
-          <ul className="space-y-1.5">
-            {visiblePickable.map((v) => (
-              <li key={v.id}>
-                <button
-                  type="button"
-                  onClick={() => pickVehicle(v)}
-                  disabled={pending}
-                  className="flex w-full items-center justify-between gap-3 rounded-[10px] border border-border/70 px-3 py-2.5 text-left transition-colors hover:bg-surface-2 disabled:opacity-60"
-                >
-                  <span className="min-w-0">
-                    <span className="nums block font-semibold">{v.plate}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {[v.make, v.model].filter(Boolean).join(" ") || "—"}
-                      {v.isOwn ? ` · ${t("v2OwnVehicle")}` : ""}
-                    </span>
-                  </span>
-                  {v.inUseBy.length > 0 && (
-                    <span className="shrink-0 rounded-full bg-accent-gold/15 px-2 py-0.5 text-[11px] font-medium text-accent-gold-text">
-                      {t("v2VehicleInUse")}
-                    </span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
+          {/* Liste artık İKİ BAŞLIK altında: boştakiler üstte, kullanımdakiler
+              altta ve KİMİN kullandığı satırda görünür (21.08.2026). Meşgul araç
+              seçilebilir kalır — uyarı diyaloğu aşağıda. */}
+          <VehiclePickerList
+            vehicles={visiblePickable}
+            disabled={pending}
+            onPick={pickVehicle}
+          />
           {visiblePickable.length === 0 && (
             <p className="py-6 text-center text-sm text-muted-foreground">
               {pickable.length === 0

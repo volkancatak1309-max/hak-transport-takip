@@ -1025,6 +1025,8 @@
     "v2OtherVehicleErr": "Fahrzeugliste konnte nicht geladen werden, bitte erneut versuchen.",
     "v2OwnVehicle": "dein Fahrzeug",
     "v2VehicleInUse": "in Benutzung",
+    "v2VehicleGroupFree": "Freie Fahrzeuge",
+    "v2VehicleGroupBusy": "Derzeit in Benutzung",
     "v2VehicleBusyWarn": "Dieses Fahrzeug wird gerade von {name} genutzt. Zwei Personen können nicht dasselbe Fahrzeug fahren — die andere Person muss in ihrem eigenen Panel das Kennzeichen des tatsächlich gefahrenen Fahrzeugs eintragen.",
     "v2VehicleBusyProceed": "Trotzdem fortfahren"
   },

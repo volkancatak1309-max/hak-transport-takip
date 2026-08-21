@@ -173,6 +173,9 @@ const AZG_DOC_DE = {
   detailed: "Detaillierte Verstöße",
   noViolations: "{L.noViolations}",
   date: "Datum",
+  /** İhlal tablosunun TÜR sütunu — "Schwerste Art" ile karışmasın: o özet
+   *  sayfasındaki EN AĞIR tür, bu ise satırın kendi türü. */
+  kind: "Art",
   start: "Beginn",
   end: "Ende",
   duration: "Dauer",
@@ -198,6 +201,7 @@ const AZG_DOC_TR = {
   detailed: "İhlal ayrıntıları",
   noViolations: "İhlal tespit edilmedi.",
   date: "Tarih",
+  kind: "Tür",
   start: "Başlangıç",
   end: "Bitiş",
   duration: "Süre",
@@ -223,6 +227,7 @@ const AZG_DOC_EN = {
   detailed: "Violations in detail",
   noViolations: "No violations found.",
   date: "Date",
+  kind: "Type",
   start: "Start",
   end: "End",
   duration: "Duration",
@@ -403,7 +408,7 @@ export function AZGDoc({ data, uretimAni, kullanici, isaret, dil }: AZGDocProps)
           <View style={styles.thead} fixed>
             <Text style={[styles.th, { width: "11%" }]}>{L.date}</Text>
             <Text style={[styles.th, { width: "16%" }]}>{L.worker}</Text>
-            <Text style={[styles.th, { width: "22%" }]}>Art</Text>
+            <Text style={[styles.th, { width: "22%" }]}>{L.kind}</Text>
             <Text style={[styles.th, { width: "24%" }]}>{L.description}</Text>
             <Text style={[styles.th, { width: "19%" }]}>{L.legalBasis}</Text>
             <Text style={[styles.th, { width: "8%" }]}>{L.severity}</Text>

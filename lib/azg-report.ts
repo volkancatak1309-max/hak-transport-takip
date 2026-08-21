@@ -144,7 +144,7 @@ export async function buildAZGReport(
   // Yasa atıfları da seçilen dilde (§ numarası sabit, açıklama çevrilir).
   const REF = azgRef(dil);
   const t = await getTranslations({
-    locale: dil === "tr" ? "tr" : "de",
+    locale: dil === "tr" || dil === "en" ? dil : "de",
     namespace: "azg",
   });
   const reportTitle = t("report_title");
@@ -410,7 +410,9 @@ export async function buildAZGReport(
       legalRef =
         dil === "tr"
           ? "§ 3 AZG (normal çalışma günlük 8 saat)"
-          : "§ 3 AZG (Normalarbeitszeit 8 Stunden täglich)";
+          : dil === "en"
+            ? "§ 3 AZG (normal working time 8 hours per day)"
+            : "§ 3 AZG (Normalarbeitszeit 8 Stunden täglich)";
     }
     if (!severity) continue;
     violations.push({

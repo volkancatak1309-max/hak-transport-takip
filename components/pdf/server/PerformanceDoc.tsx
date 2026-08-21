@@ -161,18 +161,53 @@ const TR = {
  * `as const` yüzünden değerleri de sabitler ve Türkçe metni reddederdi;
  * amaç değeri değil ANAHTARI zorlamak.
  */
+const EN = {
+  title: "Driver Performance Report",
+  employee: "Employee",
+  period: "Period",
+  generatedAt: "Created",
+  rank: "Rank",
+  ofDrivers: "of",
+  noData: "No data in the selected period.",
+  sectionMetrics: "Key figures",
+  sectionFleet: "Fleet context",
+  fleetAvg: "Fleet average",
+  fleetScored: "Scored drivers",
+  fleetInsufficient: "Insufficient data",
+  fleetTotal: "Drivers in total",
+  footer: "Safety score: 100 = no events, normalised per km",
+  footerNoScore:
+    "The safety score is currently being calibrated — the column is temporarily hidden",
+  rows: {
+    score: "Safety score",
+    shifts: "Shifts",
+    worked: "Working time",
+    km: "km",
+    delivered: "Delivered",
+    undelivered: "Undelivered",
+    events: "Events in total",
+    braking: "Braking",
+    accel: "Accel.",
+    speeding: "Speed",
+  },
+} as const;
+
 type EtiketKumesi = {
   [K in keyof typeof DE]: (typeof DE)[K] extends Record<string, unknown>
     ? { [R in keyof (typeof DE)[K]]: string }
     : string;
 };
-/** Derleme anı kontrolü: TR'de eksik/fazla anahtar varsa burada patlar. */
+/** Derleme anı kontrolü: ikizlerde eksik/fazla anahtar varsa burada patlar. */
 const TR_KONTROL: EtiketKumesi = TR;
+const EN_KONTROL: EtiketKumesi = EN;
 void TR_KONTROL;
+void EN_KONTROL;
 
 /** Dil → etiket kümesi. Bilinmeyen/boş dilde Almanca (eski hâl). */
 function etiketler(dil?: string | null): EtiketKumesi {
-  return dil === "tr" ? TR : DE;
+  if (dil === "tr") return TR;
+  if (dil === "en") return EN;
+  return DE;
 }
 
 // Panelin PerformanceReport.tsx'iyle aynı renk/ölçü dili — iki belge aynı yüz.

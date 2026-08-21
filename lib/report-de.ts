@@ -283,11 +283,44 @@ export const SHIFT_REPORT_TR = {
   },
 } as const;
 
-export type ShiftReportLabels = typeof SHIFT_REPORT_DE | typeof SHIFT_REPORT_TR;
+/**
+ * VARDIYA RAPORU ETIKETLERI · INGILIZCE IKIZ (21.08.2026).
+ * TR ikiziyle ayni kural: KUNYE cevrilmez, AZG atfi korunur.
+ */
+export const SHIFT_REPORT_EN = {
+  title: "Shift Report",
+  company: COMPANY.name,
+  address: COMPANY.address,
+  uid: COMPANY_UID_LINE,
+  period: "Period",
+  generatedAt: "Created",
+  footer: "Working time record pursuant to the Austrian Working Time Act (AZG)",
+  headers: {
+    worker: "Employee",
+    date: "Date",
+    start: "Start",
+    end: "End",
+    worked: "Working time",
+    breakMin: "Break",
+    km: "Distance km",
+    /** Almanca/Turkce surumdeki gibi KISALTILDI — kolon %9 genislikte, 8pt. */
+    loaded: "To deliver",
+    cargo: "Delivered",
+    undelivered: "Undelivered",
+    plate: "Plate",
+  },
+} as const;
+
+export type ShiftReportLabels =
+  | typeof SHIFT_REPORT_DE
+  | typeof SHIFT_REPORT_TR
+  | typeof SHIFT_REPORT_EN;
 
 /** Dil → vardiya raporu etiketleri. Bilinmeyen/boş dilde Almanca (eski hâl). */
 export function shiftReportEtiketleri(dil?: string | null): ShiftReportLabels {
-  return dil === "tr" ? SHIFT_REPORT_TR : SHIFT_REPORT_DE;
+  if (dil === "tr") return SHIFT_REPORT_TR;
+  if (dil === "en") return SHIFT_REPORT_EN;
+  return SHIFT_REPORT_DE;
 }
 
 /**
@@ -311,7 +344,23 @@ export function reportPeriodTr(range: string): string {
   }
 }
 
+/** Aralık anahtarının İNGİLİZCESİ — anahtar kümesi diğer ikisiyle birebir. */
+export function reportPeriodEn(range: string): string {
+  switch (range) {
+    case "week":
+      return "This week";
+    case "month":
+      return "This month";
+    case "custom":
+      return "Custom period";
+    default:
+      return "Today";
+  }
+}
+
 /** Dil → aralık etiketi çevirici. */
 export function reportPeriod(range: string, dil?: string | null): string {
-  return dil === "tr" ? reportPeriodTr(range) : reportPeriodDe(range);
+  if (dil === "tr") return reportPeriodTr(range);
+  if (dil === "en") return reportPeriodEn(range);
+  return reportPeriodDe(range);
 }

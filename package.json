@@ -35,7 +35,8 @@
     "verify:sefer-tur1": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sefer-tur1.mjs",
     "verify:sahipsiz-olay": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sahipsiz-olay.mjs",
     "verify:sefer-tur3": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sefer-tur3.mjs",
-    "verify:telegram-sokum": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-telegram-sokum.mjs"
+    "verify:telegram-sokum": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-telegram-sokum.mjs",
+    "verify:reopen-payload": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-reopen-payload.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

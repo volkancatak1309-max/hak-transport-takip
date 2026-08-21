@@ -815,7 +815,43 @@ export async function processAutoShifts(
     summary.errors.push(e instanceof Error ? e.message : "error");
   }
 
-  /* ══ GEÇİCİ TEŞHİS — İŞ BİTİNCE KALDIRILACAK (21.08.2026) ══ */
+  /* ══ GEÇİCİ TEŞHİS — İŞ BİTİNCE KALDIRILACAK (21.08.2026) ══
+     BUGÜNÜN VARDİYALARINI KİM KAPATTI? "15 vardiya açıldı, 0'ı açık"
+     tek başına kapatanı söylemiyor. end_reason + auto_ended + SÜRE bunu
+     tek satırda verir: auto_idle + kısa süre = motorun kendisi kapatmış. */
+  let bugunkuOzet = "olculmedi";
+  try {
+    const { data: bugunku } = await supabaseAdmin
+      .from("time_entries")
+      .select("started_at, ended_at, auto_started, auto_ended, end_reason")
+      .gte("started_at", startOfTodayVienna().toISOString());
+    const satirlar = (bugunku ?? []) as {
+      started_at: string; ended_at: string | null;
+      auto_started: boolean | null; auto_ended: boolean | null;
+      end_reason: string | null;
+    }[];
+    const sebep: Record<string, number> = {};
+    const sureler: number[] = [];
+    for (const r of satirlar) {
+      const k = r.ended_at ? (r.end_reason ?? "bos") : "ACIK";
+      sebep[k] = (sebep[k] ?? 0) + 1;
+      if (r.ended_at) {
+        sureler.push(Math.round((new Date(r.ended_at).getTime() - new Date(r.started_at).getTime()) / 60000));
+      }
+    }
+    sureler.sort((a, b) => a - b);
+    bugunkuOzet = JSON.stringify({
+      toplam: satirlar.length,
+      otoAcilan: satirlar.filter((r) => r.auto_started).length,
+      otoKapanan: satirlar.filter((r) => r.auto_ended).length,
+      sebep,
+      sureDk: sureler.length
+        ? { min: sureler[0], orta: sureler[Math.floor(sureler.length / 2)], max: sureler[sureler.length - 1] }
+        : null,
+    });
+  } catch (e) {
+    bugunkuOzet = "hata:" + (e instanceof Error ? e.message.slice(0, 40) : "?");
+  }
   console.log(
     "[oto-vardiya-teshis] tetik=" + SHIFT_START_TRIGGER +
       " otoAcik=" + AUTO_START_ENABLED +
@@ -826,6 +862,7 @@ export async function processAutoShifts(
       " bugunBaslayanSofor=" + bugunBaslayanSayisi +
       " izinliSofor=" + izinliSayisi +
       " telemetriYasDk=[" + enYeniTelemetriDk + "," + enEskiTelemetriDk + "]" +
+      " bugunkuVardiyalar=" + bugunkuOzet +
       " huni=" + JSON.stringify(huni) +
       " ozet=" + JSON.stringify({ checked: summary.checked, started: summary.started, ended: summary.ended, hata: summary.errors.length })
   );

@@ -2,7 +2,7 @@ import "server-only";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
 import { loginSchema } from "@/lib/validation";
-import { canonicalPhone, phoneVariants } from "@/lib/phone";
+import { phoneVariants } from "@/lib/phone";
 import { DRIVER_PANEL_ENABLED } from "@/lib/tenant";
 import {
   MAX_FAILURES,
@@ -156,37 +156,8 @@ export async function verifyCredentials(input: {
   pin: unknown;
   ip: string;
 }): Promise<CredentialResult> {
-  /**
-   * ══ GEÇİCİ TEŞHİS (20.08.2026) — İŞ BİTİNCE KALDIRILACAK ══════════════
-   *
-   * Neden var: şoför girişi GERÇEK TELEFONDA iki kez düştü, oysa aynı gövde
-   * `curl` ile 200 dönüyordu. Emülasyon ve masaüstü bu farkı göremiyor;
-   * gerçekte uçtan ne geldiğini görmenin başka yolu yok.
-   *
-   * ⚠️ NE LOGLANIR, NE LOGLANMAZ:
-   *   • Telefon ve PIN'in KENDİSİ ASLA loglanmaz.
-   *   • Yalnız RAKAM OLMAYAN karakterlerin kodları basılır — görünmez
-   *     karakter/boşluk avı için yeter, numarayı ele vermez.
-   *   • PIN'den yalnız uzunluk ve "hepsi rakam mı" bilgisi çıkar.
-   *   • Kanonik numaradan yalnız SON 4 hane.
-   * Kasadaki kural: sırrı koda, kasaya, loga yazma.
-   */
-  const hamTel = typeof input.phone === "string" ? input.phone : "";
-  const hamPin = typeof input.pin === "string" ? input.pin : "";
-  const rakamDisi = (v: string) =>
-    [...v].map((c, i) => (/\d/.test(c) ? null : `${i}:${c.charCodeAt(0)}`)).filter(Boolean);
-  const teshis = (asama: string, ek: Record<string, unknown> = {}) =>
-    console.log(
-      `[login-teshis] ${asama} | telUzunluk=${hamTel.length} telRakamDisi=${JSON.stringify(rakamDisi(hamTel))}` +
-        ` pinUzunluk=${hamPin.length} pinRakamDisi=${JSON.stringify(rakamDisi(hamPin))}` +
-        ` ${Object.entries(ek).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ")}`
-    );
-
   const parsed = loginSchema.safeParse({ phone: input.phone, pin: input.pin });
-  if (!parsed.success) {
-    teshis("ZOD-DUSTU", { alanlar: parsed.error.issues.map((i) => i.path.join(".")) });
-    return { ok: false, reason: "validation" };
-  }
+  if (!parsed.success) return { ok: false, reason: "validation" };
 
   // Kilit sayacı kanonik numaraya bağlanır: aynı şoförün "+43660…" ve
   // "+430660…" yazımları tek bir sayaçta toplanır, ayrı ayrı hak kazanmaz.
@@ -223,38 +194,8 @@ export async function verifyCredentials(input: {
     .in("phone", phoneVariants(parsed.data.phone))
     .limit(2);
 
-  if (error) {
-    teshis("DB-HATASI", { mesaj: error.message.slice(0, 60) });
-    return { ok: false, reason: "db" };
-  }
+  if (error) return { ok: false, reason: "db" };
   const worker = (matches?.[0] ?? null) as AuthWorker | null;
-  const kanonik = parsed.data.phone;
-  /**
-   * HASH BİÇİMİ — DEĞERİ DEĞİL. Basılan tek şey sınıf adı ve UZUNLUK.
-   * Neden gerekli: "PIN yanlış" ile "kayıtta PIN yok / PIN düz metin yazılmış /
-   * hash bozuk" birbirinden AYIRT EDİLEMİYOR — üçü de bcrypt.compare=false
-   * verir. Uzunluk 60 → bcrypt; 6 → düz metin PIN yazılmış demektir.
-   */
-  const hashSinifi = (h: unknown): string => {
-    if (h === null || h === undefined) return "NULL";
-    if (typeof h !== "string") return "tip-" + typeof h;
-    if (h.length === 0) return "BOS";
-    if (/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(h)) return "bcrypt-gecerli";
-    if (/^\$2[aby]\$/.test(h)) return "bcrypt-BOZUK";
-    return "BCRYPT-DEGIL";
-  };
-  teshis("KAYIT-ARAMA", {
-    kanonikSon4: canonicalPhone(kanonik).slice(-4),
-    varyantSayisi: phoneVariants(kanonik).length,
-    eslesenKayit: matches?.length ?? 0,
-    workerAktif: worker?.is_active ?? null,
-    yonetici: worker?.is_admin ?? null,
-    mustChangePin: worker?.must_change_pin ?? null,
-    soforSayilir: worker?.counts_as_driver ?? null,
-    hashSinif: worker ? hashSinifi(worker.pin_hash) : "-",
-    hashUzunluk:
-      typeof worker?.pin_hash === "string" ? worker.pin_hash.length : null,
-  });
 
   // Always run exactly one bcrypt compare — against the real hash, or a dummy
   // when the phone is unknown — so timing doesn't reveal whether the phone
@@ -265,44 +206,9 @@ export async function verifyCredentials(input: {
     worker?.pin_hash ?? DUMMY_PIN_HASH
   );
   const authed = !!worker && worker.is_active && pinOk;
-  teshis("PIN-KARSILASTIRMA", { pinOk, kayitVar: !!worker, sonuc: authed });
 
   if (!authed || !worker) {
-    /**
-     * GÖLGE KAYIT AVI — aynı numaranın ikinci, "kirli" bir kopyası var mı?
-     * Giriş sorgusu SANITIZE EDİLMİŞ varyantlarla arıyor; görünmez karakter
-     * taşıyan bir kopya o listeye HİÇ düşmez — ama yönetici panelinde
-     * düzenlenen kayıt O olabilir: PIN doğru yazılır, giriş başka satıra bakar.
-     * Basılan: kaç satır, her birinin UZUNLUĞU ve RAKAM OLMAYAN karakterleri.
-     * Numaraların kendisi yine basılmaz.
-     */
-    const son7 = canonicalPhone(kanonik).slice(-7);
-    const { data: benzer, error: benzerErr } = await supabaseAdmin
-      .from("workers")
-      .select("phone, is_active, is_admin")
-      .ilike("phone", "%" + son7 + "%");
-    teshis("BENZER-KAYIT", {
-      son7Eslesen: benzer?.length ?? 0,
-      hata: benzerErr?.message?.slice(0, 40) ?? null,
-      bicimler: (
-        (benzer ?? []) as {
-          phone: string | null;
-          is_active: boolean;
-          is_admin: boolean;
-        }[]
-      ).map((b) => ({
-        uz: (b.phone ?? "").length,
-        rd: rakamDisi(b.phone ?? ""),
-        aktif: b.is_active,
-        yon: b.is_admin,
-      })),
-    });
-    const basarisiz = await registerFailure(identifier);
-    teshis("KILIT", {
-      deneme: basarisiz.attempts,
-      kilitBitis: basarisiz.lockedUntil,
-    });
-    return failureResult(basarisiz);
+    return failureResult(await registerFailure(identifier));
   }
 
   // ŞOFÖR PANELİ KAPALI MÜŞTERİ (Sendigo): şoförün gideceği bir yer yok.

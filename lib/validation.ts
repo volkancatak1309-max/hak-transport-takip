@@ -66,15 +66,26 @@ export const adminSetPinSchema = z
 // old 4-digit one are not locked out before an admin resets them to 6 digits.
 // Once everyone is migrated this can be tightened to /^\d{6}$/.
 /**
- * ⚠️ `.trim()` ZORUNLU (20.08.2026, telefonda yaşandı).
+ * ⚠️ `.trim()` — 20.08.2026'da eklendi. ÖLÇÜMÜN SONUCU: aranan arızanın
+ * sebebi BU DEĞİLDİ. Not düşülüyor çünkü buradaki ilk açıklama "telefonda
+ * yaşandı" diyordu ve bir sonraki okuyanı yanlış yola sokardı.
  *
- * `phoneSchema` kırpıyordu, bu kırpmıyordu. Mobil klavye / şifre yöneticisi
- * sona bir boşluk eklediğinde regex düşüyor, `verifyCredentials` "validation"
- * dönüyor ve ekran **"Telefon veya PIN hatalı"** diyor — yani kullanıcı
- * PIN'ini doğru yazdığı hâlde "yanlış PIN" görüyor ve hatayı asla
- * çözemiyor. Masaüstünde ve `curl` ile hiç görünmez; yalnız gerçek telefonda
- * çıkar. Aynı formdaki iki alandan birinin kırpıp diğerinin kırpmaması
- * başlı başına bir tutarsızlıktı.
+ * NE OLDU: demo.galzura.com'da bir şoför üç kez giremedi. Şüpheli, PIN alanının
+ * kırpılmamasıydı — `phoneSchema` kırpıyor, bu kırpmıyordu. Canlıya geçici bir
+ * teşhis logu kondu ve GERÇEK telefondan gelen istek ölçüldü:
+ *
+ *   pinUzunluk=6  pinRakamDisi=[]   → PIN uçtan ALTI SAF RAKAM olarak geldi.
+ *
+ * Yani kırpılacak bir şey yoktu; arıza `bcrypt.compare` aşamasındaydı (kayıttaki
+ * hash başka bir PIN'e aitti). Tarayıcıda `pattern="\d{4,6}"` zaten boşluklu
+ * gönderimi durduruyor (app/LoginForm.tsx).
+ *
+ * PEKİ NEDEN DURUYOR: aynı formdaki iki alandan birinin kırpıp ötekinin
+ * kırpmaması başlı başına bir tutarsızlık. Kırpma olmadan, sona boşluk ekleyen
+ * bir şifre yöneticisi regex'i düşürür, `verifyCredentials` "validation" döner
+ * ve ekran "Telefon veya PIN hatalı" der — kullanıcı PIN'i DOĞRU yazdığı hâlde
+ * "yanlış PIN" görür. Gerçekleşmemiş ama gerçekleşebilir bir hata; kapı kapalı
+ * kalsın. Davranışı yalnız "sondaki boşluk" durumunda değiştirir.
  */
 export const loginPinSchema = z
   .string()

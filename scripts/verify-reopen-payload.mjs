@@ -131,9 +131,11 @@ try {
   iddia("yeniden açma HATASIZ (42703 yok)", !acmaHata,
     acmaHata ? `${acmaHata.code} ${acmaHata.message}` : "hata yok");
 
+  // ⚠️ Bu select KOLONU İSTEMEZ: kolon DDL ile düşecek ve istenirse bu betik
+  // 42703 ile kırılırdı — kaldırdığımız şeye bağımlı bir kanıt betiği olmaz.
   const { data: sonra } = await supabaseAdmin
     .from("time_entries")
-    .select("id, ended_at, end_km, end_reason, auto_ended, summary_notified_at, undelivered_count, still_active_asked_at")
+    .select("id, ended_at, end_km, end_reason, auto_ended, summary_notified_at, undelivered_count")
     .eq("id", vardiyaId).maybeSingle();
   iddia("vardiya AÇILDI (ended_at null)", sonra?.ended_at === null, `ended_at=${sonra?.ended_at ?? "null"}`);
   iddia("kapanış alanları temizlendi",
@@ -141,7 +143,12 @@ try {
   iddia("özet damgası SIFIRLANDI (imza döngüsü yeniden işleyecek)",
     sonra?.summary_notified_at === null, `summary_notified_at=${sonra?.summary_notified_at ?? "null"}`);
   iddia("teslim edilemeyen sıfırlandı", sonra?.undelivered_count === null, null);
-  bilgi(`still_active_asked_at şu an: ${sonra?.still_active_asked_at ?? "null"} (kolon HÂLÂ DB'de — DDL bekliyor)`);
+  // Kolonun DB'de olup olmadığını AYRI ve HOŞGÖRÜLÜ bir sorguyla bildir:
+  // iki durumda da (DDL öncesi/sonrası) betik geçerli kalsın.
+  {
+    const { error } = await supabaseAdmin.from("time_entries").select("still_active_asked_at").limit(1);
+    bilgi(`still_active_asked_at kolonu DB'de: ${error ? "HAYIR — DDL çalıştırılmış (" + error.code + ")" : "EVET — DDL bekliyor"}`);
+  }
 
   // ── 4. AÇIK VARDİYA KISITI ───────────────────────────────────────────────
   const { count: acik } = await supabaseAdmin

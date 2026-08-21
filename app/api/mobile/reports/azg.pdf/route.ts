@@ -104,6 +104,7 @@ export async function GET(req: NextRequest) {
 
   const buf = await renderPdfToBuffer(
     createElement(AZGDoc, {
+      dil,
       data: sonuc.data,
       uretimAni: damga,
       // Filigran: belgeyi İSTEYEN kişi (belgenin konusu olan şoförler değil).

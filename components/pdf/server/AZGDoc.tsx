@@ -41,6 +41,17 @@ const SEVERITY_DE: Record<AZGSeverity, string> = {
   serious_violation: "Schwerer Verstoß",
 };
 
+const SEVERITY_TR: Record<AZGSeverity, string> = {
+  warning: "Uyarı",
+  violation: "İhlal",
+  serious_violation: "Ağır ihlal",
+};
+
+/** Dil -> siddet etiketi. Bilinmeyen/bos dilde Almanca (eski hal). */
+function severityEtiket(dil?: string | null): Record<AZGSeverity, string> {
+  return dil === "tr" ? SEVERITY_TR : SEVERITY_DE;
+}
+
 const SEVERITY_COLOR: Record<AZGSeverity, string> = {
   warning: "#d97706",
   violation: "#dc2626",
@@ -127,8 +138,82 @@ function StatBox({ num, label, color }: { num: number; label: string; color?: st
   );
 }
 
+
+/**
+ * AZG BELGE ŞABLONU ETİKETLERİ (21.08.2026).
+ *
+ * ⚠️ ESKİDEN SABİT ALMANCAYDI. `buildAZGReport` t()'den geçen alanları
+ * çeviriyordu ama ŞABLON çevirmiyordu; sonuç KARMA bir belgeydi — Volkan'ın
+ * mobil tarafta teşhis ettiği kusurun ikinci yarısı. Artık dil seçilebiliyor.
+ *
+ * ⚠️ ÇEVRİLMEYEN: künye (COMPANY) ve "§ 26 AZG" madde kimliği. Kimlik sabit,
+ * açıklama dile uyar — lib/azg-rules.ts AZG_REF_TR ile aynı kural.
+ */
+const AZG_DOC_DE = {
+  createdAt: "Erstellt am",
+  shiftsTotal: "Schichten gesamt",
+  workers: "Mitarbeiter",
+  hoursTotal: "Stunden gesamt",
+  warnings: "Warnungen",
+  violations: "Verstöße",
+  serious: "Schwere Verstöße",
+  perWorker: "Zusammenfassung je Mitarbeiter",
+  worker: "Mitarbeiter",
+  shifts: "Schichten",
+  worstKind: "Schwerste Art",
+  noData: "{L.noData}",
+  detailed: "Detaillierte Verstöße",
+  noViolations: "{L.noViolations}",
+  date: "Datum",
+  start: "Beginn",
+  end: "Ende",
+  duration: "Dauer",
+  severity: "Schwere",
+  description: "Beschreibung",
+  legalBasis: "Rechtsgrundlage",
+  suspicious: "Verdächtige Aufzeichnungen",
+} as const;
+
+const AZG_DOC_TR = {
+  createdAt: "Oluşturulma",
+  shiftsTotal: "Toplam vardiya",
+  workers: "Personel",
+  hoursTotal: "Toplam saat",
+  warnings: "Uyarılar",
+  violations: "İhlaller",
+  serious: "Ağır ihlaller",
+  perWorker: "Personel bazında özet",
+  worker: "Personel",
+  shifts: "Vardiya",
+  worstKind: "En ağır tür",
+  noData: "Seçili dönemde veri yok.",
+  detailed: "İhlal ayrıntıları",
+  noViolations: "İhlal tespit edilmedi.",
+  date: "Tarih",
+  start: "Başlangıç",
+  end: "Bitiş",
+  duration: "Süre",
+  severity: "Ağırlık",
+  description: "Açıklama",
+  legalBasis: "Yasal dayanak",
+  suspicious: "Şüpheli kayıtlar",
+} as const;
+
+type AzgDocEtiket = {
+  [K in keyof typeof AZG_DOC_DE]: string;
+};
+/** Derleme anı kontrolü: TR'de eksik/fazla anahtar varsa burada patlar. */
+const AZG_DOC_TR_KONTROL: AzgDocEtiket = AZG_DOC_TR;
+void AZG_DOC_TR_KONTROL;
+
+function azgDocEtiket(dil?: string | null): AzgDocEtiket {
+  return dil === "tr" ? AZG_DOC_TR : AZG_DOC_DE;
+}
+
 export type AZGDocProps = {
   data: AZGData;
+  /** Belge dili — verilmezse Almanca (eski davranış). */
+  dil?: string | null;
   /**
    * `data.generatedAt`in de-AT biçimli hâli — ROUTE'ta üretilir.
    * Panel bunu bileşen içinde `toLocaleString` ile kuruyor; burada prop çünkü
@@ -142,7 +227,9 @@ export type AZGDocProps = {
   isaret: string | null;
 };
 
-export function AZGDoc({ data, uretimAni, kullanici, isaret }: AZGDocProps) {
+export function AZGDoc({ data, uretimAni, kullanici, isaret, dil }: AZGDocProps) {
+  const L = azgDocEtiket(dil);
+  const SEV = severityEtiket(dil);
   const title = data.reportTitle;
   const warnColor = data.warningCount > 0 ? SEVERITY_COLOR.warning : "#94a3b8";
   const violColor = data.violationCount > 0 ? SEVERITY_COLOR.violation : "#059669";
@@ -163,16 +250,16 @@ export function AZGDoc({ data, uretimAni, kullanici, isaret }: AZGDocProps) {
         {COMPANY_EXTRA_LINE ? <Text style={styles.address}>{COMPANY_EXTRA_LINE}</Text> : null}
         <Text style={styles.coverTitle}>{title}</Text>
         <Text style={styles.coverMonth}>{data.monthLabel}</Text>
-        <Text style={styles.meta}>Erstellt am: {uretimAni}</Text>
+        <Text style={styles.meta}>{L.createdAt}: {uretimAni}</Text>
 
         <View style={styles.statRow}>
-          <StatBox num={data.totalShifts} label="Schichten gesamt" />
-          <StatBox num={data.totalWorkers} label="Mitarbeiter" />
+          <StatBox num={data.totalShifts} label={L.shiftsTotal} />
+          <StatBox num={data.totalWorkers} label={L.workers} />
         </View>
         <View style={styles.statRow}>
-          <StatBox num={data.warningCount} label="Warnungen" color={warnColor} />
-          <StatBox num={data.violationCount} label="Verstöße" color={violColor} />
-          <StatBox num={data.seriousCount} label="Schwere Verstöße" color={seriousColor} />
+          <StatBox num={data.warningCount} label={L.warnings} color={warnColor} />
+          <StatBox num={data.violationCount} label={L.violations} color={violColor} />
+          <StatBox num={data.seriousCount} label={L.serious} color={seriousColor} />
         </View>
       </Page>
 
@@ -180,20 +267,20 @@ export function AZGDoc({ data, uretimAni, kullanici, isaret }: AZGDocProps) {
       <Page size="A4" style={styles.page}>
         <WatermarkServer kullanici={kullanici} damga={uretimAni} />
         <FingerprintServer isaret={isaret} />
-        <Text style={styles.h2}>Zusammenfassung je Mitarbeiter</Text>
+        <Text style={styles.h2}>{L.perWorker}</Text>
         <View style={styles.table}>
           <View style={styles.thead} fixed>
-            <Text style={[styles.th, { width: "28%" }]}>Mitarbeiter</Text>
-            <Text style={[styles.th, { width: "12%" }]}>Schichten</Text>
+            <Text style={[styles.th, { width: "28%" }]}>{L.worker}</Text>
+            <Text style={[styles.th, { width: "12%" }]}>{L.shifts}</Text>
             <Text style={[styles.th, { width: "16%" }]}>Stunden gesamt</Text>
-            <Text style={[styles.th, { width: "14%" }]}>Warnungen</Text>
-            <Text style={[styles.th, { width: "14%" }]}>Verstöße</Text>
-            <Text style={[styles.th, { width: "16%" }]}>Schwerste Art</Text>
+            <Text style={[styles.th, { width: "14%" }]}>{L.warnings}</Text>
+            <Text style={[styles.th, { width: "14%" }]}>{L.violations}</Text>
+            <Text style={[styles.th, { width: "16%" }]}>{L.worstKind}</Text>
           </View>
           {data.perWorker.length === 0 ? (
             <View style={styles.tr}>
               <Text style={[styles.td, { width: "100%" }]}>
-                Keine Daten im gewählten Zeitraum.
+                {L.noData}
               </Text>
             </View>
           ) : (
@@ -211,7 +298,7 @@ export function AZGDoc({ data, uretimAni, kullanici, isaret }: AZGDocProps) {
                     w.worst !== "none" ? { color: SEVERITY_COLOR[w.worst] } : {},
                   ]}
                 >
-                  {w.worst === "none" ? "—" : SEVERITY_DE[w.worst]}
+                  {w.worst === "none" ? "—" : SEV[w.worst]}
                 </Text>
               </View>
             ))
@@ -224,9 +311,9 @@ export function AZGDoc({ data, uretimAni, kullanici, isaret }: AZGDocProps) {
         {data.editedCount > 0 && (
           <View style={styles.noteBox}>
             <Text>
-              In diesem Zeitraum wurden {data.editedCount} Aufzeichnung(en) manuell
-              korrigiert. Die Änderungen sind im System protokolliert
-              (Feld, alter Wert, neuer Wert, Bearbeiter, Zeitpunkt).
+              {dil === "tr"
+                ? `Bu dönemde ${data.editedCount} kayıt elle düzeltildi. Değişiklikler sistemde iz olarak tutuluyor (alan, eski değer, yeni değer, düzelten, zaman).`
+                : `In diesem Zeitraum wurden ${data.editedCount} Aufzeichnung(en) manuell korrigiert. Die Änderungen sind im System protokolliert (Feld, alter Wert, neuer Wert, Bearbeiter, Zeitpunkt).`}
             </Text>
           </View>
         )}
@@ -243,11 +330,11 @@ export function AZGDoc({ data, uretimAni, kullanici, isaret }: AZGDocProps) {
             </View>
             <View style={styles.table}>
               <View style={styles.thead} fixed>
-                <Text style={[styles.th, { width: "18%" }]}>Datum</Text>
-                <Text style={[styles.th, { width: "30%" }]}>Mitarbeiter</Text>
-                <Text style={[styles.th, { width: "16%" }]}>Beginn</Text>
-                <Text style={[styles.th, { width: "16%" }]}>Ende</Text>
-                <Text style={[styles.th, { width: "20%" }]}>Dauer</Text>
+                <Text style={[styles.th, { width: "18%" }]}>{L.date}</Text>
+                <Text style={[styles.th, { width: "30%" }]}>{L.worker}</Text>
+                <Text style={[styles.th, { width: "16%" }]}>{L.start}</Text>
+                <Text style={[styles.th, { width: "16%" }]}>{L.end}</Text>
+                <Text style={[styles.th, { width: "20%" }]}>{L.duration}</Text>
               </View>
               {data.suspicious.map((s, i) => (
                 <View key={i} style={styles.tr} wrap={false}>
@@ -272,19 +359,19 @@ export function AZGDoc({ data, uretimAni, kullanici, isaret }: AZGDocProps) {
       <Page size="A4" style={styles.page}>
         <WatermarkServer kullanici={kullanici} damga={uretimAni} />
         <FingerprintServer isaret={isaret} />
-        <Text style={styles.h2}>Detaillierte Verstöße</Text>
+        <Text style={styles.h2}>{L.detailed}</Text>
         <View style={styles.table}>
           <View style={styles.thead} fixed>
-            <Text style={[styles.th, { width: "11%" }]}>Datum</Text>
-            <Text style={[styles.th, { width: "16%" }]}>Mitarbeiter</Text>
+            <Text style={[styles.th, { width: "11%" }]}>{L.date}</Text>
+            <Text style={[styles.th, { width: "16%" }]}>{L.worker}</Text>
             <Text style={[styles.th, { width: "22%" }]}>Art</Text>
-            <Text style={[styles.th, { width: "24%" }]}>Beschreibung</Text>
-            <Text style={[styles.th, { width: "19%" }]}>Rechtsgrundlage</Text>
-            <Text style={[styles.th, { width: "8%" }]}>Schwere</Text>
+            <Text style={[styles.th, { width: "24%" }]}>{L.description}</Text>
+            <Text style={[styles.th, { width: "19%" }]}>{L.legalBasis}</Text>
+            <Text style={[styles.th, { width: "8%" }]}>{L.severity}</Text>
           </View>
           {data.violations.length === 0 ? (
             <View style={styles.tr}>
-              <Text style={[styles.td, { width: "100%" }]}>Keine Verstöße festgestellt.</Text>
+              <Text style={[styles.td, { width: "100%" }]}>{L.noViolations}</Text>
             </View>
           ) : (
             data.violations.map((v, i) => (
@@ -295,7 +382,7 @@ export function AZGDoc({ data, uretimAni, kullanici, isaret }: AZGDocProps) {
                 <Text style={[styles.td, { width: "24%" }]}>{v.description}</Text>
                 <Text style={[styles.td, { width: "19%" }]}>{v.legalRef}</Text>
                 <Text style={[styles.td, { width: "8%", color: SEVERITY_COLOR[v.severity] }]}>
-                  {SEVERITY_DE[v.severity]}
+                  {SEV[v.severity]}
                 </Text>
               </View>
             ))
@@ -304,11 +391,14 @@ export function AZGDoc({ data, uretimAni, kullanici, isaret }: AZGDocProps) {
 
         <View style={styles.legal}>
           <Text>
-            Dieser Bericht erfüllt die Anforderungen gemäß § 26 AZG zur
-            Aufzeichnungs- und Auskunftspflicht. Aufbewahrungspflicht: 2 Jahre.
+            {dil === "tr"
+              ? "Bu rapor § 26 AZG kayıt ve bilgi verme yükümlülüğünün gereklerini karşılar. Saklama süresi: 2 yıl."
+              : "Dieser Bericht erfüllt die Anforderungen gemäß § 26 AZG zur Aufzeichnungs- und Auskunftspflicht. Aufbewahrungspflicht: 2 Jahre."}
           </Text>
           <Text style={styles.signature}>
-            Galzura Intelligence — automatisch generierter Compliance-Bericht
+            {dil === "tr"
+              ? "Galzura Intelligence — otomatik üretilmiş uyum raporu"
+              : "Galzura Intelligence — automatisch generierter Compliance-Bericht"}
           </Text>
         </View>
 

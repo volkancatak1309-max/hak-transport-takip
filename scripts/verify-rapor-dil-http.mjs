@@ -19,6 +19,7 @@
  *        --import ./scripts/ts-server.mjs scripts/verify-rapor-dil-http.mjs [taban]
  *   taban: varsayılan https://hak-transport-takip.vercel.app
  */
+import zlib from "node:zlib";
 import { supabaseAdmin } from "@/lib/supabase";
 import { issueTokens } from "@/lib/mobile-auth";
 
@@ -31,18 +32,76 @@ const iddia = (b, k, kanit) => {
 };
 const bilgi = (s) => console.log(`     ${s}`);
 
-/** PDF metin katmanı — ham akıştaki Tj/TJ dizgeleri. */
-function pdfMetni(buf) {
-  const ham = buf.toString("latin1");
-  const parcalar = [];
-  for (const m of ham.matchAll(/\(((?:[^()\\]|\\.)*)\)\s*T[jJ]/g)) parcalar.push(m[1]);
-  for (const m of ham.matchAll(/\[((?:[^\][\\]|\\.)*)\]\s*TJ/g)) {
-    for (const p of m[1].matchAll(/\(((?:[^()\\]|\\.)*)\)/g)) parcalar.push(p[1]);
+/**
+ * PDF METİN ÇIKARICI — ToUnicode CMap üzerinden.
+ *
+ * ⚠️ Ham `(...)Tj` toplamak BU belgelerde İŞE YARAMAZ: react-pdf gömülü
+ * ALT-KÜME font kullanıyor, metin `<hex>` glif kodlarıyla yazılıyor. Doğru
+ * yol, akıştaki ToUnicode CMap'ini okuyup glif→karakter eşlemesini kurmak
+ * (scripts/verify-rapor-pdf-tur3.mjs'te kanıtlanmış yöntemin aynısı).
+ */
+function akislar(buf) {
+  const raw = buf.toString("latin1");
+  const out = [];
+  const re = /stream\r?\n/g;
+  let m;
+  while ((m = re.exec(raw))) {
+    const b = m.index + m[0].length;
+    const s = raw.indexOf("endstream", b);
+    if (s < 0) continue;
+    try {
+      out.push(zlib.inflateSync(buf.subarray(b, s)).toString("latin1"));
+    } catch {
+      /* sıkıştırılmamış akış — metin taşımıyor */
+    }
   }
-  return parcalar
-    .join(" ")
-    .replace(/\\(\d{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)))
-    .replace(/\\([()\\])/g, "$1");
+  return out;
+}
+function pdfMetni(buf) {
+  const st = akislar(buf);
+  const harita = new Map();
+  for (const a of st) {
+    if (!/begincmap/.test(a)) continue;
+    for (const l of a.split(/\r?\n/)) {
+      // ⚠️ Çok kod-noktalı (ligatür) değer BOŞLUKLA ayrılır: <0047><0074 0074>
+      const mm = l.match(/^<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f\s]+)>$/);
+      if (!mm) continue;
+      harita.set(
+        parseInt(mm[1], 16),
+        String.fromCodePoint(...mm[2].trim().split(/\s+/).map((h) => parseInt(h, 16)))
+      );
+    }
+  }
+  let metin = "";
+  let eslenmeyen = 0;
+  for (const a of st) {
+    if (!/\bTj\b|\bTJ\b/.test(a)) continue;
+    for (const hx of a.match(/<[0-9A-Fa-f]{4,}>/g) ?? []) {
+      const h = hx.slice(1, -1);
+      for (let i = 0; i + 4 <= h.length; i += 4) {
+        const g = parseInt(h.slice(i, i + 4), 16);
+        if (harita.has(g)) metin += harita.get(g);
+        else {
+          metin += "�";
+          eslenmeyen++;
+        }
+      }
+    }
+  }
+  const raw = buf.toString("latin1");
+  return {
+    metin,
+    eslenmeyen,
+    sayfa: Math.max(0, ...(raw.match(/\/Count\s+\d+/g) ?? []).map((x) => +x.replace(/\D/g, ""))),
+    baseFont: [...new Set(raw.match(/\/BaseFont\s*\/[A-Za-z0-9+#,._-]+/g) ?? [])],
+    gomulu: /\/FontFile2/.test(raw),
+    helvetica: /Helvetica/.test(raw),
+  };
+}
+
+/** Yalniz metin — Tur 3'un cikarici gövdesi aynen kullaniliyor. */
+function pdfMetniDuz(buf) {
+  return pdfMetni(buf).metin;
 }
 
 const ALMANCA = ["Mitarbeiter", "Zeitraum", "Erstellt", "Arbeitszeit", "Schicht", "Bericht", "Zugestellt", "Kennzeichen"];
@@ -100,7 +159,7 @@ try {
       const ct = res.headers.get("content-type") ?? "";
       const metin =
         tur === "pdf"
-          ? pdfMetni(buf)
+          ? pdfMetniDuz(buf)
           : buf.toString(/utf-16/i.test(ct) ? "utf16le" : "utf8").split("\n")[0];
       cikti[dil] = metin;
       iddia(`${ad.padEnd(20)} ?dil=${dil} → 200`, true, `${buf.length} bayt`);

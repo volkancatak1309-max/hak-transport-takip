@@ -188,6 +188,7 @@ export async function GET(
 
   const buf = await renderPdfToBuffer(
     createElement(PerformanceDoc, {
+      dil,
       adSoyad: w.name as string,
       donem: `${belgeTarihi(d.range.start, dil)} – ${belgeTarihi(d.range.end, dil)}`,
       uretimAni: simdi.toLocaleString(dil === "tr" ? "tr-TR" : "de-AT", { timeZone: TENANT_TZ }),

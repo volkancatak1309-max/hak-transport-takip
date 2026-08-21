@@ -3,6 +3,7 @@ import { requireMobileAdmin } from "@/lib/mobile-scope";
 import { mobileError } from "@/lib/mobile-auth";
 import { buildShiftsCsv } from "@/lib/report-csv";
 import { aralikCoz, aralikHataAlanlari } from "../../_rapor/aralik";
+import { dilCoz, dilHataAlanlari } from "../../_rapor/dil";
 import { csvYaniti, disaAktarimKapali } from "../../_rapor/csv";
 
 export const runtime = "nodejs";
@@ -35,8 +36,13 @@ export async function GET(req: NextRequest) {
   const kapali = disaAktarimKapali();
   if (kapali) return kapali;
 
-  const cozum = aralikCoz(new URL(req.url));
+  const url = new URL(req.url);
+
+  const dilSonucu = dilCoz(url);
+  if (!dilSonucu.ok) return mobileError(400, dilSonucu.kod, dilHataAlanlari());
+
+  const cozum = aralikCoz(url);
   if (!cozum.ok) return mobileError(400, cozum.kod, aralikHataAlanlari(cozum.kod));
 
-  return csvYaniti(await buildShiftsCsv(cozum.cozum.range));
+  return csvYaniti(await buildShiftsCsv(cozum.cozum.range, dilSonucu.dil));
 }

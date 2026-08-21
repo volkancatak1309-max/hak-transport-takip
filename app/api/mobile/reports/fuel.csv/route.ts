@@ -3,6 +3,7 @@ import { requireMobileAdmin } from "@/lib/mobile-scope";
 import { mobileError } from "@/lib/mobile-auth";
 import { buildFuelCsv } from "@/lib/report-csv";
 import { aralikCoz, aralikHataAlanlari } from "../../_rapor/aralik";
+import { dilCoz, dilHataAlanlari } from "../../_rapor/dil";
 import { csvYaniti, disaAktarimKapali, fuelFisModuluKapali } from "../../_rapor/csv";
 
 export const runtime = "nodejs";
@@ -31,10 +32,15 @@ export async function GET(req: NextRequest) {
   const kapali = disaAktarimKapali();
   if (kapali) return kapali;
 
-  const cozum = aralikCoz(new URL(req.url));
+  const url = new URL(req.url);
+
+  const dilSonucu = dilCoz(url);
+  if (!dilSonucu.ok) return mobileError(400, dilSonucu.kod, dilHataAlanlari());
+
+  const cozum = aralikCoz(url);
   if (!cozum.ok) return mobileError(400, cozum.kod, aralikHataAlanlari(cozum.kod));
 
-  const yanit = csvYaniti(await buildFuelCsv(cozum.cozum.range));
+  const yanit = csvYaniti(await buildFuelCsv(cozum.cozum.range, dilSonucu.dil));
   yanit.headers.set("x-fuel-fis-modulu", fuelFisModuluKapali() ? "kapali" : "acik");
   return yanit;
 }

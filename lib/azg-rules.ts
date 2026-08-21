@@ -225,3 +225,30 @@ export const AZG_REF = {
   weeklyAvg: "§ 13b Abs. 2 AZG (48 Stunden im Durchschnitt über 17 Wochen)",
   weeklyNormal: "§ 3 AZG (Normalarbeitszeit 40 Stunden wöchentlich)",
 } as const;
+
+/**
+ * YASA ATIFLARI · TÜRKÇE İKİZ (21.08.2026).
+ *
+ * ⚠️ `§` NUMARASI ÇEVRİLMEZ. "§ 13b Abs. 2 AZG" bir kanun maddesinin
+ * kimliğidir; denetimde o kimlikle aranır ve Türkçeleştirmek belgeyi
+ * doğrulanamaz hâle getirirdi. Çevrilen YALNIZ parantez içindeki insan-okur
+ * açıklama — Almanca sürümde de zaten maddenin özetinden ibaret.
+ *
+ * Bu, künye kuralının aynısı: kimlik sabit, açıklama dile uyar
+ * (bkz. lib/report-de.ts COMPANY notu).
+ */
+export const AZG_REF_TR = {
+  dailyMax: "§ 9 Abs. 1 AZG (günlük en çok 12 saat)",
+  nightMax: "§ 14 Abs. 2 AZG (gece çalışması — günlük en çok 10 saat)",
+  break30: "§ 13c Abs. 1 AZG (6 saatten fazlasında en az 30 dk mola)",
+  break45: "§ 13c Abs. 1 AZG (9 saatten fazlasında en az 45 dk mola)",
+  rest11: "§ 12 Abs. 1 AZG (kesintisiz en az 11 saat dinlenme)",
+  weeklyMax: "§ 13b Abs. 2 AZG (haftada en çok 60 saat)",
+  weeklyAvg: "§ 13b Abs. 2 AZG (17 hafta ortalamasında 48 saat)",
+  weeklyNormal: "§ 3 AZG (normal çalışma haftada 40 saat)",
+} as const;
+
+/** Dil → yasa atıf kümesi. Bilinmeyen/boş dilde Almanca (eski hâl). */
+export function azgRef(dil?: string | null): typeof AZG_REF {
+  return (dil === "tr" ? AZG_REF_TR : AZG_REF) as typeof AZG_REF;
+}

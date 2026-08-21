@@ -18,6 +18,7 @@ import { FILE_PREFIX_LOWER, REPORT_EMPTY } from "@/lib/report-de";
 import { formatDurationShort } from "@/lib/format";
 import { TENANT_TZ } from "@/lib/tz";
 import { DONEMLER, donemCoz } from "../../../_performans/donem";
+import { dilCoz, dilHataAlanlari } from "../../../_rapor/dil";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -92,8 +93,13 @@ function asciiSlug(ad: string): string {
   );
 }
 
-const deTarih = (d: Date) =>
-  d.toLocaleDateString("de-AT", { timeZone: TENANT_TZ });
+/**
+ * Belge tarih biçimi. ⚠️ DİLE BAĞLI (21.08.2026): başlıklar Türkçe, tarihler
+ * Almanca olsaydı düzeltmeye çalıştığımız KARMA çıktının aynısını üretirdik.
+ * Dil verilmezse Avusturya biçimi — eski davranış birebir.
+ */
+const belgeTarihi = (d: Date, dil?: string | null) =>
+  d.toLocaleDateString(dil === "tr" ? "tr-TR" : "de-AT", { timeZone: TENANT_TZ });
 
 export async function GET(
   req: NextRequest,
@@ -105,6 +111,12 @@ export async function GET(
   const { id } = await params;
 
   const url = new URL(req.url);
+
+  // RAPOR DİLİ (21.08.2026): panel dilinden türetilmez, istemci söyler.
+  const dilSonucu = dilCoz(url);
+  if (!dilSonucu.ok) return mobileError(400, dilSonucu.kod, dilHataAlanlari());
+  const dil = dilSonucu.dil;
+
   const cozum = donemCoz(url);
   if (!cozum.ok) {
     return mobileError(400, cozum.kod, {
@@ -177,8 +189,8 @@ export async function GET(
   const buf = await renderPdfToBuffer(
     createElement(PerformanceDoc, {
       adSoyad: w.name as string,
-      donem: `${deTarih(d.range.start)} – ${deTarih(d.range.end)}`,
-      uretimAni: simdi.toLocaleString("de-AT", { timeZone: TENANT_TZ }),
+      donem: `${belgeTarihi(d.range.start, dil)} – ${belgeTarihi(d.range.end, dil)}`,
+      uretimAni: simdi.toLocaleString(dil === "tr" ? "tr-TR" : "de-AT", { timeZone: TENANT_TZ }),
       showScore: SAFETY_SCORE_CALIBRATED,
       satir:
         row === null
@@ -187,7 +199,7 @@ export async function GET(
               sira: idx + 1,
               skor: row.safetyScore === null ? REPORT_EMPTY : String(row.safetyScore),
               vardiya: String(row.shifts),
-              calisma: formatDurationShort(row.workedMs, "de"),
+              calisma: formatDurationShort(row.workedMs, dil ?? "de"),
               km: row.km === null ? REPORT_EMPTY : String(Math.round(row.km)),
               teslim: String(row.delivered),
               teslimEdilemeyen: String(row.undelivered),

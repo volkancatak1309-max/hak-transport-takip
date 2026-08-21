@@ -6,13 +6,14 @@ import { loadRangeShifts } from "@/lib/report-shifts";
 import { registerServerPdfFont, renderPdfToBuffer } from "@/lib/pdf-server";
 import { SchichtberichtDoc } from "@/components/pdf/server/SchichtberichtDoc";
 import {
-  SHIFT_REPORT_DE,
+  shiftReportEtiketleri,
   buildShiftReportRow,
-  reportPeriodDe,
+  reportPeriod,
   REPORT_EMPTY,
   FILE_PREFIX_LOWER,
 } from "@/lib/report-de";
 import { aralikCoz, aralikHataAlanlari } from "../../_rapor/aralik";
+import { dilCoz, dilHataAlanlari } from "../../_rapor/dil";
 import {
   isaretUret,
   pdfIziYaz,
@@ -71,6 +72,13 @@ export async function GET(req: NextRequest) {
   const guard = await requireMobileAdmin(req);
   if (!guard.ok) return guard.response;
 
+  const dilSonucu = dilCoz(new URL(req.url));
+  if (!dilSonucu.ok) return mobileError(400, dilSonucu.kod, dilHataAlanlari());
+  const dil = dilSonucu.dil;
+  // Etiket kümesi ve tarih biçimi AYNI dilden: başlıklar Türkçe, tarihler
+  // Almanca olsaydı düzeltmeye çalıştığımız karma çıktının aynısı olurdu.
+  const L = shiftReportEtiketleri(dil);
+
   const cozum = aralikCoz(new URL(req.url));
   if (!cozum.ok) return mobileError(400, cozum.kod, aralikHataAlanlari(cozum.kod));
   const { range, tur } = cozum.cozum;
@@ -89,16 +97,16 @@ export async function GET(req: NextRequest) {
 
   const buf = await renderPdfToBuffer(
     createElement(SchichtberichtDoc, {
-      title: SHIFT_REPORT_DE.title,
-      company: SHIFT_REPORT_DE.company,
-      address: SHIFT_REPORT_DE.address,
-      uid: SHIFT_REPORT_DE.uid,
-      period: `${SHIFT_REPORT_DE.period}: ${reportPeriodDe(DONEM_ANAHTARI[tur] ?? "custom")}`,
-      generatedAt: `${SHIFT_REPORT_DE.generatedAt}: ${damga}`,
-      footer: SHIFT_REPORT_DE.footer,
-      headers: SHIFT_REPORT_DE.headers,
+      title: L.title,
+      company: L.company,
+      address: L.address,
+      uid: L.uid,
+      period: `${L.period}: ${reportPeriod(DONEM_ANAHTARI[tur] ?? "custom", dil)}`,
+      generatedAt: `${L.generatedAt}: ${damga}`,
+      footer: L.footer,
+      headers: L.headers,
       rows: entries.map((e) =>
-        buildShiftReportRow(e, workerMap.get(e.worker_id)?.name ?? REPORT_EMPTY)
+        buildShiftReportRow(e, workerMap.get(e.worker_id)?.name ?? REPORT_EMPTY, dil ?? undefined)
       ),
       kullanici: guard.actor.worker.name,
       damga,

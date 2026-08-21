@@ -29,7 +29,7 @@ import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { workedMs, formatDate, formatTime } from "@/lib/format";
 import {
-  AZG_REF,
+  azgRef,
   requiredBreakMin,
   touchesNightWindow,
   dailyCapMs,
@@ -125,12 +125,28 @@ function isoWeekKey(iso: string): string {
   return `${date.getUTCFullYear()}-W${week}`;
 }
 
-export async function buildAZGReport(month: string): Promise<AZGResult> {
-
-  // The AZG report is an official § 26 AZG document for the Austrian
-  // Arbeitsinspektorat — it MUST be German regardless of the admin's UI
-  // language. So every translated string here is forced to the "de" locale.
-  const t = await getTranslations({ locale: "de", namespace: "azg" });
+export async function buildAZGReport(
+  month: string,
+  /**
+   * BELGE DİLİ (21.08.2026 — Volkan kararı).
+   *
+   * ⚠️ ESKİ KARAR KALKTI. Burada "§ 26 AZG belgesi resmî evraktır, yöneticinin
+   * arayüz dili ne olursa olsun ALMANCA olmalı" yazıyordu ve dil `"de"`ye
+   * sabitlenmişti. Yeni kural: rapor dili arayüzden TÜRETİLMEZ, her indirmeden
+   * önce kullanıcıya SORULUR — Almanca isteyen Almanca, Türkçe isteyen Türkçe
+   * alır. Belgeyi müfettişe veren de şoförüne veren de aynı kişi.
+   *
+   * Varsayılan `"de"`: dil verilmezse eski davranış birebir korunur, yani
+   * mevcut çağıranlar (panel action'ı, dilsiz mobil istek) etkilenmez.
+   */
+  dil: string = "de"
+): Promise<AZGResult> {
+  // Yasa atıfları da seçilen dilde (§ numarası sabit, açıklama çevrilir).
+  const REF = azgRef(dil);
+  const t = await getTranslations({
+    locale: dil === "tr" ? "tr" : "de",
+    namespace: "azg",
+  });
   const reportTitle = t("report_title");
 
   const m = /^(\d{4})-(\d{2})$/.exec(month);
@@ -274,7 +290,7 @@ export async function buildAZGReport(month: string): Promise<AZGResult> {
           hours: fmtH(hours),
           cap: capH,
         }),
-        legalRef: night ? AZG_REF.nightMax : AZG_REF.dailyMax,
+        legalRef: night ? REF.nightMax : REF.dailyMax,
         severity: "serious_violation",
       });
     }
@@ -295,7 +311,7 @@ export async function buildAZGReport(month: string): Promise<AZGResult> {
           hours: fmtH(hours),
           required: requiredMin,
         }),
-        legalRef: requiredMin >= 45 ? AZG_REF.break45 : AZG_REF.break30,
+        legalRef: requiredMin >= 45 ? REF.break45 : REF.break30,
         severity: "violation",
       });
     }
@@ -353,7 +369,7 @@ export async function buildAZGReport(month: string): Promise<AZGResult> {
           workedHours: "—",
           type: t("v.rest_type"),
           description: t("v.rest_desc", { hours: fmtH(gapH) }),
-          legalRef: AZG_REF.rest11,
+          legalRef: REF.rest11,
           severity: "violation",
         });
       }
@@ -381,17 +397,20 @@ export async function buildAZGReport(month: string): Promise<AZGResult> {
       severity = "serious_violation";
       typeKey = "v.dailyAbs_type";
       descKey = "v.dailyAbs_desc";
-      legalRef = AZG_REF.dailyMax;
+      legalRef = REF.dailyMax;
     } else if (d.night && d.ms > AZG_NIGHT_DAILY_MAX_MS) {
       severity = "violation";
       typeKey = "v.dailyNight_type";
       descKey = "v.dailyNight_desc";
-      legalRef = AZG_REF.nightMax;
+      legalRef = REF.nightMax;
     } else if (h > 8) {
       severity = "warning";
       typeKey = "v.dailyNormal_type";
       descKey = "v.dailyNormal_desc";
-      legalRef = "§ 3 AZG (Normalarbeitszeit 8 Stunden täglich)";
+      legalRef =
+        dil === "tr"
+          ? "§ 3 AZG (normal çalışma günlük 8 saat)"
+          : "§ 3 AZG (Normalarbeitszeit 8 Stunden täglich)";
     }
     if (!severity) continue;
     violations.push({
@@ -419,7 +438,7 @@ export async function buildAZGReport(month: string): Promise<AZGResult> {
         workedHours: fmtH(acc.hours),
         type: t("v.weeklyAbs_type"),
         description: t("v.weeklyAbs_desc", { hours: fmtH(acc.hours) }),
-        legalRef: AZG_REF.weeklyMax,
+        legalRef: REF.weeklyMax,
         severity: "violation",
       });
     } else if (acc.hours > 48) {
@@ -430,7 +449,7 @@ export async function buildAZGReport(month: string): Promise<AZGResult> {
         workedHours: fmtH(acc.hours),
         type: t("v.weeklyMax_type"),
         description: t("v.weeklyMax_desc", { hours: fmtH(acc.hours) }),
-        legalRef: AZG_REF.weeklyAvg,
+        legalRef: REF.weeklyAvg,
         severity: "warning",
       });
     } else if (acc.hours > 40) {
@@ -441,7 +460,7 @@ export async function buildAZGReport(month: string): Promise<AZGResult> {
         workedHours: fmtH(acc.hours),
         type: t("v.weeklyNormal_type"),
         description: t("v.weeklyNormal_desc", { hours: fmtH(acc.hours) }),
-        legalRef: AZG_REF.weeklyNormal,
+        legalRef: REF.weeklyNormal,
         severity: "warning",
       });
     }

@@ -21,8 +21,23 @@ export async function getLocale(): Promise<Locale> {
   return DEFAULT_LOCALE;
 }
 
-export default getRequestConfig(async () => {
-  const locale = await getLocale();
+/**
+ * ⚠️ HATA DÜZELTMESİ (21.08.2026): geri çağırma ARGÜMANSIZ yazılmıştı.
+ *
+ * next-intl, `getTranslations({locale: "de"})` gibi AÇIK dil verilen
+ * çağrılarda o dili buraya `locale` alanıyla geçirir (GetRequestConfigParams).
+ * Argüman yok sayıldığı için her istek çereze düşüyordu: rapor kodu Almanca
+ * istiyor, karşılığında panelin dili geliyordu. AZG PDF'i bu yüzden KARMA
+ * çıkıyordu — şablon sabit Almanca, `t()`den geçen alanlar Türkçe.
+ *
+ * ⚠️ PANEL DAVRANIŞI DEĞİŞMEZ: panel bileşenleri dili AÇIKÇA vermiyor
+ * (`useTranslations()` / `getTranslations()`), yani `istenen` undefined kalır
+ * ve eskisi gibi çerez okunur. Değişen tek şey, dilini SÖYLEYEN çağrının
+ * artık duyulması.
+ */
+export default getRequestConfig(async ({ locale: istenen }) => {
+  const locale: Locale =
+    istenen === "tr" || istenen === "de" ? istenen : await getLocale();
   return {
     locale,
     messages: (await import(`../messages/${locale}.json`)).default,

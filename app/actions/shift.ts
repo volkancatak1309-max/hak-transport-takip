@@ -205,6 +205,12 @@ export async function startShiftManualAction(
       return { ok: false, error: rv.error };
     }
 
+    // ⚠️ `still_active_asked_at` BU YÜKTEN ÇIKARILDI (21.08.2026). O kolon
+    // sökülen watchdog'un damgasıydı; katman kalkınca yazanı da okuyanı da
+    // kalmadı, yani burada null'a çekmek ölü bir kolona yazmaktı. Kolonun
+    // kendisi ayrı bir DDL ile düşecek — SIRA ÖNEMLİ: kolon önce düşseydi bu
+    // update 42703 verir ve aşağıdaki geri-düşüş yolu da aynı kolonu taşıdığı
+    // için ikinci kez patlardı; yani vardiya yeniden AÇILAMAZDI.
     // ARAÇ da yazılır (03.08.2026). Eskiden yeniden açma vehicle_id ve plate'e
     // HİÇ dokunmuyordu: şoför günün ikinci açılışında BAŞKA araç seçse bile
     // vardiya sabahki araçla devam ediyordu — telemetri, km ve rapor yanlış
@@ -220,7 +226,6 @@ export async function startShiftManualAction(
         summary_notified_at: null,
         summary_confirmed_at: null,
         summary_confirmed_by: null,
-        still_active_asked_at: null,
         undelivered_count: null,
         vehicle_id: veh.id,
         plate: veh.plate,
@@ -477,7 +482,6 @@ export async function startShiftForWorkerAction(input: {
       summary_notified_at: null,
       summary_confirmed_at: null,
       summary_confirmed_by: null,
-      still_active_asked_at: null,
       undelivered_count: null,
       started_at: startedIso,
       vehicle_id: veh.id,

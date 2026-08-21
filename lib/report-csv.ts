@@ -5,6 +5,17 @@ import { loadRangeShifts, persNrHaritasi } from "@/lib/report-shifts";
 import { FUEL_MIN_KM, FUEL_MIN_CONSUMED_PCT } from "@/lib/metric-thresholds";
 import { PACKAGES_ENABLED } from "@/lib/tenant";
 import { DEFAULT_LOCALE } from "@/i18n/request";
+
+/**
+ * RAPOR DİLİ (21.08.2026) — `?dil=` verilmezse kiracı varsayılanı.
+ *
+ * Volkan kararı: rapor dili panel dilinden TÜRETİLMEZ, kullanıcıya sorulur.
+ * Dil gelmediğinde `DEFAULT_LOCALE`e düşmek eski davranışı birebir korur —
+ * yani bu değişiklik mevcut istemcilerin çıktısını DEĞİŞTİRMEZ.
+ */
+function csvDili(dil?: string | null): string {
+  return dil === "tr" || dil === "de" ? dil : DEFAULT_LOCALE;
+}
 import {
   workedMs,
   kmDiff,
@@ -106,8 +117,8 @@ function utf8Bom(metin: string): Buffer {
  * `employee_number` yerine 1'den başlayan sıra numarası konur. Sıralama
  * dilden etkilendiği için (tr'de "Ç" ile "C" ayrı) dil de aynı kaynaktan.
  */
-export async function buildShiftsCsv(range: DateRange): Promise<CsvCikti> {
-  const t = await getTranslations({ locale: DEFAULT_LOCALE, namespace: "admin" });
+export async function buildShiftsCsv(range: DateRange, dil?: string | null): Promise<CsvCikti> {
+  const t = await getTranslations({ locale: csvDili(dil), namespace: "admin" });
   // Sorgu + elemeler + km_measured + isim sözlüğü ORTAK yükleyicide
   // (lib/report-shifts.ts) — Schichtbericht PDF'i de aynı satırları okuyor ve
   // iki resmî çıktının ayrışmaması için sorgu tek yerde durur.
@@ -129,10 +140,12 @@ export async function buildShiftsCsv(range: DateRange): Promise<CsvCikti> {
     return [
       persNr.get(e.worker_id) ?? "—",
       w?.name ?? "",
-      formatDate(e.started_at, DEFAULT_LOCALE),
-      formatTime(e.started_at, DEFAULT_LOCALE),
-      e.ended_at ? formatTime(e.ended_at, DEFAULT_LOCALE) : t("statusActive"),
-      formatDurationShort(workedMs(e), DEFAULT_LOCALE),
+      // ⚠️ BİÇİM DE SEÇİLEN DİLDE: başlıklar Türkçe, tarihler Almanca olsaydı
+      // düzeltmeye çalıştığımız KARMA çıktının aynısını üretirdik.
+      formatDate(e.started_at, csvDili(dil)),
+      formatTime(e.started_at, csvDili(dil)),
+      e.ended_at ? formatTime(e.ended_at, csvDili(dil)) : t("statusActive"),
+      formatDurationShort(workedMs(e), csvDili(dil)),
       String(e.break_minutes ?? 0),
       km !== null ? String(km) : "",
       ...(PACKAGES_ENABLED
@@ -159,8 +172,8 @@ export async function buildShiftsCsv(range: DateRange): Promise<CsvCikti> {
 // ── 2) MESAFE ───────────────────────────────────────────────────────────────
 
 /** Panelin Raporlar › Mesafe CSV'sinin (DistanceClient.tsx) sunucu ikizi. */
-export async function buildDistanceCsv(range: DateRange): Promise<CsvCikti> {
-  const t = await getTranslations({ locale: DEFAULT_LOCALE, namespace: "reports" });
+export async function buildDistanceCsv(range: DateRange, dil?: string | null): Promise<CsvCikti> {
+  const t = await getTranslations({ locale: csvDili(dil), namespace: "reports" });
   const rapor = await buildDistanceReport(range);
 
   const baslik = [t("col_plate"), t("col_driver"), t("col_km"), t("col_km_day")];
@@ -191,10 +204,10 @@ export async function buildDistanceCsv(range: DateRange): Promise<CsvCikti> {
  * değerleri yerine SEBEBİ yazılır; boş hücre Excel'de "sıfır" diye okunur,
  * sebep okunamaz (panelin kendi notu).
  */
-export async function buildFuelCsv(range: DateRange): Promise<CsvCikti> {
-  const t = await getTranslations({ locale: DEFAULT_LOCALE, namespace: "reports" });
+export async function buildFuelCsv(range: DateRange, dil?: string | null): Promise<CsvCikti> {
+  const t = await getTranslations({ locale: csvDili(dil), namespace: "reports" });
   const rapor = await buildFuelReport(range);
-  const nf = DEFAULT_LOCALE === "de" ? "de-AT" : "tr-TR";
+  const nf = csvDili(dil) === "de" ? "de-AT" : "tr-TR";
   const num = (v: number, d = 0) =>
     v.toLocaleString(nf, { minimumFractionDigits: d, maximumFractionDigits: d });
 

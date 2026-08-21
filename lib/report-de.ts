@@ -212,14 +212,23 @@ export type ShiftReportEntry = {
  * raporu) 13 kolonu ayrı ayrı kurmasın diye tek kaynak: kolonlardan biri
  * birinde düzelip diğerinde unutulursa iki PDF sessizce çelişirdi.
  */
-export function buildShiftReportRow(e: ShiftReportEntry, workerName: string) {
+export function buildShiftReportRow(
+  e: ShiftReportEntry,
+  workerName: string,
+  /**
+   * Tarih/saat/süre biçim dili. VARSAYILAN `REPORT_LOCALE` ("de") — panelin
+   * istemci PDF yolu bu fonksiyonu argümansız çağırıyor ve davranışı
+   * değişmemeli. Mobil rapor ucu `?dil=` ile seçileni geçer.
+   */
+  dil: string = REPORT_LOCALE
+) {
   const km = kmDiff(e);
   return {
     worker: workerName,
-    date: formatDate(e.started_at, REPORT_LOCALE),
-    start: formatTime(e.started_at, REPORT_LOCALE),
-    end: e.ended_at ? formatTime(e.ended_at, REPORT_LOCALE) : REPORT_EMPTY,
-    worked: formatDurationShort(workedMs(e), REPORT_LOCALE),
+    date: formatDate(e.started_at, dil),
+    start: formatTime(e.started_at, dil),
+    end: e.ended_at ? formatTime(e.ended_at, dil) : REPORT_EMPTY,
+    worked: formatDurationShort(workedMs(e), dil),
     breakMin: String(e.break_minutes ?? 0),
     km: km !== null ? String(km) : REPORT_EMPTY,
     loaded:
@@ -232,4 +241,77 @@ export function buildShiftReportRow(e: ShiftReportEntry, workerName: string) {
       e.undelivered_count !== null ? String(e.undelivered_count) : REPORT_EMPTY,
     plate: e.plate ?? REPORT_EMPTY,
   };
+}
+
+/**
+ * VARDİYA RAPORU ETİKETLERİ · TÜRKÇE İKİZ (21.08.2026).
+ *
+ * `SHIFT_REPORT_DE`e DOKUNULMADI: onu panelin istemci PDF yolu
+ * (app/admin/workers/[id]/WorkerDetailClient.tsx) da kullanıyor ve o yol
+ * aynen Almanca kalıyor. Bu ikiz yalnız mobil rapor ucunun `?dil=tr`
+ * isteğinde devreye girer.
+ *
+ * ⚠️ KÜNYE ÇEVRİLMEZ: firma adı, adres ve UID-Nr. hukuki künyedir; dili
+ * değişmez (COMPANY tek kaynak). Çeviri yalnız BAŞLIK ve KOLON adlarında.
+ *
+ * ⚠️ ALT NOT: Almanca sürüm AZG'ye (Arbeitszeitgesetz) atıf yapıyor — belge
+ * Avusturya'da o yasaya göre tutuluyor. Türkçe sürüm de AYNI yasaya atıf
+ * yapar, çünkü kayıt yükümlülüğü belgenin dili değişince değişmiyor; yalnız
+ * cümle Türkçeye çevrildi.
+ */
+export const SHIFT_REPORT_TR = {
+  title: "Vardiya Raporu",
+  company: COMPANY.name,
+  address: COMPANY.address,
+  uid: COMPANY_UID_LINE,
+  period: "Dönem",
+  generatedAt: "Oluşturulma",
+  footer: "Avusturya Çalışma Süresi Kanunu (AZG) uyarınca çalışma süresi kaydı",
+  headers: {
+    worker: "Personel",
+    date: "Tarih",
+    start: "Başlangıç",
+    end: "Bitiş",
+    worked: "Çalışma",
+    breakMin: "Mola",
+    km: "Katedilen km",
+    /** Almanca sürümdeki gibi KISALTILDI — kolon %9 genişlikte, 8pt. */
+    loaded: "Alınan",
+    cargo: "Teslim",
+    undelivered: "Teslim edilemeyen",
+    plate: "Plaka",
+  },
+} as const;
+
+export type ShiftReportLabels = typeof SHIFT_REPORT_DE | typeof SHIFT_REPORT_TR;
+
+/** Dil → vardiya raporu etiketleri. Bilinmeyen/boş dilde Almanca (eski hâl). */
+export function shiftReportEtiketleri(dil?: string | null): ShiftReportLabels {
+  return dil === "tr" ? SHIFT_REPORT_TR : SHIFT_REPORT_DE;
+}
+
+/**
+ * Aralık anahtarının TÜRKÇESİ — `reportPeriodDe`in ikizi.
+ * Bilinmeyen anahtar ham hâliyle döner (Almanca sürümle aynı kural).
+ */
+export function reportPeriodTr(range: string): string {
+  // ⚠️ ANAHTAR KÜMESİ `reportPeriodDe` ile BİREBİR: week/month/custom ve
+  // varsayılan "bugün". Beş anahtarlı mobil pencere dili (gun/hafta/ay/…)
+  // çağıranda bu kümeye çevriliyor (DONEM_ANAHTARI) — burada ikinci bir
+  // sözlük tutmak iki dilin ayrışmasına açık kapı bırakırdı.
+  switch (range) {
+    case "week":
+      return "Bu hafta";
+    case "month":
+      return "Bu ay";
+    case "custom":
+      return "Özel aralık";
+    default:
+      return "Bugün";
+  }
+}
+
+/** Dil → aralık etiketi çevirici. */
+export function reportPeriod(range: string, dil?: string | null): string {
+  return dil === "tr" ? reportPeriodTr(range) : reportPeriodDe(range);
 }

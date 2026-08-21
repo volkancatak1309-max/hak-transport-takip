@@ -57,6 +57,8 @@ export type PerformanceDocSatir = {
 };
 
 export type PerformanceDocProps = {
+  /** Belge dili — verilmezse Almanca (eski davranış). */
+  dil?: string | null;
   adSoyad: string;
   /** "01.08.2026 – 18.08.2026" — hazır dize. */
   donem: string;
@@ -114,6 +116,64 @@ const DE = {
     speeding: "Tempo",
   },
 } as const;
+
+/**
+ * TÜRKÇE İKİZ (21.08.2026). Rapor dili artık kullanıcıya soruluyor
+ * (`?dil=`), panelden türetilmiyor — Volkan kararı.
+ *
+ * ⚠️ ANAHTARLAR `DE` ile BİREBİR aynı olmak zorunda: belge gövdesi tek bir
+ * etiket kümesi üzerinden çiziliyor, eksik anahtar sessizce `undefined`
+ * basardı. `EtiketKumesi` tipi bunu derleme anında zorluyor.
+ */
+const TR = {
+  title: "Sürücü Performans Raporu",
+  employee: "Personel",
+  period: "Dönem",
+  generatedAt: "Oluşturulma",
+  rank: "Sıra",
+  ofDrivers: "/",
+  noData: "Seçili dönemde veri yok.",
+  sectionMetrics: "Ölçümler",
+  sectionFleet: "Filo bağlamı",
+  fleetAvg: "Filo ortalaması",
+  fleetScored: "Skorlanan şoför",
+  fleetInsufficient: "Yetersiz veri",
+  fleetTotal: "Toplam şoför",
+  footer: "Güvenlik skoru: 100 = hiç olay yok, km'ye göre normalize",
+  footerNoScore:
+    "Güvenlik skoru şu anda kalibre ediliyor — sütun geçici olarak gizlendi",
+  rows: {
+    score: "Güvenlik skoru",
+    shifts: "Vardiya",
+    worked: "Çalışma",
+    km: "km",
+    delivered: "Teslim",
+    undelivered: "Teslim edilemeyen",
+    events: "Toplam olay",
+    braking: "Sert fren",
+    accel: "Ani hız.",
+    speeding: "Aşırı hız",
+  },
+} as const;
+
+/**
+ * `DE`nin ANAHTAR KÜMESİ, değerleri serbest metin. `typeof DE` kullanmak
+ * `as const` yüzünden değerleri de sabitler ve Türkçe metni reddederdi;
+ * amaç değeri değil ANAHTARI zorlamak.
+ */
+type EtiketKumesi = {
+  [K in keyof typeof DE]: (typeof DE)[K] extends Record<string, unknown>
+    ? { [R in keyof (typeof DE)[K]]: string }
+    : string;
+};
+/** Derleme anı kontrolü: TR'de eksik/fazla anahtar varsa burada patlar. */
+const TR_KONTROL: EtiketKumesi = TR;
+void TR_KONTROL;
+
+/** Dil → etiket kümesi. Bilinmeyen/boş dilde Almanca (eski hâl). */
+function etiketler(dil?: string | null): EtiketKumesi {
+  return dil === "tr" ? TR : DE;
+}
 
 // Panelin PerformanceReport.tsx'iyle aynı renk/ölçü dili — iki belge aynı yüz.
 const styles = StyleSheet.create({
@@ -206,33 +266,34 @@ function Satir({
 }
 
 export function PerformanceDoc(p: PerformanceDocProps) {
+  const L = etiketler(p.dil);
   const kalemler: { etiket: string; deger: string }[] = [];
   if (p.satir) {
     // Skor kalibre edilmemişse kâğıda HİÇ girmez — panelin kuralının aynısı
     // (22.07.2026): basılmış yanlış bir sayı ekrandakinden uzun yaşar.
-    if (p.showScore) kalemler.push({ etiket: DE.rows.score, deger: p.satir.skor });
+    if (p.showScore) kalemler.push({ etiket: L.rows.score, deger: p.satir.skor });
     kalemler.push(
-      { etiket: DE.rows.shifts, deger: p.satir.vardiya },
-      { etiket: DE.rows.worked, deger: p.satir.calisma },
-      { etiket: DE.rows.km, deger: p.satir.km },
-      { etiket: DE.rows.delivered, deger: p.satir.teslim },
-      { etiket: DE.rows.undelivered, deger: p.satir.teslimEdilemeyen },
-      { etiket: DE.rows.events, deger: p.satir.ihlal },
-      { etiket: DE.rows.braking, deger: p.satir.sertFren },
-      { etiket: DE.rows.accel, deger: p.satir.aniHizlanma },
-      { etiket: DE.rows.speeding, deger: p.satir.asiriHiz }
+      { etiket: L.rows.shifts, deger: p.satir.vardiya },
+      { etiket: L.rows.worked, deger: p.satir.calisma },
+      { etiket: L.rows.km, deger: p.satir.km },
+      { etiket: L.rows.delivered, deger: p.satir.teslim },
+      { etiket: L.rows.undelivered, deger: p.satir.teslimEdilemeyen },
+      { etiket: L.rows.events, deger: p.satir.ihlal },
+      { etiket: L.rows.braking, deger: p.satir.sertFren },
+      { etiket: L.rows.accel, deger: p.satir.aniHizlanma },
+      { etiket: L.rows.speeding, deger: p.satir.asiriHiz }
     );
   }
 
   const filoKalemleri = [
-    { etiket: DE.fleetAvg, deger: p.filo.ortalamaSkor },
-    { etiket: DE.fleetScored, deger: p.filo.skorlanan },
-    { etiket: DE.fleetInsufficient, deger: p.filo.yetersizVeri },
-    { etiket: DE.fleetTotal, deger: p.filo.soforSayisi },
+    { etiket: L.fleetAvg, deger: p.filo.ortalamaSkor },
+    { etiket: L.fleetScored, deger: p.filo.skorlanan },
+    { etiket: L.fleetInsufficient, deger: p.filo.yetersizVeri },
+    { etiket: L.fleetTotal, deger: p.filo.soforSayisi },
   ];
 
   return (
-    <Document title={`${DE.title} — ${p.adSoyad}`} {...fingerprintDocPropsServer(p.isaret)}>
+    <Document title={`${L.title} — ${p.adSoyad}`} {...fingerprintDocPropsServer(p.isaret)}>
       <Page size="A4" style={styles.page} wrap>
         <WatermarkServer kullanici={p.kullanici} damga={p.uretimAni} />
         <FingerprintServer isaret={p.isaret} />
@@ -247,12 +308,12 @@ export function PerformanceDoc(p: PerformanceDocProps) {
             ) : null}
           </View>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={styles.title}>{DE.title}</Text>
+            <Text style={styles.title}>{L.title}</Text>
             <Text style={styles.meta}>
-              {DE.period}: {p.donem}
+              {L.period}: {p.donem}
             </Text>
             <Text style={styles.meta}>
-              {DE.generatedAt}: {p.uretimAni}
+              {L.generatedAt}: {p.uretimAni}
             </Text>
           </View>
         </View>
@@ -260,18 +321,18 @@ export function PerformanceDoc(p: PerformanceDocProps) {
         <View style={styles.kimlik}>
           <Text style={styles.ad}>{p.adSoyad}</Text>
           <Text style={styles.sira}>
-            {DE.employee}
+            {L.employee}
             {p.satir?.sira !== null && p.satir !== null
-              ? ` · ${DE.rank} ${p.satir.sira} ${DE.ofDrivers} ${p.filo.soforSayisi}`
+              ? ` · ${L.rank} ${p.satir.sira} ${L.ofDrivers} ${p.filo.soforSayisi}`
               : ""}
           </Text>
         </View>
 
         {p.satir === null ? (
-          <Text style={styles.bosVeri}>{DE.noData}</Text>
+          <Text style={styles.bosVeri}>{L.noData}</Text>
         ) : (
           <>
-            <Text style={styles.h2}>{DE.sectionMetrics}</Text>
+            <Text style={styles.h2}>{L.sectionMetrics}</Text>
             <View style={styles.table}>
               {kalemler.map((k, i) => (
                 <Satir
@@ -288,7 +349,7 @@ export function PerformanceDoc(p: PerformanceDocProps) {
         )}
 
         <View style={styles.bosluk}>
-          <Text style={styles.h2}>{DE.sectionFleet}</Text>
+          <Text style={styles.h2}>{L.sectionFleet}</Text>
           <View style={styles.table}>
             {filoKalemleri.map((k, i) => (
               <Satir
@@ -303,7 +364,7 @@ export function PerformanceDoc(p: PerformanceDocProps) {
         </View>
 
         <View style={styles.footer_} fixed>
-          <Text>{p.showScore ? DE.footer : DE.footerNoScore}</Text>
+          <Text>{p.showScore ? L.footer : L.footerNoScore}</Text>
           <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
         </View>
       </Page>

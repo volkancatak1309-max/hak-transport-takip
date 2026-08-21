@@ -6,6 +6,7 @@ import { buildAZGReport } from "@/lib/azg-report";
 import { registerServerPdfFont, renderPdfToBuffer } from "@/lib/pdf-server";
 import { AZGDoc } from "@/components/pdf/server/AZGDoc";
 import { FILE_PREFIX_UPPER } from "@/lib/report-de";
+import { dilCoz, dilHataAlanlari } from "../../_rapor/dil";
 import {
   isaretUret,
   pdfIziYaz,
@@ -77,12 +78,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const dilSonucu = dilCoz(url);
+  if (!dilSonucu.ok) return mobileError(400, dilSonucu.kod, dilHataAlanlari());
+  const dil = dilSonucu.dil;
+
   const ay = url.searchParams.get("ay");
   if (!ay || !AY.test(ay)) {
     return mobileError(400, "invalid_ay", { alan: "ay", bicim: "YYYY-MM" });
   }
 
-  const sonuc = await buildAZGReport(ay);
+  const sonuc = await buildAZGReport(ay, dil ?? undefined);
   if (!sonuc.ok) {
     // Hesabın kendi hata kanalı — yutulmaz, sebebiyle taşınır.
     return mobileError(502, "azg_build_failed", { sebep: sonuc.error });

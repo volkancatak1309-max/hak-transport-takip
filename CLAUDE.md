@@ -15,9 +15,19 @@ yüzden kanıt yöntemi **UI-path proof**: sayfanın çalıştırdığı Supabas
 yolunu canlı veritabanında birebir tekrarlayan küçük bir script yaz, ÖNCE/SONRA
 sayılarını bas. Tahmin etme, ölç.
 
-`npm run verify` şu anda **kırmızı** ve bu mevcut duruma ait: ESLint 37 problem
-(28 hata — `Date.now()` sunucu bileşeninde, `set-state-in-effect`). Yeni iş bu
-sayıyı **artırmadığı sürece** sorun değil; commit öncesi önce/sonra karşılaştır.
+`npm run verify` şu anda **kırmızı** ve bu mevcut duruma ait (22.08.2026'da
+ölçüldü):
+
+- **ESLint 43 problem — 28 hata, 15 uyarı** (`Date.now()` sunucu bileşeninde,
+  `set-state-in-effect`, betiklerde kullanılmayan değişkenler)
+- **`lint:test-filters` kırık** — tek bulgu: `lib/auto-shift.ts:825`
+  anahtarsız `time_entries` sorgusu test kayıtlarını elemiyor
+
+Yeni iş bu sayıları **artırmadığı sürece** sorun değil; commit öncesi
+önce/sonra karşılaştır. Karşılaştırmanın doğru yolu tahmin değil ölçüm:
+değişiklikleri `git stash push -u` ile kaldır, sayıyı al, `git stash pop` ile
+geri koy, tekrar al. Belgeye yazılı sayıya güvenme — bayatlar (bu satır
+"37 problem" derken gerçek 43'tü).
 
 ## Çok-ajanlı adversaryal inceleme VARSAYILAN DEĞİL
 

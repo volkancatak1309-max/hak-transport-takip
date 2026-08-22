@@ -26,6 +26,7 @@ import {
   Search,
   type LucideIcon,
   ShieldCheck,
+  MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "@/components/ui-v2/CommandPalette";
@@ -164,6 +165,7 @@ export function DashboardShell({
         { href: "/admin/raporlar", label: t("reports"), icon: FileBarChart },
         { href: "/admin/bolgeler", label: t("zones"), icon: Hexagon },
         { href: "/admin/seferler", label: t("assignments"), icon: Route },
+        { href: "/admin/mesajlar", label: t("messages"), icon: MessageSquare },
         ...(FUEL_ENABLED ? [{ href: "/admin/yakit", label: t("fuel"), icon: Fuel }] : []),
         ...(EXPENSE_ENABLED
           ? [{ href: "/admin/masraflar", label: t("expenses"), icon: Receipt }]

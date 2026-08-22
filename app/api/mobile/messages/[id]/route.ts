@@ -6,6 +6,7 @@ import {
   erisimCoz,
   hedefSoforMu,
   konusmaGetir,
+  konusmaGecmisi,
   govdeCoz,
   sonMesajiIsle,
 } from "@/lib/messaging";
@@ -66,61 +67,17 @@ export async function GET(
     });
   }
 
-  const { data, error, count } = await supabaseAdmin
-    .from("messages")
-    .select("id, sender_worker_id, sender_role, body, broadcast_id, created_at", {
-      count: "exact",
-    })
-    .eq("conversation_id", konusma.id)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false })
-    .range(page.offset, page.offset + page.limit - 1);
-  if (error) return mobileError(503, "db_error");
-
-  const mesajlar = (data ?? []) as {
-    id: string;
-    sender_worker_id: string | null;
-    sender_role: string;
-    body: string;
-    broadcast_id: string | null;
-    created_at: string;
-  }[];
-
-  // ── ✓✓ — makbuzlar TEK sorguda ────────────────────────────────────────────
-  // Bayrak kapalıyken makbuz sorgusu HİÇ atılmaz ve alan null döner:
-  // "bilinmiyor", "okunmadı" değil.
-  let okuyanlar = new Map<string, { workerId: string; an: string }[]>();
-  if (READ_RECEIPTS_ENABLED && mesajlar.length > 0) {
-    const { data: rec } = await supabaseAdmin
-      .from("message_receipts")
-      .select("message_id, worker_id, read_at")
-      .in("message_id", mesajlar.map((m) => m.id));
-    okuyanlar = new Map();
-    for (const r of (rec ?? []) as {
-      message_id: string; worker_id: string; read_at: string;
-    }[]) {
-      const l = okuyanlar.get(r.message_id) ?? [];
-      l.push({ workerId: r.worker_id, an: r.read_at });
-      okuyanlar.set(r.message_id, l);
-    }
-  }
+  // Sorgu lib/messaging.ts'te — panel ekrani AYNI fonksiyonu cagiriyor.
+  const g = await konusmaGecmisi(konusma.id, page);
+  if (!g.ok) return mobileError(503, g.code);
 
   return Response.json({
     ok: true,
     sofor: { id, adSoyad: hedefOk.ad },
     konusmaId: konusma.id,
     okunduBilgisi: READ_RECEIPTS_ENABLED,
-    mesajlar: mesajlar.map((m) => ({
-      id: m.id,
-      gonderenId: m.sender_worker_id,
-      gonderenRol: m.sender_role,
-      govde: m.body,
-      duyuruMu: m.broadcast_id !== null,
-      an: m.created_at,
-      /** null = okundu bilgisi kapalı. [] = kimse okumadı. */
-      okuyanlar: READ_RECEIPTS_ENABLED ? okuyanlar.get(m.id) ?? [] : null,
-    })),
-    sayfa: pageInfo(page, count ?? mesajlar.length),
+    mesajlar: g.mesajlar,
+    sayfa: pageInfo(page, g.total),
   });
 }
 

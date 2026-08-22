@@ -61,7 +61,8 @@
     "backToPanel": "Zurück zu meinem Panel",
     "driverPanel": "Fahrerpanel",
     "fleetAdmin": "Flottenverwaltung",
-    "security": "Sicherheit"
+    "security": "Sicherheit",
+    "messages": "Nachrichten"
   },
   "izinler": {
     "title": "Urlaubskalender",
@@ -1702,5 +1703,39 @@
     "fuel_price_note_custom": "Kosten berechnet mit dem von Ihnen hinterlegten Preis von {price} €/L.",
     "stat_avg_vehicle_day": "Pro Fahrzeug / Tag",
     "stat_avg_vehicle_scope": "aus {n}/{total} Fahrzeugen"
+  },
+  "messages": {
+    "title": "Nachrichten",
+    "searchPlaceholder": "Fahrer suchen…",
+    "empty": "Noch keine Unterhaltungen",
+    "emptyThread": "Noch kein Austausch mit diesem Fahrer. Schreib die erste Nachricht.",
+    "selectPrompt": "Wähle links einen Fahrer",
+    "inputPlaceholder": "Nachricht schreiben…",
+    "send": "Senden",
+    "sending": "Wird gesendet…",
+    "broadcast": "Flottenmitteilung",
+    "broadcastTitle": "Flottenmitteilung",
+    "broadcastDesc": "Diese Nachricht geht einzeln an ALLE Fahrer der Flotte. Antworten erreichen nur dich, die Fahrer sehen einander nicht.",
+    "broadcastPlaceholder": "Mitteilungstext…",
+    "broadcastSend": "Mitteilung senden",
+    "broadcastSent": "Mitteilung an {n} Fahrer gesendet",
+    "broadcastBadge": "MITTEILUNG",
+    "call": "Anrufen",
+    "callTitle": "Wie möchtest du anrufen?",
+    "callWhatsapp": "Über WhatsApp anrufen",
+    "callPhone": "Per Telefon anrufen",
+    "callNoPhone": "Für diesen Fahrer ist keine Telefonnummer hinterlegt",
+    "read": "Gelesen",
+    "delivered": "Zugestellt",
+    "unreadOne": "1 ungelesen",
+    "unread": "{n} ungelesen",
+    "you": "Du",
+    "cancel": "Abbrechen",
+    "scopeChief": "Du siehst nur deine eigene Flotte",
+    "errEmpty": "Nachricht darf nicht leer sein",
+    "errTooLong": "Nachricht zu lang (höchstens 4000 Zeichen)",
+    "errScope": "Dieser Fahrer gehört nicht zu deiner Flotte",
+    "errForbidden": "Kein Zugriff auf diese Unterhaltung",
+    "errGeneric": "Senden fehlgeschlagen, bitte erneut versuchen"
   }
 }

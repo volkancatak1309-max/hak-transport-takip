@@ -261,6 +261,32 @@ export const PACKAGES_ENABLED = envBool(
 );
 
 /**
+ * OKUNDU BİLGİSİ (mesajlaşma ✓✓) — VARSAYILAN AÇIK.
+ *
+ * Açıkken her mesajın kim tarafından ne zaman okunduğu yazılır
+ * (`message_receipts`, migration 071) ve iki tarafa da gösterilir.
+ *
+ * ── NEDEN KAPATILABİLİR OLMAK ZORUNDA ──────────────────────────────────────
+ * Avusturya §96(1)3 ArbVG ve Almanya §87 BetrVG: çalışanı izleyen teknik
+ * sistemlerin kurulması işyeri konseyinin ONAYINA bağlı; konsey yoksa §10
+ * AVRAG bireysel yazılı rıza istiyor. "Şoför mesajı 07:14'te okudu" kaydı bu
+ * tanıma girebilecek bir izleme verisidir ve DACH'ta satışın önünü tıkayabilir.
+ * Kapatıldığında mesajlaşma tam çalışır, YALNIZ okundu damgası yazılmaz ve
+ * gösterilmez — okunmamış sayacı da düşer, çünkü onun kaynağı da bu tablodur.
+ *
+ * ⚠️ SUNUCU SON SÖZÜ SÖYLER: bayrak kapalıyken uçlar makbuz YAZMAZ. Yalnız
+ * arayüzde gizlemek yetmezdi — veri yine birikirdi ve "tutmuyoruz" iddiası
+ * yanlış olurdu. Kapalıyken tablo boş kalır.
+ *
+ * Bayrak SONRADAN kapatılırsa geçmiş makbuzlar tabloda DURUR (silinmez);
+ * silmek ayrı ve bilinçli bir işlem olmalı (GDPR silme yolu).
+ */
+export const READ_RECEIPTS_ENABLED = envBool(
+  process.env.NEXT_PUBLIC_READ_RECEIPTS_ENABLED,
+  true
+);
+
+/**
  * LENKZEIT UYARISI (4 sa ön uyarı / 4,5 sa zorunlu mola, VO (EG) 561/2006).
  *
  * lib/azg-rules.ts'e göre 2,5 t altı, sınır geçmeyen filoda AB sürüş-dinlenme

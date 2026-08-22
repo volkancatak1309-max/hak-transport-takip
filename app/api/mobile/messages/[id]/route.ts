@@ -10,6 +10,7 @@ import {
   govdeCoz,
   sonMesajiIsle,
 } from "@/lib/messaging";
+import { mesajBildir } from "@/lib/push";
 import { READ_RECEIPTS_ENABLED } from "@/lib/tenant";
 import { parsePage, pageInfo } from "@/lib/mobile-list";
 
@@ -140,6 +141,31 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   await sonMesajiIsle(konusmaId, govde.body, erisim.role, data.created_at as string);
+
+  /**
+   * BİLDİRİM — mesaj YAZILDIKTAN sonra, yanıttan önce.
+   *
+   * `await` bilinçli: bu sunucusuz bir yol ve yanıt döndükten sonra süren iş
+   * sessizce kesilebilir — "gönder ve unut" burada "bazen gönderilir" demek
+   * olurdu. `mesajBildir` fırlatmıyor ve 8 sn zaman aşımı taşıyor; en kötü
+   * hâlde gönderim gecikir, mesaj DÜŞMEZ.
+   *
+   * `adres` olarak `konusmaId` gidiyor, URL'deki ham `[id]` değil: istemci de
+   * satırı `konusmaId ?? soforId` ile adresliyor ve konuşma bu noktada KESİN
+   * var (yukarıda gerekirse açıldı). Ham `[id]` gitseydi, birebir konuşmaya
+   * şoför kimliğiyle yazılan ilk mesajda iki taraf farklı adres kullanır ve
+   * önplanda bastırma tutmazdı.
+   */
+  await mesajBildir({
+    adres: konusmaId,
+    konusmaId,
+    tur: hedef.tur,
+    grupAdi: hedef.tur === "grup" ? hedef.baslik : null,
+    soforId: hedef.tur === "birebir" ? hedef.soforId : null,
+    gonderenId: actor.worker.id,
+    gonderenAd: actor.worker.name,
+    govde: govde.body,
+  });
 
   return Response.json({
     ok: true,

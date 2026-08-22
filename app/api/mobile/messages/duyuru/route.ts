@@ -3,6 +3,7 @@ import { requireMobileAdmin } from "@/lib/mobile-scope";
 import { mobileError } from "@/lib/mobile-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { govdeCoz, onizleme } from "@/lib/messaging";
+import { duyuruBildir } from "@/lib/push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -131,6 +132,22 @@ export async function POST(req: NextRequest) {
       last_sender_role: "admin",
     })
     .in("id", konusmalar);
+
+  /**
+   * BİLDİRİM — her şoföre KENDİ konuşmasını işaret eden ayrı bildirim.
+   *
+   * `kMap` şoför → konuşma eşlemesini zaten tutuyor; burada yeniden sorgu YOK.
+   * `duyuruBildir` tek jeton sorgusu + tek partide gönderim yapıyor (30
+   * şoförlük filoda 60 değil 2 gidiş-geliş).
+   */
+  await duyuruBildir({
+    hedefler: soforIds
+      .map((w) => ({ soforId: w, konusmaId: kMap.get(w) }))
+      .filter((h): h is { soforId: string; konusmaId: string } => Boolean(h.konusmaId)),
+    gonderenId: gonderen.id,
+    gonderenAd: gonderen.name,
+    govde: govde.body,
+  });
 
   return Response.json({
     ok: true,

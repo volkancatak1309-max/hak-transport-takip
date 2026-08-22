@@ -92,15 +92,33 @@ comment on column public.workers.fleet is
 
 commit;
 
--- ── ÇALIŞTIRDIKTAN SONRA — DOĞRULAMA SORGUSU ───────────────────────────────
--- Beklenen: bordo 9→10, mavi 19→19, NULL kalan 1 (hic vardiyasi olmayan kisi).
+-- ── ÇALIŞTIRILDI: 22.08.2026 · SONUÇ ÖLÇÜLDÜ ───────────────────────────────
 --
---   select coalesce(fleet, '(NULL)') as filo, count(*)
+--   fleet=bordo : 10 (aktif  9 · pasif 1)
+--   fleet=mavi  : 19 (aktif 18 · pasif 1)
+--   fleet=NULL  :  4 (hepsi aktif — 3 yonetici + 1 hic vardiyasi olmayan sofor)
+--
+-- Sef kapsami: bordo 9→11, mavi 19→20. HICBIR SEFIN KAPSAMINDA OLMAYAN
+-- SOFOR: 2 → 0. Aracsiz ama acik vardiyadaki sofor son kullandigi aracin
+-- filosuna (bordo) doğru sekilde baglandi. Test hesabi NULL kaldi ve hicbir
+-- kapsama sizmadi.
+--
+-- Geri dolgu PASIF calisani da dolduruyor (is_active suzmuyor) — bilincli:
+-- arac hala ustunde duran pasif kisi bugun de sefin kapsaminda ve kolon
+-- bunu degistirmemeli.
+--
+-- Dogrulama sorgusu (yeniden kosulabilir):
+--
+--   select coalesce(fleet, '(NULL)') as filo,
+--          count(*) filter (where is_active)     as aktif,
+--          count(*) filter (where not is_active) as pasif
 --   from public.workers
---   where is_active and is_test is not true
---     and (is_admin = false or counts_as_driver = true)
+--   where is_test is not true
 --   group by 1 order by 1;
 --
--- NULL kalan varsa: o kisiye panelden filo atanmali. NULL sofor hicbir sefin
--- kapsaminda DEGILDIR — bu bilincli: uydurma bir filoya koymak, verisini
--- yanlis filonun raporuna yazmak olurdu.
+-- ── NULL KALAN SOFOR NE OLUR ───────────────────────────────────────────────
+-- Filosu bilinmeyen sofor HER SEFIN kapsamindadir (lib/fleet-scope.ts, "IKI
+-- KATMAN"). Gorunmez birakmak, kapatmak icin bu migration'i yazdigimiz
+-- deligin aynisini yeni personel icin acik tutardi; bu depoda sessiz eksik
+-- yasak. Cift gorunme kabul edildi ve gurultuludur: kisiye panelden filo
+-- atanir atanmaz kendiliginden duzelir.

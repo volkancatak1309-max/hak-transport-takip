@@ -56,8 +56,9 @@ set    fleet = v.fleet
 from   public.vehicles v
 where  v.assigned_worker_id = w.id
   and  v.is_test is not true
+  and  w.is_test is not true      -- test hesabina gercek filo YAZILMAZ
   and  v.fleet in ('bordo', 'mavi')
-  and  w.fleet is null;
+  and  w.fleet is null;           -- yeniden kosulabilir: dolu satiri ezmez
 
 -- ── GERİ DOLGU 2: aracı yoksa SON KULLANDIĞI aracın filosu ─────────────────
 -- Araçsız şoförün bağlılığı tahmin edilmiyor, GEÇMİŞTEN OKUNUYOR: en son

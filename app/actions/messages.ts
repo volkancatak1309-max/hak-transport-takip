@@ -258,9 +258,11 @@ export async function duyuruAction(
   const soforIds = ((hedefler ?? []) as { id: string }[]).map((w) => w.id);
   if (soforIds.length === 0) return { ok: false, error: "no_recipients" };
 
+  // `kind=direct`: duyuru BİREBİR konuşmalara dağıtılır, gruplara ASLA.
   const { data: mevcut } = await supabaseAdmin
     .from("conversations")
     .select("id, worker_id")
+    .eq("kind", "direct")
     .in("worker_id", soforIds);
   const kMap = new Map(
     ((mevcut ?? []) as { id: string; worker_id: string }[]).map((c) => [c.worker_id, c.id])
@@ -276,6 +278,7 @@ export async function duyuruAction(
     const { data: tekrar } = await supabaseAdmin
       .from("conversations")
       .select("id, worker_id")
+      .eq("kind", "direct")
       .in("worker_id", eksik);
     for (const c of (tekrar ?? []) as { id: string; worker_id: string }[]) {
       kMap.set(c.worker_id, c.id);

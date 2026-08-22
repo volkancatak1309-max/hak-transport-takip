@@ -34,9 +34,13 @@ export async function GET(req: NextRequest) {
   return Response.json({
     ok: true,
     kapsam: { rol, filo: rol === "fleet_chief" ? kapsam?.length ?? 0 : null },
+    // Gruplar SAYFALANMIYOR (bir kişinin grup sayısı iki haneyi geçmez), bu
+    // yüzden `sayfa.total` ile karıştırılmasın diye AYRI dönüyor.
+    grupSayisi: r.grupSayisi,
     okunduBilgisi: READ_RECEIPTS_ENABLED,
-    // Uç sözleşmesi DEĞİŞMEDİ: alan adları ve sıralama aynı. `telefon` EKLENDİ
-    // (arama yönlendirmesi için) — ek alan eski istemciyi bozmaz.
+    // ⚠️ SÖZLEŞME 4a'DA KIRILDI (onaylı): `adSoyad` -> `baslik`; satırlara
+    // `tur`/`uyeSayisi`/`arsivlendiMi`/`cikarildiMi` eklendi; `soforId` grupta
+    // null. Mobilde mesajlaşma ekranı henüz yoktu, kırmak bedavaydı.
     konusmalar: r.satirlar,
     sayfa: pageInfo(page, r.total),
   });

@@ -63,9 +63,13 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Konuşmaları hazırla — eksikleri TEK toplu insert ile aç ───────────────
+  // ⚠️ `kind=direct`: duyuru BİREBİR konuşmalara dağıtılır, gruplara ASLA.
+  // worker_id gruplarda NULL olduğu için bugün zaten çakışmıyor, ama kısıtı
+  // yazmak niyeti şemaya bağlar — duyuru bir BROADCAST'tir, grup değil.
   const { data: mevcut, error: mErr } = await supabaseAdmin
     .from("conversations")
     .select("id, worker_id")
+    .eq("kind", "direct")
     .in("worker_id", soforIds);
   if (mErr) return mobileError(503, "db_error");
 
@@ -88,6 +92,7 @@ export async function POST(req: NextRequest) {
     const { data: tekrar } = await supabaseAdmin
       .from("conversations")
       .select("id, worker_id")
+      .eq("kind", "direct")
       .in("worker_id", eksik);
     for (const c of (tekrar ?? []) as { id: string; worker_id: string }[]) {
       kMap.set(c.worker_id, c.id);

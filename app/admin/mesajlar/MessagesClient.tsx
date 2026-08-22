@@ -36,6 +36,7 @@ import {
 } from "@/app/actions/messages";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { KonusmaSatiri, MesajSatiri } from "@/lib/messaging";
+import { telHref, waHref } from "@/lib/phone";
 import { TENANT_TZ } from "@/lib/tz";
 import { viennaDayKey } from "@/lib/format";
 
@@ -70,10 +71,6 @@ function adres(s: KonusmaSatiri): string {
   return s.konusmaId ?? (s.soforId as string);
 }
 
-/** E.164 → wa.me biçimi: yalnız rakamlar, baştaki + düşer. */
-function waNumarasi(phone: string): string {
-  return phone.replace(/[^\d]/g, "");
-}
 
 export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
   const t = useTranslations("messages");
@@ -871,7 +868,13 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
       {/* ── Arama yönlendirme ──
           Kendi arama altyapımız YOK ve olmayacak: iki dış uygulamaya
           yönlendiriyoruz. wa.me rakam ister (baştaki + düşer), tel: E.164'ü
-          olduğu gibi kabul eder. */}
+          olduğu gibi kabul eder.
+
+          Numara HAM alandan değil `waHref`/`telHref` üzerinden geçer: alanda
+          ulusal trunk sıfırı durabiliyor ("+4306601113783") ve wa.me onu
+          çözmez — bağlantı sessizce boşa düşerdi. 22.08.2026'da canlıda 18/34
+          kayıt o biçimdeydi. Veri 075 ile düzeltildi; bu katman geri dolgu
+          yapılmamış kiracı ve ileride eklenecek içe aktarmalar için duruyor. */}
       <Dialog open={aramaSecimi !== null} onOpenChange={(a) => !a && setAramaSecimi(null)}>
         <DialogContent>
           <DialogHeader>
@@ -884,7 +887,7 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
               programatik yönlendirme mobilde engellenebiliyor. */}
           <div className="flex flex-col gap-2">
             <a
-              href={`https://wa.me/${waNumarasi(aramaSecimi?.telefon ?? "")}`}
+              href={waHref(aramaSecimi?.telefon) ?? "#"}
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => setAramaSecimi(null)}
@@ -893,7 +896,7 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
               {t("callWhatsapp")}
             </a>
             <a
-              href={`tel:${aramaSecimi?.telefon ?? ""}`}
+              href={telHref(aramaSecimi?.telefon) ?? "#"}
               onClick={() => setAramaSecimi(null)}
               className={buttonVariants()}
             >

@@ -15,13 +15,12 @@ import {
   type FleetScope,
 } from "@/lib/fleet-scope";
 import {
-  endShiftSchema,
   editEntrySchema,
   MAX_ODOMETER,
   MAX_PER_SHIFT_KM,
   MAX_COUNT,
 } from "@/lib/validation";
-import { PACKAGES_ENABLED, SHIFT_PER_DAY } from "@/lib/tenant";
+import { SHIFT_PER_DAY } from "@/lib/tenant";
 import { startOfTodayVienna } from "@/lib/format";
 import { checkUndelivered } from "@/lib/package-limits";
 import { logShiftEdit, listShiftEdits } from "@/lib/shift-edit-log";
@@ -30,6 +29,7 @@ import { evaluateDepotGate, resolveShiftStartAt } from "@/lib/depot";
 import { latestVehicleTelemetry } from "@/lib/telemetry";
 import { resolveStartKm, resolveEndKm } from "@/lib/auto-shift";
 import { hasShiftToday } from "@/lib/shift-day";
+import { endShiftForWorker } from "@/lib/shift-end";
 
 export type ShiftResult = {
   ok: boolean;
@@ -601,136 +601,20 @@ export async function listStartableVehiclesAction(): Promise<
 export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
   const session = await requireWorker();
 
-  const parsed = endShiftSchema.safeParse({
+  // KAPANIŞ KURALLARI lib/shift-end.ts'te — MOBİLLE TEK KAYNAK (22.08.2026).
+  // Buradan çıkarılmasının sebebi mobil kapanış ucunun (POST
+  // /api/mobile/shifts/current/end) aynı muhasebeyi yapmak zorunda olması.
+  // Bu action'ın SÖZLEŞMESİ DEĞİŞMEDİ: aynı hata dizgeleri (`no_active`,
+  // `undelivered_required`, `undelivered_over:…`, `db`, ham DB mesajı) aynı
+  // sırayla dönüyor, dolayısıyla PanelClient'ın mapErr'i olduğu gibi çalışıyor.
+  const r = await endShiftForWorker(session.worker_id!, {
     plate: formData.get("plate") || null,
     notes: formData.get("notes") || null,
     break_minutes: formData.get("break_minutes") || null,
     cargo_count: formData.get("cargo_count") || null,
     undelivered_count: formData.get("undelivered_count") || null,
   });
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
-  }
-
-  // Yeni paket akışı: "teslim edilemeyen" kapanışta ZORUNLU (0 girilebilir, boş
-  // bırakılamaz). İstemci de required yapıyor; sunucu son söz.
-  //
-  // PAKET MODÜLÜ KAPALI olan kiracıda (03.08.2026) bu alan hiçbir adımda
-  // SORULMAZ — zorunlu tutmak vardiyayı KAPATILAMAZ yapardı. Kapalıyken null
-  // geçer ve kolona null yazılır: "sayılmadı" demektir. 0 yazmak sayılmış gibi
-  // görünürdü ve bu uydurma bir değer olurdu.
-  if (
-    PACKAGES_ENABLED &&
-    (parsed.data.undelivered_count === null ||
-      parsed.data.undelivered_count === undefined)
-  ) {
-    return { ok: false, error: "undelivered_required" };
-  }
-
-  const { data: active, error: findErr } = await supabaseAdmin
-    .from("time_entries")
-    .select(
-      "id, vehicle_id, start_km, started_at, break_minutes, start_package_count"
-    )
-    .eq("worker_id", session.worker_id!)
-    .is("ended_at", null)
-    .order("started_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (findErr) return { ok: false, error: "db" };
-  if (!active) return { ok: false, error: "no_active" };
-
-  const endedIso = new Date().toISOString();
-
-  // BİTİŞ KM'Sİ CİHAZDAN — şoför sayaç girmez (21.07.2026). Yanlış girilen
-  // sayaç değerleri raporda 3.000 km'lik hayalet vardiyalar üretiyordu.
-  // Kaynak sırası otomatik kapanışın birebir aynısı (resolveEndKm): cihaz
-  // odometresi → GPS mesafesi → null. Telemetrisi olmayan araçta null kalır ve
-  // rapor dürüstçe "—" gösterir; uydurma sayı yazmayız.
-  let endKm: number | null = null;
-  if (active.vehicle_id) {
-    const latest = await latestVehicleTelemetry(active.vehicle_id as string);
-    endKm = await resolveEndKm(
-      active.vehicle_id as string,
-      { started_at: active.started_at, start_km: active.start_km },
-      endedIso,
-      latest?.odometer_km,
-      latest?.recorded_at
-    );
-  }
-  // Paket muhasebesi (yeni akış, +1 sayaç yok):
-  //  • alınan  = start_package_count (şoför gün içinde manuel girdi)
-  //  • teslim edilemeyen = undelivered_count (kapanışta girilir, zorunlu)
-  //  • teslim edilen (cargo_count) = alınan − teslim edilemeyen  → TÜRETİLİR
-  // Alınan hiç girilmemişse (null) teslim edilen bilinmiyor kalır (null yazmayız,
-  // mevcut değeri ezmeyiz).
-  const undelivered = parsed.data.undelivered_count ?? null;
-  const totalTaken = active.start_package_count;
-
-  // ÜST SINIR (22.07.2026). endShiftSchema'daki MAX_COUNT (100.000) bir şema
-  // tavanı; anlamlı değil — canlıya 87.189 "teslim edilemeyen" girilebildi.
-  // Anlamsal sınır: teslim edilemeyen ≤ alınan (bilinmiyorsa mutlak tavan).
-  // Şema geçse bile sunucu son sözü söyler.
-  if (undelivered !== null) {
-    const bound = checkUndelivered(undelivered, totalTaken as number | null);
-    if (!bound.ok) return { ok: false, error: bound.code };
-  }
-  const delivered =
-    undelivered !== null && totalTaken !== null && totalTaken !== undefined
-      ? Math.max(0, totalTaken - undelivered)
-      : null;
-
-  const updateData: Record<string, unknown> = {
-    ended_at: endedIso,
-    end_km: endKm,
-    notes: parsed.data.notes,
-    summary_notified_at: endedIso,
-    end_reason: "manual",
-    undelivered_count: undelivered,
-  };
-  if (parsed.data.plate) updateData.plate = parsed.data.plate;
-  if (parsed.data.break_minutes !== null && parsed.data.break_minutes !== undefined) {
-    updateData.break_minutes = parsed.data.break_minutes;
-  }
-  if (delivered !== null) updateData.cargo_count = delivered;
-
-  let { error } = await supabaseAdmin
-    .from("time_entries")
-    .update(updateData)
-    .eq("id", active.id)
-    .eq("worker_id", session.worker_id!);
-  if (error && /undelivered_count|end_reason|column/i.test(error.message)) {
-    // Pre-migration fallback: column not applied yet → end the shift anyway.
-    const legacy = { ...updateData };
-    delete legacy.undelivered_count;
-    delete legacy.end_reason;
-    ({ error } = await supabaseAdmin
-      .from("time_entries")
-      .update(legacy)
-      .eq("id", active.id)
-      .eq("worker_id", session.worker_id!));
-  }
-
-  if (error) return { ok: false, error: error.message };
-
-  // SEFER PAKET KÖPRÜSÜ (Tur 3) — "akşam paket sayısı" burada kesinleşiyor
-  // (teslim = alınan − teslim edilemeyen). Yan görev: throw etmez, kapanışı
-  // hiçbir koşulda geri döndürmez; giriş akışı aynen kalır.
-  await seferePaketBaglaVardiyadan(active.id as string);
-
-  // Başlangıç onayı hiç verilmeden kapanan vardiya "onaysız" işaretlenir →
-  // yönetici panelinde uyarı rozeti (İş 1). Best-effort: migration 020
-  // uygulanmadıysa sessiz no-op (kapanışı asla geri döndürmez).
-  await supabaseAdmin
-    .from("time_entries")
-    .update({ confirmation_status: "unconfirmed" })
-    .eq("id", active.id)
-    .eq("confirmation_status", "pending")
-    .then(
-      () => {},
-      () => {}
-    );
+  if (!r.ok) return { ok: false, error: r.error };
 
   // DIS BILDIRIM KATMANI SOKULDU (20.08.2026): kapanista sofore ayrica
   // ozet mesaji gonderiliyordu. Ozetin KENDISI degismedi — panel/mobil ozet

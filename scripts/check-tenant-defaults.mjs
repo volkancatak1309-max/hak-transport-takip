@@ -117,6 +117,11 @@ const EXPECTED = {
   // dünya genelinde AÇIK gelmesi kararını korumak için burada: DACH kurulumu
   // NEXT_PUBLIC_READ_RECEIPTS_ENABLED=false ile kapatır (§96 ArbVG).
   "tenant.READ_RECEIPTS_ENABLED": true,
+  // 22.08.2026 oncesi boyle bir ayar YOKTU: lib/phone.ts canonicalPhone() "+43"u
+  // koda gomuyordu ("0660..." -> "+43660..."). "AT" o davranisin birebir
+  // kendisidir. Bu satir kayarsa yerel yazilan numara BASKA bir ulkeye baglanir
+  // ve o sofor giris yapamaz.
+  "tenant.TENANT_DEFAULT_COUNTRY": "AT",
   "tenant.LENKZEIT_WARNING_ENABLED": true, // LenkzeitWarning koşulsuz render ediliyordu
   "tenant.SAFETY_SCORE_CALIBRATED": true, //  metric-thresholds.ts: = true
   "tenant.SHIFT_START_TRIGGER": "depot_entry", // auto-shift.ts: depotArrivalTrigger
@@ -227,6 +232,7 @@ const tz = await load(join(process.argv[5], "lib", "tz.ts"));
 const out = {
   "tz.TENANT_TZ": tz.TENANT_TZ,
   "tz.TENANT_TZ_INVALID": tz.TENANT_TZ_INVALID,
+  "tenant.TENANT_DEFAULT_COUNTRY": tenant.TENANT_DEFAULT_COUNTRY,
   "tenant.FUEL_ENABLED": tenant.FUEL_ENABLED,
   "tenant.EXPENSE_ENABLED": tenant.EXPENSE_ENABLED,
   "tenant.MAINTENANCE_ENABLED": tenant.MAINTENANCE_ENABLED,

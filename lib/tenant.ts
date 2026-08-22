@@ -40,6 +40,7 @@
  */
 
 import { TENANT } from "@/lib/brand";
+import { BILINEN_ULKELER, VARSAYILAN_ULKE } from "@/lib/phone";
 import { TENANT_TZ, TENANT_TZ_INVALID } from "@/lib/tz";
 
 /** "true"/"1"/"yes" → true, "false"/"0"/"no" → false, tanımsız → varsayılan. */
@@ -614,6 +615,18 @@ export const FLEET_EPOCH_ISO =
   process.env.FLEET_EPOCH?.trim() || "2026-06-01T00:00:00.000Z";
 
 /**
+ * VARSAYILAN ÜLKE — yerel yazılmış telefon numarası ("0660…", "+" yok) hangi
+ * ülkeye ait sayılır.
+ *
+ * Değerin kendisi `lib/phone.ts` içinde DÜZ LİTERAL okunur; burası onu değişmezlik
+ * kaydına ve kurulum denetimine bağlayan yeniden dışa aktarımdır. 22.08.2026
+ * öncesi böyle bir ayar yoktu: `canonicalPhone` "+43"ü koda gömüyordu. "AT" o
+ * davranışın birebir kendisidir — bu satır kayarsa yerel yazılan numaralar
+ * BAŞKA bir ülkeye bağlanır ve şoför giriş yapamaz.
+ */
+export const TENANT_DEFAULT_COUNTRY = VARSAYILAN_ULKE;
+
+/**
  * KURULUM TUTARLILIK DENETİMİ — fail-closed.
  *
  * Yanlış env bileşimi sessiz bir veri kaybına dönüşebilir (şoför paneli yok +
@@ -642,6 +655,16 @@ export function assertTenantConfig(): void {
   // vardiyayı açacak tek yol yöneticinin elle başlatmasıdır — yani hiç kimse
   // unutursa o gün hiç kayıt oluşmaz. Sessiz veri kaybı; kurulumda patlasın.
   // Panel AÇIKKEN bu bileşim meşrudur (Sendigo: şoför kendi açar) ve tetiklenmez.
+  // Varsayilan ulke tabloda yoksa yerel yazim ("0660...") hicbir ulkeye
+  // baglanamaz ve numara "+" siz kalir; giris o sofor icin sessizce kirilir.
+  // Kurulumda patlasin.
+  if (!BILINEN_ULKELER.includes(VARSAYILAN_ULKE)) {
+    throw new Error(
+      `Kurulum hatasi: NEXT_PUBLIC_TENANT_DEFAULT_COUNTRY="${VARSAYILAN_ULKE}" taninmiyor. ` +
+        `Gecerli degerler: ${BILINEN_ULKELER.join(", ")}. Yeni bir ulke gerekiyorsa ` +
+        "lib/phone.ts icindeki ULKE_TABLOSU'na bir satir ekleyin."
+    );
+  }
   if (!DRIVER_PANEL_ENABLED && SHIFT_START_TRIGGER === "off") {
     throw new Error(
       "Kurulum hatası: NEXT_PUBLIC_DRIVER_PANEL_ENABLED=false iken SHIFT_START_TRIGGER='off' olamaz — " +

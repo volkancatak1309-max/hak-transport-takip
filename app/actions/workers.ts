@@ -79,10 +79,19 @@ export async function createWorkerAction(formData: FormData): Promise<WorkerResu
 
   const phone = canonicalPhone(parsed.data.phone);
 
+  // Tekillik VARYANTLARLA aranır, tek biçimle değil. `.eq(phone)` yetmiyordu:
+  // "+436601113783" kaydedilmek istendiğinde DB'de duran "+4306601113783"
+  // AYNI insandır ama eşleşmez; kolon unique olduğu için insert de patlamaz
+  // (iki satır farklı metin) ve aynı şoför iki kez kaydedilirdi. 22.08.2026'da
+  // canlıda 18/34 kayıt trunk sıfırlı biçimdeydi — kapı fiilen yarı açıktı.
+  //
+  // `.limit(1)`: `.maybeSingle()` birden çok satırda HATA döner ve buradaki
+  // yıkımda `data` null kalırdı — yani çakışma çoksa denetim sessizce geçerdi.
   const { data: existing } = await supabaseAdmin
     .from("workers")
     .select("id")
-    .eq("phone", phone)
+    .in("phone", phoneVariants(phone))
+    .limit(1)
     .maybeSingle();
   if (existing) return { ok: false, error: "Bu telefon zaten kayıtlı" };
 
@@ -249,6 +258,7 @@ export async function updateWorkerAction(formData: FormData): Promise<WorkerResu
     .select("id")
     .in("phone", phoneVariants(phone))
     .neq("id", id)
+    .limit(1) // bkz. yukarısı: maybeSingle çoklu satırda hata döner, denetim delinir
     .maybeSingle();
   if (dupe) return { ok: false, error: "Bu telefon zaten kayıtlı" };
 

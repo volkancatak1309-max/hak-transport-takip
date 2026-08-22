@@ -3,9 +3,13 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Check, CheckCheck, Megaphone, Phone, Search, Send, ArrowLeft } from "lucide-react";
+import {
+  Archive, ArchiveRestore, Check, CheckCheck, Lock, Megaphone, Phone,
+  Search, Send, ArrowLeft, Users, UserPlus, X,
+} from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -20,8 +24,17 @@ import {
   gonderAction,
   okunduAction,
   duyuruAction,
+  grupKurAction,
+  grupDetayAction,
+  grupAdiAction,
+  uyeEkleAction,
+  uyeCikarAction,
+  grupArsivAction,
+  okuyanlarAction,
   type MesajRol,
+  type GrupDetayi,
 } from "@/app/actions/messages";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { KonusmaSatiri, MesajSatiri } from "@/lib/messaging";
 import { TENANT_TZ } from "@/lib/tz";
 import { viennaDayKey } from "@/lib/format";
@@ -75,6 +88,16 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
   const [duyuruAcik, setDuyuruAcik] = useState(false);
   const [duyuruMetni, setDuyuruMetni] = useState("");
   const [aramaSecimi, setAramaSecimi] = useState<KonusmaSatiri | null>(null);
+
+  // ── GRUP DURUMLARI ──
+  const [detay, setDetay] = useState<GrupDetayi | null>(null);
+  const [kurAcik, setKurAcik] = useState(false);
+  const [yeniAd, setYeniAd] = useState("");
+  const [secilenUyeler, setSecilenUyeler] = useState<Set<string>>(new Set());
+  const [uyeArama, setUyeArama] = useState("");
+  const [yonetAcik, setYonetAcik] = useState(false);
+  const [adTaslak, setAdTaslak] = useState("");
+  const [okuyanlar, setOkuyanlar] = useState<{ adSoyad: string; an: string }[] | null>(null);
   const [gonderiliyor, baslat] = useTransition();
   const kaydirmaRef = useRef<HTMLDivElement>(null);
 
@@ -98,6 +121,19 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
    * dilimiyle karşılaştırmak, gece yarısı çevresinde dünkü mesajı bugün
    * gösterirdi.
    */
+  /**
+   * Üye adayları LİSTEDEN türetiliyor — ayrı bir sorgu YOK.
+   *
+   * Liste zaten kapsam süzülmüş geliyor (şefe yalnız kendi filosu, 4a
+   * `konusmaListesi`). Adayları ikinci bir uçtan çekseydik o kapsamı ikinci
+   * kez uygulamak gerekirdi ve biri unutulduğunda şef kapsam dışı birini
+   * seçici listesinde GÖRÜRDÜ. Kaynak tek olsun.
+   */
+  const uyeAdaylari = useMemo(
+    () => liste.filter((s) => s.tur === "birebir" && s.soforId),
+    [liste]
+  );
+
   const zaman = useMemo(
     () =>
       new Intl.DateTimeFormat(locale, {
@@ -136,6 +172,12 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
     if (kod === "forbidden" || kod === "not_a_driver") return t("errForbidden");
     if (kod === "conversation_archived") return t("errArchived");
     if (kod === "read_only") return t("errReadOnly");
+    if (kod === "title_empty" || kod === "title_required") return t("errTitleEmpty");
+    if (kod === "title_too_long") return t("errTitleLong");
+    if (kod === "members_required") return t("errMembersRequired");
+    if (kod === "not_a_member") return t("errNotMember");
+    if (kod === "already_removed") return t("errAlreadyRemoved");
+    if (kod === "worker_inactive") return t("errWorkerInactive");
     return t("errGeneric");
   }
 
@@ -152,6 +194,14 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
     // Sunucu en yeni ÜSTTE döndürüyor (sayfalama için doğru olan bu);
     // ekranda en yeni ALTTA olmalı, sohbet aşağı akar.
     setMesajlar([...r.data.mesajlar].reverse());
+
+    // Grupta üye listesi + yetki bayrakları ayrı bir çağrıyla gelir. Birebirde
+    // hiç çağrılmaz — grubu olmayan konuşmaya boşuna sorgu atmayız.
+    setDetay(null);
+    if (r.data.tur === "grup" && r.data.konusmaId) {
+      const d = await grupDetayAction(r.data.konusmaId);
+      if (d.ok) setDetay(d.data);
+    }
 
     // Okundu işaretle + rozeti düşür. Bayrak kapalıysa sunucu zaten yazmaz;
     // burada ayrıca çağırmamak da olurdu ama o zaman kapının hangi katmanda
@@ -190,6 +240,86 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
     });
   }
 
+  function grupKurGonder() {
+    const ad = yeniAd.trim();
+    if (!ad || secilenUyeler.size === 0) return;
+    baslat(async () => {
+      const r = await grupKurAction(ad, [...secilenUyeler]);
+      if (!r.ok) { toast.error(hataMetni(r.error)); return; }
+      toast.success(t("groupCreated", { ad: r.data.baslik }));
+      setKurAcik(false); setYeniAd(""); setSecilenUyeler(new Set()); setUyeArama("");
+      // Yeni grubu listeye ekle ve aç — sunucu tazelemesini beklemeden.
+      const satir: KonusmaSatiri = {
+        tur: "grup", konusmaId: r.data.konusmaId, baslik: r.data.baslik,
+        soforId: null, telefon: null, filo: null, uyeSayisi: r.data.uyeSayisi,
+        arsivlendiMi: false, cikarildiMi: false, sonMesajAn: null,
+        sonMesajOnizleme: null, sonGonderenRol: null, okunmamis: 0,
+      };
+      setListe((l) => [satir, ...l]);
+      konusmaAc(r.data.konusmaId);
+    });
+  }
+
+  async function detayTazele(konusmaId: string) {
+    const d = await grupDetayAction(konusmaId);
+    if (d.ok) {
+      setDetay(d.data);
+      setListe((l) =>
+        l.map((s) =>
+          s.konusmaId === konusmaId
+            ? { ...s, baslik: d.data.baslik, arsivlendiMi: d.data.arsivlendiMi,
+                uyeSayisi: d.data.uyeler.filter((u) => !u.cikarildiMi).length }
+            : s
+        )
+      );
+    }
+  }
+
+  function uyeEkleGonder() {
+    if (!detay || secilenUyeler.size === 0) return;
+    baslat(async () => {
+      const r = await uyeEkleAction(detay.konusmaId, [...secilenUyeler]);
+      if (!r.ok) { toast.error(hataMetni(r.error)); return; }
+      setSecilenUyeler(new Set()); setUyeArama("");
+      await detayTazele(detay.konusmaId);
+    });
+  }
+
+  function uyeCikarGonder(workerId: string) {
+    if (!detay) return;
+    baslat(async () => {
+      const r = await uyeCikarAction(detay.konusmaId, workerId);
+      if (!r.ok) { toast.error(hataMetni(r.error)); return; }
+      await detayTazele(detay.konusmaId);
+    });
+  }
+
+  function adKaydet() {
+    if (!detay) return;
+    const ad = adTaslak.trim();
+    if (!ad || ad === detay.baslik) return;
+    baslat(async () => {
+      const r = await grupAdiAction(detay.konusmaId, ad);
+      if (!r.ok) { toast.error(hataMetni(r.error)); return; }
+      await detayTazele(detay.konusmaId);
+    });
+  }
+
+  function arsivDegistir(arsivle: boolean) {
+    if (!detay) return;
+    baslat(async () => {
+      const r = await grupArsivAction(detay.konusmaId, arsivle);
+      if (!r.ok) { toast.error(hataMetni(r.error)); return; }
+      await detayTazele(detay.konusmaId);
+    });
+  }
+
+  async function okuyanlariAc(mesajId: string) {
+    const r = await okuyanlarAction(mesajId);
+    if (!r.ok) { toast.error(hataMetni(r.error)); return; }
+    setOkuyanlar(r.data.okuyanlar);
+  }
+
   function duyuruGonder() {
     const govde = duyuruMetni.trim();
     if (!govde) return;
@@ -222,6 +352,17 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
             aria-label={t("searchPlaceholder")}
           />
         </div>
+        {/* Grup kurma ŞEFE DE açık (kendi kapsamıyla); duyuru YALNIZ patrona.
+            İki düğmenin yetkisi bilerek FARKLI — sunucu da öyle uyguluyor. */}
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => { setKurAcik(true); setSecilenUyeler(new Set()); setYeniAd(""); }}
+          className="shrink-0 gap-1.5"
+        >
+          <Users className="size-4" aria-hidden />
+          <span className="hidden lg:inline">{t("groupNew")}</span>
+        </Button>
         {rol === "admin" && (
           <Button
             variant="secondary"
@@ -230,7 +371,7 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
             className="shrink-0 gap-1.5"
           >
             <Megaphone className="size-4" aria-hidden />
-            <span className="hidden sm:inline">{t("broadcast")}</span>
+            <span className="hidden lg:inline">{t("broadcast")}</span>
           </Button>
         )}
       </div>
@@ -260,7 +401,20 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
-                        <span className="truncate text-sm font-medium">{s.baslik}</span>
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          {s.tur === "grup" && (
+                            <Users className="size-3.5 shrink-0 text-muted-foreground" aria-label={t("groupBadge")} />
+                          )}
+                          <span className="truncate text-sm font-medium">{s.baslik}</span>
+                          {s.tur === "grup" && s.uyeSayisi !== null && (
+                            <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                              · {t("memberCount", { n: s.uyeSayisi })}
+                            </span>
+                          )}
+                          {s.arsivlendiMi && (
+                            <Archive className="size-3 shrink-0 text-muted-foreground" aria-label={t("archive")} />
+                          )}
+                        </span>
                         {s.sonMesajAn && (
                           <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                             {damga(s.sonMesajAn)}
@@ -310,9 +464,41 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
         >
           <ArrowLeft className="size-4" aria-hidden />
         </Button>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {seciliSatir.baslik}
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="flex items-center gap-1.5">
+            {seciliSatir.tur === "grup" && <Users className="size-4 shrink-0" aria-hidden />}
+            <span className="truncate text-sm font-semibold">{seciliSatir.baslik}</span>
+          </span>
+          {seciliSatir.tur === "grup" && detay && (
+            <button
+              type="button"
+              onClick={() => { setYonetAcik(true); setAdTaslak(detay.baslik); setSecilenUyeler(new Set()); }}
+              className="truncate text-left text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+            >
+              {t("memberCount", { n: detay.uyeler.filter((u) => !u.cikarildiMi).length })}
+              {" · "}
+              {detay.uyeler.filter((u) => !u.cikarildiMi).map((u) => u.adSoyad).join(", ")}
+            </button>
+          )}
         </span>
+        {seciliSatir.tur === "grup" && detay?.yonetebilir && (
+          <>
+            <Button variant="ghost" size="sm" className="gap-1.5"
+              onClick={() => { setYonetAcik(true); setAdTaslak(detay.baslik); setSecilenUyeler(new Set()); }}>
+              <Users className="size-4" aria-hidden />
+              <span className="hidden sm:inline">{t("manage")}</span>
+            </Button>
+            <Button variant="ghost" size="sm" className="gap-1.5"
+              onClick={() => arsivDegistir(!detay.arsivlendiMi)} disabled={gonderiliyor}>
+              {detay.arsivlendiMi
+                ? <ArchiveRestore className="size-4" aria-hidden />
+                : <Archive className="size-4" aria-hidden />}
+              <span className="hidden sm:inline">
+                {detay.arsivlendiMi ? t("unarchive") : t("archive")}
+              </span>
+            </Button>
+          </>
+        )}
         {/* Arama YALNIZ birebirde: grubun telefonu yok, "grubu ara" diye bir
             şey de yok. Grup satırında düğme hiç çizilmez. */}
         {seciliSatir.tur === "birebir" && (
@@ -332,11 +518,31 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
         )}
       </div>
 
+      {/* ── DURUM ŞERİTLERİ ──
+          Gizlemek yerine AÇIKÇA söylüyoruz: kullanıcı neden yazamadığını
+          bilmeli. Sessizce devre dışı bir kutu "bozuk" gibi görünür. */}
+      {seciliSatir.tur === "grup" && detay?.arsivlendiMi && (
+        <p className="flex items-center gap-2 border-b border-border/60 bg-muted px-3 py-2 text-xs text-muted-foreground">
+          <Archive className="size-3.5 shrink-0" aria-hidden />
+          {t("archivedBanner")}
+        </p>
+      )}
+      {seciliSatir.cikarildiMi && (
+        <p className="flex items-center gap-2 border-b border-border/60 bg-muted px-3 py-2 text-xs text-muted-foreground">
+          <X className="size-3.5 shrink-0" aria-hidden />
+          {t("removedBanner")}
+        </p>
+      )}
+
       <div ref={kaydirmaRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
         {yukleniyor ? (
           <p className="p-6 text-center text-sm text-muted-foreground">…</p>
         ) : mesajlar.length === 0 ? (
-          <p className="p-6 text-center text-sm text-muted-foreground">{t("emptyThread")}</p>
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            {/* Grupta "bu ŞOFÖRLE yazışma yok" cümlesi yanlış — muhatap kişi
+                değil oda. Canlı turda görüldü ve ayrı anahtara alındı. */}
+            {seciliSatir.tur === "grup" ? t("emptyGroupThread") : t("emptyThread")}
+          </p>
         ) : (
           mesajlar.map((m) => {
             // "Benim" = YÖNETİM TARAFI, kişi değil. İki yönetici aynı şoförle
@@ -356,13 +562,36 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
                       {t("broadcastBadge")}
                     </span>
                   )}
+                  {/* Grupta GÖNDEREN ADI şart: "bu mesajı hangi şoför yazdı"
+                      görünmezse ortak akış okunamaz. Birebirde gereksiz. */}
+                  {seciliSatir.tur === "grup" && !benim && m.gonderenAd && (
+                    <span className="mb-0.5 block text-[11px] font-medium opacity-80">
+                      {m.gonderenAd}
+                    </span>
+                  )}
                   <p className="whitespace-pre-wrap break-words text-sm">{m.govde}</p>
                   <span className="mt-1 flex items-center justify-end gap-1 text-[11px] tabular-nums opacity-70">
                     {damga(m.an)}
                     {/* Tik YALNIZ kendi mesajımızda ve YALNIZ bayrak açıkken.
                         `okuyanlar` null gelirse (bayrak kapalı) hiç çizilmez. */}
+                    {/* GRUPTA sayı, BİREBİRDE tik.
+                        Grupta ✓✓ "herkes okudu" demek olurdu ve tek kapalı
+                        telefon yüzünden gün boyu gri kalırdı (WhatsApp'ın
+                        davranışı); bir sevkiyatçı için "3/5" ham sayısı
+                        işe yarar. Dokununca kim okudu listesi açılır. */}
                     {benim && m.okuyanlar !== null && (
-                      m.okuyanlar.length > 0 ? (
+                      seciliSatir.tur === "grup" && detay ? (
+                        <button
+                          type="button"
+                          onClick={() => okuyanlariAc(m.id)}
+                          className="tabular-nums underline-offset-2 hover:underline"
+                        >
+                          {t("readCount", {
+                            n: m.okuyanlar.length,
+                            m: Math.max(0, detay.uyeler.filter((u) => !u.cikarildiMi).length - 1),
+                          })}
+                        </button>
+                      ) : m.okuyanlar.length > 0 ? (
                         <CheckCheck className="size-3.5" aria-label={t("read")} />
                       ) : (
                         <Check className="size-3.5" aria-label={t("delivered")} />
@@ -376,6 +605,18 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
         )}
       </div>
 
+      {/* ── YAZMA ALANI: kilitliyse GİZLENMEZ, KİLİTLİ GÖSTERİLİR ──
+          Alanı yok etmek "burada bir şey yoktu" izlenimi verir; kilitli
+          göstermek "vardı, kapandı, sebebi şu" der. Sunucu son sözü zaten
+          söylüyor (409) — bu yalnız dürüst bir arayüz. */}
+      {seciliSatir.tur === "grup" && detay && !detay.yazabilir ? (
+        <div className="flex items-center gap-2 border-t border-border/60 bg-muted/50 p-3">
+          <Lock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="text-sm text-muted-foreground">
+            {t("lockedComposer")} — {detay.arsivlendiMi ? t("archivedBanner") : t("removedBanner")}
+          </span>
+        </div>
+      ) : (
       <div className="flex items-end gap-2 border-t border-border/60 p-3">
         <Textarea
           value={taslak}
@@ -405,6 +646,7 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
           </span>
         </Button>
       </div>
+      )}
     </div>
   ) : (
     <div className="flex h-full items-center justify-center p-6">
@@ -455,6 +697,177 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
         </DialogContent>
       </Dialog>
 
+
+      {/* ── GRUP KUR ──
+          ⚠️ UYARI METNİ ZORUNLU: yönetici duyuru demek isterken grup kurup
+          28 şoförü birbirine bağlayabilir. Duyuru diyaloğu tam tersini
+          söylüyor; iki kutunun ayrımı bu iki cümlede yaşıyor. */}
+      <Dialog open={kurAcik} onOpenChange={setKurAcik}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("groupNew")}</DialogTitle>
+            <DialogDescription>{t("groupMembersWarning")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="grup-adi">{t("groupNameLabel")}</Label>
+              <Input
+                id="grup-adi"
+                value={yeniAd}
+                onChange={(e) => setYeniAd(e.target.value)}
+                placeholder={t("groupNamePlaceholder")}
+                maxLength={120}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>
+                {t("groupMembers")} — {t("selectedCount", { n: secilenUyeler.size })}
+              </Label>
+              <Input
+                value={uyeArama}
+                onChange={(e) => setUyeArama(e.target.value)}
+                placeholder={t("memberSearch")}
+                aria-label={t("memberSearch")}
+              />
+              <UyeSecici
+                adaylar={uyeAdaylari}
+                arama={uyeArama}
+                locale={locale}
+                secili={secilenUyeler}
+                degistir={setSecilenUyeler}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setKurAcik(false)}>{t("cancel")}</Button>
+            <Button
+              onClick={grupKurGonder}
+              disabled={gonderiliyor || yeniAd.trim().length === 0 || secilenUyeler.size === 0}
+            >
+              {t("groupCreate")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── GRUBU YÖNET: ad + üye ekle/çıkar ── */}
+      <Dialog open={yonetAcik} onOpenChange={setYonetAcik}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("groupManage")}</DialogTitle>
+            <DialogDescription>{detay?.baslik}</DialogDescription>
+          </DialogHeader>
+          {detay && (
+            <div className="space-y-4">
+              {detay.yonetebilir && !detay.arsivlendiMi && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="grup-ad-duzenle">{t("rename")}</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="grup-ad-duzenle"
+                      value={adTaslak}
+                      onChange={(e) => setAdTaslak(e.target.value)}
+                      maxLength={120}
+                    />
+                    <Button onClick={adKaydet} disabled={gonderiliyor || adTaslak.trim() === detay.baslik}>
+                      {t("saveName")}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label>{t("groupMembers")}</Label>
+                <ul className="max-h-48 overflow-y-auto rounded-md border border-border/60">
+                  {detay.uyeler.map((u) => (
+                    <li
+                      key={u.workerId}
+                      className="flex items-center gap-2 border-b border-border/40 px-2 py-1.5 last:border-b-0"
+                    >
+                      <span className={`min-w-0 flex-1 truncate text-sm ${u.cikarildiMi ? "text-muted-foreground line-through" : ""}`}>
+                        {u.adSoyad}
+                      </span>
+                      {u.cikarildiMi ? (
+                        <span className="shrink-0 text-[11px] text-muted-foreground">{t("removed")}</span>
+                      ) : (
+                        detay.yonetebilir && !detay.arsivlendiMi && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => uyeCikarGonder(u.workerId)}
+                            disabled={gonderiliyor}
+                          >
+                            {t("remove")}
+                          </Button>
+                        )
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {detay.yonetebilir && !detay.arsivlendiMi && (
+                <div className="space-y-1.5">
+                  <Label>
+                    {t("addMembers")} — {t("selectedCount", { n: secilenUyeler.size })}
+                  </Label>
+                  <Input
+                    value={uyeArama}
+                    onChange={(e) => setUyeArama(e.target.value)}
+                    placeholder={t("memberSearch")}
+                    aria-label={t("memberSearch")}
+                  />
+                  <UyeSecici
+                    adaylar={uyeAdaylari.filter(
+                      (a) => !detay.uyeler.some((u) => u.workerId === a.soforId && !u.cikarildiMi)
+                    )}
+                    arama={uyeArama}
+                    locale={locale}
+                    secili={secilenUyeler}
+                    degistir={setSecilenUyeler}
+                  />
+                  <Button
+                    onClick={uyeEkleGonder}
+                    disabled={gonderiliyor || secilenUyeler.size === 0}
+                    className="w-full gap-1.5"
+                  >
+                    <UserPlus className="size-4" aria-hidden />
+                    {t("addMembers")}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setYonetAcik(false)}>{t("cancel")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── KİM OKUDU ── */}
+      <Dialog open={okuyanlar !== null} onOpenChange={(a) => !a && setOkuyanlar(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("readByTitle")}</DialogTitle>
+          </DialogHeader>
+          {okuyanlar && okuyanlar.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("readByNobody")}</p>
+          ) : (
+            <ul className="max-h-64 overflow-y-auto">
+              {okuyanlar?.map((o) => (
+                <li
+                  key={o.adSoyad + o.an}
+                  className="flex items-center justify-between gap-2 border-b border-border/40 py-1.5 last:border-b-0"
+                >
+                  <span className="truncate text-sm">{o.adSoyad}</span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{damga(o.an)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* ── Arama yönlendirme ──
           Kendi arama altyapımız YOK ve olmayacak: iki dış uygulamaya
           yönlendiriyoruz. wa.me rakam ister (baştaki + düşer), tel: E.164'ü
@@ -490,5 +903,63 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+
+/**
+ * ÜYE SEÇİCİ — kapsam süzgeci YOK ve olmamalı.
+ *
+ * `adaylar` çağırandan geliyor ve o zaten kapsam süzülmüş listeden türüyor
+ * (bkz. `uyeAdaylari`). Burada ikinci bir süzgeç kurmak kapsam kuralının
+ * ikinci kopyası olurdu; sunucu da ayrıca reddediyor (403 scope).
+ */
+function UyeSecici({
+  adaylar,
+  arama,
+  locale,
+  secili,
+  degistir,
+}: {
+  adaylar: KonusmaSatiri[];
+  arama: string;
+  locale: string;
+  secili: Set<string>;
+  degistir: (s: Set<string>) => void;
+}) {
+  const q = arama.trim().toLocaleLowerCase(locale);
+  const gorunen = q
+    ? adaylar.filter((a) => a.baslik.toLocaleLowerCase(locale).includes(q))
+    : adaylar;
+
+  return (
+    <ul className="max-h-48 overflow-y-auto rounded-md border border-border/60">
+      {gorunen.length === 0 ? (
+        <li className="px-2 py-3 text-center text-xs text-muted-foreground">—</li>
+      ) : (
+        gorunen.map((a) => {
+          const id = a.soforId as string;
+          return (
+            <li key={id} className="border-b border-border/40 last:border-b-0">
+              <label className="flex cursor-pointer items-center gap-2 px-2 py-1.5 hover:bg-accent/50">
+                <Checkbox
+                  checked={secili.has(id)}
+                  onCheckedChange={(v) => {
+                    const yeni = new Set(secili);
+                    if (v === true) yeni.add(id);
+                    else yeni.delete(id);
+                    degistir(yeni);
+                  }}
+                />
+                <span className="min-w-0 flex-1 truncate text-sm">{a.baslik}</span>
+                {a.filo && (
+                  <span className="shrink-0 text-[11px] text-muted-foreground">{a.filo}</span>
+                )}
+              </label>
+            </li>
+          );
+        })
+      )}
+    </ul>
   );
 }

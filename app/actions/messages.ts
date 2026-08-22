@@ -20,6 +20,15 @@ import {
 } from "@/lib/messaging";
 import { READ_RECEIPTS_ENABLED } from "@/lib/tenant";
 import { audit } from "@/lib/security-log";
+import {
+  grupKur,
+  grupDetay,
+  grupAdiDegistir,
+  uyeEkle,
+  uyeCikar,
+  grupArsivle,
+  type GrupUyesi,
+} from "@/lib/messaging-groups";
 
 /**
  * PANEL MESAJLAŞMA EYLEMLERİ (/admin/mesajlar).
@@ -317,4 +326,126 @@ export async function duyuruAction(
   await audit(viewerId, "message_broadcast", `${(yazilan ?? []).length} alıcı`);
   revalidatePath("/admin/mesajlar");
   return { ok: true, data: { alici: (yazilan ?? []).length, broadcastId } };
+}
+
+// ── GRUPLAR (migration 073) ─────────────────────────────────────────────────
+//
+// Hepsi lib/messaging-groups.ts'in ince sarmalayıcısı: kural orada, burada
+// yalnız oturum çözülüyor ve sonuç panelin şekline dönüyor. Mobil uçlar da
+// AYNI fonksiyonları çağırıyor — iki yüzey tek kaynaktan.
+
+export async function grupKurAction(
+  baslik: string,
+  uyeIdler: string[]
+): Promise<MesajSonuc<{ konusmaId: string; baslik: string; uyeSayisi: number }>> {
+  const { actor, viewerId } = await panelAktoru();
+  const r = await grupKur(actor, baslik, uyeIdler);
+  if (!r.ok) return { ok: false, error: r.code };
+  await audit(viewerId, "message_send", `grup:${r.data.konusmaId}`);
+  revalidatePath("/admin/mesajlar");
+  return { ok: true, data: r.data };
+}
+
+export type GrupDetayi = {
+  konusmaId: string;
+  baslik: string;
+  arsivlendiMi: boolean;
+  yonetebilir: boolean;
+  yazabilir: boolean;
+  uyeler: GrupUyesi[];
+};
+
+export async function grupDetayAction(konusmaId: string): Promise<MesajSonuc<GrupDetayi>> {
+  const { actor } = await panelAktoru();
+  const r = await grupDetay(actor, konusmaId);
+  if (!r.ok) return { ok: false, error: r.code };
+  return { ok: true, data: r.data };
+}
+
+export async function grupAdiAction(
+  konusmaId: string,
+  baslik: string
+): Promise<MesajSonuc<{ baslik: string }>> {
+  const { actor } = await panelAktoru();
+  const r = await grupAdiDegistir(actor, konusmaId, baslik);
+  if (!r.ok) return { ok: false, error: r.code };
+  revalidatePath("/admin/mesajlar");
+  return { ok: true, data: r.data };
+}
+
+export async function uyeEkleAction(
+  konusmaId: string,
+  uyeIdler: string[]
+): Promise<MesajSonuc<{ eklenen: number }>> {
+  const { actor } = await panelAktoru();
+  const r = await uyeEkle(actor, konusmaId, uyeIdler);
+  if (!r.ok) return { ok: false, error: r.code };
+  revalidatePath("/admin/mesajlar");
+  return { ok: true, data: r.data };
+}
+
+export async function uyeCikarAction(
+  konusmaId: string,
+  workerId: string
+): Promise<MesajSonuc<{ ayrildi: string }>> {
+  const { actor } = await panelAktoru();
+  const r = await uyeCikar(actor, konusmaId, workerId);
+  if (!r.ok) return { ok: false, error: r.code };
+  revalidatePath("/admin/mesajlar");
+  return { ok: true, data: r.data };
+}
+
+export async function grupArsivAction(
+  konusmaId: string,
+  arsivle: boolean
+): Promise<MesajSonuc<{ arsivlendiMi: boolean }>> {
+  const { actor, viewerId } = await panelAktoru();
+  const r = await grupArsivle(actor, konusmaId, arsivle);
+  if (!r.ok) return { ok: false, error: r.code };
+  await audit(viewerId, "message_send", `arsiv:${konusmaId}:${arsivle}`);
+  revalidatePath("/admin/mesajlar");
+  return { ok: true, data: { arsivlendiMi: r.data.arsivlendiMi } };
+}
+
+/** Bir mesajı kimler okudu — grupta "n/m okudu" dokunulunca açılan liste. */
+export async function okuyanlarAction(
+  mesajId: string
+): Promise<MesajSonuc<{ okuyanlar: { adSoyad: string; an: string }[] }>> {
+  const { actor } = await panelAktoru();
+  if (!READ_RECEIPTS_ENABLED) return { ok: false, error: "read_receipts_off" };
+
+  // Mesajın konuşmasına erişimi olmayan, kimin okuduğunu da göremez.
+  const { data: m, error } = await supabaseAdmin
+    .from("messages")
+    .select("conversation_id")
+    .eq("id", mesajId)
+    .maybeSingle();
+  if (error || !m) return { ok: false, error: "not_found" };
+
+  const h = await hedefCoz(m.conversation_id as string, actor.worker.id);
+  if (!h.ok) return { ok: false, error: h.code };
+  const e = await erisimCozKonusma(actor, h.hedef);
+  if (!e.ok) return { ok: false, error: e.code };
+
+  const { data: rec } = await supabaseAdmin
+    .from("message_receipts")
+    .select("worker_id, read_at")
+    .eq("message_id", mesajId);
+  const satirlar = (rec ?? []) as { worker_id: string; read_at: string }[];
+  if (satirlar.length === 0) return { ok: true, data: { okuyanlar: [] } };
+
+  const { data: w } = await supabaseAdmin
+    .from("workers")
+    .select("id, name")
+    .in("id", satirlar.map((x) => x.worker_id));
+  const adlar = new Map(((w ?? []) as { id: string; name: string | null }[]).map((x) => [x.id, x.name ?? "—"]));
+
+  return {
+    ok: true,
+    data: {
+      okuyanlar: satirlar
+        .map((s) => ({ adSoyad: adlar.get(s.worker_id) ?? "—", an: s.read_at }))
+        .sort((a, b) => (a.an < b.an ? -1 : 1)),
+    },
+  };
 }

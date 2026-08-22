@@ -113,6 +113,10 @@ const EXPECTED = {
   // false o davranışın birebir kendisidir.
   "tenant.ADMIN_DRIVER_PANEL_LINK": false,
   "tenant.PACKAGES_ENABLED": true, //         paket kolonları her yerde görünürdü
+  // YENİ ÖZELLİK (22.08.2026) — "eskiden ne yapıyordu" karşılığı yok. Kayıt,
+  // dünya genelinde AÇIK gelmesi kararını korumak için burada: DACH kurulumu
+  // NEXT_PUBLIC_READ_RECEIPTS_ENABLED=false ile kapatır (§96 ArbVG).
+  "tenant.READ_RECEIPTS_ENABLED": true,
   "tenant.LENKZEIT_WARNING_ENABLED": true, // LenkzeitWarning koşulsuz render ediliyordu
   "tenant.SAFETY_SCORE_CALIBRATED": true, //  metric-thresholds.ts: = true
   "tenant.SHIFT_START_TRIGGER": "depot_entry", // auto-shift.ts: depotArrivalTrigger
@@ -244,6 +248,7 @@ const out = {
   "tenant.SHIFT_PER_DAY": tenant.SHIFT_PER_DAY,
   "tenant.ADMIN_DRIVER_PANEL_LINK": tenant.ADMIN_DRIVER_PANEL_LINK,
   "tenant.PACKAGES_ENABLED": tenant.PACKAGES_ENABLED,
+  "tenant.READ_RECEIPTS_ENABLED": tenant.READ_RECEIPTS_ENABLED,
   "tenant.LENKZEIT_WARNING_ENABLED": tenant.LENKZEIT_WARNING_ENABLED,
   "tenant.SAFETY_SCORE_CALIBRATED": tenant.SAFETY_SCORE_CALIBRATED,
   "tenant.SHIFT_START_TRIGGER": tenant.SHIFT_START_TRIGGER,

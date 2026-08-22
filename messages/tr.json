@@ -1736,6 +1736,8 @@
     "errTooLong": "Mesaj çok uzun (en fazla 4000 karakter)",
     "errScope": "Bu şoför senin filonda değil",
     "errForbidden": "Bu konuşmaya erişimin yok",
-    "errGeneric": "Gönderilemedi, tekrar dene"
+    "errGeneric": "Gönderilemedi, tekrar dene",
+    "errArchived": "Bu grup arşivlendi — yalnız geçmiş okunabilir",
+    "errReadOnly": "Bu gruptan çıkarıldın — yalnız geçmişi görebilirsin"
   }
 }

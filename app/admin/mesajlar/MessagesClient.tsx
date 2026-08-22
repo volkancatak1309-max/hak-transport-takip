@@ -46,6 +46,17 @@ type Props = {
   satirlar: KonusmaSatiri[];
 };
 
+/**
+ * Bir satırın ADRESİ — sunucunun `[id]` olarak kabul ettiği değer.
+ *
+ * Grupta konuşma kimliği; birebirde konuşma varsa onun kimliği, yoksa şoförün
+ * kimliği (konuşma satırı ilk mesaja kadar yok). Sunucu ikisini de tek
+ * sorguyla çözüyor — bkz. lib/messaging.ts hedefCoz.
+ */
+function adres(s: KonusmaSatiri): string {
+  return s.konusmaId ?? (s.soforId as string);
+}
+
 /** E.164 → wa.me biçimi: yalnız rakamlar, baştaki + düşer. */
 function waNumarasi(phone: string): string {
   return phone.replace(/[^\d]/g, "");
@@ -67,12 +78,12 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
   const [gonderiliyor, baslat] = useTransition();
   const kaydirmaRef = useRef<HTMLDivElement>(null);
 
-  const seciliSatir = liste.find((s) => s.soforId === secili) ?? null;
+  const seciliSatir = liste.find((s) => adres(s) === secili) ?? null;
 
   const suzulmus = useMemo(() => {
     const q = aramaMetni.trim().toLocaleLowerCase(locale);
     if (!q) return liste;
-    return liste.filter((s) => s.adSoyad.toLocaleLowerCase(locale).includes(q));
+    return liste.filter((s) => s.baslik.toLocaleLowerCase(locale).includes(q));
   }, [liste, aramaMetni, locale]);
 
   /**
@@ -123,14 +134,16 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
     if (kod === "body_too_long") return t("errTooLong");
     if (kod === "scope") return t("errScope");
     if (kod === "forbidden" || kod === "not_a_driver") return t("errForbidden");
+    if (kod === "conversation_archived") return t("errArchived");
+    if (kod === "read_only") return t("errReadOnly");
     return t("errGeneric");
   }
 
-  async function konusmaAc(soforId: string) {
-    setSecili(soforId);
+  async function konusmaAc(hedefAdres: string) {
+    setSecili(hedefAdres);
     setMesajlar([]);
     setYukleniyor(true);
-    const r = await gecmisAction(soforId);
+    const r = await gecmisAction(hedefAdres);
     setYukleniyor(false);
     if (!r.ok) {
       toast.error(hataMetni(r.error));
@@ -144,11 +157,9 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
     // burada ayrıca çağırmamak da olurdu ama o zaman kapının hangi katmanda
     // olduğu belirsizleşirdi — kapı TEK yerde (sunucuda) kalsın.
     if (okunduBilgisi) {
-      const o = await okunduAction(soforId);
+      const o = await okunduAction(hedefAdres);
       if (o.ok && o.data.yeniOkundu > 0) {
-        setListe((l) =>
-          l.map((s) => (s.soforId === soforId ? { ...s, okunmamis: 0 } : s))
-        );
+        setListe((l) => l.map((s) => (adres(s) === hedefAdres ? { ...s, okunmamis: 0 } : s)));
       }
     }
   }
@@ -166,7 +177,7 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
       setMesajlar((m) => [...m, r.data.mesaj]);
       setListe((l) =>
         l.map((s) =>
-          s.soforId === secili
+          adres(s) === secili
             ? {
                 ...s,
                 sonMesajAn: r.data.mesaj.an,
@@ -236,12 +247,12 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
         ) : (
           <ul>
             {suzulmus.map((s) => {
-              const aktif = s.soforId === secili;
+              const aktif = adres(s) === secili;
               return (
                 <li key={s.soforId}>
                   <button
                     type="button"
-                    onClick={() => konusmaAc(s.soforId)}
+                    onClick={() => konusmaAc(adres(s))}
                     aria-current={aktif ? "true" : undefined}
                     className={`flex w-full items-start gap-3 border-b border-border/40 px-3 py-3 text-left transition-colors ${
                       aktif ? "bg-accent" : "hover:bg-accent/50"
@@ -249,7 +260,7 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
-                        <span className="truncate text-sm font-medium">{s.adSoyad}</span>
+                        <span className="truncate text-sm font-medium">{s.baslik}</span>
                         {s.sonMesajAn && (
                           <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                             {damga(s.sonMesajAn)}
@@ -300,21 +311,25 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
           <ArrowLeft className="size-4" aria-hidden />
         </Button>
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {seciliSatir.adSoyad}
+          {seciliSatir.baslik}
         </span>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="gap-1.5"
-          onClick={() =>
-            seciliSatir.telefon
-              ? setAramaSecimi(seciliSatir)
-              : toast.error(t("callNoPhone"))
-          }
-        >
-          <Phone className="size-4" aria-hidden />
-          <span className="hidden sm:inline">{t("call")}</span>
-        </Button>
+        {/* Arama YALNIZ birebirde: grubun telefonu yok, "grubu ara" diye bir
+            şey de yok. Grup satırında düğme hiç çizilmez. */}
+        {seciliSatir.tur === "birebir" && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="gap-1.5"
+            onClick={() =>
+              seciliSatir.telefon
+                ? setAramaSecimi(seciliSatir)
+                : toast.error(t("callNoPhone"))
+            }
+          >
+            <Phone className="size-4" aria-hidden />
+            <span className="hidden sm:inline">{t("call")}</span>
+          </Button>
+        )}
       </div>
 
       <div ref={kaydirmaRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
@@ -448,7 +463,7 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("callTitle")}</DialogTitle>
-            <DialogDescription>{aramaSecimi?.adSoyad}</DialogDescription>
+            <DialogDescription>{aramaSecimi?.baslik}</DialogDescription>
           </DialogHeader>
           {/* Button `asChild` desteklemiyor (components/ui/button.tsx), bu yüzden
               bağlantılar buttonVariants ile giydirildi. <a> olmaları ZORUNLU:

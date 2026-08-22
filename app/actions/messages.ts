@@ -5,8 +5,8 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { requireFleetView, requireAdmin, effectiveViewerId } from "@/lib/session";
 import { getFleetScope, UNRESTRICTED } from "@/lib/fleet-scope";
 import {
-  erisimCoz,
-  hedefSoforMu,
+  hedefCoz,
+  erisimCozKonusma,
   konusmaGetir,
   konusmaListesi,
   konusmaGecmisi,
@@ -92,69 +92,116 @@ export async function listeAction(): Promise<
   };
 }
 
-/** Seçili konuşmanın geçmişi. Aynı çağrıda okundu İŞARETLENMEZ (ayrı eylem). */
-export async function gecmisAction(
-  soforId: string
-): Promise<MesajSonuc<{ mesajlar: MesajSatiri[]; konusmaId: string | null; adSoyad: string }>> {
+/**
+ * Seçili konuşmanın geçmişi. Aynı çağrıda okundu İŞARETLENMEZ (ayrı eylem).
+ *
+ * `adres` KONUŞMA kimliği ya da ŞOFÖR kimliği olabilir — `hedefCoz` ikisini de
+ * tek sorguyla çözer (bkz. lib/messaging.ts). Grup da birebir de bu yoldan.
+ */
+export async function gecmisAction(adres: string): Promise<
+  MesajSonuc<{
+    mesajlar: MesajSatiri[];
+    konusmaId: string | null;
+    baslik: string;
+    tur: "birebir" | "grup";
+    yazabilir: boolean;
+    arsivlendiMi: boolean;
+  }>
+> {
   const { actor } = await panelAktoru();
-  const erisim = await erisimCoz(actor, soforId);
-  if (!erisim.ok) return { ok: false, error: erisim.code };
 
-  const hedef = await hedefSoforMu(soforId);
-  if (!hedef.ok) return { ok: false, error: hedef.code };
+  const h = await hedefCoz(adres, actor.worker.id);
+  if (!h.ok) return { ok: false, error: h.code };
+  const hedef = h.hedef;
 
-  const k = await konusmaGetir(soforId, false);
-  if (!k.ok) return { ok: false, error: k.code };
-  if (k.id === null) {
-    return { ok: true, data: { mesajlar: [], konusmaId: null, adSoyad: hedef.ad } };
+  const e = await erisimCozKonusma(actor, hedef);
+  if (!e.ok) return { ok: false, error: e.code };
+
+  if (hedef.konusmaId === null) {
+    return {
+      ok: true,
+      data: {
+        mesajlar: [], konusmaId: null, baslik: hedef.baslik,
+        tur: hedef.tur, yazabilir: e.yazabilir, arsivlendiMi: false,
+      },
+    };
   }
 
-  const g = await konusmaGecmisi(k.id, { limit: 200, offset: 0 });
+  const g = await konusmaGecmisi(hedef.konusmaId, { limit: 200, offset: 0 }, hedef.pencereSonu);
   if (!g.ok) return { ok: false, error: g.code };
-  return { ok: true, data: { mesajlar: g.mesajlar, konusmaId: k.id, adSoyad: hedef.ad } };
+  return {
+    ok: true,
+    data: {
+      mesajlar: g.mesajlar, konusmaId: hedef.konusmaId, baslik: hedef.baslik,
+      tur: hedef.tur, yazabilir: e.yazabilir, arsivlendiMi: hedef.arsivlendiMi,
+    },
+  };
 }
 
 export async function gonderAction(
-  soforId: string,
+  adres: string,
   govdeHam: string
-): Promise<MesajSonuc<{ mesaj: MesajSatiri }>> {
+): Promise<MesajSonuc<{ mesaj: MesajSatiri; konusmaId: string }>> {
   const { actor, viewerId } = await panelAktoru();
-  const erisim = await erisimCoz(actor, soforId);
-  if (!erisim.ok) return { ok: false, error: erisim.code };
 
-  const hedef = await hedefSoforMu(soforId);
-  if (!hedef.ok) return { ok: false, error: hedef.code };
+  const h = await hedefCoz(adres, viewerId);
+  if (!h.ok) return { ok: false, error: h.code };
+  const hedef = h.hedef;
+
+  const e = await erisimCozKonusma(actor, hedef);
+  if (!e.ok) return { ok: false, error: e.code };
+
+  // ARŞİV KİLİDİ / çıkarılmış üye — şemada tetikleyici de var (073, HK001);
+  // bu kapı onun ÖNÜNDE, kullanıcıya ham DB hatası yerine anlamlı cevap için.
+  if (!e.yazabilir) {
+    return { ok: false, error: hedef.arsivlendiMi ? "conversation_archived" : "read_only" };
+  }
 
   const govde = govdeCoz(govdeHam);
   if (!govde.ok) return { ok: false, error: govde.code };
 
-  const k = await konusmaGetir(soforId, true);
-  if (!k.ok || !k.id) return { ok: false, error: "db_error" };
+  // Grupta konuşma zaten var; birebirde ilk mesajda açılır.
+  let konusmaId = hedef.konusmaId;
+  if (konusmaId === null) {
+    const k = await konusmaGetir(hedef.soforId as string, true);
+    if (!k.ok || !k.id) return { ok: false, error: "db_error" };
+    konusmaId = k.id;
+  }
 
   const { data, error } = await supabaseAdmin
     .from("messages")
     .insert({
-      conversation_id: k.id,
+      conversation_id: konusmaId,
       sender_worker_id: viewerId,
       // Rol KAPIDAN türer — formdan değil.
-      sender_role: erisim.role,
+      sender_role: e.role,
       body: govde.body,
     })
     .select("id, created_at")
     .single();
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    // Tetikleyici arşiv kilidi (073). Kapı yukarıda tutuyor; buraya düşmek
+    // ancak grup tam bu arada arşivlenirse mümkün — sessiz başarı ASLA.
+    if (error.code === "HK001") return { ok: false, error: "conversation_archived" };
+    return { ok: false, error: error.message };
+  }
 
-  await sonMesajiIsle(k.id, govde.body, erisim.role, data.created_at as string);
-  await audit(viewerId, "message_send", soforId);
+  await sonMesajiIsle(konusmaId, govde.body, e.role, data.created_at as string);
+  await audit(viewerId, "message_send", adres);
   revalidatePath("/admin/mesajlar");
+
+  const { data: ben } = await supabaseAdmin
+    .from("workers").select("name").eq("id", viewerId).maybeSingle();
 
   return {
     ok: true,
     data: {
+      konusmaId,
       mesaj: {
         id: data.id as string,
         gonderenId: viewerId,
-        gonderenRol: erisim.role,
+        gonderenRol: e.role,
+        gonderenAd: (ben?.name as string | null) ?? null,
         govde: govde.body,
         duyuruMu: false,
         an: data.created_at as string,
@@ -166,17 +213,21 @@ export async function gonderAction(
 
 /** Konuşmayı okundu işaretle. Bayrak kapalıysa hiçbir satır yazılmaz. */
 export async function okunduAction(
-  soforId: string
+  adres: string
 ): Promise<MesajSonuc<{ yeniOkundu: number }>> {
   const { actor, viewerId } = await panelAktoru();
-  const erisim = await erisimCoz(actor, soforId);
-  if (!erisim.ok) return { ok: false, error: erisim.code };
 
-  const k = await konusmaGetir(soforId, false);
-  if (!k.ok) return { ok: false, error: k.code };
-  if (k.id === null) return { ok: true, data: { yeniOkundu: 0 } };
+  const h = await hedefCoz(adres, viewerId);
+  if (!h.ok) return { ok: false, error: h.code };
 
-  const r = await makbuzYaz(k.id, viewerId);
+  const e = await erisimCozKonusma(actor, h.hedef);
+  if (!e.ok) return { ok: false, error: e.code };
+
+  // Okumak ARŞİVDE DE serbest — kilit yalnız YAZMAYA. Arşivlenmiş grubun
+  // geçmişi okunabilir olmalı, yoksa arşivlemek silmekle aynı şey olurdu.
+  if (h.hedef.konusmaId === null) return { ok: true, data: { yeniOkundu: 0 } };
+
+  const r = await makbuzYaz(h.hedef.konusmaId, viewerId);
   return { ok: true, data: { yeniOkundu: r.yazildi } };
 }
 

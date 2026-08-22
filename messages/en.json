@@ -1736,6 +1736,8 @@
     "errTooLong": "Message too long (4000 characters max)",
     "errScope": "This driver is not in your fleet",
     "errForbidden": "You do not have access to this conversation",
-    "errGeneric": "Could not send, please try again"
+    "errGeneric": "Could not send, please try again",
+    "errArchived": "This group is archived — history only",
+    "errReadOnly": "You were removed from this group — history only"
   }
 }

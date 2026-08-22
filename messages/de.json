@@ -1736,6 +1736,8 @@
     "errTooLong": "Nachricht zu lang (höchstens 4000 Zeichen)",
     "errScope": "Dieser Fahrer gehört nicht zu deiner Flotte",
     "errForbidden": "Kein Zugriff auf diese Unterhaltung",
-    "errGeneric": "Senden fehlgeschlagen, bitte erneut versuchen"
+    "errGeneric": "Senden fehlgeschlagen, bitte erneut versuchen",
+    "errArchived": "Diese Gruppe ist archiviert — nur der Verlauf ist lesbar",
+    "errReadOnly": "Du wurdest aus dieser Gruppe entfernt — nur der Verlauf ist sichtbar"
   }
 }

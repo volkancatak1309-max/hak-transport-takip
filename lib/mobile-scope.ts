@@ -48,6 +48,45 @@ export async function requireMobileWorker(req: Request): Promise<MobileGuard> {
   };
 }
 
+/**
+ * Oturum yeter AMA kapsam da çözülür — şef ise filosuyla, değilse kısıtsız
+ * görünümle (şoför kendi verisine bakacağı için kapsam onu ilgilendirmez).
+ *
+ * `requireMobileWorker`'dan farkı: şeflik ve filo kapsamı hesaplanır.
+ * `requireMobileFleetView`'dan farkı: şoförü REDDETMEZ.
+ *
+ * Neden ayrı bir kapı gerekti: mesajlaşma uçları ÜÇ rolü birden karşılıyor —
+ * şoför kendi konuşmasına, şef kapsamındakilere, patron herkese. Mevcut iki
+ * kapıdan biri şoförü kapıda çeviriyor, diğeri kapsamı hiç hesaplamıyordu.
+ * Kapsamı ucun içinde çözmek, o mantığı her uca kopyalamak olurdu.
+ *
+ * ⚠️ Şoför için `fleetScope` UNRESTRICTED döner ve bu bir yetki DEĞİLDİR:
+ * şoför yolunda kapsam hiç kullanılmaz, erişim kendi kimliğine anahtarlıdır
+ * (lib/messaging.ts erisimCoz). Kapsamı şoför için "her şey" sanıp bir sorguya
+ * vermek sızıntı olurdu — bu yüzden `isChief` bayrağı da dönüyor.
+ */
+export async function requireMobileWorkerScoped(req: Request): Promise<MobileGuard> {
+  const auth = await verifyMobileRequest(req);
+  if (!auth.ok) return deny(auth.status, auth.code);
+
+  if (auth.worker.is_admin) {
+    return {
+      ok: true,
+      actor: { worker: auth.worker, fleet: null, isChief: false, fleetScope: UNRESTRICTED },
+    };
+  }
+  const fleet = await getManagedFleet(auth.worker.id);
+  if (!fleet) {
+    // Şoför — kapsam yok, olmamalı da.
+    return {
+      ok: true,
+      actor: { worker: auth.worker, fleet: null, isChief: false, fleetScope: UNRESTRICTED },
+    };
+  }
+  const fleetScope = await getFleetScope(fleet);
+  return { ok: true, actor: { worker: auth.worker, fleet, isChief: true, fleetScope } };
+}
+
 /** Yalnız patron. Şef ve şoför 403 alır (panelde /panel'e atılmalarının karşılığı). */
 export async function requireMobileAdmin(req: Request): Promise<MobileGuard> {
   const auth = await verifyMobileRequest(req);

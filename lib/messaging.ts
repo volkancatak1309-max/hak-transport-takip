@@ -1,7 +1,20 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { READ_RECEIPTS_ENABLED } from "@/lib/tenant";
-import type { MobileActor } from "@/lib/mobile-scope";
+
+/**
+ * Erişim kararını veren aktör — YAPISAL tip, sınıf değil.
+ *
+ * Mobilin `MobileActor`'ü bunu birebir karşılar; panelin oturumu da aynı şekli
+ * kurar (app/actions/messages.ts). Böylece "kim kime yazabilir" kuralı TEK
+ * yerde yaşıyor. Mobile'a bağlı bir tip istesek panel onu import edemez ve
+ * kural ikinci kez yazılırdı — ilk değişiklikte iki yüzey ayrışırdı.
+ */
+export type MesajAktoru = {
+  worker: { id: string; is_admin: boolean; counts_as_driver: boolean };
+  isChief: boolean;
+  fleetScope: { isFleetWorker: (id: string | null | undefined) => boolean };
+};
 
 /**
  * MESAJLAŞMA ÇEKİRDEĞİ (migration 071) — yönetici ↔ şoför.
@@ -43,7 +56,7 @@ export type ErisimSonucu =
  * olarak yazar; başkasınınkine yönetici olarak. Kardeş kapıların aynı cümlesi.
  */
 export async function erisimCoz(
-  actor: MobileActor,
+  actor: MesajAktoru,
   hedefWorkerId: string
 ): Promise<ErisimSonucu> {
   const { worker, isChief, fleetScope } = actor;
@@ -244,4 +257,162 @@ export function govdeCoz(ham: unknown): { ok: true; body: string } | { ok: false
   if (b.length === 0) return { ok: false, code: "body_empty" };
   if (b.length > 4000) return { ok: false, code: "body_too_long" };
   return { ok: true, body: b };
+}
+
+// ── PAYLAŞILAN OKUMALAR — panel ve mobil AYNI sorguyu kullanır ──────────────
+//
+// Aşağıdaki iki fonksiyon önce yalnız /api/mobile/messages* içindeydi. Panel
+// ekranı gelince ikinci bir kopya yazmak gerekecekti; o kopya ilk kural
+// değişikliğinde geride kalır ve aynı filo iki yüzeyde FARKLI liste görürdü.
+// Bu yüzden sorgular buraya taşındı, uçlar ve sayfa buradan okuyor.
+
+export type KonusmaSatiri = {
+  soforId: string;
+  adSoyad: string;
+  telefon: string | null;
+  filo: string | null;
+  konusmaId: string | null;
+  sonMesajAn: string | null;
+  sonMesajOnizleme: string | null;
+  sonGonderenRol: string | null;
+  /** null = okundu bilgisi KAPALI (bilinmiyor), 0 = hepsi okundu. */
+  okunmamis: number | null;
+};
+
+/**
+ * Konuşma listesi — KAYNAK ŞOFÖR LİSTESİDİR, konuşma tablosu değil.
+ *
+ * Konuşma satırı ilk mesaja kadar yoktur; listeyi konuşmalardan üretseydik
+ * yönetici henüz yazışmadığı şoförü hiç göremez ve ona yazamazdı.
+ */
+export async function konusmaListesi(
+  actor: MesajAktoru,
+  rol: "admin" | "fleet_chief" | "driver",
+  kapsam: string[] | null,
+  page: { limit: number; offset: number }
+): Promise<{ ok: true; satirlar: KonusmaSatiri[]; total: number } | { ok: false; code: string }> {
+  let q = supabaseAdmin
+    .from("workers")
+    // test-filtered: yonetim yolunda is_test elenir (asagida). Sofor yolu
+    // ANAHTARLI okumadir — test hesabi kendi konusmasini gorebilmeli
+    // (lib/test-data.ts kurali).
+    .select("id, name, phone, fleet", { count: "exact" })
+    .eq("is_active", true);
+
+  if (rol === "driver") {
+    q = q.eq("id", actor.worker.id);
+  } else {
+    q = q.not("is_test", "is", true).or("is_admin.eq.false,counts_as_driver.eq.true");
+    if (rol === "fleet_chief") q = q.in("id", kapsam ?? []);
+  }
+
+  const { data, error, count } = await q
+    .order("name", { ascending: true })
+    .range(page.offset, page.offset + page.limit - 1);
+  if (error) return { ok: false, code: "db_error" };
+
+  const workers = (data ?? []) as {
+    id: string; name: string | null; phone: string | null; fleet: string | null;
+  }[];
+  if (workers.length === 0) return { ok: true, satirlar: [], total: count ?? 0 };
+
+  // Konuşmalar TEK sorguda bindirilir — şoför başına sorgu N+1 olurdu.
+  const { data: konusmalar } = await supabaseAdmin
+    .from("conversations")
+    .select("id, worker_id, last_message_at, last_message_preview, last_sender_role")
+    .in("worker_id", workers.map((w) => w.id));
+  const kMap = new Map(
+    ((konusmalar ?? []) as Record<string, unknown>[]).map((c) => [c.worker_id as string, c])
+  );
+
+  const okunmamis = await okunmamisSayaclari(
+    [...kMap.values()].map((c) => c.id as string),
+    actor.worker.id
+  );
+
+  const satirlar: KonusmaSatiri[] = workers.map((w) => {
+    const c = kMap.get(w.id);
+    const kid = (c?.id as string | undefined) ?? null;
+    return {
+      soforId: w.id,
+      adSoyad: w.name ?? "—",
+      telefon: w.phone ?? null,
+      filo: w.fleet ?? null,
+      konusmaId: kid,
+      sonMesajAn: (c?.last_message_at as string | null) ?? null,
+      sonMesajOnizleme: (c?.last_message_preview as string | null) ?? null,
+      sonGonderenRol: (c?.last_sender_role as string | null) ?? null,
+      okunmamis: okunmamis ? (kid ? okunmamis.get(kid) ?? 0 : 0) : null,
+    };
+  });
+
+  // Son konuşulan üstte; hiç mesajı olmayanlar altta, kendi aralarında ada göre.
+  satirlar.sort((a, b) => {
+    if (a.sonMesajAn && b.sonMesajAn) return a.sonMesajAn < b.sonMesajAn ? 1 : -1;
+    if (a.sonMesajAn) return -1;
+    if (b.sonMesajAn) return 1;
+    return a.adSoyad.localeCompare(b.adSoyad, "tr");
+  });
+
+  return { ok: true, satirlar, total: count ?? satirlar.length };
+}
+
+export type MesajSatiri = {
+  id: string;
+  gonderenId: string | null;
+  gonderenRol: string;
+  govde: string;
+  duyuruMu: boolean;
+  an: string;
+  /** null = okundu bilgisi kapalı. [] = kimse okumadı. */
+  okuyanlar: { workerId: string; an: string }[] | null;
+};
+
+/** Bir konuşmanın mesajları + ✓✓ makbuzları. En yeni ÜSTTE. */
+export async function konusmaGecmisi(
+  konusmaId: string,
+  page: { limit: number; offset: number }
+): Promise<{ ok: true; mesajlar: MesajSatiri[]; total: number } | { ok: false; code: string }> {
+  const { data, error, count } = await supabaseAdmin
+    .from("messages")
+    .select("id, sender_worker_id, sender_role, body, broadcast_id, created_at", { count: "exact" })
+    .eq("conversation_id", konusmaId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .range(page.offset, page.offset + page.limit - 1);
+  if (error) return { ok: false, code: "db_error" };
+
+  const rows = (data ?? []) as {
+    id: string; sender_worker_id: string | null; sender_role: string;
+    body: string; broadcast_id: string | null; created_at: string;
+  }[];
+
+  // Bayrak kapalıyken makbuz sorgusu HİÇ atılmaz ve alan null döner:
+  // "bilinmiyor" — "okunmadı" değil.
+  const okuyanlar = new Map<string, { workerId: string; an: string }[]>();
+  if (READ_RECEIPTS_ENABLED && rows.length > 0) {
+    const { data: rec } = await supabaseAdmin
+      .from("message_receipts")
+      .select("message_id, worker_id, read_at")
+      .in("message_id", rows.map((m) => m.id));
+    for (const r of (rec ?? []) as { message_id: string; worker_id: string; read_at: string }[]) {
+      const l = okuyanlar.get(r.message_id) ?? [];
+      l.push({ workerId: r.worker_id, an: r.read_at });
+      okuyanlar.set(r.message_id, l);
+    }
+  }
+
+  return {
+    ok: true,
+    total: count ?? rows.length,
+    mesajlar: rows.map((m) => ({
+      id: m.id,
+      gonderenId: m.sender_worker_id,
+      gonderenRol: m.sender_role,
+      govde: m.body,
+      duyuruMu: m.broadcast_id !== null,
+      an: m.created_at,
+      okuyanlar: READ_RECEIPTS_ENABLED ? okuyanlar.get(m.id) ?? [] : null,
+    })),
+  };
 }

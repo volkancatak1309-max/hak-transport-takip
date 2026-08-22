@@ -61,7 +61,8 @@
     "backToPanel": "Back to my panel",
     "driverPanel": "Driver Panel",
     "fleetAdmin": "Fleet Management",
-    "security": "Security"
+    "security": "Security",
+    "messages": "Messages"
   },
   "izinler": {
     "title": "Leave Calendar",
@@ -1702,5 +1703,39 @@
     "fuel_price_note_custom": "Cost calculated using the price of €{price}/L that you entered.",
     "stat_avg_vehicle_day": "Per vehicle / day",
     "stat_avg_vehicle_scope": "from {n}/{total} vehicles"
+  },
+  "messages": {
+    "title": "Messages",
+    "searchPlaceholder": "Search driver…",
+    "empty": "No conversations yet",
+    "emptyThread": "No exchange with this driver yet. Send the first message.",
+    "selectPrompt": "Pick a driver on the left",
+    "inputPlaceholder": "Write a message…",
+    "send": "Send",
+    "sending": "Sending…",
+    "broadcast": "Fleet Announcement",
+    "broadcastTitle": "Fleet Announcement",
+    "broadcastDesc": "This message goes to EVERY driver in the fleet individually. Replies reach only you; drivers cannot see each other.",
+    "broadcastPlaceholder": "Announcement text…",
+    "broadcastSend": "Send Announcement",
+    "broadcastSent": "Announcement sent to {n} drivers",
+    "broadcastBadge": "ANNOUNCEMENT",
+    "call": "Call",
+    "callTitle": "How would you like to call?",
+    "callWhatsapp": "Call via WhatsApp",
+    "callPhone": "Call by phone",
+    "callNoPhone": "No phone number on file for this driver",
+    "read": "Read",
+    "delivered": "Delivered",
+    "unreadOne": "1 unread",
+    "unread": "{n} unread",
+    "you": "You",
+    "cancel": "Cancel",
+    "scopeChief": "You only see your own fleet",
+    "errEmpty": "Message cannot be empty",
+    "errTooLong": "Message too long (4000 characters max)",
+    "errScope": "This driver is not in your fleet",
+    "errForbidden": "You do not have access to this conversation",
+    "errGeneric": "Could not send, please try again"
   }
 }

@@ -415,7 +415,13 @@ export type AuditAction =
   | "delete"
   // ── GÖLGE MODU (dalga 3) ─────────────────────────────────────────────────
   | "shadow_enter"
-  | "shadow_exit";
+  | "shadow_exit"
+  // ── MESAJLAŞMA (071) ─────────────────────────────────────────────────────
+  // "kim kime yazdı" izlenebilir olmalı: mesaj bir yönetici eylemidir ve
+  // duyuru tüm filoya gider. `audit_log.action` serbest metin (045'te CHECK
+  // yok), yani yeni değer şema değişikliği İSTEMEZ.
+  | "message_send"
+  | "message_broadcast";
 
 /**
  * Eylem izi yazar. ASLA throw etmez ve katman kapalıyken hiçbir şey yapmaz.

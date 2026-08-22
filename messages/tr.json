@@ -61,7 +61,8 @@
     "backToPanel": "Panelime dön",
     "driverPanel": "Şoför Paneli",
     "fleetAdmin": "Filo Yönetimi",
-    "security": "Güvenlik"
+    "security": "Güvenlik",
+    "messages": "Mesajlar"
   },
   "izinler": {
     "title": "İzin Takvimi",
@@ -1702,5 +1703,39 @@
     "fuel_price_note_custom": "Maliyet, girdiğiniz {price} €/L fiyatı üzerinden hesaplandı.",
     "stat_avg_vehicle_day": "Araç başına / gün",
     "stat_avg_vehicle_scope": "{n}/{total} araçtan"
+  },
+  "messages": {
+    "title": "Mesajlar",
+    "searchPlaceholder": "Şoför ara…",
+    "empty": "Henüz konuşma yok",
+    "emptyThread": "Bu şoförle henüz yazışma yok. İlk mesajı sen gönder.",
+    "selectPrompt": "Soldan bir şoför seç",
+    "inputPlaceholder": "Mesaj yaz…",
+    "send": "Gönder",
+    "sending": "Gönderiliyor…",
+    "broadcast": "Filo Duyurusu",
+    "broadcastTitle": "Filo Duyurusu",
+    "broadcastDesc": "Bu mesaj filodaki TÜM şoförlere ayrı ayrı gider. Cevaplar yalnız sana gelir, şoförler birbirini görmez.",
+    "broadcastPlaceholder": "Duyuru metni…",
+    "broadcastSend": "Duyuruyu Gönder",
+    "broadcastSent": "Duyuru {n} şoföre gönderildi",
+    "broadcastBadge": "DUYURU",
+    "call": "Ara",
+    "callTitle": "Nasıl aramak istersin?",
+    "callWhatsapp": "WhatsApp'tan ara",
+    "callPhone": "Telefondan ara",
+    "callNoPhone": "Bu şoförün telefon numarası kayıtlı değil",
+    "read": "Okundu",
+    "delivered": "İletildi",
+    "unreadOne": "1 okunmamış",
+    "unread": "{n} okunmamış",
+    "you": "Sen",
+    "cancel": "İptal",
+    "scopeChief": "Yalnız kendi filonu görüyorsun",
+    "errEmpty": "Mesaj boş olamaz",
+    "errTooLong": "Mesaj çok uzun (en fazla 4000 karakter)",
+    "errScope": "Bu şoför senin filonda değil",
+    "errForbidden": "Bu konuşmaya erişimin yok",
+    "errGeneric": "Gönderilemedi, tekrar dene"
   }
 }

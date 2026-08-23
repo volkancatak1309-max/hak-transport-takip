@@ -35,7 +35,12 @@
     "search": "Suchen",
     "actions": "Aktionen",
     "epoch_warning": "Der gewählte Zeitraum umfasst die alten Alarmschwellen — Einträge vor dem {date} wurden mit anderen Einstellungen erzeugt, die Zahlen sind nicht vergleichbar.",
-    "loading_slow": "Wird noch berechnet — bei großen Zeiträumen kann das etwas dauern"
+    "loading_slow": "Wird noch berechnet — bei großen Zeiträumen kann das etwas dauern",
+    "src_measured": "GEMESSEN",
+    "src_entered_panel": "EINGEGEBEN",
+    "src_entered_env": "EINGEGEBEN (Setup)",
+    "src_default": "STANDARD",
+    "src_default_with": "STANDARD · {kaynak} {tarih}"
   },
   "errors": {
     "error_title": "Etwas ist schiefgelaufen",
@@ -62,7 +67,8 @@
     "driverPanel": "Fahrerpanel",
     "fleetAdmin": "Flottenverwaltung",
     "security": "Sicherheit",
-    "messages": "Nachrichten"
+    "messages": "Nachrichten",
+    "settings": "Einstellungen"
   },
   "izinler": {
     "title": "Urlaubskalender",
@@ -1716,15 +1722,18 @@
     "stat_cost_basis_scope": "{days} Fahrzeugtage · {vehicles} Fahrzeuge",
     "cost_no_km": "Schicht-Kilometer nicht messbar",
     "cost_no_parcel": "Keine Paketanzahl erfasst",
-    "cost_estimate_note": "Dies ist eine SCHÄTZUNG, keine Buchhaltung: Die Bezugsgrößen (km, Stunden, Pakete, Fahrzeugtage) werden aus den Live-Schichten gemessen, drei der Faktoren sind Marktannahmen. Hinterlegen Sie Ihre eigenen Werte über Umgebungsvariablen.",
-    "cost_rates_note": "Sätze: {fuel} €/L · {labor} €/Stunde (Arbeitgeberkosten) · {day} € je gearbeitetem Fahrzeugtag.",
-    "cost_l100_measured": "Verbrauch {n} L/100km — aus der eigenen Telematik der Flotte gemessen.",
-    "cost_l100_override": "Verbrauch {n} L/100km — manuell über FLEET_L_PER_100KM gesetzt, Messung überschrieben.",
-    "cost_l100_fallback": "Verbrauch {n} L/100km — nicht messbar, Standardwert verwendet.",
+    "cost_estimate_note": "Dies ist eine SCHÄTZUNG, keine Buchhaltung: Die Bezugsgrößen (km, Stunden, Pakete, Fahrzeugtage) werden aus den Live-Schichten gemessen, drei der Faktoren sind Mandantensätze. Neben jedem Satz steht seine Herkunft — ersetzen Sie die mit STANDARD markierten unter Einstellungen › Kostensätze durch Ihre eigenen Werte.",
     "cost_reality_note": "Das Modell erwartet {model} L, die Telematik hat {measured} L gemessen ({pct} %). Bei großer Abweichung sollten der L/100km-Satz oder die Sensorabdeckung geprüft werden.",
     "col_eur_km": "€/km",
     "unit_hour": "Std",
-    "cost_hour_cap_note": "{n}/{total} Schichten erscheinen länger als {cap} Stunden und wurden in der Personalbezugsgröße auf {cap} Stunden begrenzt — das sind verspätet beendete Schichten, keine Arbeitszeit (Tageshöchstgrenze § 9 Abs. 1 AZG)."
+    "cost_hour_cap_note": "{n}/{total} Schichten erscheinen länger als {cap} Stunden und wurden in der Personalbezugsgröße auf {cap} Stunden begrenzt — das sind verspätet beendete Schichten, keine Arbeitszeit (Tageshöchstgrenze § 9 Abs. 1 AZG).",
+    "rate_label_fuel": "Kraftstoffpreis",
+    "rate_label_l100": "Flottenverbrauch",
+    "rate_label_labor": "Personalkosten",
+    "rate_label_vehicle_day": "Fahrzeugfixkosten",
+    "unit_vehicle_day": "Fahrzeugtag",
+    "cost_rates_edit_link": "Sätze bearbeiten — Einstellungen › Kostensätze",
+    "cost_rates_migration_note": "Die Sätze können nicht im Panel gepflegt werden: Migration 076 (tenant_cost_rates) wurde noch nicht ausgeführt. Die Berechnung nutzt vorerst die Setup-Werte."
   },
   "messages": {
     "title": "Nachrichten",
@@ -1794,5 +1803,30 @@
     "errAlreadyRemoved": "Diese Person wurde bereits entfernt",
     "errWorkerInactive": "Ausgeschiedenes Personal kann nicht hinzugefügt werden",
     "emptyGroupThread": "In dieser Gruppe gibt es noch keine Nachrichten. Schreib die erste."
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "desc": "Mandantenspezifische Werte. Jede hier eingetragene Zahl ersetzt den Setup-Standard.",
+    "cost_rates_title": "Kostensätze",
+    "cost_rates_desc": "Die Faktoren der €/km- und €/Paket-Berechnung. Ein leeres Feld fällt auf den Standard zurück; ein ausgefülltes Feld gilt sofort.",
+    "rate_fuel": "Kraftstoffpreis je Liter",
+    "rate_fuel_hint": "Wenn Sie mit Flottenkarte tanken, tragen Sie Ihren Vertragspreis ein. Leer = Marktdurchschnitt.",
+    "rate_labor": "Personalkosten — Fahrerstunde",
+    "rate_labor_hint": "ARBEITGEBER-GESAMTKOSTEN (Bruttolohn + Lohnnebenkosten + 13./14. Gehalt), nicht der Bruttolohn. Es ist ein Flottendurchschnitt; personenbezogene Löhne werden hier nicht gespeichert.",
+    "rate_vehicle_day": "Fahrzeugfixkosten — gearbeiteter Tag",
+    "rate_vehicle_day_hint": "Leasing/Abschreibung + Versicherung + Steuer + Serviceanteil. Bezugsgröße ist nicht der Kalendertag, sondern ein Tag mit mindestens einer Schicht.",
+    "rate_l100": "Flottenverbrauch — L/100km",
+    "rate_l100_hint": "Dieser Wert ist nicht editierbar: Er wird aus den Kraftstoffsensoren der Fahrzeuge gemessen. Was das Produkt bereits misst, überschreiben wir nicht mit einer Schätzung.",
+    "in_effect": "Aktuell",
+    "placeholder_default": "Leer = Standard ({n})",
+    "save": "Speichern",
+    "saving": "Wird gespeichert…",
+    "saved": "Sätze gespeichert.",
+    "invalid": "Ungültige Zahl — muss größer als null sein.",
+    "save_error": "Speichern fehlgeschlagen.",
+    "migration_needed": "Ohne Migration 076 (tenant_cost_rates) können die Sätze nicht im Panel gespeichert werden.",
+    "clear_hint": "Ein Feld leeren und speichern setzt den Satz auf den Standard zurück.",
+    "unit_hour": "Std",
+    "unit_vehicle_day": "Fahrzeugtag"
   }
 }

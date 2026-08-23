@@ -35,7 +35,12 @@
     "search": "Ara",
     "actions": "Eylemler",
     "epoch_warning": "Seçilen aralık eski alarm eşiklerini kapsıyor — {date} öncesi kayıtlar farklı ayarlarla üretildi, sayılar kıyaslanabilir değil.",
-    "loading_slow": "Hâlâ hesaplanıyor — büyük aralıklarda bu biraz sürebilir"
+    "loading_slow": "Hâlâ hesaplanıyor — büyük aralıklarda bu biraz sürebilir",
+    "src_measured": "ÖLÇÜLDÜ",
+    "src_entered_panel": "GİRİLDİ",
+    "src_entered_env": "GİRİLDİ (kurulum)",
+    "src_default": "VARSAYILAN",
+    "src_default_with": "VARSAYILAN · {kaynak} {tarih}"
   },
   "errors": {
     "error_title": "Bir şeyler ters gitti",
@@ -62,7 +67,8 @@
     "driverPanel": "Şoför Paneli",
     "fleetAdmin": "Filo Yönetimi",
     "security": "Güvenlik",
-    "messages": "Mesajlar"
+    "messages": "Mesajlar",
+    "settings": "Ayarlar"
   },
   "izinler": {
     "title": "İzin Takvimi",
@@ -1716,15 +1722,18 @@
     "stat_cost_basis_scope": "{days} araç-gün · {vehicles} araç",
     "cost_no_km": "Vardiya km'si ölçülemedi",
     "cost_no_parcel": "Paket sayısı girilmemiş",
-    "cost_estimate_note": "Bu bir KESTİRİMDİR, muhasebe kaydı değil: paydalar (km, saat, paket, araç-gün) canlı vardiyalardan ölçülür, çarpanların üçü piyasa varsayımıdır. Kendi rakamlarınızı ortam değişkenleriyle girin.",
-    "cost_rates_note": "Oranlar: {fuel} €/L · {labor} €/saat (işveren maliyeti) · {day} €/çalışılan araç-günü.",
-    "cost_l100_measured": "Tüketim {n} L/100km — filonun kendi telemetrisinden ölçüldü.",
-    "cost_l100_override": "Tüketim {n} L/100km — FLEET_L_PER_100KM ile elle verildi, ölçüm geçersiz kılındı.",
-    "cost_l100_fallback": "Tüketim {n} L/100km — ölçülemedi, varsayılan değere düşüldü.",
+    "cost_estimate_note": "Bu bir KESTİRİMDİR, muhasebe kaydı değil: paydalar (km, saat, paket, araç-gün) canlı vardiyalardan ölçülür, çarpanların üçü kiracı oranıdır. Her oranın yanında kaynağı yazılı — VARSAYILAN olanları Ayarlar › Maliyet Oranları'ndan kendi rakamınızla değiştirin.",
     "cost_reality_note": "Model {model} L öngörüyor, telemetri {measured} L ölçtü (%{pct}). Sapma büyükse L/100km oranı ya da sensör kapsaması gözden geçirilmeli.",
     "col_eur_km": "€/km",
     "unit_hour": "sa",
-    "cost_hour_cap_note": "{n}/{total} vardiya {cap} saatten uzun göründüğü için işçilik paydasında {cap} saate sınırlandı — bunlar geç kapatılmış vardiyalardır, çalışma süresi değil (§ 9 Abs. 1 AZG günlük tavanı)."
+    "cost_hour_cap_note": "{n}/{total} vardiya {cap} saatten uzun göründüğü için işçilik paydasında {cap} saate sınırlandı — bunlar geç kapatılmış vardiyalardır, çalışma süresi değil (§ 9 Abs. 1 AZG günlük tavanı).",
+    "rate_label_fuel": "Yakıt fiyatı",
+    "rate_label_l100": "Filo tüketimi",
+    "rate_label_labor": "İşçilik",
+    "rate_label_vehicle_day": "Araç sabit gideri",
+    "unit_vehicle_day": "araç-günü",
+    "cost_rates_edit_link": "Oranları düzenle — Ayarlar › Maliyet Oranları",
+    "cost_rates_migration_note": "Oranlar panelden girilemiyor: migration 076 (tenant_cost_rates) henüz çalıştırılmamış. Hesap şimdilik kurulum değerleriyle çalışıyor."
   },
   "messages": {
     "title": "Mesajlar",
@@ -1794,5 +1803,30 @@
     "errAlreadyRemoved": "Bu kişi zaten çıkarılmış",
     "errWorkerInactive": "Ayrılmış personel gruba eklenemez",
     "emptyGroupThread": "Bu grupta henüz mesaj yok. İlk mesajı sen gönder."
+  },
+  "settings": {
+    "title": "Ayarlar",
+    "desc": "Kiracıya ait değerler. Burada girdiğiniz her sayı kurulum varsayılanının yerine geçer.",
+    "cost_rates_title": "Maliyet Oranları",
+    "cost_rates_desc": "€/km ve €/paket hesabının çarpanları. Boş bırakılan alan varsayılana döner; girilen alan hesapta hemen geçerli olur.",
+    "rate_fuel": "Yakıt litre fiyatı",
+    "rate_fuel_hint": "Filo kartıyla akaryakıt alıyorsanız kendi anlaşmalı fiyatınızı yazın. Boşsa piyasa ortalaması kullanılır.",
+    "rate_labor": "İşçilik — şoför saati",
+    "rate_labor_hint": "İŞVEREN TOPLAM MALİYETİ (brüt ücret + yan maliyetler + 13./14. maaş), brüt ücret değil. Filo ortalamasıdır; kişi bazlı ücret burada tutulmaz.",
+    "rate_vehicle_day": "Araç sabit gideri — çalışılan gün",
+    "rate_vehicle_day_hint": "Leasing/amortisman + sigorta + vergi + servis payı. Payda takvim günü değil, aracın o gün en az bir vardiya gördüğü gündür.",
+    "rate_l100": "Filo tüketimi — L/100km",
+    "rate_l100_hint": "Bu değer girilemez: araçların yakıt sensöründen ölçülüyor. Ürünün zaten ölçtüğü bir büyüklüğü tahminle geçersiz kılmıyoruz.",
+    "in_effect": "Geçerli",
+    "placeholder_default": "Boş = varsayılan ({n})",
+    "save": "Kaydet",
+    "saving": "Kaydediliyor…",
+    "saved": "Oranlar kaydedildi.",
+    "invalid": "Geçersiz sayı — sıfırdan büyük olmalı.",
+    "save_error": "Kaydedilemedi.",
+    "migration_needed": "Migration 076 (tenant_cost_rates) çalıştırılmadan oranlar panelden kaydedilemez.",
+    "clear_hint": "Bir alanı boşaltıp kaydetmek o oranı varsayılana döndürür.",
+    "unit_hour": "sa",
+    "unit_vehicle_day": "araç-günü"
   }
 }

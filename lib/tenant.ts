@@ -77,10 +77,20 @@ function envNumIsCustom(value: string | undefined): boolean {
  * erişimi istemci paketine gömülmüyor (03.08.2026 ölçümü); o tuzağa hiç
  * girmiyoruz. Bir oranı istemcide okumak isteyen kod, sayıyı prop olarak alır.
  *
- * ⚠️ ÜÇÜ TAHMİN, BİRİ ÖLÇÜM. Yakıt fiyatı ve tüketim gerçek kaynaklara
- * dayanıyor; işçilik ve araç sabit gideri PİYASA VARSAYIMIDIR ve her müşteri
- * kendi rakamıyla geçmelidir. Rapor hangi oranın env'den geldiğini ekranda
- * söyler (`*_IS_CUSTOM`) — "tahmini sayıyı ölçüm sanma" kuralı.
+ * ⚠️ ENV ARTIK YALNIZ VARSAYILAN SAĞLAR (23.08.2026, Volkan kararı).
+ * Kiracı kendi oranını PANELDEN girer (/admin/ayarlar → migration 076,
+ * `tenant_cost_rates`). Öncelik zinciri tek yerde çözülür:
+ *
+ *        panel satırı  >  env  >  buradaki varsayılan
+ *
+ * Gerekçe: env değiştirmek deploy ister ve yalnız bizim erişimimizde;
+ * müşterinin kendi sigorta primini güncellemek için bizden dağıtım istemesi
+ * saçmadır. Bkz. lib/cost-rates-db.ts ve db/migrations/076_tenant_cost_rates.sql.
+ *
+ * ⚠️ ÜÇÜ TAHMİN, BİRİ ÖLÇÜM. Tüketim (L/100km) telemetriden ÖLÇÜLÜR ve
+ * panelden değiştirilemez; üç parasal oran ise varsayılan geldiğinde bir
+ * PİYASA VARSAYIMIDIR. Rapor her oranın yanında kaynağını yazar
+ * (ÖLÇÜLDÜ / GİRİLDİ / VARSAYILAN) — "tahmini sayıyı ölçüm sanma" kuralı.
  */
 
 /**
@@ -161,6 +171,9 @@ export const LABOR_EUR_PER_HOUR = envNum(process.env.LABOR_EUR_PER_HOUR, 19.1);
 export const LABOR_EUR_PER_HOUR_IS_CUSTOM = envNumIsCustom(
   process.env.LABOR_EUR_PER_HOUR
 );
+/** Varsayılanın kaynağı — ekranda "VARSAYILAN" etiketinin yanında gösterilir. */
+export const LABOR_SOURCE = "WKO KV Güterbeförderung";
+export const LABOR_AS_OF = "2026-01-01";
 
 /**
  * 4) ARAÇ SABİT GİDERİ (EUR / ÇALIŞILAN araç-günü).
@@ -190,6 +203,14 @@ export const VEHICLE_EUR_PER_DAY = envNum(process.env.VEHICLE_EUR_PER_DAY, 50);
 export const VEHICLE_EUR_PER_DAY_IS_CUSTOM = envNumIsCustom(
   process.env.VEHICLE_EUR_PER_DAY
 );
+/**
+ * Varsayılanın kaynağı. Tek bir resmî yayın yok — kurye/servis sınıfı 3,5 t
+ * transporter için piyasa leasing bandı (400-700 €/ay) + sigorta (~130 €/ay)
+ * derlemesi. Bu yüzden etiketi "piyasa derlemesi": kaynağı olmayan bir sayıya
+ * kaynak uydurmuyoruz, oranların EN OYNAĞI olduğunu ekranda söylüyoruz.
+ */
+export const VEHICLE_DAY_SOURCE = "piyasa derlemesi";
+export const VEHICLE_DAY_AS_OF = "2026-08";
 
 /**
  * PUAN EŞİĞİ: ÇALIŞILAN GÜNE GÖRE Mİ? (09.08.2026) — VARSAYILAN KAPALI.

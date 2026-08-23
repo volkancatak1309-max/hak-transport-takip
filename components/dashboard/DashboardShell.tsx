@@ -27,6 +27,7 @@ import {
   type LucideIcon,
   ShieldCheck,
   MessageSquare,
+  SlidersHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CommandPalette } from "@/components/ui-v2/CommandPalette";
@@ -174,6 +175,12 @@ export function DashboardShell({
         ...(LEAVES_ENABLED
           ? [{ href: "/admin/izinler", label: t("leaves"), icon: CalendarOff }]
           : []),
+        // AYARLAR (23.08.2026) — kiracının kendi maliyet oranlarını girdiği yer.
+        // Bayrak YOK ve olmayacak: ayar ekranı bir modül değil, ürünün kendi
+        // kurulum yüzeyi. Şefe gösterilmez (yönetici listesinde, şef listesinde
+        // değil) — oranlar FİLONUN TAMAMININ €/km'sini oynatır, şefin kapsamı
+        // ise tek filo (bkz. app/actions/cost-rates.ts).
+        { href: "/admin/ayarlar", label: t("settings"), icon: SlidersHorizontal },
         ...(user.isOwner
           ? [{ href: "/admin/guvenlik", label: t("security"), icon: ShieldCheck }]
           : []),

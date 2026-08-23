@@ -14,7 +14,10 @@ import {
   FUEL_MIN_CONSUMED_PCT,
   FUEL_MIN_KM,
 } from "@/lib/metric-thresholds";
+import Link from "next/link";
 import type { CostReport, FuelReport, FuelRow } from "@/lib/reports";
+import type { RateOrigin } from "@/lib/cost-model";
+import { RateSourceChip } from "@/components/admin/RateSourceChip";
 import { noteExport } from "@/lib/audit-export-client";
 
 /**
@@ -71,14 +74,31 @@ export function FuelClient({
   // satırlarıdır (km, saat, paket, araç-gün), yakıt RPC'si değil. Yakıt raporu
   // zaman aşımına düşse bile bu dört ölçüm elimizde olur; bloğu erken dönüşün
   // arkasına koysaydık, yöneticinin ona en çok ihtiyaç duyduğu anda kaybolurdu.
-  // Kaybolan tek şey `lPer100Source` "measured" olur — o da nota yazılıyor.
+  // Kaybolan tek şey L/100km'nin ÖLÇÜLDÜ etiketi olur — o da satırında yazılı.
   const cb = cost.totals;
-  const lPer100Note =
-    cost.origin.lPer100Source === "measured"
-      ? t("cost_l100_measured", { n: num(cost.rates.lPer100Km, 2) })
-      : cost.origin.lPer100Source === "override"
-        ? t("cost_l100_override", { n: num(cost.rates.lPer100Km, 2) })
-        : t("cost_l100_fallback", { n: num(cost.rates.lPer100Km, 2) });
+
+  const oranSatirlari: { ad: string; deger: string; o: RateOrigin }[] = [
+    {
+      ad: t("rate_label_fuel"),
+      deger: `${num(cost.rates.fuelEurPerL, 3)} €/L`,
+      o: cost.origin.fuel,
+    },
+    {
+      ad: t("rate_label_l100"),
+      deger: `${num(cost.rates.lPer100Km, 2)} L/100km`,
+      o: cost.origin.lPer100,
+    },
+    {
+      ad: t("rate_label_labor"),
+      deger: `${num(cost.rates.laborEurPerHour, 2)} €/${t("unit_hour")}`,
+      o: cost.origin.labor,
+    },
+    {
+      ad: t("rate_label_vehicle_day"),
+      deger: `${num(cost.rates.vehicleEurPerDay, 2)} €/${t("unit_vehicle_day")}`,
+      o: cost.origin.vehicleDay,
+    },
+  ];
 
   const costBlock = (
     <section className="space-y-3">
@@ -148,14 +168,37 @@ export function FuelClient({
           <AlertTriangle className="mt-px size-3.5 shrink-0" />
           <span>{t("cost_estimate_note")}</span>
         </p>
-        <p>
-          {t("cost_rates_note", {
-            fuel: num(cost.rates.fuelEurPerL, 3),
-            labor: num(cost.rates.laborEurPerHour, 2),
-            day: num(cost.rates.vehicleEurPerDay, 2),
-          })}{" "}
-          {lPer100Note}
-        </p>
+        {/* ORAN LİSTESİ — dört satır, her birinde DEĞER + KAYNAK ROZETİ.
+            Tek cümleye sıkıştırılmıştı; okuyucu hangi sayının ölçüm hangisinin
+            varsayım olduğunu ayıramıyordu. Ayrı satır, ayrı rozet. */}
+        <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
+          {oranSatirlari.map((r) => (
+            <li
+              key={r.ad}
+              className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2"
+            >
+              <span className="text-foreground">{r.ad}</span>
+              <span className="flex items-center gap-2">
+                <span className="nums font-medium text-foreground">{r.deger}</span>
+                <RateSourceChip origin={r.o} />
+              </span>
+            </li>
+          ))}
+        </ul>
+        {/* KENDİ RAKAMINI GİR — varsayılanla bırakılmış oran varken çağrı
+            görünür olmalı; hepsi girilmişse yalnız kısa bir bağlantı kalır. */}
+        {cost.ratesTableMissing ? (
+          <p className="flex items-start gap-1.5 text-accent-gold-text">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+            <span>{t("cost_rates_migration_note")}</span>
+          </p>
+        ) : (
+          <p>
+            <Link href="/admin/ayarlar" className="underline underline-offset-2">
+              {t("cost_rates_edit_link")}
+            </Link>
+          </p>
+        )}
         {/* TAVANA ÇARPAN VARDİYA: sessizce sınırlamak, sessizce şişirmek kadar
             kötü. Kapatılmamış vardiya bir VERİ sorunudur ve yöneticinin
             düzeltebileceği bir şeydir — sayıyı görmesi gerekir. */}

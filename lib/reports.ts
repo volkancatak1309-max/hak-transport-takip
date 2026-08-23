@@ -34,14 +34,9 @@ import {
   FUEL_PRICE_SOURCE,
   FUEL_PRICE_AS_OF,
   FUEL_PRICE_IS_CUSTOM,
-  FLEET_L_PER_100KM,
-  FLEET_L_PER_100KM_IS_CUSTOM,
-  LABOR_EUR_PER_HOUR,
-  LABOR_EUR_PER_HOUR_IS_CUSTOM,
-  VEHICLE_EUR_PER_DAY,
-  VEHICLE_EUR_PER_DAY_IS_CUSTOM,
   SCORE_THRESHOLD_WORKED_DAYS,
 } from "@/lib/tenant";
+import { resolveCostRates } from "@/lib/cost-rates-db";
 import {
   computeCost,
   computeVehicleCost,
@@ -1415,6 +1410,11 @@ export type CostReport = {
   basis: CostBasis;
   rates: CostRates;
   origin: CostRateOrigin;
+  /**
+   * migration 076 uygulanmamış → oranlar panelden girilemiyor, zincir env'den
+   * başlıyor. Rapor yine çalışır; ayarlar ekranı bunu söyler.
+   */
+  ratesTableMissing: boolean;
   totals: CostBreakdown;
   /** Araç ekseninde satırlar — plakayla eşlenmiş, €/km'ye göre azalan. */
   vehicles: (CostVehicleRow & { plate: string; driverName: string | null })[];
@@ -1594,28 +1594,12 @@ export async function buildCostReport(
   basis.vehicles = perVehicle.size;
 
   // ── ORANLAR ────────────────────────────────────────────────────────────
-  // L/100km'de ÖLÇÜM ÖNCE gelir; env yalnız GEÇERSİZ KILAR (bkz. lib/tenant.ts).
-  const lPer100Source: CostRateOrigin["lPer100Source"] =
-    FLEET_L_PER_100KM_IS_CUSTOM
-      ? "override"
-      : fleetLPer100KmMeasured !== null && fleetLPer100KmMeasured > 0
-        ? "measured"
-        : "fallback";
-  const lPer100Km =
-    lPer100Source === "measured" ? fleetLPer100KmMeasured! : FLEET_L_PER_100KM;
-
-  const rates: CostRates = {
-    fuelEurPerL: FUEL_PRICE_EUR_PER_L,
-    lPer100Km,
-    laborEurPerHour: LABOR_EUR_PER_HOUR,
-    vehicleEurPerDay: VEHICLE_EUR_PER_DAY,
-  };
-  const origin: CostRateOrigin = {
-    fuelPriceIsCustom: FUEL_PRICE_IS_CUSTOM,
-    lPer100Source,
-    laborIsCustom: LABOR_EUR_PER_HOUR_IS_CUSTOM,
-    vehicleDayIsCustom: VEHICLE_EUR_PER_DAY_IS_CUSTOM,
-  };
+  // Zincir TEK YERDE çözülür: panel satırı (076) > env > kod varsayılanı.
+  // L/100km bu zincirin DIŞINDA — telemetriden ölçülür, panelde karşılığı yok.
+  // Ayrıntı ve gerekçe: lib/cost-rates-db.ts.
+  const cozum = await resolveCostRates(fleetLPer100KmMeasured);
+  const rates = cozum.rates;
+  const origin = cozum.origin;
 
   const totals = computeCost(basis, rates);
 
@@ -1637,6 +1621,7 @@ export async function buildCostReport(
     basis,
     rates,
     origin,
+    ratesTableMissing: cozum.tabloYok,
     totals,
     vehicles: vehicleRows,
     measuredLiters: fuelInput.measuredLiters,

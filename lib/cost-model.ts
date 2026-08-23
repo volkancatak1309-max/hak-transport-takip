@@ -49,20 +49,34 @@ export type CostRates = {
 };
 
 /**
- * Her oranın NEREDEN geldiği. Ekran "bu sayı ölçüm mü varsayım mı" sorusunu
- * kullanıcıya sormadan cevaplamak zorunda.
+ * ═══════════ BİR ORANIN KAYNAĞI — ekranda ZORUNLU etiket ═══════════════
+ *
+ * `olculdu`     Telemetriden gelir, kimse giremez. Bugün yalnız L/100km.
+ * `girildi`     Kiracının KENDİ rakamı — panelden (tenant_cost_rates) ya da
+ *               kurulum env'inden. `via` hangisi olduğunu söyler.
+ * `varsayilan`  Bizim koyduğumuz başlangıç değeri. `kaynak` + `tarih` ZORUNLU:
+ *               kaynağı olmayan varsayılan, ölçüm kılığına girmiş tahmindir.
+ *
+ * NEDEN ZORUNLU: €/km bir KARAR sayısıdır (araç alınır, güzergâh kapatılır,
+ * müşteriye fiyat verilir). Karar veren kişi baktığı rakamın kendi verisi mi
+ * yoksa bizim tahminimiz mi olduğunu görmeden onu kullanamaz. Ürün bunu
+ * söylemezse kullanıcı FARKI KENDİ UYDURUR — ve genellikle her şeyi ölçüm
+ * sanar.
  */
+export type RateSource = "olculdu" | "girildi" | "varsayilan";
+
+export type RateOrigin =
+  | { source: "olculdu" }
+  | { source: "girildi"; via: "panel" | "env" }
+  | { source: "varsayilan"; kaynak: string; tarih: string };
+
+/** Dört oranın dördünün ayrı ayrı kaynağı. */
 export type CostRateOrigin = {
-  /** true → env'den geldi (müşteri kendi fiyatını girdi). */
-  fuelPriceIsCustom: boolean;
-  /**
-   * `measured`  → filonun kendi telemetrisinden ölçüldü (tercih edilen)
-   * `override`  → env FLEET_L_PER_100KM ile dayatıldı
-   * `fallback`  → ölçüm yoktu, varsayılan sabite düşüldü
-   */
-  lPer100Source: "measured" | "override" | "fallback";
-  laborIsCustom: boolean;
-  vehicleDayIsCustom: boolean;
+  fuel: RateOrigin;
+  /** Bugün her zaman `olculdu` olmalı; değilse telemetri yok demektir. */
+  lPer100: RateOrigin;
+  labor: RateOrigin;
+  vehicleDay: RateOrigin;
 };
 
 /**

@@ -28,13 +28,30 @@ import {
 import { getTestScope, dropTestRows, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { markKmMeasured } from "@/lib/km-quality";
+import { AZG_DAILY_MAX_MS } from "@/lib/azg-rules";
 import {
   FUEL_PRICE_EUR_PER_L,
   FUEL_PRICE_SOURCE,
   FUEL_PRICE_AS_OF,
   FUEL_PRICE_IS_CUSTOM,
+  FLEET_L_PER_100KM,
+  FLEET_L_PER_100KM_IS_CUSTOM,
+  LABOR_EUR_PER_HOUR,
+  LABOR_EUR_PER_HOUR_IS_CUSTOM,
+  VEHICLE_EUR_PER_DAY,
+  VEHICLE_EUR_PER_DAY_IS_CUSTOM,
   SCORE_THRESHOLD_WORKED_DAYS,
 } from "@/lib/tenant";
+import {
+  computeCost,
+  computeVehicleCost,
+  fuelRealityCheck,
+  type CostBasis,
+  type CostBreakdown,
+  type CostRateOrigin,
+  type CostRates,
+  type CostVehicleRow,
+} from "@/lib/cost-model";
 import {
   workedMs,
   kmDiff,
@@ -1389,6 +1406,241 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     capacityMissing,
     partialVehicles: failedPlates,
     partialReason: failedReason,
+  };
+}
+
+// ═══════════════════ MALİYET RAPORU — €/km ve €/paket ═══════════════════════
+
+export type CostReport = {
+  basis: CostBasis;
+  rates: CostRates;
+  origin: CostRateOrigin;
+  totals: CostBreakdown;
+  /** Araç ekseninde satırlar — plakayla eşlenmiş, €/km'ye göre azalan. */
+  vehicles: (CostVehicleRow & { plate: string; driverName: string | null })[];
+  /**
+   * Telemetriden ÖLÇÜLEN litre (yakıt raporundan gelir) — modelin gerçeklik
+   * denetimi. null: yakıt raporu kullanılamadı.
+   */
+  measuredLiters: number | null;
+  /** model litre ÷ ölçülen litre. 1'e yakınsa L/100km varsayımı tutuyor. */
+  fuelReality: number | null;
+};
+
+/**
+ * MALİYET RAPORU — dört kiracı oranını canlı vardiya paydalarıyla çarpar.
+ *
+ * ⚠️ PAYDA VARDİYA EKSENİNDEN (Volkan kararı, 23.08.2026). Gerekçe ve ölçüm:
+ * bkz. lib/cost-model.ts başlık bloğu. Aynı `time_entries` okuması hem km hem
+ * saat hem paket hem araç-gün üretir — dördü AYNI satırlardan gelmek zorunda,
+ * yoksa dört payda zamanla ayrışır (15.08.2026'da skor ekseninde yaşandı).
+ *
+ * `fleetLPer100KmMeasured` DIŞARIDAN gelir: `buildFuelReport` canlıda 30 günlük
+ * aralıkta ~60 sn sürüyor ve sayfa onu ZATEN çağırıyor. İkinci kez çağırmak
+ * rapor süresini ikiye katlardı.
+ *
+ * ⚠️ Yeni bir migration ya da yeni kolon GEREKTİRMEZ — tamamı mevcut şemadan.
+ */
+export async function buildCostReport(
+  range: DateRange,
+  fuelInput: {
+    /** buildFuelReport().fleetLPer100Km — null: ölçülemedi. */
+    fleetLPer100Km: number | null;
+    /** buildFuelReport().totalConsumedLiters — rapor kullanılamıyorsa null. */
+    measuredLiters: number | null;
+  }
+): Promise<CostReport> {
+  const fleetLPer100KmMeasured = fuelInput.fleetLPer100Km;
+  const scope = await getTestScope();
+  const driverScope = await getDriverScope();
+
+  const [{ data: entryData }, { data: vData }, { data: wData }] =
+    await Promise.all([
+      fetchAllRows<TimeEntry>(
+        (from, to) =>
+          // test-filtered + driver-scoped: yönetici hesabından açılmış demo
+          // vardiyalar km'yi ve saati doğrudan şişirir (20.100 km'lik vaka,
+          // bkz. lib/driver-scope.ts). Payda kirlenirse €/km sessizce düşer.
+          onlyDrivers(
+            withoutTestRows(
+              supabaseAdmin
+                .from("time_entries")
+                .select(
+                  "id, worker_id, vehicle_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count"
+                )
+                .gte("started_at", range.start.toISOString())
+                .lte("started_at", range.end.toISOString())
+                .order("started_at", { ascending: true })
+                .order("id")
+                .range(from, to),
+              "worker_id",
+              scope.workerIds
+            ),
+            "worker_id",
+            driverScope
+          ),
+        "buildCostReport/time_entries"
+      ),
+      supabaseAdmin.from("vehicles").select("id, plate, assigned_worker_id"),
+      // test-visible: yalnız İSİM ETİKETİ sözlüğü — hiçbir SAYIYI etkilemez.
+      // Maliyet satırları ARAÇ eksenlidir (km/saat/paket/araç-gün hepsi araca
+      // toplanır); buradaki ad "bu aracı kim kullanıyor" etiketinden ibaret.
+      // Ayrılan personelin adı da görünmeli (7 yıl arşiv) → is_active filtresi
+      // de yok.
+      //
+      // driver-scoped: KAPSAM BİLEREK UYGULANMADI — aynı gerekçe, aynı dosyada
+      // buildFuelReport'ta da yazılı. Kapsamı uygulamak tek bir sayıyı bile
+      // değiştirmez; yalnız aracı olan bir yöneticinin etiketini "—"e çevirir,
+      // yani bilgi kaybı olur, düzeltme değil. ŞOFÖR SAYAN yüzey bu değil:
+      // paydaların şoför kapsamı yukarıdaki time_entries sorgusunda
+      // onlyDrivers ile ZATEN uygulanıyor — €/km'yi kirletebilecek tek yol o.
+      supabaseAdmin.from("workers").select("id, name"),
+    ]);
+
+  const vehicles = dropTestRows(
+    (vData ?? []) as {
+      id: string;
+      plate: string;
+      assigned_worker_id: string | null;
+    }[],
+    (v) => ({ vehicle: v.id }),
+    scope
+  );
+  const plateById = new Map(vehicles.map((v) => [v.id, v.plate]));
+  const workerName = new Map(
+    ((wData ?? []) as { id: string; name: string }[]).map((w) => [w.id, w.name])
+  );
+  const driverByVehicle = new Map(
+    vehicles.map((v) => [
+      v.id,
+      v.assigned_worker_id ? (workerName.get(v.assigned_worker_id) ?? null) : null,
+    ])
+  );
+
+  // km_measured: cihazı sessiz vardiyanın 0 km'si ÖLÇÜM DEĞİL → kmDiff null
+  // döner ve paydaya girmez. Bu kapı olmasaydı 18.307 km'lik payda, hiç
+  // ölçülmemiş vardiyaların 0'larıyla birlikte aynı € toplamını daha büyük bir
+  // km'ye bölerdi (bkz. lib/km-quality.ts).
+  const entries = await markKmMeasured((entryData ?? []) as TimeEntry[]);
+
+  // AÇIK VARDİYA TAVANI: workedMs açık vardiyayı `now`a kadar sayar. Kapanmış
+  // bir dönem raporunda bu, iki gün önce açık kalmış bir satırı 40 saatlik
+  // işçiliğe çevirirdi. 052'nin `coalesce(ended_at, p_to)` kuralını uyguluyoruz.
+  const clampNow = Math.min(Date.now(), range.end.getTime());
+  // GÜNLÜK TAVAN: 12 sa (§ 9 Abs. 1 AZG). Gerekçe ve canlı ölçüm
+  // lib/cost-model.ts → CostBasis.hourCapShifts başlığında.
+  const hourCapMs = AZG_DAILY_MAX_MS;
+
+  const perVehicle = new Map<
+    string,
+    { km: number; hours: number; parcels: number; days: Set<string> }
+  >();
+  const basis: CostBasis = {
+    km: 0,
+    kmShifts: 0,
+    hours: 0,
+    hourShifts: 0,
+    hourCapShifts: 0,
+    parcels: 0,
+    parcelShifts: 0,
+    vehicleDays: 0,
+    vehicles: 0,
+    totalShifts: entries.length,
+  };
+  const vehicleDayKeys = new Set<string>();
+
+  for (const e of entries) {
+    const vid = e.vehicle_id;
+    const acc = vid
+      ? (perVehicle.get(vid) ??
+        (() => {
+          const fresh = { km: 0, hours: 0, parcels: 0, days: new Set<string>() };
+          perVehicle.set(vid, fresh);
+          return fresh;
+        })())
+      : null;
+
+    const d = kmDiff(e);
+    // NEGATİF fark paydaya girmez: odometre geri sarması bir ölçüm değil.
+    if (d !== null && d > 0) {
+      basis.km += d;
+      basis.kmShifts++;
+      if (acc) acc.km += d;
+    }
+
+    const rawMs = workedMs(e, clampNow);
+    if (rawMs > 0) {
+      const capped = rawMs > hourCapMs;
+      if (capped) basis.hourCapShifts++;
+      const h = (capped ? hourCapMs : rawMs) / 3_600_000;
+      basis.hours += h;
+      basis.hourShifts++;
+      if (acc) acc.hours += h;
+    }
+
+    if (e.cargo_count !== null && e.cargo_count !== undefined) {
+      basis.parcels += e.cargo_count;
+      basis.parcelShifts++;
+      if (acc) acc.parcels += e.cargo_count;
+    }
+
+    if (vid) {
+      const dayKey = `${vid}|${viennaDayKey(e.started_at)}`;
+      vehicleDayKeys.add(dayKey);
+      acc!.days.add(dayKey);
+    }
+  }
+  basis.vehicleDays = vehicleDayKeys.size;
+  basis.vehicles = perVehicle.size;
+
+  // ── ORANLAR ────────────────────────────────────────────────────────────
+  // L/100km'de ÖLÇÜM ÖNCE gelir; env yalnız GEÇERSİZ KILAR (bkz. lib/tenant.ts).
+  const lPer100Source: CostRateOrigin["lPer100Source"] =
+    FLEET_L_PER_100KM_IS_CUSTOM
+      ? "override"
+      : fleetLPer100KmMeasured !== null && fleetLPer100KmMeasured > 0
+        ? "measured"
+        : "fallback";
+  const lPer100Km =
+    lPer100Source === "measured" ? fleetLPer100KmMeasured! : FLEET_L_PER_100KM;
+
+  const rates: CostRates = {
+    fuelEurPerL: FUEL_PRICE_EUR_PER_L,
+    lPer100Km,
+    laborEurPerHour: LABOR_EUR_PER_HOUR,
+    vehicleEurPerDay: VEHICLE_EUR_PER_DAY,
+  };
+  const origin: CostRateOrigin = {
+    fuelPriceIsCustom: FUEL_PRICE_IS_CUSTOM,
+    lPer100Source,
+    laborIsCustom: LABOR_EUR_PER_HOUR_IS_CUSTOM,
+    vehicleDayIsCustom: VEHICLE_EUR_PER_DAY_IS_CUSTOM,
+  };
+
+  const totals = computeCost(basis, rates);
+
+  const vehicleRows = [...perVehicle.entries()]
+    .map(([vid, a]) => ({
+      ...computeVehicleCost(vid, a.km, a.hours, a.days.size, a.parcels, rates),
+      plate: plateById.get(vid) ?? "—",
+      driverName: driverByVehicle.get(vid) ?? null,
+    }))
+    // €/km'si olmayan araç (km ölçülemedi) EN SONA — "0" gibi sıralanıp ucuz
+    // görünmesin. Aynı üç-durum ayrımı skor tablosunda da uygulanıyor.
+    .sort((a, b) => {
+      const av = a.eurPerKm ?? -1;
+      const bv = b.eurPerKm ?? -1;
+      return bv - av || a.plate.localeCompare(b.plate);
+    });
+
+  return {
+    basis,
+    rates,
+    origin,
+    totals,
+    vehicles: vehicleRows,
+    measuredLiters: fuelInput.measuredLiters,
+    fuelReality: fuelRealityCheck(totals.modelLiters, fuelInput.measuredLiters),
   };
 }
 

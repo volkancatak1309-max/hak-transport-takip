@@ -14,7 +14,7 @@ import {
   FUEL_MIN_CONSUMED_PCT,
   FUEL_MIN_KM,
 } from "@/lib/metric-thresholds";
-import type { FuelReport, FuelRow } from "@/lib/reports";
+import type { CostReport, FuelReport, FuelRow } from "@/lib/reports";
 import { noteExport } from "@/lib/audit-export-client";
 
 /**
@@ -28,9 +28,11 @@ import { noteExport } from "@/lib/audit-export-client";
  */
 export function FuelClient({
   report,
+  cost,
   period,
 }: {
   report: FuelReport;
+  cost: CostReport;
   period: { from: string; to: string; days: number };
 }) {
   const t = useTranslations("reports");
@@ -39,13 +41,158 @@ export function FuelClient({
   const num = (v: number, d = 0) =>
     v.toLocaleString(nf, { minimumFractionDigits: d, maximumFractionDigits: d });
   const pct = (v: number) => `%${Math.round(v)}`;
-  /** Para birimi hep EUR: firma Avusturya'da, yakıt kartı da EUR kesiyor. */
+  /**
+   * Para birimi hep EUR: firma Avusturya'da, yakıt kartı da EUR kesiyor.
+   *
+   * ⚠️ DÜNYA PAZARI İÇİN YAPISAL ENGEL — bilinçli olarak BU TURDA çözülmedi
+   * (Volkan, 23.08.2026): sembol yalnız burada değil, `lib/format.ts:formatEur`
+   * içinde ve i18n'de 29 anahtarın METNİNE gömülü ("Tutar (€)"). Kiracı başına
+   * para birimi + kur ayrı bir turdur; buraya bir `currency` prop'u eklemek
+   * sorunun yalnız otuzda birini çözer ve "çözüldü" izlenimi bırakırdı.
+   */
   const eur = (v: number) =>
     v.toLocaleString(nf, {
       style: "currency",
       currency: "EUR",
       maximumFractionDigits: 0,
     });
+  /** Birim maliyet (€/km, €/paket) — kuruş mertebesi anlamlı, 0 basamak yutar. */
+  const eurUnit = (v: number, d = 3) =>
+    v.toLocaleString(nf, {
+      style: "currency",
+      currency: "EUR",
+      minimumFractionDigits: d,
+      maximumFractionDigits: d,
+    });
+
+  // ═══════════════ MALİYET BLOĞU — €/km ve €/paket ═══════════════════════
+  //
+  // ⚠️ ERKEN DÖNÜŞÜN ÖNÜNDE DURUYOR, bilerek. Maliyetin paydası VARDİYA
+  // satırlarıdır (km, saat, paket, araç-gün), yakıt RPC'si değil. Yakıt raporu
+  // zaman aşımına düşse bile bu dört ölçüm elimizde olur; bloğu erken dönüşün
+  // arkasına koysaydık, yöneticinin ona en çok ihtiyaç duyduğu anda kaybolurdu.
+  // Kaybolan tek şey `lPer100Source` "measured" olur — o da nota yazılıyor.
+  const cb = cost.totals;
+  const lPer100Note =
+    cost.origin.lPer100Source === "measured"
+      ? t("cost_l100_measured", { n: num(cost.rates.lPer100Km, 2) })
+      : cost.origin.lPer100Source === "override"
+        ? t("cost_l100_override", { n: num(cost.rates.lPer100Km, 2) })
+        : t("cost_l100_fallback", { n: num(cost.rates.lPer100Km, 2) });
+
+  const costBlock = (
+    <section className="space-y-3">
+      <ReportTableHeader label={t("cost_title")} tkey="rep_cost_table" />
+      <ReportStatBand
+        stats={[
+          {
+            label: t("stat_eur_per_km"),
+            // ÖLÇÜLEMEDİ = "—", 0 DEĞİL. Payda boşken "0,000 €/km" basmak
+            // filoyu bedava göstermek olurdu (lib/km-quality.ts dersi).
+            value: cb.eurPerKm === null ? "—" : eurUnit(cb.eurPerKm),
+            scope:
+              cb.eurPerKm === null
+                ? t("cost_no_km")
+                : t("stat_eur_per_km_scope", {
+                    km: num(cost.basis.km),
+                    n: cost.basis.kmShifts,
+                    total: cost.basis.totalShifts,
+                  }),
+          },
+          {
+            label: t("stat_eur_per_parcel"),
+            value: cb.eurPerParcel === null ? "—" : eurUnit(cb.eurPerParcel),
+            scope:
+              cb.eurPerParcel === null
+                ? t("cost_no_parcel")
+                : t("stat_eur_per_parcel_scope", {
+                    parcels: num(cost.basis.parcels),
+                    n: cost.basis.parcelShifts,
+                    total: cost.basis.totalShifts,
+                  }),
+          },
+          {
+            label: t("stat_total_cost"),
+            value: eur(cb.totalEur),
+            // Üç kalemin PAYI, tutarı değil: "işçilik %73" cümlesi, hangi
+            // kalemi kısmanın anlamlı olduğunu tek bakışta söyler.
+            scope:
+              cb.fuelShare === null
+                ? t("scope_range")
+                : t("stat_total_cost_scope", {
+                    fuel: Math.round(cb.fuelShare * 100),
+                    labor: Math.round((cb.laborShare ?? 0) * 100),
+                    fixed: Math.round((cb.fixedShare ?? 0) * 100),
+                  }),
+          },
+          {
+            label: t("stat_cost_basis"),
+            // Birim SÖZLÜKTEN: sabit "sa" yazmak Almanca/İngilizce ekranda
+            // Türkçe kısaltma bırakırdı (i18n muhafızı metin İÇİNDEKİ birimi
+            // yakalamaz — CO₂ başlığında tam bu kusur canlıya çıkmıştı).
+            value: `${num(cost.basis.hours)} ${t("unit_hour")}`,
+            scope: t("stat_cost_basis_scope", {
+              days: cost.basis.vehicleDays,
+              vehicles: cost.basis.vehicles,
+            }),
+          },
+        ]}
+      />
+
+      {/* ORAN KÜNYESİ — dört oranın DEĞERİ ve KAYNAĞI tek yerde.
+          "Bu € bir ölçüm değil kestirim" cümlesi ZORUNLU: paydalar ölçüm ama
+          çarpanların üçü piyasa varsayımı. Aynı ayrım mobil Analiz ucunda
+          `rolantiKatsayi` ile zaten yapılıyor. */}
+      <div className="space-y-1.5 text-xs text-muted-foreground">
+        <p className="flex items-start gap-1.5 rounded-lg border border-accent-gold/50 bg-accent-gold-soft px-3 py-2 font-medium text-accent-gold-text">
+          <AlertTriangle className="mt-px size-3.5 shrink-0" />
+          <span>{t("cost_estimate_note")}</span>
+        </p>
+        <p>
+          {t("cost_rates_note", {
+            fuel: num(cost.rates.fuelEurPerL, 3),
+            labor: num(cost.rates.laborEurPerHour, 2),
+            day: num(cost.rates.vehicleEurPerDay, 2),
+          })}{" "}
+          {lPer100Note}
+        </p>
+        {/* TAVANA ÇARPAN VARDİYA: sessizce sınırlamak, sessizce şişirmek kadar
+            kötü. Kapatılmamış vardiya bir VERİ sorunudur ve yöneticinin
+            düzeltebileceği bir şeydir — sayıyı görmesi gerekir. */}
+        {cost.basis.hourCapShifts > 0 && (
+          <p className="flex items-start gap-1.5 text-accent-gold-text">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" />
+            <span>
+              {t("cost_hour_cap_note", {
+                n: cost.basis.hourCapShifts,
+                total: cost.basis.totalShifts,
+                cap: 12,
+              })}
+            </span>
+          </p>
+        )}
+        {/* MODEL vs ÖLÇÜM: L/100km varsayımının canlı denetimi. Sapma
+            büyükse görünür olmalı — sessiz sapma, yanlış oranı doğru sanmaktır. */}
+        {cost.fuelReality !== null && (
+          <p>
+            {t("cost_reality_note", {
+              model: num(cb.modelLiters),
+              measured: num(cost.measuredLiters ?? 0),
+              pct: Math.round(cost.fuelReality * 100),
+            })}
+          </p>
+        )}
+      </div>
+    </section>
+  );
+
+  /**
+   * Araç → maliyet satırı. Tablo YAKIT raporunun satırlarını gezer (araç
+   * ekseni), maliyet ise VARDİYA ekseninden gelir; ikisi `vehicleId` ile
+   * eşlenir. Yakıt raporunda görünen ama o aralıkta hiç vardiyası olmayan
+   * araçta karşılık YOKTUR ve hücre "—" olur — sıfır değil.
+   */
+  const costByVehicle = new Map(cost.vehicles.map((v) => [v.vehicleId, v]));
 
   // Rapor hesaplanamadıysa SEBEBİ söylenir (22.07.2026). Eskiden her hata
   // "migration bekliyor" diye gösteriliyordu; migration uygulanmışken zaman
@@ -53,7 +200,8 @@ export function FuelClient({
   if (!report.available) {
     const timedOut = report.unavailableReason === "timeout";
     return (
-      <div>
+      <div className="space-y-6">
+        {costBlock}
         <EmptyState
           kind="none"
           title={timedOut ? t("fuel_timeout_title") : t("fuel_unavailable_title")}
@@ -71,6 +219,7 @@ export function FuelClient({
       t("col_avg_fuel"),
       t("col_consumed"),
       t("col_km"),
+      t("col_eur_km"),
       t("col_samples"),
       t("col_l_100km"),
       t("col_refills"),
@@ -93,6 +242,10 @@ export function FuelClient({
               ? `${Math.round(r.consumedPct)}%`
               : "",
         r.km === null ? "" : Math.round(r.km),
+        // Ekranla AYNI kural: karşılığı yoksa boş, uydurma 0 değil.
+        costByVehicle.get(r.vehicleId)?.eurPerKm == null
+          ? ""
+          : num(costByVehicle.get(r.vehicleId)!.eurPerKm!, 3),
         r.sampleCount,
         // Ekranda sebebi yazılan boşluk CSV'ye de sebebiyle gider — Excel'e
         // düşen boş hücre "sıfır" diye okunabilir, sebep okunamaz.
@@ -255,6 +408,25 @@ export function FuelClient({
       sortable: true,
       sortValue: (r) => r.km ?? -1,
     },
+    // €/km — VARDİYA ekseninden (23.08.2026). Sayı bu tablonun geri kalanıyla
+    // AYNI aracı gösterir ama BAŞKA bir paydadan gelir: yukarıdaki "km" kolonu
+    // odometre penceresi (araç ekseni), bu kolon vardiya km'si. İkisi filo
+    // genelinde %35 ayrışıyor; kolonun yardım metni farkı açıkça söylüyor.
+    {
+      key: "eurkm",
+      header: t("col_eur_km"),
+      help: "rep_cost_eur_km",
+      align: "right",
+      nums: true,
+      cell: (r) => {
+        const c = costByVehicle.get(r.vehicleId);
+        if (!c || c.eurPerKm === null)
+          return <span className="text-muted-foreground">—</span>;
+        return <span className="font-semibold">{eurUnit(c.eurPerKm)}</span>;
+      },
+      sortable: true,
+      sortValue: (r) => costByVehicle.get(r.vehicleId)?.eurPerKm ?? -1,
+    },
     {
       key: "samples",
       header: t("col_samples"),
@@ -368,6 +540,8 @@ export function FuelClient({
 
   return (
     <div className="space-y-6">
+      {costBlock}
+
       <ReportStatBand
         stats={[
           {

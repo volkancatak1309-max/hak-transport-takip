@@ -149,7 +149,7 @@
     "col_idle_euro": "Tahmini €",
     "stat_idle_hours": "Toplam Rölanti Süresi",
     "stat_idle_euro": "Tahmini Yakıt İsrafı",
-    "idle_estimate_note": "Tahmini değerdir, katsayılara dayanır (0,9 L/sa · 1,65 €/L — ayarlanabilir).",
+    "idle_estimate_note": "Tahmini değerdir, katsayılara dayanır ({lph} L/sa · {price} €/L).",
     "epoch_note": "{date} tarihinden önce farklı alarm eşikleri kullanılmıştır. Bu tarihten önceki ve sonraki olay sayıları doğrudan karşılaştırılamaz.",
     "epoch_trend_blocked": "Trend gösterilmiyor: karşılaştırılan iki dönem {date} tarihindeki alarm eşiği değişikliğinin farklı taraflarında kalıyor. Aradaki fark sürüşten değil, ölçüm eşiğinden kaynaklanır.",
     "count_driver": "şoför",
@@ -1501,7 +1501,9 @@
     "strip_closed": "Bugün vardiyasını kapatmış şoför sayısı.",
     "strip_silent": "24 saattir konum göndermeyen araç sayısı. Cihaz sorunu olabilir.",
     "strip_loaded": "Bugün araçlara yüklenen toplam paket sayısı.",
-    "strip_carried_over": "Önceki günlerde açılmış ve hâlâ kapatılmamış vardiya sayısı. Otomatik kapanış kapalı olduğu için bunlar kendiliğinden kapanmaz."
+    "strip_carried_over": "Önceki günlerde açılmış ve hâlâ kapatılmamış vardiya sayısı. Otomatik kapanış kapalı olduğu için bunlar kendiliğinden kapanmaz.",
+    "rep_cost_table": "Filonun işletme maliyeti: yakıt + işçilik + araç sabit gideri. Paydalar (km, saat, paket, araç-gün) canlı vardiyalardan ölçülür; çarpanlar ortam değişkenleriyle ayarlanır. Kestirimdir, muhasebe kaydı değildir.",
+    "rep_cost_eur_km": "Bu aracın kilometre başına toplam maliyeti. Payda VARDİYA kilometresidir; soldaki \"Yapılan yol\" sütunu odometre penceresinden gelir ve vardiya dışı hareketi de içerdiği için ondan büyük olabilir."
   },
   "reports": {
     "zone_title": "Bölge Süreleri",
@@ -1702,7 +1704,27 @@
     "fuel_price_note": "Maliyet {price} €/L üzerinden hesaplandı — kaynak: {source}, {date}. Kendi filo kartı fiyatınızı FUEL_PRICE_EUR_PER_L ile girebilirsiniz.",
     "fuel_price_note_custom": "Maliyet, girdiğiniz {price} €/L fiyatı üzerinden hesaplandı.",
     "stat_avg_vehicle_day": "Araç başına / gün",
-    "stat_avg_vehicle_scope": "{n}/{total} araçtan"
+    "stat_avg_vehicle_scope": "{n}/{total} araçtan",
+    "cost_title": "Maliyet",
+    "stat_eur_per_km": "Tam maliyet €/km",
+    "stat_eur_per_km_scope": "{km} km · {n}/{total} vardiyadan",
+    "stat_eur_per_parcel": "Paket başına maliyet",
+    "stat_eur_per_parcel_scope": "{parcels} paket · {n}/{total} vardiyadan",
+    "stat_total_cost": "Toplam maliyet",
+    "stat_total_cost_scope": "Yakıt %{fuel} · işçilik %{labor} · sabit %{fixed}",
+    "stat_cost_basis": "Şoför-saati",
+    "stat_cost_basis_scope": "{days} araç-gün · {vehicles} araç",
+    "cost_no_km": "Vardiya km'si ölçülemedi",
+    "cost_no_parcel": "Paket sayısı girilmemiş",
+    "cost_estimate_note": "Bu bir KESTİRİMDİR, muhasebe kaydı değil: paydalar (km, saat, paket, araç-gün) canlı vardiyalardan ölçülür, çarpanların üçü piyasa varsayımıdır. Kendi rakamlarınızı ortam değişkenleriyle girin.",
+    "cost_rates_note": "Oranlar: {fuel} €/L · {labor} €/saat (işveren maliyeti) · {day} €/çalışılan araç-günü.",
+    "cost_l100_measured": "Tüketim {n} L/100km — filonun kendi telemetrisinden ölçüldü.",
+    "cost_l100_override": "Tüketim {n} L/100km — FLEET_L_PER_100KM ile elle verildi, ölçüm geçersiz kılındı.",
+    "cost_l100_fallback": "Tüketim {n} L/100km — ölçülemedi, varsayılan değere düşüldü.",
+    "cost_reality_note": "Model {model} L öngörüyor, telemetri {measured} L ölçtü (%{pct}). Sapma büyükse L/100km oranı ya da sensör kapsaması gözden geçirilmeli.",
+    "col_eur_km": "€/km",
+    "unit_hour": "sa",
+    "cost_hour_cap_note": "{n}/{total} vardiya {cap} saatten uzun göründüğü için işçilik paydasında {cap} saate sınırlandı — bunlar geç kapatılmış vardiyalardır, çalışma süresi değil (§ 9 Abs. 1 AZG günlük tavanı)."
   },
   "messages": {
     "title": "Mesajlar",

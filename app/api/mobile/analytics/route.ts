@@ -13,7 +13,6 @@ import {
 import {
   TOP10_EVENT_TYPES,
   IDLE_FUEL_L_PER_HOUR,
-  DIESEL_EUR_PER_L,
   type DateRange,
   type VehicleLite,
   type WorkerLite,
@@ -25,7 +24,7 @@ import {
   rangeStartsBeforeEpoch,
   comparisonCrossesEpoch,
 } from "@/lib/config-epoch";
-import { SAFETY_SCORE_CALIBRATED } from "@/lib/tenant";
+import { SAFETY_SCORE_CALIBRATED, FUEL_PRICE_EUR_PER_L } from "@/lib/tenant";
 import { aralikCoz, aralikHataAlanlari } from "../_rapor/aralik";
 
 export const runtime = "nodejs";
@@ -316,6 +315,6 @@ export async function GET(req: NextRequest) {
      */
     oncekiDonemYok: c.onceki ? null : "filo_baslangici",
     /** Rölanti € tahmininin katsayıları — sayı bir ölçüm değil, kestirimdir. */
-    rolantiKatsayi: { litreSaat: IDLE_FUEL_L_PER_HOUR, euroLitre: DIESEL_EUR_PER_L },
+    rolantiKatsayi: { litreSaat: IDLE_FUEL_L_PER_HOUR, euroLitre: FUEL_PRICE_EUR_PER_L },
   });
 }

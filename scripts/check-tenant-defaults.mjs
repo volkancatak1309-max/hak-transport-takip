@@ -122,6 +122,26 @@ const EXPECTED = {
   // kendisidir. Bu satir kayarsa yerel yazilan numara BASKA bir ulkeye baglanir
   // ve o sofor giris yapamaz.
   "tenant.TENANT_DEFAULT_COUNTRY": "AT",
+  // ── MALİYET ORANLARI (23.08.2026) — €/km ve €/paket'in dört çarpanı ──────
+  // "Eskiden ne yapıyordu" karşılığı YOK; bunlar yeni. Kayıt burada çünkü bu
+  // dört sayı doğrudan bir PARA rakamı üretiyor: biri sessizce kayarsa yönetici
+  // yanlış €/km'ye bakarak filo kararı verir ve kaymayı fark etmesinin bir yolu
+  // olmaz (rapor sayıyı kaynağıyla birlikte basar ama "beklenen" değer yalnız
+  // burada yazılı).
+  //
+  // ⚠️ FUEL_PRICE_EUR_PER_L 2,051 → 2,043 OLARAK DEĞİŞTİ (23.08.2026, Volkan).
+  // Bu bir kayma değil BİLİNÇLİ güncelleme: 2,051 27.07.2026 ölçümüydü, 2,043
+  // WKO'nun 17.08.2026 Avusturya ortalaması. KAYNAK aynı, SAYI tazelendi.
+  // Aynı turda ikinci fiyat sabiti (analytics-shared.ts DIESEL_EUR_PER_L = 1,65)
+  // SİLİNDİ — o yüzden burada tek satır var, iki değil.
+  "tenant.FUEL_PRICE_EUR_PER_L": 2.043,
+  // Yalnız YEDEK: rapor normalde filonun kendi telemetrisinden ölçer. Kayarsa
+  // ölçüm yapılamayan aralıklarda €/km sessizce başka bir tüketime dayanır.
+  "tenant.FLEET_L_PER_100KM": 11.74,
+  // İşveren toplam maliyeti (brüt ücret değil) — WKO KV 1.1.2026'dan türetildi.
+  "tenant.LABOR_EUR_PER_HOUR": 19.1,
+  // ÇALIŞILAN araç-günü başına sabit gider (takvim günü DEĞİL).
+  "tenant.VEHICLE_EUR_PER_DAY": 50,
   "tenant.LENKZEIT_WARNING_ENABLED": true, // LenkzeitWarning koşulsuz render ediliyordu
   "tenant.SAFETY_SCORE_CALIBRATED": true, //  metric-thresholds.ts: = true
   "tenant.SHIFT_START_TRIGGER": "depot_entry", // auto-shift.ts: depotArrivalTrigger
@@ -255,6 +275,10 @@ const out = {
   "tenant.ADMIN_DRIVER_PANEL_LINK": tenant.ADMIN_DRIVER_PANEL_LINK,
   "tenant.PACKAGES_ENABLED": tenant.PACKAGES_ENABLED,
   "tenant.READ_RECEIPTS_ENABLED": tenant.READ_RECEIPTS_ENABLED,
+  "tenant.FUEL_PRICE_EUR_PER_L": tenant.FUEL_PRICE_EUR_PER_L,
+  "tenant.FLEET_L_PER_100KM": tenant.FLEET_L_PER_100KM,
+  "tenant.LABOR_EUR_PER_HOUR": tenant.LABOR_EUR_PER_HOUR,
+  "tenant.VEHICLE_EUR_PER_DAY": tenant.VEHICLE_EUR_PER_DAY,
   "tenant.LENKZEIT_WARNING_ENABLED": tenant.LENKZEIT_WARNING_ENABLED,
   "tenant.SAFETY_SCORE_CALIBRATED": tenant.SAFETY_SCORE_CALIBRATED,
   "tenant.SHIFT_START_TRIGGER": tenant.SHIFT_START_TRIGGER,

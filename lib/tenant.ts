@@ -63,31 +63,133 @@ function envNum(value: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+/** Env'den gelen ondalıklı sayının GEÇERLİ olup olmadığı — "custom" bayrağı. */
+function envNumIsCustom(value: string | undefined): boolean {
+  const n = Number(value?.trim());
+  return Number.isFinite(n) && n > 0;
+}
+
 /**
- * YAKIT LİTRE FİYATI (EUR) — "Toplam tüketim" kartının parasal karşılığı.
+ * ═════════════ MALİYET ORANLARI — €/km ve €/paket'in DÖRT GİRDİSİ ═════════════
  *
- * Varsayılan 2,051 = Avusturya dizel ortalaması 27.07.2026 (WKO/FVMI). Bu bir
- * PİYASA ortalamasıdır; filo kartıyla akaryakıt alan müşteri kendi anlaşmalı
- * fiyatını FUEL_PRICE_EUR_PER_L ile geçer ve tüm tenant'larda (HAK61, Sendigo,
- * galzura-demo) aynı hesap çalışır.
+ * Dördü de sunucu tarafı env — bilinçli olarak NEXT_PUBLIC_ DEĞİL: oran
+ * sunucuda çarpılıp SONUÇ prop olarak iniyor. `process.env[name]` dinamik
+ * erişimi istemci paketine gömülmüyor (03.08.2026 ölçümü); o tuzağa hiç
+ * girmiyoruz. Bir oranı istemcide okumak isteyen kod, sayıyı prop olarak alır.
  *
- * Sunucu tarafı env — bilinçli olarak NEXT_PUBLIC_ DEĞİL: fiyat sunucuda
- * çarpılıp sonuç prop olarak iniyor. `process.env[name]` dinamik erişimi
- * istemci paketine gömülmüyor (03.08 ölçümü), o tuzağa hiç girmiyoruz.
+ * ⚠️ ÜÇÜ TAHMİN, BİRİ ÖLÇÜM. Yakıt fiyatı ve tüketim gerçek kaynaklara
+ * dayanıyor; işçilik ve araç sabit gideri PİYASA VARSAYIMIDIR ve her müşteri
+ * kendi rakamıyla geçmelidir. Rapor hangi oranın env'den geldiğini ekranda
+ * söyler (`*_IS_CUSTOM`) — "tahmini sayıyı ölçüm sanma" kuralı.
+ */
+
+/**
+ * 1) YAKIT LİTRE FİYATI (EUR/L).
+ *
+ * Varsayılan 2,043 = Avusturya geneli ortalama dizel pompa fiyatı, 17.08.2026,
+ * WKO (Kraftstoffpreise, MÖSt + USt dâhil). ⚠️ 23.08.2026'da 2,051'den
+ * (27.07.2026 ölçümü) güncellendi — sayı değişti, KAYNAK aynı.
+ *
+ * Bu bir PİYASA ortalamasıdır; filo kartıyla akaryakıt alan müşteri kendi
+ * anlaşmalı fiyatını FUEL_PRICE_EUR_PER_L ile geçer ve tüm kiracılarda (HAK61,
+ * Sendigo, galzura-demo) aynı hesap çalışır.
+ *
+ * ⚠️ TEK KAYNAK (23.08.2026). Bu sabit eskiden İKİ yerde yaşıyordu:
+ * burada 2,051 ve `lib/analytics-shared.ts`'te `DIESEL_EUR_PER_L = 1.65`
+ * (sabit kodlu, env yok). Aynı litre yakıt iki ekranda %24 farklı € basıyordu
+ * (30 günlük rölanti: 146 € — 181 €) ve arayüz metni "ayarlanabilir" diyordu
+ * ama o değer için env YOKTU. `DIESEL_EUR_PER_L` SİLİNDİ; yakıtın parasal
+ * karşılığını hesaplayan her yol artık buradan okur.
  */
 export const FUEL_PRICE_EUR_PER_L = envNum(
   process.env.FUEL_PRICE_EUR_PER_L,
-  2.051
+  2.043
 );
 
 /** Varsayılan fiyatın kaynağı — ekrandaki küçük notta gösterilir. */
-export const FUEL_PRICE_SOURCE = "WKO/FVMI";
+export const FUEL_PRICE_SOURCE = "WKO";
 /** Varsayılan fiyatın ölçüm tarihi (ISO) — notta gösterilir. */
-export const FUEL_PRICE_AS_OF = "2026-07-27";
+export const FUEL_PRICE_AS_OF = "2026-08-17";
 /** Fiyat env'den mi geldi (true) yoksa varsayılan mı (false)? Not metnini seçer. */
-export const FUEL_PRICE_IS_CUSTOM =
-  Number.isFinite(Number(process.env.FUEL_PRICE_EUR_PER_L?.trim())) &&
-  Number(process.env.FUEL_PRICE_EUR_PER_L?.trim()) > 0;
+export const FUEL_PRICE_IS_CUSTOM = envNumIsCustom(
+  process.env.FUEL_PRICE_EUR_PER_L
+);
+
+/**
+ * 2) FİLO ORTALAMA TÜKETİMİ (L/100km) — YEDEK/GEÇERSİZ KILMA.
+ *
+ * ⚠️ NORMALDE KULLANILMAZ. Maliyet raporu tüketimi önce KENDİ filosundan ÖLÇER
+ * (`buildFuelReport().fleetLPer100Km` — telemetriden, üç kapıdan geçmiş
+ * araçların ağırlıklı ortalaması). Bu sabit yalnız iki durumda devreye girer:
+ *   · ölçüm yoksa (aralık kısa, sensör yok, RPC zaman aşımı) → YEDEK
+ *   · env verilmişse → GEÇERSİZ KILMA (müşteri kendi rakamını dayatır)
+ * Rapor hangisini kullandığını `lPer100Source` ile söyler.
+ *
+ * Neden ölçüm önce: her filonun tüketimi farklı (kasa yüksekliği, güzergâh,
+ * mevsim). Sabit bir sayı dayatmak, ürünün zaten ölçebildiği bir şeyi tahmine
+ * çevirirdi.
+ *
+ * Varsayılan 11,74 = HAK61 canlı ölçümü 23.08.2026 (30 gün, 22 araç,
+ * 2.405,6 L / 20.506 km). Başka bir kiracıda ilk ölçüm gelene kadar geçerli
+ * bir büyüklük mertebesi olsun diye buraya yazıldı — hedef sayı DEĞİL.
+ */
+export const FLEET_L_PER_100KM = envNum(process.env.FLEET_L_PER_100KM, 11.74);
+export const FLEET_L_PER_100KM_IS_CUSTOM = envNumIsCustom(
+  process.env.FLEET_L_PER_100KM
+);
+
+/**
+ * 3) İŞÇİLİK (EUR / şoför-saati) — İŞVEREN TOPLAM MALİYETİ, brüt ücret DEĞİL.
+ *
+ * Varsayılan 19,10 türetimi (kaynak: WKO Kollektivvertrag Güterbeförderungs-
+ * gewerbe, Arbeiter/innen, 1.1.2026):
+ *     Lohngruppe 2 (LKW >3,5 t, ≤3 aks), ≤5 yıl kıdem   2.178,07 €/ay
+ *     KV'nin kendi kuralı: saat = aylık / 173            → 12,59 €/sa brüt
+ *     × 1,167  13./14. maaş (Sonderzahlungen, 14/12)     → 14,69 €/sa
+ *     × 1,30   Lohnnebenkosten (DG-SV ~%21 + DB/DZ/KommSt ~%8)
+ *                                                        ≈ 19,10 €/sa
+ *
+ * ⚠️ Bu bir MERTEBE tahminidir, bordro değil. Kıdem kademesi, fazla mesai
+ * zammı (%50 / gece %100), Diäten ve gerçek Lohngruppe müşteriye göre değişir.
+ * Her kiracı kendi rakamını LABOR_EUR_PER_HOUR ile geçmelidir.
+ *
+ * ⚠️ NEDEN ŞOFÖR BAŞINA ÜCRET KOLONU DEĞİL: kişi bazlı ücret bordro verisidir
+ * (GDPR özel nitelik + ayrı yetki tasarımı). €/km zaten bir FİLO metriği;
+ * filo ortalaması bir kiracı sabitidir ve €/L ile aynı sınıftandır.
+ */
+export const LABOR_EUR_PER_HOUR = envNum(process.env.LABOR_EUR_PER_HOUR, 19.1);
+export const LABOR_EUR_PER_HOUR_IS_CUSTOM = envNumIsCustom(
+  process.env.LABOR_EUR_PER_HOUR
+);
+
+/**
+ * 4) ARAÇ SABİT GİDERİ (EUR / ÇALIŞILAN araç-günü).
+ *
+ * ⚠️ PAYDA "ÇALIŞILAN" GÜNDÜR, takvim günü değil. Maliyet raporu bunu, o
+ * aralıkta EN AZ BİR vardiya görmüş (araç, gün) çiftlerinin sayısıyla çarpar
+ * (HAK61, 30 gün: 426 araç-gün / 28 araç ≈ 15,2 gün/araç). Takvim gününe
+ * bölseydik park hâlindeki aracın gideri km'si olmayan bir paydaya dağılır ve
+ * €/km sessizce şişerdi.
+ *
+ * Varsayılan 50,00 türetimi (aylık sabit gider ÷ ayda çalışılan gün):
+ *     operating leasing, 3,5 t kasa/kurye sınıfı   ~550 €/ay
+ *     kasko + zorunlu sigorta                      ~130 €/ay
+ *     servis, lastik, vinyet, motorlu taşıt vergisi ~70 €/ay
+ *                                          toplam  ~750 €/ay
+ *     ÷ ~15 çalışılan gün                          ≈ 50 €/çalışılan gün
+ * Leasing bandı kaynağı: kurye/servis sınıfı transporter için 400–700 €/ay
+ * (leasingdeal.de / mivodo.com piyasa derlemeleri, Ağustos 2026); sigorta
+ * ~130 €/ay aynı derlemelerden.
+ *
+ * ⚠️ Bu kalem oranların EN OYNAK olanı: sahip olunan (leasing'siz) filoda
+ * amortisman çok daha düşüktür. Her kiracı kendi rakamını girmelidir.
+ * Takvim-günü muhasebesi tercih edilirse: aylık gider ÷ 30 yazılır ve
+ * sonucun daha düşük çıkacağı bilinir.
+ */
+export const VEHICLE_EUR_PER_DAY = envNum(process.env.VEHICLE_EUR_PER_DAY, 50);
+export const VEHICLE_EUR_PER_DAY_IS_CUSTOM = envNumIsCustom(
+  process.env.VEHICLE_EUR_PER_DAY
+);
 
 /**
  * PUAN EŞİĞİ: ÇALIŞILAN GÜNE GÖRE Mİ? (09.08.2026) — VARSAYILAN KAPALI.

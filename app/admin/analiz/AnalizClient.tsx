@@ -40,7 +40,7 @@ import type {
   SafetyScoreRow,
   Top10EventType,
 } from "@/lib/analytics-shared";
-import { TOP10_EVENT_TYPES } from "@/lib/analytics-shared";
+import { TOP10_EVENT_TYPES, IDLE_FUEL_L_PER_HOUR } from "@/lib/analytics-shared";
 
 // TILE_COLOR KALDIRILDI (26.07.2026 — DESIGN.md §2.2/§2.5). Her kartın barı
 // olay TÜRÜNE göre mavi/altın/kritik boyanıyordu; ama kartın başlığı zaten o
@@ -61,6 +61,7 @@ export function AnalizClient({
   configEpochISO,
   showEpochNote,
   trendBlocked,
+  fuelPriceEurPerL,
 }: {
   rangeKey: AnalyticsRangeKey;
   customFrom: string | null;
@@ -76,6 +77,17 @@ export function AnalizClient({
   prevIdleWaste: { totalMs: number; totalEuro: number } | null;
   /** Aralıktan BAĞIMSIZ aylık arşiv (tüm geçmiş) — sayfanın en altındaki tablo. */
   monthlyPivot: MonthlyPivot;
+  /**
+   * Rölanti israfının € çarpanı — SUNUCUDAN prop olarak iner.
+   *
+   * ⚠️ Metne GÖMÜLEMEZ (23.08.2026 düzeltmesi): bu not eskiden sabit
+   * "1,65 €/L — ayarlanabilir" yazıyordu ve o değer için env YOKTU; üstelik
+   * yakıt raporu aynı litreyi 2,051 ile çarpıyordu (%24 sapma). Fiyat artık
+   * tek kaynakta (FUEL_PRICE_EUR_PER_L) ve ekrana o kaynaktan geliyor —
+   * `process.env` burada okunamaz, sunucu-tarafı env istemci paketine
+   * gömülmez ve sessizce varsayılana düşerdi (03.08.2026 dersi).
+   */
+  fuelPriceEurPerL: number;
   /** Alarm eşiklerinin değiştiği an (ISO) — yoksa null. */
   configEpochISO: string | null;
   /** Görüntülenen aralık sınırdan önce başlıyor → açıklama notu göster. */
@@ -85,6 +97,8 @@ export function AnalizClient({
 }) {
   const t = useTranslations("analiz");
   const locale = useLocale();
+  /** Sayı yereli — rapor ekranlarıyla aynı eşleme (de → de-AT, gerisi tr-TR). */
+  const nfTag = locale === "de" ? "de-AT" : locale === "en" ? "en-US" : "tr-TR";
   const { set } = useUrlFilters();
 
   // Filtre geçişi: navigasyonu transition'a alıp segment vurgusunu OPTIMISTIK
@@ -606,7 +620,16 @@ export function AnalizClient({
             okur. StatCard'da ⓘ yasak (DESIGN-SYSTEM §7), o yüzden birim metinde. */}
         <p className="mb-2.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Fuel className="size-3.5 shrink-0" />
-          {t("idle_estimate_note")}
+          {t("idle_estimate_note", {
+            lph: IDLE_FUEL_L_PER_HOUR.toLocaleString(nfTag, {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1,
+            }),
+            price: fuelPriceEurPerL.toLocaleString(nfTag, {
+              minimumFractionDigits: 3,
+              maximumFractionDigits: 3,
+            }),
+          })}
         </p>
         {/* Cihaz rölantiyi ancak eşiği (5 dk) geçince bildiriyor; o eşik her
             epizoda ekleniyor (lib/analytics.ts idleEpisodeDurationMs). Ekranda

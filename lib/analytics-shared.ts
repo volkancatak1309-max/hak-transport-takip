@@ -52,9 +52,25 @@ export const SAFETY_SCORE_WEIGHTS: Record<string, number> = {
   idling: 5,
 };
 
-/** Rölanti israfı tahmin katsayıları — AYARLANABİLİR, firma değerine göre. */
+/**
+ * Rölanti israfının FİZİKSEL katsayısı: bir saat rölantide yakılan litre.
+ *
+ * ⚠️ FİYAT BURADA DEĞİL. 23.08.2026'ya kadar bu satırın hemen altında
+ * `DIESEL_EUR_PER_L = 1.65` duruyordu — sabit kodlu, env'i olmayan İKİNCİ bir
+ * yakıt fiyatı. `lib/tenant.ts`'teki FUEL_PRICE_EUR_PER_L ise 2,051'di: aynı
+ * litre yakıt Analiz ekranında 146 €, Yakıt raporunda 181 € ediyordu (%24
+ * sapma, 30 günlük rölanti üzerinde ölçüldü). Üstelik arayüz metni "1,65 €/L —
+ * ayarlanabilir" diyordu ve o değer için env YOKTU.
+ *
+ * Sabit SİLİNDİ. Fiyatı çarpan her yol artık `lib/tenant.ts`'ten okur; bu dosya
+ * istemci-güvenli kalmak zorunda olduğu için (AnalizClient buradan import
+ * ediyor) fiyat BURAYA GERİ KONULAMAZ — sunucu-tarafı env istemci paketine
+ * gömülmez, sessizce varsayılana düşerdi (03.08.2026 dersi).
+ *
+ * Bu katsayı ise fiyat değil fizik: cihaz/motor sınıfına bağlı, kiracıya değil.
+ * AYARLANABİLİR olduğu gün tenant.ts'e taşınır, buraya değil.
+ */
 export const IDLE_FUEL_L_PER_HOUR = 0.9;
-export const DIESEL_EUR_PER_L = 1.65;
 
 export const TOP10_EVENT_TYPES = [
   "harsh_acceleration",

@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase";
-import { SCORE_THRESHOLD_WORKED_DAYS } from "@/lib/tenant";
+import { SCORE_THRESHOLD_WORKED_DAYS, FUEL_PRICE_EUR_PER_L } from "@/lib/tenant";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
@@ -281,6 +281,9 @@ export default async function AnalizPage({
           configEpochISO={configEpoch ? configEpoch.changedAt.toISOString() : null}
           showEpochNote={rangeStartsBeforeEpoch(range.start, configEpoch)}
           trendBlocked={trendBlocked}
+          /* Fiyat SUNUCUDA okunur, prop olarak iner — istemcide
+             process.env.FUEL_PRICE_EUR_PER_L undefined olurdu. */
+          fuelPriceEurPerL={FUEL_PRICE_EUR_PER_L}
         />
       </div>
     </DashboardShell>

@@ -149,7 +149,7 @@
     "col_idle_euro": "Geschätzt €",
     "stat_idle_hours": "Gesamte Leerlaufzeit",
     "stat_idle_euro": "Geschätzte Kraftstoffverschwendung",
-    "idle_estimate_note": "Schätzwert, basiert auf Koeffizienten (0,9 L/Std · 1,65 €/L — anpassbar).",
+    "idle_estimate_note": "Schätzwert, basiert auf Koeffizienten ({lph} L/Std · {price} €/L).",
     "epoch_note": "Vor dem {date} galten andere Alarmschwellen. Ereigniszahlen von vor und nach diesem Datum sind nicht direkt vergleichbar.",
     "epoch_trend_blocked": "Kein Trend: Die beiden verglichenen Zeiträume liegen auf verschiedenen Seiten der Schwellenänderung vom {date}. Der Unterschied entsteht durch die Messschwelle, nicht durch das Fahrverhalten.",
     "count_driver": "Fahrer",
@@ -1501,7 +1501,9 @@
     "strip_closed": "Fahrer, die ihre Schicht heute beendet haben.",
     "strip_silent": "Fahrzeuge ohne Standortmeldung seit 24 Stunden. Kann ein Gerätefehler sein.",
     "strip_loaded": "Heute in die Fahrzeuge geladene Pakete insgesamt.",
-    "strip_carried_over": "Anzahl der an Vortagen begonnenen und noch offenen Schichten. Da der automatische Schichtschluss deaktiviert ist, schließen sie sich nicht von selbst."
+    "strip_carried_over": "Anzahl der an Vortagen begonnenen und noch offenen Schichten. Da der automatische Schichtschluss deaktiviert ist, schließen sie sich nicht von selbst.",
+    "rep_cost_table": "Betriebskosten der Flotte: Kraftstoff + Personal + Fahrzeugfixkosten. Die Bezugsgrößen (km, Stunden, Pakete, Fahrzeugtage) werden aus den Live-Schichten gemessen; die Faktoren werden über Umgebungsvariablen gesetzt. Es ist eine Schätzung, keine Buchhaltung.",
+    "rep_cost_eur_km": "Gesamtkosten dieses Fahrzeugs je Kilometer. Bezugsgröße sind die SCHICHT-Kilometer; die Spalte \"Gefahrene Strecke\" links stammt aus dem Odometer-Zeitfenster und kann größer sein, weil sie auch Fahrten außerhalb der Schicht enthält."
   },
   "reports": {
     "zone_title": "Aufenthaltszeiten",
@@ -1702,7 +1704,27 @@
     "fuel_price_note": "Kosten berechnet mit {price} €/L — Quelle: {source}, {date}. Ihren eigenen Flottenkartenpreis können Sie über FUEL_PRICE_EUR_PER_L hinterlegen.",
     "fuel_price_note_custom": "Kosten berechnet mit dem von Ihnen hinterlegten Preis von {price} €/L.",
     "stat_avg_vehicle_day": "Pro Fahrzeug / Tag",
-    "stat_avg_vehicle_scope": "aus {n}/{total} Fahrzeugen"
+    "stat_avg_vehicle_scope": "aus {n}/{total} Fahrzeugen",
+    "cost_title": "Kosten",
+    "stat_eur_per_km": "Vollkosten €/km",
+    "stat_eur_per_km_scope": "{km} km · aus {n}/{total} Schichten",
+    "stat_eur_per_parcel": "Kosten je Paket",
+    "stat_eur_per_parcel_scope": "{parcels} Pakete · aus {n}/{total} Schichten",
+    "stat_total_cost": "Gesamtkosten",
+    "stat_total_cost_scope": "Kraftstoff {fuel} % · Personal {labor} % · Fixkosten {fixed} %",
+    "stat_cost_basis": "Fahrerstunden",
+    "stat_cost_basis_scope": "{days} Fahrzeugtage · {vehicles} Fahrzeuge",
+    "cost_no_km": "Schicht-Kilometer nicht messbar",
+    "cost_no_parcel": "Keine Paketanzahl erfasst",
+    "cost_estimate_note": "Dies ist eine SCHÄTZUNG, keine Buchhaltung: Die Bezugsgrößen (km, Stunden, Pakete, Fahrzeugtage) werden aus den Live-Schichten gemessen, drei der Faktoren sind Marktannahmen. Hinterlegen Sie Ihre eigenen Werte über Umgebungsvariablen.",
+    "cost_rates_note": "Sätze: {fuel} €/L · {labor} €/Stunde (Arbeitgeberkosten) · {day} € je gearbeitetem Fahrzeugtag.",
+    "cost_l100_measured": "Verbrauch {n} L/100km — aus der eigenen Telematik der Flotte gemessen.",
+    "cost_l100_override": "Verbrauch {n} L/100km — manuell über FLEET_L_PER_100KM gesetzt, Messung überschrieben.",
+    "cost_l100_fallback": "Verbrauch {n} L/100km — nicht messbar, Standardwert verwendet.",
+    "cost_reality_note": "Das Modell erwartet {model} L, die Telematik hat {measured} L gemessen ({pct} %). Bei großer Abweichung sollten der L/100km-Satz oder die Sensorabdeckung geprüft werden.",
+    "col_eur_km": "€/km",
+    "unit_hour": "Std",
+    "cost_hour_cap_note": "{n}/{total} Schichten erscheinen länger als {cap} Stunden und wurden in der Personalbezugsgröße auf {cap} Stunden begrenzt — das sind verspätet beendete Schichten, keine Arbeitszeit (Tageshöchstgrenze § 9 Abs. 1 AZG)."
   },
   "messages": {
     "title": "Nachrichten",

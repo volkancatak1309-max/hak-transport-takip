@@ -38,7 +38,6 @@ import {
   SAFETY_SCORE_WEIGHTS,
   TOP10_EVENT_TYPES,
   IDLE_FUEL_L_PER_HOUR,
-  DIESEL_EUR_PER_L,
 } from "@/lib/analytics-shared";
 import {
   SAFETY_SCORE_K,
@@ -46,6 +45,7 @@ import {
   SCORE_MIN_KM_FLOOR,
 } from "@/lib/metric-thresholds";
 import {
+  FUEL_PRICE_EUR_PER_L,
   SAFETY_SCORE_CALIBRATED,
   SCORE_THRESHOLD_WORKED_DAYS,
 } from "@/lib/tenant";
@@ -366,8 +366,8 @@ try {
       `${n(T.rolanti.litre, 1)} L`
     );
     iddia(
-      `${ad} · euro = litre × ${DIESEL_EUR_PER_L}`,
-      Math.abs(T.rolanti.euro - T.rolanti.litre * DIESEL_EUR_PER_L) < 1e-6,
+      `${ad} · euro = litre × ${FUEL_PRICE_EUR_PER_L} (tek fiyat kaynağı)`,
+      Math.abs(T.rolanti.euro - T.rolanti.litre * FUEL_PRICE_EUR_PER_L) < 1e-6,
       `€${n(T.rolanti.euro, 2)}`
     );
   }

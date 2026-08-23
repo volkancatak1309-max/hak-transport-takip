@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { ReportPageShell } from "@/components/admin/ReportPageShell";
 import { computeAnalyticsRange } from "@/lib/analytics";
-import { buildFuelReport, rangeLabel } from "@/lib/reports";
+import { buildFuelReport, buildCostReport, rangeLabel } from "@/lib/reports";
 import type { AnalyticsRangeKey } from "@/lib/analytics-shared";
 import { FuelClient } from "./FuelClient";
 import { audit } from "@/lib/security-log";
@@ -27,6 +27,13 @@ export default async function FuelReportPage({
   ) as AnalyticsRangeKey;
   const range = computeAnalyticsRange(rangeKey, sp.baslangic, sp.bitis);
   const report = await buildFuelReport(range);
+  // MALİYET RAPORU yakıt raporunun ÜSTÜNE biner: ölçülen filo L/100km'yi ve
+  // ölçülen litreyi ondan alır. Ayrı çağırsaydık canlıda ~60 sn'lik RPC turu
+  // ikiye katlanırdı (23.08.2026 ölçümü).
+  const cost = await buildCostReport(range, {
+    fleetLPer100Km: report.fleetLPer100Km,
+    measuredLiters: report.available ? report.totalConsumedLiters : null,
+  });
   const t = await getTranslations("reports");
 
   return (
@@ -48,7 +55,7 @@ export default async function FuelReportPage({
           customFrom={sp.baslangic ?? null}
           customTo={sp.bitis ?? null}
         >
-          <FuelClient report={report} period={rangeLabel(range)} />
+          <FuelClient report={report} cost={cost} period={rangeLabel(range)} />
         </ReportPageShell>
       </div>
     </DashboardShell>

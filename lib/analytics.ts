@@ -1,7 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
-import { FLEET_EPOCH_ISO } from "@/lib/tenant";
+import { FLEET_EPOCH_ISO, FUEL_PRICE_EUR_PER_L } from "@/lib/tenant";
 import { getDriverScope, dropNonDrivers } from "@/lib/driver-scope";
 import {
   startOfTodayVienna,
@@ -22,7 +22,6 @@ import type { VehicleEventWithPlate, IdleEpisodeWithPlate } from "@/lib/telemetr
 import {
   SAFETY_SCORE_WEIGHTS,
   IDLE_FUEL_L_PER_HOUR,
-  DIESEL_EUR_PER_L,
   TOP10_EVENT_TYPES,
   type AnalyticsRangeKey,
   type DateRange,
@@ -42,10 +41,12 @@ import { TENANT_TZ } from "@/lib/tz";
 
 // Client-safe sabitler/türler lib/analytics-shared.ts'te yaşar; burada
 // yeniden dışa verilir ki mevcut çağıranlar (page.tsx) tek yerden import etsin.
+//
+// ⚠️ DIESEL_EUR_PER_L 23.08.2026'da SİLİNDİ (ikinci yakıt fiyatıydı, %24 sapma
+// üretiyordu). Yakıtın € karşılığı artık tek yerden: FUEL_PRICE_EUR_PER_L.
 export {
   SAFETY_SCORE_WEIGHTS,
   IDLE_FUEL_L_PER_HOUR,
-  DIESEL_EUR_PER_L,
   TOP10_EVENT_TYPES,
   type AnalyticsRangeKey,
   type DateRange,
@@ -1213,11 +1214,11 @@ export function computeIdleWaste(
       : (workersById.get(key)?.name ?? "—");
     const hours = a.totalMs / 3_600_000;
     const liters = hours * IDLE_FUEL_L_PER_HOUR;
-    return { key, name: label, totalMs: a.totalMs, episodeCount: a.episodeCount, liters, euro: liters * DIESEL_EUR_PER_L };
+    return { key, name: label, totalMs: a.totalMs, episodeCount: a.episodeCount, liters, euro: liters * FUEL_PRICE_EUR_PER_L };
   });
   rows.sort((a, b) => b.totalMs - a.totalMs);
 
   const totalHours = totalMs / 3_600_000;
-  const totalEuro = totalHours * IDLE_FUEL_L_PER_HOUR * DIESEL_EUR_PER_L;
+  const totalEuro = totalHours * IDLE_FUEL_L_PER_HOUR * FUEL_PRICE_EUR_PER_L;
   return { rows, totalMs, totalEuro };
 }

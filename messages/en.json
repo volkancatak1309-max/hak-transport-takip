@@ -149,7 +149,7 @@
     "col_idle_euro": "Estimated €",
     "stat_idle_hours": "Total Idling Time",
     "stat_idle_euro": "Estimated Fuel Waste",
-    "idle_estimate_note": "This is an estimate based on coefficients (0.9 L/h · €1.65/L — adjustable).",
+    "idle_estimate_note": "This is an estimate based on coefficients ({lph} L/h · €{price}/L).",
     "epoch_note": "Different alarm thresholds were used before {date}. Event counts from before and after that date cannot be compared directly.",
     "epoch_trend_blocked": "No trend shown: the two periods being compared fall on different sides of the alarm threshold change on {date}. The difference comes from the measurement threshold, not from driving behaviour.",
     "count_driver": "drivers",
@@ -1501,7 +1501,9 @@
     "strip_closed": "The number of drivers who have closed their shift today.",
     "strip_silent": "The number of vehicles that have not sent a position for 24 hours. It may be a device problem.",
     "strip_loaded": "The total number of parcels loaded onto vehicles today.",
-    "strip_carried_over": "The number of shifts started on earlier days that are still not closed. Because automatic closing is switched off, these do not close by themselves."
+    "strip_carried_over": "The number of shifts started on earlier days that are still not closed. Because automatic closing is switched off, these do not close by themselves.",
+    "rep_cost_table": "Fleet operating cost: fuel + labour + vehicle fixed cost. The denominators (km, hours, parcels, vehicle-days) are measured from live shifts; the multipliers are set via environment variables. It is an estimate, not an accounting record.",
+    "rep_cost_eur_km": "Total cost per kilometre for this vehicle. The denominator is SHIFT distance; the \"Distance driven\" column on the left comes from the odometer window and can be larger because it also includes movement outside shifts."
   },
   "reports": {
     "zone_title": "Zone Durations",
@@ -1702,7 +1704,27 @@
     "fuel_price_note": "Cost calculated at €{price}/L — source: {source}, {date}. You can enter your own fleet-card price via FUEL_PRICE_EUR_PER_L.",
     "fuel_price_note_custom": "Cost calculated using the price of €{price}/L that you entered.",
     "stat_avg_vehicle_day": "Per vehicle / day",
-    "stat_avg_vehicle_scope": "from {n}/{total} vehicles"
+    "stat_avg_vehicle_scope": "from {n}/{total} vehicles",
+    "cost_title": "Cost",
+    "stat_eur_per_km": "Full cost €/km",
+    "stat_eur_per_km_scope": "{km} km · from {n}/{total} shifts",
+    "stat_eur_per_parcel": "Cost per parcel",
+    "stat_eur_per_parcel_scope": "{parcels} parcels · from {n}/{total} shifts",
+    "stat_total_cost": "Total cost",
+    "stat_total_cost_scope": "Fuel {fuel}% · labour {labor}% · fixed {fixed}%",
+    "stat_cost_basis": "Driver hours",
+    "stat_cost_basis_scope": "{days} vehicle-days · {vehicles} vehicles",
+    "cost_no_km": "Shift distance could not be measured",
+    "cost_no_parcel": "No parcel counts recorded",
+    "cost_estimate_note": "This is an ESTIMATE, not an accounting record: the denominators (km, hours, parcels, vehicle-days) are measured from live shifts, but three of the multipliers are market assumptions. Enter your own figures via environment variables.",
+    "cost_rates_note": "Rates: €{fuel}/L · €{labor}/hour (employer cost) · €{day} per worked vehicle-day.",
+    "cost_l100_measured": "Consumption {n} L/100km — measured from the fleet's own telemetry.",
+    "cost_l100_override": "Consumption {n} L/100km — set manually via FLEET_L_PER_100KM, measurement overridden.",
+    "cost_l100_fallback": "Consumption {n} L/100km — could not be measured, default value used.",
+    "cost_reality_note": "The model expects {model} L, telemetry measured {measured} L ({pct}%). A large deviation means the L/100km rate or sensor coverage needs review.",
+    "col_eur_km": "€/km",
+    "unit_hour": "h",
+    "cost_hour_cap_note": "{n}/{total} shifts appear longer than {cap} hours and were capped at {cap} hours in the labour denominator — these are shifts closed late, not working time (daily ceiling, § 9 Abs. 1 AZG)."
   },
   "messages": {
     "title": "Messages",

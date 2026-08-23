@@ -20,6 +20,7 @@ import {
 } from "@/lib/messaging";
 import { READ_RECEIPTS_ENABLED } from "@/lib/tenant";
 import { audit } from "@/lib/security-log";
+import { mesajBildir, duyuruBildir, type DuyuruHedefi } from "@/lib/push";
 import {
   grupKur,
   grupDetay,
@@ -196,11 +197,43 @@ export async function gonderAction(
   }
 
   await sonMesajiIsle(konusmaId, govde.body, e.role, data.created_at as string);
-  await audit(viewerId, "message_send", adres);
-  revalidatePath("/admin/mesajlar");
 
   const { data: ben } = await supabaseAdmin
     .from("workers").select("name").eq("id", viewerId).maybeSingle();
+  const benAd = (ben?.name as string | null) ?? null;
+
+  /**
+   * BİLDİRİM — mobil uçtaki (`/api/mobile/messages/[id]`) çağrının AYNISI.
+   *
+   * ── NEDEN BURADA DA OLMAK ZORUNDA ─────────────────────────────────────────
+   * ÖLÇÜLDÜ (23.08.2026): bu yol `lib/push`'u hiç çağırmıyordu, yani AYNI
+   * mesaj mobilden yazılınca bildirim düşüyor, panelden yazılınca düşmüyordu.
+   * Bildirimin gidip gitmemesi, yöneticinin hangi yüzeyi kullandığına bağlı
+   * olamaz — şoför tarafında ikisi de "yönetimden gelen mesaj".
+   *
+   * `adres` olarak `konusmaId` gidiyor, çağrıdaki ham `adres` DEĞİL: mobil
+   * taraf satırı `konusmaId ?? soforId` ile adresliyor ve konuşma bu noktada
+   * KESİN var (gerekirse yukarıda açıldı). Ham adres gitseydi, birebir
+   * konuşmaya şoför kimliğiyle yazılan ilk mesajda iki taraf farklı adres
+   * kullanır ve önplanda bastırma tutmazdı.
+   *
+   * `await` bilinçli: server action da sunucusuz bir yolda çalışıyor ve yanıt
+   * döndükten sonra süren iş sessizce kesilebilir. `mesajBildir` fırlatmıyor
+   * ve 8 sn zaman aşımı taşıyor; en kötü hâlde bildirim gecikir, mesaj DÜŞMEZ.
+   */
+  await mesajBildir({
+    adres: konusmaId,
+    konusmaId,
+    tur: hedef.tur,
+    grupAdi: hedef.tur === "grup" ? hedef.baslik : null,
+    soforId: hedef.tur === "birebir" ? hedef.soforId : null,
+    gonderenId: viewerId,
+    gonderenAd: benAd ?? "—",
+    govde: govde.body,
+  });
+
+  await audit(viewerId, "message_send", adres);
+  revalidatePath("/admin/mesajlar");
 
   return {
     ok: true,
@@ -210,7 +243,7 @@ export async function gonderAction(
         id: data.id as string,
         gonderenId: viewerId,
         gonderenRol: e.role,
-        gonderenAd: (ben?.name as string | null) ?? null,
+        gonderenAd: benAd,
         govde: govde.body,
         duyuruMu: false,
         an: data.created_at as string,
@@ -322,6 +355,26 @@ export async function duyuruAction(
       last_sender_role: "admin",
     })
     .in("id", konusmalar);
+
+  const { data: duyuran } = await supabaseAdmin
+    .from("workers").select("name").eq("id", viewerId).maybeSingle();
+
+  /**
+   * DUYURU BİLDİRİMİ — mobil uçtaki (`/api/mobile/messages/duyuru`) ile aynı.
+   *
+   * Her alıcı KENDİ konuşmasını işaret eden ayrı bir bildirim alır; ortak bir
+   * "duyurular" ekranı yok. `kMap` şoför → konuşma eşlemesini zaten tutuyor,
+   * burada yeniden sorgu YOK: `duyuruBildir` tek jeton sorgusu + tek partide
+   * gönderim yapıyor.
+   */
+  await duyuruBildir({
+    hedefler: soforIds
+      .map((w) => ({ soforId: w, konusmaId: kMap.get(w) }))
+      .filter((h): h is DuyuruHedefi => typeof h.konusmaId === "string"),
+    gonderenId: viewerId,
+    gonderenAd: (duyuran?.name as string | null) ?? "—",
+    govde: govde.body,
+  });
 
   await audit(viewerId, "message_broadcast", `${(yazilan ?? []).length} alıcı`);
   revalidatePath("/admin/mesajlar");

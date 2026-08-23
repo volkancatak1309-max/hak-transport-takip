@@ -144,6 +144,12 @@ async function gonder(mesajlar: ExpoMesaj[]): Promise<void> {
  * `getFleetScope` istek başına önbellekli — en fazla iki ek sorgu.
  */
 async function yonetimTarafi(soforId: string): Promise<string[]> {
+  // test-visible: alıcılar YÖNETİM tarafı — patronlar ve kapsamdaki şefler.
+  // Test hesabı da patron ve `erisimCoz` ona zaten HER konuşmayı açıyor;
+  // bildirimin ona da gitmesi yeni bir şey sızdırmaz, mevcut yetkisini
+  // tekrarlar. Elemek ise birebir push yolunu test hesabından DENENEMEZ
+  // kılardı — `uyeleriDogrula`daki (lib/messaging-groups.ts) aynı tuzak:
+  // otomatik dahil etme eler, ama burada dahil edilen kişi zaten yetkili.
   const { data, error } = await supabaseAdmin
     .from("workers")
     .select("id, is_admin, managed_fleet")

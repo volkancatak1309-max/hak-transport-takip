@@ -22,10 +22,12 @@ import type { RateOrigin } from "@/lib/cost-model";
  * bir isim alanından metin çekerdi. Rozet ikisine de ait değil; ikisinin de
  * kullandığı ortak bir kelime dağarcığı.
  *
- * ÜÇ DURUM, ÜÇ TON — renk bilgi taşıyor:
- *   ÖLÇÜLDÜ    info (mavi)    ürün ölçtü, kimse giremez
- *   GİRİLDİ     neutral        müşterinin kendi rakamı
- *   VARSAYILAN  warning (altın) DİKKAT: bu bizim tahminimiz, düzeltilmeyi bekliyor
+ * DÖRT DURUM — renk bilgi taşıyor:
+ *   ÖLÇÜLDÜ            info (mavi)     ürün ölçtü, kimse giremez
+ *   KAYNAKTAN          info (mavi)     dış resmî kaynak, taze — ölçümle aynı güven ailesi
+ *   KAYNAKTAN (bayat)  warning (altın) kaynak yaşlandı, sayı hâlâ gerçek ama yaşı görünmeli
+ *   GİRİLDİ            neutral         müşterinin kendi rakamı
+ *   VARSAYILAN         warning (altın) DİKKAT: bu bizim tahminimiz, düzeltilmeyi bekliyor
  *
  * Altın bilinçli. Sessiz gri, varsayılanla bırakılmış bir oranı "hallolmuş" gibi
  * gösterirdi; oysa o, karar sayısının içinde duran bir eksiktir.
@@ -35,6 +37,22 @@ export function RateSourceChip({ origin }: { origin: RateOrigin }) {
 
   if (origin.source === "olculdu") {
     return <StatusChip tone="info">{t("src_measured")}</StatusChip>;
+  }
+  // KAYNAKTAN — dış resmî kaynaktan otomatik çekildi.
+  //
+  // TON SEÇİMİ: taze referans `info`, yani ÖLÇÜLDÜ ile AYNI aile. Gerekçe:
+  // ikisi de "gerçekliğe dayanan sayı"dır ve kullanıcıya aynı güveni verir;
+  // aradaki farkı RENK değil METİN taşır (biz mi ölçtük, kaynak mı yayınladı).
+  // BAYAT olan `warning`e düşer — VARSAYILAN ile aynı ton, çünkü ikisi de
+  // aynı şeyi söylüyor: "buna bak, düzeltilmeyi bekliyor".
+  if (origin.source === "kaynaktan") {
+    return (
+      <StatusChip tone={origin.bayat ? "warning" : "info"}>
+        {origin.bayat
+          ? t("src_sourced_stale", { tarih: origin.tarih })
+          : t("src_sourced", { tarih: origin.tarih })}
+      </StatusChip>
+    );
   }
   if (origin.source === "girildi") {
     return (

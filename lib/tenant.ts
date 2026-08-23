@@ -116,6 +116,27 @@ export const FUEL_PRICE_EUR_PER_L = envNum(
   2.043
 );
 
+/**
+ * YAKIT FİYATI REFERANSININ ÜLKESİ — otomatik çekimin hangi satırı okuyacağı.
+ *
+ * Varsayılan `TENANT_DEFAULT_COUNTRY` (telefon kanonikleştirmesinin de
+ * kullandığı kiracı ülkesi). Yeni bir kolon ya da yeni bir env ZORUNLU
+ * DEĞİL: kiracının ülkesi zaten tek yerde tanımlı ve filo normalde orada
+ * yakıt alıyor.
+ *
+ * Ayrı bir override bırakılmasının sebebi dar ama gerçek: merkezi Avusturya'da
+ * olup ağırlıklı Almanya'da yakan bir filo, fiyat referansını DE'den almak
+ * isteyebilir. O gün bu env yazılır; o güne kadar hiç dokunulmaz.
+ *
+ * ⚠️ Bugün yalnız 'AT' ve 'DE' için referans üretiliyor (AB Weekly Oil
+ * Bulletin kapsamı, bkz. lib/fuel-price-source.ts). Başka bir ülke kodu
+ * yazmak hata vermez — referans satırı bulunamaz ve zincir env/varsayılana
+ * düşer, ekranda da öyle etiketlenir.
+ */
+export const FUEL_PRICE_COUNTRY = (
+  process.env.FUEL_PRICE_COUNTRY?.trim() || VARSAYILAN_ULKE
+).toUpperCase();
+
 /** Varsayılan fiyatın kaynağı — ekrandaki küçük notta gösterilir. */
 export const FUEL_PRICE_SOURCE = "WKO";
 /** Varsayılan fiyatın ölçüm tarihi (ISO) — notta gösterilir. */

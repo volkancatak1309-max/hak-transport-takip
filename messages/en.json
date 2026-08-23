@@ -40,7 +40,9 @@
     "src_entered_panel": "ENTERED",
     "src_entered_env": "ENTERED (setup)",
     "src_default": "DEFAULT",
-    "src_default_with": "DEFAULT · {kaynak} {tarih}"
+    "src_default_with": "DEFAULT · {kaynak} {tarih}",
+    "src_sourced": "SOURCED · {tarih}",
+    "src_sourced_stale": "SOURCED · {tarih} · STALE"
   },
   "errors": {
     "error_title": "Something went wrong",
@@ -1733,7 +1735,9 @@
     "rate_label_vehicle_day": "Vehicle fixed cost",
     "unit_vehicle_day": "vehicle-day",
     "cost_rates_edit_link": "Edit rates — Settings › Cost rates",
-    "cost_rates_migration_note": "Rates cannot be edited from the panel: migration 076 (tenant_cost_rates) has not been run yet. The calculation currently uses the setup values."
+    "cost_rates_migration_note": "Rates cannot be edited from the panel: migration 076 (tenant_cost_rates) has not been run yet. The calculation currently uses the setup values.",
+    "source_link": "view source",
+    "fuel_ref_stale_note": "The fuel price reference has not been refreshed for {gun} days (source {tarih}). The number is still real but ageing — the source or the scheduler may have stopped."
   },
   "messages": {
     "title": "Messages",
@@ -1810,7 +1814,7 @@
     "cost_rates_title": "Cost rates",
     "cost_rates_desc": "The multipliers behind €/km and €/parcel. An empty field falls back to the default; a filled field takes effect immediately.",
     "rate_fuel": "Fuel price per litre",
-    "rate_fuel_hint": "If you fuel with a fleet card, enter your contract price. Empty = market average.",
+    "rate_fuel_hint": "This price is fetched automatically from the European Commission's weekly bulletin. If you fuel with a fleet card, enter your contract price — your value then replaces the automatic reference.",
     "rate_labor": "Labour — driver hour",
     "rate_labor_hint": "TOTAL EMPLOYER COST (gross pay + on-costs + 13th/14th salary), not gross pay. It is a fleet average; per-person wages are not stored here.",
     "rate_vehicle_day": "Vehicle fixed cost — worked day",
@@ -1827,6 +1831,7 @@
     "migration_needed": "Without migration 076 (tenant_cost_rates) the rates cannot be saved from the panel.",
     "clear_hint": "Clearing a field and saving resets that rate to the default.",
     "unit_hour": "h",
-    "unit_vehicle_day": "vehicle-day"
+    "unit_vehicle_day": "vehicle-day",
+    "source_link": "view source"
   }
 }

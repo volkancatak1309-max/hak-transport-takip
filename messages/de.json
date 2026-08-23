@@ -40,7 +40,9 @@
     "src_entered_panel": "EINGEGEBEN",
     "src_entered_env": "EINGEGEBEN (Setup)",
     "src_default": "STANDARD",
-    "src_default_with": "STANDARD · {kaynak} {tarih}"
+    "src_default_with": "STANDARD · {kaynak} {tarih}",
+    "src_sourced": "AMTLICHE QUELLE · {tarih}",
+    "src_sourced_stale": "AMTLICHE QUELLE · {tarih} · VERALTET"
   },
   "errors": {
     "error_title": "Etwas ist schiefgelaufen",
@@ -1733,7 +1735,9 @@
     "rate_label_vehicle_day": "Fahrzeugfixkosten",
     "unit_vehicle_day": "Fahrzeugtag",
     "cost_rates_edit_link": "Sätze bearbeiten — Einstellungen › Kostensätze",
-    "cost_rates_migration_note": "Die Sätze können nicht im Panel gepflegt werden: Migration 076 (tenant_cost_rates) wurde noch nicht ausgeführt. Die Berechnung nutzt vorerst die Setup-Werte."
+    "cost_rates_migration_note": "Die Sätze können nicht im Panel gepflegt werden: Migration 076 (tenant_cost_rates) wurde noch nicht ausgeführt. Die Berechnung nutzt vorerst die Setup-Werte.",
+    "source_link": "zur Quelle",
+    "fuel_ref_stale_note": "Die Kraftstoffpreis-Referenz wurde seit {gun} Tagen nicht aktualisiert (Quelle {tarih}). Der Wert ist weiterhin echt, altert aber — Quelle oder Zeitplaner könnten ausgefallen sein."
   },
   "messages": {
     "title": "Nachrichten",
@@ -1810,7 +1814,7 @@
     "cost_rates_title": "Kostensätze",
     "cost_rates_desc": "Die Faktoren der €/km- und €/Paket-Berechnung. Ein leeres Feld fällt auf den Standard zurück; ein ausgefülltes Feld gilt sofort.",
     "rate_fuel": "Kraftstoffpreis je Liter",
-    "rate_fuel_hint": "Wenn Sie mit Flottenkarte tanken, tragen Sie Ihren Vertragspreis ein. Leer = Marktdurchschnitt.",
+    "rate_fuel_hint": "Dieser Preis wird automatisch aus dem wöchentlichen Bulletin der EU-Kommission bezogen. Wenn Sie mit Flottenkarte tanken, tragen Sie Ihren Vertragspreis ein — Ihr Wert ersetzt dann die automatische Referenz.",
     "rate_labor": "Personalkosten — Fahrerstunde",
     "rate_labor_hint": "ARBEITGEBER-GESAMTKOSTEN (Bruttolohn + Lohnnebenkosten + 13./14. Gehalt), nicht der Bruttolohn. Es ist ein Flottendurchschnitt; personenbezogene Löhne werden hier nicht gespeichert.",
     "rate_vehicle_day": "Fahrzeugfixkosten — gearbeiteter Tag",
@@ -1827,6 +1831,7 @@
     "migration_needed": "Ohne Migration 076 (tenant_cost_rates) können die Sätze nicht im Panel gespeichert werden.",
     "clear_hint": "Ein Feld leeren und speichern setzt den Satz auf den Standard zurück.",
     "unit_hour": "Std",
-    "unit_vehicle_day": "Fahrzeugtag"
+    "unit_vehicle_day": "Fahrzeugtag",
+    "source_link": "zur Quelle"
   }
 }

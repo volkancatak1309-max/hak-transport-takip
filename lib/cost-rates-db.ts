@@ -16,17 +16,20 @@ import {
   VEHICLE_DAY_AS_OF,
   FLEET_L_PER_100KM,
   FLEET_L_PER_100KM_IS_CUSTOM,
+  FUEL_PRICE_COUNTRY,
 } from "@/lib/tenant";
 import type { CostRates, CostRateOrigin, RateOrigin } from "@/lib/cost-model";
+import { readLatestFuelPrice, type FuelPriceLookup } from "@/lib/fuel-price-db";
 
 /**
  * MALİYET ORANLARININ KAYNAK ZİNCİRİ — tek karar yeri.
  *
- * ═══ ÜÇ KAYNAK, ÜÇ ETİKET (Volkan kararı, 23.08.2026) ═══
+ * ═══ DÖRT KAYNAK, DÖRT ETİKET ═══
  *
- *   ÖLÇÜLDÜ    telemetriden gelir, kimse giremez     → L/100km
- *   GİRİLDİ     kiracının kendi rakamı               → panel satırı ya da env
- *   VARSAYILAN  bizim koyduğumuz başlangıç değeri    → kaynağıyla gösterilir
+ *   ÖLÇÜLDÜ     telemetriden gelir, kimse giremez     → L/100km
+ *   KAYNAKTAN   dış RESMÎ kaynaktan otomatik çekildi  → yakıt fiyatı (24.08.2026)
+ *   GİRİLDİ     kiracının kendi rakamı                → panel satırı ya da env
+ *   VARSAYILAN  bizim koyduğumuz başlangıç değeri     → kaynağıyla gösterilir
  *
  * Etiket ekranda her oranın yanında durur. Gerekçe: €/km bir KARAR sayısıdır
  * (araç alınır, güzergâh kapatılır, fiyat verilir). Karar veren kişi, baktığı
@@ -36,7 +39,11 @@ import type { CostRates, CostRateOrigin, RateOrigin } from "@/lib/cost-model";
  *
  * ═══ ÖNCELİK ═══
  *
- *   panel satırı (tenant_cost_rates)  >  env  >  koddaki varsayılan
+ *   İşçilik ve araç-gün:
+ *     panel satırı (tenant_cost_rates)  >  env  >  koddaki varsayılan
+ *
+ *   Yakıt fiyatı (beş kademe — 24.08.2026, otomatik kaynak eklendikten sonra):
+ *     panel satırı > referans TAZE > referans BAYAT > env > kod varsayılanı
  *
  * Env KALDIRILMADI ama rolü değişti: artık yalnız VARSAYILAN sağlar. Panelden
  * bir değer girildiği an env sessizce devre dışı kalır — aksi hâlde müşteri
@@ -73,6 +80,11 @@ export type CostRateResolution = {
   tabloYok: boolean;
   /** Panelde duran ham değerler (form bunları gösterir). Tablo yoksa null. */
   row: CostRateRow | null;
+  /**
+   * Yakıt fiyatı referansının durumu — ekran bunu "kaynak ne durumda"
+   * sorusuna cevap vermek için kullanır (077 yoksa, satır yoksa, terk edilmişse).
+   */
+  fuelRef: FuelPriceLookup;
 };
 
 /** Panel satırını okur. Tablo yoksa `{ row: null, tabloYok: true }`. */
@@ -131,17 +143,50 @@ function coz(
  * kurulumların yedeğidir ve o durumda etiketi "varsayılan"dır.
  */
 export async function resolveCostRates(
-  fleetLPer100KmMeasured: number | null
+  fleetLPer100KmMeasured: number | null,
+  now: Date = new Date()
 ): Promise<CostRateResolution> {
   const { row, tabloYok } = await readCostRateRow();
 
-  const fuel = coz(
-    sayi(row?.fuel_eur_per_l),
-    FUEL_PRICE_IS_CUSTOM,
-    FUEL_PRICE_EUR_PER_L,
-    FUEL_PRICE_SOURCE,
-    FUEL_PRICE_AS_OF
-  );
+  // ── YAKIT: BEŞ KADEMELİ DÜŞÜŞ ───────────────────────────────────────
+  //
+  //   1. panel değeri        → GİRİLDİ(panel)      ← her zaman kazanır
+  //   2. referans, taze      → KAYNAKTAN
+  //   3. referans, bayat     → KAYNAKTAN (bayat)
+  //   4. kurulum env'i       → GİRİLDİ(kurulum)
+  //   5. kod varsayılanı     → VARSAYILAN
+  //
+  // ⚠️ PANEL DEĞERİ EN ÜSTTE — onaylanan listede "kiracı girdisi" bayat
+  // referansın ALTINDA yazıyordu; bilerek yukarı alındı ve sebebi şu: kiracı
+  // 1,880 €/L yazdıysa bu onun FİLO KARTI SÖZLEŞMESİDİR, piyasa ortalaması
+  // değil. Bayat da olsa bir piyasa sayısını müşterinin kendi sözleşme
+  // fiyatının önüne geçirmek, ekranda düpedüz yanlış rakam göstermek olurdu.
+  // Onaylanan merdiven bundan sonrası için AYNEN uygulanıyor: kiracı bir şey
+  // girmediğinde taze → bayat → env → varsayılan → null.
+  const fuelRef = await readLatestFuelPrice(FUEL_PRICE_COUNTRY, "diesel", now);
+  const panelFuel = sayi(row?.fuel_eur_per_l);
+  const fuel: { value: number; origin: RateOrigin } =
+    panelFuel !== null
+      ? { value: panelFuel, origin: { source: "girildi", via: "panel" } }
+      : fuelRef.row && (fuelRef.freshness === "taze" || fuelRef.freshness === "bayat")
+        ? {
+            value: fuelRef.row.priceEur,
+            origin: {
+              source: "kaynaktan",
+              kaynak: fuelRef.row.sourceKey,
+              tarih: fuelRef.row.referenceDate,
+              bayat: fuelRef.freshness === "bayat",
+              atif: fuelRef.row.licenseNote,
+              url: fuelRef.row.sourceUrl,
+            },
+          }
+        : coz(
+            null,
+            FUEL_PRICE_IS_CUSTOM,
+            FUEL_PRICE_EUR_PER_L,
+            FUEL_PRICE_SOURCE,
+            FUEL_PRICE_AS_OF
+          );
   const labor = coz(
     sayi(row?.labor_eur_per_hour),
     LABOR_EUR_PER_HOUR_IS_CUSTOM,
@@ -172,6 +217,7 @@ export async function resolveCostRates(
   return {
     tabloYok,
     row,
+    fuelRef,
     rates: {
       fuelEurPerL: fuel.value,
       lPer100Km: lPer100.value,

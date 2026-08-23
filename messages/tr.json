@@ -40,7 +40,9 @@
     "src_entered_panel": "GİRİLDİ",
     "src_entered_env": "GİRİLDİ (kurulum)",
     "src_default": "VARSAYILAN",
-    "src_default_with": "VARSAYILAN · {kaynak} {tarih}"
+    "src_default_with": "VARSAYILAN · {kaynak} {tarih}",
+    "src_sourced": "KAYNAKTAN · {tarih}",
+    "src_sourced_stale": "KAYNAKTAN · {tarih} · BAYAT"
   },
   "errors": {
     "error_title": "Bir şeyler ters gitti",
@@ -1733,7 +1735,9 @@
     "rate_label_vehicle_day": "Araç sabit gideri",
     "unit_vehicle_day": "araç-günü",
     "cost_rates_edit_link": "Oranları düzenle — Ayarlar › Maliyet Oranları",
-    "cost_rates_migration_note": "Oranlar panelden girilemiyor: migration 076 (tenant_cost_rates) henüz çalıştırılmamış. Hesap şimdilik kurulum değerleriyle çalışıyor."
+    "cost_rates_migration_note": "Oranlar panelden girilemiyor: migration 076 (tenant_cost_rates) henüz çalıştırılmamış. Hesap şimdilik kurulum değerleriyle çalışıyor.",
+    "source_link": "kaynağa git",
+    "fuel_ref_stale_note": "Yakıt fiyatı referansı {gun} gündür tazelenmedi (kaynak {tarih}). Sayı hâlâ gerçek ama yaşlanıyor — kaynak ya da zamanlayıcı durmuş olabilir."
   },
   "messages": {
     "title": "Mesajlar",
@@ -1810,7 +1814,7 @@
     "cost_rates_title": "Maliyet Oranları",
     "cost_rates_desc": "€/km ve €/paket hesabının çarpanları. Boş bırakılan alan varsayılana döner; girilen alan hesapta hemen geçerli olur.",
     "rate_fuel": "Yakıt litre fiyatı",
-    "rate_fuel_hint": "Filo kartıyla akaryakıt alıyorsanız kendi anlaşmalı fiyatınızı yazın. Boşsa piyasa ortalaması kullanılır.",
+    "rate_fuel_hint": "Bu fiyat AB Komisyonu'nun haftalık bülteninden otomatik çekiliyor. Filo kartıyla akaryakıt alıyorsanız kendi anlaşmalı fiyatınızı yazın — girdiğiniz değer otomatik referansın yerine geçer.",
     "rate_labor": "İşçilik — şoför saati",
     "rate_labor_hint": "İŞVEREN TOPLAM MALİYETİ (brüt ücret + yan maliyetler + 13./14. maaş), brüt ücret değil. Filo ortalamasıdır; kişi bazlı ücret burada tutulmaz.",
     "rate_vehicle_day": "Araç sabit gideri — çalışılan gün",
@@ -1827,6 +1831,7 @@
     "migration_needed": "Migration 076 (tenant_cost_rates) çalıştırılmadan oranlar panelden kaydedilemez.",
     "clear_hint": "Bir alanı boşaltıp kaydetmek o oranı varsayılana döndürür.",
     "unit_hour": "sa",
-    "unit_vehicle_day": "araç-günü"
+    "unit_vehicle_day": "araç-günü",
+    "source_link": "kaynağa git"
   }
 }

@@ -63,10 +63,27 @@ export type CostRates = {
  * söylemezse kullanıcı FARKI KENDİ UYDURUR — ve genellikle her şeyi ölçüm
  * sanar.
  */
-export type RateSource = "olculdu" | "girildi" | "varsayilan";
+export type RateSource = "olculdu" | "kaynaktan" | "girildi" | "varsayilan";
 
 export type RateOrigin =
   | { source: "olculdu" }
+  /**
+   * Dış bir RESMÎ kaynaktan otomatik çekildi (AB Weekly Oil Bulletin).
+   *
+   * ⚠️ NEDEN "ÖLÇÜLDÜ" DEĞİL: bunu ne biz ne cihaz ölçtü. `olculdu` etiketini
+   * üçüncü taraf bir istatistiğe ödünç vermek, `lib/km-quality.ts` ile kurulan
+   * "bu sayı bizim telemetrimizden geliyor" güvencesini sulandırırdı.
+   * `bayat` alanı zorunlu: yaşı gizlenen sayı, null'dan kötüdür.
+   * `atif` alanı zorunlu: CC BY 4.0 atfı ekranda GÖRÜNMELİ.
+   */
+  | {
+      source: "kaynaktan";
+      kaynak: string;
+      tarih: string;
+      bayat: boolean;
+      atif: string;
+      url: string;
+    }
   | { source: "girildi"; via: "panel" | "env" }
   | { source: "varsayilan"; kaynak: string; tarih: string };
 

@@ -181,6 +181,25 @@ export function CostRatesForm({
           <p className="text-xs text-muted-foreground">{t("rate_l100_hint")}</p>
         </div>
 
+        {/* CC BY 4.0 ATFI — kaynaktan çekilen fiyat gösterildiği her yerde ZORUNLU.
+            Lisans dört unsur istiyor: kaynak adı, lisans adı+bağlantısı, veriye
+            bağlantı ve DEĞİŞİKLİK BİLDİRİMİ (1000 L → 1 L dönüşümü bir uyarlama).
+            🔴 AB LOGOSU/AMBLEMİ KULLANILMAZ ve "AB onaylı/iş ortağı" DENMEZ —
+            Karar 2011/833/EU Md.2(2)(a) logoları kapsam dışı bırakıyor,
+            CC BY 4.0 Md.2(a)(6) "No endorsement". Atıf METİNLE yapılır. */}
+        {origin.fuel.source === "kaynaktan" && (
+          <p className="text-[11px] leading-snug text-text-tertiary">
+            {origin.fuel.atif}{" "}
+            <a
+              href={origin.fuel.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              {t("source_link")}
+            </a>
+          </p>
+        )}
         <div className="flex items-center gap-3">
           <Button type="submit" disabled={tabloYok || pending}>
             {pending ? t("saving") : t("save")}

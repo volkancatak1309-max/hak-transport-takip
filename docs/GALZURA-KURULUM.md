@@ -245,6 +245,8 @@ kapanmaz. Betik bunu kırmızıya çevirir.
   `vehicles.vin`e yazılır ve maskeleme kendini bozar.
 - **Güvenlik katmanı** — oturum/cihaz izleme, tek oturum kilidi, eylem izi,
   dışa aktarma kapatma, PDF filigranı, hız sınırı, uzaktan dondurma.
-- **Zamanlayıcı kayıtları** — `/api/flespi/sync` (~60 sn) ve
-  `/api/cron/shift-watchdog` (saatlik) cron-job.org kayıtları.
+- **Zamanlayıcı kayıtları** — `/api/flespi/sync` (~30–60 sn) ve demo'ya özel
+  `/api/cron/demo-retention` (günde 1, gece) cron-job.org kayıtları.
   Sendigo'da bu adım atlandığı için `device_telemetry` boş kalmıştı.
+  Tam liste ve dönüş kodları: [`CRON-KAYITLARI.md`](CRON-KAYITLARI.md).
+  ⚠️ `/api/cron/shift-watchdog` **kaldırıldı** (Telegram sökümü) — kurma.

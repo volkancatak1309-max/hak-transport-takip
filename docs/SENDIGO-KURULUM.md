@@ -311,10 +311,21 @@ Yeni bölge → amaç **depot** → merkez + yarıçap (200-500 m tipik).
 
 ### 6.5 Cron kayıtları (cron-job.org / GitHub Actions)
 
+**Tek kaynak: [`CRON-KAYITLARI.md`](CRON-KAYITLARI.md)** — URL deseni, sır
+yöntemi, dönüş kodları ve hangi kaydın hangi kiracıda gerektiği orada.
+
 ```
-GET https://<domain>/api/flespi/sync?secret=<FLESPI_SYNC_SECRET>     — her 60 sn
-GET https://<domain>/api/cron/shift-watchdog?secret=<CRON_SECRET>     — saatlik
+GET https://<domain>/api/flespi/sync?secret=<FLESPI_SYNC_SECRET>       — her 30–60 sn
+GET https://<domain>/api/cron/fuel-price-sync?secret=<CRON_SECRET>     — günde 1, 06:00
+GET https://<domain>/api/cron/document-alerts?secret=<CRON_SECRET>     — günde TAM 1, 06:00
 ```
+
+> ⚠️ `shift-watchdog` **kaldırıldı** (20.08.2026, Telegram sökümü). Eski bir
+> kayıt duruyorsa **sil** — saatte bir 404 alıyordur.
+>
+> ⚠️ `document-alerts` migration **078** ister; uygulanmadıysa 503 döner.
+> `fuel-price-sync` migration **077** ister. Kaydı kurduktan sonra ilk
+> çağrının **200** döndüğünü doğrula.
 
 ### 6.7 Kabul testi (veri geldikten sonra)
 

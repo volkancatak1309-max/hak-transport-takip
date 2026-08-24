@@ -34,47 +34,60 @@ Kuruluma başlamadan elde olması gerekenler — hiçbiri tahminle doldurulmaz:
 
 1. Yeni proje aç (bölge: **eu-central-1**).
 2. **Settings → API**'den `Project URL` ve `service_role` anahtarını al.
-3. SQL Editor'da migration'ları **sırayla** çalıştır:
+3. SQL Editor'da **tek parça kurulum dosyasını** çalıştır:
 
 ```
-001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 → 010 → 011 → 012
-013_vehicles_flespi_device
-014_device_telemetry     → 014_vehicle_penalties
-015 → 016 → 017 → 018 → 019 → 020 → 021 → 022 → 023 → 024 → 025
-026 → 027 → 028 → 029 → 030 → 031 → 032 → 033 → 034 → 035 → 036
-037 → 038 → 039 → 040
+db/install/<musteri>-full.sql      ← hepsini yapıştır → Run
 ```
 
-> **013 ve 014 iki kez var.** Numaralar tarihsel olarak çakışmış; sıra yukarıdaki
-> gibidir. Alfabetik çalıştırmak da aynı sonucu verir, ama listeye bakarak
-> ilerlemek daha güvenli.
+Dosyayı `node scripts/gen-install-sql.mjs <musteri>` üretir; içinde
+**001 → 078** arası migration'lar doğru sırayla ve tek transaction içinde
+durur. Migration'ları tek tek çalıştırmak GEREKMEZ ve önerilmez: sıra
+elle takip edilemeyecek kadar uzadı ve iki yerde köprü gerekiyor (aşağıda).
 
-> **041+ migration'lar BİLEREK dışarıda.** Yeni kurulum 040'ta durur. Somut
-> sonucu (10.08.2026): `report_fuel_stats_vehicle` migration **052** ile
-> geliyor, yani Sendigo ve Galzura'da **yok** — mobil vardiya detayının
-> (`GET /api/mobile/shifts/[id]`) yakıt bloğu oralarda `null` döner ve
-> `bloklar.yakit: "rpc_yok"` ile SEBEBİNİ söyler. Bu bilinçli bir karardır
-> (Volkan, 10.08.2026): 052 o kurulumlarda çalıştırılmayacak. Boş blok "bu
-> vardiyada yakıt harcanmadı" DEĞİL, "bu kurulumda yakıt hesabı yok" demektir;
-> ekran bunu ayırt edebilsin diye sebep alanı taşınıyor.
+> **HEPSİ YA DA HİÇBİRİ.** Dosyanın tamamı tek `begin/commit` içindedir;
+> bir ifade hata verirse hiçbir şey uygulanmaz — yarım şema oluşmaz.
+> Başındaki boşluk denetimi, dolu bir veritabanına çalıştırılmasını da
+> engeller (`DURDURULDU: bu veritabanı BOŞ DEĞİL`).
 
-> **Mobil araç uçları (11.08.2026) yeni kurulumda ÇALIŞIR.** `…/gunler`,
-> `…/rota`, `…/olaylar`, `…/duraklar`, `…/metrikler` hiçbir RPC'ye dayanmaz;
-> okudukları tablolar `device_telemetry` (**014**), `vehicle_events` (**018**)
-> ve `idle_episodes` (**024**) — üçü de 040 öncesinde. Tek eksik `cihaz.ad`:
-> `vehicles.device_model` migration **055** ile gelir, o da 041+ olduğu için
-> yeni kurulumlarda YOK → alan `null` döner, uç çalışmaya devam eder.
+> **013 ve 014 iki kez var.** Numaralar tarihsel olarak çakışmış; kurulum
+> dosyası sırayı zaten içeriyor.
+
+> **İKİ KÖPRÜ KOLONU** kurulum dosyasında var, migration'larda yok:
+> `vehicles.tank_capacity_l` (hiçbir migration yaratmıyor, canlı HAK61'e elle
+> eklenmiş — yokluğunda 028 kırılır) ve `geofences.archived_at` (063
+> kullanıyor, 069 yaratıyor — yokluğunda kurulum 063'te durur). İkisi de boş
+> bir PostgreSQL 16 üzerinde ölçüldü (24.08.2026).
+
+> **ÜÇ MIGRATION BİLEREK DIŞARIDA:** `013_telegram_chat_unique` ve `005`in
+> telegram kısmı (katman 20.08.2026'da söküldü), `054` (yalnız galzura-demo'ya
+> ait telemetri silme fonksiyonu — gerçek müşteride var olmaması bir güvenlik
+> katmanı) ve `075` (sıfır DDL, saf veri onarımı). Gerekçeler
+> `scripts/gen-install-sql.mjs` → `HARIC` sözlüğünde; muhafız
+> (`npm run lint:install-sql`) gerekçesiz atlamaya izin vermez.
+
+> **ESKİ KURULUMLAR (Sendigo · Galzura) 043'TE KALDI.** Kurulum dosyası
+> 24.08.2026'ya kadar 043'te bitiyordu; o tarihte 35 migration'ın listeden
+> düştüğü fark edildi. Somut sonucu: `report_fuel_stats_vehicle` migration
+> **052** ile geliyor, yani o iki kurulumda **yok** — mobil vardiya detayının
+> yakıt bloğu orada `bloklar.yakit: "rpc_yok"` döner ("bu kurulumda yakıt
+> hesabı yok", "bu vardiyada yakıt harcanmadı" DEĞİL). Aynı şekilde
+> `vehicles.device_model` (**055**) yok → araç uçlarında `cihaz.ad` null.
+> **YENİ kurulumlar bu eksiklerden etkilenmez;** mevcut iki kurulumu
+> hizalamak ayrı bir karardır (migration'lar oralarda elle çalıştırılır).
 
 > **028** boş veritabanında test şoförünü **kendisi yaratır** (31.07.2026'da
 > düzeltildi — önceden sabit bir UUID'ye bağlıydı ve yabancı anahtar hatasıyla
 > zinciri 028'de kırıyordu).
 
-Tamamlandığında kontrol:
+Tamamlandığında kontrol (24.08.2026'da boş PostgreSQL 16 üzerinde ölçüldü):
 
 ```sql
 select count(*) from information_schema.tables
- where table_schema = 'public';
--- 20+ tablo bekleniyor
+ where table_schema = 'public' and table_type = 'BASE TABLE';
+-- 47 tablo bekleniyor
+select count(*) from pg_indexes where schemaname = 'public';
+-- 156 indeks
 select * from public.vehicles where is_test;   -- 1 satır (TEST-001)
 ```
 
@@ -134,7 +147,7 @@ tenant kodu için varlıklar zaten `public/brands/<tenant>/` altında aranır.
 | `SESSION_PASSWORD` | 32+ rastgele karakter (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) |
 | `FLESPI_TOKEN` | flespi REST token'ı |
 | `FLESPI_SYNC_SECRET` | `/api/flespi/sync` ve `/api/flespi/ingest` koruması |
-| `CRON_SECRET` | `/api/cron/shift-watchdog` koruması |
+| `CRON_SECRET` | `/api/cron/*` uçlarının koruması (yakıt fiyatı · belge uyarısı · demo temizliği) — bkz. [`CRON-KAYITLARI.md`](CRON-KAYITLARI.md) |
 
 ### Marka + kurulum modu env
 
@@ -179,9 +192,15 @@ gün sınırı panelden ayrışır.
    - **HTTP Stream push:** stream **yalnız o müşterinin cihaz grubuna** filtreli
      olmalı. Filtresiz stream diğer müşterinin uygulamasına da mesaj gönderir;
      veri bozulmaz (eşleşmeyen IMEI atılır) ama gürültü olur.
-4. Cron kayıtları (cron-job.org / GitHub Actions):
-   - `GET /api/flespi/sync?secret=<FLESPI_SYNC_SECRET>` — her 60 sn
-   - `GET /api/cron/shift-watchdog?secret=<CRON_SECRET>` — saatlik
+4. Cron kayıtları (cron-job.org / GitHub Actions) —
+   **ayrıntı: [`CRON-KAYITLARI.md`](CRON-KAYITLARI.md)**:
+   - `GET /api/flespi/sync?secret=<FLESPI_SYNC_SECRET>` — her 30–60 sn
+   - `GET /api/cron/fuel-price-sync?secret=<CRON_SECRET>` — günde 1, 06:00 (migration 077)
+   - `GET /api/cron/document-alerts?secret=<CRON_SECRET>` — günde **tam 1**, 06:00 (migration 078)
+
+   > `shift-watchdog` **artık yok** (Telegram sökümü, 20.08.2026) — kaydını kurma.
+   > `document-alerts` günde birden fazla çağrılırsa **aynı bildirimi tekrarlar**:
+   > dönüm noktası gün sayısından türetiliyor, durum kolonu yok.
 
 ---
 

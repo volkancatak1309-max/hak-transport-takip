@@ -19,7 +19,7 @@
     "verify:tz-parity": "node scripts/verify-tz-parity.mjs",
     "brand:assets": "node scripts/gen-brand-assets.mjs",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
-    "verify": "npm run lint && npm run lint:test-filters && npm run lint:owner-scope && npm run lint:arac-uclari && npm run lint:ariza-bildir && npm run lint:aksiyon-erteleme && npm run lint:filo-yonetimi && npm run lint:i18n && npm run build && npm run lint:tenant-defaults",
+    "verify": "npm run lint && npm run lint:test-filters && npm run lint:owner-scope && npm run lint:arac-uclari && npm run lint:ariza-bildir && npm run lint:aksiyon-erteleme && npm run lint:filo-yonetimi && npm run lint:i18n && npm run lint:install-sql && npm run build && npm run lint:tenant-defaults",
     "lint:ariza-bildir": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-alias.mjs scripts/check-ariza-bildir.mjs",
     "verify:ariza-bildir": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-ariza-bildir.mjs",
     "lint:aksiyon-erteleme": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-alias.mjs scripts/check-aksiyon-erteleme.mjs",
@@ -40,7 +40,8 @@
     "verify:reopen-payload": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-reopen-payload.mjs",
     "verify:rapor-dil": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-dil.mjs",
     "verify:rapor-dil-http": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-dil-http.mjs",
-    "verify:belge-takibi": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-belge-takibi.mjs"
+    "verify:belge-takibi": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-belge-takibi.mjs",
+    "lint:install-sql": "node scripts/check-install-sql.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -3,7 +3,7 @@
  * db/install/<musteri>-full.sql üreticisi.
  *
  * `db/migrations` altındaki migration'ları DOĞRU SIRAYLA tek dosyada
- * birleştirir (bugün 001→078). Yapılan her dönüşüm burada AÇIKÇA listelidir ve
+ * birleştirir (bugün 001→079). Yapılan her dönüşüm burada AÇIKÇA listelidir ve
  * çalıştırıldığında rapor edilir — üretilen dosya elle düzenlenmez, bu betik
  * yeniden çalıştırılır.
  *
@@ -77,8 +77,11 @@ const ORDER = [
   "070_sefer_koprular.sql", "071_messaging.sql", "072_worker_fleet.sql",
   "073_messaging_groups.sql", "074_push_tokens.sql",
   "076_tenant_cost_rates.sql", "077_fuel_price_reference.sql",
-  "078_worker_documents.sql",
+  "078_worker_documents.sql", "079_sefer_takip_linkleri.sql",
 ];
+
+/** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */
+const SON_MIGRATION = ORDER[ORDER.length - 1].slice(0, 3);
 
 /**
  * KURULUM DOSYASINA BİLEREK GİRMEYEN migration'lar — her biri GEREKÇELİ.
@@ -399,7 +402,7 @@ function transform(file, sql) {
 function basSayfa(TENANT) {
   return `-- ═══════════════════════════════════════════════════════════════════════════
 --  ${TENANT.toUpperCase()} — TEK PARÇA KURULUM SQL'İ
---  hak-transport-takip · şema 001 → 078 · üreten: scripts/gen-install-sql.mjs
+--  hak-transport-takip · şema 001 → ${SON_MIGRATION} · üreten: scripts/gen-install-sql.mjs
 -- ═══════════════════════════════════════════════════════════════════════════
 --
 --  NE İŞE YARAR

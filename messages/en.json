@@ -1869,5 +1869,32 @@
     "doc_field_requires_no": "Document has a number",
     "doc_migration_needed": "Without migration 078 (document_types / worker_documents) document tracking cannot be used.",
     "cancel": "Cancel"
+  },
+  "takip": {
+    "durum_hazirlaniyor": "Getting ready",
+    "durum_yolda": "On the way",
+    "durum_vardi": "At your address",
+    "alt_yolda": "Your vehicle is on the way",
+    "alt_eta": "In about {dk} minutes",
+    "alt_vardi": "The vehicle has reached the drop-off point",
+    "eta_etiket": "Estimated arrival",
+    "eta_dakika": "~{dk} min",
+    "eta_uzun": "90+ min",
+    "guncelleme_etiket": "Location",
+    "konum_taze": "Live",
+    "konum_bayat": "Last known location",
+    "konum_yok": "No signal yet",
+    "sofor_etiket": "Driver",
+    "link_notu": "This page refreshes automatically",
+    "kapali_bulunamadi_baslik": "This link was not found",
+    "kapali_bulunamadi_govde": "The link may have been copied incompletely. Open the address you were sent again.",
+    "kapali_suresi_doldu_baslik": "The link has expired",
+    "kapali_suresi_doldu_govde": "Tracking links are valid for a limited time. Please request a new one.",
+    "kapali_iptal_edildi_baslik": "Link closed",
+    "kapali_iptal_edildi_govde": "This tracking link was closed by the sender.",
+    "kapali_sefer_kapandi_baslik": "Delivery complete",
+    "kapali_sefer_kapandi_govde": "The trip is finished, so live tracking has ended.",
+    "kapali_tablo_yok_baslik": "Tracking is unavailable",
+    "kapali_tablo_yok_govde": "Live tracking is not enabled in this installation yet."
   }
 }

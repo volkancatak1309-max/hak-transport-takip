@@ -771,6 +771,52 @@ export const FLEET_EPOCH_ISO =
 export const TENANT_DEFAULT_COUNTRY = VARSAYILAN_ULKE;
 
 /**
+ * ═════════════ MÜŞTERİ CANLI TAKİP LİNKİ (migration 079) ═════════════
+ *
+ * Dördü de SUNUCU tarafı — bilerek `NEXT_PUBLIC_` DEĞİL. Girişsiz sayfa
+ * sunucuda render ediliyor; bu ayarları istemci paketine gömmek, kiracının
+ * yapılandırmasını linke tıklayan HERKESE okutmak olurdu.
+ */
+
+/**
+ * Linkin ömrü (dakika). Varsayılan 120 — görevde yazan iki saat.
+ *
+ * Değer linke YAZILIR (expires_at), okuma anında bakılmaz: ayarı sonradan
+ * kısaltmak, dün gönderilmiş bir linki geriye dönük öldürmemeli.
+ */
+export const TAKIP_LINK_TTL_MIN = envInt(process.env.TAKIP_LINK_TTL_MIN, 120);
+
+/**
+ * Girişsiz sayfada ŞOFÖRÜN ADI görünsün mü. VARSAYILAN KAPALI.
+ *
+ * ⚠️ HUKUKİ. Şoför adını müşteriye göstermek DACH'ta çalışan izleme kapsamına
+ * girer: AT DSG §10 (çalışan verisinin işlenmesi) ve DE BetrVG §87 Abs. 1
+ * Nr. 6 (teknik izleme, işçi konseyi onayı). Bunu açmak kiracının hukuk
+ * kararıdır, ürünün varsayılanı olamaz. Kapalıyken sayfada isim GEÇMEZ —
+ * sunucu alanı hiç göndermez, istemcide gizlemez.
+ */
+export const TAKIP_SOFOR_ADI = envBool(process.env.TAKIP_SOFOR_ADI, false);
+
+/**
+ * Kuş uçuşu mesafeyi yol mesafesine çeviren katsayı.
+ *
+ * Rota motoru YOK (ölçüldü: depoda OSRM/Valhalla/harici yönlendirme yok,
+ * yalnız `lib/geo.ts` haversine). Şehir içi dağıtımda gerçek yol, kuş uçuşunun
+ * tipik olarak 1,25-1,4 katıdır; 1,3 orta değer. Katsayı KİRACI ayarı çünkü
+ * coğrafyaya göre değişir (nehirli/dağlık bir şehirde 1,6'ya çıkar).
+ */
+export const TAKIP_YOL_KATSAYISI = envNum(process.env.TAKIP_YOL_KATSAYISI, 1.3);
+
+/**
+ * Aracın kendi hızı ölçülemediğinde kullanılacak varsayılan hız (km/s).
+ *
+ * 35: şehir içi dağıtım aracının duraklar dahil ortalaması. Araç hareketliyse
+ * ETA onun SON ölçülen hızından çıkar; bu değer yalnız "araç duruyor ya da hız
+ * alanı boş" hâlinde devreye girer.
+ */
+export const TAKIP_VARSAYILAN_HIZ_KMS = envInt(process.env.TAKIP_VARSAYILAN_HIZ_KMS, 35);
+
+/**
  * KURULUM TUTARLILIK DENETİMİ — fail-closed.
  *
  * Yanlış env bileşimi sessiz bir veri kaybına dönüşebilir (şoför paneli yok +

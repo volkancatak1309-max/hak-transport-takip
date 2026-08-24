@@ -1869,5 +1869,32 @@
     "doc_field_requires_no": "Belge numarası var",
     "doc_migration_needed": "Migration 078 (document_types / worker_documents) çalıştırılmadan belge takibi kullanılamaz.",
     "cancel": "Vazgeç"
+  },
+  "takip": {
+    "durum_hazirlaniyor": "Hazırlanıyor",
+    "durum_yolda": "Yolda",
+    "durum_vardi": "Adresinizde",
+    "alt_yolda": "Aracınız yola çıktı",
+    "alt_eta": "Yaklaşık {dk} dakika içinde",
+    "alt_vardi": "Araç teslim noktasına ulaştı",
+    "eta_etiket": "Tahmini varış",
+    "eta_dakika": "~{dk} dk",
+    "eta_uzun": "90+ dk",
+    "guncelleme_etiket": "Konum",
+    "konum_taze": "Canlı",
+    "konum_bayat": "Son bilinen konum",
+    "konum_yok": "Henüz sinyal yok",
+    "sofor_etiket": "Sürücü",
+    "link_notu": "Bu sayfa kendiliğinden yenilenir",
+    "kapali_bulunamadi_baslik": "Bu bağlantı bulunamadı",
+    "kapali_bulunamadi_govde": "Bağlantı eksik kopyalanmış olabilir. Size gönderilen adresi tekrar açın.",
+    "kapali_suresi_doldu_baslik": "Bağlantının süresi doldu",
+    "kapali_suresi_doldu_govde": "Takip bağlantıları sınırlı süre için geçerlidir. Yeni bir bağlantı isteyin.",
+    "kapali_iptal_edildi_baslik": "Bağlantı kapatıldı",
+    "kapali_iptal_edildi_govde": "Bu takip bağlantısı gönderen tarafından kapatıldı.",
+    "kapali_sefer_kapandi_baslik": "Teslimat tamamlandı",
+    "kapali_sefer_kapandi_govde": "Bu sefer kapandığı için canlı takip sona erdi.",
+    "kapali_tablo_yok_baslik": "Takip şu anda kullanılamıyor",
+    "kapali_tablo_yok_govde": "Canlı takip bu kurulumda henüz etkin değil."
   }
 }

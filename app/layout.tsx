@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import { NextIntlClientProvider } from "next-intl";
+import { PATH_BASLIGI } from "@/proxy";
 import { getLocale } from "@/i18n/request";
 import { Providers } from "@/components/providers";
 import { Toaster } from "@/components/ui/sonner";
@@ -51,7 +53,28 @@ export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const locale = await getLocale();
-  const messages = (await import(`@/messages/${locale}.json`)).default;
+  const tumMesajlar = (await import(`@/messages/${locale}.json`)).default;
+
+  /**
+   * GİRİŞSİZ SAYFAYA SÖZLÜĞÜN TAMAMI GİTMEZ.
+   *
+   * `NextIntlClientProvider`a verilen her şey sunucu yükünde istemciye seri
+   * hâlde iner. Panelde bu doğru (onlarca istemci bileşeni çeviri okuyor), ama
+   * /takip girişsizdir ve ÖLÇÜLDÜ (24.08.2026, üretim derlemesi + curl):
+   * sayfa 112 KB geliyordu ve içinde "Bordo Filo"/"Mavi Filo" (FİLO ADLARI),
+   * PIN kuralı metinleri ve yönetici etiketleri vardı.
+   *
+   * Yolu proxy söylüyor (bkz. proxy.ts — matcher yalnız /takip).
+   * Başlık yoksa davranış BUGÜNKÜYLE AYNI: tam sözlük. Yani bu daraltma
+   * fail-open değil, KAPSAMI DAR bir istisnadır; middleware düşse panel
+   * etkilenmez, yalnız takip sayfası eski (sızdıran) hâline döner — o yüzden
+   * sızıntı denetimi ayrıca `scripts/check-takip-sizinti.mjs` muhafızındadır.
+   */
+  const yol = (await headers()).get(PATH_BASLIGI) ?? "";
+  const girisSiz = yol.startsWith("/takip");
+  const messages = girisSiz
+    ? { takip: (tumMesajlar as Record<string, unknown>).takip }
+    : tumMesajlar;
 
   return (
     <html

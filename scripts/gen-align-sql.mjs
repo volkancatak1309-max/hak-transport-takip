@@ -160,8 +160,9 @@ $ks$;
 `;
 
 function basSayfa(tenant, dosyalar, olcum) {
+  // Hedef numara LİSTEDEN türetilir: yeni migration eklenince başlık bayatlamasın.
   return `-- ═══════════════════════════════════════════════════════════════════════════
---  ${tenant.toUpperCase()} — ŞEMA HİZALAMA 043 → 078
+--  ${tenant.toUpperCase()} — ŞEMA HİZALAMA 043 → ${dosyalar[dosyalar.length - 1].slice(0, 3)}
 --  hak-transport-takip · üreten: scripts/gen-align-sql.mjs
 -- ═══════════════════════════════════════════════════════════════════════════
 --

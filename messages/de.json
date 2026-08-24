@@ -1869,5 +1869,32 @@
     "doc_field_requires_no": "Dokument hat eine Nummer",
     "doc_migration_needed": "Ohne Migration 078 (document_types / worker_documents) ist die Dokumentenverwaltung nicht nutzbar.",
     "cancel": "Abbrechen"
+  },
+  "takip": {
+    "durum_hazirlaniyor": "In Vorbereitung",
+    "durum_yolda": "Unterwegs",
+    "durum_vardi": "An Ihrer Adresse",
+    "alt_yolda": "Ihr Fahrzeug ist unterwegs",
+    "alt_eta": "In etwa {dk} Minuten",
+    "alt_vardi": "Das Fahrzeug hat den Zielort erreicht",
+    "eta_etiket": "Voraussichtliche Ankunft",
+    "eta_dakika": "~{dk} Min.",
+    "eta_uzun": "90+ Min.",
+    "guncelleme_etiket": "Standort",
+    "konum_taze": "Live",
+    "konum_bayat": "Letzter bekannter Standort",
+    "konum_yok": "Noch kein Signal",
+    "sofor_etiket": "Fahrer",
+    "link_notu": "Diese Seite aktualisiert sich automatisch",
+    "kapali_bulunamadi_baslik": "Dieser Link wurde nicht gefunden",
+    "kapali_bulunamadi_govde": "Der Link wurde möglicherweise unvollständig kopiert. Öffnen Sie die gesendete Adresse erneut.",
+    "kapali_suresi_doldu_baslik": "Der Link ist abgelaufen",
+    "kapali_suresi_doldu_govde": "Tracking-Links gelten nur für begrenzte Zeit. Fordern Sie einen neuen Link an.",
+    "kapali_iptal_edildi_baslik": "Link geschlossen",
+    "kapali_iptal_edildi_govde": "Dieser Tracking-Link wurde vom Absender geschlossen.",
+    "kapali_sefer_kapandi_baslik": "Lieferung abgeschlossen",
+    "kapali_sefer_kapandi_govde": "Die Fahrt ist abgeschlossen, die Live-Verfolgung endet damit.",
+    "kapali_tablo_yok_baslik": "Verfolgung derzeit nicht verfügbar",
+    "kapali_tablo_yok_govde": "Live-Verfolgung ist in dieser Installation noch nicht aktiviert."
   }
 }

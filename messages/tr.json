@@ -1832,6 +1832,7 @@
     "clear_hint": "Bir alanı boşaltıp kaydetmek o oranı varsayılana döndürür.",
     "unit_hour": "sa",
     "unit_vehicle_day": "araç-günü",
-    "source_link": "kaynağa git"
+    "source_link": "kaynağa git",
+    "rate_l100_loading": "Filo tüketimi ölçülüyor…"
   }
 }

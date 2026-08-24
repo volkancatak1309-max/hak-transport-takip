@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { AlertTriangle, Gauge } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,11 +37,23 @@ export function CostRatesForm({
   origin,
   row,
   tabloYok,
+  consumptionSlot,
 }: {
   rates: CostRates;
   origin: CostRateOrigin;
   row: CostRateRow | null;
   tabloYok: boolean;
+  /**
+   * ÖLÇÜLEN tüketim satırı — SUNUCUDAN AKITILARAK gelir, burada hesaplanmaz.
+   *
+   * ⚠️ NEDEN YUVA: bu satırın kaynağı `buildFuelReport` ve o çağrı canlıda
+   * 40-60 SANİYE sürüyor (24.08.2026 ölçümü: 48 sn). Sayfanın tamamını ona
+   * bağlamak, üç sayı düzenlemeye gelen yöneticiyi 43 saniye boş ekranda
+   * bekletiyordu — üstelik veritabanı yavaşladığında sayfa büsbütün boş
+   * render oluyordu (bir kez ölçüldü). Formun üç parasal oranı yakıt raporuna
+   * HİÇ ihtiyaç duymuyor; tek bağımlı satır buydu ve artık Suspense arkasında.
+   */
+  consumptionSlot: React.ReactNode;
 }) {
   const t = useTranslations("settings");
   const locale = useLocale();
@@ -164,22 +176,7 @@ export function CostRatesForm({
           </div>
         ))}
 
-        {/* ÖLÇÜLEN SATIR — girilemez, ama görünür. */}
-        <div className="space-y-1.5 rounded-lg border border-border/60 bg-surface-2/60 px-3 py-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-            <span className="flex items-center gap-1.5 text-[13px] font-medium">
-              <Gauge className="size-3.5 shrink-0 text-accent-sky-text" />
-              {t("rate_l100")}
-            </span>
-            <span className="flex items-center gap-2 text-xs">
-              <span className="nums font-medium text-foreground">
-                {num(rates.lPer100Km, 2)} L/100km
-              </span>
-              <RateSourceChip origin={origin.lPer100} />
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">{t("rate_l100_hint")}</p>
-        </div>
+        {consumptionSlot}
 
         {/* CC BY 4.0 ATFI — kaynaktan çekilen fiyat gösterildiği her yerde ZORUNLU.
             Lisans dört unsur istiyor: kaynak adı, lisans adı+bağlantısı, veriye

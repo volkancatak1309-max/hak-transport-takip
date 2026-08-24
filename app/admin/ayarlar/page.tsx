@@ -1,12 +1,12 @@
+import { Suspense } from "react";
 import { getTranslations } from "next-intl/server";
 import { requireAdmin } from "@/lib/session";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { PageHeader } from "@/components/ui-v2";
-import { computeAnalyticsRange } from "@/lib/analytics";
-import { buildFuelReport } from "@/lib/reports";
 import { resolveCostRates } from "@/lib/cost-rates-db";
 import { audit } from "@/lib/security-log";
 import { CostRatesForm } from "./CostRatesForm";
+import { ConsumptionRow, ConsumptionRowSkeleton } from "./ConsumptionRow";
 
 export const dynamic = "force-dynamic";
 
@@ -24,13 +24,18 @@ export default async function AyarlarPage() {
 
   const t = await getTranslations("settings");
 
-  // ÖLÇÜLEN tüketimi göstermek için yakıt raporu OKUNUR ama yalnız tek alanı
-  // kullanılır. Aralık "ay": oran ekranı bir DÖNEM raporu değil, "bugün hangi
-  // sayı geçerli" ekranıdır; 30 gün ölçümün oturması için yeterli ve yakıt
-  // raporunun kendi varsayılanıyla aynı pencere.
-  const range = computeAnalyticsRange("ay");
-  const fuel = await buildFuelReport(range);
-  const cozum = await resolveCostRates(fuel.fleetLPer100Km);
+  // ⚠️ `null` GEÇİLİYOR, yakıt raporu ÇAĞRILMIYOR — bilerek.
+  //
+  // Ölçülen L/100km'nin tek kaynağı `buildFuelReport` ve o çağrı canlıda
+  // 40-60 saniye sürüyor. Sayfa onu doğrudan bekliyordu ve ölçüldü: ayarlar
+  // ekranı 43 saniyede açılıyor, veritabanı yavaşladığında ise 200 dönüp
+  // İÇERİKSİZ render oluyordu. Düzenlenebilir üç parasal oran yakıt raporuna
+  // hiç ihtiyaç duymuyor (bkz. lib/cost-rates-db.ts zinciri); tek bağımlı
+  // parça tüketim satırıydı ve o artık Suspense arkasında akıyor.
+  //
+  // Buradaki `null`, YALNIZ bu çağrının lPer100 alanını etkiler ve o alan
+  // forma HİÇ geçmiyor — tüketim satırı kendi çözümünü kendi yapıyor.
+  const cozum = await resolveCostRates(null);
 
   return (
     <DashboardShell
@@ -50,6 +55,11 @@ export default async function AyarlarPage() {
           origin={cozum.origin}
           row={cozum.row}
           tabloYok={cozum.tabloYok}
+          consumptionSlot={
+            <Suspense fallback={<ConsumptionRowSkeleton label={t("rate_l100_loading")} />}>
+              <ConsumptionRow />
+            </Suspense>
+          }
         />
       </div>
     </DashboardShell>

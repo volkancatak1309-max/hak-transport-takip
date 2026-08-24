@@ -1832,6 +1832,7 @@
     "clear_hint": "Clearing a field and saving resets that rate to the default.",
     "unit_hour": "h",
     "unit_vehicle_day": "vehicle-day",
-    "source_link": "view source"
+    "source_link": "view source",
+    "rate_l100_loading": "Measuring fleet consumption…"
   }
 }

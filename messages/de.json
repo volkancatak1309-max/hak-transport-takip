@@ -1832,6 +1832,7 @@
     "clear_hint": "Ein Feld leeren und speichern setzt den Satz auf den Standard zurück.",
     "unit_hour": "Std",
     "unit_vehicle_day": "Fahrzeugtag",
-    "source_link": "zur Quelle"
+    "source_link": "zur Quelle",
+    "rate_l100_loading": "Flottenverbrauch wird gemessen…"
   }
 }

@@ -39,7 +39,8 @@
     "verify:telegram-sokum": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-telegram-sokum.mjs",
     "verify:reopen-payload": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-reopen-payload.mjs",
     "verify:rapor-dil": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-dil.mjs",
-    "verify:rapor-dil-http": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-dil-http.mjs"
+    "verify:rapor-dil-http": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-rapor-dil-http.mjs",
+    "verify:belge-takibi": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-belge-takibi.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

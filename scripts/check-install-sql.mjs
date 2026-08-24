@@ -18,9 +18,11 @@
  *        `HARIC`e bir cümle gerekçe yazmak zorundasın.
  *
  *   K2 — TAZELİK: `ORDER`/`HARIC`/dönüşümler ya da bir migration DEĞİŞTİĞİ
- *        hâlde `db/install/*-full.sql` yeniden üretilmediyse kırar. Üretici
- *        bellekte yeniden koşturulur ve diskteki dosyayla BAYT BAYT
- *        karşılaştırılır. "Üretmeyi unuttum" da sessiz kalamaz.
+ *        hâlde `db/install/*-full.sql` **ve** `*-hizalama-078.sql` yeniden
+ *        üretilmediyse kırar. Üreticiler bellekte yeniden koşturulur ve
+ *        diskteki dosyayla BAYT BAYT karşılaştırılır. "Üretmeyi unuttum" da
+ *        sessiz kalamaz. Hizalama dosyaları da kapsanır: onlar mevcut
+ *        kiracıların veritabanına uygulanıyor, bayat kalmaları daha pahalı.
  *
  *   K3 — TEK İŞLEM: üretilen dosyada tam olarak BİR `begin;` ve BİR `commit;`
  *        olmalı. İçeride kalmış bir `commit;` dış transaction'ı erken kapatır
@@ -42,6 +44,7 @@ import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { build, ORDER, HARIC, SENTETIK } from "./gen-install-sql.mjs";
+import { hizalama } from "./gen-align-sql.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = join(ROOT, "db", "migrations");
@@ -49,6 +52,9 @@ const OUT_DIR = join(ROOT, "db", "install");
 
 /** Üretilen kurulum dosyası olan müşteriler — hepsi denetlenir. */
 const MUSTERILER = ["sendigo", "galzura"];
+
+/** Hizalama dosyası üretilen kiracılar (MEVCUT, canlı verisi olan kurulumlar). */
+const HIZALAMALAR = ["sendigo", "galzura-demo"];
 
 const hatalar = [];
 const notlar = [];
@@ -124,14 +130,31 @@ if (hatalar.length === 0) {
 }
 
 // ── K2 · TAZELİK ───────────────────────────────────────────────────────────
+// Hem SIFIRDAN kurulum dosyaları hem MEVCUT kiracıyı hizalama dosyaları.
+// İkincisi de elle üretiliyor ve aynı şekilde bayatlayabilir.
+const URETIMLER = [
+  ...MUSTERILER.map((m) => ({
+    ad: m,
+    dosya: `${m}-full.sql`,
+    uret: () => build(m).sql,
+    komut: `node scripts/gen-install-sql.mjs ${m}`,
+  })),
+  ...HIZALAMALAR.map((m) => ({
+    ad: `${m} (hizalama)`,
+    dosya: `${m}-hizalama-078.sql`,
+    uret: () => hizalama(m).sql,
+    komut: `node scripts/gen-align-sql.mjs ${m}`,
+  })),
+];
+
 const uretilen = new Map();
-for (const m of MUSTERILER) {
-  const dosya = join(OUT_DIR, `${m}-full.sql`);
+for (const { ad: m, dosya: dosyaAd, uret, komut } of URETIMLER) {
+  const dosya = join(OUT_DIR, dosyaAd);
   if (!existsSync(dosya)) {
-    hatalar.push(`K2 — ${m}-full.sql YOK. Üret: node scripts/gen-install-sql.mjs ${m}`);
+    hatalar.push(`K2 — ${dosyaAd} YOK. Üret: ${komut}`);
     continue;
   }
-  const { sql } = build(m);
+  const sql = uret();
   uretilen.set(m, sql);
   const diskte = readFileSync(dosya, "utf8").replace(/\r\n/g, "\n");
   if (diskte !== sql) {
@@ -141,13 +164,13 @@ for (const m of MUSTERILER) {
     let i = 0;
     while (i < a.length && i < b.length && a[i] === b[i]) i++;
     hatalar.push(
-      `K2 — db/install/${m}-full.sql BAYAT (ilk fark ${i + 1}. satırda):\n` +
+      `K2 — db/install/${dosyaAd} BAYAT (ilk fark ${i + 1}. satırda):\n` +
         `    diskte : ${(a[i] ?? "(dosya bitti)").trim().slice(0, 90)}\n` +
         `    olması : ${(b[i] ?? "(dosya bitti)").trim().slice(0, 90)}\n` +
-        `  Çözüm: node scripts/gen-install-sql.mjs ${m}`
+        `  Çözüm: ${komut}`
     );
   } else {
-    notlar.push(`K2 ✓ ${m}-full.sql güncel (${sql.length} bayt).`);
+    notlar.push(`K2 ✓ ${dosyaAd} güncel (${sql.length} bayt).`);
   }
 }
 

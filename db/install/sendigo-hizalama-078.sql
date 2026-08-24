@@ -1,0 +1,3895 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SENDIGO — ŞEMA HİZALAMA 043 → 078
+--  hak-transport-takip · üreten: scripts/gen-align-sql.mjs
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+--  NE İŞE YARAR
+--  MEVCUT ve CANLI VERİSİ OLAN bir kurulumu bugünkü şemaya çeker. Eksik
+--  tabloları, kolonları, indeksleri ve RPC''leri ekler.
+--
+--  ⚠️ BOŞ VERİTABANINDA KULLANMAYIN — onun dosyası sendigo-full.sql.
+--
+--  BU KİRACIDA NE DEĞİŞECEK — ÖLÇÜLDÜ (24.08.2026, canlı Sendigo şeması)
+--    · +22 TABLO: action_snoozes · audit_log · conversations · conversation_members
+--      · country_approvals · device_approvals · document_types · fleets
+--      · fuel_price_reference · kill_switch · kill_switch_attempts
+--      · kill_switch_secret · login_sessions · message_receipts · messages
+--      · pdf_fingerprints · push_tokens · seferler · tenant_cost_rates
+--      · vehicle_fault_reports · worker_documents · zone_visits
+--    · +13 KOLON: geofences(archived_at, category, customer_name, customer_ref,
+--      min_dwell_s) · vehicles(device_model) · workers(access_hours_start,
+--      access_hours_end, allowed_countries, fleet, gate_exempt, is_owner,
+--      session_version)
+--    · +5 RPC: last_recorded_at_batch · idle_episode_cursors_batch
+--      · autoshift_telemetry_batch · latest_telemetry_batch · first_ignition_batch
+--    · SİLİNEN SATIR: 0.  DÜŞÜRÜLEN TABLO/KOLON: 0.
+--
+--  CANLI VERİ (24.08.2026): 9 personel · 5 araç · 26 vardiya · 0 bölge
+--  · 207.388 device_telemetry satırı. Bölge tablosu BOŞ olduğu için 063/064/069
+--  kısıt ve geri-doldurma adımları bu kiracıda hiçbir satıra dokunmaz.
+--  vehicles.fleet''in 5 satırının hepsi 'mavi' → 059''un FK''si sorunsuz kurulur.
+--  telegram_chat_id dolu 0 satır → Telegram kalıntısı kimseyi etkilemiyor.
+--
+--  NASIL ÇALIŞIR — HEPSİ YA DA HİÇBİRİ
+--  Dosyanın tamamı TEK transaction içindedir. Bir ifade hata verirse HİÇBİR
+--  ŞEY uygulanmaz; yarım şema oluşmaz. Baştaki ön denetimler, sorunu kısıt
+--  hatasından önce okunur bir cümleyle söyler.
+--
+--  TEKRAR ÇALIŞTIRILABİLİR (idempotent). İkinci koşum hiçbir şey değiştirmez;
+--  boş bir PostgreSQL 16 üzerinde iki kez üst üste ölçüldü.
+--
+--  VERİ KAYBI RİSKİ
+--  · Hiçbir tablo ya da kolon DÜŞÜRÜLMEZ. Hiçbir satır SİLİNMEZ.
+--  · Tek DROP: `vehicle_odometer_spans` FONKSİYONU (051) — veri değil, kod;
+--    yerine 052''nin `shift_odometer_spans`ı geliyor ve uygulama onu çağırıyor.
+--  · Yazma yapan üç yer var, üçü de YENİ kolonları dolduruyor:
+--      063/069 → geofences.category (yalnız varsayılanda kalmış satırlar)
+--      072     → workers.fleet (araç atamasından ve son vardiyadan türetilir)
+--    Mevcut hiçbir kolonun değeri EZİLMEZ.
+--  · Telefon numaralarına DOKUNULMAZ: 075 bilerek dahil edilmedi (saf veri
+--    onarımı; ayrı ve bilinçli bir karar olmalı — dosyanın sonundaki nota bakın).
+--
+--  ÇALIŞTIRMA
+--  Supabase → SQL Editor → hepsini yapıştır → Run. Sakin bir saatte çalıştırın:
+--  `lock_timeout` 20 sn''dir, canlı yazma trafiği kilidi tutarsa dosya kendini
+--  düşürür ve HİÇBİR ŞEY uygulanmaz — tekrar çalıştırmak güvenlidir.
+--
+--  SONRASINDA
+--    select count(*) from information_schema.tables
+--     where table_schema='public' and table_type='BASE TABLE';
+--    -- 47 bekleniyor (telegram_link_codes duruyorsa 48)
+--    select code, name from public.fleets;          -- bordo, mavi
+--    select count(*) from public.document_types;    -- 0 (türleri panelden açarsınız)
+--
+--  ⚠️ Uygulama kodu ZATEN 078''i bekliyor ve eksik tabloları kademeli düşüşle
+--  karşılıyor (tablo yoksa özellik sessizce kapalı). Yani bu dosya "önce kod,
+--  sonra şema" sırasını bozmaz; hizalamadan sonra özellikler AÇILIR.
+-- ═══════════════════════════════════════════════════════════════════════════
+--  KAPSAM: 33 migration (044 → 078)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+begin;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  ÖN DENETİMLER — sorun varsa BURADA ve OKUNUR biçimde durur
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- Zaman aşımları: büyük tablolarda indeks kurulacak (device_telemetry).
+-- lock_timeout kısa: canlı uygulamayı dakikalarca bekletmektense hızlı düş,
+-- sakin bir saatte tekrar çalıştır.
+set local statement_timeout = '15min';
+set local lock_timeout = '20s';
+
+do $on_denetim$
+declare
+  v_eksik text;
+  v_kotu  text;
+begin
+  -- 1) BU DOSYA MEVCUT KURULUM İÇİNDİR. Boş veritabanında yanlış araç.
+  select string_agg(t, ', ' order by t) into v_eksik
+    from unnest(array['workers','vehicles','time_entries','device_telemetry']) t
+   where not exists (
+     select 1 from information_schema.tables
+      where table_schema = 'public' and table_name = t
+   );
+  if v_eksik is not null then
+    raise exception
+      'DURDURULDU: temel tablolar yok (%). Bu dosya MEVCUT bir kurulumu 078''e çeker; SIFIRDAN kurulum için db/install/sendigo-full.sql kullanın.',
+      v_eksik;
+  end if;
+
+  -- 2) 043 TABANI: 023 (vehicles.fleet) ve 019 (must_change_pin) burada mı?
+  if not exists (
+    select 1 from information_schema.columns
+     where table_schema='public' and table_name='vehicles' and column_name='fleet'
+  ) then
+    raise exception
+      'DURDURULDU: vehicles.fleet yok — bu kurulum 023''ten eski. Hizalama 043 tabanı varsayar; önce eski migration''ları uygulayın.';
+  end if;
+
+  -- 3) 059 ÖN DENETİMİ — CHECK''ten FK''ye geçiş.
+  --    fleets tablosunda yalnız 'bordo' ve 'mavi' olacak. Mevcut satırlarda
+  --    başka bir kod varsa FK eklenemez ve işlem geri alınır.
+  select string_agg(distinct fleet, ', ') into v_kotu
+    from public.vehicles
+   where fleet is not null and fleet not in ('bordo','mavi');
+  if v_kotu is not null then
+    raise exception
+      'DURDURULDU (059): vehicles.fleet''te tanımsız filo kodu var: %. fleets tablosuna eklenecek kodlar yalnız bordo/mavi; önce bu satırları düzeltin.',
+      v_kotu;
+  end if;
+
+  select string_agg(distinct managed_fleet, ', ') into v_kotu
+    from public.workers
+   where managed_fleet is not null and managed_fleet not in ('bordo','mavi');
+  if v_kotu is not null then
+    raise exception
+      'DURDURULDU (059): workers.managed_fleet''te tanımsız filo kodu var: %.', v_kotu;
+  end if;
+
+  -- 4) 064 ÖN DENETİMİ — geofences.purpose kısıtı yeniden kurulacak.
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema='public' and table_name='geofences' and column_name='purpose'
+  ) then
+    select string_agg(distinct purpose, ', ') into v_kotu
+      from public.geofences
+     where purpose is not null and purpose not in ('rule','depot','customer');
+    if v_kotu is not null then
+      raise exception
+        'DURDURULDU (064): geofences.purpose''ta izinli olmayan değer var: %. İzinli küme: rule/depot/customer.',
+        v_kotu;
+    end if;
+  end if;
+
+  raise notice 'Ön denetimler geçti — hizalama başlıyor.';
+end
+$on_denetim$;
+
+-- ── KÖPRÜ KOLONLARI (migration DEĞİL) ──────────────────────────────────────
+-- İkisi de `if not exists`: zaten varsa hiçbir şey olmaz.
+-- KÖPRÜ 2, 063''ten ÖNCE gelmek ZORUNDA — 063 o kolona kısmi indeks kuruyor
+-- ama kolonu 069 ekliyor (boş PostgreSQL 16''da ölçüldü: 063 patlıyor).
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- KÖPRÜ 1 — vehicles.tank_capacity_l   (migration DEĞİL, eksik DDL tamamlaması)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Bu kolon HİÇBİR migration dosyasında yaratılmıyor: canlı HAK61 veritabanına
+-- 2026 ortasında Supabase SQL Editor'dan elle eklenmiş ve repoya hiç girmemiş.
+-- Boş bir veritabanında yokluğu ZİNCİRİ KIRAR:
+--   • 028_test_data_flag.sql → insert into public.vehicles (... tank_capacity_l ...)
+--     "column tank_capacity_l of relation vehicles does not exist" → 028-040 çalışmaz.
+--   • lib/reports.ts:630 → .select("id, plate, assigned_worker_id, tank_capacity_l")
+--     yakıt raporu kolon hatası döndürür.
+-- Tip/ölçek canlı HAK61 şemasından alındı (numeric, litre; NULL = bilinmiyor).
+alter table public.vehicles
+  add column if not exists tank_capacity_l numeric;
+
+comment on column public.vehicles.tank_capacity_l is
+  'Depo kapasitesi (litre). Yakıt raporunda yüzde→litre çevrimi için; NULL ise litre hesaplanmaz.';
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- KÖPRÜ 2 — geofences.archived_at   (migration DEĞİL, SIRA düzeltmesi)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 063_geofence_category.sql son adımında şu kısmi indeksi kuruyor:
+--     create index ... on public.geofences (active) where archived_at is null;
+-- ama kolonu KENDİSİ eklemiyor — daha eskisinin eklediğini varsayıyor. Kolonu
+-- gerçekte 069 ekliyor, yani ALTI DOSYA SONRA.
+--
+-- ÖLÇÜLDÜ (24.08.2026, boş PostgreSQL 16 üzerinde): köprüsüz kurulum
+--   "ERROR: column archived_at does not exist" ile 063'te DURUYOR.
+-- Tüm dosya tek transaction olduğu için sonuç YARIM ŞEMA değil, HİÇ ŞEMA.
+-- 069'un başlığındaki "kuvvetli şüphe" böylece ölçülmüş bir olgu oldu.
+--
+-- Kolon, geofences tablosunun yaratıldığı 015'in HEMEN ARDINDAN eklenir;
+-- 069'daki `add column if not exists` sonra no-op'a döner ve sonuçtaki şema
+-- canlı HAK61'inkiyle BİREBİR aynı kalır.
+alter table public.geofences
+  add column if not exists archived_at timestamptz;
+
+comment on column public.geofences.archived_at is
+  'Arşivlenme anı (NULL = etkin). 063 bu kolona kısmi indeks kuruyor, 069 ekliyor; kurulum dosyasında sıra düzeltildi.';
+
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  044_mobile_token_version.sql                                       ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 044 — MOBİL TOKEN İPTAL SAYACI
+--
+-- ⚠️ BU DOSYA HENÜZ ÇALIŞTIRILMADI. Volkan'ın Supabase SQL editöründe
+--    çalıştırması bekleniyor (HAK61 ve Sendigo projelerinde ayrı ayrı).
+--
+-- NE İŞE YARAR
+-- Mobil uygulama çerez kullanamadığı için /api/mobile/* uçları mühürlü token
+-- ile çalışıyor (lib/mobile-auth.ts). Token durumsuz olduğu için, verildikten
+-- sonra "bunu iptal et" demenin tek yolu sunucuda karşılaştırılacak bir sayaç
+-- tutmaktır. Token mühürlenirken o anki token_version içine gömülür; her
+-- istekte DB'deki değerle karşılaştırılır. Sayaç artınca o kişinin TÜM mobil
+-- token'ları (access + refresh, her cihazda) anında ölür.
+--
+-- NEDEN AYRI TABLO DEĞİL
+-- Oturum tablosu cihaz başına iptal ve denetim izi verirdi, ama büyüyen bir
+-- tablo + temizlik politikası + rotasyon kodu getirirdi. Bu filoda kişi başına
+-- tek cihaz var ve gerçek senaryolar (işten çıkış, pasife alma, PIN sıfırlama,
+-- kayıp telefon) hesap ekseninde iptalle zaten karşılanıyor. Kararın tam
+-- karşılaştırması ve bilinçli kabul edilen bedeli (tek cihazdan çıkış diğer
+-- cihazları da düşürür) tasarım turunda verildi.
+-- İleride cihaz yönetimi gerekirse token'a jti eklenip tablo YANINA konabilir;
+-- bu kolon o zaman da geçerli kalır, kırıcı bir değişiklik olmaz.
+--
+-- SAYACI ARTIRAN DÖRT OLAY (kod tarafında bağlı):
+--   • POST /api/mobile/auth/logout        → app/api/mobile/auth/logout/route.ts
+--   • PIN değişimi (şoför kendi değiştirir) → app/actions/auth.ts changePinAction
+--   • PIN sıfırlama (yönetici)             → app/actions/workers.ts setWorkerPinAction
+--   • Aktif/pasif çevirme                  → app/actions/workers.ts toggleActiveAction
+--   • İşten çıkarma                        → app/actions/workers.ts terminateWorkerAction
+--
+-- MIGRATION ÖNCESİ DAVRANIŞ (kod buna göre yazıldı, kırılmaz):
+--   /login, /refresh, /me  → TAM ÇALIŞIR, sürüm denetimi atlanır
+--   /logout                → 503 mobile_store_missing (sessizce başarılı SAYMAZ)
+--   bumpTokenVersion(...)  → sessiz no-op, mevcut yönetici akışları etkilenmez
+--
+-- RLS: şemanın geri kalanıyla tutarlı olarak KAPALI — bu kolon yalnız
+-- service-role istemcisi tarafından okunup yazılır (bkz. 012, 014, 019, 021).
+
+alter table public.workers
+  add column if not exists token_version integer not null default 0;
+
+comment on column public.workers.token_version is
+  'Mobil token iptal sayacı. Artınca o kişinin tüm mobil token''ları geçersizleşir. Tarayıcı oturum çerezini (hak_session) ETKİLEMEZ.';
+
+-- İndeks GEREKMEZ: kolon her zaman workers.id (birincil anahtar) üzerinden
+-- tek satır okunuyor, hiçbir sorguda filtre ya da sıralama anahtarı değil.
+
+notify pgrst, 'reload schema';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  045_owner_security.sql                                             ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 — Migration 045 (PATRON KADEMESİ + GÜVENLİK İZİ)
+-- =====================================================================
+-- Üç şey ekler, hiçbir mevcut kolona/tabloya DOKUNMAZ:
+--
+--   a) workers.is_owner        — yöneticinin ÜSTÜNDE bir kademe
+--   b) workers.session_version — tek oturum kilidi + uzaktan kesme sayacı
+--   c) login_sessions          — kim, ne zaman, nereden, hangi cihazdan girdi
+--   d) audit_log               — sayfa görüntüleme + önemli eylem izi
+--
+-- ── NEDEN AYRI KADEME (is_owner) ─────────────────────────────────────
+-- Bugün tek yönetici kademesi var (workers.is_admin, 001) ve 19 yönetici
+-- sayfasının hepsi requireAdmin() ile korunuyor. Güvenlik ekranı oturum
+-- geçmişi, IP ve cihaz parmak izi gösteriyor — bu, "panele bakan herkesin"
+-- değil, HESAP SAHİBİNİN görmesi gereken bir veri. is_admin'i bölmek yerine
+-- ÜSTÜNE bir kademe konuldu: mevcut 19 sayfa aynen requireAdmin'de kalır,
+-- yalnız yeni ekran requireOwner() arkasına girer. Böylece bu migration
+-- çalıştırılmadan önce yazılmış hiçbir yetki kararı değişmez.
+--
+-- Desen migration 029'un (managed_fleet) birebir aynısı: tek nullable kolon +
+-- kod tarafında bir kapı fonksiyonu. Yeni rol TABLOSU yok.
+--
+-- ⚠️ VARSAYILAN false: bu dosya çalıştırıldığı anda kimse owner olmaz.
+--    Owner'ı ayrıca siz atarsınız (aşağıdaki nota bakın).
+--
+-- ── NEDEN session_version ────────────────────────────────────────────
+-- Oturum iron-session ile ÇEREZDE taşınıyor (lib/session.ts) ve sunucuda
+-- hiçbir kaydı yok — yani bugün bir oturumu uzaktan düşürmek teknik olarak
+-- imkânsız. Bu sayaç mobil taraftaki workers.token_version (044) ile aynı
+-- fikri web çerezine getirir: çerez mühürlenirken içine o anki değer konur,
+-- her istekte DB'deki değerle karşılaştırılır, sayaç artınca eski çerez ölür.
+--
+-- Tekrar çalıştırılabilir (idempotent). Supabase SQL Editor'da çalıştırın.
+--
+-- ⚠️ BU DOSYA GÜNCELLENDİ (login_sessions.source + canlılık indeksi eklendi).
+--    Daha önce çalıştırdıysanız TEKRAR ÇALIŞTIRIN — her adım idempotent, var
+--    olan satırlara ve kolonlara dokunmaz.
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ── a) PATRON KADEMESİ ───────────────────────────────────────────────
+-- nullable + default false: mevcut satırlar false olur, kimse yetki kazanmaz.
+alter table public.workers
+  add column if not exists is_owner boolean not null default false;
+
+comment on column public.workers.is_owner is
+  'Yöneticinin üstünde kademe (045). Yalnız /admin/guvenlik ekranını açar; '
+  'diğer 19 yönetici sayfası is_admin ile korunmaya devam eder.';
+
+-- Owner sayısı tipik olarak 1-2; kısmi indeks tam da bu dağılım için.
+create index if not exists idx_workers_is_owner
+  on public.workers(id)
+  where is_owner;
+
+-- ── b) OTURUM SÜRÜMÜ ─────────────────────────────────────────────────
+-- Artınca o kişinin TÜM web çerezleri geçersizleşir (tek oturum kilidi ve
+-- "oturumları sonlandır" düğmesi bunu artırır).
+alter table public.workers
+  add column if not exists session_version integer not null default 0;
+
+comment on column public.workers.session_version is
+  'Web oturum iptal sayacı (045). Çerez mühürlenirken içine yazılır; '
+  'DB değeri artınca eski çerez reddedilir. Mobil karşılığı: token_version (044).';
+
+-- ── c) GİRİŞ OTURUMLARI ──────────────────────────────────────────────
+-- Bugün BAŞARILI giriş hiçbir yere yazılmıyor: login_attempts (012) yalnız
+-- BAŞARISIZ denemeyi tutar ve başarılı girişte o satır SİLİNİR
+-- (lib/auth-core.ts:143). Yani "kim ne zaman girdi" verisi hiç yok.
+create table if not exists public.login_sessions (
+  id            uuid primary key default gen_random_uuid(),
+  worker_id     uuid not null references public.workers(id) on delete cascade,
+  started_at    timestamptz not null default now(),
+  -- Oturum CANLILIĞI. Korumalı her sayfa isteğinde ileri taşınır
+  -- (lib/session.ts → touchLoginSession). "Açık" ile "canlı" farklı şeyler:
+  -- tarayıcıyı çıkış yapmadan kapatan biri açık kalır ama canlı değildir —
+  -- bu yüzden çoklu-oturum işareti started_at değil BU alana bakar.
+  last_seen_at  timestamptz not null default now(),
+  -- NULL = hâlâ açık. Dolu = kapandı (aşağıdaki sebeple).
+  ended_at      timestamptz,
+  ended_reason  text check (ended_reason is null or ended_reason in
+                  ('logout','single_session','revoked','expired')),
+  ip            text,
+  user_agent    text,
+  -- Cihaz parmak izi: UA + dil başlığının sha256'sı (lib/request-context.ts).
+  -- ⚠️ Kesin kimlik DEĞİL — aynı tarayıcı sürümü + aynı dil aynı izi üretir.
+  -- "Yeni cihaz" işareti bu yüzden bir İPUCU, kanıt değil.
+  device_hash   text,
+  -- Vercel'in ücretsiz coğrafya başlıklarından (x-vercel-ip-city / -country).
+  -- Dış servis YOK, ek maliyet YOK. Vercel dışında çalışırken NULL kalır.
+  city          text,
+  country       text,
+  -- Bu oturum açılırken aynı kişinin başka açık oturumu var mıydı?
+  concurrent    boolean not null default false,
+  -- Bu cihaz izi o kişide daha önce hiç görülmedi mi?
+  new_device    boolean not null default false,
+  -- Hangi kapıdan girildi: tarayıcı çerezi mi, mobil token ucu mu?
+  -- İki giriş kapısı var (app/actions/auth.ts ve app/api/mobile/auth/login) ve
+  -- ikisi de buraya yazar; ayırt edilmezse "aynı hesap iki cihazda" işareti
+  -- telefondan+masaüstünden çalışan bir kişide yanlış alarma dönüşür.
+  source        text not null default 'web'
+);
+
+-- 045'i DAHA ÖNCE çalıştırmış kurulumlar için: tablo zaten vardı, kolon yoktu.
+alter table public.login_sessions
+  add column if not exists source text not null default 'web';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'login_sessions_source_chk'
+  ) then
+    alter table public.login_sessions
+      add constraint login_sessions_source_chk check (source in ('web','mobile'));
+  end if;
+end $$;
+
+-- Patron ekranının ana sorgusu: kişi bazında en yeniden eskiye.
+create index if not exists idx_login_sessions_worker_time
+  on public.login_sessions(worker_id, started_at desc);
+
+-- "Aktif oturumlar" listesi ve çoklu-oturum tespiti. last_seen_at indekste:
+-- canlılık sorgusu (açık VE son N dakikada görülmüş) tek geçişte çözülsün.
+--
+-- ⚠️ ADI DEĞİŞTİ (idx_login_sessions_open → _live). `create index if not exists`
+--    var olan bir ADI görürse kolonları FARKLI olsa bile hiçbir şey yapmaz ve
+--    sessizce eski tanımı bırakırdı; bu yüzden eskisi adıyla düşürülüyor.
+drop index if exists public.idx_login_sessions_open;
+
+create index if not exists idx_login_sessions_live
+  on public.login_sessions(worker_id, last_seen_at desc)
+  where ended_at is null;
+
+-- Tüm kullanıcılar arası zaman çizelgesi (giriş geçmişi ekranı).
+create index if not exists idx_login_sessions_time
+  on public.login_sessions(started_at desc);
+
+-- ── d) EYLEM İZİ ─────────────────────────────────────────────────────
+-- Sayfa görüntüleme + önemli eylem (rapor açma, PDF, dışa aktarma).
+-- worker_id NULL olabilir: oturumsuz bir eylem de kaydedilebilsin.
+create table if not exists public.audit_log (
+  id         uuid primary key default gen_random_uuid(),
+  worker_id  uuid references public.workers(id) on delete set null,
+  at         timestamptz not null default now(),
+  -- 'page_view' | 'export_csv' | 'export_pdf' | 'session_revoke' | 'freeze' …
+  action     text not null,
+  -- Eylemin hedefi: sayfa yolu, rapor adı, etkilenen kullanıcı id'si.
+  target     text,
+  meta       jsonb,
+  ip         text
+);
+
+create index if not exists idx_audit_log_time
+  on public.audit_log(at desc);
+
+create index if not exists idx_audit_log_worker_time
+  on public.audit_log(worker_id, at desc);
+
+-- Ekranda tür bazlı süzme (yalnız dışa aktarmaları göster vb.).
+create index if not exists idx_audit_log_action_time
+  on public.audit_log(action, at desc);
+
+-- NOT: RLS bu iki tabloda da KAPALI kalır — şemanın geri kalanıyla tutarlı;
+-- yalnız service-role istemcisi okuyup yazıyor (bkz. 012/014/015'teki aynı not).
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- =====================================================================
+--  ÇALIŞTIRDIKTAN SONRA — owner'ı siz atarsınız
+--
+--    update public.workers set is_owner = true where phone = '+XXXXXXXXXXXX';
+--
+--  Doğrulama:
+--    select name, phone, is_admin, is_owner from public.workers where is_owner;
+--    select count(*) from public.login_sessions;   -- 0 (ilk girişte dolar)
+--
+--  ⚠️ Bu migration TEK BAŞINA hiçbir davranış değiştirmez. Katmanı açan şey
+--     SECURITY_LAYER_ENABLED env'idir (lib/tenant.ts) ve VARSAYILANI false —
+--     yani HAK61/Sendigo'da tablo yaratılsa bile hiçbir şey yazılmaz.
+-- =====================================================================
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  046_access_gates.sql                                               ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 — Migration 046 (ERİŞİM KAPILARI)
+-- =====================================================================
+-- Dört kapı, hepsi 045'in üstüne biner ve hepsi TEK bayrakla açılır
+-- (ACCESS_GATES_ENABLED, lib/tenant.ts). Bayrak kapalıyken bu tabloların
+-- hiçbirine dokunulmaz — HAK61/Sendigo'da tablolar yaratılsa bile tek satır
+-- yazılmaz, tek sorgu atılmaz.
+--
+--   KAPI 1  device_approvals    yeni cihazdan giriş patron onayına düşer
+--   KAPI 2  country_approvals   liste dışı ülkeden giriş patron onayına düşer
+--   KAPI 3  workers.access_hours_start/end  kişi bazında saat aralığı
+--   KAPI 4  kill_switch (+ _attempts, _secret)  ölü adam anahtarı
+--
+-- ── NEDEN ONAY TABLOSU, NEDEN BEYAZ LİSTE DEĞİL ──────────────────────
+-- Cihaz ve ülke kararları GEÇMİŞİ olan kararlardır: kim, ne zaman, nereden
+-- istedi ve kim onayladı. Tek bir `allowed_devices text[]` kolonu bu izi
+-- tutamaz — reddedilen bir istek hiç görünmez, oysa asıl bilmek istediğimiz
+-- şey reddedilenlerdir. Bu yüzden durum makinesi olan bir tablo.
+--
+-- ── workers.allowed_countries NEDEN AYRICA VAR ───────────────────────
+-- country_approvals "bu kullanıcı bu ülkeden giriş istedi" olayını tutar;
+-- allowed_countries ise patronun ÖNCEDEN açtığı ülkeleri (onay beklemeden).
+-- NULL = kiracı varsayılanı (ACCESS_COUNTRIES env, öntanımlı TR,AT).
+-- Boş dizi = "hiçbir ülke serbest değil, hepsi onaydan geçsin" demektir ve
+-- NULL'dan farklıdır — bu ayrım bilinçli.
+--
+-- Tekrar çalıştırılabilir (idempotent). Supabase SQL Editor'da çalıştırın.
+-- ⚠️ ÖNCE 045 çalıştırılmış olmalı (workers.is_owner buradaki kapıların
+--    muafiyet ölçütü).
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ── KAPI 1: CİHAZ ONAYI ──────────────────────────────────────────────
+-- device_hash lib/request-context.ts'ten gelir: UA + Accept-Language sha256'sı.
+-- ⚠️ KASITLI OLARAK ZAYIF bir iz (bkz. 045): aynı tarayıcı sürümünü aynı dille
+-- kullanan iki kişi AYNI izi üretir. Yani bu kapı "cihazı tanır" demez,
+-- "tanımadığım bir imza gördüm, insana sor" der. Güvenliği sağlayan şey
+-- parmak izinin gücü değil, ONAY ADIMIDIR.
+create table if not exists public.device_approvals (
+  id            uuid primary key default gen_random_uuid(),
+  worker_id     uuid not null references public.workers(id) on delete cascade,
+  device_hash   text not null,
+  status        text not null default 'pending'
+                  check (status in ('pending','approved','denied')),
+  requested_at  timestamptz not null default now(),
+  decided_at    timestamptz,
+  decided_by    uuid references public.workers(id) on delete set null,
+  -- İlk görüldüğü andaki bağlam — patron kararı buna bakarak veriyor.
+  first_ip      text,
+  first_city    text,
+  first_country text,
+  user_agent    text
+);
+
+-- Kişi + cihaz çifti TEKTİR: aynı cihaz için ikinci bir pending satır açılmaz,
+-- yoksa her giriş denemesi listeye yeni bir satır atar ve patron ekranı
+-- kullanılamaz hâle gelir.
+create unique index if not exists idx_device_approvals_worker_device
+  on public.device_approvals(worker_id, device_hash);
+
+-- Patron ekranının ana sorgusu: bekleyenler, en yeniden eskiye.
+create index if not exists idx_device_approvals_pending
+  on public.device_approvals(requested_at desc)
+  where status = 'pending';
+
+-- ── KAPI 2: ÜLKE ONAYI ───────────────────────────────────────────────
+-- Ülke Vercel'in x-vercel-ip-country başlığından okunur (ücretsiz, dış servis
+-- yok). ⚠️ Başlık YOKSA (yerel geliştirme, Vercel dışı barındırma) kapı
+-- AÇIK kalır: bilinmeyen bir ülkeyi "yasak" saymak, başlık üretmeyen her
+-- ortamda herkesi kilitlerdi. Kapının işi bilinen-yabancı ülkeyi durdurmak.
+create table if not exists public.country_approvals (
+  id            uuid primary key default gen_random_uuid(),
+  worker_id     uuid not null references public.workers(id) on delete cascade,
+  -- ISO 3166-1 alpha-2, BÜYÜK harf (kod tarafında normalize edilir).
+  country       text not null,
+  status        text not null default 'pending'
+                  check (status in ('pending','approved','denied')),
+  requested_at  timestamptz not null default now(),
+  decided_at    timestamptz,
+  decided_by    uuid references public.workers(id) on delete set null
+);
+
+create unique index if not exists idx_country_approvals_worker_country
+  on public.country_approvals(worker_id, country);
+
+create index if not exists idx_country_approvals_pending
+  on public.country_approvals(requested_at desc)
+  where status = 'pending';
+
+-- Patronun ÖNCEDEN açtığı ülkeler. NULL = kiracı varsayılanı (TR,AT).
+alter table public.workers
+  add column if not exists allowed_countries text[];
+
+comment on column public.workers.allowed_countries is
+  'Onay beklemeden serbest ülkeler (046). NULL = kiracı varsayılanı; '
+  'BOŞ DİZİ = hiçbiri serbest değil (NULL ile aynı şey DEĞİL).';
+
+-- ── KAPI 3: SAAT KİLİDİ ──────────────────────────────────────────────
+-- İkisi de NULL = bu kişide saat kısıtı YOK (kiracı varsayılanı uygulanır).
+-- Gece devreden aralık (22:00-06:00) DESTEKLENİR: start > end ise aralık
+-- gece yarısını sarar, kod tarafında öyle değerlendirilir.
+alter table public.workers
+  add column if not exists access_hours_start time;
+
+alter table public.workers
+  add column if not exists access_hours_end time;
+
+comment on column public.workers.access_hours_start is
+  'Giriş serbest saat aralığının başı (046, Europe/Istanbul). NULL = kısıt yok. '
+  'start > end ise aralık gece yarısını sarar.';
+
+-- ── KAPI 4: ÖLÜ ADAM ANAHTARI ────────────────────────────────────────
+-- Her satır BİR AKTİVASYONDUR. Açık kayıt = deactivated_at IS NULL.
+-- Anahtar "aktif mi" sorusunun cevabı: böyle bir satır var mı.
+create table if not exists public.kill_switch (
+  id              uuid primary key default gen_random_uuid(),
+  activated_at    timestamptz not null default now(),
+  activated_by    uuid references public.workers(id) on delete set null,
+  deactivated_at  timestamptz,
+  deactivated_by  uuid references public.workers(id) on delete set null,
+  reason          text
+);
+
+-- Aynı anda birden çok açık aktivasyon olamaz.
+create unique index if not exists idx_kill_switch_open
+  on public.kill_switch((deactivated_at is null))
+  where deactivated_at is null;
+
+create index if not exists idx_kill_switch_time
+  on public.kill_switch(activated_at desc);
+
+-- Her aşama denemesi buraya yazılır — kilit durumu BURADAN TÜRETİLİR,
+-- ayrı bir sayaç kolonu tutulmaz (iki yerde saklanan sayaç ayrışır).
+create table if not exists public.kill_switch_attempts (
+  id         uuid primary key default gen_random_uuid(),
+  at         timestamptz not null default now(),
+  worker_id  uuid references public.workers(id) on delete set null,
+  ip         text,
+  -- 'confirm' = "ONAYLIYORUM" yazımı · 'secret' = gizli soru cevabı
+  stage      text not null check (stage in ('confirm','secret')),
+  success    boolean not null default false
+);
+
+create index if not exists idx_kill_switch_attempts_time
+  on public.kill_switch_attempts(at desc);
+
+-- Kilit türetmesi bu indeksi kullanır: son N 'secret' denemesi.
+create index if not exists idx_kill_switch_attempts_secret
+  on public.kill_switch_attempts(at desc)
+  where stage = 'secret';
+
+-- ── GİZLİ SORUNUN CEVABI ─────────────────────────────────────────────
+-- ⚠️ DÜZ METİN HİÇBİR YERDE YOK — ne bu dosyada, ne kodda, ne env'de.
+-- Yalnız bcrypt hash'i duruyor ve doğrulama bcrypt.compare ile yapılır
+-- (lib/kill-switch.ts). Hash'i geri çevirmek pratikte imkânsız; cevabı
+-- değiştirmek isteyen yeni bir hash üretip bu satırı günceller.
+--
+-- Neden tabloda, neden env'de değil: env değeri Vercel panelinde okunabilir
+-- durumda duruyor ve üç kiracıya kopyalanırdı. Cevap kiracıya ait bir SIR,
+-- bir yapılandırma değil.
+create table if not exists public.kill_switch_secret (
+  id           uuid primary key default gen_random_uuid(),
+  answer_hash  text not null,
+  updated_at   timestamptz not null default now(),
+  -- Tek satır olmalı: sabit true kolonu + tekil indeks bunu şemada zorlar.
+  singleton    boolean not null default true
+);
+
+create unique index if not exists idx_kill_switch_secret_singleton
+  on public.kill_switch_secret(singleton);
+
+-- Idempotent: satır varsa dokunulmaz (cevabı elle değiştirdiyseniz korunur).
+-- ═══ [birleştirici] HAK61'İN GİZLİ SORU HASH'İ ÇIKARILDI ═════════════════
+-- Özgün 046, tabloyu kurduktan sonra HAK61'in cevabının bcrypt hash'ini de
+-- yazıyordu. O satır BU MÜŞTERİYE AİT DEĞİLDİR: hash'i taşımak, HAK61'in
+-- cevabını bilen birinin burada da ölü adam anahtarını açabilmesi demekti.
+--
+-- SATIRSIZ DAVRANIŞ GÜVENLİ: lib/kill-switch.ts verifySecret() satır yoksa
+-- `false` döner (fail-closed) — anahtar AÇILAMAZ, sistem normal çalışır.
+--
+-- Kendi cevabınızı belirlemek için (düz metin hiçbir yere yazılmaz):
+--   node -e "console.log(require('bcryptjs').hashSync('CEVABINIZ', 10))"
+--   insert into public.kill_switch_secret (answer_hash) values ('<hash>');
+
+-- NOT: RLS bu tabloların hepsinde KAPALI kalır — şemanın geri kalanıyla
+-- tutarlı; yalnız service-role istemcisi okuyup yazıyor (bkz. 045).
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- =====================================================================
+--  ÇALIŞTIRDIKTAN SONRA
+--
+--  Doğrulama:
+--    select count(*) from public.device_approvals;   -- 0
+--    select count(*) from public.country_approvals;  -- 0
+--    select count(*) from public.kill_switch;        -- 0 (anahtar kapalı)
+--    select count(*) from public.kill_switch_secret; -- 1
+--
+--  Kişiye özel saat aralığı (örnek):
+--    update public.workers set access_hours_start='08:00', access_hours_end='18:00'
+--     where phone = '+43...';
+--
+--  Kişiye özel serbest ülke (onay beklemeden):
+--    update public.workers set allowed_countries = array['TR','AT','DE']
+--     where phone = '+43...';
+--
+--  ⚠️ Bu migration TEK BAŞINA hiçbir davranış değiştirmez. Kapıları açan şey
+--     ACCESS_GATES_ENABLED env'idir (lib/tenant.ts) ve VARSAYILANI false.
+-- =====================================================================
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  047_pdf_fingerprints.sql                                           ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 — Migration 047 (PDF PARMAK İZİ)
+-- =====================================================================
+-- Üretilen her PDF'e gömülen benzersiz işaretin KAYIT DEFTERİ.
+--
+-- ── İŞARET NEDEN OPAK ────────────────────────────────────────────────
+-- İşaretin içine "kim, ne zaman, hangi IP" yazmak CAZİPTİ ve YAPILMADI:
+-- filigranlı bir PDF elden ele dolaşmak üzere üretiliyor ve o belge
+-- kaybolduğunda içindeki kişisel veri de kaybolur. Bunun yerine işaret
+-- ANLAMSIZ bir tekil dize; kim/ne zaman/hangi IP bilgisi YALNIZ bu tabloda
+-- durur. Belge sızarsa sızan şey bir kimlik değil, bir numaradır — ve o
+-- numara patron ekranında sorgulanınca kime ait olduğunu söyler.
+--
+-- ── NEDEN SUNUCUDA ÜRETİLİYOR ────────────────────────────────────────
+-- PDF'ler TARAYICIDA üretiliyor (@react-pdf/renderer). İşaret de istemcide
+-- üretilseydi kullanıcı kendi tarayıcısında başka bir değer koyabilir ya da
+-- hiç koymayabilirdi. Bu yüzden işaret bir SUNUCU ACTION'ında üretilip
+-- BURAYA yazılıyor, sonra istemciye veriliyor. İstemci onu belgeden
+-- silebilir — ama silmesi indirmenin KAYDINI silmez: satır burada durur.
+--
+-- Tekrar çalıştırılabilir (idempotent). Supabase SQL Editor'da çalıştırın.
+-- ⚠️ 045 gerekir (audit_log / is_owner ile aynı katmanın parçası).
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+create table if not exists public.pdf_fingerprints (
+  id           uuid primary key default gen_random_uuid(),
+  worker_id    uuid references public.workers(id) on delete set null,
+  at           timestamptz not null default now(),
+  ip           text,
+  -- 'azg' | 'co2' | 'fuel' | 'performance' | 'shift' (lib/pdf-fingerprint.ts)
+  report_type  text not null,
+  -- Belgeye gömülen dize. Biçim: HAK-XXXX-XXXX-XXXX (Crockford base32).
+  fingerprint  text not null
+);
+
+-- Sorgulama ekranının ANA ERİŞİMİ: yapıştırılan işaretle tek satır bulunur.
+-- Tekil: aynı işaret iki belgeye verilemez (çakışma olursa yazma patlar ve
+-- sessizce ikinci bir sahip doğmaz).
+create unique index if not exists idx_pdf_fingerprints_value
+  on public.pdf_fingerprints(fingerprint);
+
+-- "Bu kişi neler indirdi" listesi.
+create index if not exists idx_pdf_fingerprints_worker_time
+  on public.pdf_fingerprints(worker_id, at desc);
+
+create index if not exists idx_pdf_fingerprints_time
+  on public.pdf_fingerprints(at desc);
+
+-- NOT: RLS KAPALI kalır — şemanın geri kalanıyla tutarlı; yalnız service-role
+-- istemcisi okuyup yazıyor (bkz. 045/046).
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- =====================================================================
+--  ÇALIŞTIRDIKTAN SONRA
+--    select count(*) from public.pdf_fingerprints;   -- 0
+--
+--  Bir işareti elle sorgulamak (patron ekranı bunu yapıyor):
+--    select w.name, f.at, f.ip, f.report_type
+--      from public.pdf_fingerprints f
+--      left join public.workers w on w.id = f.worker_id
+--     where f.fingerprint = 'HAK-XXXX-XXXX-XXXX';
+--
+--  ⚠️ Bu migration TEK BAŞINA hiçbir davranış değiştirmez. Parmak izini açan
+--     şey SECURITY_LAYER_ENABLED (sunucu) + NEXT_PUBLIC_SECURITY_LAYER_ENABLED
+--     (istemci) bayraklarıdır; ikisi de HAK61/Sendigo'da tanımsız.
+-- =====================================================================
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  048_gate_exempt.sql                                                ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 — Migration 048 (ERİŞİM KAPILARI MUAFİYETİ)
+-- =====================================================================
+-- Tek kolon: workers.gate_exempt
+--
+-- ── NEDEN KOLON, NEDEN TELEFON NUMARASI DEĞİL ────────────────────────
+-- Muafiyeti bir telefon numarasına gömmek (kodda ya da env'de) üç şeyi
+-- birden bozardı: numara değişince muafiyet sessizce kaybolur, kimin
+-- neden muaf olduğu hiçbir yerde görünmez, ve muafiyeti kaldırmak için
+-- kod değişikliği + deploy gerekir. Kolon, patron ekranından açılıp
+-- kapanabilen ve audit_log'a düşen bir VERİ kararıdır.
+--
+-- Aynı gerekçe 029 (managed_fleet) ve 045 (is_owner) için de geçerliydi:
+-- bu depoda rol ve muafiyet HER ZAMAN tek nullable/boolean kolon + kod
+-- tarafında bir kapı olarak yaşar. Yeni rol TABLOSU yok.
+--
+-- ── NEYDEN MUAF, NEYDEN DEĞİL ────────────────────────────────────────
+-- MUAF   : cihaz onayı (046 kapı 1) · ülke onayı (kapı 2) · saat kilidi (kapı 3)
+-- MUAF DEĞİL: ÖLÜ ADAM ANAHTARI (kapı 4).
+--
+-- Bu ayrım anahtarın anlamıdır: "sistemi kapat" dendiğinde patron DIŞINDA
+-- herkesin düşmesi gerekiyor. Muafiyet bunu delseydi anahtar, kapattığını
+-- sandığın ama iki kişinin içeride kaldığı bir düğmeye dönerdi — yani acil
+-- durum aracı olmaktan çıkardı.
+--
+-- ⚠️ MUAFİYET GÖRÜNÜRLÜK VERMEZ. gate_exempt=true olan biri hâlâ:
+--    • /admin/guvenlik'i AÇAMAZ (requireOwner, is_owner ister)
+--    • patronu personel listelerinde GÖREMEZ (045 görünmezliği ayrı eksen)
+--    İki kavram bilerek ayrı: biri "kapıdan geç", diğeri "kademe".
+--
+-- Tekrar çalıştırılabilir (idempotent). Supabase SQL Editor'da çalıştırın.
+-- ⚠️ 045 + 046 gerekir.
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+alter table public.workers
+  add column if not exists gate_exempt boolean not null default false;
+
+comment on column public.workers.gate_exempt is
+  'Erişim kapılarından muaf (048): cihaz onayı, ülke onayı ve saat kilidi '
+  'uygulanmaz. ÖLÜ ADAM ANAHTARI bundan etkilenmez — orada tek istisna '
+  'is_owner. Görünürlük/yetki VERMEZ.';
+
+-- Muaf sayısı tipik olarak 1-2; kısmi indeks tam da bu dağılım için.
+create index if not exists idx_workers_gate_exempt
+  on public.workers(id)
+  where gate_exempt;
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- =====================================================================
+--  ÇALIŞTIRDIKTAN SONRA — muafiyeti siz atarsınız
+--
+--    update public.workers set gate_exempt = true where phone = '+XXXXXXXXXXXX';
+--
+--  Doğrulama:
+--    select name, phone, is_admin, is_owner, gate_exempt
+--      from public.workers where gate_exempt or is_owner;
+--
+--  Panelden de yapılabilir: /admin/guvenlik → "Erişim kuralları" sekmesi,
+--  kişi satırındaki "Kapılardan muaf" düğmesi. Oradan yapılan değişiklik
+--  audit_log'a eski/yeni değeriyle düşer; SQL'le yapılan düşmez.
+--
+--  ⚠️ Bu migration TEK BAŞINA hiçbir davranış değiştirmez: kolon varsayılanı
+--     false ve kapıları açan şey ACCESS_GATES_ENABLED env'idir.
+-- =====================================================================
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  049_fuel_report_index.sql                                          ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 049_fuel_report_index.sql — YAKIT RAPORU ZAMAN AŞIMI (57014)
+--
+-- SORUN (canlıda ölçüldü 09.08.2026, HAK61 üretim):
+--   /admin/raporlar/yakit → report_fuel_stats soğuk cache'te 8,2 sn sonra
+--   57014 (statement timeout) → sayfa available:false basıyor. Ödeyen müşteri
+--   raporu hiç göremiyor.
+--
+-- TEŞHİS — süre ARALIKTAN BAĞIMSIZ, yani indeks HİÇ kullanılmıyor:
+--     7 gün  : 7.037 ms (soğuk) / 2.239 ms (sıcak)
+--    30 gün  : 7.861 ms / 6.930 ms
+--   tüm zaman: 6.905 ms / 6.841 ms
+--   Aralığı 4 katına çıkarmak süreyi değiştirmiyor → 1.038.145 satırlık
+--   SEQ SCAN. Sayfanın VARSAYILAN aralığı "hafta" (raporlar/yakit/page.tsx:26),
+--   yani her normal açılış bu 7 saniyeyi ödüyor ve yük altında tavanı aşıyor.
+--
+-- NEDEN indeks yok: device_telemetry'deki üç indeksin ÜÇÜ DE recorded_at'i
+-- İKİNCİ kolonda tutuyor —
+--   014: (vehicle_id, recorded_at) unique
+--   014: (flespi_device_id, recorded_at desc)
+--   039: (vehicle_id, recorded_at) where fuel_volume_l is not null
+-- Rapor fonksiyonları ise ARAÇ FİLTRESİ OLMADAN yalnız recorded_at aralığı +
+-- "yakıt alanı dolu" ile süzüyor (026/027 satır 60-63, 039 satır 78-81).
+-- recorded_at baştaki kolon olmadığı için hiçbiri aralık taramasına hizmet
+-- edemiyor.
+--
+-- ÇÖZÜM: recorded_at BAŞTA olan kısmi + kapsayan (covering) indeks.
+--   • kısmi (where ... is not null) → yalnız yakıt okuması olan satırlar
+--     (fuel_level_pct: 687.111/1.038.145 = %66; fuel_volume_l: 273.692 = %26)
+--   • include(...) → fonksiyonun okuduğu her kolon indekste, heap'e hiç
+--     gidilmiyor (index-only scan)
+--   • recorded_at başta → 7 günlük rapor 7 günlük veriyi tarar, tabloyu değil.
+--     Asıl kazanç bu: tablo büyüdükçe rapor YAVAŞLAMAZ.
+--
+-- 039'un kendi indeksi (vehicle_id başta) DURUYOR — düşürmüyoruz: pencere
+-- fonksiyonunun partition by vehicle_id sıralamasına hâlâ hizmet edebilir ve
+-- düşürmek geri alınamaz bir risk olurdu. Maliyeti yalnız disk.
+--
+-- Additive + idempotent. Uygulanmazsa davranış bugünkü hâliyle aynı kalır.
+--
+-- ⚠️ CANLIDA KESİNTİSİZ İSTENİRSE: aşağıdaki iki create index'i
+--    `create index concurrently if not exists ...` olarak, HER BİRİNİ AYRI
+--    çalıştırın (CONCURRENTLY transaction bloğu içinde çalışmaz). Bu dosyadaki
+--    düz sürüm ~2-5 sn ACCESS EXCLUSIVE kilidi alır; flespi sync upsert'i
+--    idempotent olduğu için o pencerede kaçan tur bir sonraki turda kapanır.
+
+-- YÜZDE hattı — report_fuel_stats (migration 026 + 027).
+create index if not exists idx_device_telemetry_fuel_pct_time
+  on public.device_telemetry (recorded_at)
+  include (vehicle_id, fuel_level_pct, odometer_km)
+  where fuel_level_pct is not null;
+
+-- LİTRE hattı — report_fuel_volume_stats (migration 039). Aynı kusur: 039'un
+-- indeksi vehicle_id ile başlıyor, fonksiyon ise yalnız recorded_at süzüyor.
+create index if not exists idx_device_telemetry_fuel_volume_time
+  on public.device_telemetry (recorded_at)
+  include (vehicle_id, fuel_volume_l, odometer_km)
+  where fuel_volume_l is not null;
+
+analyze public.device_telemetry;
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  050_report_perf.sql                                                ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 050_report_perf.sql — RAPOR HIZLANDIRMA (iki fonksiyon, şema değişikliği yok)
+--
+-- İki ayrı darboğaz, ikisi de canlıda ölçüldü (09.08.2026, HAK61 üretim):
+--
+--  1) /admin/raporlar/yakit 30 GÜN → 8.277 ms → 57014 statement timeout.
+--     049'daki indeks DEVREYE GİRDİ (süre artık aralıkla ölçekleniyor:
+--     1 gün 429 ms, 7 gün 3.714 ms, 30 gün timeout) ama 30 günde ~690 bin
+--     satır üstünde İKİ pencere fonksiyonu (max() over rows 30 preceding/
+--     following) + lag + iki array_agg dönüyor. Bu CPU/sort maliyeti, indeksin
+--     çözebileceği bir şey DEĞİL. Çözüm: aynı işi araç araç yap — her araç
+--     ~1/29 veri görür, pencere fonksiyonları küçük partition'larda koşar,
+--     ve 29 çağrı PARALEL gider.
+--
+--  2) /admin/analiz 6,4 sn'nin 5.485 ms'i getVehicleDistanceSpan'in 58 ARDIŞIK
+--     sorgusu (29 araç × asc+desc limit 1). Veri hacmi değil ROUND-TRIP sayısı:
+--     her sorgu ~95 ms ağ gidiş-dönüşü, dönen veri 1 satır. Çözüm: tek
+--     DISTINCT ON sorgusu.
+--
+-- Additive + idempotent. Uygulanmazsa uygulama eski yoluna düşer (kod her iki
+-- fonksiyonu da PGRST202'de yakalayıp mevcut davranışa geri döner).
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 1) TEK ARAÇ İÇİN YAKIT İSTATİSTİĞİ
+--
+-- Gövde 027'deki report_fuel_stats ile BİREBİR AYNI (de-glitch → adım →
+-- toplulaştırma, eşikler 10 puan). TEK fark: `p_vehicle_id` filtresi. İki
+-- fonksiyon aynı sayıyı üretmek ZORUNDA — biri diğerinin araç-kırpılmış hâli.
+-- Mantık değişirse İKİSİ BİRDEN değişmeli (027'nin gövdesi tek doğruluk kaynağı).
+-- ─────────────────────────────────────────────────────────────────────────────
+create or replace function public.report_fuel_stats_vehicle(
+  p_from       timestamptz,
+  p_to         timestamptz,
+  p_vehicle_id uuid
+)
+returns table (
+  vehicle_id   uuid,
+  sample_count bigint,
+  avg_pct      double precision,
+  min_pct      double precision,
+  max_pct      double precision,
+  first_pct    double precision,
+  last_pct     double precision,
+  refill_count bigint,
+  refill_pct   double precision,
+  drop_count   bigint,
+  drop_pct     double precision
+)
+language sql
+stable
+as $$
+  with base as (
+    select
+      dt.vehicle_id,
+      dt.recorded_at,
+      dt.fuel_level_pct::double precision as fuel,
+      dt.odometer_km::double precision    as odo
+    from public.device_telemetry dt
+    where dt.vehicle_id = p_vehicle_id
+      and dt.recorded_at >= p_from
+      and dt.recorded_at <= p_to
+      and dt.fuel_level_pct is not null
+  ),
+  numbered as (
+    select b.*,
+           row_number() over (order by b.recorded_at) as rn,
+           count(*) over ()                           as cnt
+    from base b
+  ),
+  bounded as (
+    select
+      n.*,
+      max(n.fuel) over (order by n.recorded_at rows between 30 preceding and current row) as bwd_max,
+      max(n.fuel) over (order by n.recorded_at rows between current row and 30 following) as fwd_max
+    from numbered n
+  ),
+  clean as (
+    -- UÇ SATIR KURALI (027): ilk satırda geriye, son satırda ileriye pencere
+    -- YOKTUR; tek yönlü kanıt yeterli sayılır, yoksa gerçek dolum kırpılırdı.
+    select vehicle_id, recorded_at, fuel, odo
+    from bounded
+    where not (
+      case
+        when rn = 1   then fwd_max - fuel >= 10
+        when rn = cnt then bwd_max - fuel >= 10
+        else bwd_max - fuel >= 10 and fwd_max - fuel >= 10
+      end
+    )
+  ),
+  stepped as (
+    select c.*,
+           lag(c.fuel) over w as prev_fuel,
+           lag(c.odo)  over w as prev_odo
+    from clean c
+    window w as (order by c.recorded_at)
+  )
+  select
+    p_vehicle_id                                    as vehicle_id,
+    count(*)::bigint                                as sample_count,
+    avg(fuel)                                       as avg_pct,
+    min(fuel)                                       as min_pct,
+    max(fuel)                                       as max_pct,
+    (array_agg(fuel order by recorded_at asc))[1]   as first_pct,
+    (array_agg(fuel order by recorded_at desc))[1]  as last_pct,
+    count(*) filter (
+      where prev_fuel is not null and fuel - prev_fuel >= 10
+    )::bigint                                       as refill_count,
+    coalesce(sum(fuel - prev_fuel) filter (
+      where prev_fuel is not null and fuel - prev_fuel >= 10
+    ), 0)                                           as refill_pct,
+    count(*) filter (
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo < 1
+    )::bigint                                       as drop_count,
+    coalesce(sum(prev_fuel - fuel) filter (
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo < 1
+    ), 0)                                           as drop_pct
+  from stepped
+  having count(*) > 0;
+$$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 2) TÜM ARAÇLARIN ODOMETRE UÇ NOKTALARI — TEK SORGUDA
+--
+-- getVehicleDistanceSpan'in 58 ardışık sorgusunun yerine geçer. km-guard'ı
+-- (negatif fark, MAX_PLAUSIBLE_KM_PER_DAY = 800 km/gün) BURADA UYGULAMAZ:
+-- kural JS tarafında (lib/analytics.ts:352-358) yaşamaya devam eder ki tek
+-- doğruluk kaynağı bölünmesin. Bu fonksiyon yalnız UÇ NOKTALARI getirir.
+--
+-- `distinct on (vehicle_id)` iki kez: bir asc bir desc. Her ikisi de
+-- (vehicle_id, recorded_at) indeksinden gider — 049'un eklediği kısmi indeks
+-- burada gerekmez, 014'teki unique indeks yeterli.
+-- ─────────────────────────────────────────────────────────────────────────────
+create or replace function public.vehicle_odometer_spans(
+  p_from timestamptz,
+  p_to   timestamptz
+)
+returns table (
+  vehicle_id uuid,
+  first_km   double precision,
+  first_at   timestamptz,
+  last_km    double precision,
+  last_at    timestamptz
+)
+language sql
+stable
+as $$
+  with f as (
+    select distinct on (dt.vehicle_id)
+           dt.vehicle_id,
+           dt.odometer_km::double precision as km,
+           dt.recorded_at
+    from public.device_telemetry dt
+    where dt.recorded_at >= p_from
+      and dt.recorded_at <= p_to
+      and dt.odometer_km is not null
+    order by dt.vehicle_id, dt.recorded_at asc
+  ),
+  l as (
+    select distinct on (dt.vehicle_id)
+           dt.vehicle_id,
+           dt.odometer_km::double precision as km,
+           dt.recorded_at
+    from public.device_telemetry dt
+    where dt.recorded_at >= p_from
+      and dt.recorded_at <= p_to
+      and dt.odometer_km is not null
+    order by dt.vehicle_id, dt.recorded_at desc
+  )
+  select f.vehicle_id, f.km, f.recorded_at, l.km, l.recorded_at
+  from f join l on l.vehicle_id = f.vehicle_id;
+$$;
+
+notify pgrst, 'reload schema';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  051_drop_odometer_spans.sql                                        ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 051_drop_odometer_spans.sql — 050'DEKİ İKİNCİ FONKSİYONU GERİ ÇEK
+--
+-- `vehicle_odometer_spans` (migration 050) YANLIŞ BİR TEŞHİSE dayanıyordu ve
+-- canlıda ölçüldüğünde hem GEREKSİZ hem ZARARLI çıktı. İkisi de 09.08.2026'da
+-- HAK61 üretiminde ölçüldü:
+--
+--  1) GEREKSİZ. "Analiz sayfasındaki 58 ardışık sorgu 5.485 ms sürüyor" bulgusu
+--     HATALIYDI: o rakam benim SIRALI test döngümün maliyetiydi, ürün kodunun
+--     değil. Gerçek kod zaten tam paralel —
+--       • lib/analytics.ts:324  getVehicleDistanceSpan içinde Promise.all([asc, desc])
+--       • app/admin/analiz/page.tsx:64  Promise.all(vehicles.map(...))
+--     Aynı 58 sorgu paralel atıldığında ÖLÇÜLEN süre: 1.010 ms (soğuk) /
+--     286 ms (sıcak). Hedef "< 1 sn" zaten karşılanıyordu; ortada çözülecek
+--     bir N+1 yoktu.
+--
+--  2) ZARARLI. Fonksiyonun kendisi 30 günlük aralıkta 8.333 ms sonra 57014
+--     (statement timeout) veriyor — yani çağrılsaydı çalışan bir yolu BOZARDI.
+--     Sebep: `distinct on (vehicle_id) ... order by vehicle_id, recorded_at`
+--     iki kez, `odometer_km is not null` süzgeciyle. Bu şekil (vehicle_id,
+--     recorded_at) indeksinden gidemiyor; aralıktaki tüm satırları sıralıyor.
+--     Doğru şekli `vehicles`e LATERAL join + araç başına limit 1 olurdu — ama
+--     madde 1 yüzünden buna İHTİYAÇ YOK, o yüzden yazmıyoruz: kullanılmayan
+--     ikinci bir kod yolu ileride yanlışlıkla benimsenecek bir tuzaktır.
+--
+-- 050'nin BİRİNCİ fonksiyonu (report_fuel_stats_vehicle) DURUYOR ve canlıda
+-- kullanılıyor: 30 günlük yakıt raporu 8,3 sn timeout → 6,0 sn / 29 araç.
+--
+-- Idempotent. Fonksiyon hiç uygulanmadıysa da sorunsuz geçer.
+
+drop function if exists public.vehicle_odometer_spans(timestamptz, timestamptz);
+
+notify pgrst, 'reload schema';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  052_shift_distance_and_refill_merge.sql                            ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 052 — VARDİYA PENCERELİ KM + DOLUM BİRLEŞTİRME
+--
+-- İki ayrı doğruluk kusuru, ikisi de 09.08.2026'da canlıda ölçüldü.
+--
+-- ═══ 1) shift_odometer_spans — KM ARTIK VARDİYADAN, ARALIKTAN DEĞİL ═══
+--
+-- Kusur: getVehicleDistanceSpan aracın km'sini ARALIĞIN uçlarından ölçüyor.
+-- Şoför o aracı 1 gün sürmüş olsa bile aracın 30 GÜNLÜK km'si ona yazılıyordu:
+--     Mustafa Karakoç   809 km / 1 çalışılan gün
+--     Ekrem Gyuler    1.163 km / 3 gün  (işten çıkmış)
+--     Bayram Çöymen     917 km / 3 gün  (işten çıkmış)
+-- Şişirilmiş km → düşük ceza/1000km → ŞİŞİRİLMİŞ SKOR. Puan eşiği çalışılan
+-- güne çekilince (adc04df) bu uyuşmazlık daha da büyüdü, o yüzden o değişiklik
+-- bayrakla kapatıldı ve buranın düzelmesi bekleniyor.
+--
+-- Neden SQL: JS'te vardiya başına 2 sorgu = 373 vardiya × 2 = 746 istek.
+-- ÖLÇÜLDÜ: paralel bile 26.926 ms / 38.786 ms. Kabul edilemez. Buradaki iki
+-- LATERAL, araç başına (vehicle_id, recorded_at) indeksine tek seek yapar;
+-- 373 vardiya tek sorguda, tek gidiş-dönüşte döner.
+--
+-- KM-GUARD BURADA UYGULANMAZ. Ham uç noktalar döner, guard (negatif fark +
+-- MAX_PLAUSIBLE_KM_PER_DAY = 800 km/gün) lib/analytics.ts'te kalır — tek
+-- doğruluk kaynağı bölünmesin. Bu fonksiyon yalnız "hangi vardiyada odometre
+-- nereden nereye gitti" sorusunu cevaplar.
+--
+-- AÇIK VARDİYA: ended_at null ise pencere p_to'da kapanır.
+-- ARALIKLA KESİŞEN her vardiya döner (başlangıcı aralıktan önce olsa bile),
+-- böylece gece yarısını aşan / devreden vardiya kaybolmaz.
+
+create or replace function public.shift_odometer_spans(
+  p_from timestamptz,
+  p_to   timestamptz
+)
+returns table (
+  time_entry_id uuid,
+  worker_id     uuid,
+  vehicle_id    uuid,
+  started_at    timestamptz,
+  ended_at      timestamptz,
+  first_km      double precision,
+  last_km       double precision
+)
+language sql
+stable
+as $$
+  select
+    te.id,
+    te.worker_id,
+    te.vehicle_id,
+    te.started_at,
+    te.ended_at,
+    f.km,
+    l.km
+  from public.time_entries te
+  left join lateral (
+    select dt.odometer_km::double precision as km
+    from public.device_telemetry dt
+    where dt.vehicle_id = te.vehicle_id
+      and dt.odometer_km is not null
+      and dt.recorded_at >= te.started_at
+      and dt.recorded_at <= coalesce(te.ended_at, p_to)
+    order by dt.recorded_at asc
+    limit 1
+  ) f on true
+  left join lateral (
+    select dt.odometer_km::double precision as km
+    from public.device_telemetry dt
+    where dt.vehicle_id = te.vehicle_id
+      and dt.odometer_km is not null
+      and dt.recorded_at >= te.started_at
+      and dt.recorded_at <= coalesce(te.ended_at, p_to)
+    order by dt.recorded_at desc
+    limit 1
+  ) l on true
+  where te.vehicle_id is not null
+    and te.worker_id is not null
+    and te.started_at <= p_to
+    and (te.ended_at is null or te.ended_at >= p_from);
+$$;
+
+-- ═══ 2) report_fuel_stats_vehicle — DOLUM BİRLEŞTİRME ═══
+--
+-- Kusur: tek fiziksel dolum ardışık okumalara bölününce her parça ayrı dolum
+-- sayılıyordu. ÖLÇÜLDÜ (7 gün, canlı): gerçek 16 dolum serisine karşılık
+-- sistem 19 adım saymış. Örnek — DO-719GV, 70 L, 06.08:
+--     06:53:18  %18
+--     06:54:20  %33  (+15 puan)  ← ayrı dolum sayılıyordu
+--     06:56:36  %100 (+67 puan)  ← ayrı dolum sayılıyordu
+--   toplam +82 puan = 57 L, tek fiziksel dolum.
+--
+-- ÇÖZÜM: ardışık YÜKSELİŞLER, aralarında MERGE_GAP'ten uzun boşluk yoksa TEK
+-- dolum sayılır ve puanları toplanır. 15 dakika: ölçülen dolum içi adım aralığı
+-- 1-3 dakika, iki AYRI dolum arasındaki en kısa mesafe ise saatler — 15 dk ikisi
+-- arasında geniş bir güvenlik payı bırakıyor.
+--
+-- EŞİK 10 → 5 PUAN. Birleştirmeden ÖNCE 10 puan gerekliydi çünkü eşik hem
+-- "gürültüyü ele" hem "dolumu yakala" işini birden yapıyordu. Artık gürültüyü
+-- birleştirme+seri toplamı eliyor, eşik yalnız "bu seri gerçek bir dolum mu"
+-- sorusunu cevaplıyor. ÖLÇÜLDÜ: 10 puanlık eşik DO-623GL'de gerçek bir dolumun
+-- 7 puanlık ilk parçasını (4 L) düşürüyordu. 5 puan (~3,5 L) hâlâ sensör
+-- gürültüsünün (1 puan = 0,7 L) çok üstünde.
+--
+-- Düşüş (drop) tarafı DEĞİŞMEDİ: 10 puan + odometre durağan şartı aynen duruyor.
+-- Şüpheli düşüş bir HIRSIZLIK sinyali; onu gevşetmek yanlış alarm üretirdi.
+
+create or replace function public.report_fuel_stats_vehicle(
+  p_from       timestamptz,
+  p_to         timestamptz,
+  p_vehicle_id uuid
+)
+returns table (
+  vehicle_id   uuid,
+  sample_count bigint,
+  avg_pct      double precision,
+  min_pct      double precision,
+  max_pct      double precision,
+  first_pct    double precision,
+  last_pct     double precision,
+  refill_count bigint,
+  refill_pct   double precision,
+  drop_count   bigint,
+  drop_pct     double precision
+)
+language sql
+stable
+as $$
+  with base as (
+    select
+      dt.recorded_at,
+      dt.fuel_level_pct::double precision as fuel,
+      dt.odometer_km::double precision    as odo
+    from public.device_telemetry dt
+    where dt.vehicle_id = p_vehicle_id
+      and dt.recorded_at >= p_from
+      and dt.recorded_at <= p_to
+      and dt.fuel_level_pct is not null
+  ),
+  numbered as (
+    select b.*,
+           row_number() over (order by b.recorded_at) as rn,
+           count(*) over ()                           as cnt
+    from base b
+  ),
+  bounded as (
+    select
+      n.*,
+      max(n.fuel) over (order by n.recorded_at rows between 30 preceding and current row) as bwd_max,
+      max(n.fuel) over (order by n.recorded_at rows between current row and 30 following) as fwd_max
+    from numbered n
+  ),
+  clean as (
+    -- UÇ SATIR KURALI (027): ilk satırda geriye, son satırda ileriye pencere yok.
+    select recorded_at, fuel, odo
+    from bounded
+    where not (
+      case
+        when rn = 1   then fwd_max - fuel >= 10
+        when rn = cnt then bwd_max - fuel >= 10
+        else bwd_max - fuel >= 10 and fwd_max - fuel >= 10
+      end
+    )
+  ),
+  stepped as (
+    select c.*,
+           lag(c.fuel)        over w as prev_fuel,
+           lag(c.odo)         over w as prev_odo,
+           lag(c.recorded_at) over w as prev_at
+    from clean c
+    window w as (order by c.recorded_at)
+  ),
+  marked as (
+    -- YENİ SERİ BAŞLANGICI: yükseliş değilse, ya da önceki okumadan 15 dk'dan
+    -- uzun süre geçmişse. Bu bayrağın kümülatif toplamı seri kimliğidir.
+    select s.*,
+           case
+             when s.prev_fuel is null then 1
+             when s.fuel - s.prev_fuel <= 0 then 1
+             when s.recorded_at - s.prev_at > interval '15 minutes' then 1
+             else 0
+           end as new_run
+    from stepped s
+  ),
+  runs as (
+    select m.*, sum(m.new_run) over (order by m.recorded_at) as run_id
+    from marked m
+  ),
+  rises as (
+    -- Seri başına toplam yükseliş. Yalnız POZİTİF adımlar toplanır: seriyi
+    -- açan satırın kendisi yükseliş olmayabilir (new_run=1 iken).
+    select run_id,
+           sum(greatest(fuel - coalesce(prev_fuel, fuel), 0)) as total_rise
+    from runs
+    group by run_id
+  )
+  select
+    p_vehicle_id                                    as vehicle_id,
+    (select count(*) from clean)::bigint            as sample_count,
+    (select avg(fuel) from clean)                   as avg_pct,
+    (select min(fuel) from clean)                   as min_pct,
+    (select max(fuel) from clean)                   as max_pct,
+    (select fuel from clean order by recorded_at asc  limit 1) as first_pct,
+    (select fuel from clean order by recorded_at desc limit 1) as last_pct,
+    (select count(*) from rises where total_rise >= 5)::bigint as refill_count,
+    (select coalesce(sum(total_rise), 0) from rises where total_rise >= 5) as refill_pct,
+    (select count(*) from stepped
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo < 1
+    )::bigint                                       as drop_count,
+    (select coalesce(sum(prev_fuel - fuel), 0) from stepped
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo < 1
+    )                                               as drop_pct
+  where exists (select 1 from clean);
+$$;
+
+notify pgrst, 'reload schema';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  053_covering_indexes.sql                                           ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 053 — SOĞUK CACHE ZAMAN AŞIMI: ARAÇ EKSENLİ KAPSAYAN İNDEKSLER
+--
+-- ═══ NEDEN (canlıda ölçüldü, 09.08.2026, HAK61 üretim) ═══
+--
+-- İki fonksiyon da soğukta statement timeout (57014) alıyor, SICAKTA almıyor:
+--
+--   shift_odometer_spans (30 gün)   1. çağrı 8.290 ms → 57014
+--                                   2. çağrı 1.198 ms → 373 vardiya
+--   report_fuel_stats_vehicle       soğuk turda 30 aracın 12'si 57014
+--                                   sıcak turda 30/30, 5.512 ms
+--
+-- 7 katlık soğuk/sıcak farkı CPU değil DİSK imzasıdır. Aynı sorgu, aynı satır,
+-- aynı plan — tek fark sayfaların bellekte olup olmaması.
+--
+-- ═══ SEBEP: OKUNAN KOLONLAR HİÇBİR İNDEKSTE YOK ═══
+--
+-- Bugünkü device_telemetry indeksleri:
+--   014  (vehicle_id, recorded_at) unique                    — INCLUDE YOK
+--   014  (flespi_device_id, recorded_at desc)
+--   039  (vehicle_id, recorded_at) where fuel_volume_l is not null
+--   049  (recorded_at) include(vehicle_id, fuel_level_pct, odometer_km)
+--          where fuel_level_pct is not null                  — recorded_at BAŞTA
+--
+-- İki fonksiyon da ARAÇ + ZAMAN süzüp odometer_km / fuel_level_pct OKUYOR.
+-- Araç-eksenli tek indeks 014 ve o hiçbir veri kolonu taşımıyor → eşleşen her
+-- satır için HEAP'e gitmek zorunlu. shift_odometer_spans'ın iki LATERAL'i
+-- 373 vardiya × 2 = 746 ayrı seek yapar; soğukta 746 rastgele disk okuması
+-- ≈ 8 sn. Ölçülen sayı tam olarak bu.
+--
+-- 049 bu iki fonksiyonu KURTARMAZ: recorded_at başta olduğu için araç-eksenli
+-- erişimde ya kullanılamaz ya da aralığın TÜM filo satırını (687.111) tarayıp
+-- vehicle_id'yi INCLUDE'dan süzmek zorunda kalır.
+--
+-- ═══ ÇÖZÜM ═══
+--
+-- 039'un LİTRE hattı için yaptığının aynısını yüzde ve odometre hatları için
+-- yapmak: araç-eksenli KISMİ + KAPSAYAN indeks. Böylece ilgili taramalar
+-- index-only olur, heap'e hiç gidilmez, soğuk turda rastgele disk okuması
+-- ortadan kalkar.
+--
+-- Kısmi (where ... is not null) çünkü fonksiyonlar zaten yalnız dolu satırla
+-- ilgileniyor: odometer_km 1.038.145 satırın bir kısmında, fuel_level_pct
+-- 687.111'inde dolu. Kısmi indeks hem küçük hem tam olarak sorgunun süzgeciyle
+-- örtüşüyor.
+--
+-- ⚠️ BU MIGRATION UYGULANMASA DA KOD DOĞRU ÇALIŞIR: uygulama tarafında
+-- eşzamanlılık tavanı (lib/db-fanout.ts, mapBounded=6) ve zaman aşımında tek
+-- seferlik tekrar (retryOnTimeout) zaten devrede. Bu indeksler o iki muhafızın
+-- YERİNE değil, ALTINA konur — muhafızlar kusuru yönetir, indeks kusuru
+-- kaynağında keser.
+--
+-- ⚠️ CANLIDA KESİNTİSİZ İSTENİRSE: her create index'i `concurrently` ile ve
+-- AYRI çalıştırın (CONCURRENTLY transaction bloğunda çalışmaz). Düz sürüm
+-- ~3-8 sn ACCESS EXCLUSIVE kilidi alır; flespi sync upsert'i idempotent olduğu
+-- için o pencerede kaçan tur bir sonraki turda kapanır.
+--
+-- Additive + idempotent. Hiçbir veri değişmez, hiçbir fonksiyon değişmez.
+
+-- ── 1) ODOMETRE HATTI — shift_odometer_spans + getVehicleDistanceSpan ────────
+-- Fonksiyon (vehicle_id, recorded_at) ile seek edip odometer_km okuyor.
+-- INCLUDE ile bu tek seek index-only olur.
+create index if not exists idx_device_telemetry_vehicle_odo
+  on public.device_telemetry (vehicle_id, recorded_at)
+  include (odometer_km)
+  where odometer_km is not null;
+
+-- ── 2) YÜZDE HATTI — report_fuel_stats_vehicle ──────────────────────────────
+-- 049'un araç-eksenli ikizi. 049 DURUYOR: araç filtresi OLMAYAN eski
+-- report_fuel_stats'a hâlâ hizmet ediyor (Sendigo/demo geri düşüş yolu).
+create index if not exists idx_device_telemetry_vehicle_fuel_pct
+  on public.device_telemetry (vehicle_id, recorded_at)
+  include (fuel_level_pct, odometer_km)
+  where fuel_level_pct is not null;
+
+analyze public.device_telemetry;
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  055_vehicle_device_model.sql                                       ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 055_vehicle_device_model.sql — TAKİP CİHAZININ ADI (künye satırı)
+--
+-- ⚠️ BU DOSYA CLAUDE TARAFINDAN ÇALIŞTIRILMADI. Volkan Supabase SQL editöründe
+-- kendisi çalıştırır. Uç tarafı kolon olsa da olmasa da çalışır (aşağıya bak).
+--
+-- ── NE İÇİN ────────────────────────────────────────────────────────────────
+-- Mobil araç künyesindeki "Takip cihazı" satırı bugün ÜRETİLEMİYOR:
+--   flespi_device_id → bir sayı (ör. 6237914), cihaz adı değil
+--   imei             → bir seri numarası
+--   vin              → aracın şasi numarası, cihazla ilgisi yok
+-- Cihaz modeli ("Teltonika FMC003") depoda YALNIZ kod yorumlarında geçiyor —
+-- veri olarak hiçbir tabloda durmuyor (10.08.2026 ölçümü: `vehicles.device_model`
+-- kolonu YOK, hata 42703). Referans tasarımdaki "Galzura Tracker GT-4" satırı
+-- bu yüzden uydurma olurdu.
+--
+-- ── NEDEN KOLON, NEDEN SABİT DEĞİL ─────────────────────────────────────────
+-- Filodaki her cihaz aynı model DEĞİL (26 cihaza FMC003 kurulum komutu basıldı,
+-- toplam 29 cihazlı araç var). Kodda tek bir sabit yazmak üç aracı yanlış
+-- etiketlerdi ve yanlış olduğu hiçbir yerden anlaşılmazdı. Doğru yer kayıt
+-- bazında bir alandır.
+--
+-- ── GERİYE DÖNÜK ETKİ YOK ──────────────────────────────────────────────────
+-- Additive ve nullable: hiçbir sorgu, hiçbir sayı, hiçbir ekran değişmez.
+-- Kolon eklendiği anda `getVehicleDetail`in `select("*")`i onu getirmeye başlar
+-- ve `/api/mobile/vehicles/[id]` → `cihaz.ad` doldurulur. Kolon EKLENMEZSE uç
+-- aynı alanı null döndürür ve hiçbir yerde hata olmaz — mobil ekran o satırı
+-- boş satır çizmez, düşürür ("boş satır çizilmez" kuralı).
+--
+-- ── DOLDURMA ───────────────────────────────────────────────────────────────
+-- Elle. Kolon eklendikten sonra bilinen filoya toplu yazmak istenirse (ÖRNEK,
+-- çalıştırılmadı — hangi aracın hangi cihazı taşıdığı Volkan'da):
+--   update public.vehicles set device_model = 'Teltonika FMC003'
+--   where flespi_device_id is not null and device_model is null;
+-- Bu satır BİLEREK migration'ın dışında: 29 cihazın hepsinin FMC003 olduğu
+-- DOĞRULANMADI ve doğrulanmadan yazmak, uydurmayı veriye çevirmek olurdu.
+--
+-- Gizlilik: bu dosyada plaka/isim YOK.
+
+alter table public.vehicles
+  add column if not exists device_model text;
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  056_vehicle_fault_reports.sql                                      ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 056_vehicle_fault_reports.sql — ELLE ARIZA BİLDİRİMİ (U7)
+--
+-- ⚠️ BU DOSYA CLAUDE TARAFINDAN ÇALIŞTIRILMADI. Volkan Supabase SQL
+-- editöründe kendisi çalıştırır.
+--
+-- ── NEDEN vehicle_dtc'YE YAZILMIYOR ────────────────────────────────────────
+-- `vehicle_dtc` CİHAZIN gerçeğidir: flespi akışı her anlık görüntüde tabloyu
+-- uzlaştırıyor (`saveDtc` + `reconcileDtc`). Oraya elle bir satır girilirse bir
+-- sonraki senkron turunda "artık listede yok" sayılıp `cleared_at` ile kapanır
+-- ya da tamamen kaybolur. Bu tablo İNSANIN beyanıdır — ayrı yaşamak zorunda.
+-- İkisi aynı ekranda yan yana gösterilebilir; aynı satırda DEĞİL.
+--
+-- ── ALANLAR ────────────────────────────────────────────────────────────────
+-- reported_by  → bildiren kişi. Depo `created_by` / `updated_by` / `approved_by`
+--                adlandırmasını kullanıyor, bu da onun kardeşi.
+--                CASCADE YOK (bilerek): bildirim, bildireni silinse bile
+--                kayıttır. Zaten bu sistemde personel silinmiyor,
+--                `terminated_at` ile ayrılıyor.
+-- aciklama     → serbest metin. Uzunluk sınırı UÇTA (2000 karakter), burada
+--                CHECK olarak DEĞİL: sınır bir ürün kararıdır ve değiştiğinde
+--                migration yazmak gerekmesin.
+-- durum        → 'acik' | 'kapali'. Ara durum ('islemde') BİLEREK yok —
+--                bugün onu değiştirecek bir yüzey yok, olmayan bir iş akışını
+--                şemaya yazmak onu var sanmaya yol açar. Gerektiğinde CHECK
+--                genişletmek tek satırlık additive bir iştir.
+--
+-- Adlandırma notu: `aciklama` ve `durum` TÜRKÇE, tablodaki diğer kolonlar ve
+-- deponun geri kalanı İNGİLİZCE. Volkan'ın verdiği isimler bunlar; İngilizce
+-- karşılıkları `note` ve `status` olurdu. Karar onun.
+--
+-- ── GERİYE DÖNÜK ETKİ YOK ──────────────────────────────────────────────────
+-- Yeni tablo; mevcut hiçbir sorgu, sayı ya da ekran değişmez.
+--
+-- Gizlilik: bu dosyada plaka/isim YOK.
+
+create table if not exists public.vehicle_fault_reports (
+  id          uuid primary key default gen_random_uuid(),
+  vehicle_id  uuid not null references public.vehicles(id) on delete cascade,
+  reported_by uuid not null references public.workers(id),
+  aciklama    text not null,
+  durum       text not null default 'acik' check (durum in ('acik', 'kapali')),
+  created_at  timestamptz not null default now()
+);
+
+-- Araç detayının okuması: tek aracın bildirimleri, yeniden eskiye.
+create index if not exists idx_vehicle_fault_reports_vehicle
+  on public.vehicle_fault_reports(vehicle_id, created_at desc);
+
+-- RLS KAPALI — şemanın geri kalanıyla tutarlı. Bu tabloya yalnız service-role
+-- istemcisi (sunucu tarafı uçlar) yazıyor ve okuyor; tarayıcıya anon anahtarla
+-- açılan bir yolu yok.
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  057_fault_report_closed.sql                                        ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 057_fault_report_closed.sql — ARIZA BİLDİRİMİNDE KAPATMA İZİ
+--
+-- ⚠️ BU DDL VOLKAN TARAFINDAN 11.08.2026'DA SUPABASE'DE ÇALIŞTIRILDI ve HAK61
+-- canlısında UYGULANMIŞ durumdadır (kolonlar ölçüldü: `closed_at` VAR,
+-- `closed_by` VAR). Bu dosya deponun ŞEMA KAYDIDIR — yeni bir kurulum
+-- migration listesini buradan yürütecek. Claude tarafından çalıştırılmadı.
+--
+-- ── NEDEN GEREKLİ ──────────────────────────────────────────────────────────
+-- 056 bildirimin AÇILIŞINI kaydediyordu (`reported_by`, `created_at`) ama
+-- KAPANIŞINI kaydetmiyordu. `durum` alanı tek başına "şu an kapalı" der;
+-- "kim, ne zaman kapattı" sorusunun cevabı yoktu. Kapatma bir yönetici
+-- kararıdır ve izsiz bırakılırsa geriye dönük hesabı sorulamaz.
+--
+-- ── NEDEN İKİ KOLON, NEDEN AYRI TABLO DEĞİL ────────────────────────────────
+-- Bildirimin YALNIZ İKİ durumu var (056: 'acik' | 'kapali') ve kapanış
+-- tekildir — açılıp kapanma döngüsünün geçmişi tutulmuyor. Ayrı bir olay
+-- tablosu, olmayan bir ihtiyacı şemaya yazmak olurdu. Yeniden açılan bildirimde
+-- ikisi de NULL'a döner: "şu an açık" ile "kapatılmış ama sonra açılmış" aynı
+-- şeydir, çünkü açık bir bildirimin kapatma anı YOKTUR.
+--
+-- ── GERİYE DÖNÜK ETKİ YOK ──────────────────────────────────────────────────
+-- İkisi de nullable ve varsayılansız: mevcut satırlar NULL kalır, hiçbir sorgu
+-- ve hiçbir sayı değişmez. 056'sı olup 057'si olmayan bir kurulumda uç
+-- ÇALIŞMAYA DEVAM EDER — kolon eksikse yalnız durum yazılır ve yanıt
+-- `kapatmaIzi: false` ile bunu SÖYLER (lib/fault-reports-db.ts).
+--
+-- `closed_by`'da CASCADE YOK, 056'daki `reported_by` ile aynı gerekçe: iz,
+-- izi bırakan kişi silinse bile kayıttır. Zaten personel silinmiyor,
+-- `terminated_at` ile ayrılıyor.
+--
+-- Gizlilik: bu dosyada plaka/isim YOK.
+
+alter table public.vehicle_fault_reports
+  add column if not exists closed_at timestamptz,
+  add column if not exists closed_by uuid references public.workers(id);
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  058_action_snoozes.sql                                             ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 058_action_snoozes.sql — AKSİYON ERTELEME (alarm / dikkat kalemi / izin talebi)
+--
+-- ⚠️ BU DDL VOLKAN TARAFINDAN 11.08.2026'DA SUPABASE'DE ÇALIŞTIRILDI ve HAK61
+-- canlısında UYGULANMIŞ durumdadır. Bu dosya deponun ŞEMA KAYDIDIR — yeni bir
+-- kurulum migration listesini buradan yürütecek. Claude tarafından çalıştırılmadı.
+--
+-- ── NEDEN GEREKLİ ──────────────────────────────────────────────────────────
+-- Mobildeki Aksiyon Merkezi üç kaynağı (cihaz olayları, dikkat kalemleri, izin
+-- talepleri) tek listede topluyor. "Bunu şimdi değil, yarın sabah hallederim"
+-- diyebilmek listenin işe yaraması için şart: erteleyemeyen yönetici kalemi
+-- görmezden gelmeyi öğrenir ve liste gürültüye döner.
+--
+-- ── NEDEN CİHAZDA DEĞİL SUNUCUDA ───────────────────────────────────────────
+-- Telefonda ertelenen bir uyarı panelde ve ikinci telefonda "bekliyor"
+-- görünürdü; iki yönetici aynı filoyu iki farklı listeyle yönetirdi. Erteleme
+-- ancak sunucuda kalıcıysa DOĞRUDUR. Bu, mobilde "Ertelenen" sekmesinin
+-- 11.08.2026'ya kadar KAPALI ÖZELLİK olarak durmasının da sebebiydi.
+--
+-- ── NEDEN YABANCI ANAHTAR YOK ──────────────────────────────────────────────
+-- Ertelenebilir kalemler ÜÇ ayrı kaynaktan geliyor (vehicle_events,
+-- TÜRETİLMİŞ dikkat kalemleri, worker_leaves) ve tek bir tabloya bağlanamaz.
+-- Türetilmiş kalemlerin (ör. "kör araç", "belge süresi doluyor") veritabanında
+-- SATIRI BİLE YOK — hesaplanıyorlar. Bu yüzden kalem, (tür + kimlik) çiftiyle
+-- tanımlanıyor. Başka bir yol yok; FK yokluğu bir eksiklik değil, kaynağın
+-- doğasının sonucu.
+--
+-- item_id `text`, uuid DEĞİL: üç kaynağın kimlik uzayı farklı. vehicle_events.id
+-- uuid, dikkat kalemi kimliği türetilmiş bir dizge ("silent:<aracId>" gibi),
+-- worker_leaves.id uuid. Kolonu uuid yapmak dikkat kalemlerini dışarıda bırakırdı.
+--
+-- ── NEDEN cancelled_at, NEDEN DELETE DEĞİL ─────────────────────────────────
+-- "Şimdi geri al" satırı SİLMEZ, iptal işaretler. Silmek "kim ertelemişti, kim
+-- geri aldı" sorusunun cevabını yok ederdi; erteleme bir yönetici kararıdır ve
+-- kararın izi kalır. `closed_at`/`closed_by` (057) ile aynı gerekçe.
+--
+-- ── SÜRE DOLUNCA OTOMATİK GERİ DÖNÜŞ — CRON GEREKMİYOR ─────────────────────
+-- Liste ucu `snoozed_until > now()` koşuluyla süzüyor; süresi geçen kalem
+-- kendiliğinden bekleyene döner. Zamanlanmış iş yazmak, sorgunun zaten
+-- yaptığı şeyi ikinci kez yapmak olurdu.
+--
+-- ── GERİYE DÖNÜK ETKİ YOK ──────────────────────────────────────────────────
+-- Yeni tablo; mevcut hiçbir sorgu, sayı ya da ekran değişmez. Bu tablosu
+-- olmayan kurulumda (Sendigo/galzura-demo) erteleme uçları `tablo_yok` der ve
+-- liste uçları `ertelemeler: []` + `ertelemeDurumu: "tablo_yok"` ile SÖYLER —
+-- sessizce "hiç erteleme yok" gibi görünmez.
+--
+-- Gizlilik: bu dosyada plaka/isim YOK.
+
+create table if not exists public.action_snoozes (
+  id            uuid primary key default gen_random_uuid(),
+  -- 'alarm' | 'attention' | 'leave' — mobil istemcinin kaynak öneki.
+  item_source   text not null check (item_source in ('alarm','attention','leave')),
+  -- Kaynağın kendi kimliği (vehicle_events.id, dikkat kalem kimliği, leave id).
+  item_id       text not null,
+  -- Kalem bir araca/kişiye bağlıysa taşınır: ileride "bu aracın tüm
+  -- ertelemelerini göster" sorgusu tablo taraması gerektirmesin.
+  vehicle_id    uuid references public.vehicles(id) on delete cascade,
+  worker_id     uuid references public.workers(id) on delete cascade,
+  snoozed_until timestamptz not null,
+  snoozed_by    uuid not null references public.workers(id),
+  created_at    timestamptz not null default now(),
+  -- Geri alma SİLME DEĞİL: kim ne zaman geri aldı izi kalsın.
+  cancelled_at  timestamptz
+);
+
+-- Bir kalemin AYNI ANDA tek etkin ertelemesi olur.
+--
+-- ⚠️ KISMİ indeks: PostgREST'in `on_conflict` parametresi WHERE yüklemini
+-- taşıyamadığı için bu indeks `.upsert()` ile ARBITER olarak KULLANILAMAZ.
+-- lib/action-snoozes-db.ts bu yüzden oku-sonra-yaz yapıyor ve yarışta dönen
+-- 23505'i güncellemeye çeviriyor. (Ölçüldü, 11.08.2026.)
+create unique index if not exists idx_action_snoozes_item_active
+  on public.action_snoozes(item_source, item_id)
+  where cancelled_at is null;
+
+-- "Şu an ertelenmiş olanlar" sorgusunun taradığı yol.
+create index if not exists idx_action_snoozes_until
+  on public.action_snoozes(snoozed_until)
+  where cancelled_at is null;
+
+-- Servis-rol istemcisi dışında erişim yok (projedeki diğer tablolarla aynı).
+alter table public.action_snoozes disable row level security;
+
+-- PostgREST şema önbelleğini yenile (yeni tablo hemen görünür olsun).
+notify pgrst, 'reload schema';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  059_fleets.sql                                                     ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 059_fleets.sql — İSİMLİ FİLOLAR (kiracı başına en fazla 5)
+--
+-- ⚠️ BU DDL VOLKAN TARAFINDAN 11.08.2026'DA SUPABASE'DE ÇALIŞTIRILDI ve HAK61
+-- canlısında UYGULANMIŞ durumdadır. Bu dosya deponun ŞEMA KAYDIDIR — yeni bir
+-- kurulum migration listesini buradan yürütecek. Claude tarafından çalıştırılmadı.
+--
+-- ── UYGULANDIKTAN SONRA CANLIDA ÖLÇÜLDÜ (11.08.2026) ──────────────────────
+-- PostgREST pg_catalog'a erişemediği için kısıtlar ADIYLA değil DAVRANIŞLARIYLA
+-- ölçüldü (CHECK satır düzeyinde, FK AFTER trigger → CHECK önce patlar; yani
+-- 23503 almak "eski CHECK düştü VE FK kuruldu" demektir):
+--   · fleets 2 satır — bordo/1/name=null · mavi/2/name=null            ✓
+--   · sort_order 6/0/-1 → 23514 · sıra 1 ikinci kez → 23505 (tavan yapısal) ✓
+--   · vehicles.fleet='yok'  → 23503 (23514 DEĞİL) → eski CHECK düştü, FK var ✓
+--   · üçüncü filo kodu açılıp araç oraya taşınabildi                    ✓
+--   · içinde aracı olan filo silinemedi → 23503 (on delete restrict)    ✓
+--   · workers.managed_fleet='yok' → 23503                               ✓
+--   · idx_vehicles_fleet: ÖLÇÜLMEDİ — PostgREST pg_catalog'u dışa açmıyor.
+--     SQL Editor'da doğrulanır:
+--       select indexname from pg_indexes where indexname = 'idx_vehicles_fleet';
+--
+-- Uygulanmamış kurulumda (Sendigo/galzura-demo) uçların davranışı:
+--   · GET  /api/mobile/fleets            ÇALIŞIR (filolar vehicles.fleet'ten türetilir)
+--   · POST /api/mobile/fleets/[id]/atamalar ÇALIŞIR (yazdığı kolon zaten var)
+--   · POST /api/mobile/fleets  ve  PATCH /api/mobile/fleets/[id]  →  503 tablo_yok
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  ÖNCE ÖLÇÜLDÜ (canlı HAK61, 11.08.2026)
+-- ═══════════════════════════════════════════════════════════════════════════
+--  · Ayrı bir `fleets` tablosu YOK (PGRST205 ile doğrulandı).
+--  · Filo üyeliği İKİ metin kolonunda yaşıyor:
+--      vehicles.fleet        — not null, default 'mavi', check in ('bordo','mavi')   [023]
+--      workers.managed_fleet — nullable,                 check in ('bordo','mavi')   [029]
+--    İkincisi ÜYELİK DEĞİL ŞEFLİK ("bu kişi o filonun şefi").
+--  · Şoförün filosu HİÇBİR YERDE TUTULMUYOR; türetiliyor:
+--      vehicles.fleet → vehicles.assigned_worker_id  (lib/fleet-scope.ts)
+--  · Kiracı kolonu YOK ve OLMAMALI: her müşteri AYRI bir Supabase veritabanı
+--    (db/install/sendigo-full.sql, galzura-full.sql "boş veritabanı" denetimiyle
+--    başlıyor). Kiracı kimliği env'de (NEXT_PUBLIC_TENANT), satırda değil.
+--    Bu yüzden "kiracı başına 5 filo" = BU VERİTABANINDA 5 SATIR.
+--  · Dağılım: 30 araç (10 bordo / 20 mavi, 1'i test aracı) · 34 personel
+--    (3 filo şefi: 1 bordo, 2 mavi).
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NEDEN fleet_id DEĞİL, KOD KÖPRÜSÜ
+-- ═══════════════════════════════════════════════════════════════════════════
+--  `vehicles.fleet` metni 60+ dosyada, iki CHECK kısıtında, FLEET_STYLE renk
+--  eşlemesinde, ACTIVE_FLEETS env'inde ve İKİ BAŞKA KİRACININ kurulum SQL'inde
+--  geçiyor. Onu `fleet_id uuid` ile değiştirmek, tek turda o yüzeylerin hepsini
+--  yeniden yazmak ve 059'u çalıştırmamış kiracıları kırmak demekti.
+--
+--  Bunun yerine ÜYELİK OLDUĞU YERDE KALIYOR (`vehicles.fleet` = filo KODU) ve
+--  bu tablo yalnız üç şey ekliyor: AD · SIRA · O KODUN VAR OLMASI.
+--  Sonuç: mevcut 'bordo'/'mavi' verisi tek satır bile değişmeden korunur —
+--  aşağıda araç/personel tablolarına DOKUNAN tek ifade CHECK→FK dönüşümüdür,
+--  hiçbir UPDATE yok.
+--
+--  KAZANÇ: izin verilen filo kümesi artık KOD DEĞİL VERİ. 023'ün CHECK'i
+--  üçüncü filoyu imkânsız kılıyordu; FK, kümeyi `fleets` satırlarına bağlar.
+--  Referans bütünlüğü de CHECK'ten güçlü: olmayan filoya araç yazılamaz ve
+--  içinde aracı olan filo SİLİNEMEZ (on delete restrict) — "silme yok, yoksa
+--  içindekiler öksüz kalır" kararı böylece şemayla da güvenceye alınmış olur.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NEDEN AYRI BİR uuid `id` YOK
+-- ═══════════════════════════════════════════════════════════════════════════
+--  Filonun kimliği ZATEN 30 araç satırında metin olarak duruyor. Yanına bir
+--  uuid koymak aynı şeye İKİNCİ bir kimlik verirdi ve veri yine metin olanı
+--  kullanmaya devam ederdi: uçlar hangisini kabul edecek, istemci hangisini
+--  saklayacak? Üstelik tablo YOKKEN (bugün) uuid diye bir şey hiç yok, yani
+--  uçların migration öncesi ve sonrası kimliği FARKLI olurdu.
+--  Bir kimlik: `code`. URL'deki `[id]` segmenti de odur (/api/mobile/fleets/mavi).
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NEDEN `name` NULL OLABİLİYOR
+-- ═══════════════════════════════════════════════════════════════════════════
+--  Bugün filo adı i18n sözlüğünden geliyor ("Bordo Filo" / "Bordo-Flotte") ve
+--  kiracı env'iyle ezilebiliyor (NEXT_PUBLIC_FLEET_*_LABEL, lib/tenant.ts).
+--  Tohumda Türkçe adı YAZSAYDIK, Almanca kurulumda 059 çalıştığı an ad sessizce
+--  Türkçeye dönerdi. NULL = "kiracı henüz ad vermedi" → görünen ad bugünkü
+--  kaynaktan gelir. PATCH ad yazar, boş ad tekrar NULL'a döndürür.
+--  Bu yüzden 059 çalıştırıldığında GÖRÜNEN HİÇBİR AD DEĞİŞMEZ.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NEDEN TAVAN ŞEMADA (check 1..5), UYGULAMADA DEĞİL
+-- ═══════════════════════════════════════════════════════════════════════════
+--  "En fazla 5" satır SAYISINA ait bir kural; CHECK satır sayamaz. Uygulamada
+--  say-sonra-yaz yapılırsa iki yönetici aynı anda 6. filoyu açabilir.
+--  `sort_order` 1..5 aralığında ve BENZERSİZ olduğu için tavan YAPISALDIR:
+--  beşten fazla satır fiziksel olarak sığmaz, yarışın kaybedeni 23505 alır.
+--  Sıra aynı zamanda "N. Filo" varsayılan adının N'i ve listenin kararlı sırası.
+--  DEFERRABLE: ileride bir yeniden sıralama ucu yazılırsa iki filonun sırası
+--  TEK transaction içinde takas edilebilsin (yoksa geçici çakışma engellerdi).
+--  Tavanı değiştirmek isteyen bu CHECK'i VE lib/fleets.ts:FILO_TAVANI'nı birlikte
+--  değiştirir; scripts/check-filo-yonetimi.mjs ikisinin ayrışmasını yakalar.
+--
+--  Ad uzunluğu sınırı BİLEREK ŞEMADA DEĞİL: o bir ÜRÜN kararı ve her fikir
+--  değişikliğinde migration istemesin (056'daki ARIZA_ACIKLAMA_MAX ile aynı gerekçe).
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  GERİYE DÖNÜK ETKİ
+-- ═══════════════════════════════════════════════════════════════════════════
+--  Yeni tablo + iki kısıt dönüşümü. Hiçbir satır güncellenmiyor, hiçbir kolon
+--  düşmüyor, hiçbir mevcut sorgu değişmiyor: 'bordo'/'mavi' yazan/okuyan her
+--  kod aynen çalışmaya devam eder (FK o iki kodu kabul eder, çünkü tohumda var).
+--  Bu tablosu olmayan kurulumda (Sendigo/galzura-demo) uçlar `tablo_yok` DER —
+--  sessizce "filo yok" gibi görünmez.
+--
+--  Gizlilik: bu dosyada plaka/isim/e-posta YOK.
+
+-- ── 1 · FİLO TANIMLARI ─────────────────────────────────────────────────────
+create table if not exists public.fleets (
+  -- Kimlik = kod. vehicles.fleet ve workers.managed_fleet bunu tutuyor.
+  code       text primary key,
+  -- NULL = kiracı ad vermedi; görünen ad i18n/env'den gelir (yukarıdaki not).
+  name       text,
+  -- 1..5 · benzersiz → tavan YAPISAL. Aynı zamanda kararlı liste sırası.
+  sort_order smallint not null check (sort_order between 1 and 5),
+  created_at timestamptz not null default now(),
+  constraint fleets_sort_order_key unique (sort_order) deferrable initially deferred
+);
+
+comment on table public.fleets is
+  'İsimli filolar (en fazla 5). Üyelik BURADA DEĞİL: araç vehicles.fleet=code ile bağlı, personel araçtan türetilir (lib/fleet-scope.ts).';
+comment on column public.fleets.name is
+  'NULL ise görünen ad i18n/env''den gelir (lib/vehicle-ui.ts fleetLabel). Yeniden adlandırma bunu yazar.';
+
+-- ── 2 · TOHUM — MEVCUT VERİYİ KORUR ────────────────────────────────────────
+-- Ad BİLEREK NULL (yukarıdaki gerekçe). Sıra bugünkü arayüz sırası:
+-- FLEET_STYLE ve ACTIVE_FLEETS varsayılanı ikisinde de bordo önce geliyor.
+insert into public.fleets (code, name, sort_order) values
+  ('bordo', null, 1),
+  ('mavi',  null, 2)
+on conflict (code) do nothing;
+
+-- ── 3 · CHECK → FK · İZİN VERİLEN KÜME ARTIK VERİ ──────────────────────────
+-- Kısıt adları 023/029'da AÇIKÇA VERİLMEDİ, yani PostgreSQL'in ürettiği ada
+-- (vehicles_fleet_check / workers_managed_fleet_check) güvenmek zorunda
+-- kalırdık — kurulumdan kuruluma değişebilir. Onun yerine 'bordo' geçen CHECK
+-- kısıtları ADIYLA DEĞİL TANIMIYLA bulunup düşürülüyor. İdempotent: ikinci
+-- çalıştırmada düşürecek bir şey bulamaz ve sessizce geçer.
+do $fleet_check$
+declare c record;
+begin
+  for c in
+    select conrelid::regclass::text as tbl, conname
+      from pg_constraint
+     where contype = 'c'
+       and conrelid in ('public.vehicles'::regclass, 'public.workers'::regclass)
+       and pg_get_constraintdef(oid) ilike '%bordo%'
+  loop
+    execute format('alter table %s drop constraint %I', c.tbl, c.conname);
+    raise notice 'düşürüldü: % on %', c.conname, c.tbl;
+  end loop;
+end
+$fleet_check$;
+
+-- Araç → filo. RESTRICT: içinde aracı olan filo silinemez (öksüz araç olmaz).
+-- CASCADE (update): bir kodun kendisi değiştirilirse araçlar birlikte taşınır.
+do $fk_vehicles$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'vehicles_fleet_fkey'
+      and conrelid = 'public.vehicles'::regclass
+  ) then
+    alter table public.vehicles
+      add constraint vehicles_fleet_fkey foreign key (fleet)
+      references public.fleets(code) on update cascade on delete restrict;
+  end if;
+end
+$fk_vehicles$;
+
+-- Şeflik → filo. NULL serbest (herkes şef değil); FK NULL'ı zaten denetlemez.
+do $fk_workers$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'workers_managed_fleet_fkey'
+      and conrelid = 'public.workers'::regclass
+  ) then
+    alter table public.workers
+      add constraint workers_managed_fleet_fkey foreign key (managed_fleet)
+      references public.fleets(code) on update cascade on delete restrict;
+  end if;
+end
+$fk_workers$;
+
+-- ── 4 · İNDEKS ─────────────────────────────────────────────────────────────
+-- FK'nin referans veren tarafı indekssizdi. Filo başına araç sayımı ve
+-- ileride bir filo silme denemesi bu indeksi kullanır.
+create index if not exists idx_vehicles_fleet on public.vehicles (fleet);
+
+-- Servis-rol istemcisi dışında erişim yok (projedeki diğer tablolarla aynı).
+alter table public.fleets disable row level security;
+
+-- PostgREST şema önbelleğini yenile (yeni tablo hemen görünür olsun).
+notify pgrst, 'reload schema';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  060_last_recorded_at_batch.sql                                     ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 060 — SENKRON TURUNUN İMLEÇ OKUMASI TEK SORGUYA (#84 Adım 1)
+--
+-- ═══ SORUN ═══
+-- `/api/flespi/sync` her turda araç başına bir "son kayıt anı" sorgusu atıyor
+-- (lib/telemetry.ts → lastRecordedAt). 29 araçta 29 gidiş-dönüş.
+--
+-- 18.08.2026'da CANLIDA ÖLÇÜLDÜ (sorgu sayacı, #84 Adım 0): tur başına
+-- 169 PostgREST çağrısı, dökümü:
+--     92  device_telemetry     ← imleç okuması bunun büyük kısmı
+--     59  idle_episodes
+--      7  workers · 6 geofences · 2 vehicles · 2 time_entries · 1 worker_leaves
+--
+-- ═══ NEDEN SQL (JS'te toplanamıyor) ═══
+-- PostgREST "araç başına max(recorded_at)" ifadesini kuramaz: GROUP BY yok,
+-- DISTINCT ON yok. JS tarafında yapılabilecek tek şey son N satırı çekip
+-- bellekte gruplamaktı — ama o SESSİZ KIRPMAYA açık: yoğun bir araç tek başına
+-- 1000 satırı doldurursa başka bir aracın imleci hiç görünmez ve o araç için
+-- pencere yanlış hesaplanır. Kasadaki ders açık: sessiz kırpma başarı gibi
+-- görünür. Bu yüzden toplama SQL tarafında yapılıyor.
+--
+-- LATERAL, araç başına (vehicle_id, recorded_at) indeksine TEK seek yapar —
+-- 052'deki shift_odometer_spans ile aynı desen. Tablo taranmaz.
+--
+-- ═══ SÖZLEŞME ═══
+-- Girdi : araç id listesi (senkronun o turda işlediği araçlar)
+-- Çıktı : her araç için son telemetri anı. HİÇ kaydı olmayan araç SATIR
+--         DÖNDÜRMEZ (null döndürmez) — çağıran tarafta "kayıt yok" ile
+--         "sorgu başarısız" birbirine karışmasın diye.
+--
+-- ═══ GERİYE UYUM ═══
+-- Bu fonksiyon ÇALIŞTIRILMASA DA uygulama çalışır: lib/telemetry.ts'teki
+-- toplu okuma, fonksiyon yoksa araç-araç eski yola (lastRecordedAt) düşer ve
+-- tur bugünküyle birebir aynı davranır — yalnız sorgu sayısı düşmez.
+-- Yani deploy sırası serbest: kod önce çıkabilir, migration sonra koşabilir.
+
+create or replace function public.last_recorded_at_batch(
+  p_vehicle_ids uuid[]
+)
+returns table (
+  vehicle_id  uuid,
+  recorded_at timestamptz
+)
+language sql
+stable
+as $$
+  select v.id as vehicle_id, son.recorded_at
+  from unnest(p_vehicle_ids) as v(id)
+  cross join lateral (
+    select dt.recorded_at
+    from public.device_telemetry dt
+    where dt.vehicle_id = v.id
+    order by dt.recorded_at desc
+    limit 1
+  ) as son
+$$;
+
+comment on function public.last_recorded_at_batch(uuid[]) is
+  'Senkron turunun imlec okumasi: arac basina son device_telemetry ani, TEK sorguda (#84 Adim 1). Kaydi olmayan arac icin satir donmez.';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  061_idle_episode_cursors_batch.sql                                 ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 061 — RÖLANTİ EPİZOD İMLEÇLERİ TEK SORGUYA (#84 Adım 2)
+--
+-- ═══ SORUN ═══
+-- `saveIdleEpisodes` her araç için İKİ okuma yapıyor (lib/telemetry.ts):
+--     getOpenEpisode(vehicleId)     → açık epizod (varsa)
+--     latestClosedEndMs(vehicleId)  → son KAPALI epizodun bitiş anı
+-- 29 araçta 58 gidiş-dönüş.
+--
+-- CANLIDA ÖLÇÜLDÜ (#84 sayacı, HAK61):
+--     Adım 0 tabanı        : 169 sorgu/tur — idle_episodes 59
+--     Adım 1 (migration 060): 141 sorgu/tur — idle_episodes HÂLÂ 59
+-- Yani `idle_episodes` artık turun en büyük kalemi.
+--
+-- ═══ NEDEN SQL ═══
+-- 060 ile aynı sebep: PostgREST "araç başına en yeni satır" kuramaz (GROUP BY
+-- yok, DISTINCT ON yok). Bellekte gruplamak sessiz kırpmaya açık olurdu.
+-- İki LATERAL, araç başına (vehicle_id, ended_at) indeksine birer seek yapar.
+--
+-- ═══ SÖZLEŞME ═══
+-- Girdi : araç id listesi
+-- Çıktı : HER araç için TEK satır (LEFT JOIN — açık epizodu ya da kapalı
+--         epizodu olmayan araç da döner, ilgili alanları null).
+--         open_id            : açık epizodun id'si, yoksa null
+--         open_started_at    : açık epizodun başlangıcı
+--         open_last_seen_at  : açık epizodun son doğrulanmış anı
+--         latest_closed_end  : son KAPALI epizodun ended_at'i, yoksa null
+--
+-- `getOpenEpisode` açıklar arasında `started_at desc limit 1` alıyor; tekil
+-- indeks zaten araç başına en fazla bir açık epizoda izin veriyor ama buradaki
+-- sıralama o savunmacı davranışı BİREBİR taklit eder — davranış farkı kalmasın.
+--
+-- ═══ 23505 YARIŞ KORUMASI BU FONKSİYONA DEVREDİLMEZ ═══
+-- `saveIdleEpisodes` içinde insert 23505 (tekil ihlal) alırsa açık epizodu
+-- YENİDEN okuyor. O okuma CANLI kalmak ZORUNDA: yarışı kaybettiğimiz an
+-- karşı tarafın az önce yazdığı satırı öğrenmek istiyoruz, tur başında
+-- çekilmiş bayat bir değeri değil. Bu yüzden kod tarafında o çağrı
+-- `getOpenEpisode(vehicleId)` olarak AYNEN kalır; bu fonksiyon yalnız tur
+-- BAŞINDAKİ ilk okumayı toplulaştırır.
+--
+-- ═══ GERİYE UYUM ═══
+-- Çalıştırılmasa da uygulama çalışır: toplu okuma null dönerse
+-- `saveIdleEpisodes` araç-araç eski yola düşer ve davranış birebir aynı kalır
+-- (060'ta canlıda kanıtlanan desen). Deploy sırası serbest.
+
+create or replace function public.idle_episode_cursors_batch(
+  p_vehicle_ids uuid[]
+)
+returns table (
+  vehicle_id        uuid,
+  open_id           uuid,
+  open_started_at   timestamptz,
+  open_last_seen_at timestamptz,
+  latest_closed_end timestamptz
+)
+language sql
+stable
+as $$
+  select
+    v.id as vehicle_id,
+    a.id            as open_id,
+    a.started_at    as open_started_at,
+    a.last_seen_at  as open_last_seen_at,
+    k.ended_at      as latest_closed_end
+  from unnest(p_vehicle_ids) as v(id)
+  left join lateral (
+    select ie.id, ie.started_at, ie.last_seen_at
+    from public.idle_episodes ie
+    where ie.vehicle_id = v.id
+      and ie.ended_at is null
+    order by ie.started_at desc
+    limit 1
+  ) as a on true
+  left join lateral (
+    select ie.ended_at
+    from public.idle_episodes ie
+    where ie.vehicle_id = v.id
+      and ie.ended_at is not null
+    order by ie.ended_at desc
+    limit 1
+  ) as k on true
+$$;
+
+comment on function public.idle_episode_cursors_batch(uuid[]) is
+  'Senkron turunun rolanti imlecleri: arac basina acik epizod + son kapali bitis ani, TEK sorguda (#84 Adim 2). 23505 yaris korumasindaki yeniden okuma bunu KULLANMAZ, canli kalir.';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  062_autoshift_telemetry_batch.sql                                  ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 062 — OTOMATİK VARDİYA TELEMETRİ OKUMALARI TEK SORGUYA (#116b)
+--
+-- ═══ SORUN ═══
+-- `processAutoShifts` her turda araç/vardiya başına ayrı telemetri sorgusu
+-- atıyor (lib/auto-shift.ts):
+--     firstIgnitionToday(vehicleId)   → bugünün İLK kontak-açık anı   (araç başına 1)
+--     lastActivityMs(vehicleId, shift)→ vardiya başlangıcından beri
+--                                        son kontak-açık + son HAREKET (vardiya başına 2)
+--
+-- CANLIDA ÖLÇÜLDÜ (19.08.2026, #84 sayacı, yoğun tur):
+--     device_telemetry 37 sorgu/tur
+--     13 açık vardiya, 29 cihazlı araç → 2×13 + (29−13) = 42 beklenen, 37 ölçülen
+--     (fark: daha önceki filtrelerle elenen araçlar)
+-- #84 Adım 0-4 bittikten sonra turun EN BÜYÜK kalemi bu.
+--
+-- ⚠️ NOT: bu kalem başta "saveDtc odometre okuması" sanılmıştı. Ölçüm yanlışı
+-- düzeltti — saveDtc'nin odometre okuması TEMBEL (yalnız yeni bir arıza kodu
+-- eklenirken) ve pratikte neredeyse hiç tetiklenmiyor.
+--
+-- ═══ NEDEN SQL ═══
+-- 060/061 ile aynı sebep: PostgREST "araç başına EN YENİ/EN ESKİ satır"
+-- kuramaz (GROUP BY yok, DISTINCT ON yok) ve her aracın penceresi FARKLI
+-- (`p_since` vardiya başlangıcı). Bellekte gruplamak için tüm telemetriyi
+-- çekmek gerekirdi — yoğun günde araç başına binlerce satır, ve 1000 satırlık
+-- PostgREST tavanı yüzünden SESSİZ KIRPMAYA açık.
+--
+-- Üç LATERAL, araç başına (vehicle_id, recorded_at) indeksine birer seek yapar.
+--
+-- ═══ SÖZLEŞME ═══
+-- Girdi : eşleşen üç dizi — araç id'leri ve her araç için pencere başlangıcı.
+--         `p_since[i]` NULL ise o araç için vardiya penceresi yok; yalnız
+--         `first_ignition_today` hesaplanır (diğer ikisi NULL döner).
+-- Çıktı : her araç için TEK satır (LEFT JOIN — hiç kaydı olmayan araç da döner).
+--         first_ignition_today : p_day_start'tan sonraki İLK kontak-açık anı
+--         last_ignition_on     : p_since'ten sonraki SON kontak-açık anı
+--         last_movement        : p_since'ten sonraki SON hareket anı
+--                                (speed_kmh >= p_move_kmh)
+--
+-- Hız eşiği PARAMETRE: JS tarafındaki MOVE_SPEED_KMH tek kaynak olarak kalsın;
+-- SQL'e sabit gömülseydi iki yerde iki farklı eşik olur ve biri değişince
+-- öteki sessizce geride kalırdı.
+--
+-- ═══ GERİYE UYUM ═══
+-- Çalıştırılmasa da uygulama çalışır: toplu okuma null dönerse auto-shift
+-- araç-araç eski yola düşer ve davranış birebir aynı kalır (060/061'de
+-- canlıda iki kez kanıtlanan desen). Deploy sırası serbest.
+
+create or replace function public.autoshift_telemetry_batch(
+  p_vehicle_ids uuid[],
+  p_since       timestamptz[],
+  p_day_start   timestamptz,
+  p_move_kmh    double precision
+)
+returns table (
+  vehicle_id           uuid,
+  first_ignition_today timestamptz,
+  last_ignition_on     timestamptz,
+  last_movement        timestamptz
+)
+language sql
+stable
+as $$
+  select
+    v.id as vehicle_id,
+    ilk.recorded_at  as first_ignition_today,
+    sonKontak.recorded_at as last_ignition_on,
+    sonHareket.recorded_at as last_movement
+  from unnest(p_vehicle_ids, p_since) as v(id, since)
+  left join lateral (
+    select dt.recorded_at
+    from public.device_telemetry dt
+    where dt.vehicle_id = v.id
+      and dt.ignition_on = true
+      and dt.recorded_at >= p_day_start
+    order by dt.recorded_at asc
+    limit 1
+  ) as ilk on true
+  left join lateral (
+    select dt.recorded_at
+    from public.device_telemetry dt
+    where v.since is not null
+      and dt.vehicle_id = v.id
+      and dt.ignition_on = true
+      and dt.recorded_at >= v.since
+    order by dt.recorded_at desc
+    limit 1
+  ) as sonKontak on true
+  left join lateral (
+    select dt.recorded_at
+    from public.device_telemetry dt
+    where v.since is not null
+      and dt.vehicle_id = v.id
+      and dt.speed_kmh >= p_move_kmh
+      and dt.recorded_at >= v.since
+    order by dt.recorded_at desc
+    limit 1
+  ) as sonHareket on true
+$$;
+
+comment on function public.autoshift_telemetry_batch(uuid[], timestamptz[], timestamptz, double precision) is
+  'Otomatik vardiya motorunun telemetri okumalari: arac basina bugunun ilk kontagi + vardiya penceresindeki son kontak/son hareket, TEK sorguda (#116b). Hiz esigi parametre — JS tarafi tek kaynak.';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  063_geofence_category.sql                                          ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 — Migration 063 (BÖLGE GÖRSEL KATEGORİSİ)
+-- =====================================================================
+-- Mobil Bölgeler ekranının kategori rozeti. Additive + idempotent.
+-- ⚠️ 015 (geofences) ve 034 (purpose) uygulanmış olmalı. Arşiv kolonu
+-- (archived_at) ayrı bir migration'la zaten canlıda.
+--
+-- ═══ NEDEN `purpose` GENİŞLETİLMİYOR DA YENİ KOLON AÇILIYOR ═══
+--
+-- `purpose` bugün İKİ işi birden yapıyor: görsel rozet VE davranış anahtarı.
+-- purpose='depot' olan bölge şunları sürüyor:
+--   (a) otomatik vardiya başlatma tetiği   lib/auto-shift.ts
+--   (b) manuel başlatmada depo kilidi      app/actions/shift.ts
+--   (c) vardiya başlangıç anını türetir    app/actions/shift.ts
+--   (d) şoför panelinde öneri/kilit rozeti app/panel/page.tsx
+--   (e) KURAL değerlendirmesinden muafiyet app/admin/araclar/[id]/page.tsx
+--
+-- `purpose`u 'customer','restricted','custom' ile genişletseydik, mobilde bir
+-- bölgenin kategorisini depot→customer çevirmek bu BEŞ davranışı birden
+-- sessizce kapatırdı. Büyüklüğü ölçüldü (18.08.2026, HAK61): son 30 günde
+-- 511 vardiyanın 346'sı (%68) depo tetiğiyle açılmış ve canlıda yalnız 2 depo
+-- bölgesi var — tek bir açılır menü seçimi filonun üçte iki vardiya kaydını
+-- durdurabilirdi, hata mesajı olmadan.
+--
+-- Bu yüzden eksenler AYRI:
+--   category = GÖRSEL kategori (mobil/panel rozeti) — motor OKUMAZ
+--   purpose  = DAVRANIŞ anahtarı — CHECK'i DEĞİŞMEZ, motor kodu değişmez
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+alter table public.geofences
+  add column if not exists category text not null default 'custom';
+
+-- Kısıt ayrı: kolon zaten varsa da kısıt garanti altına alınsın.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'geofences_category_check'
+  ) then
+    alter table public.geofences
+      add constraint geofences_category_check
+      check (category in ('depot','customer','restricted','custom'));
+  end if;
+end $$;
+
+-- Geriye dönük doldurma: davranış anahtarı görsel kategoriye yansısın.
+-- Yalnız varsayılanda kalmış satırlara dokunur (elle değiştirilmiş satır
+-- ezilmez) — migration tekrar çalıştırılabilir kalsın diye.
+update public.geofences
+   set category = 'depot'
+ where purpose = 'depot' and category = 'custom';
+
+-- Varsayılan liste ve motor okumaları "arşivde değil" filtresiyle çalışır.
+create index if not exists idx_geofences_not_archived
+  on public.geofences (active)
+  where archived_at is null;
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  064_customer_zone_visits.sql                                       ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 064 — MÜŞTERİ BÖLGESİ + ZİYARET ÖLÇÜMÜ (FAZ C)
+-- =====================================================================
+-- "Bölgede geçirilen süre raporu (faturalama kanıtı)" — GOLD paketinde
+-- zaten satılan özelliğin veri katmanı.
+--
+-- ⚠️ 063 (geofences.category) uygulanmış olmalı. Numara 063 dolu → 064.
+--
+-- ═══ NEDEN `purpose`, `category` DEĞİL (Volkan kararı B, 19.08.2026) ═══
+--
+-- 063 iki ekseni ayırdı ve gerekçesi ölçülmüştü:
+--     category = GÖRSEL rozet — MOTOR OKUMAZ, mobil serbestçe yazar
+--     purpose  = DAVRANIŞ anahtarı
+--
+-- Ziyaret ölçümü `category='customer'`e bağlansaydı, mobil uygulamada bir
+-- kategori açılır menüsüne dokunmak FATURALAMA KANITI üretimini sessizce
+-- başlatır ya da durdururdu — hata mesajı olmadan. 063 tam olarak bu kaza
+-- sınıfını önlemek için yazılmıştı (son 30 günde 511 vardiyanın %68'i depo
+-- tetiğiyle açılıyor); aynı tehlike burada en yüksek bahisli tüketiciye,
+-- müşteri faturasına dokunuyor.
+--
+-- Volkan'ın kararı ve gerekçesi:
+--   "ÖLÇÜM DAVRANIŞTIR, ROZET DEĞİL; FATURA KANITI TELEFON MENÜSÜNDEN
+--    DEĞİŞEMEZ."
+--
+-- Sonuç: bir bölge, `purpose='customer'` ise müşteri sahasıdır.
+-- `category='customer'` rozeti YANINDA durur (panel ikisini birlikte yazar).
+-- Mobil `purpose` YAZAMIYOR (lib/geofences-db.ts, bilinçli) → ölçüm yalnız
+-- panelden, bilerek açılabilir.
+--
+-- 063'ün saydığı depo tehlikesi BURADA YOK: 'customer' hiçbir mevcut satırda
+-- olmayan YENİ bir değer; purpose='depot' satırlarına dokunulmuyor ve o beş
+-- depo davranışı (otomatik vardiya tetiği, depo kilidi, başlangıç anı türetme,
+-- şoför paneli rozeti, kural muafiyeti) aynen çalışmaya devam ediyor.
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ── 1) purpose'a 'customer' ──────────────────────────────────────────
+-- 034 kısıtı kolon tanımının İÇİNDE açmıştı (adı Postgres tarafından
+-- üretildi). Adı varsaymak yerine purpose üzerindeki CHECK kısıtı BULUNUP
+-- düşürülüyor — migration tekrar çalıştırılabilir kalsın.
+do $$
+declare k text;
+begin
+  select con.conname into k
+    from pg_constraint con
+    join pg_class rel on rel.oid = con.conrelid
+    join pg_namespace ns on ns.oid = rel.relnamespace
+   where ns.nspname = 'public'
+     and rel.relname = 'geofences'
+     and con.contype = 'c'
+     and pg_get_constraintdef(con.oid) ilike '%purpose%'
+   limit 1;
+  if k is not null then
+    execute format('alter table public.geofences drop constraint %I', k);
+  end if;
+end $$;
+
+alter table public.geofences
+  add constraint geofences_purpose_check
+  check (purpose in ('rule','depot','customer'));
+
+-- ── 2) Müşteri kimliği ───────────────────────────────────────────────
+-- Ayrı müşteri TABLOSU açılmıyor: bugün "müşteri kaydı" diye bir kavram yok,
+-- iki kolon yetiyor. Gerekirse sonra ilişkiye çevrilir; şimdiden tablo açmak
+-- kullanılmayan bir yapıyı bakım yüküne çevirirdi.
+alter table public.geofences
+  add column if not exists customer_name text,
+  add column if not exists customer_ref  text;
+
+-- ── 3) Histerezis eşiği ──────────────────────────────────────────────
+-- Depo tetiği 3 dakika kullanıyor. Müşteri sahası için AYRI ve ayarlanabilir
+-- olmalı: bir teslimat 90 saniye sürebilir ve 3 dakikalık eşik onu TAMAMEN
+-- kaçırırdı. Varsayılan 120 sn (Volkan onayı).
+-- Çok kısa seçilirse yoldan geçiş "ziyaret" sayılır ve FATURAYA girer —
+-- bu bir fatura doğruluğu ayarıdır, kozmetik değil.
+alter table public.geofences
+  add column if not exists min_dwell_s integer not null default 120
+  constraint geofences_min_dwell_pos check (min_dwell_s > 0);
+
+-- ── 4) ZİYARET EPİZODLARI ────────────────────────────────────────────
+-- idle_episodes'un (024) birebir kardeşi. Aynı ilke: GÖZLEMLENMEMİŞ SÜRE
+-- ASLA SAYILMAZ. Süre daima ended_at - started_at; "şu an - started_at"
+-- HİÇBİR YERDE hesaplanmaz.
+create table if not exists public.zone_visits (
+  id           uuid primary key default gen_random_uuid(),
+  vehicle_id   uuid not null references public.vehicles(id)  on delete cascade,
+  zone_id      uuid not null references public.geofences(id) on delete cascade,
+  -- Ziyaret anındaki şoför. Araç el değiştirirse GEÇMİŞ BOZULMASIN diye
+  -- burada donduruluyor (vehicles.assigned_worker_id'den türetilmiyor).
+  worker_id    uuid references public.workers(id) on delete set null,
+  -- Histerezis dolduğu an — yoldan geçiş değil, GERÇEK varış.
+  started_at   timestamptz not null,
+  -- NULL = araç hâlâ içeride.
+  ended_at     timestamptz,
+  -- İçeride olduğunu doğrulayan SON telemetri. Sinyal kesilirse ziyaret
+  -- bununla kapanır; sinyalsiz geçen süre faturaya girmez.
+  last_seen_at timestamptz not null,
+  end_reason   text check (end_reason in ('exit','gap_timeout','shift_end')),
+  created_at   timestamptz not null default now(),
+  -- Bitmiş ziyaret geriye akamaz.
+  constraint zone_visits_sira check (ended_at is null or ended_at >= started_at)
+);
+
+-- KRİTİK DEĞİŞMEZ: araç + bölge başına EN FAZLA BİR açık ziyaret.
+-- idle_episodes'un uq_idle_open_per_vehicle deseninin aynısı: iki ingest yolu
+-- (stream + poll) yarışırsa veritabanı reddeder, kod yarışı çözer.
+create unique index if not exists uq_zone_visit_open
+  on public.zone_visits (vehicle_id, zone_id)
+  where ended_at is null;
+
+-- Rapor okuması: "şu tarih aralığında şu bölgedeki ziyaretler".
+create index if not exists idx_zone_visits_zone_time
+  on public.zone_visits (zone_id, started_at desc);
+-- Tur okuması: açık ziyaretlerin tamamı (tur başına TEK sorgu).
+create index if not exists idx_zone_visits_open
+  on public.zone_visits (vehicle_id)
+  where ended_at is null;
+
+-- RLS — kardeş tablo `idle_episodes` (024) ile BİREBİR aynı duruş:
+-- tablo yalnız service-role (supabaseAdmin) ile okunur/yazılır ve service-role
+-- RLS'i bypass eder. public/anon/authenticated erişimi OLMAMALI →
+-- RLS AÇIK + policy YOK (varsayılan deny).
+-- Kasadaki kural (17 Tem): yeni migration'da RLS zorunlu.
+alter table public.zone_visits enable row level security;
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  065_latest_telemetry_batch.sql                                     ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 065 — CANLI TELEMETRİ PENCERESİ TOPLU (#116b'nin GERÇEK karşılığı)
+-- =====================================================================
+-- ═══ SORUN ═══
+-- `processAutoShifts` döngüsünün İLK satırı, KOŞULSUZ:
+--     lib/auto-shift.ts:494   const latest = await latestVehicleTelemetry(v.id);
+-- Araç başına 1 sorgu → 29 araçta 29 gidiş-dönüş.
+--
+-- CANLIDA ÖLÇÜLDÜ (19.08.2026, #84 sayacı, yoğun tur): `device_telemetry` 37;
+-- bunun 29'u bu çağrı, kalanı `depotArrivalTrigger` sayfalı okumaları ve
+-- vardiya açılırken `resolveStartKm`.
+--
+-- ⚠️ Bu kalem önce "saveDtc odometre", sonra "migration 062" sanılmıştı. İkisi
+-- de ÖLÇÜMLE yanlış çıktı: saveDtc'nin odometre okuması tembel, 062'nin
+-- kapsadığı üç okuma da HAK61 yapılandırmasında (SHIFT_START_TRIGGER=
+-- depot_entry, SHIFT_AUTO_END=off) hiç çalışmıyor. Gerçek kaynak burası.
+--
+-- ═══ NEDEN 060 DESENİNİN AYNISI DEĞİL ═══
+-- `latestVehicleTelemetry` TEK SATIR döndürmüyor: en yeni 40 satırlık bir
+-- PENCERE çekip seyrek CAN/OBD alanlarını (yakıt, rpm, hararet…) o pencerede
+-- gerçekten değer bildiren EN YENİ satırdan tamamlıyor. En yeni kare motor
+-- verisi taşımadığında detay kartı "—" göstermesin diye.
+--
+-- Bu yüzden bu fonksiyon da PENCERE döndürür — tek satır değil.
+--
+-- ═══ BİRLEŞTİRME (coalesce) SQL'E TAŞINMADI — BİLİNÇLİ ═══
+-- Alanları SQL tarafında doldurmak, aynı kuralın İKİNCİ bir uygulaması
+-- olurdu ve iki uygulama ilk değişiklikte birbirinden sapardı. Kural
+-- JS'te TEK KAYNAK olarak kalıyor (lib/telemetry.ts); SQL yalnız satırları
+-- getiriyor. Aynı gerekçe `telemetriSatirlari()` ve `MOVE_SPEED_KMH`
+-- parametresinde de uygulandı.
+--
+-- ═══ ⚠️ SATIR TAVANI — ÇAĞIRAN PARÇALAYARAK ÇAĞIRMALI ═══
+-- 29 araç × 40 satır = 1160 satır. PostgREST sonuçları 1000 satırda SESSİZCE
+-- keser; tek çağrıda tüm filoyu istemek bazı araçların penceresini yarıda
+-- kırpar ve bunu HİÇBİR HATA BİLDİRMEZ — kasadaki en pahalı hata sınıfı.
+-- Bu yüzden çağıran taraf araç listesini parçalara böler:
+--     parça = floor(900 / pencere)   → 40'lık pencerede 22 araç
+-- 29 araç = 2 çağrı (29 yerine). Pencere değişirse parça boyu kendiliğinden
+-- ayarlanır; sabit bir sayı yazmak o günü sessiz kırpmaya çevirirdi.
+--
+-- ═══ GERİYE UYUM ═══
+-- Çalıştırılmasa da uygulama çalışır: toplu okuma null dönerse çağıran
+-- araç-araç `latestVehicleTelemetry`'ye düşer ve davranış birebir aynı kalır
+-- (060/061'de canlıda iki kez kanıtlanan desen).
+-- =====================================================================
+
+create or replace function public.latest_telemetry_batch(
+  p_vehicle_ids uuid[],
+  p_window      integer
+)
+returns table (
+  vehicle_id       uuid,
+  latitude         double precision,
+  longitude        double precision,
+  speed_kmh        double precision,
+  heading          double precision,
+  ignition_on      boolean,
+  fuel_level_pct   double precision,
+  odometer_km      double precision,
+  engine_rpm       double precision,
+  engine_load_pct  double precision,
+  coolant_temp_c   double precision,
+  fuel_consumption double precision,
+  power_voltage    double precision,
+  battery_voltage  double precision,
+  gsm_signal       double precision,
+  altitude_m       double precision,
+  satellites       double precision,
+  dtc_number       integer,
+  recorded_at      timestamptz
+)
+language sql
+stable
+as $$
+  select
+    p.vehicle_id, p.latitude, p.longitude, p.speed_kmh, p.heading,
+    p.ignition_on, p.fuel_level_pct, p.odometer_km, p.engine_rpm,
+    p.engine_load_pct, p.coolant_temp_c, p.fuel_consumption,
+    p.power_voltage, p.battery_voltage, p.gsm_signal, p.altitude_m,
+    p.satellites, p.dtc_number, p.recorded_at
+  from unnest(p_vehicle_ids) as v(id)
+  cross join lateral (
+    select
+      dt.vehicle_id, dt.latitude, dt.longitude, dt.speed_kmh, dt.heading,
+      dt.ignition_on, dt.fuel_level_pct, dt.odometer_km, dt.engine_rpm,
+      dt.engine_load_pct, dt.coolant_temp_c, dt.fuel_consumption,
+      dt.power_voltage, dt.battery_voltage, dt.gsm_signal, dt.altitude_m,
+      dt.satellites, dt.dtc_number, dt.recorded_at
+    from public.device_telemetry dt
+    where dt.vehicle_id = v.id
+    order by dt.recorded_at desc
+    limit p_window
+  ) as p
+$$;
+
+comment on function public.latest_telemetry_batch(uuid[], integer) is
+  'Arac basina en yeni p_window telemetri satiri, TEK sorguda (#116b). Seyrek CAN alanlarinin birlestirilmesi SQL''e TASINMADI - kural JS''te tek kaynak. Cagiran, PostgREST 1000 satir tavanina karsi arac listesini floor(900/p_window) buyuklugunde parcalara bolmek ZORUNDA.';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  066_seferler.sql                                                   ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 — Migration 066 (SEFER / GÖREV ATAMA — Tur 1 temeli)
+-- =====================================================================
+-- Yönetici gün için sefer oluşturur, şoföre atar; şoför telefonda görür ve
+-- durum çizgisini ilerletir. Additive + idempotent; mevcut hiçbir tabloya
+-- DOKUNULMAZ. Supabase SQL Editor'da çalıştırın.
+--
+-- ⚠️ NUMARA: 064/065 diğer zincirde (FAZ C müşteri bölgesi + telemetri partisi).
+-- Bu dosya o zincirden BAĞIMSIZ: zone_visits'e ne yazar ne okur.
+--
+-- ═══ NEDEN `assignments` (006) KULLANILMIYOR ═══
+--
+-- 006'daki tablo bir "çoklu duraklı sipariş" modeli: stops jsonb, start_km/
+-- end_km, kategori (lieferung/abholung/kurier/verteilung), Telegram bildirim
+-- damgası. Canlıda 0 satır — hiç kullanılmadı. Onaylanan model ise DURAK
+-- LİSTESİ OLMAYAN, gün eksenli sade bir sefer. Eski tabloyu bu şekle zorlamak
+-- kullanılmayan altı alanı taşımak ve durum makinesini (assigned/started/
+-- completed/cancelled) yeniden yazmak demekti. 006 OLDUĞU GİBİ bırakılıyor;
+-- panelin /admin/seferler sayfası bugünkü hâliyle çalışmaya devam eder.
+--
+-- ═══ NEDEN `tarih date`, timestamptz DEĞİL ═══
+--
+-- Sefer bir GÜN birimidir ("19 Ağustos, Wolfurt bölgesi, Ahmet"). Saatli bir
+-- alan, olmayan bir kesinlik vaat ederdi ve kiracı diliminde (Europe/Vienna)
+-- gün sınırı sorusunu her okumada yeniden doğururdu. Durumun NE ZAMAN
+-- değiştiği ayrı damgalarda zaten saatli tutuluyor.
+--
+-- ═══ TEST VERİSİ ELEMESİ İÇİN KOLON YOK — BİLEREK ═══
+--
+-- Depodaki desen `worker_id` üzerinden eler (`lib/test-data.ts`
+-- withoutTestRows(q, "worker_id", scope.workerIds)). `seferler.worker_id`
+-- zorunlu olduğu için aynı süzgeç buraya da uygulanır; ikinci bir `is_test`
+-- kolonu iki ayrı gerçek doğururdu.
+--
+-- ═══ RLS ═══
+-- Kapalı — şemanın geri kalanıyla tutarlı. Tabloya yalnız service-role
+-- istemcisi yazar; okuma sunucu bileşenleri ve /api/mobile uçları üzerinden.
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+create table if not exists public.seferler (
+  id uuid primary key default gen_random_uuid(),
+
+  -- Operasyon günü (kiracı takvimi). Sefer bir GÜN birimidir.
+  tarih date not null,
+
+  -- Kime atandı. Sefer şoförsüz var olamaz.
+  worker_id uuid not null references public.workers(id) on delete cascade,
+
+  -- Hangi araçla. Atama anında belli olmayabilir; araç silinirse sefer kalır.
+  vehicle_id uuid references public.vehicles(id) on delete set null,
+
+  -- Hedef bölge (geofences). Tur 1'de yalnız YAPISAL bağ: hiçbir motor bunu
+  -- okumuyor. Otomatik "varıldı" köprüsü (zone_visits) Tur 3'ün işi.
+  -- Bölge silinirse sefer kaybolmaz, hedefi boşalır.
+  zone_id uuid references public.geofences(id) on delete set null,
+
+  -- Planlanan paket adedi. null = hedef verilmedi (0 DEĞİL).
+  paket_hedef integer check (paket_hedef is null or paket_hedef >= 0),
+
+  -- Serbest not. ⚠️ Kolon adı `notlar`: `not` PostgreSQL'de REZERVE kelime,
+  -- kolon adı olarak her yerde çift tırnak isterdi.
+  notlar text,
+
+  -- ── DURUM ÇİZGİSİ ────────────────────────────────────────────────────
+  -- atandi → kabul → yolda → tamamlandi   (+ iptal: yalnız yönetici)
+  -- "Reddet" YOK (Volkan kararı 3): şoför seferi reddedemez.
+  durum text not null default 'atandi'
+    check (durum in ('atandi','kabul','yolda','tamamlandi','iptal')),
+
+  -- Her geçişin anı ayrı damgada: "ne zaman kabul etti", "yola ne zaman
+  -- çıktı" soruları tek bir updated_at'ten cevaplanamaz.
+  atandi_at     timestamptz not null default now(),
+  kabul_at      timestamptz,
+  yolda_at      timestamptz,
+  tamamlandi_at timestamptz,
+  iptal_at      timestamptz,
+
+  -- Seferi kim oluşturdu (yalnız yönetici). Hesap silinirse sefer kalır.
+  created_by uuid references public.workers(id) on delete set null,
+
+  created_at timestamptz not null default now()
+);
+
+-- Günün seferleri: mobil listenin birincil sorgusu (tarih + şoför).
+create index if not exists idx_seferler_tarih_worker
+  on public.seferler (tarih desc, worker_id);
+
+-- Şoförün AÇIK seferleri — kapanmış/iptal satırlar indekse hiç girmez.
+create index if not exists idx_seferler_acik
+  on public.seferler (worker_id, tarih)
+  where durum in ('atandi','kabul','yolda');
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- ÇALIŞTIRDIKTAN SONRA BEKLENEN HÂL (doğrulama sorgusu):
+--
+--   select column_name, data_type, is_nullable
+--     from information_schema.columns
+--    where table_schema='public' and table_name='seferler'
+--    order by ordinal_position;
+--
+--   → 15 satır: id, tarih, worker_id, vehicle_id, zone_id, paket_hedef,
+--     notlar, durum, atandi_at, kabul_at, yolda_at, tamamlandi_at, iptal_at,
+--     created_by, created_at
+--
+--   select count(*) from public.seferler;   → 0
+-- =====================================================================
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  067_first_ignition_batch.sql                                       ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 067 — OTOMATİK VARDİYANIN "BUGÜNKÜ İLK KONTAK" OKUMASI TEK SORGUYA (#131b)
+--
+-- ═══ SORUN — VE NASIL GÖRÜLDÜ ═══
+-- `lib/auto-shift.ts` → `firstIgnitionToday(vehicleId)`: otomatik başlatma
+-- kapısını geçen HER araç için ayrı bir `device_telemetry` sorgusu.
+--
+-- Bu kalem #84 boyunca HİÇ görülmedi ve sebebi öğreticiydi: bütün ölçümler
+-- `curl` ile ELLE tetiklenen turlardan alınıyordu. Cron 30 saniyede bir
+-- koştuğu için el çağrısı hep bir turun hemen ardına düşüyor ve bu yol 8'de
+-- kalıyordu. 20.08.2026'da ölçüm aracı değiştirildi — sayaç zaten her tur
+-- `[flespi/sync] SORGU toplam=…` diye loglanıyordu — ve CRON'UN KENDİ turunda
+-- gerçek şu çıktı:
+--
+--     gece turu (57 sorgu):  device_telemetry 22  +  workers 22   = 44
+--     gündüz turu (56):      vehicle_dtc 23 baskın, bu yol 8'de
+--
+-- `workers` ayağı #131a ile migration'sız kapatıldı (8 → 1, canlıda ölçüldü).
+-- Kalan ayak bu.
+--
+-- ═══ NEDEN SQL (JS'te toplanamıyor) ═══
+-- İstenen şey araç başına "bugünün İLK kontak-açık satırı". PostgREST bunu
+-- kuramaz (GROUP BY / DISTINCT ON yok). JS'te yapılabilecek tek şey günün tüm
+-- kontak satırlarını çekip bellekte gruplamaktı — ama o SESSİZ KIRPMAYA açık:
+-- 1000 satır tavanına yoğun bir araç tek başına dayanırsa başka bir aracın ilk
+-- kontağı hiç görünmez ve o araç için vardiya YANLIŞ saatte açılır. Kasadaki
+-- ders net: sessiz kırpma başarı gibi görünür. 060 ve 065 aynı gerekçeyle
+-- SQL'e taşınmıştı; bu onların üçüncüsü.
+--
+-- LATERAL, `(vehicle_id, recorded_at)` indeksine araç başına TEK seek yapar.
+--
+-- ⚠️ `ignition_on` üzerinde ayrı bir indeks GEREKMEZ: seek zaten araç+zaman
+-- üzerinden gidiyor, `ignition_on = true` süzgeci seek içinde uygulanıyor ve
+-- pencere tek bir kiracı-günü. Yeni indeks eklemek yazma yolunu (turun en
+-- yoğun kalemi olan telemetri partisini) yavaşlatırdı.
+--
+-- ═══ SÖZLEŞME ═══
+-- Girdi : araç id listesi + kiracı-gününün başlangıcı (Viyana 04:00 sınırı
+--         JS'te hesaplanır — `startOfTodayVienna()`; DST mantığı TEK YERDE
+--         kalsın diye SQL'e taşınmadı).
+-- Çıktı : araç başına bugünkü İLK kontak-açık anı. Bugün hiç kontak açmamış
+--         araç SATIR DÖNDÜRMEZ (null değil) — "kontak yok" ile "sorgu
+--         başarısız" birbirine karışmasın.
+--
+-- ═══ GERİYE UYUM ═══
+-- Bu fonksiyon KOŞULMASA DA uygulama çalışır: `lib/auto-shift.ts` toplu okuma
+-- null dönerse araç-araç eski yola (`firstIgnitionToday`) düşer ve davranış
+-- birebir aynı kalır — yalnız kazanç gerçekleşmez. Deploy sırası serbest.
+--
+-- ⚠️ ÜÇ VERİTABANI VAR (bkz. Bekleyen-Isler #128): hak-transport-takip ·
+-- galzura-demo · sendigo. "Koşuldu" üç ayrı kutucuktur.
+
+create or replace function public.first_ignition_batch(
+  p_vehicle_ids uuid[],
+  p_day_start   timestamptz
+)
+returns table (
+  vehicle_id   uuid,
+  first_at     timestamptz
+)
+language sql
+stable
+as $$
+  select v.id as vehicle_id, ilk.recorded_at as first_at
+  from unnest(p_vehicle_ids) as v(id)
+  cross join lateral (
+    select dt.recorded_at
+    from public.device_telemetry dt
+    where dt.vehicle_id = v.id
+      and dt.ignition_on = true
+      and dt.recorded_at >= p_day_start
+    order by dt.recorded_at asc
+    limit 1
+  ) as ilk
+$$;
+
+comment on function public.first_ignition_batch(uuid[], timestamptz) is
+  'Otomatik vardiya: arac basina BUGUNUN ilk kontak-acik ani, TEK sorguda (#131b). Bugun kontak acmamis arac icin satir donmez.';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  068_zone_visit_zone_closed.sql                                     ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 068 — ZİYARET KAPANIŞ SEBEBİNE 'zone_closed' EKLE (#136)
+-- =====================================================================
+-- ⚠️ 064 (zone_visits) uygulanmış olmalı.
+--
+-- ═══ NEDEN GEREKLİ ═══
+-- 20.08.2026 canlı testinde görüldü: demo'da müşteri bölgesi pasifleştirilince
+-- o bölgenin AÇIK ziyaretleri askıda kaldı. Sebep yapısal — hem ölçüm hem gap
+-- bekçisi `active = true` müşteri bölgeleri kapısının ARDINDA çalışıyor; bölge
+-- kapanınca o satırları kapatacak hiçbir yol kalmıyor ve fatura eki süresiz
+-- "devam ediyor" satırı taşıyor.
+--
+-- Kod artık bölge pasifleştirildiğinde/arşivlendiğinde açık ziyaretleri
+-- `ended_at = last_seen_at` ile kapatıyor. Ama bu kapanış, ötekilerden AYRI bir
+-- şey söylüyor ve ayrı işaretlenmeli:
+--
+--   'exit'        → araç çıktı. Süre TAM.
+--   'gap_timeout' → cihaz sustu. Süre EKSİK olabilir — araç hâlâ içeride
+--                   olabilirdi, bilmiyoruz.
+--   'zone_closed' → ÖLÇÜMÜ BİZ DURDURDUK. Süre EKSİK olabilir — araç hâlâ
+--                   içerideydi, ama artık ölçmüyoruz.
+--
+-- Son ikisi "bu süre eksik olabilir" der; SEBEPLERİ farklıdır ve raporda ayrı
+-- rozet taşırlar. Üçünü tek etikete koymak, ölçümü kendi kararımızla
+-- kestiğimizi müşteriden gizlerdi.
+--
+-- ═══ 068 KOŞULMAZSA NE OLUR ═══
+-- Kod düşer ama DURMAZ: CHECK reddedince (23514) satır **sebepsiz** kapanır.
+-- Ziyaret yine askıda kalmaz, yalnız raporda "Ölçüm durdu" rozeti çıkmaz.
+-- Yani bu migration doğruluk için değil, ŞEFFAFLIK için gerekli.
+--
+-- ⚠️ ÜÇ VERİTABANI VAR (bkz. Bekleyen-Isler #128): hak-transport-takip ·
+-- galzura-demo · sendigo. "Koşuldu" üç ayrı kutucuktur.
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- Kısıt adı 064'te açıkça verilmişti; yine de adı VARSAYMAK yerine
+-- `end_reason` üzerindeki CHECK bulunup düşürülüyor (tekrar çalıştırılabilir).
+do $$
+declare k text;
+begin
+  select con.conname into k
+    from pg_constraint con
+    join pg_class rel on rel.oid = con.conrelid
+    join pg_namespace ns on ns.oid = rel.relnamespace
+   where ns.nspname = 'public'
+     and rel.relname = 'zone_visits'
+     and con.contype = 'c'
+     and pg_get_constraintdef(con.oid) ilike '%end_reason%'
+   limit 1;
+  if k is not null then
+    execute format('alter table public.zone_visits drop constraint %I', k);
+  end if;
+end $$;
+
+alter table public.zone_visits
+  add constraint zone_visits_end_reason_check
+  check (end_reason in ('exit','gap_timeout','shift_end','zone_closed'));
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  069_geofence_category_repair.sql                                   ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 069 — 063'ÜN ONARIMI: `geofences.category` her kurulumda GERÇEKTEN olsun
+-- =====================================================================
+-- ═══ NEDEN GEREKLİ — CANLIDA ÖLÇÜLDÜ (20.08.2026) ═══
+-- Demo'da `GET /api/mobile/geofences` **503** veriyor. Panel çalışıyor, çünkü
+-- `app/actions/geofences.ts` → `selectZones` `category` kolonunu OKUMUYOR;
+-- mobil yol (`lib/geofences-db.ts` → `listGeofences`) okuyor. Yani 063 demo'da
+-- uygulanmamış ve bu, beş mobil bölge ucunu sessizce ölü bırakmış.
+--
+-- ═══ 063 NEDEN YARIM KALMIŞ OLABİLİR (kuvvetli şüphe) ═══
+-- 063'ün son adımı şu indeksi kuruyor:
+--     create index ... on public.geofences (active) where archived_at is null;
+-- ama `archived_at` kolonunu KENDİSİ eklemiyor — daha eski bir migration'ın
+-- eklediğini varsayıyor. O migration koşmamış bir veritabanında bu satır
+-- hata verir; 063 tek bir `begin/commit` içinde olduğu için **tamamı geri
+-- alınır** ve `category` de eklenmemiş olur. Dışarıdan görünen tek belirti
+-- mobil uçların 503 vermesidir — kimse bakmazsa aylarca sürer.
+--
+-- Bu dosya o zinciri kırar: eksik olabilecek HER parçayı ayrı ayrı ve
+-- koşulsuz-güvenli biçimde tamamlar.
+--
+-- ═══ GÜVENLİK ═══
+-- • IDEMPOTENT: istediğin kadar çalıştır, ikincisi hiçbir şey yapmaz.
+-- • Bölge SİLMEZ, TAŞIMAZ, yarıçap/merkez/amaç DEĞİŞTİRMEZ.
+-- • Geriye doldurma DAR: yalnız hâlâ varsayılan `custom` değerinde duran
+--   satırlara dokunur. Elle değiştirilmiş bir kategori EZİLMEZ.
+-- • 063 zaten uygulanmış bir veritabanında (HAK61) çalıştırmak zararsızdır ve
+--   hiçbir satırı değiştirmez.
+--
+-- ⚠️ ÜÇ VERİTABANI VAR (bkz. Bekleyen-Isler #128): hak-transport-takip ·
+-- galzura-demo · sendigo. "Koşuldu" üç ayrı kutucuktur. Bu dosyanın asıl
+-- hedefi **galzura-demo**.
+--
+-- Salt-okuma envanter için: db/maintenance/sema-envanteri.sql
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ── 1) archived_at ───────────────────────────────────────────────────
+-- 063'ün varsaydığı ama eklemediği kolon. Önce bu gelir, yoksa aşağıdaki
+-- kısmi indeks patlar ve tüm işlem geri alınır (bkz. yukarıdaki şüphe).
+alter table public.geofences
+  add column if not exists archived_at timestamptz;
+
+-- ── 2) category ──────────────────────────────────────────────────────
+-- Mobil bölge uçlarının okuduğu kolon. NOT NULL + varsayılan 'custom':
+-- mevcut satırlar otomatik dolar, yazma yolları değişmeden çalışır.
+alter table public.geofences
+  add column if not exists category text not null default 'custom';
+
+-- ── 3) CHECK kısıtı ──────────────────────────────────────────────────
+-- Kısıt adını VARSAYMAK yerine `category` üzerindeki mevcut CHECK bulunup
+-- düşürülüyor, sonra doğru hâliyle ekleniyor. Böylece dosya, kısıt farklı bir
+-- adla oluşturulmuş bir veritabanında da tekrar çalıştırılabilir kalıyor
+-- (064'te aynı desen `purpose` için kullanıldı).
+do $$
+declare k text;
+begin
+  select con.conname into k
+    from pg_constraint con
+    join pg_class rel on rel.oid = con.conrelid
+    join pg_namespace ns on ns.oid = rel.relnamespace
+   where ns.nspname = 'public'
+     and rel.relname = 'geofences'
+     and con.contype = 'c'
+     and pg_get_constraintdef(con.oid) ilike '%category%'
+   limit 1;
+  if k is not null then
+    execute format('alter table public.geofences drop constraint %I', k);
+  end if;
+end $$;
+
+alter table public.geofences
+  add constraint geofences_category_check
+  check (category in ('depot','customer','restricted','custom'));
+
+-- ── 4) GERİYE DOLDURMA ───────────────────────────────────────────────
+-- 063'ün yaptığının aynısı, AYNI dar koşulla: yalnız varsayılanda duran
+-- depo bölgeleri etiketlenir.
+update public.geofences
+   set category = 'depot'
+ where purpose = 'depot' and category = 'custom';
+
+-- 064'ten sonra doğan müşteri bölgeleri de rozetine kavuşsun. `category` bir
+-- ROZET, `purpose` DAVRANIŞTIR (064 kararı) — bu satır davranışı değiştirmez,
+-- yalnız rozeti davranışla tutarlı hâle getirir.
+update public.geofences
+   set category = 'customer'
+ where purpose = 'customer' and category = 'custom';
+
+-- ── 5) İndeks ────────────────────────────────────────────────────────
+-- Arşivli olmayan bölgelerin listelenmesi (063'ün son adımı).
+create index if not exists idx_geofences_not_archived
+  on public.geofences (active)
+  where archived_at is null;
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- ── SONUÇ — koştuktan sonra bunu da çalıştır, çıktıyı bildir ─────────
+select category, purpose, count(*) as adet
+  from public.geofences
+ group by category, purpose
+ order by 1, 2;
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  070_sefer_koprular.sql                                             ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 — Migration 070 (SEFER TUR 3 — OTOMATİK KÖPRÜLER)
+-- =====================================================================
+-- Seferin iki alanı ARTIK ELLE DOLDURULMUYOR:
+--   · vardi_at         → araç hedef bölgeye VARDI (zone_visits'ten okunur)
+--   · paket_gerceklesen→ o günün vardiyasında girilen teslim sayısı
+--
+-- Additive + idempotent. `seferler` dışında HİÇBİR tabloya dokunulmaz;
+-- zone_visits ve shift_packages YALNIZ OKUNUR. Supabase SQL Editor'da
+-- çalıştırın.
+--
+-- ⚠️ NUMARA: bu dosya Volkan'a "069" olarak verildi ve canlıda O HÂLİYLE
+-- çalıştırıldı. Aynı anda diğer zincir de 069'u aldı
+-- (069_geofence_category_repair.sql, main'e önce girdi), o yüzden REPO
+-- DOSYASI 070'e taşındı. ⚠️ DDL BAYT BAYT AYNI — veritabanında değişen
+-- hiçbir şey yok, yalnız kurulum sırası tekilleşti.
+-- 067/068 de diğer zincirde. Bu dosya onlardan BAĞIMSIZ; yalnız 066'nın
+-- (seferler) ve 064'ün (zone_visits) var olmasını bekler.
+--
+-- ═══ NEDEN YENİ DURUM DEĞİL, BİLGİ DAMGASI ═══
+--
+-- "vardi" bir DURUM olsaydı çizgi atandi→kabul→vardi→yolda→tamamlandi olur
+-- ve şoförün elle ilerlettiği akışa, ŞOFÖRÜN BASMADIĞI bir adım girerdi.
+-- O zaman "şoför yolda'ya basmadan sistem vardi yazdı" gibi bir sıra sorunu
+-- doğar, geçiş kuralları (Tur 1 İK2) ikiye bölünürdü. Varış bir OLAY: oldu ya
+-- da olmadı. Durum çizgisi Tur 1'deki gibi AYNEN kalıyor.
+--
+-- ═══ NEDEN DAMGA BİR KEZ DÜŞER ═══
+--
+-- Araç bölgeye gün içinde üç kez girip çıkabilir (park, ikinci teslim, geri
+-- dönüş). "İlk varış" tek ve tekrar etmez; damgayı her ziyarette güncellemek
+-- "ne zaman vardı" sorusunun cevabını akşama kaydırırdı. Yazma koşulu
+-- `vardi_at is null` — köprü idempotenttir, aynı turda iki kez koşsa da
+-- ikinci kez yazmaz.
+--
+-- ═══ NEDEN zone_visit id'si SAKLANMIYOR ═══
+--
+-- Sefer bir GÜN birimi ve hedefi TEK bölge; "hangi ziyaret" sorusu
+-- (zone_id, vehicle_id, gün) üçlüsüyle zaten cevaplanabiliyor. Bir FK daha
+-- eklemek ziyaret silindiğinde damgayı da düşürme/koruma kararı doğururdu —
+-- oysa damga bir OLAY kaydı: ziyaret satırı sonradan temizlense bile "o gün
+-- vardı" doğru kalmalı.
+--
+-- ═══ NEDEN paket_gerceklesen AYRI KOLON, time_entries'ten TÜRETME DEĞİL ═══
+--
+-- Türetseydik her okumada "o günün hangi vardiyası" kuralını yeniden
+-- uygulamak gerekirdi ve kural iki yerde yaşardı; kolon, bağlamanın SONUCUNU
+-- tek yerde tutuyor.
+--
+-- ⚠️ DEĞER DONDURULMAZ, TAZELENİR (ilk taslakta tersi yazıyordu — DDL aynı,
+-- yorum uygulanan davranışa göre düzeltildi). Yönetici `cargo_count`u
+-- sonradan düzeltebiliyor (shift_edit_log); dondursaydık sefer, düzeltilmiş
+-- vardiyanın YANLIŞ sayısını taşımaya devam ederdi. Köprü hedef seferi her
+-- çağrıda yeniden çözer ve yalnız O seferin değerini günceller; başka hiçbir
+-- seferin değeri elle sürülmez (bkz. lib/sefer-bridge.ts).
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+alter table public.seferler
+  -- Hedef bölgeye VARIŞ anı (zone_visits.started_at'ten kopyalanır).
+  -- null = henüz varılmadı ya da hedef bölge tanımsız.
+  add column if not exists vardi_at timestamptz,
+
+  -- O günün vardiyasından bağlanan teslim sayısı (time_entries.cargo_count).
+  -- null = henüz bağlanmadı; 0 GEÇERLİ bir değerdir ("hiç teslim edilmedi").
+  add column if not exists paket_gerceklesen integer
+    check (paket_gerceklesen is null or paket_gerceklesen >= 0);
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- İNDEKS EKLENMEDİ — BİLEREK
+--
+-- Köprü sorgusu günün seferlerini `tarih` ile okuyor; 066'daki
+-- idx_seferler_tarih_worker bunu zaten karşılıyor. Tablo günde ~30 satır
+-- büyüyor; `vardi_at is null` için ayrı bir kısmi indeks, kazanmadığı bir
+-- yazma maliyeti eklerdi. Tablo büyürse ölçülüp eklenir.
+-- =====================================================================
+-- ÇALIŞTIRDIKTAN SONRA BEKLENEN HÂL (doğrulama sorgusu):
+--
+--   select column_name, data_type, is_nullable
+--     from information_schema.columns
+--    where table_schema='public' and table_name='seferler'
+--      and column_name in ('vardi_at','paket_gerceklesen');
+--
+--   → 2 satır:
+--       vardi_at            timestamptz  YES
+--       paket_gerceklesen   integer      YES
+--
+--   select count(*) from public.seferler where vardi_at is not null;  → 0
+-- =====================================================================
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  071_messaging.sql                                                  ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 071_messaging.sql — UYGULAMA İÇİ MESAJLAŞMA (yönetici ↔ şoför)
+--
+-- ⚠️ BU DDL HENÜZ ÇALIŞTIRILMADI. Volkan Supabase'de çalıştıracak.
+--    Claude tarafından çalıştırılmadı; bu dosya deponun ŞEMA KAYDIDIR.
+--
+-- ── NE ÇÖZÜYOR ─────────────────────────────────────────────────────────────
+-- Telegram katmanı 20.08.2026'da tamamen söküldü ve o günden beri sistemde
+-- şoföre ULAŞAN HİÇBİR KANAL YOK: veri tek yönlü akıyor (şoför üretir, yönetici
+-- okur). `driver_reports` (020) var ama tek yönlü ve dört sabit seçenekli;
+-- serbest metin yok, cevap yok.
+--
+-- ── KURAL: ŞOFÖRLER BİRBİRİYLE MESAJLAŞAMAZ ────────────────────────────────
+-- Bu kural ŞEMAYA gömülü, koda değil. `conversations.worker_id` UNIQUE ve
+-- konuşmanın sahibi DAİMA bir şofördür; şoför-şoför konuşması TEMSİL EDİLEMEZ.
+-- Bir kontrol satırı unutulabilir, tablo şekli unutulamaz.
+--
+-- ── NEDEN ŞOFÖR BAŞINA TEK KONUŞMA, (yönetici,şoför) ÇİFTİ BAŞINA DEĞİL ────
+-- Şoför alıcı SEÇMEZ — "Yönetim"e yazar. Çift ekseninde kursaydık aynı şoför
+-- üç yöneticiyle üç ayrı geçmiş taşırdı: "bunu kime söylemiştim" sorusunun
+-- cevabı kaybolurdu ve yönetici devri geçmişi parçalardı. Samsara ve Motive'in
+-- şoför tarafı da alıcı seçtirmiyor (dispatch tek muhatap).
+--
+-- ── RLS ────────────────────────────────────────────────────────────────────
+-- Kapalı — deponun kuralı. Bu kurulumda anon key YOK ve RLS politikası 0;
+-- tüm erişim service-role ile sunucudan geçiyor, yetki uygulama kodunda
+-- (lib/mobile-scope.ts, lib/session.ts). Burada RLS AÇMAK yanlış güven
+-- duygusu verirdi: politika yazılmadan açılan RLS hiçbir şey korumaz.
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ── 1) conversations — şoför başına TEK konuşma ────────────────────────────
+create table if not exists public.conversations (
+  id uuid primary key default gen_random_uuid(),
+
+  -- KONUŞMANIN SAHİBİ = ŞOFÖR. UNIQUE: bir şoförün tek konuşması olur.
+  -- on delete cascade: personel silinirse konuşması da gider (GDPR md. 17
+  -- silme yolu). "Ayrılan personel" için silme DEĞİL is_active=false
+  -- kullanılıyor (032) — o kişinin geçmişi durur.
+  worker_id uuid not null unique
+    references public.workers(id) on delete cascade,
+
+  -- DENORMALİZE — yönetici listesi için. 1000 şoförlü filoda liste ekranı
+  -- her satır için "son mesaj" sorgusu atsaydı 1000 sorgu olurdu; burada tek
+  -- sorgu + tek indeks. Mesaj yazılırken güncellenir.
+  last_message_at      timestamptz,
+  last_message_preview text,
+  last_sender_role     text check (last_sender_role in ('driver', 'admin')),
+
+  created_at timestamptz not null default now()
+);
+
+-- ── 2) messages ────────────────────────────────────────────────────────────
+create table if not exists public.messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null
+    references public.conversations(id) on delete cascade,
+
+  -- GERÇEKTE YAZAN KİŞİ. on delete set null: personel silinse bile mesaj
+  -- konuşmada kalır — karşı taraf için "cevap gelmiş miydi" sorusunun cevabı
+  -- kaybolmamalı. Kim olduğu düşer, ne dediği kalır.
+  sender_worker_id uuid references public.workers(id) on delete set null,
+
+  -- GÖNDERİM ANINDA DONDURULUR. Kişinin rolü sonradan değişebilir (şoför
+  -- şef olur, yönetici yetkisi alınır); o değişiklik GEÇMİŞ mesajın kimden
+  -- geldiğini değiştirmemeli. Aynı gerekçe: zone_visits.worker_id dondurma.
+  sender_role text not null check (sender_role in ('driver', 'admin')),
+
+  -- Boş mesaj gönderilemez; tavan 4000 karakter. Sınır ŞEMADA da var çünkü
+  -- istemci doğrulaması atlanabilir ve sınırsız metin bir DoS yüzeyidir.
+  body text not null check (char_length(btrim(body)) between 1 and 4000),
+
+  -- FİLO DUYURUSU: tek duyuru her şoförün konuşmasına BİRER satır olarak
+  -- yazılır, hepsi aynı broadcast_id'yi taşır. Neden dağıtım: okuma modeli
+  -- tekdüze kalır, okundu durumu şoför başına doğal olur, gelen cevap zaten
+  -- kendi konuşmasına düşer. 500 şoför = 500 satır, önemsiz.
+  broadcast_id uuid,
+
+  -- ── SAKLAMA VE SİLME ─────────────────────────────────────────────────────
+  -- GDPR md. 5(1)(e): saklama süresi TANIMLANMAK ZORUNDA. Süre dolduğunda
+  -- silen süpürge `legal_hold = true` satırlara DOKUNMAZ. Gerekçesi somut:
+  -- şoför sohbete "kaza yaptım" yazarsa o mesaj bir kayıttır ve saklama
+  -- süresi dolduğu için sessizce yok edilmesi kabul edilemez.
+  legal_hold boolean not null default false,
+
+  -- Yumuşak silme (moderasyon + GDPR). Satırı gerçekten silmek "buradan bir
+  -- mesaj kaldırıldı" bilgisini de yok ederdi.
+  deleted_at timestamptz,
+  deleted_by uuid references public.workers(id) on delete set null,
+
+  created_at timestamptz not null default now()
+);
+
+-- ── 3) message_receipts — MESAJ BAŞINA ✓✓ ──────────────────────────────────
+--
+-- NEDEN AYRI TABLO, NEDEN messages.read_at DEĞİL: şoförün yazdığı bir mesajı
+-- BİRDEN ÇOK yönetici okuyabilir. Tek kolon "Volkan okudu, Serkan okumadı"
+-- durumunu ifade edemez ve ikinci yöneticinin okumamış olması görünmez olurdu.
+--
+-- ⚠️ NEXT_PUBLIC_READ_RECEIPTS_ENABLED=false olan kurulumda bu tabloya
+-- HİÇBİR SATIR YAZILMAZ (uç seviyesinde, arayüzde gizleyerek değil). Avusturya
+-- §96(1)3 ArbVG / Almanya §87 BetrVG: çalışanı izleyen teknik sistem işyeri
+-- konseyi onayına bağlı. "Tutmuyoruz" diyip yazmaya devam etmek yanlış beyan
+-- olurdu — bu yüzden kapı yazma yolunda.
+create table if not exists public.message_receipts (
+  message_id uuid not null references public.messages(id) on delete cascade,
+  worker_id  uuid not null references public.workers(id) on delete cascade,
+  read_at    timestamptz not null default now(),
+  primary key (message_id, worker_id)
+);
+
+-- ── İNDEKSLER ──────────────────────────────────────────────────────────────
+
+-- Konuşma ekranı: son N mesaj, sayfalı.
+create index if not exists idx_messages_conversation
+  on public.messages (conversation_id, created_at desc);
+
+-- Yönetici liste ekranı: en son konuşulan üstte. NULLS LAST — hiç mesajı
+-- olmayan konuşma (yeni açılmış) listenin sonunda kalır.
+create index if not exists idx_conversations_recent
+  on public.conversations (last_message_at desc nulls last);
+
+-- Duyurunun kopyalarını toplamak (yönetici "bu duyuruyu kim okudu").
+create index if not exists idx_messages_broadcast
+  on public.messages (broadcast_id)
+  where broadcast_id is not null;
+
+-- Okunmamış sayacı: "bana ait makbuzu OLMAYAN mesajlar" (NOT EXISTS).
+-- PK (message_id, worker_id) bu yönde işe yaramaz; ters sıra gerekiyor.
+create index if not exists idx_receipts_worker
+  on public.message_receipts (worker_id, message_id);
+
+-- Saklama süpürgesi: dokunulabilir satırları taramak. Kısmi indeks, çünkü
+-- legal_hold ve silinmiş satırlar süpürgenin ilgi alanı dışında.
+create index if not exists idx_messages_retention
+  on public.messages (created_at)
+  where legal_hold = false and deleted_at is null;
+
+-- ── RLS: deponun kuralı (yukarıdaki nota bakın) ────────────────────────────
+alter table public.conversations    disable row level security;
+alter table public.messages         disable row level security;
+alter table public.message_receipts disable row level security;
+
+comment on table public.conversations is
+  'Sofor basina TEK konusma. worker_id UNIQUE oldugu icin sofor-sofor '
+  'mesajlasmasi semada TEMSIL EDILEMEZ.';
+comment on column public.messages.sender_role is
+  'Gonderim aninda dondurulur — kisinin rolu sonradan degisse bile gecmis '
+  'mesajin kimden geldigi degismez.';
+comment on column public.messages.legal_hold is
+  'true ise saklama supurgesi DOKUNMAZ (kaza/ihtilaf kaydi).';
+comment on table public.message_receipts is
+  'Mesaj basina okundu (✓✓). NEXT_PUBLIC_READ_RECEIPTS_ENABLED=false olan '
+  'kurulumda hic satir yazilmaz (DACH §96 ArbVG / §87 BetrVG).';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  072_worker_fleet.sql                                               ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 072_worker_fleet.sql — ŞOFÖRÜN FİLO BAĞLILIĞI (araçtan bağımsız)
+--
+-- ⚠️ BU DDL HENÜZ ÇALIŞTIRILMADI. Volkan Supabase'de çalıştıracak.
+--    071'den BAĞIMSIZ — sırası önemli değil, ikisi ayrı konu.
+--
+-- ── HANGİ ARIZAYI KAPATIYOR ────────────────────────────────────────────────
+-- Filo şefinin kapsamı bugüne kadar YALNIZ `vehicles.assigned_worker_id`'den
+-- türüyordu (lib/fleet-scope.ts getFleetScope). Sessiz sonucu: aracı atanmamış
+-- şoför HİÇBİR şefin kapsamına girmiyor. Şefi onu göremiyor, izin talebini
+-- onaylayamıyor, raporunda bulamıyor, mesaj atamıyor.
+--
+-- CANLIDA ÖLÇÜLDÜ (HAK61, 22.08.2026): 28 şoförün 2'si bu durumdaydı ve
+-- BİRİ O AN AÇIK VARDİYADAYDI, son kullandığı araç bordo filosundandı.
+-- Delik teorik değildi — o gün ısırıyordu.
+--
+-- ── NEDEN YENİ KOLON ───────────────────────────────────────────────────────
+-- Şoföru filoya bağlayan bir alan YOKTU; "araç = kimlik" HAK61'in tesadüfi
+-- durumuydu, tasarım kararı değil. Dünya ölçeğinde araçsız şoför kuraldır:
+-- havuz filosu, yeni işe giren, aracı serviste olan, yalnız römork çeken.
+--
+-- Kolaycı alternatif — "araçsız şoför TÜM şeflere görünsün" — reddedildi:
+-- o kişinin vardiyası, km'si ve olayı İKİ filonun raporunda birden sayılırdı.
+-- Bağlılık AÇIKÇA tutulmalı.
+--
+-- ── GERİYE DÖNÜK ETKİ: SIFIR ───────────────────────────────────────────────
+-- Aşağıdaki geri dolgu kolonu MEVCUT araç atamasından türetiyor. Yani atanmış
+-- 26 şoför için kapsam BİREBİR AYNI kalır (aynı kişi hem araç yolundan hem
+-- kolon yolundan gelir, küme değişmez). Değişen tek şey araçsızların artık
+-- görünmesi.
+--
+-- Kod bu migration OLMADAN da çalışır: kolon yoksa sorgu hata verir ve kapsam
+-- bugünkü hâliyle devam eder (lib/fleet-scope.ts, missing-column dalı).
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- Alan adı `vehicles.fleet` ile AYNI ve aynı kısıtı taşıyor: iki tabloda iki
+-- farklı filo sözlüğü olamaz. NULL = bağlılık bilinmiyor.
+alter table public.workers
+  add column if not exists fleet text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'workers_fleet_check'
+  ) then
+    alter table public.workers
+      add constraint workers_fleet_check
+      check (fleet is null or fleet in ('bordo', 'mavi'));
+  end if;
+end $$;
+
+-- ── GERİ DOLGU 1: mevcut araç ataması ──────────────────────────────────────
+-- Bugün kapsamda olan herkes kolonda da aynı filoya düşer → davranış aynı.
+update public.workers w
+set    fleet = v.fleet
+from   public.vehicles v
+where  v.assigned_worker_id = w.id
+  and  v.is_test is not true
+  and  w.is_test is not true      -- test hesabina gercek filo YAZILMAZ
+  and  v.fleet in ('bordo', 'mavi')
+  and  w.fleet is null;           -- yeniden kosulabilir: dolu satiri ezmez
+
+-- ── GERİ DOLGU 2: aracı yoksa SON KULLANDIĞI aracın filosu ─────────────────
+-- Araçsız şoförün bağlılığı tahmin edilmiyor, GEÇMİŞTEN OKUNUYOR: en son
+-- hangi filonun aracıyla vardiya açtıysa o filoya bağlanır. HAK61 ölçümünde
+-- bu, açık vardiyadaki şoförü doğru filoya (bordo) koyuyor.
+-- Hiç vardiyası olmayanda NULL kalır — uydurmuyoruz.
+update public.workers w
+set    fleet = son.fleet
+from (
+  select distinct on (t.worker_id)
+         t.worker_id, v.fleet
+  from   public.time_entries t
+  join   public.vehicles v on v.id = t.vehicle_id
+  where  v.fleet in ('bordo', 'mavi')
+    and  v.is_test is not true
+  order  by t.worker_id, t.started_at desc
+) son
+where son.worker_id = w.id
+  and w.fleet is null
+  and w.is_test is not true;
+
+-- Şefin kapsam sorgusu: fleet + is_active + test dışı.
+create index if not exists idx_workers_fleet
+  on public.workers (fleet)
+  where fleet is not null;
+
+comment on column public.workers.fleet is
+  'Soforun filo bagliligi — ARACTAN BAGIMSIZ. Araci atanmamis sofor de '
+  'sefin kapsaminda kalsin diye (22.08.2026 olcumu: 2/28 sofor kapsam '
+  'disiydi, biri acik vardiyadaydi). NULL = baglilik bilinmiyor.';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- ── ÇALIŞTIRILDI: 22.08.2026 · SONUÇ ÖLÇÜLDÜ ───────────────────────────────
+--
+--   fleet=bordo : 10 (aktif  9 · pasif 1)
+--   fleet=mavi  : 19 (aktif 18 · pasif 1)
+--   fleet=NULL  :  4 (hepsi aktif — 3 yonetici + 1 hic vardiyasi olmayan sofor)
+--
+-- Sef kapsami: bordo 9→11, mavi 19→20. HICBIR SEFIN KAPSAMINDA OLMAYAN
+-- SOFOR: 2 → 0. Aracsiz ama acik vardiyadaki sofor son kullandigi aracin
+-- filosuna (bordo) doğru sekilde baglandi. Test hesabi NULL kaldi ve hicbir
+-- kapsama sizmadi.
+--
+-- Geri dolgu PASIF calisani da dolduruyor (is_active suzmuyor) — bilincli:
+-- arac hala ustunde duran pasif kisi bugun de sefin kapsaminda ve kolon
+-- bunu degistirmemeli.
+--
+-- Dogrulama sorgusu (yeniden kosulabilir):
+--
+--   select coalesce(fleet, '(NULL)') as filo,
+--          count(*) filter (where is_active)     as aktif,
+--          count(*) filter (where not is_active) as pasif
+--   from public.workers
+--   where is_test is not true
+--   group by 1 order by 1;
+--
+-- ── NULL KALAN SOFOR NE OLUR ───────────────────────────────────────────────
+-- Filosu bilinmeyen sofor HER SEFIN kapsamindadir (lib/fleet-scope.ts, "IKI
+-- KATMAN"). Gorunmez birakmak, kapatmak icin bu migration'i yazdigimiz
+-- deligin aynisini yeni personel icin acik tutardi; bu depoda sessiz eksik
+-- yasak. Cift gorunme kabul edildi ve gurultuludur: kisiye panelden filo
+-- atanir atanmaz kendiliginden duzelir.
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  073_messaging_groups.sql                                           ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 073_messaging_groups.sql — GRUP MESAJLAŞMASI (yönetici kurar, şoförler grup içinde konuşur)
+--
+-- ⚠️ BU DDL HENÜZ ÇALIŞTIRILMADI. Volkan Supabase'de çalıştıracak.
+--    Claude tarafından çalıştırılmadı; bu dosya deponun ŞEMA KAYDIDIR.
+--
+-- ── NE EKLİYOR ─────────────────────────────────────────────────────────────
+-- 071 "şoför başına TEK konuşma" kuruyordu (conversations.worker_id UNIQUE).
+-- Grup bunu kırıyor: 5 şoförü ortak bir işe yönlendirmek için tek mesaj.
+--
+-- ── NEDEN AYRI `groups` TABLOSU DEĞİL ──────────────────────────────────────
+-- Ayrı tablo, mesaj + makbuz + okunmamış sayacı + önizleme + saklama süpürgesi
+-- + legal_hold makinesinin TAMAMINI ikinci kez yazmayı gerektirirdi ve her
+-- okuma yolu bir UNION olurdu. Burada tek `conversations` tablosuna TİP
+-- ekleniyor: `messages` ve `message_receipts` HİÇ DEĞİŞMİYOR. Grup mesajı
+-- sıradan bir mesajdır, yalnız conversation_id'si bir gruba işaret eder.
+--
+-- ── "ŞOFÖRLER BİRBİRİYLE MESAJLAŞAMAZ" KURALI DURUYOR ──────────────────────
+-- Kural 071'de şemaya gömülüydü ve BOZULMUYOR: `direct` konuşmanın sahibi
+-- hâlâ tek bir şofördür (aşağıdaki CHECK bunu zorunlu kılıyor). Grup AÇIKÇA
+-- farklı bir tür ve üyeliği açık — türetilmiş değil. Gruptan birebir sohbete
+-- giden yol YOKTUR: şoför grupta başka şoförü görür ama onun `direct`
+-- konuşmasına erişemez (lib/messaging.ts erisimCoz, kendi kimliği kuralı).
+--
+-- ── GERİYE DÖNÜK ETKİ: SIFIR ───────────────────────────────────────────────
+-- Tamamı eklemeli. `kind` varsayılanı mevcut satırları kendiliğinden 'direct'
+-- yapar; tek satır yeniden yazılmaz. 22.08.2026 ölçümü: conversations 0,
+-- messages 0, message_receipts 0 satır — CHECK zaten trivial olarak sağlanır.
+--
+-- ── RLS ────────────────────────────────────────────────────────────────────
+-- Kapalı — deponun kuralı (anon key yok, RLS politikası 0, yetki uygulama
+-- kodunda). 071'in aynı gerekçesi.
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ── 1) conversations — TİP KAZANIYOR ───────────────────────────────────────
+
+alter table public.conversations
+  add column if not exists kind text not null default 'direct';
+
+-- Grup adı. `direct` konuşmada NULL (muhatabın adı workers'tan geliyor).
+alter table public.conversations
+  add column if not exists title text;
+
+alter table public.conversations
+  add column if not exists created_by uuid references public.workers(id) on delete set null;
+
+-- ── ARŞİV = SİLME DEĞİL ────────────────────────────────────────────────────
+-- Grup silinmez, arşivlenir: herkes için SALT OKUNUR olur, geçmiş bozulmaz.
+-- Gerekçe deponun mevcut felsefesi (messages.deleted_at, legal_hold,
+-- action_snoozes.cancelled_at): "silmek kim ne yaptı bilgisini de yok eder".
+-- Grup akışı bir OPERASYON KAYDIDIR — sevkiyat talimatları orada duruyor.
+alter table public.conversations
+  add column if not exists archived_at timestamptz;
+alter table public.conversations
+  add column if not exists archived_by uuid references public.workers(id) on delete set null;
+
+-- `worker_id` artık zorunlu DEĞİL — grupta sahip yok.
+-- ⚠️ UNIQUE kısıtına DOKUNULMUYOR ve bu bilinçli: PostgreSQL unique kısıtında
+-- BİRDEN ÇOK NULL'a izin verir, yani gruplar (worker_id IS NULL) birbiriyle
+-- çakışmaz. Kısıtı düşürüp kısmi indeksle yeniden kurmak aynı sonucu verirdi
+-- ama "şoför başına tek konuşma" güvencesini bir an için ortadan kaldırırdı.
+alter table public.conversations
+  alter column worker_id drop not null;
+
+-- ── BİÇİM KISITI — ASIL KORUMA BURADA ──────────────────────────────────────
+-- direct ⇒ sahibi var, başlığı yok.   group ⇒ sahibi yok, başlığı var.
+-- Bu kısıt olmadan "başlıklı ama sahipli" ya da "sahipsiz ve başlıksız" gibi
+-- anlamsız satırlar yazılabilirdi ve okuma yolları sessizce yanlış davranırdı.
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'conversations_kind_check') then
+    alter table public.conversations
+      add constraint conversations_kind_check
+      check (kind in ('direct', 'group'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'conversations_shape_check') then
+    alter table public.conversations
+      add constraint conversations_shape_check
+      check (
+        (kind = 'direct' and worker_id is not null and title is null)
+        or
+        (kind = 'group'  and worker_id is null     and title is not null)
+      );
+  end if;
+end $$;
+
+-- ── 2) conversation_members — GRUP ÜYELİĞİ ─────────────────────────────────
+--
+-- ⚠️ ÇIKARILAN ÜYENİN SATIRI SİLİNMEZ, `left_at` İŞARETLENİR.
+-- WhatsApp davranışı: çıkarılan kişi grubu listesinde görmeye devam eder,
+-- geçmişi okur, yeni mesaj almaz. Filo ürününde ek ve daha güçlü gerekçe:
+-- o şoföre o grupta bir TALİMAT verildi ("yarın 06:30 A deposu"). Gruptan
+-- çıkarmak, ona söylenmiş şeyi ekranından silmemeli — 071'deki "kaza yaptım
+-- kaydını sessizce yok etme" sorununun aynısı.
+--
+-- Okuma penceresi: üye `left_at`'ten SONRAKİ mesajları GÖRMEZ. Süzgeç uygulama
+-- kodunda (messages.created_at <= left_at); şemada tutulamaz çünkü aynı mesaj
+-- farklı üyeler için farklı görünürlükte.
+create table if not exists public.conversation_members (
+  conversation_id uuid not null
+    references public.conversations(id) on delete cascade,
+  worker_id uuid not null
+    references public.workers(id) on delete cascade,
+
+  joined_at timestamptz not null default now(),
+  -- Kim ekledi — yetki tartışmasında "bunu kim yaptı" sorusunun cevabı.
+  added_by uuid references public.workers(id) on delete set null,
+  -- null = AKTİF üye. Dolu = çıkarıldı; geçmişi bu ana kadar okur.
+  left_at timestamptz,
+  -- Kim çıkardı. Çıkarılma bir yönetici kararıdır ve izi kalır.
+  removed_by uuid references public.workers(id) on delete set null,
+
+  -- PK çifti: aynı kişi iki kez eklenemez. Yeniden ekleme `left_at`'i
+  -- temizler (upsert), yeni satır AÇMAZ — yoksa "kaç kez çıkarıldı" gürültüsü
+  -- üyelik sorgusunu belirsizleştirirdi.
+  primary key (conversation_id, worker_id)
+);
+
+-- ── 3) ARŞİV KİLİDİ — ŞEMAYA GÖMÜLÜ ────────────────────────────────────────
+--
+-- Arşivlenmiş grupta HİÇ KİMSE yazamaz: şoför de, şef de, patron da.
+--
+-- ⚠️ BU TETİKLEYİCİ UÇ KAPISININ YERİNE GEÇMEZ, ALTINA KONULUYOR.
+-- Uç (POST /messages/[id]) arşivi ÖNCE denetleyip temiz bir 409 döndürecek;
+-- bu tetikleyici, o kapının unutulduğu ya da atlandığı her yol için son hat:
+-- yeni bir uç, duyuru dağıtımı, elle çalıştırılan bir SQL. Deponun kuralı
+-- budur — koruma "kapı eklemekle" değil, YAPISAL OLARAK MÜMKÜN OLMAMAKLA
+-- sağlanır (bkz. conversations.worker_id UNIQUE = şoför-şoför sohbeti yok).
+--
+-- SQLSTATE 'HK001' özel bir sınıf (PostgreSQL 'HK' sınıfını kullanmıyor).
+-- Uç bunu yakalarsa 409 'conversation_archived' döndürmeli; yakalamazsa
+-- 500 write_failed olur ve detayda bu mesaj görünür — sessiz başarı ASLA.
+create or replace function public.mesaj_arsive_yazilamaz()
+returns trigger
+language plpgsql
+as $$
+declare
+  ark timestamptz;
+begin
+  select archived_at into ark
+  from public.conversations
+  where id = new.conversation_id;
+
+  if ark is not null then
+    raise exception
+      'arsivlenmis konusmaya mesaj yazilamaz (conversation_id=%, archived_at=%)',
+      new.conversation_id, ark
+      using errcode = 'HK001';
+  end if;
+  return new;
+end;
+$$;
+
+-- `drop ... if exists` + `create`: yeniden çalıştırılabilir, ad çakışmasında
+-- patlamaz.
+drop trigger if exists trg_mesaj_arsive_yazilamaz on public.messages;
+create trigger trg_mesaj_arsive_yazilamaz
+  before insert on public.messages
+  for each row
+  execute function public.mesaj_arsive_yazilamaz();
+
+-- ── İNDEKSLER ──────────────────────────────────────────────────────────────
+
+-- "Benim gruplarım" — şoför/şef listesinin tek sorgusu. Kısmi: çıkmış üyeler
+-- de listelenecek (salt okunur), bu yüzden left_at süzgeci indekste YOK.
+create index if not exists idx_conv_members_worker
+  on public.conversation_members (worker_id);
+
+-- Grubun üye listesi + "n/m okudu" paydası.
+create index if not exists idx_conv_members_conversation
+  on public.conversation_members (conversation_id);
+
+-- Yönetici liste ekranı gruplarda da sıralı gelsin; arşivlenmişler ayrı
+-- bölümde gösterileceği için kısmi indeks AKTİF grupları hedefliyor.
+create index if not exists idx_conversations_group_active
+  on public.conversations (last_message_at desc nulls last)
+  where kind = 'group' and archived_at is null;
+
+comment on column public.conversations.kind is
+  'direct = sofor basina tek konusma (071 kurali korunuyor) · group = uyeleri '
+  'conversation_members''ta tutulan ortak oda.';
+comment on column public.conversations.archived_at is
+  'Dolu ise grup SALT OKUNUR — trg_mesaj_arsive_yazilamaz hicbir yazmaya izin '
+  'vermez. Grup SILINMEZ, arsivlenir.';
+comment on column public.conversation_members.left_at is
+  'null = aktif uye. Dolu = cikarildi; gecmisi YALNIZ bu ana kadar okur '
+  '(suzgec uygulama kodunda: messages.created_at <= left_at).';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- ── ÇALIŞTIRDIKTAN SONRA — DOĞRULAMA SORGULARI ─────────────────────────────
+--
+-- 1) Mevcut konusmalarin hepsi 'direct' mi (beklenen: group=0):
+--
+--    select kind, count(*) from public.conversations group by 1;
+--
+-- 2) Bicim kisiti calisiyor mu — IKISI DE HATA VERMELI:
+--
+--    insert into public.conversations (kind, worker_id, title)
+--      values ('group', gen_random_uuid(), null);      -- sahipli grup -> RED
+--    insert into public.conversations (kind, worker_id, title)
+--      values ('direct', null, 'olmaz');               -- sahipsiz birebir -> RED
+--
+-- 3) Arsiv kilidi calisiyor mu (gecici bir grupla):
+--
+--    begin;
+--      insert into public.conversations (kind, title, archived_at)
+--        values ('group','KILIT TESTI', now()) returning id;   -- <id> not al
+--      insert into public.messages (conversation_id, sender_role, body)
+--        values ('<id>', 'admin', 'gecmemeli');   -- HK001 HATASI BEKLENIYOR
+--    rollback;   -- ⚠️ ROLLBACK: test verisi birakmaz
+--
+-- Beklenen hata: 'arsivlenmis konusmaya mesaj yazilamaz ...' (SQLSTATE HK001)
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  074_push_tokens.sql                                                ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 074_push_tokens.sql — PUSH BİLDİRİM ADRESLERİ (cihaz başına Expo jetonu)
+--
+-- ⚠️ BU DDL HENÜZ ÇALIŞTIRILMADI. Volkan Supabase'de çalıştıracak.
+--    Claude tarafından çalıştırılmadı; bu dosya deponun ŞEMA KAYDIDIR.
+--
+-- ── NE ÇÖZÜYOR ─────────────────────────────────────────────────────────────
+-- 071/073 mesajlaşmayı kurdu ama kanal GÜVENİLMEZ: şoför uygulamayı açmazsa
+-- mesajı görmüyor. Çekme (polling) yalnız uygulama önplandayken çalışıyor
+-- (use-messages: 12/30 sn) — telefon cebindeyken hiçbir şey akmıyor.
+-- Bu tablo "o kişiye ULAŞILABİLECEK adresleri" tutar; gönderimi sunucu yapar.
+--
+-- ── NEDEN `token` BİRİNCİL ANAHTAR ─────────────────────────────────────────
+-- Jeton bir KURULUMU temsil eder, bir kişiyi değil. Aynı telefonda iki şoför
+-- sırayla giriyor (ortak araç telefonu — bu filoda gerçek). `token` PK olunca
+-- ikinci giriş aynı satırı DEVRALIR: `worker_id` güncellenir ve önceki kişi o
+-- adresten düşer. (worker_id, token) çifti PK olsaydı iki satır yan yana
+-- dururdu ve çıkan kişinin mesajları yeni kullanıcının telefonuna DÜŞERDİ —
+-- rahatsızlık değil, mahremiyet kusuru.
+--
+-- ── NEDEN CİHAZ BAŞINA DEĞİL, JETON BAŞINA ─────────────────────────────────
+-- Expo jetonu sabit değil: uygulama verisi silinince, cihaz geri yüklenince
+-- ya da FCM kaydı yenilenince değişir. "Cihaz kimliği" diye güvenilir bir şey
+-- yok; olan tek kararlı olgu jetonun kendisi. Bir kişinin birden çok satırı
+-- olması NORMAL (telefon + tablet) ve isteniyor.
+--
+-- ── ÖLÜ JETONLAR NASIL TEMİZLENİYOR ────────────────────────────────────────
+-- İki yol, ikisi de yazılı:
+--   1. ÇIKIŞTA — uygulama `DELETE /api/mobile/push/token` çağırıyor.
+--   2. GÖNDERİMDE — Expo `DeviceNotRegistered` döndüğünde satır silinir
+--      (lib/push.ts, `olenleriSil`). Kullanıcı uygulamayı sildiğinde tek
+--      haber kaynağı budur; başka sinyal yok.
+-- `last_seen_at` üçüncü bir ağ değil, teşhis: "bu jeton en son ne zaman
+-- tazelendi" sorusu, bildirim gelmiyor şikâyetinde ilk bakılacak yerdir.
+--
+-- ── NEDEN `tenant_id` YOK ───────────────────────────────────────────────────
+-- Bu kurulumda kiracı ayrımı VERİTABANI başına (HAK61 ve Sendigo ayrı Supabase
+-- projeleri) — `workers` tablosunda da tenant kolonu yok. Buraya eklemek, bu
+-- şemada karşılığı olmayan bir alan uydurmak olurdu.
+--
+-- ── RLS ────────────────────────────────────────────────────────────────────
+-- Kapalı — deponun kuralı (anon key yok, RLS politikası 0, yetki uygulama
+-- kodunda: lib/mobile-scope.ts). Politika yazılmadan açılan RLS hiçbir şey
+-- korumaz, yalnız yanlış güven duygusu verir.
+--
+-- ── GERİYE DÖNÜK ETKİ: SIFIR ───────────────────────────────────────────────
+-- Tamamı eklemeli; var olan hiçbir tabloya dokunulmuyor.
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+create table if not exists public.push_tokens (
+  -- Expo jetonu: "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]".
+  -- Uzunluk sınırı KOYULMADI: biçim Expo'nun ve değişebilir; dar bir CHECK
+  -- ileride sessizce kayıt düşürürdü.
+  token text primary key,
+
+  -- Bu adresin ŞU ANKİ sahibi. Devralma yoluyla değişebilir (yukarıya bak).
+  -- on delete cascade: personel silinince adresi de gider (GDPR md. 17).
+  worker_id uuid not null
+    references public.workers(id) on delete cascade,
+
+  platform text not null check (platform in ('ios', 'android')),
+
+  -- Teşhis için: "hangi telefon". Kullanıcının verdiği cihaz adı, kimlik değil.
+  device_name text,
+
+  created_at   timestamptz not null default now(),
+  -- Her açılışta tazelenir. Ölü jeton avında ilk bakılacak kolon.
+  last_seen_at timestamptz not null default now()
+);
+
+-- Gönderim yolunun TEK sorgusu: "bu kişilerin adresleri".
+-- Alıcı kümesi her mesajda çözülüyor; indekssiz her bildirim tam tarama olurdu.
+create index if not exists push_tokens_worker_idx
+  on public.push_tokens (worker_id);
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- ── ÇALIŞTIRDIKTAN SONRA — DOĞRULAMA SORGULARI ─────────────────────────────
+--
+-- 1) Tablo ve indeks yerinde mi (beklenen: 1 satir + 2 indeks):
+--
+--    select count(*) from information_schema.tables
+--      where table_schema='public' and table_name='push_tokens';
+--    select indexname from pg_indexes
+--      where schemaname='public' and tablename='push_tokens';
+--
+-- 2) Platform kisiti calisiyor mu — HATA VERMELI:
+--
+--    insert into public.push_tokens (token, worker_id, platform)
+--      values ('T1', (select id from public.workers limit 1), 'web');  -- RED
+--
+-- 3) DEVRALMA calisiyor mu (ortak telefon senaryosu):
+--
+--    begin;
+--      insert into public.push_tokens (token, worker_id, platform)
+--        values ('ExponentPushToken[TEST]', (select id from public.workers order by id limit 1), 'android');
+--      insert into public.push_tokens (token, worker_id, platform)
+--        values ('ExponentPushToken[TEST]', (select id from public.workers order by id offset 1 limit 1), 'android')
+--        on conflict (token) do update
+--          set worker_id = excluded.worker_id, last_seen_at = now();
+--      -- BEKLENEN: tek satir, worker_id IKINCI kisi.
+--      select token, worker_id from public.push_tokens where token='ExponentPushToken[TEST]';
+--    rollback;   -- ⚠️ ROLLBACK: test verisi birakmaz
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  076_tenant_cost_rates.sql                                          ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 / Galzura Fleet — Migration 076 (MALİYET ORANLARI, KİRACI GİRDİSİ)
+-- =====================================================================
+-- €/km ve €/paket hesabının üç PARASAL oranını kiracının kendisi panelden
+-- girebilsin: yakıt litre fiyatı, şoför-saati işçilik maliyeti, araç günlük
+-- sabit gideri. Additive + idempotent; mevcut hiçbir tabloya DOKUNULMAZ.
+-- Supabase SQL Editor'da çalıştırın.
+--
+-- ═══ NEDEN TABLO, NEDEN ENV DEĞİL (Volkan kararı, 23.08.2026) ═══
+--
+-- Oranlar ilk turda yalnız env'deydi (FUEL_PRICE_EUR_PER_L, LABOR_EUR_PER_HOUR,
+-- VEHICLE_EUR_PER_DAY). Bu, tek müşterili bir kurulumda çalışır ama ürün dünya
+-- pazarına satılacak ve orada üç şey birden bozuluyor:
+--
+--   1. Env değiştirmek DEPLOY gerektirir. Müşteri kendi sigorta primini
+--      güncellemek için bizden yeni bir dağıtım isteyemez.
+--   2. Env'i yalnız BİZ yazabiliyoruz (Vercel proje ayarları). Müşterinin kendi
+--      rakamını girmesi için bize e-posta atması gerekirdi.
+--   3. Oran bir AYAR değil, müşteriye ait bir VERİDİR: "şoför saati bize 21,40 €'ya
+--      mal oluyor" cümlesi o firmanın bordro gerçeği. Verinin yeri veritabanı.
+--
+-- Env KALDIRILMADI, rolü DEĞİŞTİ: artık yalnız VARSAYILAN sağlıyor. Öncelik
+-- sırası kodda tek yerde (lib/cost-rates-db.ts):
+--        panel satırı (bu tablo)  >  env  >  koddaki varsayılan
+--
+-- ═══ NEDEN L/100km BU TABLODA YOK ═══
+--
+-- Tüketim ÖLÇÜLÜYOR — telemetriden, aracın kendi yakıt sensöründen
+-- (report_fuel_stats / report_fuel_volume_stats, migration 026 + 039).
+-- Elle girilebilir yapsaydık kullanıcı, ürünün ZATEN ÖLÇTÜĞÜ bir büyüklüğü
+-- tahminle geçersiz kılabilirdi ve €/km sessizce bir varsayıma dayanırdı.
+-- Ölçülen değer varsa o kazanır; kolon açmıyoruz ki "geçersiz kılma" diye bir
+-- kapı hiç doğmasın. (Env'deki FLEET_L_PER_100KM yalnız ölçüm HİÇ yapılamadığı
+-- kurulumlar için yedektir ve ekranda "varsayılan" diye etiketlenir.)
+--
+-- ═══ NEDEN TEK SATIR (singleton) ═══
+--
+-- Bu mimaride her kiracının KENDİ veritabanı var (bkz. lib/brand.ts REGISTRY:
+-- hak61 / sendigo / galzura-demo ayrı Supabase projeleri). Yani "kiracı" ayrımı
+-- satır düzeyinde DEĞİL, veritabanı düzeyinde. Bir `tenant_id` kolonu açmak
+-- hiçbir zaman ikinci bir değer almayacak bir eksen doğururdu — ve o eksen
+-- unutulan bir WHERE ile sessiz bir sızıntı kapısına dönerdi.
+--
+-- Tekilliği CHECK garanti eder: `id` yalnız 'singleton' olabilir. İkinci satır
+-- INSERT'i birincil anahtara takılır; "hangi satır geçerli" sorusu doğmaz.
+--
+-- ═══ NEDEN HER KOLON NULL'LANABİLİR ═══
+--
+-- NULL = "kiracı bu oranı GİRMEDİ" demek ve varsayılana düşülür. Kolonu NOT
+-- NULL + varsayılan değerli yapsaydık, satır bir kez oluştuğunda üç oran da
+-- "girilmiş" görünürdü ve ekran GİRİLDİ / VARSAYILAN ayrımını yapamazdı.
+-- O ayrım bu özelliğin ana vaadi: hangi sayının müşteriye, hangisinin bize ait
+-- olduğu ekranda okunmalı.
+--
+-- ═══ NEDEN numeric, double precision DEĞİL ═══
+--
+-- Bunlar PARA oranı. `double precision` ikili kayan nokta: 2.043 tam olarak
+-- saklanamaz ve "girdiğim sayı geri gelmiyor" sınıfı bir kusur doğurur.
+-- numeric(12,4) dört ondalık basamağa kadar TAM saklar — akaryakıt fiyatı
+-- (2,0430) ve saatlik ücret (19,1000) için fazlasıyla yeterli.
+--
+-- ═══ RLS ═══
+-- Kapalı — şemanın geri kalanıyla tutarlı. Tabloya yalnız service-role
+-- istemcisi yazar; yetki uygulama kodunda (requireAdmin).
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+create table if not exists public.tenant_cost_rates (
+  -- Tekillik kilidi: tek satır, adı sabit.
+  id text primary key default 'singleton'
+    check (id = 'singleton'),
+
+  -- ── ÜÇ PARASAL ORAN ─────────────────────────────────────────────────
+  -- Üçü de NULL'lanabilir: NULL = "girilmedi, varsayılan kullanılsın".
+  -- CHECK'ler > 0: sıfır ya da negatif bir oran hesabı sessizce bozardı
+  -- (€/km 0'a düşer ve filo bedava görünür). Girdi doğrulaması uygulama
+  -- katmanında da var; bu son hat.
+
+  -- Yakıt litre fiyatı (EUR/L). Filo kartıyla alan müşteri kendi anlaşmalı
+  -- fiyatını yazar; varsayılan piyasa ortalamasıdır.
+  fuel_eur_per_l numeric(12,4)
+    check (fuel_eur_per_l is null or fuel_eur_per_l > 0),
+
+  -- İşçilik (EUR / şoför-saati) — İŞVEREN TOPLAM MALİYETİ, brüt ücret değil
+  -- (Lohnnebenkosten + 13./14. maaş dâhil). Filo ORTALAMASIDIR: kişi bazlı
+  -- ücret bordro verisidir ve buraya girmez.
+  labor_eur_per_hour numeric(12,4)
+    check (labor_eur_per_hour is null or labor_eur_per_hour > 0),
+
+  -- Araç sabit gideri (EUR / ÇALIŞILAN araç-günü): leasing/amortisman +
+  -- sigorta + vergi + servis payı. Payda TAKVİM GÜNÜ DEĞİL — o gün en az bir
+  -- vardiya görmüş (araç, gün) çiftidir (bkz. lib/cost-model.ts).
+  vehicle_eur_per_day numeric(12,4)
+    check (vehicle_eur_per_day is null or vehicle_eur_per_day > 0),
+
+  -- ── İZ ──────────────────────────────────────────────────────────────
+  -- Kim ne zaman değiştirdi. Bir € oranı filo kararlarını sürüklüyor; "bu
+  -- rakamı kim koydu" sorusu altı ay sonra sorulacak.
+  -- Hesap silinirse oran KALIR (set null): sayı firmanın, kişinin değil.
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.workers(id) on delete set null
+);
+
+comment on table public.tenant_cost_rates is
+  'Maliyet oranlarının kiracıya ait değerleri (€/km motoru). Tek satır: id=''singleton''. NULL kolon = girilmedi, env/kod varsayılanı kullanılır.';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- ── DOĞRULAMA (ayrı çalıştırın) ───────────────────────────────────────
+-- select * from public.tenant_cost_rates;
+--   → 0 satır beklenir: tablo yaratıldı ama kiracı henüz oran girmedi,
+--     yani üç oran da VARSAYILAN etiketiyle görünür. Panel ilk kaydetmede
+--     satırı kendisi oluşturur (upsert).
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  077_fuel_price_reference.sql                                       ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 / Galzura Fleet — Migration 077 (YAKIT FİYATI REFERANSI, ÜLKE EKSENİ)
+-- =====================================================================
+-- Yakıt litre fiyatı artık elle yazılmıyor: AB Komisyonu Weekly Oil Bulletin'den
+-- günlük bir cron ile çekilip buraya yazılıyor. Additive + idempotent; mevcut
+-- hiçbir tabloya DOKUNULMAZ. Supabase SQL Editor'da çalıştırın.
+--
+-- ⚠️ 076 (tenant_cost_rates) uygulanmış olmalı — bu tablo onun ÜSTÜNE biner,
+-- yerine geçmez: kiracı kendi sözleşme fiyatını girmişse o kazanır, bu tablo
+-- yalnız REFERANS sağlar.
+--
+-- ═══ NEDEN AYRI TABLO, tenant_cost_rates'e KOLON DEĞİL ═══
+--
+-- Yakıt fiyatı KİRACIYA ait değil, ÜLKEYE ait bir olgudur. Avusturya'daki üç
+-- kiracı aynı 2,043 €/L'yi okur. Kolon eklemek aynı sayıyı N kiracı için N kez
+-- yazmak, N kez tazelemek ve N yoldan tutarsızlaşmak demekti: 50 kiracılı bir
+-- kurulumda cron 50 satır güncellemek zorunda kalır, biri başarısız olursa iki
+-- kiracı farklı fiyat görür — sessiz ve teşhisi zor bir kusur.
+--
+-- Bu şemada cron 1 SATIR yazar, N kiracı AYNI satırı okur.
+--
+-- ═══ KAYNAK: AB WEEKLY OIL BULLETIN — NEDEN BU, NEDEN BAŞKASI DEĞİL ═══
+--
+-- ÖLÇÜLDÜ (24.08.2026): dosyadaki Avusturya dizel değeri 2043 EUR/1000 L, yani
+-- 2,043 €/L — kodda elle yazılı olan sabitin BİREBİR AYNISI (WKO, 17.08.2026).
+-- Yani kaynak değişikliği hiçbir sayıyı oynatmıyor, yalnız güncelleme işini
+-- otomatikleştiriyor.
+--
+-- Elenen adaylar ve gerekçeleri (araştırma, 24.08.2026):
+--   · WKO (bugünkü kaynak) — hiçbir yeniden kullanım izni yayımlamıyor;
+--     yayıncı kamu otoritesi değil, sektör birliği. Yalnız kazımayla alınır.
+--   · E-Control REST API — yalnız EN UCUZ 5/10 istasyonu döndürüyor (yasanın
+--     amacı bu); ortalaması sistematik olarak gerçeğin ALTINDA kalır.
+--   · E-Control medyan XLSX — günlük ve daha taze, ama (a) lisans metni YOK,
+--     (b) MEDYAN yayınlıyor, ürün ORTALAMA kullanıyor — sessiz metodoloji
+--     değişikliği olurdu, (c) tek ülke.
+--   · Tankerkönig — şartları bu tasarımı adıyla yasaklıyor ("Regelmäßige,
+--     nicht explizit vom User initiierte Requests sind zu vermeiden").
+--   · OilPriceAPI / fuel-prices.eu — ücretli ama ticari kullanıma kapalı
+--     ("We grant no rights in the data" / "personal, non-commercial use").
+--
+-- LİSANS: CC BY 4.0. Dosyanın kendi telif notu birebir: "Reproduction is
+-- authorised provided the source is acknowledged. © European Communities".
+-- Ürün ekranda metin atıf gösterir. ⚠️ AB LOGOSU/AMBLEMİ KULLANILMAZ ve
+-- "AB onaylı / iş ortağı" denmez (Karar 2011/833/EU Md.2(2)(a) logoları
+-- kapsam dışı bırakıyor; CC BY 4.0 Md.2(a)(6) "No endorsement").
+--
+-- ═══ NEDEN price VE price_eur AYRI ═══
+--
+-- Bugün AT ve DE kapsamda ve ikisi de EUR — iki kolon aynı değeri taşıyacak.
+-- Ama İsviçre (CHF) ve Türkiye (TRY) sonraki turlarda gelecek ve o gün ham
+-- değeri kaybetmiş olmak, kur hatasını geri alınamaz kılardı. `price` her
+-- zaman KAYNAĞIN yazdığı sayıdır; `price_eur` bizim türettiğimizdir.
+--
+-- ═══ NEDEN statistic KOLONU VAR ═══
+--
+-- WOB ORTALAMA yayınlıyor, E-Control MEDYAN. İkisi aynı sayı değil (17.08 vs
+-- 22.08 ölçümü: 2,043 ve 2,029). Kaynak değiştiğinde sayının "kendiliğinden"
+-- değiştiği izlenimini önleyen tek şey bu kolonun ekranda görünmesi.
+--
+-- ═══ NEDEN reference_date, fetched_at DEĞİL ═══
+--
+-- reference_date = KAYNAĞIN ölçtüğü Pazartesi (17.08). fetched_at = bizim
+-- indirdiğimiz an. Bayatlık HER ZAMAN reference_date'ten hesaplanır: cron her
+-- gün başarıyla koşup aynı haftalık satırı yeniden yazsa bile veri yaşlanır.
+-- fetched_at'e bakan bir bayatlık ölçüsü, çalışan bir cron'u "taze veri"
+-- sanardı.
+--
+-- ═══ RLS ═══
+-- Kapalı — şemanın geri kalanıyla tutarlı (78 migration'ın yalnız 2'si açıyor).
+-- Tabloya yalnız service-role istemcisi yazar.
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+create table if not exists public.fuel_price_reference (
+  id uuid primary key default gen_random_uuid(),
+
+  -- ── KİMLİK ──────────────────────────────────────────────────────────
+  -- ISO 3166-1 alpha-2. Bugün yalnız 'AT' ve 'DE' yazılıyor; CHECK bilerek
+  -- YOK — yeni ülke eklemek migration gerektirmesin. Kapsam kodda (kaynak
+  -- eşlemesi) belirleniyor, şemada değil.
+  country_code text not null check (country_code = upper(country_code) and length(country_code) = 2),
+
+  -- 'diesel' | 'petrol95'. Bugün yalnız dizel yazılıyor (€/km motorunun
+  -- ihtiyacı o); benzin sütunu aynı dosyada duruyor, ileride bedavaya gelir.
+  fuel_type text not null check (fuel_type in ('diesel', 'petrol95')),
+
+  -- KAYNAĞIN referans tarihi (WOB'da Pazartesi). Bizim çekim anımız DEĞİL.
+  reference_date date not null,
+
+  -- ── DEĞER ───────────────────────────────────────────────────────────
+  -- Kaynağın yazdığı ham sayı, kaynağın para biriminde, LİTRE başına.
+  -- ⚠️ WOB dosyası 1000 LİTRE başına yayınlıyor (2043) — bölme işlemi
+  -- ayrıştırıcıda yapılır, buraya 2.0430 olarak girer.
+  price numeric(12,4) not null check (price > 0),
+  currency text not null check (currency = upper(currency) and length(currency) = 3),
+
+  -- € karşılığı. EUR kaynakta ise price ile aynıdır ve fx_rate null kalır.
+  price_eur numeric(12,4) not null check (price_eur > 0),
+  fx_rate numeric(18,8) check (fx_rate is null or fx_rate > 0),
+
+  -- ── KÖKEN ───────────────────────────────────────────────────────────
+  -- 'mean' | 'median'. Metodolojiyi ASLA örtme (bkz. başlık).
+  statistic text not null check (statistic in ('mean', 'median')),
+
+  -- Kaynak anahtarı — kodda tanımlı sağlayıcıya karşılık gelir.
+  -- Bugün yalnız 'eu_wob'. UNIQUE'in parçası: aynı gün için iki farklı
+  -- kaynaktan gelen satırlar yan yana yaşayabilsin (çapraz kontrol).
+  source_key text not null,
+  source_url text not null,
+
+  -- Ekranda gösterilecek atıf satırı. Şemada tutuluyor çünkü lisans
+  -- KAYNAĞA bağlı: ikinci bir sağlayıcı eklendiğinde onun atfı farklı olur
+  -- ve kodda sabit bir cümle yanlış kaynağı atfetmeye başlardı.
+  license_note text not null,
+
+  -- Kaynağın YAYIN PERİYODU (gün). WOB haftalık → 7. Bayatlık eşiği bundan
+  -- TÜRETİLİR, sabit yazılmaz: aylık bir kaynağa (İsviçre BFS) 10 günlük
+  -- eşik uygulamak onu doğduğu gün bayat ilan ederdi.
+  expected_period_days integer not null default 7 check (expected_period_days > 0),
+
+  fetched_at timestamptz not null default now(),
+
+  -- Aynı gün + aynı ürün + aynı kaynak = TEK satır. Cron günde bir kez koşar
+  -- ama beş kez koşsa da tek satır kalır (upsert bu kısıta çarpar).
+  constraint fuel_price_reference_uq
+    unique (country_code, fuel_type, reference_date, source_key)
+);
+
+-- Okuma deseni: "şu ülke + şu yakıt için EN YENİ satır". Tarihe göre azalan
+-- kısmi tarama yeter; tablo yılda ~52 satır/ülke büyüyor, yani küçük kalacak.
+create index if not exists fuel_price_reference_lookup_idx
+  on public.fuel_price_reference (country_code, fuel_type, reference_date desc);
+
+comment on table public.fuel_price_reference is
+  'Ülke ekseninde yakıt fiyatı referansı (€/km motoru). Kaynak: AB Weekly Oil Bulletin, CC BY 4.0. Kiracıya değil ÜLKEYE aittir; tenant_cost_rates.fuel_eur_per_l doluysa O kazanır.';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- ── DOĞRULAMA (ayrı çalıştırın) ───────────────────────────────────────
+-- select count(*) from public.fuel_price_reference;
+--   → 0 satır beklenir. Cron ilk koştuğunda AT ve DE için birer satır düşer.
+--
+-- Cron koştuktan sonra:
+-- select country_code, fuel_type, reference_date, price, currency, price_eur,
+--        statistic, source_key, expected_period_days
+--   from public.fuel_price_reference
+--  order by reference_date desc, country_code;
+--   → AT 2.0430 EUR ve DE 2.2660 EUR, reference_date = kaynağın Pazartesi'si.
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  078_worker_documents.sql                                           ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 / Galzura Fleet — Migration 078 (ŞOFÖR BELGE TAKİBİ)
+-- =====================================================================
+-- Şoförün süresi dolan belgelerini takip et, dolmadan uyar. Additive +
+-- idempotent; mevcut hiçbir tabloya DOKUNULMAZ. Supabase SQL Editor'da
+-- çalıştırın.
+--
+-- ═══ NEDEN TABLO, NEDEN workers'A KOLON DEĞİL ═══
+--
+-- Belge türleri ÜLKEYE göre değişiyor ve ürün dünya pazarına satılacak:
+-- TR'de SRC + psikoteknik, DACH'ta Aufenthaltstitel + Fahrerqualifizierungs-
+-- nachweis, AB genelinde CPC, taşınan yüke göre ADR. Kolon modelinde her yeni
+-- ülke YENİ BİR MIGRATION demek olurdu — yani müşteri kendi belgesini bizden
+-- dağıtım isteyerek ekleyecekti.
+--
+-- ⚠️ SABİT TÜR LİSTESİ YAZILMADI, CHECK KISITI DA YOK. Türleri KİRACI tanımlar
+-- (`document_types`). Bir enum ya da CHECK, aynı hatanın şema düzeyindeki hâli
+-- olurdu: Portekiz'in belgesini eklemek için ALTER TABLE gerekirdi.
+--
+-- ═══ EHLİYET NEDEN BURAYA TAŞINMIYOR ═══
+--
+-- `workers.license_no` / `license_expiry` OLDUĞU GİBİ KALIYOR. Taşımak 15+
+-- çağrı yerini kırardı: lib/worker-ui.ts licenseState, iki şoför formu,
+-- /admin/workers listesi ve detay ekranı, iki mobil uç (`ehliyetSon`,
+-- `ehliyet.no`), güvenlik ekranı alan etiketi, install SQL'leri ve
+-- lib/admin-dashboard.ts'teki kalem kuralı.
+--
+-- ⚠️ Ehliyetin dikkat kalemi de AYNEN kalıyor ve KENDİ kuralıyla çalışıyor:
+-- dolmuş ehliyetin ALT SINIRI YOKTUR (lib/admin-dashboard.ts:1429). Bu tablo
+-- ona dokunmuyor; iki eksen yan yana yaşıyor.
+--
+-- ⚠️ SONUÇ OLARAK BİR TUZAK DOĞUYOR: kiracı "Ehliyet" adında bir belge türü
+-- tanımlarsa aynı gerçek İKİ YERDE takip edilir ve pano iki kalem üretir.
+-- Şema bunu yasaklayamaz (tür adları serbest, yasaklamak da dünya pazarında
+-- yanlış olurdu). Panel bu yüzden tür ekleme ekranında UYARI gösteriyor.
+--
+-- ═══ NEDEN İKİ TABLO ═══
+--
+-- `document_types` = kiracının SÖZLÜĞÜ (hangi belgeler var, kaç gün önce uyar).
+-- `worker_documents` = KİŞİYE ait kayıt (kimin belgesi, ne zaman doluyor).
+-- Tek tabloda tutulsaydı tür adı ve eşik her satırda tekrarlanır, bir türün
+-- eşiğini değiştirmek N satır güncellemek olurdu ve iki satır sessizce
+-- ayrışabilirdi.
+--
+-- ═══ NEDEN warn_days TÜR BAŞINA ═══
+--
+-- Görev "kiracı ayarı, varsayılan 30 gün" diyordu; tür başına yapmak kesin
+-- olarak daha doğru: oturma izni 90 gün önce haber vermezse yenilenemez
+-- (randevu süresi), sağlık raporu için 30 gün fazlasıyla yeter. Tek bir
+-- kiracı eşiği, en kritik belgeyi en gevşek belgeye eşitlerdi. Varsayılan
+-- yine 30 — kiracı hiçbir şey yapmazsa görevde yazan davranış aynen geçerli.
+--
+-- ═══ RLS ═══
+-- Kapalı — şemanın geri kalanıyla tutarlı. Yalnız service-role yazar; yetki
+-- uygulama kodunda (requireAdmin / requireFleetView).
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ── 1) KİRACININ BELGE SÖZLÜĞÜ ──────────────────────────────────────
+create table if not exists public.document_types (
+  id uuid primary key default gen_random_uuid(),
+
+  -- Makine adı: kod içinde ve i18n anahtarında kullanılır. Kiracı serbestçe
+  -- belirler ('src', 'adr', 'aufenthaltstitel', 'cpc', 'psikoteknik'…).
+  -- ⚠️ SABİT LİSTE YOK — CHECK kısıtı bilerek konulmadı (başlık bloğu).
+  code text not null,
+
+  -- Ekranda görünen ad. i18n sözlüğüne GİRMEZ: kiracıya ait bir veri, ürün
+  -- metni değil. Almanca kurulumda "Aufenthaltstitel" yazan bir kiracının
+  -- etiketini bizim çeviri dosyamıza koymak, müşterinin verisini ürünün
+  -- kaynak koduna taşımak olurdu.
+  label text not null check (length(btrim(label)) between 1 and 80),
+
+  -- Kaç gün önce uyarılsın. Tür başına — gerekçe başlık bloğunda.
+  warn_days integer not null default 30
+    check (warn_days between 1 and 365),
+
+  -- Belge numarası bu tür için anlamlı mı (SRC'nin numarası var, sağlık
+  -- raporunun genelde yok). Yalnız FORMU sadeleştirir; veri kaybı yaratmaz.
+  requires_number boolean not null default false,
+
+  -- Kapatılan tür GEÇMİŞİ SİLMEZ: kayıtlar kalır, yeni kayıt açılamaz ve
+  -- uyarı üretilmez. Silme yerine pasifleştirme, çünkü bir belge türünü
+  -- kaldırmak o belgeye sahip kişilerin geçmişini yok etmemeli.
+  active boolean not null default true,
+
+  -- Listede sıra. Aynı sıradakiler label'a göre dizilir.
+  sort_order integer not null default 100,
+
+  created_at timestamptz not null default now(),
+  created_by uuid references public.workers(id) on delete set null,
+
+  -- Aynı kod iki kez tanımlanamaz. Büyük/küçük harf farkı bir tür DEĞİLDİR:
+  -- 'SRC' ve 'src' aynı belgedir ve ikisini birden açmak sessiz bir çift
+  -- kayıt kapısıdır.
+  constraint document_types_code_uq unique (code)
+);
+
+-- ── 2) KİŞİYE AİT BELGE KAYDI ───────────────────────────────────────
+create table if not exists public.worker_documents (
+  id uuid primary key default gen_random_uuid(),
+
+  -- Personel silinirse belgesi de gider: kişiye ait, kişisiz anlamı yok.
+  worker_id uuid not null references public.workers(id) on delete cascade,
+
+  -- Tür silinemez (yalnız pasifleştirilir), o yüzden restrict: yanlışlıkla
+  -- silme denemesi sessizce N kaydı götürmesin.
+  type_id uuid not null references public.document_types(id) on delete restrict,
+
+  -- ⚠️ ZORUNLU. Bu tablonun VARLIK SEBEBİ süre takibi; tarihsiz bir satır
+  -- hiçbir uyarı üretmez ve "belge var" yanılsaması yaratırdı — kayıtlı ama
+  -- takip edilmeyen bir belge, hiç kaydedilmemiş olandan daha tehlikelidir.
+  expires_at date not null,
+
+  -- Opsiyonel: belge numarası ve serbest not.
+  document_no text check (document_no is null or length(btrim(document_no)) between 1 and 80),
+  note text check (note is null or length(note) <= 500),
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.workers(id) on delete set null,
+
+  -- Bir kişinin bir türden TEK GEÇERLİ kaydı olur. Yenileme = mevcut satırın
+  -- tarihini ileri almak, ikinci satır açmak DEĞİL.
+  --
+  -- ⚠️ NEDEN GEÇMİŞ SÜRÜM TUTULMUYOR: "2023'te hangi tarihti" sorusunun bugün
+  -- bir tüketicisi yok ve sürümlü bir tablo, her okumada "hangisi geçerli"
+  -- kuralını her yere taşırdı. Gerekirse ayrı bir iz tablosu eklenir; bu
+  -- kısıt o gün kaldırılmaz, iz tablosu ONUN YANINA gelir.
+  constraint worker_documents_uq unique (worker_id, type_id)
+);
+
+-- Okuma deseni: "süresi yaklaşan/dolmuş belgeler" — tarihe göre artan tarama.
+create index if not exists worker_documents_expiry_idx
+  on public.worker_documents (expires_at);
+
+-- Kişi ekranı: "bu şoförün belgeleri".
+create index if not exists worker_documents_worker_idx
+  on public.worker_documents (worker_id);
+
+comment on table public.document_types is
+  'Kiracının tanımladığı belge türleri (SRC, ADR, oturma izni, CPC…). SABİT LİSTE YOK: türleri kiracı belirler. warn_days tür başına uyarı eşiği, varsayılan 30.';
+comment on table public.worker_documents is
+  'Şoför belgelerinin bitiş tarihleri. Ehliyet BURAYA GİRMEZ — workers.license_expiry kendi ekseninde kalır (bkz. migration başlığı).';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- ── DOĞRULAMA (ayrı çalıştırın) ───────────────────────────────────────
+-- select count(*) from public.document_types;      → 0 beklenir
+-- select count(*) from public.worker_documents;    → 0 beklenir
+--
+-- Kiracı ilk türünü panelden açar (/admin/workers → Belge Türleri).
+-- Örnek bir tür ELLE eklemek isterseniz:
+--   insert into public.document_types (code, label, warn_days, requires_number)
+--   values ('src', 'SRC Belgesi', 30, true);
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  BİTTİ — şema 078 hizasında.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PostgREST şema önbelleğini tazele: yeni tablolar API''de hemen görünsün.
+notify pgrst, 'reload schema';
+
+commit;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  DOĞRULAMA (commit''ten SONRA, ayrı çalıştırın)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- select count(*) from information_schema.tables
+--  where table_schema='public' and table_type='BASE TABLE';
+-- select code from public.fleets order by sort_order;      -- bordo, mavi
+-- select count(*) from public.messages;                    -- 0
+-- select count(*) from public.worker_documents;            -- 0
+-- select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--  where n.nspname='public' and proname like '%_batch' order by 1;   -- 5 satır
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  BU DOSYANIN YAPMADIĞI İKİ ŞEY — bilinçli, ayrı karar gerektirir
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+--  1) TELEGRAM KALINTISI DÜŞÜRÜLMEDİ.
+--     Katman 20.08.2026''da söküldü; kodda tek satır yok. Bu kurulumda
+--     `telegram_link_codes` tablosu ve `workers.telegram_*` dört kolonu
+--     hâlâ duruyor (canlı HAK61''de düşürüldü). Uygulama onları hiç okumuyor,
+--     yani zararsızlar — ama biri (telegram_username) kişisel veridir.
+--     Silmek İSTERSENİZ, ayrı ve bilinçli bir adım olarak:
+--
+--       begin;
+--       drop table if exists public.telegram_link_codes;
+--       alter table public.workers
+--         drop column if exists telegram_chat_id,
+--         drop column if exists telegram_username,
+--         drop column if exists telegram_linked_at,
+--         drop column if exists telegram_locale;
+--       commit;
+--
+--     ⚠️ GERİ ALINAMAZ. Önce `select count(*) from public.workers
+--        where telegram_chat_id is not null;` ile ne kaybedeceğinizi görün.
+--
+--  2) TELEFON NUMARASI NORMALİZASYONU (075) YAPILMADI.
+--     075, "+430660…" biçimindeki numaralardan ulusal trunk sıfırını atar
+--     ("+43660…"). Bu bir ŞEMA değişikliği değil, VERİ değişikliğidir ve
+--     `workers.phone` UNIQUE olduğu için çakışma üretebilir. Kod her iki
+--     biçimi de tanıyor (lib/phone.ts phoneVariants), yani giriş bozulmuyor.
+--     Uygulamak isterseniz db/migrations/075_phone_trunk_zero.sql''i AYRI
+--     çalıştırın: içindeki DO bloğu çakışma varsa kendini durdurur.

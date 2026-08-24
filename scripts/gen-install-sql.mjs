@@ -482,15 +482,21 @@ $guard$;
  * `db/install/*-full.sql` yeniden üretilmediyse `npm run verify` kırılır.
  * "Üretmeyi unuttum" sessiz kalamaz.
  */
-export function build(tenant) {
-  const TENANT = String(tenant ?? "sendigo").trim().toLowerCase();
-  if (!/^[a-z0-9-]+$/.test(TENANT)) {
-    throw new Error(`Geçersiz müşteri kodu: "${TENANT}" (yalnız a-z, 0-9, tire)`);
-  }
+/**
+ * Verilen migration'ları dönüştürüp başlıklı parçalar hâline getirir.
+ *
+ * `build()` (sıfırdan kurulum) ve `scripts/gen-align-sql.mjs` (mevcut kiracıyı
+ * hizalama) AYNI dönüşümleri kullansın diye ayrıldı: iç begin/commit temizliği,
+ * telefon maskeleme, 046'nın sır satırı, 033'ün HAK61 kaydı… İki yerde
+ * tekrarlansaydı biri düzeltilip diğeri unutulurdu.
+ *
+ * `koprular` false ise köprü kolonları eklenmez (çağıran kendi yerleştirir).
+ */
+export function parcala(dosyalar, { koprular = true } = {}) {
   changes.length = 0;
-  const parts = [basSayfa(TENANT)];
+  const parts = [];
 
-  for (const file of ORDER) {
+  for (const file of dosyalar) {
     let sql = readFileSync(join(SRC, file), "utf8").replace(/\r\n/g, "\n").trimEnd();
     sql = transform(file, sql);
 
@@ -502,6 +508,7 @@ export function build(tenant) {
         "\n"
     );
 
+    if (!koprular) continue;
     // Köprü, vehicles tablosunun yaratıldığı 009'un HEMEN ARDINDAN girer:
     // ondan sonraki her okuma/yazma (026 yorumu, 028 insert) kolonu bulur.
     if (file === "009_vehicles.sql") {
@@ -515,6 +522,22 @@ export function build(tenant) {
       changes.push("015 sonrası: KÖPRÜ 2 — geofences.archived_at eklendi");
     }
   }
+
+  return { parts, changes: [...changes] };
+}
+
+/** Hizalama üreteci de aynı köprü metnini kullansın — tek kaynak. */
+export { BRIDGE_TANK, BRIDGE_ARCHIVED };
+
+export function build(tenant) {
+  const TENANT = String(tenant ?? "sendigo").trim().toLowerCase();
+  if (!/^[a-z0-9-]+$/.test(TENANT)) {
+    throw new Error(`Geçersiz müşteri kodu: "${TENANT}" (yalnız a-z, 0-9, tire)`);
+  }
+  const { parts: govde, changes: uygulanan } = parcala(ORDER);
+  const parts = [basSayfa(TENANT), ...govde];
+  changes.length = 0;
+  changes.push(...uygulanan);
 
   parts.push(`
 

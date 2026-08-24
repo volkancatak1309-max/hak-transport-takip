@@ -339,6 +339,105 @@ export async function belgeBildir(g: {
   }
 }
 
+/**
+ * ARAÇ EKSENLİ YÖNETİM TARAFI (081) — patronlar + o ARACIN filosunun şefleri.
+ *
+ * `yonetimTarafi` şoför ekseninde çalışıyor (kapsam `isFleetWorker`); bakım ve
+ * iş emri ise ARAÇ ekseninde. Şoför ekseninden türetmek (aracın atanmış
+ * şoförüne bakmak) atamasız araçta hiç alıcı bulamazdı — ki bakımı en çok
+ * gecikeni tam olarak o araçlar.
+ */
+async function aracYonetimTarafi(vehicleId: string): Promise<string[]> {
+  // test-visible: alıcılar YÖNETİM tarafı (yonetimTarafi'ndaki gerekçenin
+  // aynısı) — test hesabı zaten patron ve bu bildirim ona yeni bir şey
+  // sızdırmaz; elemek ise push yolunu test hesabından DENENEMEZ kılardı.
+  const { data, error } = await supabaseAdmin
+    .from("workers")
+    .select("id, is_admin, managed_fleet")
+    .eq("is_active", true);
+  if (error || !data) return [];
+
+  const satirlar = data as { id: string; is_admin: boolean; managed_fleet: string | null }[];
+  const alicilar: string[] = [];
+  const kapsamlar = new Map<string, FleetScope>();
+
+  for (const w of satirlar) {
+    if (w.is_admin === true) {
+      alicilar.push(w.id);
+      continue;
+    }
+    const filo = w.managed_fleet;
+    if (filo !== "bordo" && filo !== "mavi") continue;
+    let kapsam = kapsamlar.get(filo);
+    if (!kapsam) {
+      kapsam = await getFleetScope(filo);
+      kapsamlar.set(filo, kapsam);
+    }
+    if (kapsam.isFleetVehicle(vehicleId)) alicilar.push(w.id);
+  }
+  return alicilar;
+}
+
+/**
+ * PERİYODİK BAKIM BİLDİRİMİ (081).
+ *
+ * ── ALICI: YALNIZ YÖNETİM ──────────────────────────────────────────────────
+ * Şoför bilerek dışarıda: bakım randevusunu o almıyor, aracı servise yönetim
+ * gönderiyor. Şoföre bildirmek, elinden bir şey gelmeyen bir kişiyi haftada
+ * bir dürtmek olurdu — `belgeBildir`de şoförün alıcı OLMASININ sebebi tam
+ * tersiydi (belgeyi o yeniliyor).
+ *
+ * ── `tur: "bakim"` ─────────────────────────────────────────────────────────
+ * `belgeBildir` ile aynı desen: mobilde bakım ekranı henüz yok, veri yükü
+ * bugünden taşınıyor ki ekran eklendiği gün SUNUCU DEĞİŞMEDEN bağlansın.
+ */
+export async function bakimBildir(g: {
+  vehicleId: string;
+  plaka: string;
+  /** Bakım tipi — kiracı verisi, ÇEVRİLMEZ. */
+  tip: string;
+  /** Tetikleyen eksen. */
+  eksen: "km" | "sure";
+  /** Kalan km (eksen='km') ya da kalan gün (eksen='sure'); negatif = geçti. */
+  kalan: number;
+  gecti: boolean;
+}): Promise<void> {
+  try {
+    const alicilar = await aracYonetimTarafi(g.vehicleId);
+    const jetonlar = await jetonlariGetir(alicilar);
+    if (jetonlar.length === 0) return;
+
+    const birim = g.eksen === "km" ? "km" : "gün";
+    const baslik = g.gecti
+      ? `${g.plaka} — ${g.tip} bakımı gecikti`
+      : `${g.plaka} — ${g.tip} bakımı yaklaşıyor`;
+    const govde = g.gecti
+      ? `${Math.abs(g.kalan)} ${birim} geçti`
+      : `${Math.abs(g.kalan)} ${birim} kaldı`;
+
+    await gonder(
+      jetonlar.map(({ token }) => ({
+        to: token,
+        title: baslik,
+        body: govde,
+        data: {
+          tur: "bakim",
+          aracId: g.vehicleId,
+          plaka: g.plaka,
+          eksen: g.eksen,
+          kalan: g.kalan,
+          gecti: g.gecti,
+        },
+        sound: "default" as const,
+        channelId: KANAL,
+        priority: "high" as const,
+      }))
+    );
+  } catch {
+    // Bildirim yolu ASLA çağıranı düşürmez (modül başlığındaki gerekçe).
+  }
+}
+
 export type DuyuruHedefi = { soforId: string; konusmaId: string };
 
 /**

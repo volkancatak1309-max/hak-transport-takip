@@ -7,6 +7,8 @@ import {
 } from "@/lib/format";
 import { markKmMeasured } from "@/lib/km-quality";
 import { listExpiringDocuments, type ExpiringDocument } from "@/lib/documents-db";
+import { bakimDurumlari, type BakimDurumu } from "@/lib/bakim-db";
+import { listIsEmirleri, type IsEmri } from "@/lib/is-emri-db";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { listFleetActiveDtc, listLatestVehiclePositions } from "@/lib/telemetry";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
@@ -266,6 +268,48 @@ export type AttentionItem =
       worker_name: string;
       by_name: string;
       started_at: string;
+    }
+  | {
+      /**
+       * AÇIK İŞ EMRİ (081) — araç "sorunlu" durumda.
+       *
+       * `vehicles` üzerinde bir bayrak YOK: açık emrin varlığı gerçeğin
+       * kendisidir. Bayrak koysaydık kapanışta güncellemeyi atlayan bir yol,
+       * sonsuza dek sorunlu görünen bir araç bırakırdı.
+       *
+       * Kalem yalnız YÜKSEK ve KRİTİK öncelikli emirler için çıkar: normal
+       * öncelikli her arıza panoya düşseydi Dikkat listesi bir iş emri
+       * kuyruğuna dönerdi. Tam liste /admin/is-emirleri ekranında.
+       */
+      kind: "workOrder";
+      id: string;
+      plate: string;
+      aciklama: string;
+      oncelik: "yuksek" | "kritik";
+      /** Emri doğuran yer: surucu | dvir | dtc | periyodik | elle. */
+      kaynak: string;
+      /** Açılalı kaç gün oldu. */
+      days: number;
+    }
+  | {
+      /**
+       * PERİYODİK BAKIM eşiğe girdi ya da geçti (081).
+       *
+       * `kalanKm`/`kalanGun`'den YALNIZ tetikleyen eksen dolu gelir; ikisini
+       * birden basmak "8.000 km veya 6 ay" kuralını iki ayrı uyarı gibi
+       * gösterirdi. Odometresi okunamayan araçta km ekseni hiç hesaplanmaz
+       * ve kalem süre ekseninden doğar — "ölçemedim" asla "gerekmiyor"a
+       * çevrilmez (lib/km-quality.ts dersi).
+       */
+      kind: "maintenanceDue";
+      id: string;
+      plate: string;
+      tip: string;
+      eksen: "km" | "sure";
+      kalanKm: number | null;
+      kalanGun: number | null;
+      /** Eşik geçildi mi (gecikmiş bakım). */
+      gecti: boolean;
     };
 
 /** Filo geneli arıza (DTC) özeti — plaka + aktif kod sayısı + en uzun süredir
@@ -720,6 +764,24 @@ export async function getDashboardData(
     (r) => r.id
   );
   const { items: expiringDocs } = await listExpiringDocuments(scopedDriverIds);
+
+  /**
+   * AÇIK İŞ EMİRLERİ + PERİYODİK BAKIM DURUMU (081).
+   *
+   * expiringDocs ile aynı gerekçeyle Promise.all'ın dışında: ikisi de
+   * kapsamdaki ARAÇ kümesini argüman olarak istiyor ve o küme aynı
+   * Promise.all'dan çıkıyor. 081 uygulanmamışsa ikisi de boş döner
+   * (`tabloYok`) ve panonun geri kalanı etkilenmez.
+   */
+  const scopedVehicleIds = vehicles.map((v) => v.id);
+  const [isEmriRes, bakimRes] = await Promise.all([
+    listIsEmirleri({ vehicleIds: scopedVehicleIds, yalnizAcik: true, limit: 200 }),
+    bakimDurumlari(),
+  ]);
+  const acikIsEmirleri = isEmriRes.emirler;
+  const bakimDurum = bakimRes.durumlar.filter((d) =>
+    scopedVehicleIds.includes(d.vehicleId)
+  );
   // Bugün ONAYLI izinli şoförler → roster "İzinli" durumu (Modül 1).
   const leaveWorkerIds = new Set(
     ((leavesRes.data ?? []) as { worker_id: string }[]).map((r) => r.worker_id)
@@ -935,7 +997,9 @@ export async function getDashboardData(
       locationUnverified,
       startEstimated,
       vehicleIdle,
-      manualStarts
+      manualStarts,
+      acikIsEmirleri,
+      bakimDurum
     ),
     openVehicleCount: openVehicleIds.size,
     // BUGÜNKÜ ham vardiya satırları. /admin "Kapanmamış Vardiyalar" kartı açık
@@ -1333,7 +1397,11 @@ function buildAttention(
     worker_name: string;
     by_name: string;
     started_at: string;
-  }[]
+  }[],
+  /** Kapsamdaki AÇIK iş emirleri (081) — yalnız yüksek/kritik kalem olur. */
+  acikIsEmirleri: IsEmri[],
+  /** Periyodik bakım durumları (081) — yalnız eşiğe girenler kalem olur. */
+  bakimDurum: BakimDurumu[]
 ): AttentionItem[] {
   const items: AttentionItem[] = [];
 
@@ -1531,6 +1599,49 @@ function buildAttention(
       type_label: d.typeLabel,
       due: d.expiresAt,
       days: d.days,
+    });
+  }
+
+  // 5c) AÇIK İŞ EMİRLERİ (081) — yalnız YÜKSEK ve KRİTİK.
+  //
+  //      Eşik bilinçli: her açık arıza panoya düşseydi Dikkat listesi bir iş
+  //      emri kuyruğuna dönerdi ve asıl işini (bugün neye bakmalıyım) yapamaz
+  //      hâle gelirdi. Normal/düşük öncelikli emirler /admin/is-emirleri
+  //      ekranında, kendi kuyruğunda durur.
+  for (const e of acikIsEmirleri) {
+    if (e.oncelik !== "yuksek" && e.oncelik !== "kritik") continue;
+    const days = Math.max(
+      0,
+      Math.round((today - new Date(e.createdAt).getTime()) / dayMs)
+    );
+    items.push({
+      kind: "workOrder",
+      // Kimlik emrin KENDİ id'si: erteleme (058) tek tek emre yazılabilmeli.
+      id: `${e.id}-workorder`,
+      plate: e.plaka,
+      aciklama: e.aciklama,
+      oncelik: e.oncelik,
+      kaynak: e.kaynak,
+      days,
+    });
+  }
+
+  // 5d) PERİYODİK BAKIM eşiği (081).
+  //
+  //      `bakimDurumlari` zaten yalnız uyarı penceresine giren ve geçmiş
+  //      planları işaretliyor; burada eleme `uyarida || gecti`.
+  for (const d of bakimDurum) {
+    if (!d.uyarida && !d.gecti) continue;
+    if (!d.eksen) continue; // ne km ne süre hesaplanabildi → uyarı uydurma
+    items.push({
+      kind: "maintenanceDue",
+      id: `${d.planId}-${d.vehicleId}-maintenance`,
+      plate: d.plaka,
+      tip: d.tip,
+      eksen: d.eksen,
+      kalanKm: d.eksen === "km" ? d.kalanKm : null,
+      kalanGun: d.eksen === "sure" ? d.kalanGun : null,
+      gecti: d.gecti,
     });
   }
 
@@ -1734,6 +1845,15 @@ function buildAttention(
         // vardiyası normaldir. manualStart ile aynı bantta — ikisi de "bugün
         // olağandışı bir şey oldu, haberin olsun" diyor.
         return 77;
+      case "workOrder":
+        // Aracı durduran bir kusur: muayene/sigorta bandıyla aynı ailede ama
+        // ondan SERT. Kritik olan yasal belgelerin de önüne geçer — dolmuş
+        // muayene bir risk, kopmuş fren hattı bir olaydır.
+        return i.oncelik === "kritik" ? -500 : 40 - i.days;
+      case "maintenanceDue":
+        // Gecikmiş bakım araç belgeleriyle aynı bantta (ikisi de aracı
+        // durdurur); yaklaşan bakım onların gerisinde, planlanabilir iş.
+        return i.gecti ? 20 : 60;
       case "penalty":
         return 100 - i.count; // unpaid fines: after overdue docs, before overruns
       case "overLimit":

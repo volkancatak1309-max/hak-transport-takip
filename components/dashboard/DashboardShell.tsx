@@ -16,6 +16,8 @@ import {
   Receipt,
   Hexagon,
   Siren,
+  Wrench,
+  CalendarCheck,
   BarChart3,
   FileBarChart,
   CalendarOff,
@@ -144,6 +146,9 @@ export function DashboardShell({
     ? [
         { href: "/admin", label: t("admin"), icon: LayoutDashboard },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
+        // İş emirleri şefe AÇIK (081): aracı servise o gönderiyor. Kapsam
+        // eylem katmanında ARAÇ ekseninde uygulanıyor, menü onu daraltmıyor.
+        { href: "/admin/is-emirleri", label: t("workOrders"), icon: Wrench },
         // İzinler: şef kendi filosunun izin TALEBİNİ açar (onay patronda).
         // /admin ve /admin/harita'dan sonra şefe açılan ÜÇÜNCÜ sayfa —
         // bilinçli; yazma sunucuda scope.isFleetWorker ile korunuyor.
@@ -161,6 +166,11 @@ export function DashboardShell({
         { href: "/admin", label: t("admin"), icon: LayoutDashboard },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
         { href: "/admin/araclar", label: t("vehicles"), icon: Truck },
+        // İŞ EMİRLERİ + BAKIM (081): Araçlar'ın hemen ardında, bilinçli.
+        // İkisi de ARAÇ ekseninde ve aracın "sorunlu mu / servise ne zaman"
+        // sorusunu yanıtlıyor; Alarmlar sürüş davranışı ekseni, ayrı aile.
+        { href: "/admin/is-emirleri", label: t("workOrders"), icon: Wrench },
+        { href: "/admin/bakim", label: t("maintenance"), icon: CalendarCheck },
         { href: "/admin/alarmlar", label: t("alarms"), icon: Siren },
         { href: "/admin/analiz", label: t("analytics"), icon: BarChart3 },
         { href: "/admin/raporlar", label: t("reports"), icon: FileBarChart },

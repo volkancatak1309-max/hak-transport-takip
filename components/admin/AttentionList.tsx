@@ -20,6 +20,7 @@ import {
   CircleParking,
   Pencil,
   PlayCircle,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -228,6 +229,42 @@ export function AttentionList({
           meta: formatDate(item.date, locale),
           overdue: false,
         };
+      // AÇIK İŞ EMRİ (081) — yalnız yüksek/kritik buraya düşer.
+      // `aciklama` kiracının/şoförün kendi metni: `t()` içinden GEÇMEZ.
+      case "workOrder":
+        return {
+          icon: Wrench,
+          text: t(
+            item.oncelik === "kritik" ? "dash.attn_wo_critical" : "dash.attn_wo",
+            { plate: item.plate, what: item.aciklama }
+          ),
+          meta:
+            item.days === 0
+              ? t("dash.attn_wo_today")
+              : t("dash.attn_wo_days", { days: item.days }),
+          // Kritik emir her zaman sert; yüksek öncelikli emir bir günden
+          // uzun süredir açıksa sertleşir — "bugün açıldı" henüz gecikme değil.
+          overdue: item.oncelik === "kritik" || item.days >= 1,
+        };
+      // PERİYODİK BAKIM (081). Tetikleyen eksen hangisiyse o basılır;
+      // `tip` kiracının verisi, çevrilmez.
+      case "maintenanceDue": {
+        const kalan =
+          item.eksen === "km" && item.kalanKm !== null
+            ? t("dash.attn_maint_km", { km: Math.abs(item.kalanKm) })
+            : item.kalanGun !== null
+              ? t("dash.attn_maint_days", { days: Math.abs(item.kalanGun) })
+              : "";
+        return {
+          icon: CalendarClock,
+          text: t(item.gecti ? "dash.attn_maint_over" : "dash.attn_maint", {
+            plate: item.plate,
+            type: item.tip,
+          }),
+          meta: item.gecti ? t("dash.attn_maint_late", { kalan }) : kalan,
+          overdue: item.gecti,
+        };
+      }
       case "penalty":
         return {
           icon: Receipt,

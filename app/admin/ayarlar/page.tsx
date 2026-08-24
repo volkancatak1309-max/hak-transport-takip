@@ -9,6 +9,8 @@ import { CostRatesForm } from "./CostRatesForm";
 import { ConsumptionRow, ConsumptionRowSkeleton } from "./ConsumptionRow";
 import { DocumentTypesSection } from "./DocumentTypesSection";
 import { listDocumentTypes } from "@/lib/documents-db";
+import { DvirMaddeleriSection } from "./DvirMaddeleriSection";
+import { listDvirMaddeleri } from "@/lib/dvir-db";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,8 @@ export default async function AyarlarPage() {
   // Belge türleri KÜÇÜK bir sözlük (kiracı başına birkaç satır) — Suspense'e
   // gerek yok, maliyet bloğunun aksine ağır bir sorgu değil.
   const { types: docTypes, tabloYok: docTabloYok } = await listDocumentTypes();
+  // Kontrol maddeleri de küçük bir sözlük (kiracı başına on-yirmi satır).
+  const { maddeler: dvirMaddeler, tabloYok: dvirTabloYok } = await listDvirMaddeleri(false);
 
   return (
     <DashboardShell
@@ -67,6 +71,7 @@ export default async function AyarlarPage() {
           }
         />
         <DocumentTypesSection types={docTypes} tabloYok={docTabloYok} />
+        <DvirMaddeleriSection maddeler={dvirMaddeler} tabloYok={dvirTabloYok} />
       </div>
     </DashboardShell>
   );

@@ -1003,6 +1003,17 @@ export function PanelClient({
         >
           {t("v2LinkHistory")}
         </Link>
+        {/* ARAÇ KONTROLÜ (081) — geçmişle aynı sessiz banttan giriliyor.
+            Vardiya başlatma akışının İÇİNE koymadık bilerek: kontrol formu
+            vardiyanın ön koşulu DEĞİL (kiracı isterse şart koşar, ürün
+            koşmaz) ve o akışa bir adım daha eklemek, günde iki kez yapılan
+            en kritik işlemi yavaşlatırdı. */}
+        <Link
+          href="/panel/kontrol"
+          className="inline-flex min-h-[44px] items-center rounded-full px-4 font-medium text-muted-foreground transition-colors hover:bg-surface-panel hover:text-foreground"
+        >
+          {t("v2LinkInspection")}
+        </Link>
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}

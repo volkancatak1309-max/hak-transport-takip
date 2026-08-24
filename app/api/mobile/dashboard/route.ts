@@ -450,6 +450,25 @@ type UyariKalemi = {
   baslatan?: string;
   /** Günün TOPLAM çalışma süresi (dk) — secondShift kalemi. */
   toplamDk?: number;
+  /**
+   * İŞ EMRİNİN METNİ (081) — kusurun ne olduğu.
+   *
+   * ⚠️ `belgeTuru` ile aynı kural: ÇEVRİLMEZ. Metin ya şoförün yazdığı arıza
+   * ya da kontrol formundaki maddenin kiracı etiketi + şoförün notudur.
+   */
+  aciklama?: string;
+  /** İş emri önceliği — mobilde renk/sıra için. */
+  oncelik?: "yuksek" | "kritik";
+  /** İş emrinin doğduğu yer: surucu | dvir | dtc | periyodik | elle. */
+  kaynak?: string;
+  /** Periyodik bakımın tipi (kiracı verisi, ÇEVRİLMEZ). */
+  bakimTipi?: string;
+  /** Bakımı tetikleyen eksen; yalnız o eksenin kalan değeri gönderilir. */
+  eksen?: "km" | "sure";
+  /** Bakıma kalan km (yalnız eksen='km'). */
+  kalanKm?: number;
+  /** Bakım eşiği geçildi mi. */
+  gecti?: boolean;
 };
 
 function uyariKalemi(a: AttentionItem): UyariKalemi {
@@ -554,6 +573,32 @@ function uyariKalemi(a: AttentionItem): UyariKalemi {
         adet: a.count,
         toplamDk: Math.round(a.totalMs / 60_000),
         an: a.started_at,
+      };
+    // İŞ EMRİ (081). `aciklama` şoförün/kontrol formunun kendi metni —
+    // çevrilmez, olduğu gibi taşınır (belgeTuru ile aynı gerekçe).
+    case "workOrder":
+      return {
+        tur: a.kind,
+        id: a.id,
+        plaka: a.plate,
+        aciklama: a.aciklama,
+        oncelik: a.oncelik,
+        kaynak: a.kaynak,
+        kalanGun: -a.days, // negatif = kaç gündür açık (belge kalemiyle aynı yön)
+      };
+    // PERİYODİK BAKIM (081). Yalnız TETİKLEYEN eksen gönderilir; diğeri hiç
+    // yazılmaz — iki eksen birden göndermek "8.000 km VEYA 6 ay" kuralını
+    // iki ayrı uyarı gibi gösterirdi.
+    case "maintenanceDue":
+      return {
+        tur: a.kind,
+        id: a.id,
+        plaka: a.plate,
+        bakimTipi: a.tip,
+        eksen: a.eksen,
+        ...(a.kalanKm !== null ? { kalanKm: a.kalanKm } : {}),
+        ...(a.kalanGun !== null ? { kalanGun: a.kalanGun } : {}),
+        gecti: a.gecti,
       };
   }
   // Yeni bir Dikkat türü eklenip buraya yazılmazsa DERLEME kırılır (`a` artık

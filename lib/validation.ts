@@ -246,27 +246,6 @@ export const breakToggleSchema = z.object({
   break_end: z.string().optional(),
 });
 
-export const assignmentStopSchema = z.object({
-  label: z.string().trim().min(1, "errStopLabel").max(60),
-  address: z.string().trim().min(1, "errStopAddress").max(200),
-});
-
-export const assignmentCategorySchema = z.enum([
-  "lieferung",
-  "abholung",
-  "kurier",
-  "verteilung",
-]);
-
-export const createAssignmentSchema = z.object({
-  worker_id: z.string().uuid(),
-  scheduled_at: isoDate,
-  category: assignmentCategorySchema,
-  stops: z.array(assignmentStopSchema).min(2, "errStops").max(10),
-  package_count: z.coerce.number().int().min(0).max(100000).optional().nullable(),
-  notes: z.string().trim().max(500).optional().nullable(),
-});
-
 // European decimals: accept "89,50" as well as "89.50".
 const euroNumber = z.preprocess((v) => {
   if (typeof v === "string") {

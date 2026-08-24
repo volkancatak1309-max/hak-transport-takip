@@ -17,12 +17,16 @@ export const dynamic = "force-dynamic";
  *   POST   /api/mobile/sefer/[id]/takip-linki            — yeni link üret
  *   DELETE /api/mobile/sefer/[id]/takip-linki?link=<id>  — linki iptal et
  *
- * ── NEDEN MOBİL UÇTA, PANELDE DEĞİL ───────────────────────────────────────
- * ÖLÇÜLDÜ (24.08.2026): `/admin/seferler` sayfası SEFER ekranı DEĞİL — eski
- * `assignments` (görev) ekranını render ediyor. Sefer sisteminin panelde
- * hiçbir yüzeyi yok; seferler yalnız `app/api/mobile/sefer/**` üzerinden
- * yönetiliyor. Link üretimi seferin yönetildiği yere konuldu; panele bir
- * sefer ekranı eklemek ayrı ve daha büyük bir iştir.
+ * ── NEDEN MOBİLDE DE VAR ──────────────────────────────────────────────────
+ * Bu uç yazıldığında (24.08.2026 öğleden önce) `/admin/seferler` sayfası SEFER
+ * ekranı DEĞİLDİ: eski `assignments` (görev) ekranını render ediyordu ve sefer
+ * sisteminin panelde hiçbir yüzeyi yoktu. Link üretimi bu yüzden seferin
+ * gerçekten yönetildiği tek yere, mobil uca konuldu.
+ *
+ * ⚠️ AYNI GÜN PANEL EKRANI DA GELDİ (`app/actions/seferler.ts`). İki yüzey
+ * ARTIK BİRLİKTE yaşıyor ve bu bilinçli: yönetici sahadayken telefondan,
+ * masasındayken panelden link üretebilmeli. İkisi de `lib/takip-db.ts`
+ * çağırıyor — kural tek yerde, yalnız kapı farklı (jeton ↔ çerez).
  *
  * ── KAPI: YALNIZ YÖNETİCİ ─────────────────────────────────────────────────
  * `requireMobileAdmin`. Şoför kendi seferinin linkini üretemez: link müşteriyle

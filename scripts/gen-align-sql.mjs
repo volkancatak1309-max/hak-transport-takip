@@ -123,6 +123,7 @@ begin
   raise notice 'Ön denetimler geçti — hizalama başlıyor.';
 end
 $on_denetim$;
+${tenant === "galzura-demo" ? UYARI_KILL_SWITCH : ""}
 
 -- ── KÖPRÜ KOLONLARI (migration DEĞİL) ──────────────────────────────────────
 -- İkisi de \`if not exists\`: zaten varsa hiçbir şey olmaz.
@@ -132,6 +133,31 @@ ${BRIDGE_TANK}
 ${BRIDGE_ARCHIVED}
 `;
 }
+
+/**
+ * 046'nın ELLE uygulandığı kiracıya özel UYARI — yalnız NOTICE, hiçbir şeyi
+ * değiştirmez ve hiçbir şeyi durdurmaz.
+ *
+ * Özgün migration, kurulduğu veritabanına HAK61'in gizli soru hash'ini yazıyor.
+ * Bu dosya o satırı yazmaz ama VAR OLANI da silmez — silmek, kiracının kendi
+ * belirlediği bir cevabı sessizce yok etmek olurdu. Doğru davranış: durumu
+ * söylemek ve kararı insana bırakmak.
+ */
+const UYARI_KILL_SWITCH = `
+-- ── UYARI: ÖLÜ ADAM ANAHTARININ SIRRI (046 elle uygulanmış) ────────────────
+do $ks$
+declare
+  n integer;
+begin
+  select count(*) into n from public.kill_switch_secret;
+  if n > 0 then
+    raise notice '⚠️ kill_switch_secret''te % satır var. 046 elle uygulandıysa bu HAK61''in gizli soru hash''i olabilir — o cevabı bilen biri BU kurulumda da anahtarı açabilir. Kendi hash''inizle değiştirmek için dosyanın sonundaki komuta bakın.', n;
+  else
+    raise notice 'kill_switch_secret boş — ölü adam anahtarı fail-closed (açılamaz).';
+  end if;
+end
+$ks$;
+`;
 
 function basSayfa(tenant, dosyalar, olcum) {
   return `-- ═══════════════════════════════════════════════════════════════════════════
@@ -173,7 +199,9 @@ ${olcum}--
 --  SONRASINDA
 --    select count(*) from information_schema.tables
 --     where table_schema='public' and table_type='BASE TABLE';
---    -- ${tenant === "galzura-demo" ? "48" : "47"} bekleniyor (${tenant === "galzura-demo" ? "47 + purge fonksiyonu tablosu yok, 054 yalnız fonksiyon" : "telegram_link_codes duruyorsa 48"})
+--    -- 48 bekleniyor: 47 (bugünkü şema) + telegram_link_codes.
+--    --    Telegram temizliğini de çalıştırdıysanız 47 olur (dosya sonundaki not).
+--    --    ${tenant === "galzura-demo" ? "Bu kiracıda ölçülen taban 35 → 35 + 13 = 48." : "Bu kiracıda ölçülen taban 26 → 26 + 22 = 48."}
 --    select code, name from public.fleets;          -- bordo, mavi
 --    select count(*) from public.document_types;    -- 0 (türleri panelden açarsınız)
 --
@@ -212,19 +240,37 @@ const OLCUM = {
 --  vehicles.fleet''in 5 satırının hepsi 'mavi' → 059''un FK''si sorunsuz kurulur.
 --  telegram_chat_id dolu 0 satır → Telegram kalıntısı kimseyi etkilemiyor.
 `,
-  "galzura-demo": `--  ⚠️ BU KİRACIDA ÖLÇÜM YAPILAMADI — service_role anahtarı Claude''da YOK
---  (Vercel''de Sensitive, kopyalanamıyor). Aşağıdaki liste Sendigo ölçümünden
---  ve kurulum tarihinden ÇIKARIM'dır, ÖLÇÜM DEĞİLDİR:
---    · galzura-demo 07.08.2026''da 001→043 kurulum dosyasıyla açıldı;
---      054 (demo telemetri temizliği) ayrıca uygulanmış OLABİLİR.
---    · Beklenen: ~+22 tablo, ~+13 kolon, +5 RPC. GERÇEK SAYI ÖLÇÜLMEDİ.
+  "galzura-demo": `--  BU KİRACIDA NE DEĞİŞECEK — TABLO LİSTESİ ÖLÇÜLDÜ (24.08.2026, canlı)
 --
---  ÖNCE ENVANTER ÇALIŞTIRIN: db/install/ENVANTER.sql — salt-okuma, 10 saniye.
---  Çıktısı bu dosyanın neyi ekleyeceğini kesinleştirir. Hizalama dosyası her
---  hâlükârda idempotenttir: zaten var olan hiçbir şeye dokunmaz.
+--  MEVCUT TABAN: 35 tablo. Bu, 043 kurulum dosyasının üstüne 045 · 046 · 047
+--  ve 064''ün ELLE uygulanmış olmasıyla birebir örtüşüyor — taban Docker''da
+--  yeniden kurulup canlı listeyle karşılaştırıldı: 35/35, sıfır fark.
+--  ⚠️ Sendigo''dan FARKLI bir taban: güvenlik katmanı (045/046/047) burada
+--  UYGULANMIŞ, \`zone_visits\` (064) VAR; buna karşılık \`action_snoozes\` ve
+--  \`fleets\` YOK. Yani "iki kiracı aynı yerde" varsayımı YANLIŞ olurdu.
+--
+--    · +13 TABLO: action_snoozes (058) · conversations + messages +
+--      message_receipts (071) · conversation_members (073) · document_types +
+--      worker_documents (078) · fleets (059) · fuel_price_reference (077) ·
+--      push_tokens (074) · seferler (066) · tenant_cost_rates (076) ·
+--      vehicle_fault_reports (056)
+--    · SİLİNEN SATIR: 0.  DÜŞÜRÜLEN TABLO/KOLON: 0.
+--
+--  🔴 KOLON ve RPC ÖLÇÜLMEDİ — elde yalnız TABLO listesi var. Bu yüzden
+--  "kaç kolon eklenecek" sayısı VERİLMEDİ; tahmin edilmedi. Dosya bu belirsizliği
+--  taşıyabilir: her adım \`if not exists\` ile yazılmıştır, zaten var olana
+--  dokunmaz. Kesin tablo için hizalamadan SONRA db/install/ENVANTER.sql
+--  çalıştırın — "hizalama gerekli mi" satırı HAYIR demeli.
+--
+--  ⚠️ 046 BU KİRACIDA ZATEN UYGULANMIŞ. Özgün 046, kurulduğu veritabanına
+--  HAK61''in gizli soru hash''ini de yazar. Bu dosya o satırı YAZMAZ ve mevcut
+--  satıra DOKUNMAZ — ama halihazırda oradaysa, HAK61''in cevabını bilen biri
+--  bu kurulumda da ölü adam anahtarını açabilir. Aşağıdaki ön denetim satır
+--  sayısını NOTICE olarak basar; çıktıda görürseniz kendi hash''inizle
+--  değiştirin (komut dosyanın sonunda).
 --
 --  ⚠️ DEMO''DA TELEMETRİ HACMİ YÜKSEK (günde ~50 bin satır). İndeks kuran
---  adımlar (049 · 053) burada Sendigo''dakinden uzun sürebilir; statement_timeout
+--  adımlar (049 · 053) Sendigo''dakinden uzun sürebilir; statement_timeout
 --  15 dakikaya çekildi. Yine de sakin bir saatte çalıştırın.
 `,
 };
@@ -296,7 +342,26 @@ commit;
 --     biçimi de tanıyor (lib/phone.ts phoneVariants), yani giriş bozulmuyor.
 --     Uygulamak isterseniz db/migrations/075_phone_trunk_zero.sql''i AYRI
 --     çalıştırın: içindeki DO bloğu çakışma varsa kendini durdurur.
-`;
+${
+  tenant === "galzura-demo"
+    ? `--
+--  3) ÖLÜ ADAM ANAHTARININ CEVABI DEĞİŞTİRİLMEDİ.
+--     046 bu kurulumda elle uygulandığı için \`kill_switch_secret\`te HAK61''in
+--     hash''i duruyor OLABİLİR (koşum başındaki NOTICE satır sayısını söyler).
+--     Bu dosya o satıra DOKUNMAZ: silmek, kiracının kendi belirlediği bir cevabı
+--     sessizce yok etmek olurdu. Kendi cevabınızı koymak için:
+--
+--       -- 1) Hash üret (düz metin hiçbir yere yazılmaz):
+--       --    node -e "console.log(require('bcryptjs').hashSync('CEVABINIZ', 10))"
+--       -- 2) Tek satırı değiştir:
+--       begin;
+--       update public.kill_switch_secret set answer_hash = '<yeni-hash>', updated_at = now();
+--       commit;
+--
+--     Satır hiç yoksa anahtar zaten AÇILAMAZ (fail-closed) — acele etmeyin.
+`
+    : ""
+}`;
 
   return { tenant: TENANT, sql, dosyalar, changes };
 }

@@ -57,7 +57,9 @@
 --  SONRASINDA
 --    select count(*) from information_schema.tables
 --     where table_schema='public' and table_type='BASE TABLE';
---    -- 47 bekleniyor (telegram_link_codes duruyorsa 48)
+--    -- 48 bekleniyor: 47 (bugünkü şema) + telegram_link_codes.
+--    --    Telegram temizliğini de çalıştırdıysanız 47 olur (dosya sonundaki not).
+--    --    Bu kiracıda ölçülen taban 26 → 26 + 22 = 48.
 --    select code, name from public.fleets;          -- bordo, mavi
 --    select count(*) from public.document_types;    -- 0 (türleri panelden açarsınız)
 --
@@ -145,6 +147,7 @@ begin
   raise notice 'Ön denetimler geçti — hizalama başlıyor.';
 end
 $on_denetim$;
+
 
 -- ── KÖPRÜ KOLONLARI (migration DEĞİL) ──────────────────────────────────────
 -- İkisi de `if not exists`: zaten varsa hiçbir şey olmaz.

@@ -31,15 +31,38 @@ Bu belge onları bugünkü şemaya çeken işi anlatır.
 > ve `shift_odometer_spans` RPC'leri canlıda VAR, `workers.token_version` kolonu VAR.
 > Yani "043'te kaldı" cümlesi Sendigo için tam doğru değildi.
 
-### galzura-demo — 🔴 ÖLÇÜLMEDİ
+### galzura-demo — TABLO LİSTESİ ÖLÇÜLDÜ (Volkan, 24.08.2026)
 
-Service key Claude'da **yok** (Vercel'de Sensitive, kopyalanamıyor) ve repoda da
-yok. `.env.sendigo` depoda duruyor, galzura'nınki hiç commit edilmemiş.
+Service key hâlâ Claude'da yok; ölçümü Volkan Supabase panelinden yaptı ve
+**canlı tablo listesini** verdi. Kolon ve RPC listesi **verilmedi**.
 
-**Bu yüzden galzura-demo için hiçbir sayı verilmedi.** Beklenen liste Sendigo'dan
-ÇIKARIM'dır. Kesinleştirmek için önce `db/install/ENVANTER.sql` çalıştırılmalı
-(salt okuma, ~10 sn) — çıktısı hangi tablo/kolon/RPC'nin eksik olduğunu satır
-satır söyler. Hizalama dosyası her hâlükârda idempotenttir: var olana dokunmaz.
+| Ne | Değer |
+|---|---|
+| Tablo | **35** (hedef 47) |
+| Taban | **043 + 045 + 046 + 047 + 064** — Docker'da yeniden kurularak doğrulandı: **35/35, sıfır fark** |
+| Eksik tablo | **13** |
+| Kolon / RPC | 🔴 **ÖLÇÜLMEDİ** — sayı verilmedi, tahmin edilmedi |
+
+**Eksik 13 tablo:** `action_snoozes` (058) · `conversations` + `messages` +
+`message_receipts` (071) · `conversation_members` (073) · `document_types` +
+`worker_documents` (078) · `fleets` (059) · `fuel_price_reference` (077) ·
+`push_tokens` (074) · `seferler` (066) · `tenant_cost_rates` (076) ·
+`vehicle_fault_reports` (056).
+
+> ⚠️ **Sendigo'dan FARKLI bir taban.** Güvenlik katmanı (045/046/047) demo'da
+> UYGULANMIŞ ve `zone_visits` (064) VAR; buna karşılık `action_snoozes` ve
+> `fleets` YOK. Sendigo'da ise 044/050/052 var, güvenlik katmanı yok.
+> "İki kiracı aynı yerde" varsayımı yanlış olurdu — bu yüzden iki ayrı dosya.
+
+> 🔴 **046 elle uygulandığı için `kill_switch_secret`te HAK61'in gizli soru
+> hash'i duruyor olabilir.** Özgün migration o satırı yazar; hizalama dosyası
+> yazmaz ve mevcut satıra dokunmaz, ama koşum başında satır sayısını NOTICE
+> olarak basar. Provada birebir bu durum kuruldu ve satırın **değişmediği**
+> md5 ile doğrulandı. Kendi hash'inizle değiştirme komutu dosyanın sonunda.
+
+> Kolon/RPC ölçülmediği için "kaç kolon eklenecek" sayısı verilmedi. Dosya bu
+> belirsizliği taşıyabiliyor: her adım `if not exists`. Hizalamadan sonra
+> `db/install/ENVANTER.sql` çalıştırılırsa kesin tablo çıkar.
 
 ---
 
@@ -144,6 +167,34 @@ Provada doğrulandı: iki şoför `mavi` aldı, yönetici ve test hesabı NULL k
 | İkinci kez çalıştırma | çıkış 0, şema değişmedi (**idempotent**) |
 | galzura dosyası, DÜZ 043 tabanında | çıkış 0 → 48 tablo, hedefe göre 0 eksik, artı `purge_old_telemetry` |
 | galzura dosyası ikinci koşum | çıkış 0 |
+
+### galzura-demo, ÖLÇÜLEN taban üzerinde (24.08.2026 akşamı)
+
+| Prova | Sonuç |
+|---|---|
+| Taban Docker'da yeniden kuruldu (043 + 045 + 046 + 047 + 064) | **35 tablo — canlı listeyle BİREBİR**, sıfır fark |
+| Tohum veri (4 personel · 3 araç · 1 vardiya · 2 bölge · **1 bölge ziyareti** · 800 telemetri · 1 oturum · 1 kill_switch_secret satırı) | yazıldı |
+| Hizalama uygulandı | çıkış 0; `NOTICE: ⚠️ kill_switch_secret'te 1 satır var…` beklendiği gibi bastı |
+| Mevcut veri | satır sayıları **ve md5 özetleri birebir aynı** — `kill_switch_secret` hash'i dahil |
+| Sonuç ↔ sıfırdan 078 | **0 eksik tablo · 0 eksik kolon · 0 eksik fonksiyon** (48 tablo · 503 kolon · 37 fonksiyon) |
+| Fazla kalanlar | yalnız `telegram_link_codes` ve demo'ya ait `purge_old_telemetry` |
+| Geri dolgu | `workers.fleet`: araç atanmış şoför `mavi`, diğerleri NULL · `geofences.category`: `depot`→depot, `customer`→customer |
+| İkinci koşum | çıkış 0, 48 tablo / 503 kolon değişmedi (**idempotent**) |
+| Hizalama sonrası ENVANTER | "**HAYIR — bu kurulum 078 hizasında**", 0 eksik tablo/kolon/RPC |
+
+### Ön denetimin NEGATİF sınaması
+
+`vehicles.fleet = 'yesil'` yazılıp hizalama çalıştırıldı →
+`ERROR: DURDURULDU (059): vehicles.fleet'te tanımsız filo kodu var: yesil…`
+çıkışı **3**, tablo sayısı **35 → 35** (hiçbir şey uygulanmadı). Satır `mavi`
+yapılıp tekrar çalıştırıldığında çıkış **0**, 48 tablo.
+
+> İlk denemede bozuk satır **yazılamadı**: 023'ün ve 064'ün CHECK kısıtları
+> girişi zaten reddetti, yani sınama boşa döndü ve ön denetim hiç tetiklenmedi.
+> Kısıtı düşürüp tekrar denendi. **Buradan çıkan gerçek:** 023/064 uygulanmış
+> her veritabanında 059/064 riski fiilen teoriktir — kötü değer zaten
+> yazılamıyor. Ön denetimler yine de duruyor, çünkü kısıtın hiç kurulmadığı ya
+> da elle düşürüldüğü bir kurulum bunu garanti etmez.
 
 ---
 

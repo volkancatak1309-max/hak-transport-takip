@@ -3,12 +3,13 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { ChevronLeft, ChevronRight, Package, Truck, MapPin } from "lucide-react";
+import { ChevronLeft, ChevronRight, Package, Truck, MapPin, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusChip, EmptyState, type ChipTone } from "@/components/ui-v2";
 import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { SoforSeferi } from "@/app/actions/seferler";
+import { TeslimatKanitiDialog } from "./TeslimatKanitiDialog";
 
 /**
  * ŞOFÖRÜN SEFER TAKVİMİ — /panel/seferler.
@@ -58,6 +59,7 @@ export function SeferTakvimiClient({
   const [bekliyor, basla] = useTransition();
 
   const [yil, aySayi] = ay.split("-").map(Number);
+  const [kanitSeferi, setKanitSeferi] = useState<string | null>(null);
   const [secili, setSecili] = useState(
     seferler.some((s) => s.tarih === bugun) ? bugun : (seferler[0]?.tarih ?? bugun)
   );
@@ -197,9 +199,47 @@ export function SeferTakvimiClient({
                 </span>
               </div>
               {s.notlar && <p className="text-sm break-words">{s.notlar}</p>}
+
+              {/*
+                TESLİMAT KANITI — yalnız AÇIK seferde bırakılabilir. Kapanmış
+                bir sefere sonradan kanıt eklemek, olaydan sonra delil üretmek
+                olurdu (kural sunucuda da var: app/actions/teslimat.ts).
+              */}
+              {s.durum !== "tamamlandi" && s.durum !== "iptal" && (
+                <div className="flex items-center gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9"
+                    onClick={() => setKanitSeferi(s.id)}
+                  >
+                    <ShieldCheck className="size-4" />
+                    {t("kanit_birak")}
+                  </Button>
+                  {s.kanitSayisi > 0 && (
+                    <StatusChip tone="info">{t("kanit_var", { n: s.kanitSayisi })}</StatusChip>
+                  )}
+                </div>
+              )}
+              {(s.durum === "tamamlandi" || s.durum === "iptal") && s.kanitSayisi > 0 && (
+                <StatusChip tone="neutral">{t("kanit_var", { n: s.kanitSayisi })}</StatusChip>
+              )}
             </li>
           ))}
         </ul>
+      )}
+
+      {kanitSeferi && (
+        <TeslimatKanitiDialog
+          seferId={kanitSeferi}
+          acik
+          kapat={() => setKanitSeferi(null)}
+          tamamlandi={() => {
+            setKanitSeferi(null);
+            basla(() => router.refresh());
+          }}
+        />
       )}
     </div>
   );

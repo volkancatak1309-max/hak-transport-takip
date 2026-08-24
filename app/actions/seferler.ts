@@ -285,6 +285,8 @@ export type SoforSeferi = {
   yolda_at: string | null;
   vardi_at: string | null;
   tamamlandi_at: string | null;
+  /** Bu sefere bırakılmış kanıt sayısı (080 yoksa 0). */
+  kanitSayisi: number;
 };
 
 /**
@@ -332,6 +334,23 @@ export async function getSoforSeferleri(
   const plaka = new Map(((v.data ?? []) as { id: string; plate: string }[]).map((r) => [r.id, r.plate]));
   const bolge = new Map(((z.data ?? []) as { id: string; name: string }[]).map((r) => [r.id, r.name]));
 
+  /**
+   * KANIT SAYISI — tek sorguda, sefer başına değil.
+   *
+   * 080 uygulanmamışsa sorgu hata döner ve sayaç 0'da kalır: takvim çalışmaya
+   * devam eder, yalnız kanıt rozeti çıkmaz (kademeli düşüş deseni).
+   */
+  const kanitSayaci = new Map<string, number>();
+  if (satirlar.length > 0) {
+    const { data: kRows } = await supabaseAdmin
+      .from("teslimatlar")
+      .select("sefer_id")
+      .in("sefer_id", satirlar.map((s) => s.id));
+    for (const k of (kRows ?? []) as { sefer_id: string }[]) {
+      kanitSayaci.set(k.sefer_id, (kanitSayaci.get(k.sefer_id) ?? 0) + 1);
+    }
+  }
+
   return {
     ay: gecerli,
     seferler: satirlar.map((s) => ({
@@ -347,6 +366,7 @@ export async function getSoforSeferleri(
       yolda_at: s.yolda_at,
       vardi_at: s.vardi_at,
       tamamlandi_at: s.tamamlandi_at,
+      kanitSayisi: kanitSayaci.get(s.id) ?? 0,
     })),
   };
 }

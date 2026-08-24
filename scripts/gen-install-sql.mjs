@@ -78,6 +78,7 @@ const ORDER = [
   "073_messaging_groups.sql", "074_push_tokens.sql",
   "076_tenant_cost_rates.sql", "077_fuel_price_reference.sql",
   "078_worker_documents.sql", "079_sefer_takip_linkleri.sql",
+  "080_teslimat_kaniti.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

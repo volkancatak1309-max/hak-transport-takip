@@ -35,7 +35,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PageHeader, EmptyState, StatusChip, type ChipTone } from "@/components/ui-v2";
-import { formatDate, formatTime } from "@/lib/format";
+import { formatDate, formatTime, formatDateTime } from "@/lib/format";
 import {
   seferOlustur,
   seferIptalEt,
@@ -47,6 +47,8 @@ import {
   type SeferSatir,
   type TakipLinkGorunum,
 } from "@/app/actions/seferler";
+import { getSeferTeslimatlari, teslimatIptalEt, type KanitGorunum } from "@/app/actions/teslimat";
+import { ImzaGoster } from "@/components/teslimat/ImzaPad";
 
 /**
  * GÜNÜN SEFERLERİ — yönetici/şef ekranı.
@@ -534,6 +536,8 @@ function SeferDetayi({
             )}
           </div>
 
+          <TeslimatKaniti seferId={sefer.id} />
+
           {acik && (
             <Button variant="outline" onClick={seferIptal} disabled={calisiyor} className="w-full">
               {calisiyor ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}
@@ -543,5 +547,138 @@ function SeferDetayi({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ── TESLİMAT KANITI (ePOD) ────────────────────────────────────────────────
+
+/**
+ * Seferin teslimat kanıtları — yönetici görünümü.
+ *
+ * ═══ NEDEN İSTEK ÜZERİNE YÜKLENİYOR ═══
+ *
+ * Kanıt okuması fotoğraflar için İMZALI URL üretiyor (Storage'a ayrı bir
+ * çağrı). Sefer listesindeki her satır için peşinen yapmak, hiç açılmayacak
+ * onlarca kanıt için imza üretmek olurdu. Detay açılınca bir kez yükleniyor.
+ *
+ * ═══ İPTAL — SİLME DEĞİL ═══
+ *
+ * Yanlış bir kanıt kayıttan çıkarılmaz, SEBEBİYLE geçersiz ilan edilir.
+ * Veritabanı da aynı şeyi söylüyor: 080'deki tetikleyici kanıt satırının
+ * güncellenmesine yalnız iptal alanları için izin veriyor.
+ */
+function TeslimatKaniti({ seferId }: { seferId: string }) {
+  const t = useTranslations("teslimat");
+  const [kanitlar, setKanitlar] = useState<KanitGorunum[] | null>(null);
+  const [tabloYok, setTabloYok] = useState(false);
+  const [calisiyor, setCalisiyor] = useState(false);
+
+  async function yukle() {
+    setCalisiyor(true);
+    const r = await getSeferTeslimatlari(seferId);
+    setKanitlar(r.kanitlar);
+    setTabloYok(r.tabloYok);
+    setCalisiyor(false);
+  }
+
+  async function iptal(id: string) {
+    const sebep = window.prompt(t("iptal_sebep_sor"));
+    if (!sebep || sebep.trim().length < 3) return;
+    setCalisiyor(true);
+    const r = await teslimatIptalEt(id, sebep);
+    setCalisiyor(false);
+    if (r.ok) {
+      toast.success(t("iptal_edildi"));
+      await yukle();
+    } else toast.error(t("iptal_hata"));
+  }
+
+  return (
+    <div className="rounded-xl border border-border p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-medium">{t("baslik")}</span>
+        {kanitlar === null && (
+          <Button size="sm" variant="ghost" onClick={yukle} disabled={calisiyor} className="h-7 px-2 text-xs">
+            {calisiyor ? <Loader2 className="size-3.5 animate-spin" /> : null}
+            {t("goster")}
+          </Button>
+        )}
+      </div>
+
+      {tabloYok && <p className="text-xs text-muted-foreground">{t("kapali")}</p>}
+
+      {kanitlar !== null && kanitlar.length === 0 && !tabloYok && (
+        <p className="text-xs text-muted-foreground">{t("kanit_yok")}</p>
+      )}
+
+      {kanitlar?.map((k) => (
+        <div key={k.id} className="space-y-2 border-t border-border pt-2 first:border-0 first:pt-0">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="nums font-medium">{formatDateTime(k.teslimAt)}</span>
+            {k.iptalAt ? (
+              <StatusChip tone="critical">{t("iptalli")}</StatusChip>
+            ) : (
+              <StatusChip tone="info">{t("gecerli")}</StatusChip>
+            )}
+            {k.latitude != null && k.longitude != null && (
+              <a
+                href={`https://www.openstreetmap.org/?mlat=${k.latitude}&mlon=${k.longitude}#map=17/${k.latitude}/${k.longitude}`}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="nums inline-flex items-center gap-1 text-muted-foreground underline-offset-2 hover:underline"
+              >
+                <MapPin className="size-3" />
+                {k.latitude.toFixed(4)}, {k.longitude.toFixed(4)}
+                {k.dogrulukM != null ? ` ±${Math.round(k.dogrulukM)} m` : ""}
+              </a>
+            )}
+          </div>
+
+          {k.iptalSebep && (
+            <p className="text-xs text-status-critical-text">{t("iptal_sebebi", { sebep: k.iptalSebep })}</p>
+          )}
+          {k.aliciAd && <p className="text-sm">{t("alici_satir", { ad: k.aliciAd })}</p>}
+          {k.notlar && <p className="text-sm break-words text-muted-foreground">{k.notlar}</p>}
+
+          {k.imzaSvg && (
+            <div className="rounded-lg border border-border bg-surface-2 p-2">
+              <ImzaGoster d={k.imzaSvg} className="h-20 w-full text-foreground" />
+            </div>
+          )}
+
+          {k.fotograflar.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {k.fotograflar.map((f, i) =>
+                f.url ? (
+                  <a
+                    key={f.id}
+                    href={f.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="block size-16 overflow-hidden rounded-lg border border-border"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- imzalı URL, Next optimizasyonu özel kovaya erişemez */}
+                    <img src={f.url} alt={t("foto_no", { n: i + 1 })} className="size-full object-cover" />
+                  </a>
+                ) : null
+              )}
+            </div>
+          )}
+
+          {!k.iptalAt && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => iptal(k.id)}
+              disabled={calisiyor}
+              className="h-7 px-2 text-xs text-status-critical-text"
+            >
+              <Ban className="size-3.5" />
+              {t("iptal_et")}
+            </Button>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }

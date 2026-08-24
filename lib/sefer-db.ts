@@ -115,6 +115,33 @@ export async function listSeferByDay(
 }
 
 /**
+ * TARİH ARALIĞINDA seferler — takvim görünümü için.
+ *
+ * `listSeferByDay`ın ikizi ama GÜN yerine ARALIK alıyor: şoför paneli bir ayı
+ * birden gösteriyor ve otuz ayrı sorgu atmak (gün başına bir) aynı veriyi otuz
+ * kez istemek olurdu.
+ *
+ * ⚠️ `workerId` ZORUNLU değil ama şoför yüzeyinde HER ZAMAN verilir — çağıran
+ * kendi kapısını kendisi kuruyor (dosya başlığındaki kural). Boş bırakmak
+ * "herkesin seferleri" demektir ve o yalnız yönetim yüzeyinde meşrudur.
+ */
+export async function listSeferByRange(
+  baslangic: string,
+  bitis: string,
+  workerId?: string
+): Promise<SeferRow[]> {
+  let q = supabaseAdmin
+    .from("seferler")
+    .select(COLS)
+    .gte("tarih", baslangic)
+    .lte("tarih", bitis);
+  if (workerId) q = q.eq("worker_id", workerId);
+  const { data, error } = await q.order("tarih", { ascending: true }).order("atandi_at");
+  if (error) throw new Error(`sefer_range:${error.code}:${error.message}`);
+  return (data ?? []) as unknown as SeferRow[];
+}
+
+/**
  * İŞ KURALI 1 — aynı şoföre aynı gün İKİNCİ AÇIK sefer açılamaz.
  *
  * Neden sunucuda ve neden DB kısıtı değil: kural "açık olanlar arasında tek"

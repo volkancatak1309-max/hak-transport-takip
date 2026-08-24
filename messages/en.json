@@ -1955,6 +1955,9 @@
     "link_hata_eksik_alan": "Select a vehicle and destination zone first",
     "link_hata_hata": "Link could not be created",
     "seferi_iptal_et": "Cancel trip",
-    "iptal_edildi": "Trip cancelled"
+    "iptal_edildi": "Trip cancelled",
+    "onceki_ay": "Previous month",
+    "sonraki_ay": "Next month",
+    "sofor_bos_gun": "You have no trip on this day"
   }
 }

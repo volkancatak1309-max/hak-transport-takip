@@ -1955,6 +1955,9 @@
     "link_hata_eksik_alan": "Wählen Sie zuerst Fahrzeug und Zielzone",
     "link_hata_hata": "Link konnte nicht erzeugt werden",
     "seferi_iptal_et": "Fahrt stornieren",
-    "iptal_edildi": "Fahrt storniert"
+    "iptal_edildi": "Fahrt storniert",
+    "onceki_ay": "Voriger Monat",
+    "sonraki_ay": "Nächster Monat",
+    "sofor_bos_gun": "An diesem Tag haben Sie keine Fahrt"
   }
 }

@@ -1955,6 +1955,9 @@
     "link_hata_eksik_alan": "Önce araç ve hedef bölge seçin",
     "link_hata_hata": "Link üretilemedi",
     "seferi_iptal_et": "Seferi iptal et",
-    "iptal_edildi": "Sefer iptal edildi"
+    "iptal_edildi": "Sefer iptal edildi",
+    "onceki_ay": "Önceki ay",
+    "sonraki_ay": "Sonraki ay",
+    "sofor_bos_gun": "Bu günde seferiniz yok"
   }
 }

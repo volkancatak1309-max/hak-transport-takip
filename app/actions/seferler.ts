@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requireFleetView, effectiveViewerId } from "@/lib/session";
+import { requireFleetView, requireWorker, effectiveViewerId } from "@/lib/session";
 import { getFleetScope, UNRESTRICTED, type FleetScope } from "@/lib/fleet-scope";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
@@ -10,6 +10,7 @@ import { getOwnerScope, withoutOwner } from "@/lib/owner-scope";
 import { viennaDayKey, startOfDayViennaFromYmd } from "@/lib/format";
 import {
   listSeferByDay,
+  listSeferByRange,
   insertSefer,
   iptalSefer,
   acikSeferVarMi,
@@ -267,6 +268,87 @@ export async function seferIptalEt(id: string): Promise<SeferSonuc> {
   await audit(session.worker_id ?? null, "delete", `sefer:${id}`);
   revalidatePath("/admin/seferler");
   return { ok: true, id };
+}
+
+// ── ŞOFÖR YÜZEYİ ──────────────────────────────────────────────────────────
+
+export type SoforSeferi = {
+  id: string;
+  tarih: string;
+  durum: SeferRow["durum"];
+  arac_plaka: string | null;
+  bolge_ad: string | null;
+  paket_hedef: number | null;
+  paket_gerceklesen: number | null;
+  notlar: string | null;
+  kabul_at: string | null;
+  yolda_at: string | null;
+  vardi_at: string | null;
+  tamamlandi_at: string | null;
+};
+
+/**
+ * ŞOFÖRÜN KENDİ SEFERLERİ — /panel/seferler.
+ *
+ * ═══ NEDEN AYRI FONKSİYON, getSeferGunu'ya BAYRAK DEĞİL ═══
+ *
+ * İkisinin KAPISI farklı: yönetim yüzeyi `requireFleetView`, şoför yüzeyi
+ * `requireWorker`. Aynı fonksiyona "mine" bayrağı koymak, iki yetki modelini
+ * tek gövdede yaşatmak olurdu — bayrağı geçmeyi unutan bir çağrı, şoföre
+ * herkesin seferini gösterirdi. Ayrı fonksiyon, ayrı kapı.
+ *
+ * ═══ NEDEN DÖNEN ALANLAR DAR ═══
+ *
+ * Şoför kendi seferini görüyor; `worker_id`, `created_by` ve takip linkleri
+ * BURADAN ÇIKMAZ. Linkler yönetim kararıdır (kim müşteriye ne gönderdi) ve
+ * şoförün ekranında işi yok.
+ */
+export async function getSoforSeferleri(
+  ay?: string
+): Promise<{ ay: string; seferler: SoforSeferi[] }> {
+  const session = await requireWorker();
+  const workerId = session.worker_id!;
+
+  // Ay penceresi: "YYYY-MM" → ayın ilk ve son günü.
+  const simdi = new Date();
+  const gecerli = ay && /^\d{4}-\d{2}$/.test(ay) ? ay : viennaDayKey(simdi).slice(0, 7);
+  const [yil, aySay] = gecerli.split("-").map(Number);
+  const ilk = `${gecerli}-01`;
+  const sonGun = new Date(Date.UTC(yil, aySay, 0)).getUTCDate();
+  const son = `${gecerli}-${String(sonGun).padStart(2, "0")}`;
+
+  const satirlar = await listSeferByRange(ilk, son, workerId);
+
+  const aracIds = [...new Set(satirlar.map((s) => s.vehicle_id).filter(Boolean))] as string[];
+  const bolgeIds = [...new Set(satirlar.map((s) => s.zone_id).filter(Boolean))] as string[];
+  const [v, z] = await Promise.all([
+    aracIds.length
+      ? supabaseAdmin.from("vehicles").select("id, plate").in("id", aracIds)
+      : Promise.resolve({ data: [] }),
+    bolgeIds.length
+      ? supabaseAdmin.from("geofences").select("id, name").in("id", bolgeIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const plaka = new Map(((v.data ?? []) as { id: string; plate: string }[]).map((r) => [r.id, r.plate]));
+  const bolge = new Map(((z.data ?? []) as { id: string; name: string }[]).map((r) => [r.id, r.name]));
+
+  return {
+    ay: gecerli,
+    seferler: satirlar.map((s) => ({
+      id: s.id,
+      tarih: s.tarih,
+      durum: s.durum,
+      arac_plaka: s.vehicle_id ? (plaka.get(s.vehicle_id) ?? "—") : null,
+      bolge_ad: s.zone_id ? (bolge.get(s.zone_id) ?? "—") : null,
+      paket_hedef: s.paket_hedef,
+      paket_gerceklesen: s.paket_gerceklesen,
+      notlar: s.notlar,
+      kabul_at: s.kabul_at,
+      yolda_at: s.yolda_at,
+      vardi_at: s.vardi_at,
+      tamamlandi_at: s.tamamlandi_at,
+    })),
+  };
 }
 
 // ── TAKİP LİNKLERİ ────────────────────────────────────────────────────────

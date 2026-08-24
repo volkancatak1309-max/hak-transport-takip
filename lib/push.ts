@@ -271,6 +271,74 @@ export async function mesajBildir(g: BildirimGirdisi): Promise<void> {
   }
 }
 
+/**
+ * BELGE UYARISI BİLDİRİMİ (migration 078) — şoföre VE yönetim tarafına.
+ *
+ * ── NEDEN ÜÇÜNCÜ BİR GİRİŞ NOKTASI ────────────────────────────────────────
+ * `mesajBildir` ve `duyuruBildir` MESAJ şeklinde: ikisi de `konusmaId` ve
+ * `adres` istiyor çünkü mobil dokunuşta bir sohbet açıyor. Belge uyarısının
+ * arkasında konuşma YOK. O alanları uydurup var olmayan bir sohbete
+ * yönlendirmek, bildirimi dokunulunca hiçbir şey yapmayan bir şeye çevirirdi.
+ *
+ * ── ALICI: KİŞİ + YÖNETİM ─────────────────────────────────────────────────
+ * Şoförün kendisi (belgesini o yenileyecek) VE yönetim tarafı (planlamayı o
+ * yapacak). `yonetimTarafi` yeniden kullanılıyor: patronlar + O ŞOFÖRÜN
+ * filosundaki şefler. İkinci bir alıcı kuralı yazmak, bildirim yüzeyiyle
+ * yetki yüzeyini ayrıştırırdı — kapsam dışı bir şef, uygulamada göremediği
+ * bir kişinin belgesini kilit ekranında okurdu.
+ *
+ * ── `adres` YERİNE `tur: "belge"` ─────────────────────────────────────────
+ * Mobil bugün bir belge ekranı BİLMİYOR; bildirim dokunulunca uygulama açılır,
+ * derin bağlantı yok. Veri yükünde tür ve şoför kimliği taşınıyor ki mobil
+ * tarafa ekran eklendiği gün SUNUCU DEĞİŞMEDEN bağlanabilsin.
+ *
+ * ── KANAL ─────────────────────────────────────────────────────────────────
+ * Mevcut "mesajlar" kanalı kullanılıyor. Ayrı bir kanal açmak mobil tarafta
+ * `app.json` değişikliği ve sürüm çıkmayı gerektirirdi; kanal adı iki tarafta
+ * AYNI olmak zorunda (bkz. KANAL sabiti). Kanal ayrımı mobil sürümle birlikte
+ * gelecek bir iş.
+ */
+export async function belgeBildir(g: {
+  soforId: string;
+  soforAd: string;
+  /** Kiracının tanımladığı belge etiketi — ÇEVRİLMEZ. */
+  belgeTuru: string;
+  /** Bitişe kalan gün; negatif = süresi doldu. */
+  kalanGun: number;
+  /** ISO gün (YYYY-MM-DD). */
+  sonTarih: string;
+}): Promise<void> {
+  try {
+    const yonetim = await yonetimTarafi(g.soforId);
+    // Şoförün kendisi de alıcı: belgeyi o yenileyecek. `yonetimTarafi` onu
+    // bilerek dışarıda bırakıyor (kendi mesajını kendine bildirmemek için),
+    // burada AÇIKÇA ekleniyor.
+    const alicilar = [...new Set([g.soforId, ...yonetim])];
+    const jetonlar = await jetonlariGetir(alicilar);
+    if (jetonlar.length === 0) return;
+
+    const doldu = g.kalanGun < 0;
+    const baslik = doldu ? `${g.belgeTuru} süresi doldu` : `${g.belgeTuru} bitiyor`;
+    const govde = doldu
+      ? `${g.soforAd} — ${g.sonTarih} tarihinde doldu (${Math.abs(g.kalanGun)} gün geçti)`
+      : `${g.soforAd} — ${g.sonTarih} (${g.kalanGun} gün kaldı)`;
+
+    await gonder(
+      jetonlar.map(({ token }) => ({
+        to: token,
+        title: baslik,
+        body: govde,
+        data: { tur: "belge", soforId: g.soforId, sonTarih: g.sonTarih, kalanGun: g.kalanGun },
+        sound: "default" as const,
+        channelId: KANAL,
+        priority: "high" as const,
+      }))
+    );
+  } catch {
+    // Bildirim yolu ASLA çağıranı düşürmez (modül başlığındaki gerekçe).
+  }
+}
+
 export type DuyuruHedefi = { soforId: string; konusmaId: string };
 
 /**

@@ -7,6 +7,8 @@ import { resolveCostRates } from "@/lib/cost-rates-db";
 import { audit } from "@/lib/security-log";
 import { CostRatesForm } from "./CostRatesForm";
 import { ConsumptionRow, ConsumptionRowSkeleton } from "./ConsumptionRow";
+import { DocumentTypesSection } from "./DocumentTypesSection";
+import { listDocumentTypes } from "@/lib/documents-db";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +38,9 @@ export default async function AyarlarPage() {
   // Buradaki `null`, YALNIZ bu çağrının lPer100 alanını etkiler ve o alan
   // forma HİÇ geçmiyor — tüketim satırı kendi çözümünü kendi yapıyor.
   const cozum = await resolveCostRates(null);
+  // Belge türleri KÜÇÜK bir sözlük (kiracı başına birkaç satır) — Suspense'e
+  // gerek yok, maliyet bloğunun aksine ağır bir sorgu değil.
+  const { types: docTypes, tabloYok: docTabloYok } = await listDocumentTypes();
 
   return (
     <DashboardShell
@@ -61,6 +66,7 @@ export default async function AyarlarPage() {
             </Suspense>
           }
         />
+        <DocumentTypesSection types={docTypes} tabloYok={docTabloYok} />
       </div>
     </DashboardShell>
   );

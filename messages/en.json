@@ -1266,7 +1266,9 @@
       "attn_over_limit": "{name} — exceeded the daily limit of {cap} hours",
       "attn_over_limit_night": "{name} — night work, exceeded the {cap}-hour limit",
       "attn_break45": "{name} — {required} min break required",
-      "attn_break45_meta": "{worked} · break {min} min"
+      "attn_break45_meta": "{worked} · break {min} min",
+      "attn_doc": "{name} — {doc} expiring · {date}",
+      "attn_doc_expired": "{name} — {doc} EXPIRED · {date}"
     },
     "editWorker": "Edit Employee",
     "workerUpdated": "Employee updated",
@@ -1363,7 +1365,21 @@
     "emergencyTitle": "Emergency contact",
     "emergencyName": "Name",
     "emergencyRelation": "Relationship",
-    "emergencyPhone": "Phone"
+    "emergencyPhone": "Phone",
+    "documents": "Documents",
+    "docAdd": "Add document",
+    "docEmpty": "No documents recorded.",
+    "docNoTypes": "First define a type under Settings › Document types.",
+    "docType": "Document type",
+    "docExpiry": "Expires on",
+    "docNumber": "Document no.",
+    "docNote": "Note",
+    "docSaved": "Document saved.",
+    "docDeleted": "Document deleted.",
+    "docDelete": "Delete document",
+    "docExpired": "{days} days overdue",
+    "docExpiring": "in {days} days",
+    "docValid": "{days} days"
   },
   "manualStart": {
     "title": "Start Shift",
@@ -1833,6 +1849,25 @@
     "unit_hour": "h",
     "unit_vehicle_day": "vehicle-day",
     "source_link": "view source",
-    "rate_l100_loading": "Measuring fleet consumption…"
+    "rate_l100_loading": "Measuring fleet consumption…",
+    "doc_types_title": "Document types",
+    "doc_types_desc": "Driver documents tracked in your fleet. You define the types — the product does not impose a list, because every country's documents differ.",
+    "doc_types_empty": "No document type defined yet. No document warnings are produced until you add one.",
+    "doc_types_license_note": "The driving licence is tracked on its own axis (the \"Licence expiry\" field on the staff record). Creating a type called \"Licence\" here would track the same document twice and produce two items in the attention list.",
+    "doc_type_add": "Add document type",
+    "doc_type_saved": "Document type saved.",
+    "doc_type_duplicate": "That code is already defined.",
+    "doc_type_inactive": "inactive",
+    "doc_type_warn": "warn {days} days ahead",
+    "doc_field_label": "Display name",
+    "doc_field_label_ph": "e.g. CPC certificate",
+    "doc_field_code": "Code",
+    "doc_field_code_ph": "e.g. cpc",
+    "doc_field_code_hint": "Letters, digits, hyphen. Case is ignored.",
+    "doc_field_warn": "Warning threshold (days)",
+    "doc_field_warn_hint": "This many days before expiry it appears in the attention list and a notification is sent.",
+    "doc_field_requires_no": "Document has a number",
+    "doc_migration_needed": "Without migration 078 (document_types / worker_documents) document tracking cannot be used.",
+    "cancel": "Cancel"
   }
 }

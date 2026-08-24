@@ -6,6 +6,7 @@ import {
   kmDiff,
 } from "@/lib/format";
 import { markKmMeasured } from "@/lib/km-quality";
+import { listExpiringDocuments, type ExpiringDocument } from "@/lib/documents-db";
 import { listVehiclesWithStatus } from "@/lib/vehicles";
 import { listFleetActiveDtc, listLatestVehiclePositions } from "@/lib/telemetry";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
@@ -147,6 +148,25 @@ export type AttentionItem =
       kind: "license"; // şoför ehliyeti doldu / dolmak üzere (workers.license_expiry)
       id: string;
       worker_name: string;
+      due: string;
+      days: number; // dolmasına kaç gün (negatif = doldu)
+    }
+  | {
+      /**
+       * ŞOFÖR BELGESİ doldu / dolmak üzere (migration 078).
+       *
+       * `license` kaleminden AYRI TUTULUYOR ve birleştirilmemeli: ehliyetin
+       * TEK bir kaynağı var (workers.license_expiry) ve tür kavramı yok;
+       * belge kaleminin türü kiracının tanımladığı bir sözlükten geliyor ve
+       * etiketi ÇEVRİLMEZ (müşteri verisi, ürün metni değil). İkisini tek
+       * kaleme katlamak, ekranda "Ehliyet" ile kiracının "Ehliyet" adında
+       * açtığı bir türü ayırt edilemez yapardı.
+       */
+      kind: "document";
+      id: string;
+      worker_name: string;
+      /** Kiracının tanımladığı etiket — İ18N'E GİRMEZ, olduğu gibi basılır. */
+      type_label: string;
       due: string;
       days: number; // dolmasına kaç gün (negatif = doldu)
     }
@@ -398,6 +418,7 @@ export async function getDashboardData(
     vehicles,
     workersRes,
     licenseRes,
+    driverIdsRes,
     penaltyRes,
     positions,
     dtcRows,
@@ -510,6 +531,33 @@ export async function getDashboardData(
             .select("id, name, license_expiry")
             .eq("is_active", true)
             .not("license_expiry", "is", null),
+          "id",
+          scope.workerIds
+        ),
+        "id",
+        driverScope
+      ),
+      "id",
+      fleetScope.workerIds,
+      fleetScope
+    ),
+    /**
+     * BELGE UYARILARI İÇİN KAPSAMLI ŞOFÖR KÜMESİ (migration 078).
+     *
+     * Ehliyet sorgusunun İKİZİ, tek farkla: `license_expiry` koşulu YOK.
+     * Belge takibi ehliyetten bağımsız bir eksen — ehliyeti girilmemiş bir
+     * şoförün SRC belgesi de takip edilir.
+     *
+     * ⚠️ NEDEN AYRI SORGU, `workerRows`u SÜZMEK DEĞİL: `workerRows` filtresiz
+     * okunuyor (roster in-memory eliyor) ve şoför kapsamı `is_admin === false`
+     * ile taklit edilemez — lib/driver-scope.ts `counts_as_driver` muafiyetini
+     * de uyguluyor (araç kullanan yönetici ŞOFÖRDÜR, migration 041). O kuralı
+     * burada elle tekrarlamak, iki listeyi zamanla ayrıştırırdı.
+     */
+    onlyFleet(
+      onlyDrivers(
+        withoutTestRows(
+          supabaseAdmin.from("workers").select("id").eq("is_active", true),
           "id",
           scope.workerIds
         ),
@@ -657,6 +705,21 @@ export async function getDashboardData(
     name: string;
     license_expiry: string;
   }[];
+  /**
+   * SÜRESİ YAKLAŞAN/DOLMUŞ BELGELER (migration 078).
+   *
+   * ⚠️ Promise.all'ın DIŞINDA, bilerek: `listExpiringDocuments` kapsamlı şoför
+   * kümesini ARGÜMAN olarak istiyor ve o küme aynı Promise.all'dan çıkıyor —
+   * içeri almak dairesel bir bağ olurdu. Bedel küçük: iki tabloda birkaç
+   * satırlık okuma (belge tablosu kişi başına birkaç satır).
+   *
+   * 078 uygulanmamışsa `tabloYok` ile boş döner ve panonun geri kalanı
+   * etkilenmez — 076/077'deki kademeli düşüşün aynısı.
+   */
+  const scopedDriverIds = ((driverIdsRes.data ?? []) as { id: string }[]).map(
+    (r) => r.id
+  );
+  const { items: expiringDocs } = await listExpiringDocuments(scopedDriverIds);
   // Bugün ONAYLI izinli şoförler → roster "İzinli" durumu (Modül 1).
   const leaveWorkerIds = new Set(
     ((leavesRes.data ?? []) as { worker_id: string }[]).map((r) => r.worker_id)
@@ -864,6 +927,7 @@ export async function getDashboardData(
       todayStart,
       unpaidPenalties,
       licenses,
+      expiringDocs,
       positions,
       openVehicleIds,
       inactiveWorkerIds,
@@ -1243,6 +1307,8 @@ function buildAttention(
     penalty_date: string | null;
   }[],
   licenses: { id: string; name: string; license_expiry: string }[],
+  /** Süresi yaklaşan/dolmuş şoför belgeleri (078) — ehliyetten AYRI eksen. */
+  expiringDocs: ExpiringDocument[],
   positions: {
     vehicle_id: string;
     recorded_at: string;
@@ -1445,6 +1511,29 @@ function buildAttention(
     });
   }
 
+  // 5b) Süresi yaklaşan / dolmuş ŞOFÖR BELGELERİ (migration 078).
+  //
+  //     Ehliyetle AYNI kural: dolmuş belgenin ALT SINIRI YOKTUR. Eşik ise
+  //     ehliyetinkinden farklı — her TÜR kendi `warn_days` değerini taşıyor
+  //     ve eleme zaten `listExpiringDocuments` içinde yapıldı; burada gelen
+  //     her satır kalem olur.
+  //
+  //     ⚠️ `type_label` KİRACININ verisidir ve çevrilmez. Ekran onu olduğu
+  //     gibi basar; i18n sözlüğüne koymak müşterinin verisini ürünün kaynak
+  //     koduna taşımak olurdu.
+  for (const d of expiringDocs) {
+    items.push({
+      kind: "document",
+      // Kimlik BELGE satırının id'si: erteleme (058) bu kimliğe yazılıyor ve
+      // aynı şoförün iki farklı belgesi ayrı ayrı ertelenebilmeli.
+      id: `${d.id}-document`,
+      worker_name: d.workerName,
+      type_label: d.typeLabel,
+      due: d.expiresAt,
+      days: d.days,
+    });
+  }
+
   // 6) Cihazlı ama uzun süredir hiç telemetri göndermeyen AKTİF araçlar.
   //    Hiç veri göndermemiş araç burada yoktur (listLatestVehiclePositions onu
   //    zaten döndürmez) — "cihaz hiç kurulmamış" ile "cihaz sustu" ayrı şeyler,
@@ -1610,6 +1699,12 @@ function buildAttention(
         // Ehliyet ve araç belgeleri aynı skalada yarışır (gün cinsinden), ama
         // eşitlikte ehliyet öne geçer: şoför direksiyona geçemez > araç belgesi.
         return i.days - 0.5;
+      case "document":
+        // Şoför belgesi ehliyetle ARAÇ belgeleri arasında: ehliyetsiz
+        // direksiyona geçilemez (en sert), SRC/ADR/oturma izni de kişiyi
+        // çalışamaz hâle getirir ama ehliyetin bir adım gerisinde; araç
+        // muayenesi ise aracı durdurur, kişiyi değil.
+        return i.days - 0.25;
       case "inspection":
       case "insurance":
         return i.days; // overdue (negative) and soonest first

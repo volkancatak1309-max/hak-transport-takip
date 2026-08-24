@@ -10,6 +10,7 @@ import {
   Receipt,
   CheckCircle2,
   IdCard,
+  FileBadge,
   SatelliteDish,
   Navigation,
   UserX,
@@ -77,6 +78,23 @@ export function AttentionList({
           icon: IdCard,
           text: t(expired ? "dash.attn_license_expired" : "dash.attn_license", {
             name: item.worker_name,
+            date: formatDate(item.due, locale),
+          }),
+          meta: expired
+            ? t("dash.attn_overdue_days", { days: Math.abs(item.days) })
+            : t("dash.attn_in_days", { days: item.days }),
+          overdue: expired,
+        };
+      }
+      // ŞOFÖR BELGESİ (078). Ehliyet kaleminin ikizi ama TÜR ADI taşıyor ve o
+      // ad kiracının verisi — `t()` içinden GEÇMEZ, doğrudan basılır.
+      case "document": {
+        const expired = item.days < 0;
+        return {
+          icon: FileBadge,
+          text: t(expired ? "dash.attn_doc_expired" : "dash.attn_doc", {
+            name: item.worker_name,
+            doc: item.type_label,
             date: formatDate(item.due, locale),
           }),
           meta: expired

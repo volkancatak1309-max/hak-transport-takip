@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/UserAvatar";
 import { WorkerDetailClient } from "./WorkerDetailClient";
+import { WorkerDocuments } from "./WorkerDocuments";
+import { listWorkerDocuments, listDocumentTypes } from "@/lib/documents-db";
 import {
   formatDate,
   startOfMonthVienna,
@@ -108,6 +110,26 @@ export default async function WorkerDetailPage({
   }
   const monthKmCoverage = kmCoverage(monthEntries);
   const monthKm = monthKmCoverage.km;
+
+  // Belge takibi (078). İki küçük okuma; tablo yoksa ikisi de boş döner ve
+  // bölüm "migration bekliyor" der — sayfanın geri kalanı etkilenmez.
+  const [belgeler, belgeTurleri] = await Promise.all([
+    listWorkerDocuments(w.id),
+    listDocumentTypes(),
+  ]);
+  // Kalan gün SUNUCUDA ölçülür: istemcide `Date.now()` çağırmak render'ı saf
+  // olmaktan çıkarır ve gece yarısını geçen bir istekte sunucu/istemci farklı
+  // sonuç üretebilir.
+  const bugunUTC = (() => {
+    const n = new Date();
+    return Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate());
+  })();
+  const belgeSatirlari = belgeler.docs.map((d) => ({
+    ...d,
+    days: Math.round(
+      (Date.parse(d.expiresAt + "T00:00:00Z") - bugunUTC) / 86_400_000
+    ),
+  }));
 
   return (
     <DashboardShell
@@ -262,6 +284,13 @@ export default async function WorkerDetailPage({
           </CardContent>
         </Card>
 
+        {/* Belge takibi (078) — ehliyetin YANINDA ama ondan AYRI eksen. */}
+        <WorkerDocuments
+          workerId={w.id}
+          docs={belgeSatirlari}
+          types={belgeTurleri.types}
+          tabloYok={belgeler.tabloYok || belgeTurleri.tabloYok}
+        />
         <WorkerDetailClient
           worker={w}
           loginLock={loginLock}

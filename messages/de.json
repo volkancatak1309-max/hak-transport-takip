@@ -1266,7 +1266,9 @@
       "attn_over_limit": "{name} — Tagesgrenze von {cap} Stunden überschritten",
       "attn_over_limit_night": "{name} — Nachtarbeit, {cap}-Stunden-Grenze überschritten",
       "attn_break45": "{name} — {required} Min Pause erforderlich",
-      "attn_break45_meta": "{worked} · Pause {min} Min"
+      "attn_break45_meta": "{worked} · Pause {min} Min",
+      "attn_doc": "{name} — {doc} läuft ab · {date}",
+      "attn_doc_expired": "{name} — {doc} ABGELAUFEN · {date}"
     },
     "editWorker": "Mitarbeiter bearbeiten",
     "workerUpdated": "Mitarbeiter aktualisiert",
@@ -1363,7 +1365,21 @@
     "emergencyTitle": "Notfallkontakt",
     "emergencyName": "Name",
     "emergencyRelation": "Beziehung",
-    "emergencyPhone": "Telefon"
+    "emergencyPhone": "Telefon",
+    "documents": "Dokumente",
+    "docAdd": "Dokument hinzufügen",
+    "docEmpty": "Keine Dokumente erfasst.",
+    "docNoTypes": "Definieren Sie zuerst eine Art unter Einstellungen › Dokumentarten.",
+    "docType": "Dokumentart",
+    "docExpiry": "Gültig bis",
+    "docNumber": "Dokumentnummer",
+    "docNote": "Notiz",
+    "docSaved": "Dokument gespeichert.",
+    "docDeleted": "Dokument gelöscht.",
+    "docDelete": "Dokument löschen",
+    "docExpired": "{days} Tage überfällig",
+    "docExpiring": "in {days} Tagen",
+    "docValid": "{days} Tage"
   },
   "manualStart": {
     "title": "Schicht starten",
@@ -1833,6 +1849,25 @@
     "unit_hour": "Std",
     "unit_vehicle_day": "Fahrzeugtag",
     "source_link": "zur Quelle",
-    "rate_l100_loading": "Flottenverbrauch wird gemessen…"
+    "rate_l100_loading": "Flottenverbrauch wird gemessen…",
+    "doc_types_title": "Dokumentarten",
+    "doc_types_desc": "Fahrerdokumente, die in Ihrer Flotte überwacht werden. Die Arten definieren Sie selbst — das Produkt gibt keine Liste vor, denn jedes Land hat andere Dokumente.",
+    "doc_types_empty": "Noch keine Dokumentart definiert. Bis dahin werden keine Dokumentwarnungen erzeugt.",
+    "doc_types_license_note": "Der Führerschein wird separat geführt (Feld „Führerschein gültig bis\" in der Personalakte). Legen Sie hier eine Art namens „Führerschein\" an, wird dasselbe Dokument doppelt geführt und erscheint zweimal in der Achtung-Liste.",
+    "doc_type_add": "Dokumentart hinzufügen",
+    "doc_type_saved": "Dokumentart gespeichert.",
+    "doc_type_duplicate": "Dieser Code ist bereits vergeben.",
+    "doc_type_inactive": "inaktiv",
+    "doc_type_warn": "{days} Tage vorher warnen",
+    "doc_field_label": "Anzeigename",
+    "doc_field_label_ph": "z. B. Aufenthaltstitel",
+    "doc_field_code": "Code",
+    "doc_field_code_ph": "z. B. aufenthaltstitel",
+    "doc_field_code_hint": "Buchstaben, Ziffern, Bindestrich. Groß-/Kleinschreibung wird ignoriert.",
+    "doc_field_warn": "Warnschwelle (Tage)",
+    "doc_field_warn_hint": "So viele Tage vor Ablauf erscheint das Dokument in der Achtung-Liste und es wird benachrichtigt.",
+    "doc_field_requires_no": "Dokument hat eine Nummer",
+    "doc_migration_needed": "Ohne Migration 078 (document_types / worker_documents) ist die Dokumentenverwaltung nicht nutzbar.",
+    "cancel": "Abbrechen"
   }
 }

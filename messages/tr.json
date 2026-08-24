@@ -1266,7 +1266,9 @@
       "attn_over_limit": "{name} — günlük {cap} saat sınırını aştı",
       "attn_over_limit_night": "{name} — gece çalışması, {cap} saat sınırını aştı",
       "attn_break45": "{name} — {required} dk mola gerekli",
-      "attn_break45_meta": "{worked} · mola {min} dk"
+      "attn_break45_meta": "{worked} · mola {min} dk",
+      "attn_doc": "{name} — {doc} bitiyor · {date}",
+      "attn_doc_expired": "{name} — {doc} SÜRESİ DOLDU · {date}"
     },
     "editWorker": "Çalışanı Düzenle",
     "workerUpdated": "Çalışan güncellendi",
@@ -1363,7 +1365,21 @@
     "emergencyTitle": "Acil durum",
     "emergencyName": "Ad",
     "emergencyRelation": "Yakınlık",
-    "emergencyPhone": "Telefon"
+    "emergencyPhone": "Telefon",
+    "documents": "Belgeler",
+    "docAdd": "Belge ekle",
+    "docEmpty": "Kayıtlı belge yok.",
+    "docNoTypes": "Önce Ayarlar › Belge Türleri'nden bir tür tanımlayın.",
+    "docType": "Belge türü",
+    "docExpiry": "Bitiş tarihi",
+    "docNumber": "Belge no",
+    "docNote": "Not",
+    "docSaved": "Belge kaydedildi.",
+    "docDeleted": "Belge silindi.",
+    "docDelete": "Belgeyi sil",
+    "docExpired": "{days} gün geçti",
+    "docExpiring": "{days} gün kaldı",
+    "docValid": "{days} gün"
   },
   "manualStart": {
     "title": "Vardiya Başlat",
@@ -1833,6 +1849,25 @@
     "unit_hour": "sa",
     "unit_vehicle_day": "araç-günü",
     "source_link": "kaynağa git",
-    "rate_l100_loading": "Filo tüketimi ölçülüyor…"
+    "rate_l100_loading": "Filo tüketimi ölçülüyor…",
+    "doc_types_title": "Belge Türleri",
+    "doc_types_desc": "Filonuzda takip edilecek şoför belgeleri. Türleri siz tanımlarsınız — ürün hazır bir liste dayatmaz, çünkü her ülkenin belgesi farklıdır.",
+    "doc_types_empty": "Henüz belge türü tanımlanmadı. Bir tür ekleyene kadar belge uyarısı üretilmez.",
+    "doc_types_license_note": "Ehliyet ayrı eksende takip ediliyor (personel kartındaki Ehliyet Bitiş alanı). Burada \"Ehliyet\" adında bir tür açarsanız aynı belge iki yerde takip edilir ve Dikkat panosunda iki kalem çıkar.",
+    "doc_type_add": "Belge türü ekle",
+    "doc_type_saved": "Belge türü kaydedildi.",
+    "doc_type_duplicate": "Bu kod zaten tanımlı.",
+    "doc_type_inactive": "pasif",
+    "doc_type_warn": "{days} gün önce uyar",
+    "doc_field_label": "Görünen ad",
+    "doc_field_label_ph": "örn. SRC Belgesi",
+    "doc_field_code": "Kod",
+    "doc_field_code_ph": "örn. src",
+    "doc_field_code_hint": "Harf, rakam, tire. Büyük/küçük harf farkı yok sayılır.",
+    "doc_field_warn": "Uyarı eşiği (gün)",
+    "doc_field_warn_hint": "Bitişine bu kadar gün kala Dikkat panosuna düşer ve bildirim gider.",
+    "doc_field_requires_no": "Belge numarası var",
+    "doc_migration_needed": "Migration 078 (document_types / worker_documents) çalıştırılmadan belge takibi kullanılamaz.",
+    "cancel": "Vazgeç"
   }
 }

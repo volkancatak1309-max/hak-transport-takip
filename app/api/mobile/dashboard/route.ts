@@ -409,6 +409,14 @@ type UyariKalemi = {
   sonTarih?: string;
   /** Bitişe kalan gün; negatif = süresi geçmiş (days). */
   kalanGun?: number;
+  /**
+   * ŞOFÖR BELGESİ türünün ETİKETİ (078) — ör. "SRC Belgesi", "Aufenthaltstitel".
+   *
+   * ⚠️ ÇEVRİLMEZ ve mobil sözlüğe girmez: kiracının tanımladığı bir veridir,
+   * ürün metni değil. Uygulama bunu olduğu gibi basar; aksi hâlde her yeni
+   * belge türü mobil sürüm çıkmayı gerektirirdi.
+   */
+  belgeTuru?: string;
   /** Adet — teslim edilemeyen paket ya da ödenmemiş ceza sayısı (count). */
   adet?: number;
   /** Son telemetriden bu yana geçen saat (hours). */
@@ -490,6 +498,18 @@ function uyariKalemi(a: AttentionItem): UyariKalemi {
       };
     case "license":
       return { tur: a.kind, id: a.id, sofor: a.worker_name, sonTarih: a.due, kalanGun: a.days };
+    case "document":
+      // `belgeTuru` KİRACININ etiketi — çevrilmez, olduğu gibi taşınır.
+      // Mobil tarafın sözlüğüne koymak, müşteri verisini uygulama paketine
+      // gömmek olurdu ve yeni bir tür eklemek sürüm çıkmayı gerektirirdi.
+      return {
+        tur: a.kind,
+        id: a.id,
+        sofor: a.worker_name,
+        belgeTuru: a.type_label,
+        sonTarih: a.due,
+        kalanGun: a.days,
+      };
     case "silent":
       return { tur: a.kind, id: a.id, plaka: a.plate, saat: a.hours, an: a.at };
     case "kmUnmeasured":

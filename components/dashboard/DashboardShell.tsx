@@ -151,6 +151,7 @@ export function DashboardShell({
         // hiç çıkmıyor (app/actions/haftalik-aksiyon.ts).
         { href: "/admin/haftalik", label: t("weekly"), icon: ClipboardCheck },
         { href: "/admin/karlilik", label: t("profitability"), icon: Euro },
+        { href: "/admin/mevzuat", label: t("compliance"), icon: ShieldCheck },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
         // İş emirleri şefe AÇIK (081): aracı servise o gönderiyor. Kapsam
         // eylem katmanında ARAÇ ekseninde uygulanıyor, menü onu daraltmıyor.
@@ -175,6 +176,7 @@ export function DashboardShell({
         // ("bu hafta ne yap"). İkisi aynı aile, farklı zaman ölçeği.
         { href: "/admin/haftalik", label: t("weekly"), icon: ClipboardCheck },
         { href: "/admin/karlilik", label: t("profitability"), icon: Euro },
+        { href: "/admin/mevzuat", label: t("compliance"), icon: ShieldCheck },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
         { href: "/admin/araclar", label: t("vehicles"), icon: Truck },
         // İŞ EMİRLERİ + BAKIM (081): Araçlar'ın hemen ardında, bilinçli.

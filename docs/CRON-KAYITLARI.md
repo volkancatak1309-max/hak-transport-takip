@@ -23,7 +23,8 @@ Vercel projesinden alınır.
 | 4 | Demo telemetri temizliği | `/api/cron/demo-retention` | `CRON_SECRET` | günde 1 · gece | **YALNIZ galzura-demo** |
 | 5 | Periyodik bakım uyarısı | `/api/cron/bakim-alerts` | `CRON_SECRET` | **günde TAM 1 · 06:15** | Bakım planı kuran her kiracı (migration 081) |
 | 6 | Haftalık aksiyon | `/api/cron/haftalik-aksiyon` | `CRON_SECRET` | **haftada TAM 1 · Pazartesi 06:30** | Haftalık panel isteyen her kiracı (migration 084) |
-| ~~7~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
+| 7 | Mevzuat erken uyarı | `/api/cron/mevzuat-tarama` | `CRON_SECRET` | **15 dakika** | Canlı mevzuat katmanı isteyen her kiracı (migration 086) |
+| ~~8~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
 
 Sır iki biçimde de kabul edilir ve karşılaştırma zamanlama-güvenlidir
 (`safeEqual`):
@@ -267,9 +268,57 @@ için tur üretilmemiş" der ve zamanlayıcı kaydının eksik olduğunu söyler
 
 ---
 
+## 7 · Mevzuat erken uyarı — 15 DAKİKADA BİR
+
+```
+POST https://<alan-adi>/api/cron/mevzuat-tarama?secret=<CRON_SECRET>
+```
+
+**Sıklık: 15 dakika.** Bu modülün tek vaadi "ihlal OLMADAN ÖNCE haber ver".
+En dar kademe 15 dakika; tarama daha seyrek koşarsa o kademe hiç yakalanmaz
+ve ürün kendi vaadini tutamaz.
+
+**SIK KOŞMAK SPAM ÜRETMEZ.** `mevzuat_uyari_tekil` indeksi
+`(worker_id, gun, kural, kademe)` tekil: kademe koşulu 15 dakika boyunca
+sağlanmaya devam etse de ikinci insert 23505 ile reddedilir ve **gönderim
+yapılmaz**. Yanıttaki `tekrar` sayacı kaç tetiklemenin böyle engellendiğini
+söyler — sıfır olması gerekmez, sağlıklı bir turda pozitiftir.
+
+**Kuru koşum** — kimin hangi kademede olduğunu yazmadan ve bildirmeden gösterir:
+
+```
+POST /api/cron/mevzuat-tarama?secret=<CRON_SECRET>&kuru=1
+```
+
+### Yanıt kodları
+
+| Kod | Anlamı | Ne yapmalı |
+|---|---|---|
+| 200 | Tur tamam (`taranan`, `aday`, `yazilan`, `tekrar`, `gonderilenler`) | — |
+| 401 | Sır yanlış/tanımsız | Vercel env'i kontrol et |
+| 503 | migration **086** çalıştırılmamış | Canlı katman o kiracıda kapalı; ya SQL'i çalıştır ya kaydı kurma |
+| 500 | Tur sırasında hata — gövdede sebep | Gövdeye bak |
+
+### Yanıtın okunması
+
+`taranan` AÇIK vardiya sayısıdır; kapanmış vardiya bu turun konusu değildir.
+`aday` kademe koşulunu sağlayan (şoför, kural) çifti; `yazilan` gerçekten
+gönderilen uyarı; `tekrar` tekil indekse takılan (yani spam engellenen)
+tetikleme.
+
+⚠️ **24 saatten uzun süredir açık kayıtlar taranır ama uyarı ÜRETMEZ.** Bunlar
+kapanmamış vardiyalardır, 37 saattir çalışan insanlar değil — HAK61'de 9 açık
+vardiyanın 7'si böyleydi (ölçüldü 25.08.2026). Ayrıntı
+`docs/MEVZUAT-ERKEN-UYARI.md` § 6.
+
+⚠️ **Bu modül yasal uyum garantisi vermez.** Takograf yok; çalışma süresi
+ölçülür, sürüş süresi yalnız tahmin edilir. Konumlandırma "erken uyarı".
+
+---
+
 ## Yeni kiracıda kurulum sırası
 
-1. Kurulum SQL'ini çalıştır (`db/install/<musteri>-full.sql`) — şema 001→084.
+1. Kurulum SQL'ini çalıştır (`db/install/<musteri>-full.sql`) — şema 001→086.
 2. Vercel env'leri gir: `FLESPI_SYNC_SECRET`, `CRON_SECRET`, `FLESPI_TOKEN`.
 3. **1 numaralı** kaydı kur (flespi) — telemetri akmadan hiçbir şey çalışmaz.
 4. `device_telemetry`ye satır düştüğünü doğrula:
@@ -279,4 +328,6 @@ için tur üretilmemiş" der ve zamanlayıcı kaydının eksik olduğunu söyler
 6. Bakım planı kuracaksan **5**'i de kur (kuru koşumla doğrula).
 7. Haftalık paneli istiyorsan **6**'yı kur — önce `&kuru=1` ile koştur ve
    `tarama` çıktısına bak: kaç kural gerçekten veri buluyor?
-8. Demo değilse **4**'ü kurma. `shift-watchdog` diye bir iş **yok**.
+8. Canlı mevzuat katmanını istiyorsan **7**'yi kur — önce `&kuru=1` ile
+   koştur ve kaç kişinin hangi kademede olduğuna bak.
+9. Demo değilse **4**'ü kurma. `shift-watchdog` diye bir iş **yok**.

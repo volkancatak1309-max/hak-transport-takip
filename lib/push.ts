@@ -614,3 +614,70 @@ export async function haftalikAksiyonBildir(g: {
     return { alici: 0, jeton: 0, hata: String((e as Error).message).slice(0, 160) };
   }
 }
+
+/**
+ * MEVZUAT ERKEN UYARISI — ŞOFÖRE VE YÖNETİME (086).
+ *
+ * ⚠️ `void` DÖNMÜYOR, SONUÇ DÖNÜYOR — bilinçli istisna (haftalikAksiyonBildir
+ * ile aynı gerekçe): `mevzuat_uyarilari` satırı gönderimin akıbetini kaydeder
+ * ve panel "uyarı gerçekten ulaştı mı" sorusunu cevaplayabilmelidir. HAK61'de
+ * kayıtlı push jetonu SIFIR — ölçüldü; "gönderildi" demek yalan olurdu.
+ *
+ * ⚠️ İKİ AYRI ALICI, İKİ AYRI ÖNCELİK: şoförün uyarısı ACİLDİR (yolda, karar
+ * vermesi gerekiyor) → `high`. Yöneticininki durum bilgisidir → `normal`,
+ * Doze modunda bekleyebilir.
+ */
+export async function mevzuatUyarisiBildir(g: {
+  workerId: string;
+  ad: string;
+  kural: { kural: string; temel: string; dayanak: string; esikDk: number; kalanDk: number | null; tur: string; gerekenMolaDk: number | null };
+  kademe: "erken" | "yaklasti" | "son" | "ihlal";
+}): Promise<{ soforJeton: number; yoneticiJeton: number; hata: string | null }> {
+  try {
+    const { uyariMetni } = await import("@/lib/mevzuat");
+    const metin = uyariMetni(
+      g.kural as unknown as Parameters<typeof uyariMetni>[0],
+      g.kademe
+    );
+
+    const [soforJetonlar, yonetim] = await Promise.all([
+      jetonlariGetir([g.workerId]),
+      yonetimTarafi(g.workerId),
+    ]);
+    const yoneticiJetonlar = await jetonlariGetir(yonetim);
+
+    const mesajlar: ExpoMesaj[] = [
+      ...soforJetonlar.map(({ token }) => ({
+        to: token,
+        title: metin.baslik,
+        body: metin.govde,
+        data: { tur: "mevzuat_uyari", kural: g.kural.kural, kademe: g.kademe },
+        sound: "default" as const,
+        channelId: KANAL,
+        priority: "high" as const,
+      })),
+      ...yoneticiJetonlar.map(({ token }) => ({
+        to: token,
+        title: `${g.ad} — ${metin.baslik.toLowerCase()}`,
+        body: metin.govde,
+        data: { tur: "mevzuat_uyari", kural: g.kural.kural, kademe: g.kademe, workerId: g.workerId },
+        sound: "default" as const,
+        channelId: KANAL,
+        priority: "normal" as const,
+      })),
+    ];
+
+    if (mesajlar.length === 0) {
+      return { soforJeton: 0, yoneticiJeton: 0, hata: "kayitli_cihaz_yok" };
+    }
+
+    const sonuc = await gonderSonuclu(mesajlar);
+    return {
+      soforJeton: soforJetonlar.length,
+      yoneticiJeton: yoneticiJetonlar.length,
+      hata: sonuc.hata,
+    };
+  } catch (e) {
+    return { soforJeton: 0, yoneticiJeton: 0, hata: String((e as Error).message).slice(0, 160) };
+  }
+}

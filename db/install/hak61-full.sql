@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════
---  GALZURA — TEK PARÇA KURULUM SQL'İ
+--  HAK61 — TEK PARÇA KURULUM SQL'İ
 --  hak-transport-takip · şema 001 → 086 · üreten: scripts/gen-install-sql.mjs
 -- ═══════════════════════════════════════════════════════════════════════════
 --

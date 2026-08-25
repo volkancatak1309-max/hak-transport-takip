@@ -44,6 +44,8 @@ const YAZMA = /(upsert|[Kk]aydet|^save[A-Z]|^create[A-Z]|Ekle|Olustur|Ac$|Gonder
  * yok ve kullanıcının geri alma yolu ne.
  */
 const MUAF = {
+  "app/admin/mevzuat/MevzuatClient.tsx":
+    "Kayıt listesi değil, TEK ayar satırı (tenant_mevzuat singleton). Silinecek satır yok; geri alma yolu önceki kural setini yeniden seçmektir. Ekranın ürettiği uyarı kaydı (mevzuat_uyarilari) bilerek DEĞİŞMEZDİR: gönderilmiş bir bildirimin silinmesi, gönderilmemiş gibi görünmesine yol açar ve tekil indeksin spam korumasını da bozar.",
   "app/admin/ayarlar/CostRatesForm.tsx":
     "Kayıt listesi değil, tek bir ayar formu. Geri alma yolu zaten var: alanı boşaltıp kaydetmek oranı varsayılana döndürür.",
   "app/admin/bolgeler/BolgelerClient.tsx":

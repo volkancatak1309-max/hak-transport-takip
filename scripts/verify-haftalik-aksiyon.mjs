@@ -158,7 +158,22 @@ async function main() {
   }
 
   const tarama = r.json?.tarama ?? {};
-  iddia("yedi kuralın hepsi tarandı", Object.keys(tarama).length === 7, Object.keys(tarama).join(","));
+  /**
+   * ⚠️ SAYI SABİTLENMEZ — KURAL LİSTESİNDEN TÜRETİLİR.
+   *
+   * "Yedi kural" diye sabitlenmişti ve 085 (musteri_zarar) ile 088
+   * (ayin_en_iyisi) eklenince iddia BAYATLADI: motor doğru çalıştığı hâlde
+   * betik kırıldı. Beklenen küme `TABAN`ın anahtarlarıdır; yeni bir kural
+   * eklemek bu iddiayı bozmamalı, EKSİK bir kural bozmalı.
+   */
+  const { TABAN } = await import("@/lib/haftalik-aksiyon");
+  const beklenenKurallar = Object.keys(TABAN);
+  const eksikKural = beklenenKurallar.filter((k) => !(k in tarama));
+  iddia(
+    `${beklenenKurallar.length} kuralın hepsi tarandı`,
+    eksikKural.length === 0,
+    eksikKural.length ? `EKSİK: ${eksikKural.join(",")}` : Object.keys(tarama).join(",")
+  );
   iddia(
     "sessiz_arac: 3 cihazlı araçtan 2'si eşiği geçti (biri taze)",
     tarama.sessiz_arac?.gecen === 2,

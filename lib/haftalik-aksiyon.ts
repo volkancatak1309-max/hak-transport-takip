@@ -77,6 +77,15 @@ export const TABAN = {
    * zaten yukarı taşır.
    */
   musteri_zarar: 350,
+  /**
+   * Ayın en iyisi (088) — TABAN EN DÜŞÜK, ve bu bilinçli.
+   *
+   * Bu kalem bir SORUN değil bir FIRSAT: yapılmazsa kimse zarar görmez.
+   * Diğer yedi kural geri dönülemez bir kaybı önlüyor; tebrik etmemek yalnız
+   * bir kazancı kaçırmaktır. Yine de listeye giriyor çünkü haftalık panel
+   * "bu hafta ne yap" diyor ve tebrik etmek yapılacak bir iştir.
+   */
+  ayin_en_iyisi: 200,
 } as const;
 
 export type KuralAdi = keyof typeof TABAN;
@@ -709,5 +718,64 @@ export function kuralMusteriZarar(g: MusteriZararGirdi): AksiyonAdayi | null {
       sabitGiderHaric: true,
     },
     hedefYol: `/admin/karlilik`,
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// KURAL: AYIN EN İYİSİ (088)
+// ══════════════════════════════════════════════════════════════════════════
+
+export type AyinEnIyisiGirdi = {
+  workerId: string;
+  ad: string;
+  skor: number;
+  /** Kaç şoför skorlanabildi — tek kişilik "birincilik" anlamsızdır. */
+  skorlananSayisi: number;
+  esik: number;
+  /** Dönem kalibrasyon sınırından önce mi başlıyor. */
+  epokOncesi: boolean;
+  donemBas: string;
+};
+
+/**
+ * KURAL: dönemin en yüksek skorlu şoförünü tebrik et.
+ *
+ * ⚠️ ÜÇ KAPI:
+ *   1. Skor eşiği geçmeli — listenin en üstü olmak "iyi" demek değildir;
+ *      herkesin 30 aldığı bir ayda birinciyi tebrik etmek alay olur.
+ *   2. En az 3 şoför skorlanmış olmalı. İki kişilik bir sıralamada
+ *      "birincilik" bir başarı değil, bir tesadüftür.
+ *   3. Dönem kalibrasyon sınırından SONRA başlamalı. Cihaz eşiği değişimini
+ *      aşan bir skor, aynı cetvelle ölçülmemiş demektir.
+ */
+export const AYIN_EN_IYISI_MIN_SKORLANAN = 3;
+
+export function kuralAyinEnIyisi(g: AyinEnIyisiGirdi): AksiyonAdayi | null {
+  if (g.epokOncesi) return null;
+  if (g.skorlananSayisi < AYIN_EN_IYISI_MIN_SKORLANAN) return null;
+  if (g.skor < g.esik) return null;
+
+  return {
+    kural: "ayin_en_iyisi",
+    workerId: g.workerId,
+    vehicleId: null,
+    musteriId: null,
+    oncelik: oncelikHesapla({
+      kural: "ayin_en_iyisi",
+      // Aciliyet DÜŞÜK: tebrik gecikince değerini tamamen kaybetmez.
+      aciliyet: 20,
+      // Etki skorun eşiğin ne kadar üstünde olduğuna bağlı.
+      etki: Math.min((g.skor - g.esik) * 5, EKSEN_TAVAN),
+    }),
+    baslik: `${g.ad} bu dönem en iyi sürücü — tebrik edin (${g.skor} puan)`,
+    gerekce: `${g.donemBas} döneminde ${g.skorlananSayisi} skorlanan şoför arasında en yüksek güvenlik skoru ${g.ad}'de: ${g.skor} puan (rozet eşiği ${g.esik}). Olumlu geri bildirim şoför devrini düşüren en ucuz araçtır.`,
+    kanit: {
+      olculen: g.skor,
+      esik: g.esik,
+      birim: "puan",
+      skorlananSayisi: g.skorlananSayisi,
+      donemBas: g.donemBas,
+    },
+    hedefYol: `/admin/odul`,
   };
 }

@@ -19,6 +19,7 @@ import {
   Wrench,
   CalendarCheck,
   ClipboardCheck,
+  Award,
   Euro,
   BarChart3,
   FileBarChart,
@@ -152,6 +153,7 @@ export function DashboardShell({
         { href: "/admin/haftalik", label: t("weekly"), icon: ClipboardCheck },
         { href: "/admin/karlilik", label: t("profitability"), icon: Euro },
         { href: "/admin/mevzuat", label: t("compliance"), icon: ShieldCheck },
+        { href: "/admin/odul", label: t("recognition"), icon: Award },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
         // İş emirleri şefe AÇIK (081): aracı servise o gönderiyor. Kapsam
         // eylem katmanında ARAÇ ekseninde uygulanıyor, menü onu daraltmıyor.
@@ -177,6 +179,7 @@ export function DashboardShell({
         { href: "/admin/haftalik", label: t("weekly"), icon: ClipboardCheck },
         { href: "/admin/karlilik", label: t("profitability"), icon: Euro },
         { href: "/admin/mevzuat", label: t("compliance"), icon: ShieldCheck },
+        { href: "/admin/odul", label: t("recognition"), icon: Award },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
         { href: "/admin/araclar", label: t("vehicles"), icon: Truck },
         // İŞ EMİRLERİ + BAKIM (081): Araçlar'ın hemen ardında, bilinçli.

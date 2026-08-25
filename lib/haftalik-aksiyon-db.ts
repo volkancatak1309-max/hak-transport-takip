@@ -18,6 +18,8 @@ import {
   kuralSkorDususu,
   kuralVardiyaKapanmadi,
   kuralYakitSapmasi,
+  AYIN_EN_IYISI_MIN_SKORLANAN,
+  kuralAyinEnIyisi,
   kuralMusteriZarar,
   ozneKimligi,
   susturulmusMu,
@@ -35,6 +37,8 @@ import {
 } from "@/lib/haftalik-aksiyon";
 import { ZARAR_MIN_SEFER, ZARAR_PENCERE_GUN } from "@/lib/karlilik";
 import { zararEdenMusteriler } from "@/lib/karlilik-db";
+import { ROZET_SKOR_ESIK } from "@/lib/odul";
+import { donemleriOku } from "@/lib/odul-db";
 
 /**
  * HAFTALIK AKSİYON — VERİ KATMANI (migration 084).
@@ -268,7 +272,7 @@ const GUN_MS = 86_400_000;
 /**
  * HAFTALIK TURU ÜRET.
  *
- * ═══ TEK GEÇİŞ, SEKİZ KURAL ═══
+ * ═══ TEK GEÇİŞ, DOKUZ KURAL ═══
  *
  * Her kural kendi try/catch'inde: bir sinyal okunamazsa (migration yok, RPC
  * yok) tur DÜŞMEZ, o kural `atlandi` sayacıyla işaretlenir. Bir kuralın
@@ -383,11 +387,11 @@ export async function haftalikKuruKosum(
 }
 
 /**
- * SEKİZ KURALI ÇALIŞTIR, ADAYLARI TOPLA — yazma YOK.
+ * DOKUZ KURALI ÇALIŞTIR, ADAYLARI TOPLA — yazma YOK.
  *
  * Her kural kendi try/catch'inde: bir sinyal okunamazsa (migration yok, RPC
  * yok) toplama DÜŞMEZ, o kural `atlandi` sayacıyla işaretlenir. Bir kuralın
- * arızası diğer yedisini sessizce yok etmemeli.
+ * arızası diğer sekizini sessizce yok etmemeli.
  */
 async function adaylariTopla(
   simdi: Date
@@ -586,6 +590,43 @@ async function adaylariTopla(
           pencereGun: ZARAR_PENCERE_GUN,
         })
       ),
+    };
+  });
+
+  // ── 9) AYIN EN İYİSİ (088) — tek OLUMLU kural
+  await kuralKos("ayin_en_iyisi", `skor ≥ ${ROZET_SKOR_ESIK} · ${AYIN_EN_IYISI_MIN_SKORLANAN}+ skorlanan`, async () => {
+    const { donemler, tabloYok } = await donemleriOku();
+    /**
+     * 088 UYGULANMAMIŞSA KURAL "ÇALIŞMADI" DER, "0 BULDU" DEMEZ — panelin
+     * `tarama` bölümünün tek varlık sebebi bu ayrım.
+     */
+    if (tabloYok) throw new Error("088 yok (sofor_skor_donem)");
+    if (donemler.length === 0) return { aday: 0, cikanlar: [] };
+
+    const sonBas = donemler[0].donemBas;
+    const bu = donemler.filter((d) => d.donemBas === sonBas && d.skor !== null);
+    if (bu.length === 0) return { aday: 0, cikanlar: [] };
+
+    const enIyi = bu.reduce((a, b) => ((b.skor ?? 0) > (a.skor ?? 0) ? b : a));
+    const { data: w } = await supabaseAdmin
+      .from("workers")
+      .select("name")
+      .eq("id", enIyi.workerId)
+      .maybeSingle();
+
+    return {
+      aday: bu.length,
+      cikanlar: [
+        kuralAyinEnIyisi({
+          workerId: enIyi.workerId,
+          ad: (w as { name?: string } | null)?.name ?? "—",
+          skor: enIyi.skor!,
+          skorlananSayisi: bu.length,
+          esik: ROZET_SKOR_ESIK,
+          epokOncesi: enIyi.epokOncesi,
+          donemBas: enIyi.donemBas,
+        }),
+      ],
     };
   });
 

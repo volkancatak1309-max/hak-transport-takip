@@ -44,6 +44,8 @@ const YAZMA = /(upsert|[Kk]aydet|^save[A-Z]|^create[A-Z]|Ekle|Olustur|Ac$|Gonder
  * yok ve kullanıcının geri alma yolu ne.
  */
 const MUAF = {
+  "app/admin/odul/OdulClient.tsx":
+    "Kayıt listesi değil, TEK ayar satırı (tenant_odul singleton). Silinecek satır yok; geri alma yolu kutuyu tekrar işaretlemektir. Ekranın gösterdiği rozetler (sofor_rozetleri) bilerek DEĞİŞMEZDİR: rozet kazanıldığı dönemin gerçeğidir, sonraki dönemde skor düşse de geri alınmaz — silinebilir olsaydı ödül anlamını yitirirdi.",
   "app/admin/mevzuat/MevzuatClient.tsx":
     "Kayıt listesi değil, TEK ayar satırı (tenant_mevzuat singleton). Silinecek satır yok; geri alma yolu önceki kural setini yeniden seçmektir. Ekranın ürettiği uyarı kaydı (mevzuat_uyarilari) bilerek DEĞİŞMEZDİR: gönderilmiş bir bildirimin silinmesi, gönderilmemiş gibi görünmesine yol açar ve tekil indeksin spam korumasını da bozar.",
   "app/admin/ayarlar/CostRatesForm.tsx":

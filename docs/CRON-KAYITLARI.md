@@ -24,7 +24,8 @@ Vercel projesinden alınır.
 | 5 | Periyodik bakım uyarısı | `/api/cron/bakim-alerts` | `CRON_SECRET` | **günde TAM 1 · 06:15** | Bakım planı kuran her kiracı (migration 081) |
 | 6 | Haftalık aksiyon | `/api/cron/haftalik-aksiyon` | `CRON_SECRET` | **haftada TAM 1 · Pazartesi 06:30** | Haftalık panel isteyen her kiracı (migration 084) |
 | 7 | Mevzuat erken uyarı | `/api/cron/mevzuat-tarama` | `CRON_SECRET` | **15 dakika** | Canlı mevzuat katmanı isteyen her kiracı (migration 086) |
-| ~~8~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
+| 8 | Dönem skoru + rozet | `/api/cron/skor-donem` | `CRON_SECRET` | **haftada 1** | Ödül/liderlik isteyen her kiracı (migration 088) |
+| ~~9~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
 
 Sır iki biçimde de kabul edilir ve karşılaştırma zamanlama-güvenlidir
 (`safeEqual`):
@@ -316,9 +317,59 @@ vardiyanın 7'si böyleydi (ölçüldü 25.08.2026). Ayrıntı
 
 ---
 
+## 8 · Dönem skoru + rozet — HAFTADA BİR
+
+```
+POST https://<alan-adi>/api/cron/skor-donem?secret=<CRON_SECRET>
+```
+
+**Sıklık: haftada 1.** Dönem 30 günlük **kayan** pencere; haftada bir yazmak
+sıralamayı makul tazelikte tutar. Aylık koşsaydı şoför üç hafta boyunca eski
+sırayı görürdü.
+
+**NEDEN CRON:** `buildPerformanceReport` 30 günlük olay + telemetri + vardiya
+taraması yapıyor ve liderlik tablosu HER ŞOFÖRÜN telefonunda açılıyor. Her
+açılışta bu raporu koşturmak hem yavaş hem gereksiz.
+
+**TEKRAR KOŞMAK ZARARSIZ:** dönem `(worker_id, donem_bas)` tekil ve yazma
+**upsert** — ikinci koşum aynı satırı günceller, yenisini yazmaz (aksi hâlde
+"üst üste 3 dönem" sayımı tekrarlarla şişerdi). Rozet tarafında
+`(worker_id, rozet, donem_bas)` tekil; ikinci koşum 23505 alır ve `tekrar`
+sayacına düşer.
+
+**Geriye dönük doldurma** — yeni kurulumda geçmişi bir kerede üretir:
+
+```
+POST /api/cron/skor-donem?secret=<CRON_SECRET>&geri=5
+```
+
+Her dönem kendi kalibrasyon damgasını alır; cihaz eşiği değişiminden önce
+başlayan dönemler `epok_oncesi=true` işaretlenir ve seri rozetine **sayılmaz**.
+
+### Yanıt kodları
+
+| Kod | Anlamı | Ne yapmalı |
+|---|---|---|
+| 200 | Dönemler yazıldı (`donemler`, `rozet`) | — |
+| 401 | Sır yanlış/tanımsız | Vercel env'i kontrol et |
+| 503 | migration **088** çalıştırılmamış | Ödül katmanı o kiracıda kapalı |
+| 500 | Hata — gövdede sebep | Gövdeye bak |
+
+### Yanıtın okunması
+
+`rozet.seriKazanilabilir` **false** ise sebep temiz dönem azlığıdır: cihaz
+alarm eşikleri 23.07.2026'da değişti ve o sınırdan öncesi karşılaştırılamaz.
+`rozet.temizDonem` kaç dönemin sınırdan sonra başladığını söyler.
+
+⚠️ **İsim görünürlüğü ayarı bu cron'la ilgili değildir** ve varsayılanı
+KAPALIDIR: isimli liderlik tablosu § 87 Abs. 1 Nr. 6 BetrVG anlamında
+performans izlemeye elverişli bir düzenektir (bkz. `docs/SOFOR-ODUL.md` § 6).
+
+---
+
 ## Yeni kiracıda kurulum sırası
 
-1. Kurulum SQL'ini çalıştır (`db/install/<musteri>-full.sql`) — şema 001→086.
+1. Kurulum SQL'ini çalıştır (`db/install/<musteri>-full.sql`) — şema 001→088.
 2. Vercel env'leri gir: `FLESPI_SYNC_SECRET`, `CRON_SECRET`, `FLESPI_TOKEN`.
 3. **1 numaralı** kaydı kur (flespi) — telemetri akmadan hiçbir şey çalışmaz.
 4. `device_telemetry`ye satır düştüğünü doğrula:
@@ -330,4 +381,6 @@ vardiyanın 7'si böyleydi (ölçüldü 25.08.2026). Ayrıntı
    `tarama` çıktısına bak: kaç kural gerçekten veri buluyor?
 8. Canlı mevzuat katmanını istiyorsan **7**'yi kur — önce `&kuru=1` ile
    koştur ve kaç kişinin hangi kademede olduğuna bak.
-9. Demo değilse **4**'ü kurma. `shift-watchdog` diye bir iş **yok**.
+9. Ödül/liderlik istiyorsan **8**'i kur — önce `&geri=5` ile bir kez
+   koştur ki geçmiş dönemler dolsun.
+10. Demo değilse **4**'ü kurma. `shift-watchdog` diye bir iş **yok**.

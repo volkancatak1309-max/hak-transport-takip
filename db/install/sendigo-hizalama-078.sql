@@ -4906,13 +4906,12 @@ create table if not exists public.sefer_duraklari (
    * numarasını takas eder. Ertelenmemiş bir tekillikte tek bir toplu UPDATE
    * bile satır satır denetlendiği için ARADA çakışır ve reddedilir; çözüm
    * "önce geçici numaraya taşı" gibi bir hile olurdu. Ertelenmişte denetim
-   * COMMIT'te yapılır ve tek istekte (= tek transaction) gelen toplu upsert
-   * sorunsuz geçer.
+   * COMMIT'te yapılır ve tek ifade sorunsuz geçer.
    *
-   * ⚠️ BEDELİ: ertelenmiş bir tekil kısıt `ON CONFLICT` hakemi OLAMAZ. Yani
-   * `upsert(onConflict:"sefer_id,sira")` 42P10 verir. Yeniden sıralama bu
-   * yüzden BİRİNCİL ANAHTAR üzerinden upsert ediyor (`onConflict:"id"`) —
-   * bkz. lib/sefer-duraklari.ts.
+   * ⚠️ BEDELİ: ertelenmiş bir tekil kısıt `ON CONFLICT` hakemi OLAMAZ
+   * (`upsert(onConflict:"sefer_id,sira")` → 42P10). Yeniden sıralama zaten
+   * upsert kullanmıyor: aşağıdaki `sefer_duraklari_sirala()` fonksiyonu tek
+   * `update` ifadesiyle yazıyor — gerekçesi o fonksiyonun başlığında.
    */
   constraint sefer_durak_sira_uq unique (sefer_id, sira) deferrable initially deferred
 );
@@ -5129,17 +5128,18 @@ notify pgrst, 'reload schema';
 --   select count(*) from public.sefer_duraklari;
 --   → HAK61: 0 · Sendigo: 0 (zone_id dolu sefer yok — ölçüldü 25.08.2026)
 --
---   select column_name from information_schema.columns
---    where table_schema='public' and table_name='sefer_duraklari'
---    order by ordinal_position;
---   → 18 satır: id, sefer_id, sira, ad, zone_id, adres, latitude, longitude,
---     yaricap_m, pencere_bas, pencere_bit, tahmini_sure_dk, notlar, durum,
---     atlama_sebep, varildi_at, tamamlandi_at, atlandi_at, varis_kaynak,
---     created_at   (19 — id dahil)
+--   select count(*) from information_schema.columns
+--    where table_schema='public' and table_name='sefer_duraklari';
+--   → 20  (id, sefer_id, sira, ad, zone_id, adres, latitude, longitude,
+--          yaricap_m, pencere_bas, pencere_bit, tahmini_sure_dk, notlar,
+--          durum, atlama_sebep, varildi_at, tamamlandi_at, atlandi_at,
+--          varis_kaynak, created_at)
 --
 --   select count(*) from information_schema.columns
 --    where table_schema='public' and table_name='teslimatlar'
 --      and column_name='durak_id';                          → 1
+--
+--   select count(*) from pg_proc where proname='sefer_duraklari_sirala';  → 1
 --
 --   select indexname from pg_indexes
 --    where schemaname='public' and tablename='teslimatlar'
@@ -5149,6 +5149,9 @@ notify pgrst, 'reload schema';
 --   select conname from pg_constraint
 --    where conrelid='public.teslimatlar'::regclass and conname='teslimat_durak_uq';
 --   → 0 satır (kısmi indekslere çevrildi)
+--
+--   select condeferred from pg_constraint where conname='sefer_durak_sira_uq';
+--   → t  (ertelenmiş — yeniden sıralamanın ön koşulu)
 --
 -- ERTELENMİŞ TEKİLLİĞİ SINAMAK (durak varken):
 --   begin;

@@ -1,6 +1,6 @@
 # Zamanlayıcı (cron) kayıtları — GERÇEK DURUM
 
-> Son ölçüm: **24.08.2026**. Bu dosya, dış zamanlayıcıya (cron-job.org /
+> Son ölçüm: **25.08.2026**. Bu dosya, dış zamanlayıcıya (cron-job.org /
 > GitHub Actions / Vercel Cron) girilecek işlerin **tek kaynağıdır**.
 > Kurulum belgeleri (`SENDIGO-KURULUM.md`, `GALZURA-KURULUM.md`,
 > `YENI-MUSTERI-KURULUM.md`) buraya işaret eder — liste üç yerde
@@ -21,7 +21,8 @@ Vercel projesinden alınır.
 | 2 | Yakıt fiyatı | `/api/cron/fuel-price-sync` | `CRON_SECRET` | **günde 1 · 06:00** | Yakıt maliyeti isteyen her kiracı (migration 077) |
 | 3 | Belge uyarısı | `/api/cron/document-alerts` | `CRON_SECRET` | **günde TAM 1 · 06:00** | Belge takibi açık kiracı (migration 078 — bugün yalnız HAK61) |
 | 4 | Demo telemetri temizliği | `/api/cron/demo-retention` | `CRON_SECRET` | günde 1 · gece | **YALNIZ galzura-demo** |
-| ~~5~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
+| 5 | Periyodik bakım uyarısı | `/api/cron/bakim-alerts` | `CRON_SECRET` | **günde TAM 1 · 06:15** | Bakım planı kuran her kiracı (migration 081) |
+| ~~6~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
 
 Sır iki biçimde de kabul edilir ve karşılaştırma zamanlama-güvenlidir
 (`safeEqual`):
@@ -129,7 +130,66 @@ GET https://<alan-adı>/api/cron/demo-retention?secret=<CRON_SECRET>    — gün
 > (c) silme fonksiyonu o veritabanlarında **hiç kurulmaz** —
 > `054_demo_telemetry_retention.sql` kurulum SQL'ine bilerek dahil edilmez.
 
-## ~~5 · Vardiya bekçisi — KALDIRILDI~~
+## 5 · Periyodik bakım uyarısı — GÜNDE TAM BİR KEZ
+
+```
+GET https://<alan-adı>/api/cron/bakim-alerts?secret=<CRON_SECRET>      — günde 1, 06:15
+```
+
+İki iş yapar, tek geçişte:
+
+1. **İş emri açar.** Eşiğe giren (ya da geçmiş) her bakım planı için
+   `kaynak='periyodik'` bir iş emri açar. Aynı araçta AÇIK periyodik emir
+   varsa **ikincisini açmaz** — ölçüldü: ikinci tur `isEmriAcilan=0`.
+2. **Bildirim gönderir.** Alıcı YALNIZ yönetim tarafıdır (patronlar + o
+   ARACIN filosunun şefleri). Şoföre gitmez: bakım randevusunu o almıyor.
+
+**Dönüm noktaları** — belge cron'uyla aynı gerekçe (her sabah bağıran bir
+kanal susturulur):
+
+| Eksen | Ne zaman bildirir |
+|-------|-------------------|
+| süre  | eşiğe giriş günü (`uyari_gun`, varsayılan 14) · 7 · 1 · 0 · sonra haftada bir |
+| km    | yalnız **eşiğe giriş** ve **geçiş** anları |
+
+> Km'de "gün" diye bir şey yoktur: eşik takvime değil aracın ne kadar
+> çalıştığına bağlıdır. "1.200 km kaldı" ile "1.150 km kaldı" arasında
+> yöneticinin davranışını değiştirecek bir fark yok.
+
+> ⚠️ **Günde birden fazla çağırma.** Belge cron'undaki tuzağın aynısı:
+> tetikleme "en son ne zaman bildirdim" kolonundan değil, o günün kalan
+> gün/km sayısından türetiliyor. İkinci çağrı aynı bildirimi tekrar gönderir.
+> (İş emri tarafı idempotenttir — tekrar çağırmak ikinci emir açmaz.)
+>
+> Saat **06:15** öneriliyor: belge uyarısı 06:00'da koşuyor, iki iş aynı
+> dakikaya binmesin.
+
+| Kod | Anlamı | Ne yapmalı |
+|-----|--------|------------|
+| 200 | Hesap yapıldı (`esikte`, `isEmriAcilan`, `bildirilen`, `kmOlculemeyen`, `kalemler`) | — |
+| 401 | Sır yanlış/tanımsız | Vercel env'i kontrol et |
+| 503 | migration **081** çalıştırılmamış | Bakım o kiracıda kapalı demektir; ya SQL'i çalıştır ya kaydı kurma |
+
+**Kurmadan önce kuru koşum** — ne yazılacağını ve kimin bildirim alacağını
+**yazmadan ve göndermeden** gösterir:
+
+```
+GET https://<alan-adı>/api/cron/bakim-alerts?secret=<CRON_SECRET>&kuru=1
+```
+
+Gövdedeki **`kmOlculemeyen`** alanına bak: odometresi 72 saattir okunamayan
+araç sayısıdır. O araçlarda km eşiği hesaplanmaz (uydurulmaz) ve plan yalnız
+süre ekseninden tetiklenir — sayı beklediğinden büyükse cihaz tarafında bir
+sorun var demektir, bakım tarafında değil.
+
+Pano kalemi bu işten **bağımsızdır**: yaklaşan/gecikmiş bakım Dikkat
+listesinde her gün durur. Kaçan bir gün kalemi kaybettirmez.
+
+> **Plan yoksa iş boştur.** Bakım kuralları `/admin/bakim` ekranından kurulur;
+> hiç plan yoksa uç 200 döner ve `esikte: 0` der. Kaydı bugünden kurmak
+> zararsızdır.
+
+## ~~6 · Vardiya bekçisi — KALDIRILDI~~
 
 `/api/cron/shift-watchdog` **artık yok**. Telegram katmanının tamamı
 20.08.2026'da söküldü (kod + şema); bekçi de o gün silindi, çünkü tek işi
@@ -148,11 +208,12 @@ Otomatik kapanış kaldırıldı; kapanmamış vardiyalar Dikkat panosundaki
 
 ## Yeni kiracıda kurulum sırası
 
-1. Kurulum SQL'ini çalıştır (`db/install/<musteri>-full.sql`) — şema 001→078.
+1. Kurulum SQL'ini çalıştır (`db/install/<musteri>-full.sql`) — şema 001→081.
 2. Vercel env'leri gir: `FLESPI_SYNC_SECRET`, `CRON_SECRET`, `FLESPI_TOKEN`.
 3. **1 numaralı** kaydı kur (flespi) — telemetri akmadan hiçbir şey çalışmaz.
 4. `device_telemetry`ye satır düştüğünü doğrula:
    `select count(*) from device_telemetry where recorded_at > now() - interval '1 hour';`
 5. **2** ve **3** numaralı kayıtları kur; ilk çağrılarının **200** döndüğünü gör
    (503 alıyorsan ilgili migration çalışmamıştır).
-6. Demo değilse **4**'ü kurma. `shift-watchdog` diye bir iş **yok**.
+6. Bakım planı kuracaksan **5**'i de kur (kuru koşumla doğrula).
+7. Demo değilse **4**'ü kurma. `shift-watchdog` diye bir iş **yok**.

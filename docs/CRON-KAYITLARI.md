@@ -248,8 +248,19 @@ sessiz bir arıza değil, kayda geçmiş bir eksikliktir.
 
 `bildirim` alanı `{alici, jeton, hata}` döner. `jeton: 0` **hata değildir**:
 yöneticilerin kayıtlı mobil cihazı yoksa bildirim hiçbir yere gitmez ve panel
-bunu açıkça yazar ("kayıtlı cihaz yok"). HAK61'de 25.08.2026 itibarıyla push
-jetonu **sıfır** — ölçüldü.
+bunu açıkça yazar ("N yönetici — kayıtlı cihaz yok"). HAK61'de 25.08.2026
+itibarıyla push jetonu **sıfır** — ölçüldü.
+
+Panelde bildirim **üç durumludur** ve ayrımı bu cron belirler:
+
+| Turdaki değer | Panelde | Anlamı |
+|---|---|---|
+| `bildirim_alici = NULL` | "Bildirim denenmedi" | Turu bu cron ÜRETMEDİ; gönderim hiç çağrılmadı |
+| `alici > 0`, `jeton = 0` | "N yönetici — kayıtlı cihaz yok" | Denendi, alıcı var, kayıtlı cihaz yok |
+| `jeton > 0` | "N yöneticiye · M cihaza" | Gitti |
+
+Yani panelde **"Bildirim denenmedi"** görüyorsanız tur bu uçtan geçmemiştir —
+zamanlayıcı kaydını kontrol edin.
 
 ⚠️ **Bu cron kurulmazsa** panel boş kalır ama sessizce değil: ekran "bu hafta
 için tur üretilmemiş" der ve zamanlayıcı kaydının eksik olduğunu söyler.

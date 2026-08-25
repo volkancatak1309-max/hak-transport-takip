@@ -1289,7 +1289,18 @@
     "stripInFieldToday": "In the field today",
     "stripCarriedOver": "Open since yesterday",
     "boardTabCarriedOver": "Open since yesterday",
-    "boardCarriedOverHint": "These shifts were started on earlier days and are still open. The system never closes a shift by itself — only staff or an administrator does. The \"In the field today\" counter above counts shifts started today; these are not included in it."
+    "boardCarriedOverHint": "These shifts were started on earlier days and are still open. The system never closes a shift by itself — only staff or an administrator does. The \"In the field today\" counter above counts shifts started today; these are not included in it.",
+    "editReasonLabel": "Reason for correction (required)",
+    "editReasonPlaceholder": "e.g. driver forgot to close, actual end 05:30",
+    "editReasonHint": "This form changes fields that feed the AZG report. The reason is written to the audit trail and appears in the report.",
+    "editReasonShort": "The reason must be at least 3 characters",
+    "editReasonMissing": "no reason recorded (before 087)",
+    "editSourceClose": "closed by admin",
+    "closeReasonLabel": "Reason for closing (required)",
+    "closeReasonPlaceholder": "e.g. driver forgot to close",
+    "closeReasonShort": "The reason must be at least 3 characters",
+    "staleShiftBadge": "unclosed",
+    "staleShiftsBadge": "{count} unclosed"
   },
   "workers": {
     "kmUnmeasuredShifts": "{count} shifts could not be measured",

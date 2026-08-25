@@ -1289,7 +1289,18 @@
     "stripInFieldToday": "Heute im Einsatz",
     "stripCarriedOver": "Von gestern offen",
     "boardTabCarriedOver": "Von gestern offen",
-    "boardCarriedOverHint": "Diese Schichten wurden an früheren Tagen begonnen und sind noch offen. Das System schließt Schichten nicht automatisch — nur Mitarbeitende oder Verwaltung. Der Zähler \"Heute im Einsatz\" zählt die heute begonnenen Schichten; diese sind darin nicht enthalten."
+    "boardCarriedOverHint": "Diese Schichten wurden an früheren Tagen begonnen und sind noch offen. Das System schließt Schichten nicht automatisch — nur Mitarbeitende oder Verwaltung. Der Zähler \"Heute im Einsatz\" zählt die heute begonnenen Schichten; diese sind darin nicht enthalten.",
+    "editReasonLabel": "Korrekturgrund (Pflichtfeld)",
+    "editReasonPlaceholder": "z. B. Fahrer hat das Beenden vergessen, tatsächliches Ende 05:30",
+    "editReasonHint": "Dieses Formular ändert Felder, die den AZG-Bericht speisen. Der Grund wird protokolliert und erscheint im Bericht.",
+    "editReasonShort": "Der Grund muss mindestens 3 Zeichen haben",
+    "editReasonMissing": "kein Grund erfasst (vor 087)",
+    "editSourceClose": "von Verwaltung beendet",
+    "closeReasonLabel": "Grund für das Beenden (Pflichtfeld)",
+    "closeReasonPlaceholder": "z. B. Fahrer hat das Beenden vergessen",
+    "closeReasonShort": "Der Grund muss mindestens 3 Zeichen haben",
+    "staleShiftBadge": "nicht beendet",
+    "staleShiftsBadge": "{count} nicht beendet"
   },
   "workers": {
     "kmUnmeasuredShifts": "{count} Schichten nicht messbar",

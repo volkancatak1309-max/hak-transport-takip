@@ -354,6 +354,7 @@ export function AdminClient({
       return `KM +${diff} > ${max}`;
     }
     if (e === "errKmRange") return "KM aralık dışı";
+    if (e === "errReasonShort") return t("editReasonShort");
     return e;
   }
 
@@ -1213,6 +1214,29 @@ export function AdminClient({
                 <Label htmlFor="e_nt">{t("tblNote")}</Label>
                 <Textarea id="e_nt" name="notes" defaultValue={editOpen.notes ?? ""} rows={2} />
               </div>
+
+              {/*
+                DÜZELTME SEBEBİ — ZORUNLU (087).
+
+                Bu formun değiştirdiği üç alan (başlangıç, bitiş, mola) AZG
+                raporunu DOĞRUDAN besliyor ve o raporu Avusturya iş
+                müfettişliği okuyor. "Bu çalışma saati neden değişti?"
+                sorusunun cevabı kayıtta olmak zorunda; sunucu eylemi sebepsiz
+                gönderimi reddeder, buradaki `required` yalnız ilk savunmadır.
+              */}
+              <div className="space-y-1.5">
+                <Label htmlFor="e_rs">{t("editReasonLabel")}</Label>
+                <Textarea
+                  id="e_rs"
+                  name="reason"
+                  rows={2}
+                  required
+                  minLength={3}
+                  placeholder={t("editReasonPlaceholder")}
+                />
+                <p className="text-xs text-muted-foreground">{t("editReasonHint")}</p>
+              </div>
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setEditOpen(null)}>
                   {tc("cancel")}

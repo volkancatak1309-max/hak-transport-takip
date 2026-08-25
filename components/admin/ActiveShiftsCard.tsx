@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CheckCircle2, Clock, Loader2, Square } from "lucide-react";
 import { OpsGroup } from "@/components/ui-v2";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { VARDIYA_BAYAT_MS } from "@/lib/mevzuat";
 import {
   Dialog,
   DialogContent,
@@ -67,23 +69,47 @@ export function ActiveShiftsCard({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [closing, setClosing] = useState<ActiveShiftRow | null>(null);
+  /** 087 — kapatma bir DÜZELTMEDİR ve sebebi kayda geçer. */
+  const [sebep, setSebep] = useState("");
 
   function confirmClose() {
     const row = closing;
     if (!row) return;
     startTransition(async () => {
-      const r = await adminCloseShiftAction(row.id);
+      const r = await adminCloseShiftAction(row.id, sebep);
       if (r.ok) {
         toast.success(t("activeShiftClosed", { name: row.worker_name }));
         setClosing(null);
+        setSebep("");
         router.refresh();
       } else {
-        toast.error(t("activeShiftCloseErr"));
+        toast.error(r.error === "errReasonShort" ? t("closeReasonShort") : t("activeShiftCloseErr"));
       }
     });
   }
 
   const overCount = rows.filter((r) => r.overLimit).length;
+
+  /**
+   * KAPANMAMIŞ KAYITLAR ÖNE (087).
+   *
+   * ÖLÇÜLDÜ (HAK61, 25.08.2026): 9 açık vardiyanın 7'si 37+ saatti. Bunlar
+   * 37 saattir çalışan insanlar değil, kapatılmamış kayıtlar — mevzuat motoru
+   * (086) da onları `VARDIYA_BAYAT_MS` eşiğiyle ayırıyor. Aynı eşik burada da
+   * uygulanıyor ki iki ekran aynı satıra aynı adı versin, ve yöneticinin
+   * yapacağı iş listenin en üstünde dursun.
+   */
+  const sirali = useMemo(
+    () =>
+      [...rows].sort((a, b) => {
+        const ba = a.elapsedMs > VARDIYA_BAYAT_MS ? 1 : 0;
+        const bb = b.elapsedMs > VARDIYA_BAYAT_MS ? 1 : 0;
+        if (ba !== bb) return bb - ba;
+        return b.elapsedMs - a.elapsedMs;
+      }),
+    [rows]
+  );
+  const bayatCount = rows.filter((r) => r.elapsedMs > VARDIYA_BAYAT_MS).length;
 
   return (
     <>
@@ -95,7 +121,11 @@ export function ActiveShiftsCard({
         count={rows.length}
         icon={<Clock className="size-4 text-accent-coral" />}
         action={
-          overCount > 0 ? (
+          bayatCount > 0 ? (
+            <span className="rounded-full bg-accent-gold/20 px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-accent-gold-text">
+              {t("staleShiftsBadge", { count: bayatCount })}
+            </span>
+          ) : overCount > 0 ? (
             <span className="rounded-full bg-status-critical-soft px-2 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-status-critical-text">
               {t("activeShiftsOverBadge", { count: overCount })}
             </span>
@@ -111,7 +141,7 @@ export function ActiveShiftsCard({
           ) : (
             <>
               <ul className="-mx-1 max-h-[320px] space-y-1 overflow-y-auto">
-                {rows.map((r) => (
+                {sirali.map((r) => (
                   <li
                     key={r.id}
                     className="flex items-center gap-3 rounded-lg px-1.5 py-2 transition-colors hover:bg-surface-2/60"
@@ -152,6 +182,11 @@ export function ActiveShiftsCard({
                         {/* Uyarının GEREKÇESİ satırda yazılı: yönetici hangi
                             tavanın aşıldığını görmeden karar veremez — gece
                             vardiyasında tavan 10 saate iner. */}
+                        {r.elapsedMs > VARDIYA_BAYAT_MS && (
+                          <span className="rounded bg-accent-gold/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-gold-text">
+                            {t("staleShiftBadge")}
+                          </span>
+                        )}
                         {r.overLimit && (
                           <span className="rounded bg-status-critical-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-status-critical-text">
                             {t("activeShiftsOverTag", {
@@ -190,7 +225,15 @@ export function ActiveShiftsCard({
 
       {/* Kapatma geri alınabilir bir işlem değil (yalnız vardiya düzenlemeden
           elle düzeltilir) — onay katmanı şart. */}
-      <Dialog open={!!closing} onOpenChange={(o) => !o && setClosing(null)}>
+      <Dialog
+        open={!!closing}
+        onOpenChange={(o) => {
+          if (!o) {
+            setClosing(null);
+            setSebep("");
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("activeShiftCloseTitle")}</DialogTitle>
@@ -203,11 +246,31 @@ export function ActiveShiftsCard({
                 : ""}
             </DialogDescription>
           </DialogHeader>
+
+          {/*
+            SEBEP ZORUNLU (087). Kapatma `ended_at` yazıyor ve o alan AZG
+            raporunu doğrudan besliyor; denetimde "bu bitiş saatini kim, neden
+            koydu" sorusunun cevabı kayıtta olmak zorunda.
+          */}
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">{t("closeReasonLabel")}</span>
+            <Textarea
+              value={sebep}
+              onChange={(e) => setSebep(e.target.value)}
+              placeholder={t("closeReasonPlaceholder")}
+              rows={2}
+            />
+          </label>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setClosing(null)}>
               {tc("cancel")}
             </Button>
-            <Button variant="destructive" onClick={confirmClose} disabled={pending}>
+            <Button
+              variant="destructive"
+              onClick={confirmClose}
+              disabled={pending || sebep.trim().length < 3}
+            >
               {pending && <Loader2 className="size-4 animate-spin" />}
               {t("activeShiftClose")}
             </Button>

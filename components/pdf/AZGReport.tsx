@@ -205,7 +205,9 @@ function ReportDoc({ data }: { data: AZGData }) {
             <Text>
               In diesem Zeitraum wurden {data.editedCount} Aufzeichnung(en) manuell
               korrigiert. Die Änderungen sind im System protokolliert
-              (Feld, alter Wert, neuer Wert, Bearbeiter, Zeitpunkt).
+              (Feld, alter Wert, neuer Wert, Bearbeiter, Zeitpunkt, Grund).
+              Betroffene Zeilen sind in der Tabelle mit einem Stern (*) vor dem
+              Datum gekennzeichnet.
             </Text>
           </View>
         )}
@@ -270,7 +272,19 @@ function ReportDoc({ data }: { data: AZGData }) {
           ) : (
             data.violations.map((v, i) => (
               <View key={i} style={styles.tr} wrap={false}>
-                <Text style={[styles.td, { width: "11%" }]}>{v.date}</Text>
+                <Text style={[styles.td, { width: "11%" }]}>
+                  {/*
+                    DÜZELTME İŞARETİ (087). Toplam dipnot "bu dönemde N kayıt
+                    düzeltildi" diyordu ama HANGİSİ olduğunu söylemiyordu.
+                    Denetimde okunan şey satırdır: müfettiş bu 13 saatlik günün
+                    sonradan mı yazıldığını satırın kendisinde görmeli.
+                    ⚠️ İşaret ASCII bir yıldız: react-pdf'te gömülü yazı tipi
+                    her Unicode sembolü taşımıyor ve eksik glif SESSİZCE boş
+                    basılırdı (Tur 3'ün font dersi).
+                  */}
+                  {v.edited ? "* " : ""}
+                  {v.date}
+                </Text>
                 <Text style={[styles.td, { width: "16%" }]}>{v.worker}</Text>
                 <Text style={[styles.td, { width: "22%" }]}>{v.type}</Text>
                 <Text style={[styles.td, { width: "24%" }]}>{v.description}</Text>

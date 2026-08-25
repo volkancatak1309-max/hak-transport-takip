@@ -42,6 +42,21 @@ export type ShiftEditLogRow = {
   field: string;
   old_value: string | null;
   new_value: string | null;
+  /** 087 — düzeltmenin SEBEBİ. 087 öncesi satırlarda null. */
+  reason?: string | null;
+  /** 087 — tek düzeltmenin alan satırlarını bağlar. */
+  edit_group?: string | null;
+  /** 087 — 'duzeltme' | 'kapatma' | 'km'. Eski satırlarda null. */
+  kaynak?: string | null;
+};
+
+/** Düzeltmeyi yazan yol — denetimde "hangi işlemle" sorusunun cevabı. */
+export type EditKaynak = "duzeltme" | "kapatma" | "km";
+
+export type EditIz = {
+  /** ZORUNLU (087). Sunucu eylemi sebepsiz düzeltmeyi reddeder. */
+  reason: string;
+  kaynak: EditKaynak;
 };
 
 function norm(v: unknown): string | null {
@@ -58,11 +73,24 @@ export async function logShiftEdit(
   timeEntryId: string,
   changedBy: string | null,
   before: Record<string, unknown> | null,
-  after: Record<string, unknown>
+  after: Record<string, unknown>,
+  /**
+   * 087 — SEBEP + KAYNAK. Geriye dönük uyumluluk için opsiyonel: 087 öncesi
+   * çağıranlar (ve migration uygulanmamış kurulumlar) eskisi gibi çalışır.
+   * Yeni yollarda sunucu eylemi sebebi ZORUNLU kılar; buraya sebepsiz
+   * gelinmesi artık kod hatası olur, veri kaybı değil.
+   */
+  iz?: EditIz
 ): Promise<void> {
   if (!before) return;
-  const rows: Omit<ShiftEditLogRow, "id" | "changed_by_name">[] = [];
+  const rows: Record<string, unknown>[] = [];
   const changedAt = new Date().toISOString();
+  /**
+   * Grup kimliği ÇAĞRI BAŞINA bir kez üretilir: bir düzeltmenin üç alanı
+   * aynı gruba, aynı sebebe bağlanır. `changed_at` ile gruplamak yanlıştı —
+   * aynı saniyeye düşen iki ayrı düzeltme birbirine karışırdı.
+   */
+  const grup = iz ? crypto.randomUUID() : null;
 
   for (const field of TRACKED) {
     if (!(field in after)) continue;
@@ -85,15 +113,36 @@ export async function logShiftEdit(
       field,
       old_value: oldV,
       new_value: newV,
+      ...(iz ? { reason: iz.reason, edit_group: grup, kaynak: iz.kaynak } : {}),
     });
   }
   if (rows.length === 0) return;
 
-  try {
-    await supabaseAdmin.from("shift_edit_log").insert(rows);
-  } catch {
-    // Tablo yok / yazma hatası → sessiz geç.
-  }
+  const { error } = await supabaseAdmin.from("shift_edit_log").insert(rows);
+  if (!error) return;
+
+  /**
+   * 087 UYGULANMAMIŞ KURULUMDA GERİ DÜŞ.
+   *
+   * `reason/edit_group/kaynak` kolonları yoksa PostgREST PGRST204 döner.
+   * Bu durumda izin TAMAMI kaybolmamalı: sebepsiz de olsa eski biçimde
+   * yazılır. Sessizce hiç yazmamak, denetim kaydını 087 gecikmesine kurban
+   * etmek olurdu.
+   */
+  const kolonYok = error.code === "PGRST204" || /column .* does not exist/i.test(error.message ?? "");
+  if (!kolonYok) return;
+  /**
+   * 087 kolonlarını AT — `delete` ile, yıkımla değil: yıkım kullanılmayan
+   * değişken üretiyor ve ESLint tabanını üç uyarı yükseltiyordu.
+   */
+  const sade = rows.map((r) => {
+    const kalan = { ...r };
+    delete kalan.reason;
+    delete kalan.edit_group;
+    delete kalan.kaynak;
+    return kalan;
+  });
+  await supabaseAdmin.from("shift_edit_log").insert(sade);
 }
 
 /** Bir vardiyanın düzenleme geçmişi (yeni → eski). Tablo yoksa boş dizi. */
@@ -101,12 +150,25 @@ export async function listShiftEdits(timeEntryId: string): Promise<ShiftEditLogR
   try {
     const { data, error } = await supabaseAdmin
       .from("shift_edit_log")
-      .select("id, time_entry_id, changed_at, changed_by, field, old_value, new_value")
+      .select("id, time_entry_id, changed_at, changed_by, field, old_value, new_value, reason, edit_group, kaynak")
       .eq("time_entry_id", timeEntryId)
       .order("changed_at", { ascending: false })
       .limit(50);
-    if (error || !data) return [];
-    const rows = data as ShiftEditLogRow[];
+    /**
+     * 087 UYGULANMAMIŞSA KOLONSUZ TEKRAR DENE — geçmiş yine görünsün.
+     */
+    let satirlar = data as ShiftEditLogRow[] | null;
+    if (error) {
+      const { data: eski } = await supabaseAdmin
+        .from("shift_edit_log")
+        .select("id, time_entry_id, changed_at, changed_by, field, old_value, new_value")
+        .eq("time_entry_id", timeEntryId)
+        .order("changed_at", { ascending: false })
+        .limit(50);
+      satirlar = (eski as ShiftEditLogRow[] | null) ?? null;
+    }
+    if (!satirlar) return [];
+    const rows = satirlar;
 
     const ids = [...new Set(rows.map((r) => r.changed_by).filter(Boolean))] as string[];
     if (ids.length === 0) return rows;

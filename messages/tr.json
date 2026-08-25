@@ -1289,7 +1289,18 @@
     "stripInFieldToday": "Bugün sahada",
     "stripCarriedOver": "Dünden açık",
     "boardTabCarriedOver": "Dünden açık",
-    "boardCarriedOverHint": "Bu vardiyalar önceki günlerde açıldı ve hâlâ kapatılmadı. Sistem vardiyayı kendiliğinden kapatmaz — yalnız personel ya da yönetici kapatır. Üstteki \"Bugün sahada\" sayacı bugün başlayanları sayar, bunlar ona dahil değildir."
+    "boardCarriedOverHint": "Bu vardiyalar önceki günlerde açıldı ve hâlâ kapatılmadı. Sistem vardiyayı kendiliğinden kapatmaz — yalnız personel ya da yönetici kapatır. Üstteki \"Bugün sahada\" sayacı bugün başlayanları sayar, bunlar ona dahil değildir.",
+    "editReasonLabel": "Düzeltme sebebi (zorunlu)",
+    "editReasonPlaceholder": "Örn. şoför kapatmayı unuttu, gerçek bitiş 05:30",
+    "editReasonHint": "Bu form AZG raporunu besleyen alanları değiştiriyor. Sebep denetim kaydına yazılır ve raporda görünür.",
+    "editReasonShort": "Sebep en az 3 karakter olmalı",
+    "editReasonMissing": "sebep kaydedilmemiş (087 öncesi)",
+    "editSourceClose": "yönetici kapattı",
+    "closeReasonLabel": "Kapatma sebebi (zorunlu)",
+    "closeReasonPlaceholder": "Örn. şoför kapatmayı unuttu",
+    "closeReasonShort": "Sebep en az 3 karakter olmalı",
+    "staleShiftBadge": "kapanmamış",
+    "staleShiftsBadge": "{count} kapanmamış"
   },
   "workers": {
     "kmUnmeasuredShifts": "{count} vardiya ölçülemedi",

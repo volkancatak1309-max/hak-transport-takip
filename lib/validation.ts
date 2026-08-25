@@ -165,6 +165,18 @@ export const editEntrySchema = z
     // türetilmiş alan düzenlenebilirken kaynak alanlar düzenlenemiyordu.
     start_package_count: z.coerce.number().int().min(0).max(MAX_COUNT).optional().nullable(),
     undelivered_count: z.coerce.number().int().min(0).max(MAX_COUNT).optional().nullable(),
+    /**
+     * DÜZELTME SEBEBİ — ZORUNLU (087).
+     *
+     * Avusturya iş müfettişliği AZG raporunu okuyor ve bu raporu besleyen üç
+     * alan (`started_at`, `ended_at`, `break_minutes`) yöneticinin
+     * değiştirebildiği alanlar. "Bu çalışma saati neden değişti?" sorusunun
+     * cevabı kayıtta olmak zorunda.
+     *
+     * Asgari 3 karakter: "ok" gibi bir şey sebep sayılmaz, ama şoförün kendi
+     * cümlesini ("unuttu") de reddetmemeli.
+     */
+    reason: z.string().trim().min(3, "errReasonShort").max(500),
   })
   .refine(
     (d) => d.end_km == null || d.end_km - d.start_km <= MAX_PER_SHIFT_KM,

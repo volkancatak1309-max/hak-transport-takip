@@ -49,6 +49,15 @@ export type AZGViolation = {
   description: string;
   legalRef: string;
   severity: AZGSeverity;
+  /**
+   * 087 — bu bulgunun dayandığı vardiya ELLE DÜZELTİLDİ mi.
+   *
+   * Toplam dipnot ("bu dönemde N kayıt düzeltildi") zaten vardı ama HANGİ
+   * satırın düzeltildiğini söylemiyordu. Denetimde okunan şey satırdır:
+   * müfettiş "bu 13 saatlik gün gerçekten mi böyleydi, yoksa sonradan mı
+   * yazıldı" diye sorar ve cevabın o satırda durması gerekir.
+   */
+  edited?: boolean;
 };
 
 export type AZGPerWorker = {
@@ -225,25 +234,43 @@ export async function buildAZGReport(
   const nameById = new Map((workersData ?? []).map((w) => [w.id, w.name as string]));
 
   const violations: AZGViolation[] = [];
-  const weekly = new Map<string, { hours: number; worker: string; iso: string }>();
+  /**
+   * 087 — `edited`: kovaya giren vardiyalardan EN AZ BİRİ elle düzeltildiyse
+   * true. Toplam satırı da (gün/hafta) denetimde okunuyor; hangi kaydın
+   * düzeltildiğini söylemeyen bir toplam, tek satırlık bulgudan daha az
+   * şeffaf olurdu.
+   */
+  const weekly = new Map<
+    string,
+    { hours: number; worker: string; iso: string; edited: boolean }
+  >();
   // Daily totals include EVERY shift (even micro ones): legally every worked
   // minute counts toward the daily cap. Grouped by the shift's start date.
   const daily = new Map<
     string,
-    { ms: number; worker: string; iso: string; shifts: number; night: boolean }
+    { ms: number; worker: string; iso: string; shifts: number; night: boolean; edited: boolean }
   >();
   // Rest-period analysis ignores micro shifts (< 5 min): a test blip is not a
   // real work period to demand 11 h rest around.
   const MICRO_MS = 5 * 60_000;
   const restByWorker = new Map<
     string,
-    { startTs: number; endTs: number; iso: string }[]
+    { startTs: number; endTs: number; iso: string; edited: boolean }[]
   >();
   // Suspicious (micro) shifts are excluded from the statistics below and shown
   // in their own section. Meaningful shifts are counted per worker for the
   // "Schichten" / "Stunden gesamt" columns.
   const suspicious: AZGSuspicious[] = [];
   const statByWorker = new Map<string, { shifts: number; ms: number }>();
+
+  /**
+   * 087 — DÜZELTİLMİŞ VARDİYA KÜMESİ, DÖNGÜDEN ÖNCE.
+   *
+   * Eskiden yalnız raporun sonunda SAYI için okunuyordu ("bu dönemde N kayıt
+   * düzeltildi"). Denetimde okunan şey satırdır: her bulgu, dayandığı kaydın
+   * elle düzeltilip düzeltilmediğini kendi üstünde taşımalı.
+   */
+  const editedIds = await listEditedEntryIds(entries.map((x) => x.id));
 
   for (const e of entries) {
     const worker = nameById.get(e.worker_id) ?? "—";
@@ -292,6 +319,7 @@ export async function buildAZGReport(
         }),
         legalRef: night ? REF.nightMax : REF.dailyMax,
         severity: "serious_violation",
+        edited: editedIds.has(e.id),
       });
     }
 
@@ -313,19 +341,23 @@ export async function buildAZGReport(
         }),
         legalRef: requiredMin >= 45 ? REF.break45 : REF.break30,
         severity: "violation",
+        edited: editedIds.has(e.id),
       });
     }
 
     const wk = `${e.worker_id}:${isoWeekKey(e.started_at)}`;
-    const acc = weekly.get(wk) ?? { hours: 0, worker, iso: e.started_at };
+    const acc = weekly.get(wk) ?? { hours: 0, worker, iso: e.started_at, edited: false };
     acc.hours += hours;
+    if (editedIds.has(e.id)) acc.edited = true;
     weekly.set(wk, acc);
 
     const dk = `${e.worker_id}:${viennaDateKey(e.started_at)}`;
     const dacc =
-      daily.get(dk) ?? { ms: 0, worker, iso: e.started_at, shifts: 0, night: false };
+      daily.get(dk) ??
+      { ms: 0, worker, iso: e.started_at, shifts: 0, night: false, edited: false };
     dacc.ms += ms;
     dacc.shifts += 1;
+    if (editedIds.has(e.id)) dacc.edited = true;
     // Gunun HERHANGI bir vardiyasi gece penceresine degiyorsa o gun icin
     // 14 Abs. 2 tavani (10 sa) gecerlidir.
     if (touchesNightWindow(e.started_at, e.ended_at)) dacc.night = true;
@@ -336,6 +368,7 @@ export async function buildAZGReport(
     // stats. (Micro shifts already returned above.)
     const arr = restByWorker.get(e.worker_id) ?? [];
     arr.push({
+      edited: editedIds.has(e.id),
       startTs: new Date(e.started_at).getTime(),
       endTs: new Date(e.ended_at as string).getTime(),
       iso: e.started_at,
@@ -371,6 +404,9 @@ export async function buildAZGReport(
           description: t("v.rest_desc", { hours: fmtH(gapH) }),
           legalRef: REF.rest11,
           severity: "violation",
+          // Boşluk İKİ vardiyadan doğar; biri düzeltildiyse bulgu düzeltilmiş
+          // veriye dayanıyordur.
+          edited: arr[i - 1].edited || arr[i].edited,
         });
       }
     }
@@ -424,6 +460,7 @@ export async function buildAZGReport(
       description: t(descKey, { hours: fmtH(h) }),
       legalRef,
       severity,
+      edited: d.edited,
     });
   }
 
@@ -442,6 +479,7 @@ export async function buildAZGReport(
         description: t("v.weeklyAbs_desc", { hours: fmtH(acc.hours) }),
         legalRef: REF.weeklyMax,
         severity: "violation",
+        edited: acc.edited,
       });
     } else if (acc.hours > 48) {
       violations.push({
@@ -453,6 +491,7 @@ export async function buildAZGReport(
         description: t("v.weeklyMax_desc", { hours: fmtH(acc.hours) }),
         legalRef: REF.weeklyAvg,
         severity: "warning",
+        edited: acc.edited,
       });
     } else if (acc.hours > 40) {
       violations.push({
@@ -464,6 +503,7 @@ export async function buildAZGReport(
         description: t("v.weeklyNormal_desc", { hours: fmtH(acc.hours) }),
         legalRef: REF.weeklyNormal,
         severity: "warning",
+        edited: acc.edited,
       });
     }
   }
@@ -546,7 +586,8 @@ export async function buildAZGReport(
       // (started_at / ended_at / break_minutes) yönetici tarafından
       // değiştirilebiliyor; rapor bunu dipnotta açıkça beyan etmeli.
       // Tablo yoksa 0 döner ve dipnot hiç basılmaz.
-      editedCount: (await listEditedEntryIds(entries.map((e) => e.id))).size,
+      // Küme yukarıda BİR KEZ okundu (satır işaretleri için); sayı ondan gelir.
+      editedCount: editedIds.size,
     },
   };
 }

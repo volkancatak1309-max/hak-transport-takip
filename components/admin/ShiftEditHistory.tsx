@@ -84,7 +84,22 @@ export function ShiftEditHistory({ entryId }: { entryId: string }) {
             <span className="ml-1.5 text-muted-foreground">
               · {r.changed_by_name ?? "—"} ·{" "}
               {formatDate(r.changed_at, locale)} {formatTime(r.changed_at, locale)}
+              {r.kaynak === "kapatma" && <> · {t("editSourceClose")}</>}
             </span>
+            {/*
+              SEBEP AYRI SATIRDA (087). Denetimde sorulan soru "ne değişti"
+              değil "NEDEN değişti". 087 öncesi satırlarda sebep yok ve bu
+              GİZLENMİYOR: "sebep kaydedilmemiş" yazıyor — boş bırakmak,
+              sebebin sorulmadığı bir dönemi sebebi olan bir düzeltmeymiş
+              gibi gösterirdi.
+            */}
+            <div className="mt-0.5 pl-2 text-muted-foreground">
+              {r.reason ? (
+                <>“{r.reason}”</>
+              ) : (
+                <span className="italic opacity-70">{t("editReasonMissing")}</span>
+              )}
+            </div>
           </li>
         ))}
       </ul>

@@ -770,7 +770,10 @@ export async function adminUpdateKmAction(
 
   if (error) return { ok: false, error: error.message };
 
-  await logShiftEdit(entryId, session.worker_id ?? null, beforeKm ?? null, kmUpdate);
+  await logShiftEdit(entryId, session.worker_id ?? null, beforeKm ?? null, kmUpdate, {
+    reason: "Km düzeltmesi (panel)",
+    kaynak: "km",
+  });
 
   revalidatePath("/admin");
   revalidatePath("/panel");
@@ -793,8 +796,23 @@ export async function adminUpdateKmAction(
  * duran bir vardiyayı "şimdi"ye kapatmak 27 saatlik çalışma yazardı.
  * Bitiş km'si de manuel kapanışla aynı kaynaktan türetilir (resolveEndKm).
  */
-export async function adminCloseShiftAction(entryId: string): Promise<ShiftResult> {
+/**
+ * KAPANMAMIŞ VARDİYAYI YÖNETİCİ KAPATIR — SEBEP ZORUNLU, İZ ZORUNLU (087).
+ *
+ * 🔴 ÖNCEDEN İZ BIRAKMIYORDU. Bu eylem `ended_at` ve `end_km` yazıyor;
+ * `ended_at` AZG raporunu doğrudan besleyen üç alandan biri. `editEntryAction`
+ * iz bırakırken kapatmanın bırakmaması, aynı tabloya iki farklı standart
+ * uygulamaktı — ve denetimde "bu bitiş saatini kim koydu" sorusu cevapsız
+ * kalıyordu.
+ */
+export async function adminCloseShiftAction(
+  entryId: string,
+  reason: string
+): Promise<ShiftResult> {
   const session = await requireAdmin();
+
+  const sebep = (reason ?? "").trim();
+  if (sebep.length < 3) return { ok: false, error: "errReasonShort" };
 
   const { data: entry } = await supabaseAdmin
     .from("time_entries")
@@ -846,6 +864,20 @@ export async function adminCloseShiftAction(entryId: string): Promise<ShiftResul
 
   if (error) return { ok: false, error: error.message };
 
+  /**
+   * DENETİM İZİ — kapatma da bir düzeltmedir.
+   *
+   * `before` yalnız değişen iki alanı taşır: `ended_at` zaten null'dı,
+   * `end_km` de. Log yazıcısı değişen alanları kendisi süzer.
+   */
+  await logShiftEdit(
+    entryId,
+    session.worker_id ?? null,
+    { ended_at: null, end_km: null },
+    { ended_at: endedIso, end_km: endKm },
+    { reason: sebep, kaynak: "kapatma" }
+  );
+
   // Başlangıç onayı verilmeden kapanan vardiya "onaysız" işaretlenir — manuel
   // kapanıştaki desenin aynısı (best-effort, kapanışı geri döndürmez).
   await supabaseAdmin
@@ -877,6 +909,7 @@ export async function editEntryAction(formData: FormData): Promise<ShiftResult> 
     break_minutes: formData.get("break_minutes") || null,
     start_package_count: formData.get("start_package_count") || null,
     undelivered_count: formData.get("undelivered_count") || null,
+    reason: formData.get("reason") || "",
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
@@ -960,7 +993,10 @@ export async function editEntryAction(formData: FormData): Promise<ShiftResult> 
 
   if (error) return { ok: false, error: error.message };
 
-  await logShiftEdit(parsed.data.id, session.worker_id ?? null, before ?? null, update);
+  await logShiftEdit(parsed.data.id, session.worker_id ?? null, before ?? null, update, {
+    reason: parsed.data.reason,
+    kaynak: "duzeltme",
+  });
 
   // SEFER PAKET KÖPRÜSÜ (Tur 3) — yönetici teslim sayısını düzeltirse seferin
   // taşıdığı rakam da tazelensin; yoksa sefer düzeltilmiş vardiyanın YANLIŞ

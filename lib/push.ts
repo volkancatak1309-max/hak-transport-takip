@@ -47,7 +47,7 @@ type ExpoMesaj = {
   data: Record<string, unknown>;
   sound: "default";
   channelId: string;
-  priority: "high";
+  priority: "high" | "normal";
 };
 
 type ExpoSonuc = {
@@ -119,6 +119,49 @@ async function partiGonder(parti: ExpoMesaj[]): Promise<void> {
   } finally {
     clearTimeout(saat);
   }
+}
+
+/**
+ * SONUÇ DÖNDÜREN GÖNDERİM — yalnız `haftalikAksiyonBildir` için.
+ *
+ * `gonder`/`partiGonder` bilerek `void`: mesaj yolunda sonuç kimse tarafından
+ * okunmuyor ve hata mesajı düşürmemeli. Haftalık turda ise sonuç KAYDA
+ * geçiyor, bu yüzden ayrı bir yol. Ölü jeton temizliği aynen yapılıyor.
+ */
+async function gonderSonuclu(mesajlar: ExpoMesaj[]): Promise<{ hata: string | null }> {
+  let hata: string | null = null;
+  for (let i = 0; i < mesajlar.length; i += PARTI) {
+    const parti = mesajlar.slice(i, i + PARTI);
+    const kontrol = new AbortController();
+    const saat = setTimeout(() => kontrol.abort(), ZAMAN_ASIMI_MS);
+    try {
+      const yanit = await fetch(EXPO_UC, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify(parti),
+        signal: kontrol.signal,
+      });
+      if (!yanit.ok) {
+        hata = `expo_${yanit.status}`;
+        continue;
+      }
+      const govde = (await yanit.json()) as { data?: ExpoSonuc[] };
+      const sonuclar = Array.isArray(govde.data) ? govde.data : [];
+      const olu: string[] = [];
+      sonuclar.forEach((s, j) => {
+        if (s?.status === "error" && s.details?.error === "DeviceNotRegistered") {
+          const m = parti[j];
+          if (m) olu.push(m.to);
+        }
+      });
+      await olenleriSil(olu);
+    } catch (e) {
+      hata = String((e as Error).name === "AbortError" ? "zaman_asimi" : (e as Error).message).slice(0, 80);
+    } finally {
+      clearTimeout(saat);
+    }
+  }
+  return { hata };
 }
 
 /** Gövdeleri 100'lük partilere böler. */
@@ -495,5 +538,79 @@ export async function duyuruBildir(g: {
     await gonder(mesajlar);
   } catch {
     // Duyuru yazıldı; bildirim yolu onu düşürmez.
+  }
+}
+
+/**
+ * HAFTALIK AKSİYON BİLDİRİMİ (084) — YÖNETİM TARAFINA.
+ *
+ * ═══ NEDEN SONUÇ DÖNDÜRÜYOR — bu modülde bir İSTİSNA ═══
+ *
+ * Diğer bildirim fonksiyonları `void`: "bildirim mesajı düşürmez" ilkesi.
+ * Burada da hiçbir şey FIRLATMIYOR ama SONUÇ dönüyor, çünkü haftalık tur
+ * bildirimin akıbetini KAYDEDİYOR (`haftalik_aksiyon_turlari.bildirim_*`).
+ * Gerekçe ölçülebilir: HAK61'de bugün push jetonu SIFIR (25.08.2026) — yani
+ * gönderim yolu kusursuz çalışsa bile hiçbir cihaz çalmaz. Bunu "gitti"
+ * saymak yalan olurdu; panel "0 cihaza gitti" diyebilmeli.
+ *
+ * ═══ ALICI: PATRONLAR + TÜM ŞEFLER ═══
+ *
+ * Haftalık panel FİLO GENELİ bir yorum; kalemleri belirli bir şoföre ya da
+ * araca bağlı olsa bile liste bir bütün. Bu yüzden kapsam SORULMUYOR: şef
+ * kendi filosunun kalemlerini panelde zaten kapsam süzgecinin ardından görür
+ * (`requireFleetView`). Bildirim METNİNDE isim/plaka YOK — yalnız sayı ve
+ * en yüksek öncelikli kalemin BAŞLIĞI; başlık zaten panelde göreceği cümle.
+ *
+ * ⚠️ Şoförlere GİTMEZ. Bu bir yönetim işi listesi; şoförün elinden gelen bir
+ * şey yok ve haftada bir dürtmek kanalı susturmaktan başka işe yaramaz
+ * (`bakimBildir`in aynı gerekçesi).
+ */
+export async function haftalikAksiyonBildir(g: {
+  haftaBasi: string;
+  aksiyonSayisi: number;
+  /** En yüksek öncelikli kalemin başlığı — null ise "temiz hafta". */
+  ilkBaslik: string | null;
+}): Promise<{ alici: number; jeton: number; hata: string | null }> {
+  try {
+    // test-visible: alıcılar YÖNETİM tarafı (yonetimTarafi'ndaki gerekçenin
+    // aynısı). Test hesabı patron ve panelde bu listeyi zaten görüyor.
+    const { data, error } = await supabaseAdmin
+      .from("workers")
+      .select("id, is_admin, managed_fleet")
+      .eq("is_active", true);
+    if (error || !data) return { alici: 0, jeton: 0, hata: error?.message ?? "workers okunamadi" };
+
+    const alicilar = (data as { id: string; is_admin: boolean; managed_fleet: string | null }[])
+      .filter((w) => w.is_admin === true || w.managed_fleet === "bordo" || w.managed_fleet === "mavi")
+      .map((w) => w.id);
+    if (alicilar.length === 0) return { alici: 0, jeton: 0, hata: null };
+
+    const jetonlar = await jetonlariGetir(alicilar);
+    if (jetonlar.length === 0) {
+      // SESSİZ BAŞARI DEĞİL: alıcı var ama kayıtlı cihaz yok. Tur bunu yazar.
+      return { alici: alicilar.length, jeton: 0, hata: "kayitli_cihaz_yok" };
+    }
+
+    const baslik =
+      g.aksiyonSayisi === 0
+        ? "Bu hafta aksiyon yok"
+        : `Bu hafta ${g.aksiyonSayisi} aksiyon`;
+    const govde = g.ilkBaslik ?? "Filoda eşiği geçen bir kalem çıkmadı.";
+
+    const sonuc = await gonderSonuclu(
+      jetonlar.map(({ token }) => ({
+        to: token,
+        title: baslik,
+        body: govde,
+        data: { tur: "haftalik_aksiyon", haftaBasi: g.haftaBasi, adet: g.aksiyonSayisi },
+        sound: "default" as const,
+        channelId: KANAL,
+        // Haftalık özet ACİL DEĞİL: normal öncelik, Doze modunda beklesin.
+        priority: "normal" as const,
+      }))
+    );
+    return { alici: alicilar.length, jeton: jetonlar.length, hata: sonuc.hata };
+  } catch (e) {
+    return { alici: 0, jeton: 0, hata: String((e as Error).message).slice(0, 160) };
   }
 }

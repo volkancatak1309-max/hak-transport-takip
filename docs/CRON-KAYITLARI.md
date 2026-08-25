@@ -22,7 +22,8 @@ Vercel projesinden alınır.
 | 3 | Belge uyarısı | `/api/cron/document-alerts` | `CRON_SECRET` | **günde TAM 1 · 06:00** | Belge takibi açık kiracı (migration 078 — bugün yalnız HAK61) |
 | 4 | Demo telemetri temizliği | `/api/cron/demo-retention` | `CRON_SECRET` | günde 1 · gece | **YALNIZ galzura-demo** |
 | 5 | Periyodik bakım uyarısı | `/api/cron/bakim-alerts` | `CRON_SECRET` | **günde TAM 1 · 06:15** | Bakım planı kuran her kiracı (migration 081) |
-| ~~6~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
+| 6 | Haftalık aksiyon | `/api/cron/haftalik-aksiyon` | `CRON_SECRET` | **haftada TAM 1 · Pazartesi 06:30** | Haftalık panel isteyen her kiracı (migration 084) |
+| ~~7~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
 
 Sır iki biçimde de kabul edilir ve karşılaştırma zamanlama-güvenlidir
 (`safeEqual`):
@@ -206,9 +207,58 @@ Otomatik kapanış kaldırıldı; kapanmamış vardiyalar Dikkat panosundaki
 
 ---
 
+## 6 · Haftalık aksiyon — HAFTADA TAM BİR KEZ
+
+```
+POST https://<alan-adi>/api/cron/haftalik-aksiyon?secret=<CRON_SECRET>
+```
+
+**Sıklık: Pazartesi 06:30.** Neden Pazartesi sabahı: tur GEÇEN HAFTAYI yorumluyor
+ve yöneticinin haftaya "bu hafta ne yapacağım" listesiyle başlaması gerekiyor.
+06:30, belge (06:00) ve bakım (06:15) uyarılarından SONRA — o iki cron aynı
+sabah iş emri açabiliyor ve haftalık tarama onları görebilsin.
+
+**HAFTADA TAM 1 — ikinci tetikleme zararsız.** `hafta_basi` tekil; ikinci koşum
+hiçbir şey yazmaz ve `{"zatenVardi": true}` döner. Kapatılmış kalemler geri
+gelmez. (Bakım cron'undaki "günde tam 1" deseninin haftalık karşılığı.)
+
+**Kuru koşum** — canlıya satır yazmadan "kurallar ne çıkarıyor" sorusunu
+cevaplar. Yeni kiracıda eşikleri görmek için:
+
+```
+POST /api/cron/haftalik-aksiyon?secret=<CRON_SECRET>&kuru=1
+```
+
+### Yanıt kodları
+
+| Kod | Anlamı | Ne yapmalı |
+|---|---|---|
+| 200 | Tur üretildi (`aksiyon`, `elenen`, `tarama`, `bildirim`, `kalemler`) | — |
+| 200 + `zatenVardi` | Bu haftanın turu zaten var; hiçbir şey yazılmadı | — |
+| 401 | Sır yanlış/tanımsız | Vercel env'i kontrol et |
+| 503 | migration **084** çalıştırılmamış | Haftalık panel o kiracıda kapalı; ya SQL'i çalıştır ya kaydı kurma |
+| 500 | Üretim sırasında hata — gövdede sebep | Gövdeye bak; tur YAZILMAMIŞTIR (yarım hafta bırakılmaz) |
+
+### Yanıtın okunması
+
+`tarama` alanı kural başına `{aday, gecen, esik}` taşır ve **"kural çalışmadı"
+ile "kural çalıştı, eşiği geçen yok" ayrımının tek kaynağıdır**. Bir kuralda
+`atlandi` görürseniz o sinyal okunamamıştır (migration yok, RPC yok) — 0 kalem
+sessiz bir arıza değil, kayda geçmiş bir eksikliktir.
+
+`bildirim` alanı `{alici, jeton, hata}` döner. `jeton: 0` **hata değildir**:
+yöneticilerin kayıtlı mobil cihazı yoksa bildirim hiçbir yere gitmez ve panel
+bunu açıkça yazar ("kayıtlı cihaz yok"). HAK61'de 25.08.2026 itibarıyla push
+jetonu **sıfır** — ölçüldü.
+
+⚠️ **Bu cron kurulmazsa** panel boş kalır ama sessizce değil: ekran "bu hafta
+için tur üretilmemiş" der ve zamanlayıcı kaydının eksik olduğunu söyler.
+
+---
+
 ## Yeni kiracıda kurulum sırası
 
-1. Kurulum SQL'ini çalıştır (`db/install/<musteri>-full.sql`) — şema 001→081.
+1. Kurulum SQL'ini çalıştır (`db/install/<musteri>-full.sql`) — şema 001→084.
 2. Vercel env'leri gir: `FLESPI_SYNC_SECRET`, `CRON_SECRET`, `FLESPI_TOKEN`.
 3. **1 numaralı** kaydı kur (flespi) — telemetri akmadan hiçbir şey çalışmaz.
 4. `device_telemetry`ye satır düştüğünü doğrula:
@@ -216,4 +266,6 @@ Otomatik kapanış kaldırıldı; kapanmamış vardiyalar Dikkat panosundaki
 5. **2** ve **3** numaralı kayıtları kur; ilk çağrılarının **200** döndüğünü gör
    (503 alıyorsan ilgili migration çalışmamıştır).
 6. Bakım planı kuracaksan **5**'i de kur (kuru koşumla doğrula).
-7. Demo değilse **4**'ü kurma. `shift-watchdog` diye bir iş **yok**.
+7. Haftalık paneli istiyorsan **6**'yı kur — önce `&kuru=1` ile koştur ve
+   `tarama` çıktısına bak: kaç kural gerçekten veri buluyor?
+8. Demo değilse **4**'ü kurma. `shift-watchdog` diye bir iş **yok**.

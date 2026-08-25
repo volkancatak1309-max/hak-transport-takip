@@ -18,6 +18,7 @@ import {
   Siren,
   Wrench,
   CalendarCheck,
+  ClipboardCheck,
   BarChart3,
   FileBarChart,
   CalendarOff,
@@ -145,6 +146,9 @@ export function DashboardShell({
   const navItems: NavItem[] = isChief
     ? [
         { href: "/admin", label: t("admin"), icon: LayoutDashboard },
+        // Şef de görür ama KAPSAMLI: kendi filosu dışındaki kalem sunucudan
+        // hiç çıkmıyor (app/actions/haftalik-aksiyon.ts).
+        { href: "/admin/haftalik", label: t("weekly"), icon: ClipboardCheck },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
         // İş emirleri şefe AÇIK (081): aracı servise o gönderiyor. Kapsam
         // eylem katmanında ARAÇ ekseninde uygulanıyor, menü onu daraltmıyor.
@@ -164,6 +168,10 @@ export function DashboardShell({
     : user.isAdmin
     ? [
         { href: "/admin", label: t("admin"), icon: LayoutDashboard },
+        // HAFTALIK AKSİYON (084) — /admin'in hemen ardında, bilinçli.
+        // /admin GÜNÜN panosu ("bugün ne var"), bu HAFTANIN yorumu
+        // ("bu hafta ne yap"). İkisi aynı aile, farklı zaman ölçeği.
+        { href: "/admin/haftalik", label: t("weekly"), icon: ClipboardCheck },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },
         { href: "/admin/araclar", label: t("vehicles"), icon: Truck },
         // İŞ EMİRLERİ + BAKIM (081): Araçlar'ın hemen ardında, bilinçli.

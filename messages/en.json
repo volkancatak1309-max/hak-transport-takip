@@ -513,7 +513,8 @@
     "every_month": "every {months} months",
     "err_no_threshold": "Enter at least one interval — km or months.",
     "err_duplicate": "A rule already exists for this vehicle and type.",
-    "err_fleet_wide": "Only the owner can create a fleet-wide rule."
+    "err_fleet_wide": "Only the owner can create a fleet-wide rule.",
+    "plan_delete_desc": "The rule is deleted. Past service records are kept; only their link to this rule is removed."
   },
   "co2": {
     "button": "📊 CO₂ Report",
@@ -1370,7 +1371,8 @@
     "docDelete": "Delete document",
     "docExpired": "{days} days overdue",
     "docExpiring": "in {days} days",
-    "docValid": "{days} days"
+    "docValid": "{days} days",
+    "docDeleteDesc": "The document record is permanently deleted. If the date is wrong, edit it instead of deleting."
   },
   "manualStart": {
     "title": "Start Shift",
@@ -1882,7 +1884,10 @@
     "dvir_field_desc_ph": "Tread depth and sidewall damage",
     "dvir_field_vtype": "Vehicle type",
     "dvir_field_vtype_ph": "Truck",
-    "dvir_field_vtype_hint": "Leave empty to ask for every vehicle."
+    "dvir_field_vtype_hint": "Leave empty to ask for every vehicle.",
+    "doc_field_sort": "Order",
+    "doc_type_delete_desc": "The type is deleted. If documents of this type exist it cannot be deleted — deactivate it instead.",
+    "dvir_item_delete_desc": "The item is deleted. If it appears in a submitted form it cannot be deleted — deactivate it instead."
   },
   "takip": {
     "durum_hazirlaniyor": "Getting ready",
@@ -2078,6 +2083,22 @@
     "source_dvir": "Inspection",
     "source_dtc": "Fault code",
     "source_periyodik": "Scheduled service",
-    "source_elle": "Manual"
+    "source_elle": "Manual",
+    "delete_desc": "The work order is permanently deleted.",
+    "delete_only_manual": "Only manually opened work orders can be deleted. Orders from an inspection, a fault code or scheduled service are part of an evidence chain — close them instead, and reopen if needed.",
+    "delete_not_closed": "A closed work order cannot be deleted: it carries cost and service date. Reopen it if needed."
+  },
+  "crud": {
+    "edit": "Edit",
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "delete_title": "Delete {name}?",
+    "delete_desc": "This record will be permanently deleted.",
+    "deleted": "Deleted.",
+    "activated": "Activated.",
+    "deactivated": "Deactivated — it stays in the list but is no longer offered for new records.",
+    "in_use_deactivate": "This record is in use and cannot be deleted. Deactivate it instead — existing records are kept, new ones will not offer it."
   }
 }

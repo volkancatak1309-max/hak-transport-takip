@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusChip } from "@/components/ui-v2";
-import { dvirMaddeKaydet } from "@/app/actions/dvir";
+import { CrudSatirEylemleri } from "@/components/admin/CrudSatirEylemleri";
+import { dvirMaddeKaydet, dvirMaddeSil } from "@/app/actions/dvir";
 import type { DvirMadde } from "@/lib/dvir-db";
 
 /**
@@ -25,6 +26,12 @@ import type { DvirMadde } from "@/lib/dvir-db";
  * Bir madde sefer öncesine, sonrasına ya da ikisine birden ait olabilir. Lastik
  * sefer öncesi kontrol edilir; hasar sefer sonrası da bakılır. "İkisi" ayrı bir
  * madde açmak zorunda bırakmamak için var — aynı gerçek iki satıra bölünmesin.
+ *
+ * ═══ EKLE VARSA DÜZENLE VE SİL DE VAR ═══
+ *
+ * Madde doldurulmuş bir formda geçiyorsa veritabanı silmeyi durdurur (FK
+ * restrict, 081) ve ekran PASİFLEŞTİRMEYİ önerir: madde yeni formlarda
+ * sorulmaz, eski formlar okunur kalır. Kanıtın yarısını silmenin yolu yok.
  */
 export function DvirMaddeleriSection({
   maddeler,
@@ -34,22 +41,32 @@ export function DvirMaddeleriSection({
   tabloYok: boolean;
 }) {
   const t = useTranslations("settings");
+  const tc = useTranslations("crud");
   const [pending, startTransition] = useTransition();
   const [acik, setAcik] = useState(false);
+  const [duzenlenen, setDuzenlenen] = useState<DvirMadde | null>(null);
+
+  function formuAc(m: DvirMadde | null) {
+    setDuzenlenen(m);
+    setAcik(true);
+  }
 
   async function kaydet(fd: FormData) {
     const r = await dvirMaddeKaydet({
+      id: duzenlenen?.id,
       kod: String(fd.get("kod") ?? ""),
       etiket: String(fd.get("etiket") ?? ""),
       aciklama: (fd.get("aciklama") as string) || null,
       tur: (String(fd.get("tur") ?? "ikisi") as DvirMadde["tur"]) ?? "ikisi",
       aracTipi: (fd.get("aracTipi") as string) || null,
       sira: Number(fd.get("sira") ?? 0),
-      aktif: true,
+      // Pasiflik bu formdan yönetilmiyor; düzenleme onu KORUR, sıfırlamaz.
+      aktif: duzenlenen ? duzenlenen.aktif : true,
     });
     if (r.ok) {
       toast.success(t("dvir_item_saved"));
       setAcik(false);
+      setDuzenlenen(null);
       return;
     }
     toast.error(
@@ -58,6 +75,31 @@ export function DvirMaddeleriSection({
         : r.hata === "tablo_yok"
           ? t("dvir_migration_needed")
           : t("save_error")
+    );
+  }
+
+  async function sil(m: DvirMadde) {
+    const r = await dvirMaddeSil(m.id);
+    if (r.ok) {
+      toast.success(tc("deleted"));
+      return;
+    }
+    toast.error(r.hata === "kullanimda" ? tc("in_use_deactivate") : t("save_error"));
+  }
+
+  async function pasifDegistir(m: DvirMadde) {
+    const r = await dvirMaddeKaydet({
+      id: m.id,
+      kod: m.kod,
+      etiket: m.etiket,
+      aciklama: m.aciklama,
+      tur: m.tur,
+      aracTipi: m.aracTipi,
+      sira: m.sira,
+      aktif: !m.aktif,
+    });
+    toast[r.ok ? "success" : "error"](
+      r.ok ? (m.aktif ? tc("deactivated") : tc("activated")) : t("save_error")
     );
   }
 
@@ -82,7 +124,7 @@ export function DvirMaddeleriSection({
               {maddeler.map((m) => (
                 <li
                   key={m.id}
-                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 text-sm"
+                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1 pl-3 pr-1 text-sm"
                 >
                   <span className="flex items-center gap-2">
                     {/* Etiket KİRACININ verisi — çevrilmez. */}
@@ -92,9 +134,22 @@ export function DvirMaddeleriSection({
                       <StatusChip tone="neutral">{t("dvir_item_inactive")}</StatusChip>
                     )}
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {t(`dvir_kind_${m.tur}`)}
-                    {m.aracTipi ? ` · ${m.aracTipi}` : ""}
+                  <span className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {t(`dvir_kind_${m.tur}`)}
+                      {m.aracTipi ? ` · ${m.aracTipi}` : ""}
+                    </span>
+                    <CrudSatirEylemleri
+                      adi={m.etiket}
+                      pending={pending}
+                      pasifMi={!m.aktif}
+                      onDuzenle={() => formuAc(m)}
+                      onSil={() => startTransition(async () => { await sil(m); })}
+                      onPasiflestir={() =>
+                        startTransition(async () => { await pasifDegistir(m); })
+                      }
+                      silmeAciklamasi={t("dvir_item_delete_desc")}
+                    />
                   </span>
                 </li>
               ))}
@@ -103,6 +158,9 @@ export function DvirMaddeleriSection({
 
           {acik ? (
             <form
+              // `key`: aynı form hem ekleme hem düzenleme için kullanılıyor;
+              // React defaultValue'yu satır değişince kendiliğinden okumaz.
+              key={duzenlenen?.id ?? "yeni"}
               action={(fd) => startTransition(async () => { await kaydet(fd); })}
               className="space-y-3 rounded-lg border border-border/60 p-3"
             >
@@ -113,6 +171,7 @@ export function DvirMaddeleriSection({
                     id="dvir_label"
                     name="etiket"
                     required
+                    defaultValue={duzenlenen?.etiket ?? ""}
                     placeholder={t("dvir_field_label_ph")}
                   />
                 </div>
@@ -122,6 +181,7 @@ export function DvirMaddeleriSection({
                     id="dvir_code"
                     name="kod"
                     required
+                    defaultValue={duzenlenen?.kod ?? ""}
                     placeholder={t("dvir_field_code_ph")}
                   />
                   <p className="text-[11px] text-muted-foreground">
@@ -133,7 +193,7 @@ export function DvirMaddeleriSection({
                   <select
                     id="dvir_kind"
                     name="tur"
-                    defaultValue="ikisi"
+                    defaultValue={duzenlenen?.tur ?? "ikisi"}
                     className="h-10 w-full rounded-lg border border-border/60 bg-transparent px-3 text-sm"
                   >
                     <option value="once">{t("dvir_kind_once")}</option>
@@ -149,7 +209,7 @@ export function DvirMaddeleriSection({
                     type="number"
                     min={0}
                     max={999}
-                    defaultValue={maddeler.length * 10}
+                    defaultValue={duzenlenen?.sira ?? maddeler.length * 10}
                   />
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
@@ -157,6 +217,7 @@ export function DvirMaddeleriSection({
                   <Input
                     id="dvir_desc"
                     name="aciklama"
+                    defaultValue={duzenlenen?.aciklama ?? ""}
                     placeholder={t("dvir_field_desc_ph")}
                   />
                 </div>
@@ -165,6 +226,7 @@ export function DvirMaddeleriSection({
                   <Input
                     id="dvir_vtype"
                     name="aracTipi"
+                    defaultValue={duzenlenen?.aracTipi ?? ""}
                     placeholder={t("dvir_field_vtype_ph")}
                   />
                   <p className="text-[11px] text-muted-foreground">
@@ -176,13 +238,20 @@ export function DvirMaddeleriSection({
                 <Button type="submit" disabled={pending}>
                   {pending ? t("saving") : t("save")}
                 </Button>
-                <Button type="button" variant="ghost" onClick={() => setAcik(false)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setAcik(false);
+                    setDuzenlenen(null);
+                  }}
+                >
                   {t("cancel")}
                 </Button>
               </div>
             </form>
           ) : (
-            <Button type="button" variant="outline" onClick={() => setAcik(true)}>
+            <Button type="button" variant="outline" onClick={() => formuAc(null)}>
               <Plus className="size-4" />
               {t("dvir_item_add")}
             </Button>

@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader, StatusChip, EmptyState } from "@/components/ui-v2";
+import { CrudSatirEylemleri } from "@/components/admin/CrudSatirEylemleri";
 import {
   bakimPlaniKaydet,
+  bakimPlaniSil,
   bakimYapildiIsaretle,
   bakimIsEmrineCevir,
 } from "@/app/actions/bakim";
@@ -30,6 +32,12 @@ import type { BakimPlani, BakimDurumu } from "@/lib/bakim-db";
  * Odometresi 72 saatten bayat araçta km ekseni hesaplanmaz ve satır bunu
  * AÇIKÇA söyler. Sessizce "sorun yok" demek, cihazı susmuş aracı bakımsız
  * bırakmanın en kolay yoluydu (lib/km-quality.ts dersi).
+ *
+ * ═══ EKLE VARSA DÜZENLE VE SİL DE VAR ═══
+ *
+ * Kural yanlış girildiyse (15.000 yerine 1.500) düzeltilebilmeli. Silme geçmiş
+ * servis kayıtlarını DÜŞÜRMEZ (FK `set null`); kural artık geçerli değilse
+ * pasifleştirme daha doğru yoldur — plan listede kalır, eşik üretmez.
  */
 export function BakimClient({
   planlar,
@@ -43,9 +51,16 @@ export function BakimClient({
   tabloYok: boolean;
 }) {
   const t = useTranslations("maintenance");
+  const tc = useTranslations("crud");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [acikForm, setAcikForm] = useState(false);
+  const [duzenlenen, setDuzenlenen] = useState<BakimPlani | null>(null);
+
+  function formuAc(p: BakimPlani | null) {
+    setDuzenlenen(p);
+    setAcikForm(true);
+  }
 
   const acil = durumlar.filter((d) => d.gecti);
   const yaklasan = durumlar.filter((d) => !d.gecti && d.uyarida);
@@ -57,6 +72,7 @@ export function BakimClient({
       return v === "" ? null : Number(v);
     };
     const r = await bakimPlaniKaydet({
+      id: duzenlenen?.id,
       vehicleId: (fd.get("vehicleId") as string) || null,
       tip: String(fd.get("tip") ?? ""),
       aralikKm: sayi("aralikKm"),
@@ -65,7 +81,8 @@ export function BakimClient({
       sonBakimAt: (fd.get("sonBakimAt") as string) || null,
       uyariKm: sayi("uyariKm") ?? 500,
       uyariGun: sayi("uyariGun") ?? 14,
-      aktif: true,
+      // Pasiflik bu formdan yönetilmiyor; düzenleme onu KORUR.
+      aktif: duzenlenen ? duzenlenen.aktif : true,
     });
     if (!r.ok) {
       toast.error(
@@ -83,6 +100,44 @@ export function BakimClient({
     }
     toast.success(t("plan_saved"));
     setAcikForm(false);
+    setDuzenlenen(null);
+    router.refresh();
+  }
+
+  async function planSil(p: BakimPlani) {
+    const r = await bakimPlaniSil(p.id);
+    if (r.ok) {
+      toast.success(tc("deleted"));
+      router.refresh();
+      return;
+    }
+    toast.error(
+      r.hata === "kullanimda"
+        ? tc("in_use_deactivate")
+        : r.hata === "filo_geneli_yetki"
+          ? t("err_fleet_wide")
+          : t("save_error")
+    );
+  }
+
+  async function planPasifDegistir(p: BakimPlani) {
+    const r = await bakimPlaniKaydet({
+      id: p.id,
+      vehicleId: p.vehicleId,
+      tip: p.tip,
+      aralikKm: p.aralikKm,
+      aralikAy: p.aralikAy,
+      sonBakimKm: p.sonBakimKm,
+      sonBakimAt: p.sonBakimAt,
+      uyariKm: p.uyariKm,
+      uyariGun: p.uyariGun,
+      aktif: !p.aktif,
+    });
+    if (!r.ok) {
+      toast.error(r.hata === "filo_geneli_yetki" ? t("err_fleet_wide") : t("save_error"));
+      return;
+    }
+    toast.success(p.aktif ? tc("deactivated") : tc("activated"));
     router.refresh();
   }
 
@@ -197,7 +252,7 @@ export function BakimClient({
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-[15px] font-semibold">{t("plans_title")}</h2>
-          <Button type="button" variant="outline" onClick={() => setAcikForm((o) => !o)}>
+          <Button type="button" variant="outline" onClick={() => formuAc(null)}>
             <Plus className="size-4" />
             {t("plan_add")}
           </Button>
@@ -205,6 +260,8 @@ export function BakimClient({
 
         {acikForm && (
           <form
+            // `key`: aynı form hem ekleme hem düzenleme için kullanılıyor.
+            key={duzenlenen?.id ?? "yeni"}
             action={(fd) => startTransition(async () => { await planKaydet(fd); })}
             className="space-y-3 rounded-[14px] border border-border/60 p-4"
           >
@@ -214,6 +271,7 @@ export function BakimClient({
                 <select
                   id="bp_vehicle"
                   name="vehicleId"
+                  defaultValue={duzenlenen?.vehicleId ?? ""}
                   className="h-10 w-full rounded-lg border border-border/60 bg-transparent px-3 text-sm"
                 >
                   {/* Boş = FİLO GENELİ. Tek planla tüm filo kurulur. */}
@@ -227,24 +285,55 @@ export function BakimClient({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="bp_tip">{t("field_type")}</Label>
-                <Input id="bp_tip" name="tip" required placeholder={t("field_type_ph")} />
+                <Input
+                  id="bp_tip"
+                  name="tip"
+                  required
+                  defaultValue={duzenlenen?.tip ?? ""}
+                  placeholder={t("field_type_ph")}
+                />
                 <p className="text-[11px] text-muted-foreground">{t("field_type_hint")}</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="bp_km">{t("field_interval_km")}</Label>
-                <Input id="bp_km" name="aralikKm" type="number" min={100} max={500000} />
+                <Input
+                  id="bp_km"
+                  name="aralikKm"
+                  type="number"
+                  min={100}
+                  max={500000}
+                  defaultValue={duzenlenen?.aralikKm ?? ""}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="bp_ay">{t("field_interval_month")}</Label>
-                <Input id="bp_ay" name="aralikAy" type="number" min={1} max={120} />
+                <Input
+                  id="bp_ay"
+                  name="aralikAy"
+                  type="number"
+                  min={1}
+                  max={120}
+                  defaultValue={duzenlenen?.aralikAy ?? ""}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="bp_son_km">{t("field_last_km")}</Label>
-                <Input id="bp_son_km" name="sonBakimKm" type="number" min={0} />
+                <Input
+                  id="bp_son_km"
+                  name="sonBakimKm"
+                  type="number"
+                  min={0}
+                  defaultValue={duzenlenen?.sonBakimKm ?? ""}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="bp_son_at">{t("field_last_date")}</Label>
-                <Input id="bp_son_at" name="sonBakimAt" type="date" />
+                <Input
+                  id="bp_son_at"
+                  name="sonBakimAt"
+                  type="date"
+                  defaultValue={duzenlenen?.sonBakimAt ? duzenlenen.sonBakimAt.slice(0, 10) : ""}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="bp_uk">{t("field_warn_km")}</Label>
@@ -254,7 +343,7 @@ export function BakimClient({
                   type="number"
                   min={0}
                   max={50000}
-                  defaultValue={500}
+                  defaultValue={duzenlenen?.uyariKm ?? 500}
                 />
               </div>
               <div className="space-y-1.5">
@@ -265,7 +354,7 @@ export function BakimClient({
                   type="number"
                   min={0}
                   max={365}
-                  defaultValue={14}
+                  defaultValue={duzenlenen?.uyariGun ?? 14}
                 />
               </div>
             </div>
@@ -278,7 +367,14 @@ export function BakimClient({
               <Button type="submit" disabled={pending}>
                 {pending ? t("saving") : t("save")}
               </Button>
-              <Button type="button" variant="ghost" onClick={() => setAcikForm(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setAcikForm(false);
+                  setDuzenlenen(null);
+                }}
+              >
                 {t("cancel")}
               </Button>
             </div>
@@ -292,7 +388,7 @@ export function BakimClient({
             {planlar.map((p) => (
               <li
                 key={p.id}
-                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5 text-sm"
+                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1 pl-4 pr-1 text-sm"
               >
                 <span className="flex items-center gap-2">
                   <span className="font-medium">{p.tip}</span>
@@ -303,13 +399,26 @@ export function BakimClient({
                   </span>
                   {!p.aktif && <StatusChip tone="neutral">{t("plan_inactive")}</StatusChip>}
                 </span>
-                <span className="nums text-xs text-muted-foreground">
-                  {[
-                    p.aralikKm !== null ? t("every_km", { km: p.aralikKm }) : null,
-                    p.aralikAy !== null ? t("every_month", { months: p.aralikAy }) : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
+                <span className="flex items-center gap-2">
+                  <span className="nums text-xs text-muted-foreground">
+                    {[
+                      p.aralikKm !== null ? t("every_km", { km: p.aralikKm }) : null,
+                      p.aralikAy !== null ? t("every_month", { months: p.aralikAy }) : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                  <CrudSatirEylemleri
+                    adi={p.tip}
+                    pending={pending}
+                    pasifMi={!p.aktif}
+                    onDuzenle={() => formuAc(p)}
+                    onSil={() => startTransition(async () => { await planSil(p); })}
+                    onPasiflestir={() =>
+                      startTransition(async () => { await planPasifDegistir(p); })
+                    }
+                    silmeAciklamasi={t("plan_delete_desc")}
+                  />
                 </span>
               </li>
             ))}

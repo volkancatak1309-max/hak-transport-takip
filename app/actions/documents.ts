@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/session";
 import {
   upsertDocumentType,
+  deleteDocumentType,
   upsertWorkerDocument,
   deleteWorkerDocument,
 } from "@/lib/documents-db";
@@ -98,6 +99,23 @@ export async function saveDocumentTypeAction(
     null,
     { code, label, warn_days: warnDays }
   );
+  revalidatePath("/admin/ayarlar");
+  revalidatePath("/admin");
+  return { ok: true };
+}
+
+/**
+ * BELGE TÜRÜNÜ SİLER. Kullanılıyorsa silmez — çağıran ekran pasifleştirmeyi
+ * önerir (bkz. lib/silme-sonucu.ts). "Ekle varsa sil de var" kuralı.
+ */
+export async function deleteDocumentTypeAction(
+  id: string
+): Promise<{ ok: boolean; sebep?: string }> {
+  const session = await requireAdmin();
+  if (!id.trim()) return { ok: false, sebep: "gecersiz" };
+  const r = await deleteDocumentType(id);
+  if (!r.ok) return { ok: false, sebep: r.sebep };
+  await auditChange(session.worker_id ?? null, "delete", "document_type", id, null, null);
   revalidatePath("/admin/ayarlar");
   revalidatePath("/admin");
   return { ok: true };

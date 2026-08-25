@@ -513,7 +513,8 @@
     "every_month": "her {months} ay",
     "err_no_threshold": "En az bir aralık girin — km ya da ay.",
     "err_duplicate": "Bu araç ve tip için zaten bir kural var.",
-    "err_fleet_wide": "Filo geneli kuralı yalnız patron açabilir."
+    "err_fleet_wide": "Filo geneli kuralı yalnız patron açabilir.",
+    "plan_delete_desc": "Kural silinir. Geçmiş servis kayıtları SİLİNMEZ, yalnız bu kuralla bağı kopar."
   },
   "co2": {
     "button": "📊 CO₂ Raporu",
@@ -1370,7 +1371,8 @@
     "docDelete": "Belgeyi sil",
     "docExpired": "{days} gün geçti",
     "docExpiring": "{days} gün kaldı",
-    "docValid": "{days} gün"
+    "docValid": "{days} gün",
+    "docDeleteDesc": "Belge kaydı kalıcı olarak silinir. Yanlış tarih girdiyseniz silmek yerine düzenleyin."
   },
   "manualStart": {
     "title": "Vardiya Başlat",
@@ -1882,7 +1884,10 @@
     "dvir_field_desc_ph": "Diş derinliği ve yanak hasarı",
     "dvir_field_vtype": "Araç tipi",
     "dvir_field_vtype_ph": "TIR",
-    "dvir_field_vtype_hint": "Boş bırakırsanız tüm araçlarda sorulur."
+    "dvir_field_vtype_hint": "Boş bırakırsanız tüm araçlarda sorulur.",
+    "doc_field_sort": "Sıra",
+    "doc_type_delete_desc": "Tür silinir. Bu türde kayıtlı belge varsa silinemez — o durumda pasifleştirin.",
+    "dvir_item_delete_desc": "Madde silinir. Doldurulmuş bir formda geçiyorsa silinemez — o durumda pasifleştirin."
   },
   "takip": {
     "durum_hazirlaniyor": "Hazırlanıyor",
@@ -2078,6 +2083,22 @@
     "source_dvir": "Kontrol formu",
     "source_dtc": "Arıza kodu",
     "source_periyodik": "Periyodik bakım",
-    "source_elle": "Elle açıldı"
+    "source_elle": "Elle açıldı",
+    "delete_desc": "İş emri kalıcı olarak silinir.",
+    "delete_only_manual": "Yalnız elle açılan iş emri silinebilir. Kontrol formundan, arıza kodundan ya da bakımdan doğan emir bir kanıt zincirinin parçasıdır — onu KAPATIN, gerekirse yeniden açın.",
+    "delete_not_closed": "Kapanmış iş emri silinemez: maliyet ve servis tarihi taşır. Gerekirse yeniden açın."
+  },
+  "crud": {
+    "edit": "Düzenle",
+    "delete": "Sil",
+    "cancel": "Vazgeç",
+    "activate": "Aktifleştir",
+    "deactivate": "Pasifleştir",
+    "delete_title": "{name} silinsin mi?",
+    "delete_desc": "Bu kayıt kalıcı olarak silinir.",
+    "deleted": "Silindi.",
+    "activated": "Aktifleştirildi.",
+    "deactivated": "Pasifleştirildi — listede kalır, yeni kayıtlarda kullanılmaz.",
+    "in_use_deactivate": "Bu kayıt kullanımda olduğu için silinemez. Pasifleştirin — geçmiş kayıtlar korunur, yenilerinde çıkmaz."
   }
 }

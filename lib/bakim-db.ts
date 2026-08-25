@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { tabloYokMu } from "@/lib/fault-reports";
+import { kullanimdaMi, type SilmeSonucu } from "@/lib/silme-sonucu";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 
 /**
@@ -340,4 +341,27 @@ export async function bakimYapildi(
   if (planHata) return { ok: false, sebep: "hata", mesaj: planHata.message };
 
   return { ok: true, veri: { kayitId } };
+}
+
+/**
+ * BAKIM PLANINI SİLER.
+ *
+ * `vehicle_maintenance.bakim_plani_id` FK'si `on delete set null` (081), yani
+ * silme geçmiş servis kayıtlarını DÜŞÜRMEZ — yalnız "hangi kuraldan doğmuştu"
+ * bağını koparır. Servis kaydının kendisi (tarih, km, maliyet) yerinde kalır;
+ * o bir muhasebe kaydıdır, kuralın eklentisi değil.
+ *
+ * Yine de kural yanlış girildiyse değil, ARTIK GEÇERSİZ olduysa pasifleştirme
+ * doğru yoldur: plan listede kalır, eşik üretmez, geri açılabilir.
+ */
+export async function deleteBakimPlani(id: string): Promise<SilmeSonucu> {
+  const { error } = await supabaseAdmin.from("bakim_planlari").delete().eq("id", id);
+  if (error) {
+    return {
+      ok: false,
+      sebep: tabloYokMu(error) ? "tablo_yok" : kullanimdaMi(error) ? "kullanimda" : "hata",
+      mesaj: error.message,
+    };
+  }
+  return { ok: true };
 }

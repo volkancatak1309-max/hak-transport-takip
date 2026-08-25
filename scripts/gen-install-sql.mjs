@@ -28,6 +28,8 @@ import { join } from "node:path";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = join(ROOT, "db", "migrations");
+/** Yeni kurulumda yazılan varsayılan sözlükler — hizalama dosyasına GİRMEZ. */
+const SEED = join(ROOT, "db", "install", "seed-varsayilanlar.sql");
 const OUT_DIR = join(ROOT, "db", "install");
 
 const changes = [];
@@ -551,6 +553,19 @@ export function build(tenant) {
 -- ═══════════════════════════════════════════════════════════════════════════
 commit;
 `);
+
+  /**
+   * VARSAYILAN SÖZLÜKLER — YALNIZ KURULUM DOSYASINA.
+   *
+   * Hizalama dosyası (gen-align-sql.mjs) `parcala()`yı çağırır ve buraya HİÇ
+   * uğramaz; yani mevcut kiracılara bu satırlar GİTMEZ. Yeni kiracı ise bakım
+   * kuralı / kontrol maddesi / belge türü ekranlarını boş açmaz.
+   *
+   * Bloklar "tablo boşsa" koşullu: dosya ikinci kez koşarsa satırlar ikilenmez
+   * ve kiracının kendi sözlüğü ezilmez.
+   */
+  parts.push(`
+` + readFileSync(SEED, "utf8"));
 
   return { tenant: TENANT, sql: parts.join(""), changes: [...changes] };
 }

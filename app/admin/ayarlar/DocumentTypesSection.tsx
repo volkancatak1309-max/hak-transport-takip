@@ -9,7 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusChip } from "@/components/ui-v2";
-import { saveDocumentTypeAction } from "@/app/actions/documents";
+import { CrudSatirEylemleri } from "@/components/admin/CrudSatirEylemleri";
+import {
+  saveDocumentTypeAction,
+  deleteDocumentTypeAction,
+} from "@/app/actions/documents";
 import type { DocumentType } from "@/lib/documents-db";
 
 /**
@@ -24,9 +28,17 @@ import type { DocumentType } from "@/lib/documents-db";
  *
  * ═══ SABİT LİSTE YOK ═══
  *
- * Ürün hiçbir belge türünü ÖNERMİYOR ve önermemeli: TR'de SRC + psikoteknik,
- * DACH'ta Aufenthaltstitel, AB'de CPC, yüke göre ADR. Hazır bir liste sunmak,
- * listede olmayan ülkeyi ikinci sınıf müşteri yapardı.
+ * Ürün hiçbir belge türünü dayatmıyor: TR'de SRC + psikoteknik, DACH'ta
+ * Aufenthaltstitel, AB'de CPC, yüke göre ADR. Yeni kurulumlarda MAKUL BİR SET
+ * hazır gelir (`db/install/seed-varsayilanlar.sql`) ve kiracı onu düzenler —
+ * boş ekranla karşılaşmaz ama listeye de mahkûm değildir.
+ *
+ * ═══ EKLE VARSA DÜZENLE VE SİL DE VAR ═══
+ *
+ * Yanlış girilen bir uyarı eşiği (90 yerine 30) geri alınabilmeli. Tür
+ * kullanımdaysa veritabanı silmeyi durdurur (FK restrict) ve ekran
+ * PASİFLEŞTİRMEYİ önerir: tür yeni belgelerde seçilemez, mevcut belgeler
+ * yerinde kalır.
  */
 export function DocumentTypesSection({
   types,
@@ -36,9 +48,17 @@ export function DocumentTypesSection({
   tabloYok: boolean;
 }) {
   const t = useTranslations("settings");
+  const tc = useTranslations("crud");
   const [pending, startTransition] = useTransition();
   const [acik, setAcik] = useState(false);
+  const [duzenlenen, setDuzenlenen] = useState<DocumentType | null>(null);
   const [hataliAlan, setHataliAlan] = useState<string | null>(null);
+
+  function formuAc(d: DocumentType | null) {
+    setDuzenlenen(d);
+    setHataliAlan(null);
+    setAcik(true);
+  }
 
   async function kaydet(fd: FormData) {
     setHataliAlan(null);
@@ -46,6 +66,7 @@ export function DocumentTypesSection({
     if (r.ok) {
       toast.success(t("doc_type_saved"));
       setAcik(false);
+      setDuzenlenen(null);
       return;
     }
     if (r.sebep === "gecersiz") {
@@ -59,6 +80,37 @@ export function DocumentTypesSection({
         : r.sebep === "tablo_yok"
           ? t("doc_migration_needed")
           : t("save_error")
+    );
+  }
+
+  async function sil(d: DocumentType) {
+    const r = await deleteDocumentTypeAction(d.id);
+    if (r.ok) {
+      toast.success(tc("deleted"));
+      return;
+    }
+    // Kullanımdaki tür silinemez — kullanıcıyı çıkışsız bırakmamak için
+    // pasifleştirmeyi ÖNERMEK yetmez, aynı tıklamada yapılabilir olmalı.
+    if (r.sebep === "kullanimda") {
+      toast.error(tc("in_use_deactivate"));
+      return;
+    }
+    toast.error(t("save_error"));
+  }
+
+  /** Pasifleştirme = aynı upsert, yalnız `active` değişir. */
+  async function pasifDegistir(d: DocumentType) {
+    const fd = new FormData();
+    fd.set("id", d.id);
+    fd.set("code", d.code);
+    fd.set("label", d.label);
+    fd.set("warn_days", String(d.warnDays));
+    fd.set("sort_order", String(d.sortOrder));
+    if (d.requiresNumber) fd.set("requires_number", "on");
+    fd.set("active", d.active ? "off" : "on");
+    const r = await saveDocumentTypeAction(fd);
+    toast[r.ok ? "success" : "error"](
+      r.ok ? (d.active ? tc("deactivated") : tc("activated")) : t("save_error")
     );
   }
 
@@ -83,17 +135,30 @@ export function DocumentTypesSection({
               {types.map((d) => (
                 <li
                   key={d.id}
-                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2 text-sm"
+                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1 pl-3 pr-1 text-sm"
                 >
-                  <span className="flex items-center gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
                     <span className="font-medium text-foreground">{d.label}</span>
                     <span className="nums text-[11px] text-text-tertiary">{d.code}</span>
                     {!d.active && (
                       <StatusChip tone="neutral">{t("doc_type_inactive")}</StatusChip>
                     )}
                   </span>
-                  <span className="nums text-xs text-muted-foreground">
-                    {t("doc_type_warn", { days: d.warnDays })}
+                  <span className="flex items-center gap-2">
+                    <span className="nums text-xs text-muted-foreground">
+                      {t("doc_type_warn", { days: d.warnDays })}
+                    </span>
+                    <CrudSatirEylemleri
+                      adi={d.label}
+                      pending={pending}
+                      pasifMi={!d.active}
+                      onDuzenle={() => formuAc(d)}
+                      onSil={() => startTransition(async () => { await sil(d); })}
+                      onPasiflestir={() =>
+                        startTransition(async () => { await pasifDegistir(d); })
+                      }
+                      silmeAciklamasi={t("doc_type_delete_desc")}
+                    />
                   </span>
                 </li>
               ))}
@@ -112,9 +177,21 @@ export function DocumentTypesSection({
 
           {acik ? (
             <form
-              action={(fd) => startTransition(() => void kaydet(fd))}
+              // `key` ZORUNLU: aynı form hem ekleme hem düzenleme için
+              // kullanılıyor ve React 19 defaultValue'yu satır değişince
+              // yeniden okumaz — düzenlenen kayıt değişse de eski değerler
+              // ekranda kalırdı (gunde-tek-vardiya'daki form-reset tuzağı).
+              key={duzenlenen?.id ?? "yeni"}
+              action={(fd) => startTransition(async () => { await kaydet(fd); })}
               className="space-y-3 rounded-lg border border-border/60 p-3"
             >
+              {duzenlenen && <input type="hidden" name="id" value={duzenlenen.id} />}
+              {/* Pasiflik bu formdan YÖNETİLMİYOR ama kaybolmamalı: eylem
+                  `active` alanını okumazsa varsayılan "aktif"tir ve pasif bir
+                  türü düzenlemek onu sessizce geri açardı. */}
+              {duzenlenen && !duzenlenen.active && (
+                <input type="hidden" name="active" value="off" />
+              )}
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="doc_label">{t("doc_field_label")}</Label>
@@ -122,6 +199,7 @@ export function DocumentTypesSection({
                     id="doc_label"
                     name="label"
                     required
+                    defaultValue={duzenlenen?.label ?? ""}
                     placeholder={t("doc_field_label_ph")}
                     aria-invalid={hataliAlan === "label" || undefined}
                   />
@@ -132,6 +210,7 @@ export function DocumentTypesSection({
                     id="doc_code"
                     name="code"
                     required
+                    defaultValue={duzenlenen?.code ?? ""}
                     placeholder={t("doc_field_code_ph")}
                     aria-invalid={hataliAlan === "code" || undefined}
                   />
@@ -145,13 +224,28 @@ export function DocumentTypesSection({
                     type="number"
                     min={1}
                     max={365}
-                    defaultValue={30}
+                    defaultValue={duzenlenen?.warnDays ?? 30}
                     aria-invalid={hataliAlan === "warn_days" || undefined}
                   />
                   <p className="text-[11px] text-muted-foreground">{t("doc_field_warn_hint")}</p>
                 </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="doc_sort">{t("doc_field_sort")}</Label>
+                  <Input
+                    id="doc_sort"
+                    name="sort_order"
+                    type="number"
+                    min={0}
+                    max={999}
+                    defaultValue={duzenlenen?.sortOrder ?? types.length * 10}
+                  />
+                </div>
                 <div className="flex items-end gap-2 pb-2">
-                  <Checkbox id="doc_reqno" name="requires_number" />
+                  <Checkbox
+                    id="doc_reqno"
+                    name="requires_number"
+                    defaultChecked={duzenlenen?.requiresNumber ?? false}
+                  />
                   <Label htmlFor="doc_reqno" className="text-[13px] font-normal">
                     {t("doc_field_requires_no")}
                   </Label>
@@ -161,13 +255,20 @@ export function DocumentTypesSection({
                 <Button type="submit" disabled={pending}>
                   {pending ? t("saving") : t("save")}
                 </Button>
-                <Button type="button" variant="ghost" onClick={() => setAcik(false)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setAcik(false);
+                    setDuzenlenen(null);
+                  }}
+                >
                   {t("cancel")}
                 </Button>
               </div>
             </form>
           ) : (
-            <Button type="button" variant="outline" onClick={() => setAcik(true)}>
+            <Button type="button" variant="outline" onClick={() => formuAc(null)}>
               <Plus className="size-4" />
               {t("doc_type_add")}
             </Button>

@@ -9,6 +9,7 @@ import {
   getIsEmri,
   createIsEmri,
   updateIsEmri,
+  deleteIsEmri,
   type IsEmri,
   type IsEmriDurum,
   type IsEmriOncelik,
@@ -103,6 +104,27 @@ export async function isEmriGuncelle(
   });
   revalidatePath("/admin/is-emirleri");
   revalidatePath("/admin/araclar");
+  return { ok: true };
+}
+
+/**
+ * İŞ EMRİNİ SİLER — yalnız ELLE açılmış ve henüz kapanmamış olanı.
+ *
+ * Kontrol formundan/DTC'den/bakımdan doğan emirler silinmez: onlar bir kanıt
+ * ya da ölçüm zincirinin halkası (bkz. lib/is-emri-db.ts). O emirlerde geri
+ * alınabilir yol DURUM DEĞİŞTİRMEDİR — kapatılan emir yeniden açılabilir.
+ */
+export async function isEmriSil(id: string): Promise<{ ok: boolean; hata?: string }> {
+  const { session, scope } = await kapsam();
+  const emir = await getIsEmri(id);
+  if (!emir) return { ok: false, hata: "yok" };
+  if (!scope.isFleetVehicle(emir.vehicleId)) return { ok: false, hata: "kapsam_disi" };
+
+  const r = await deleteIsEmri(id);
+  if (!r.ok) return { ok: false, hata: r.sebep === "silinemez" ? `silinemez_${r.mesaj}` : r.sebep };
+  await audit(session.worker_id ?? null, "delete", `is_emri:${id}`);
+  revalidatePath("/admin/is-emirleri");
+  revalidatePath("/admin");
   return { ok: true };
 }
 

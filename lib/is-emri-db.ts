@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { tabloYokMu } from "@/lib/fault-reports";
+import { kullanimdaMi, type SilmeSonucu } from "@/lib/silme-sonucu";
 import type { IsEmri, IsEmriDurum, IsEmriOncelik } from "@/lib/is-emri";
 
 /**
@@ -223,4 +224,51 @@ export async function updateIsEmri(
   }
   // `data` null = satır zaten o durumdaydı. Hata DEĞİL: istenen sonuç zaten var.
   return { ok: true, veri: { id: data ? String((data as { id: string }).id) : id } };
+}
+
+/**
+ * İŞ EMRİNİ SİLER — YALNIZ elle açılmış ve HENÜZ KAPANMAMIŞ olanı.
+ *
+ * ═══ NEDEN HERKESİ DEĞİL ═══
+ *
+ * Kontrol formundan doğan emir (`kaynak='dvir'`) bir KANIT zincirinin
+ * halkasıdır: `dvir_yanit_id` ile o kusurun fotoğrafına ve notuna bağlı.
+ * Silinseydi, "kusur bildirildi ama ne yapıldı" sorusunun cevabı kaybolurdu —
+ * kontrol formunun kendisi de bu yüzden değişmez (HK081). Aynı gerekçe DTC ve
+ * periyodik bakımdan doğan emirler için de geçerli: onların geri alınabilir
+ * yolu SİLME değil, DURUM DEĞİŞTİRMEDİR (kapat ↔ yeniden aç).
+ *
+ * Elle açılan emir ise yalnız bir yönetici girdisidir; yanlış araca açılmış
+ * olabilir ve kullanıcı onu geri alabilmelidir.
+ *
+ * KAPANMIŞ emir de silinmez: kapanış maliyeti ve servis tarihi taşır.
+ */
+export async function deleteIsEmri(id: string): Promise<SilmeSonucu> {
+  const { data, error: okumaHatasi } = await supabaseAdmin
+    .from("vehicle_fault_reports")
+    .select("id, kaynak, durum")
+    .eq("id", id)
+    .maybeSingle();
+  if (okumaHatasi) {
+    return {
+      ok: false,
+      sebep: tabloYokMu(okumaHatasi) ? "tablo_yok" : "hata",
+      mesaj: okumaHatasi.message,
+    };
+  }
+  if (!data) return { ok: false, sebep: "yok" };
+
+  const satir = data as { kaynak: string | null; durum: string };
+  if ((satir.kaynak ?? "surucu") !== "elle") return { ok: false, sebep: "silinemez", mesaj: "kaynak" };
+  if (satir.durum === "kapali") return { ok: false, sebep: "silinemez", mesaj: "kapali" };
+
+  const { error } = await supabaseAdmin.from("vehicle_fault_reports").delete().eq("id", id);
+  if (error) {
+    return {
+      ok: false,
+      sebep: tabloYokMu(error) ? "tablo_yok" : kullanimdaMi(error) ? "kullanimda" : "hata",
+      mesaj: error.message,
+    };
+  }
+  return { ok: true };
 }

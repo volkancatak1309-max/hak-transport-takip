@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
+import { kullanimdaMi, type SilmeSonucu } from "@/lib/silme-sonucu";
 import { tabloYokMu } from "@/lib/fault-reports";
 
 /**
@@ -287,6 +288,26 @@ export async function upsertWorkerDocument(
     return { ok: false, sebep: tabloYokMu(error) ? "tablo_yok" : "hata", mesaj: error.message };
   }
   return { ok: true, id: data ? String((data as { id: string }).id) : undefined };
+}
+
+/**
+ * BELGE TÜRÜNÜ SİLER — kullanılıyorsa silmez, "kullanimda" der.
+ *
+ * `worker_documents.type_id` FK'si `on delete restrict` (078): kullanılan bir
+ * türü silmek, o şoförlerin belgelerini sessizce yok etmek olurdu. Çağıran
+ * taraf bu cevabı alınca PASİFLEŞTİRMEYİ önerir — tür listeden düşer, geçmiş
+ * kayıtlar yerinde kalır ve karar geri alınabilir.
+ */
+export async function deleteDocumentType(id: string): Promise<SilmeSonucu> {
+  const { error } = await supabaseAdmin.from("document_types").delete().eq("id", id);
+  if (error) {
+    return {
+      ok: false,
+      sebep: tabloYokMu(error) ? "tablo_yok" : kullanimdaMi(error) ? "kullanimda" : "hata",
+      mesaj: error.message,
+    };
+  }
+  return { ok: true };
 }
 
 export async function deleteWorkerDocument(id: string): Promise<DocWriteResult> {

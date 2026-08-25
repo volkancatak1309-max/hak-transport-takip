@@ -10,6 +10,7 @@ import {
   bakimDurumlari,
   bakimYapildi,
   tazeOdometre,
+  deleteBakimPlani,
   type BakimPlani,
   type BakimDurumu,
 } from "@/lib/bakim-db";
@@ -86,6 +87,30 @@ export async function bakimPlaniKaydet(p: {
   const r = await upsertBakimPlani(p, session.worker_id ?? null);
   if (!r.ok) return { ok: false, hata: r.sebep };
   await audit(session.worker_id ?? null, "update", `bakim_plani:${r.veri.id}`);
+  revalidatePath("/admin/bakim");
+  return { ok: true };
+}
+
+/**
+ * BAKIM PLANINI SİLER. Geçmiş servis kayıtları DÜŞMEZ (FK `set null`), yalnız
+ * "hangi kuraldan doğmuştu" bağı kopar. Kural artık geçerli değilse
+ * pasifleştirme daha doğru yoldur — ekran ikisini de sunar.
+ */
+export async function bakimPlaniSil(id: string): Promise<{ ok: boolean; hata?: string }> {
+  const { session, scope } = await kapsam();
+  // Kapsam plandan okunur, istemciden değil: şef başka filonun kuralını silemez.
+  const { planlar } = await listBakimPlanlari(false);
+  const plan = planlar.find((p) => p.id === id);
+  if (!plan) return { ok: false, hata: "yok" };
+  if (plan.vehicleId && !scope.isFleetVehicle(plan.vehicleId)) {
+    return { ok: false, hata: "kapsam_disi" };
+  }
+  // Filo geneli kuralı yalnız patron kaldırabilir — açmasıyla aynı kapı.
+  if (!plan.vehicleId && scope.restricted) return { ok: false, hata: "filo_geneli_yetki" };
+
+  const r = await deleteBakimPlani(id);
+  if (!r.ok) return { ok: false, hata: r.sebep };
+  await audit(session.worker_id ?? null, "delete", `bakim_plani:${id}`);
   revalidatePath("/admin/bakim");
   return { ok: true };
 }

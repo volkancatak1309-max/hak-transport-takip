@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { tabloYokMu } from "@/lib/fault-reports";
+import { kullanimdaMi, type SilmeSonucu } from "@/lib/silme-sonucu";
 
 /**
  * ARAÇ KONTROL FORMU (DVIR) — veri katmanı (migration 081).
@@ -378,4 +379,24 @@ export async function iptalDvirForm(
     .is("iptal_at", null);
   if (error) return { ok: false, sebep: tabloYokMu(error) ? "tablo_yok" : "hata", mesaj: error.message };
   return { ok: true, veri: { id } };
+}
+
+/**
+ * KONTROL MADDESİNİ SİLER — doldurulmuş bir formda geçiyorsa silmez.
+ *
+ * `dvir_yanitlari.madde_id` FK'si `on delete restrict` (081): maddeyi silmek,
+ * o maddeye verilmiş "kusurlu" cevabının neye ait olduğunu yok etmek olurdu —
+ * yani kanıtın yarısını. Çağıran taraf "kullanimda" cevabında PASİFLEŞTİRMEYİ
+ * önerir: madde yeni formlarda sorulmaz, eski formlar okunmaya devam eder.
+ */
+export async function deleteDvirMadde(id: string): Promise<SilmeSonucu> {
+  const { error } = await supabaseAdmin.from("dvir_maddeleri").delete().eq("id", id);
+  if (error) {
+    return {
+      ok: false,
+      sebep: tabloYokMu(error) ? "tablo_yok" : kullanimdaMi(error) ? "kullanimda" : "hata",
+      mesaj: error.message,
+    };
+  }
+  return { ok: true };
 }

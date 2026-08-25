@@ -12,6 +12,7 @@ import {
   listDvirByVehicle,
   listDvirByWorker,
   iptalDvirForm,
+  deleteDvirMadde,
   type DvirMadde,
   type DvirForm,
   type YanitGirdi,
@@ -228,6 +229,20 @@ export async function dvirMaddeKaydet(m: {
   if (!m.kod.trim() || !m.etiket.trim()) return { ok: false, hata: "eksik_alan" };
   const r = await upsertDvirMadde(m, session.worker_id ?? null);
   if (!r.ok) return { ok: false, hata: r.sebep };
+  revalidatePath("/admin/ayarlar");
+  return { ok: true };
+}
+
+/**
+ * KONTROL MADDESİNİ SİLER; doldurulmuş formda geçiyorsa "kullanimda" der ve
+ * ekran PASİFLEŞTİRMEYİ önerir (madde yeni formlarda sorulmaz, eski formlar
+ * okunur kalır). "Ekle varsa sil de var" kuralı.
+ */
+export async function dvirMaddeSil(id: string): Promise<{ ok: boolean; hata?: string }> {
+  const { session } = await requireFleetView();
+  const r = await deleteDvirMadde(id);
+  if (!r.ok) return { ok: false, hata: r.sebep };
+  await audit(session.worker_id ?? null, "delete", `dvir_madde:${id}`);
   revalidatePath("/admin/ayarlar");
   return { ok: true };
 }

@@ -10,8 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader, StatusChip, EmptyState, SegmentedControl } from "@/components/ui-v2";
+import { CrudSatirEylemleri } from "@/components/admin/CrudSatirEylemleri";
 import { formatDate } from "@/lib/format";
-import { isEmriAc, isEmriGuncelle } from "@/app/actions/is-emri";
+import { isEmriAc, isEmriGuncelle, isEmriSil } from "@/app/actions/is-emri";
 import {
   IS_EMRI_DURUMLARI,
   IS_EMRI_ONCELIKLERI,
@@ -35,6 +36,13 @@ import {
  * Kusurun ne olduğu bildirildiği hâliyle kalır — DVIR yolunda o metin kontrol
  * formundaki kanıttan doğuyor. Yönetici DURUMU, önceliği, atananı, maliyeti ve
  * kapanış notunu yazar; olayın kendisini değil.
+ *
+ * ═══ SİLME YALNIZ ELLE AÇILANDA ═══
+ *
+ * Kontrol formundan / DTC'den / bakımdan doğan emir bir kanıt zincirinin
+ * halkasıdır; onlarda geri alınabilir yol SİLME değil DURUM DEĞİŞTİRMEDİR
+ * (kapat ↔ yeniden aç, ikisi de bu ekranda). Elle açılan emir ise yalnız bir
+ * yönetici girdisi — yanlış araca açılmış olabilir, silinebilir.
  */
 
 const ONCELIK_TONU: Record<IsEmriOncelik, "critical" | "warning" | "info" | "neutral"> = {
@@ -58,6 +66,7 @@ export function IsEmirleriClient({
   yalnizAcik: boolean;
 }) {
   const t = useTranslations("workorders");
+  const tc = useTranslations("crud");
   const locale = useLocale();
   /**
    * Kaynak etiketi. Bilinmeyen bir değer HAM basılır — `t()` bilinmeyen
@@ -84,6 +93,22 @@ export function IsEmirleriClient({
     toast.success(t("created"));
     setAcikForm(false);
     router.refresh();
+  }
+
+  async function sil(e: IsEmri) {
+    const r = await isEmriSil(e.id);
+    if (r.ok) {
+      toast.success(tc("deleted"));
+      router.refresh();
+      return;
+    }
+    toast.error(
+      r.hata === "silinemez_kaynak"
+        ? t("delete_only_manual")
+        : r.hata === "silinemez_kapali"
+          ? t("delete_not_closed")
+          : t("save_error")
+    );
   }
 
   async function guncelle(id: string, fd: FormData) {
@@ -229,15 +254,30 @@ export function IsEmirleriClient({
                     {e.atananAd ? ` · → ${e.atananAd}` : ""}
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDuzenlenen((o) => (o === e.id ? null : e.id))}
-                >
-                  <Wrench className="size-4" />
-                  {t("manage")}
-                </Button>
+                <span className="flex shrink-0 items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDuzenlenen((o) => (o === e.id ? null : e.id))}
+                  >
+                    <Wrench className="size-4" />
+                    {t("manage")}
+                  </Button>
+                  {/* Düzenleme "Yönet" panelinde; burada yalnız silme kalıyor.
+                      Pasiflik yok: bu kaydın ekseni DURUM (açık/serviste/kapalı)
+                      ve ona ikinci bir pasiflik kavramı eklemek iki gerçek
+                      üretirdi. */}
+                  <CrudSatirEylemleri
+                    adi={e.plaka}
+                    pending={pending}
+                    onDuzenle={() => setDuzenlenen(e.id)}
+                    onSil={() => startTransition(async () => { await sil(e); })}
+                    silmeAciklamasi={
+                      e.kaynak === "elle" ? t("delete_desc") : t("delete_only_manual")
+                    }
+                  />
+                </span>
               </div>
 
               {duzenlenen === e.id && (

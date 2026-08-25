@@ -51,14 +51,21 @@ export type EtaGirdi = {
 };
 
 export type EtaSonuc = {
-  /** Kalan dakika, 5'in katına yuvarlanmış. Vardıysa 0. */
+  /** Kalan dakika, kademeye yuvarlanmış. Vardıysa 0. */
   dakika: number;
-  /** 90 dakikayı aşıyor mu — ekran "90+ dk" der. */
+  /** Üst sınırı aşıyor mu — ekran "{ustSinirDk}+ dk" der. */
   ustSinirAsildi: boolean;
   /** Araç hedef dairenin İÇİNDE mi (ETA yerine "vardı"). */
   vardi: boolean;
   /** Hesapta kullanılan hız — şeffaflık için (ekranda gösterilmez). */
   kullanilanHizKms: number;
+  /**
+   * Bu tahminin üst sınırı (dk) — ekranın "90+" / "240+" cümlesini SAYIYI
+   * GÖMEREK değil buradan kurması için. Tek hedefte 90, durak zincirinde 240:
+   * 12 duraklı bir turda 90 dk tavanı her seferde "90+" derdi ve bilgi
+   * taşımazdı (bkz. `durakEtaHesapla`).
+   */
+  ustSinirDk: number;
 };
 
 /** Tahminin üst sınırı; üstü "90+" olarak verilir. */
@@ -76,7 +83,7 @@ const DURUYOR_ESIGI_KMS = 3;
 export function etaHesapla(g: EtaGirdi): EtaSonuc {
   // Hedef dairenin içindeysek iş bitmiştir: mesafe 0 değil ama VARILDI.
   if (g.mesafeM <= g.hedefYaricapM) {
-    return { dakika: 0, ustSinirAsildi: false, vardi: true, kullanilanHizKms: 0 };
+    return { dakika: 0, ustSinirAsildi: false, vardi: true, kullanilanHizKms: 0, ustSinirDk: ETA_UST_SINIR_DK };
   }
 
   const olculen = g.hizKms ?? 0;
@@ -99,6 +106,170 @@ export function etaHesapla(g: EtaGirdi): EtaSonuc {
     ustSinirAsildi: kademeli > ETA_UST_SINIR_DK,
     vardi: false,
     kullanilanHizKms: hiz,
+    ustSinirDk: ETA_UST_SINIR_DK,
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// DURAK ZİNCİRİ (migration 083)
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * ÇOK DURAKLI ETA — MÜŞTERİNİN KENDİ DURAĞINA.
+ *
+ * ═══ SEKTÖR FORMÜLÜ, BİREBİR ═══
+ *
+ * Ölçüldü (25.08.2026, upperinc.com/blog/delivery-eta ve locus.sh mühendislik
+ * kılavuzu): *"A scheduled ETA is calculated as: distance to stop divided by
+ * expected travel speed, PLUS planned service time at the stop, PLUS CUMULATIVE
+ * TIME FROM PRIOR STOPS."* Uyguladığımız zincir aynen bu:
+ *
+ *   araç → S1 → S2 → … → MÜŞTERİNİN DURAĞI
+ *   her bacak : haversine × yol katsayısı ÷ etkin hız
+ *   her ARA durak : planlanan servis süresi
+ *
+ * ═══ MÜŞTERİNİN KENDİ SERVİS SÜRESİ SAYILMAZ ═══
+ *
+ * Sorulan şey VARIŞ, ayrılış değil. Kendi durağının 15 dakikasını eklemek,
+ * müşteriye "aracın senden ayrılacağı saat"i varış saati diye sunmak olurdu.
+ *
+ * ═══ SABİT SERVİS SÜRESİ EN BÜYÜK HATA KAYNAĞI — VE BİZDE ALAN VAR ═══
+ *
+ * Aynı kaynağın uyarısı: *"Applying a UNIFORM service time estimate, such as
+ * 3 minutes per stop, ignores the wide variance between delivery types … and is
+ * often the LARGEST SOURCE OF ETA ERROR on multi-stop routes."*
+ * Bu yüzden zincir önce DURAĞIN KENDİ `tahmini_sure_dk` değerini kullanıyor;
+ * kiracı varsayılanı yalnız o alan BOŞSA devreye giriyor. Yani planlayan kişi
+ * bir durağın 25 dakika süreceğini biliyorsa tahmin onu bilir.
+ *
+ * ═══ KOORDİNATSIZ DURAK — TAHMİN KABALAŞIR, SESSİZ KALMAZ ═══
+ *
+ * Serbest adresli bir durak koordinatsız olabilir (082: adres bir ETİKET).
+ * Öyle bir durak zincirde BACAK üretemez; yalnız SERVİS SÜRESİ sayılır ve
+ * zincir bir sonraki bilinen noktaya "atlar". Sonuç `kaba: true` ile
+ * işaretlenir — çağıran isterse ekranda daha temkinli bir dil kullanır.
+ *
+ * ═══ ÜST SINIR 90 DEĞİL 240 ═══
+ *
+ * Tek hedefli ETA'da 90 dk tavanı doğruydu: tek bir teslimata 90 dakikadan
+ * fazla varsa sayı zaten anlamsızdı. 12 duraklı bir turda ise 90 dk tavanı HER
+ * SEFERİNDE "90+" derdi ve hiçbir bilgi taşımazdı. Tavan 240 dk; kademe de
+ * büyüklükle kabalaşıyor (≤30 dk → 5, ≤90 dk → 10, üstü → 15): iki saatlik bir
+ * tahmini 5 dakikaya yuvarlamak, olmayan bir hassasiyet iddiasıdır.
+ */
+export const ETA_ZINCIR_UST_SINIR_DK = 240;
+
+/** Zincirdeki tek durak — geometrisi olmayabilir (serbest adres, koordinatsız). */
+export type ZincirDuragi = {
+  lat: number | null;
+  lng: number | null;
+  /** Varış yarıçapı (m) — bacaktan düşülür: dairenin kenarına varmak varmaktır. */
+  yaricapM: number;
+  /** Durağın planlanan süresi (dk). null → kiracı varsayılanı. */
+  servisDk: number | null;
+};
+
+export type ZincirGirdi = {
+  aracLat: number;
+  aracLng: number;
+  hizKms: number | null;
+  yolKatsayisi: number;
+  varsayilanHizKms: number;
+  /** `servisDk` boş duraklarda kullanılacak süre (kiracı ayarı). */
+  varsayilanServisDk: number;
+  /**
+   * Aracın ÖNÜNDEKİ AÇIK duraklar, SIRAYLA. SONUNCUSU müşterinin durağıdır.
+   * Yani `duraklar.length - 1` = "önünüzde kaç durak var".
+   */
+  duraklar: ZincirDuragi[];
+  /** İki nokta arası kuş uçuşu mesafe (m) — çağıran `haversineM`i geçirir. */
+  mesafe: (aLat: number, aLng: number, bLat: number, bLng: number) => number;
+};
+
+export type ZincirSonuc = EtaSonuc & {
+  /** Müşterinin durağından ÖNCE yapılacak açık durak sayısı. */
+  onunuzdeDurak: number;
+  /** Zincirde koordinatsız durak vardı → tahmin kabalaştı. */
+  kaba: boolean;
+};
+
+/** Büyüdükçe kabalaşan yuvarlama — yanlış kesinliğe karşı. */
+function zincirKademesi(hamDk: number): number {
+  if (hamDk <= 30) return 5;
+  if (hamDk <= 90) return 10;
+  return 15;
+}
+
+export function durakEtaHesapla(g: ZincirGirdi): ZincirSonuc | null {
+  const n = g.duraklar.length;
+  if (n === 0) return null;
+
+  const hedef = g.duraklar[n - 1];
+  // Müşterinin kendi durağının geometrisi yoksa hesap kurulamaz. Uydurmak
+  // yerine null döndürüp ekranın "tahmin yok" demesini sağlıyoruz.
+  if (hedef.lat === null || hedef.lng === null) return null;
+
+  const olculen = g.hizKms ?? 0;
+  const hiz =
+    olculen >= DURUYOR_ESIGI_KMS ? Math.min(olculen, ETA_HIZ_TAVANI_KMS) : g.varsayilanHizKms;
+
+  let mesafeToplamM = 0;
+  let servisToplamDk = 0;
+  let kaba = false;
+  let sonLat = g.aracLat;
+  let sonLng = g.aracLng;
+  /** Aracın, müşterinin durağının dairesi içinde olup olmadığı (yalnız ilk durakken anlamlı). */
+  let ilkBacakM: number | null = null;
+
+  for (let i = 0; i < n; i++) {
+    const d = g.duraklar[i];
+    if (d.lat === null || d.lng === null) {
+      // Bacak ölçülemiyor: zincir bir sonraki BİLİNEN noktaya atlar.
+      kaba = true;
+    } else {
+      const ham = g.mesafe(sonLat, sonLng, d.lat, d.lng);
+      if (i === 0) ilkBacakM = ham;
+      // Yarıçap düşülür (0'ın altına inmez): kenara varmak varmaktır.
+      mesafeToplamM += Math.max(0, ham - d.yaricapM);
+      sonLat = d.lat;
+      sonLng = d.lng;
+    }
+    // ⚠️ SON durağın (müşterininki) servis süresi SAYILMAZ — sorulan VARIŞ.
+    if (i < n - 1) servisToplamDk += d.servisDk ?? g.varsayilanServisDk;
+  }
+
+  /**
+   * "VARDI" YALNIZ MÜŞTERİNİN DURAĞI SIRADAKİYSE.
+   *
+   * Duraklar birbirine yakınsa araç, müşterinin dairesi içindeyken hâlâ ondan
+   * önceki bir durakta olabilir. O hâlde "vardı" demek yanlış olurdu; şart
+   * zincirde başka durak OLMAMASI.
+   */
+  if (n === 1 && ilkBacakM !== null && ilkBacakM <= hedef.yaricapM) {
+    return {
+      dakika: 0,
+      ustSinirAsildi: false,
+      vardi: true,
+      kullanilanHizKms: 0,
+      ustSinirDk: ETA_ZINCIR_UST_SINIR_DK,
+      onunuzdeDurak: 0,
+      kaba,
+    };
+  }
+
+  const yolKm = (mesafeToplamM / 1000) * g.yolKatsayisi;
+  const hamDk = (yolKm / hiz) * 60 + servisToplamDk;
+  const kademe = zincirKademesi(hamDk);
+  const kademeli = Math.max(kademe, Math.round(hamDk / kademe) * kademe);
+
+  return {
+    dakika: Math.min(kademeli, ETA_ZINCIR_UST_SINIR_DK),
+    ustSinirAsildi: kademeli > ETA_ZINCIR_UST_SINIR_DK,
+    vardi: false,
+    kullanilanHizKms: hiz,
+    ustSinirDk: ETA_ZINCIR_UST_SINIR_DK,
+    onunuzdeDurak: n - 1,
+    kaba,
   };
 }
 

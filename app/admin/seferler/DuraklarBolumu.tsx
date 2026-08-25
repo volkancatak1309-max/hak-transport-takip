@@ -15,6 +15,10 @@ import {
   ShieldCheck,
   RotateCcw,
   TriangleAlert,
+  Link2,
+  Copy,
+  Ban,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,7 +46,13 @@ import {
   type DurakGorunum,
   type DurakListesi,
 } from "@/app/actions/duraklar";
-import type { SeferSecenekleri } from "@/app/actions/seferler";
+import {
+  takipLinkiUret,
+  takipLinkleriGetir,
+  takipLinkiIptalEt,
+  type SeferSecenekleri,
+  type TakipLinkGorunum,
+} from "@/app/actions/seferler";
 
 /**
  * SEFERİN DURAKLARI — yönetici/şef yüzeyi (migration 082).
@@ -91,6 +101,7 @@ export function DuraklarBolumu({
   const [calisiyor, setCalisiyor] = useState(false);
   const [formAcik, setFormAcik] = useState(false);
   const [duzenlenen, setDuzenlenen] = useState<DurakGorunum | null>(null);
+  const [linkDuragi, setLinkDuragi] = useState<DurakGorunum | null>(null);
   const [, basla] = useTransition();
 
   async function yukle() {
@@ -265,6 +276,29 @@ export function DuraklarBolumu({
 
                 {seferAcik && (
                   <span className="flex shrink-0 items-center">
+                    {/*
+                      DURAK BAZLI TAKIP LINKI (083) — musteri KENDI duraginin
+                      ETA'sini gorsun. Hedefi olmayan durakta pasif: harita bos,
+                      ETA yok, musteriye "bozuk" bir sayfa gider (sunucu da
+                      reddediyor — `durak_hedefsiz`).
+                    */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      disabled={
+                        calisiyor ||
+                        !durakHedefliMi(d) ||
+                        d.durum === "tamamlandi" ||
+                        d.durum === "atlandi"
+                      }
+                      onClick={() => setLinkDuragi(d)}
+                      aria-label={t("link_baslik")}
+                      title={durakHedefliMi(d) ? t("link_baslik") : t("link_hedefsiz")}
+                    >
+                      <Link2 className="size-4" />
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"
@@ -327,6 +361,14 @@ export function DuraklarBolumu({
         </ol>
       )}
 
+      {linkDuragi && (
+        <DurakLinkKutusu
+          seferId={seferId}
+          durak={linkDuragi}
+          kapat={() => setLinkDuragi(null)}
+        />
+      )}
+
       {formAcik && (
         <DurakFormu
           acik
@@ -345,6 +387,163 @@ export function DuraklarBolumu({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Duragin COZULEBILIR bir hedefi var mi — link dugmesinin kapisi.
+ *
+ * Bolge bagliysa (silinmediyse) ya da koordinati varsa harita cizilebilir.
+ * Yalniz adi olan durak musteriye bos bir sayfa gosterirdi; sunucu da ayni
+ * kapiyi tutuyor (`durak_hedefsiz`).
+ */
+function durakHedefliMi(d: DurakGorunum): boolean {
+  if (d.zone_id) return d.bolge_ad !== null;
+  return d.latitude !== null && d.longitude !== null;
+}
+
+// ── DURAK TAKIP LINKLERI (083) ────────────────────────────────────────────
+
+/**
+ * BIR DURAGIN MUSTERI LINKLERI.
+ *
+ * ═══ NEDEN AYRI KUTU, SATIR ICINDE LISTE DEGIL ═══
+ *
+ * 80 durakli bir turda her satirin altina link listesi acmak ekrani okunmaz
+ * hale getirirdi. Ayrica link uretimi seyrek bir eylem: musteriye bir kez
+ * gonderilir. Kutu, o duragin linklerini ISTEK UZERINE yukluyor.
+ *
+ * ⚠️ SEFER BAZLI LINKLER BU KUTUDA GORUNMEZ. Ikisi ayri seyler ve karistirmak
+ * "hangi linki kime gonderdim" sorusunu bulanik birakirdi; sefer bazli linkler
+ * sefer detayindaki kendi bolumunde kaliyor.
+ */
+function DurakLinkKutusu({
+  seferId,
+  durak,
+  kapat,
+}: {
+  seferId: string;
+  durak: DurakGorunum;
+  kapat: () => void;
+}) {
+  const t = useTranslations("duraklar");
+  const [linkler, setLinkler] = useState<TakipLinkGorunum[] | null>(null);
+  const [calisiyor, setCalisiyor] = useState(false);
+
+  async function yukle() {
+    const r = await takipLinkleriGetir(seferId);
+    setLinkler(r.linkler.filter((l) => l.durakId === durak.id));
+  }
+
+  // setState efekt govdesinde CAGRILMIYOR (bkz. DuraklarBolumu ilk yukleme notu).
+  useEffect(() => {
+    let alive = true;
+    takipLinkleriGetir(seferId).then((r) => {
+      if (alive) setLinkler(r.linkler.filter((l) => l.durakId === durak.id));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [seferId, durak.id]);
+
+  async function uret() {
+    setCalisiyor(true);
+    const r = await takipLinkiUret(seferId, null, durak.id);
+    setCalisiyor(false);
+    if (r.ok) {
+      toast.success(t("link_uretildi"));
+      await navigator.clipboard.writeText(r.link.url).catch(() => {});
+      await yukle();
+    } else {
+      toast.error(t(`link_hata_${r.hata}`));
+    }
+  }
+
+  async function iptal(id: string) {
+    setCalisiyor(true);
+    const r = await takipLinkiIptalEt(seferId, id);
+    setCalisiyor(false);
+    if (r.ok) {
+      toast.success(t("link_iptal_edildi"));
+      await yukle();
+    } else toast.error(t("link_hata_hata"));
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && kapat()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t("link_baslik_ad", { ad: durak.ad })}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          {/*
+            SIZINTI CUMLESI — yonetici ne gonderdigini bilsin. Sayfa yalniz
+            aracin konumunu, BU duragin hedefini, ETA'yi ve "onunuzde N durak"
+            bilgisini gosterir; diger duraklarin adresi, alici adi, sofor adi ve
+            plaka SUNUCUDAN HIC CIKMAZ (lib/takip-db.ts).
+          */}
+          <p className="rounded-lg bg-surface-2 p-2.5 text-xs text-muted-foreground">
+            {t("link_gizlilik")}
+          </p>
+
+          <Button onClick={uret} disabled={calisiyor} className="w-full">
+            {calisiyor ? <Loader2 className="size-4 animate-spin" /> : <Link2 className="size-4" />}
+            {t("link_uret")}
+          </Button>
+
+          {linkler === null ? (
+            <Skeleton className="h-10 w-full" />
+          ) : linkler.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{t("link_yok")}</p>
+          ) : (
+            <ul className="space-y-2">
+              {linkler.map((l) => (
+                <li key={l.id} className="flex items-center gap-2 text-xs">
+                  <span className={l.iptalEdildi ? "text-muted-foreground line-through" : ""}>
+                    {t("link_bitis", { saat: formatTime(l.bitis) })}
+                  </span>
+                  <span className="nums text-muted-foreground">
+                    {t("link_acilma", { n: l.acilma })}
+                  </span>
+                  <span className="ml-auto flex items-center gap-1">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7"
+                      disabled={l.iptalEdildi}
+                      onClick={() => {
+                        void navigator.clipboard.writeText(l.url);
+                        toast.success(t("link_kopyalandi"));
+                      }}
+                    >
+                      <Copy className="size-3.5" />
+                    </Button>
+                    <a
+                      href={l.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-2"
+                      aria-label={t("link_ac")}
+                    >
+                      <ExternalLink className="size-3.5" />
+                    </a>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7"
+                      disabled={l.iptalEdildi || calisiyor}
+                      onClick={() => iptal(l.id)}
+                    >
+                      <Ban className="size-3.5" />
+                    </Button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

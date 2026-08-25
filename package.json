@@ -45,7 +45,8 @@
     "lint:takip": "node scripts/check-takip-sizinti.mjs",
     "verify:takip-linki": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-takip-linki.mjs",
     "lint:crud": "node scripts/check-crud-ekranlari.mjs",
-    "verify:sefer-duraklari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sefer-duraklari.mjs"
+    "verify:sefer-duraklari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sefer-duraklari.mjs",
+    "verify:takip-durak": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-takip-durak.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

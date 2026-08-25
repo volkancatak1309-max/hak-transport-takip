@@ -20,6 +20,7 @@ import {
   type DurakGirdi,
   type DurakOzeti,
 } from "@/lib/sefer-duraklari";
+import { revokeDurakLinks } from "@/lib/takip-db";
 import { audit } from "@/lib/security-log";
 
 /**
@@ -197,6 +198,20 @@ export async function durakSil(durakId: string): Promise<DurakSonuc> {
   const mevcut = await getDurak(durakId);
   if (!mevcut) return { ok: false, hata: "durak_yok" };
   if (!(await kapsamdakiSefer(mevcut.sefer_id, scope))) return { ok: false, hata: "kapsam_disi" };
+
+  /**
+   * ⚠️ ÖNCE MÜŞTERİ LİNKLERİ İPTAL (083) — silmeden ÖNCE.
+   *
+   * Silme sonrası FK `durak_id`yi NULL'a çeker ve link "durağı silinmiş"
+   * durumuna düşer; müşteri "bu takip sona erdi" görür. Doğru ama eksik: olan
+   * şey yöneticinin durağı plandan çıkarmasıdır ve bunun müşteri karşılığı
+   * "gönderen linki kapattı"dır. Sıra önemli — silmeden sonra `durak_id`
+   * NULL olacağı için linkler bulunamaz hâle gelirdi.
+   */
+  const iptalEdilen = await revokeDurakLinks(durakId, workerId);
+  if (iptalEdilen > 0) {
+    await audit(workerId, "delete", `takip_linki:durak_silindi:${durakId}:${iptalEdilen}`);
+  }
 
   const r = await deleteDurak(durakId);
   if (!r.ok) {

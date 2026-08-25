@@ -83,6 +83,7 @@ const ORDER = [
   "080_teslimat_kaniti.sql",
   "081_dvir_ve_bakim.sql",
   "082_sefer_duraklari.sql",
+  "083_takip_durak.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

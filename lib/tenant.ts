@@ -817,6 +817,38 @@ export const TAKIP_YOL_KATSAYISI = envNum(process.env.TAKIP_YOL_KATSAYISI, 1.3);
 export const TAKIP_VARSAYILAN_HIZ_KMS = envInt(process.env.TAKIP_VARSAYILAN_HIZ_KMS, 35);
 
 /**
+ * "ÖNÜNÜZDE N DURAK VAR" — bu sayının GÖSTERİLECEĞİ üst eşik (083).
+ *
+ * ═══ NEDEN EŞİK, AÇIK/KAPALI DEĞİL ═══
+ *
+ * Onfleet aynı öğeyi aynı biçimde veriyor (support.onfleet.com, "Customized
+ * Recipient Experience"): *"configure the NUMBER OF STOPS they would like to be
+ * displayed to recipients by enabling the option and then entering the number
+ * of stops you would like to display. If the setting is unchecked, the number
+ * of stops is not shown."* Yani sektörde de bu bir SAYI, bir bayrak değil.
+ *
+ * Sebebi ölçülebilir: "önünüzde 2 durak var" kullanışlı bir bilgidir; "önünüzde
+ * 47 durak var" hem cesaret kırıcıdır hem de o mesafedeki bir tahminin güveni
+ * düşüktür. Eşiğin üstünde sayı GÖSTERİLMEZ — ETA yine görünür.
+ *
+ * ⚠️ Bu sayı ROTA BÜYÜKLÜĞÜNÜ sızdırmaz: müşteriye kendi durağının SIRA NUMARASI
+ * ya da turdaki TOPLAM durak sayısı ASLA gönderilmiyor (lib/takip-db.ts), yalnız
+ * "önünde kaç tane kaldı". 0 verilirse özellik tamamen kapanır.
+ */
+export const TAKIP_SIRA_ESIGI = envInt(process.env.TAKIP_SIRA_ESIGI, 10);
+
+/**
+ * Durakta geçmesi beklenen VARSAYILAN süre (dk) — yalnız durağın kendi
+ * `tahmini_sure_dk` alanı BOŞSA kullanılır.
+ *
+ * ⚠️ Sabit servis süresi çok duraklı ETA'nın en büyük hata kaynağıdır
+ * (bkz. lib/takip-eta.ts başlığındaki kaynak). Bu yüzden bu değer bir
+ * VARSAYILAN, bir kural değil: planlayan kişi durağa süre yazdıysa o kazanır.
+ * 5 dk — şehir içi bir teslimatın kapıda geçen tipik süresi.
+ */
+export const TAKIP_VARSAYILAN_SERVIS_DK = envInt(process.env.TAKIP_VARSAYILAN_SERVIS_DK, 5);
+
+/**
  * KURULUM TUTARLILIK DENETİMİ — fail-closed.
  *
  * Yanlış env bileşimi sessiz bir veri kaybına dönüşebilir (şoför paneli yok +

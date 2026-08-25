@@ -51,7 +51,19 @@ function taban(req: Request): string {
   }
 }
 
-function govde(link: { id: string; token: string; expiresAt: string; revokedAt: string | null; aliciNot: string | null; createdAt: string; hitCount: number }, base: string) {
+function govde(
+  link: {
+    id: string;
+    token: string;
+    expiresAt: string;
+    revokedAt: string | null;
+    aliciNot: string | null;
+    createdAt: string;
+    hitCount: number;
+    durakId: string | null;
+  },
+  base: string
+) {
   return {
     id: link.id,
     url: `${base}/takip/${link.token}`,
@@ -61,6 +73,8 @@ function govde(link: { id: string; token: string; expiresAt: string; revokedAt: 
     aliciNot: link.aliciNot,
     olusturuldu: link.createdAt,
     acilma: link.hitCount,
+    /** Bagli oldugu durak (083). null → sefer bazli link. */
+    durakId: link.durakId,
   };
 }
 
@@ -88,18 +102,43 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!UUID.test(id)) return NextResponse.json({ ok: false, sebep: "gecersiz_sefer" }, { status: 400 });
 
   let aliciNot: string | null = null;
+  /**
+   * DURAK BAZLI LİNK (083) — gövdede `durakId`.
+   *
+   * Verilmezse 079/082 davranışı: sefer bazlı link. Sözleşme geriye uyumlu,
+   * eski istemciler gövdesiz POST atmaya devam edebilir.
+   */
+  let durakId: string | null = null;
   try {
-    const j = (await req.json()) as { aliciNot?: unknown } | null;
+    const j = (await req.json()) as { aliciNot?: unknown; durakId?: unknown } | null;
     const ham = typeof j?.aliciNot === "string" ? j.aliciNot.trim() : "";
     aliciNot = ham ? ham.slice(0, 80) : null;
+    durakId = typeof j?.durakId === "string" && j.durakId ? j.durakId : null;
   } catch {
-    // Gövdesiz POST geçerli: not opsiyonel.
+    // Gövdesiz POST geçerli: iki alan da opsiyonel.
+  }
+  if (durakId && !UUID.test(durakId)) {
+    return NextResponse.json({ ok: false, sebep: "gecersiz_durak" }, { status: 400 });
   }
 
-  const r = await createTakipLink(id, kapi.actor.worker.id, aliciNot);
+  const r = await createTakipLink(id, kapi.actor.worker.id, aliciNot, durakId);
   if (!r.ok) {
     const durum =
-      r.sebep === "tablo_yok" ? 503 : r.sebep === "sefer_yok" ? 404 : r.sebep === "sefer_kapali" ? 409 : 500;
+      r.sebep === "tablo_yok"
+        ? 503
+        : r.sebep === "durak_ozelligi_kapali"
+          ? 503
+          : r.sebep === "sefer_yok"
+            ? 404
+            : r.sebep === "durak_yok"
+              ? 404
+              : r.sebep === "sefer_kapali"
+                ? 409
+                : r.sebep === "durak_kapali"
+                  ? 409
+                  : r.sebep === "durak_hedefsiz"
+                    ? 409
+                    : 500;
     return NextResponse.json({ ok: false, sebep: r.sebep, mesaj: r.mesaj }, { status: durum });
   }
   return NextResponse.json(

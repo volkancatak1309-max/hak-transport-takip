@@ -27,12 +27,24 @@ export const dynamic = "force-dynamic";
  * müşteriye yer bırakır; IP başına 60/dk, bir ofisten bakan birden çok kişiyi
  * kesmez ama tarayıcı döngüsünü durdurur.
  *
- * ── 404 TEK CEVAP ─────────────────────────────────────────────────────────
+ * ── 404 mü 410 mu ─────────────────────────────────────────────────────────
  * "Token yok" ile "süresi doldu" ekranda AYRI cümlelerdir (sayfa sunucuda
  * ayrımı biliyor), ama bu uçta ikisi de 410/404 döner ve gövde SEBEBİ taşır.
- * Var olmayan token'a 404, var olup ölmüşe 410: müşteri "link ölmüş" ile
+ * Var olmayan token'a 404, VAR OLUP ÖLMÜŞE 410: müşteri "link ölmüş" ile
  * "linki yanlış kopyalamışım" ayrımını yapabilsin.
+ *
+ * ⚠️ ÖLÜ SEBEPLERİ TEK KAYNAKTAN (083'te ölçülerek yakalandı): dördüncü ölüm
+ * yolu `durak_kapandi` eklendiğinde bu liste güncellenmeyi UNUTMUŞTU ve uç 404
+ * dönüyordu — yani kapanmış bir durağın müşterisine "böyle bir link yok"
+ * deniyordu ve o kişi linki yanlış kopyaladığını sanırdı. Liste artık
+ * `OLU_SEBEPLER` sabitinde; yeni bir ölüm yolu eklendiğinde tek yer değişir.
  */
+
+/**
+ * VAR OLUP ÖLMÜŞ link sebepleri → HTTP 410 Gone.
+ * Buraya girmeyen her sebep 404'tür ("böyle bir link yok").
+ */
+const OLU_SEBEPLER = new Set(["suresi_doldu", "iptal_edildi", "sefer_kapandi", "durak_kapandi"]);
 
 /** Token başına pencere: 30 istek / 60 sn. */
 const TOKEN_TAVAN = 30;
@@ -83,7 +95,7 @@ export async function GET(
 
   const sonuc = await readTakipByToken(token);
   if (!sonuc.ok) {
-    const olu = sonuc.sebep === "suresi_doldu" || sonuc.sebep === "iptal_edildi" || sonuc.sebep === "sefer_kapandi";
+    const olu = OLU_SEBEPLER.has(sonuc.sebep);
     return NextResponse.json(
       { ok: false, sebep: sonuc.sebep },
       { status: olu ? 410 : 404, headers: { "cache-control": "no-store" } }

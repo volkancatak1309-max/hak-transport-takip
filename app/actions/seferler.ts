@@ -540,6 +540,8 @@ export type TakipLinkGorunum = {
   iptalEdildi: boolean;
   aliciNot: string | null;
   acilma: number;
+  /** Bağlı olduğu durak (083). null → sefer bazlı link. */
+  durakId: string | null;
 };
 
 function linkGorunum(l: TakipLink, taban: string): TakipLinkGorunum {
@@ -550,6 +552,7 @@ function linkGorunum(l: TakipLink, taban: string): TakipLinkGorunum {
     iptalEdildi: l.revokedAt !== null,
     aliciNot: l.aliciNot,
     acilma: l.hitCount,
+    durakId: l.durakId,
   };
 }
 
@@ -585,13 +588,30 @@ export type TakipLinkSonuc =
   | { ok: true; link: TakipLinkGorunum }
   | {
       ok: false;
-      hata: "kapsam_disi" | "tablo_yok" | "sefer_kapali" | "eksik_alan" | "hata";
+      hata:
+        | "kapsam_disi"
+        | "tablo_yok"
+        | "sefer_kapali"
+        | "eksik_alan"
+        | "durak_yok"
+        | "durak_kapali"
+        | "durak_hedefsiz"
+        | "durak_ozelligi_kapali"
+        | "hata";
       mesaj?: string;
     };
 
+/**
+ * Takip linki üretir — SEFER ya da DURAK bazlı (083).
+ *
+ * `durakId` verilirse müşteri KENDİ durağının ETA'sını görür; verilmezse
+ * 079/082 davranışı (seferin çözülmüş hedefi) aynen sürer. İkisi de meşru:
+ * tek duraklı işlerde sefer bazlı link daha az tıklamadır.
+ */
 export async function takipLinkiUret(
   seferId: string,
-  aliciNot?: string | null
+  aliciNot?: string | null,
+  durakId?: string | null
 ): Promise<TakipLinkSonuc> {
   const { session, scope } = await kapsam();
   const s = await seferKapsamda(seferId, scope);
@@ -608,16 +628,45 @@ export async function takipLinkiUret(
    * yeni seferler artık o kolonu yazmıyor.
    */
   if (!s.vehicle_id) return { ok: false, hata: "eksik_alan", mesaj: "arac" };
-  const hedef = await seferHedefi(s);
-  if (!hedef) return { ok: false, hata: "eksik_alan", mesaj: "bolge" };
+  /**
+   * Hedef denetimi İKİ YOLDA AYRI:
+   *   · durak bazlı → durağın kendi hedefine `createTakipLink` bakıyor
+   *     (durak bu seferin mi, açık mı, çözülebilir geometrisi var mı).
+   *   · sefer bazlı → seferin ÇÖZÜLMÜŞ hedefi (082).
+   */
+  if (!durakId) {
+    const hedef = await seferHedefi(s);
+    if (!hedef) return { ok: false, hata: "eksik_alan", mesaj: "bolge" };
+  }
 
-  const r = await createTakipLink(seferId, session.worker_id ?? null, aliciNot?.trim() || null);
+  const r = await createTakipLink(
+    seferId,
+    session.worker_id ?? null,
+    aliciNot?.trim() || null,
+    durakId ?? null
+  );
   if (!r.ok) {
     const h =
-      r.sebep === "tablo_yok" ? "tablo_yok" : r.sebep === "sefer_kapali" ? "sefer_kapali" : "hata";
+      r.sebep === "tablo_yok"
+        ? "tablo_yok"
+        : r.sebep === "sefer_kapali"
+          ? "sefer_kapali"
+          : r.sebep === "durak_yok"
+            ? "durak_yok"
+            : r.sebep === "durak_kapali"
+              ? "durak_kapali"
+              : r.sebep === "durak_hedefsiz"
+                ? "durak_hedefsiz"
+                : r.sebep === "durak_ozelligi_kapali"
+                  ? "durak_ozelligi_kapali"
+                  : "hata";
     return { ok: false, hata: h, mesaj: r.mesaj };
   }
-  await audit(session.worker_id ?? null, "create", `takip_linki:${seferId}`);
+  await audit(
+    session.worker_id ?? null,
+    "create",
+    durakId ? `takip_linki:durak:${durakId}` : `takip_linki:${seferId}`
+  );
   revalidatePath("/admin/seferler");
   return { ok: true, link: linkGorunum(r.veri, linkTabani()) };
 }

@@ -36,7 +36,46 @@ const hatalar = [];
 const notlar = [];
 
 // ── K1 · GÖVDENİN ALAN LİSTESİ ─────────────────────────────────────────────
-const IZINLI_ALANLAR = ["durum", "konum", "hedef", "eta", "linkBitisISO", "soforAdi"];
+/**
+ * GİRİŞSİZ GÖVDEDE İZİNLİ ALANLAR — her satır bir KARAR.
+ *
+ * Bu liste bir beyaz liste değil, bir KAYIT: her alanın müşteriye gitmesi
+ * bilinçle kabul edilmiştir. Yeni bir alan eklendiğinde muhafız kırılır ve
+ * karar yeniden verilir. (083'te tam bu oldu: dört alan eklendi ve buraya
+ * gerekçesiyle yazıldı.)
+ *
+ *   durum         → hazirlaniyor|yolda|vardi. Beş değerli iç çizgi ÜÇE
+ *                   indirilmiş; "kabul" damgası çalışan davranışıdır, çıkmaz.
+ *   konum         → aracın son noktası. Özelliğin varlık sebebi.
+ *   hedef         → YALNIZ geometri. 083'ten sonra DURAK bazlı linkte
+ *                   müşterinin KENDİ durağı, aracın sıradakisi değil.
+ *   eta           → tahmin. Kademeli ve üst sınırlı (yanlış kesinlik yok).
+ *   linkBitisISO  → "bu link ne zaman kapanır" — müşterinin kendi linki.
+ *   soforAdi      → YALNIZ TAKIP_SOFOR_ADI açıksa; varsayılan KAPALI (AT DSG
+ *                   §10, DE BetrVG §87). K3 ayrıca bunu denetliyor.
+ *   etaKaba       → tahminin güvenilirliği (koordinatsız durak vardı). Bir
+ *                   NİTELİK bayrağı; hiçbir durağın verisini taşımaz.
+ *   durakBagli    → linkin türü (durak mı sefer mi). Ekran dilini belirler;
+ *                   müşteri zaten kendi linkinin ne olduğunu biliyor.
+ *   onunuzdeDurak → "önünüzde N durak var" (Onfleet'in aynı öğesi).
+ *                   ⚠️ SIRA NUMARASI ve TOPLAM DURAK SAYISI BİLEREK YOK: ikisi
+ *                   rota büyüklüğünü ve müşterinin turdaki yerini ele verirdi.
+ *                   TAKIP_SIRA_ESIGI üstünde null gönderilir.
+ *   pencere       → müşterinin KENDİ durağının zaman aralığı. Kendi kısıtı,
+ *                   başka durağın penceresi ASLA gönderilmez.
+ */
+const IZINLI_ALANLAR = [
+  "durum",
+  "konum",
+  "hedef",
+  "eta",
+  "linkBitisISO",
+  "soforAdi",
+  "etaKaba",
+  "durakBagli",
+  "onunuzdeDurak",
+  "pencere",
+];
 
 const dbKaynak = oku("lib/takip-db.ts");
 const tipBlok = dbKaynak.slice(

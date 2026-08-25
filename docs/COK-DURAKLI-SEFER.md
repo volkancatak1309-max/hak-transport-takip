@@ -1,4 +1,4 @@
-# Çok duraklı sefer (migration 082)
+# Çok duraklı sefer (migration 082 + 083)
 
 Sefer artık TEK hedefli değil: sıralı bir **durak listesi** taşıyor. Bu belge
 kararların gerekçesini, ölçümleri ve provayı tutar.
@@ -167,13 +167,11 @@ Tekillik ikiye bölündü, garanti korunarak:
   bir durağın **aynı anda tek GEÇERLİ kanıtı**. İptal edilmiş kanıt yeni denemeyi
   engellemez — yanlış kanıt sebebiyle kayıtta durur, üstüne doğrusu yazılabilir.
 
-### 3.5 Bilinen sınır — takip linki
+### 3.5 Takip linki durağa bağlandı (migration 083) ✅
 
-Takip linki **sefere** bağlı (079), durağa değil. Çok duraklı bir seferde müşteri
-kendi durağının değil **aracın sıradaki durağının** ETA'sını görür.
-Onfleet/Track-POD linkleri göreve (=durağa) bağlıdır; bu farkı kapatmak 079'a
-`durak_id` eklemeyi gerektirir ve bu turun kapsamında değil. Bugünkü davranış
-yanlış değil, **dar**: araç yaklaştıkça sıradaki durak müşterininki olur.
+> Bu bölüm 082 turunda **açık bir sınır** olarak yazılmıştı: "link sefere bağlı,
+> müşteri kendi durağının değil aracın sıradaki durağının ETA'sını görüyor".
+> **083 ile kapandı.** Ayrıntı aşağıda; kararların tamamı §7'de.
 
 ---
 
@@ -288,3 +286,156 @@ derleyin** — yoksa `.next` QA adresine bakar kalır.
 - ⚠️ `teslimatlar.durak_id` de 082 ile geliyor; `lib/teslimat-db.ts` okuma
   yolunda 42703'e düşerse ESKİ kolon listesine geri düşer ve durumu **bir kez**
   loglar — 080 ile gelen çalışan bir özellik yeni bir migration'a rehin olmasın.
+
+---
+
+## 7 · Takip linki durağa bağlı (migration 083)
+
+082 turunda **açık bırakılan sınır**: takip linki sefere bağlıydı, müşteri kendi
+durağının değil **aracın sıradaki durağının** ETA'sını görüyordu. 12 duraklı bir
+turda bu yanlış bilgidir. 083 onu kapatıyor.
+
+### 7.1 ÖNCE ÖLÇÜLDÜ — sektör müşteri sayfasında ne gösteriyor
+
+| Ürün | Ne gösteriyor | Kaynak |
+|---|---|---|
+| **Onfleet** | *"configure the **number of stops** they would like to be displayed to recipients … If the setting is unchecked, the number of stops is not shown."* Ayrıca *"choose whether to display the **names of the drivers**"* ve *"display an **ETA range** and add a **buffer**"* | support.onfleet.com — "Customized Recipient Experience" |
+| **Track-POD** | linke tıklayan müşteri *"a map with the exact location of their driver"* + *"dynamic ETA … on the same page"*; bildirim **"after the driver left the previous stop"** tetikleniyor — referans nokta müşterinin KENDİ durağı | track-pod.com/blog/track-and-trace, /blog/notifications-2-0 |
+| **Bringg** | *"the driver's live location"* + ETA *"using GPS, traffic data, and **delivery progress**"*; sektör pratiği **"'next stop' alerts when delivery is one stop away"** | bringg.com/resources/real-time-delivery-tracking |
+
+**Sonuç:** "önünüzde N durak var" gerçek bir sektör öğesi ve Onfleet'te **bir sayı
+ayarı**, bir bayrak değil. Aynen uygulandı: `TAKIP_SIRA_ESIGI` (varsayılan 10).
+Eşiğin üstünde sayı gösterilmez — "önünüzde 47 durak var" hem cesaret kırıcıdır
+hem düşük güvenilirlikte bir tahmindir. `0` verilirse özellik tamamen kapanır.
+
+### 7.2 ÖNCE ÖLÇÜLDÜ — ETA durak eksenine nasıl taşınır
+
+Sektör formülü (upperinc.com/blog/delivery-eta, locus.sh mühendislik kılavuzu):
+
+> *"A scheduled ETA is calculated as: distance to stop divided by expected travel
+> speed, **plus planned service time at the stop, plus cumulative time from prior
+> stops**."*
+
+Ve uyarısı:
+
+> *"Applying a **uniform service time estimate**, such as 3 minutes per stop,
+> ignores the wide variance … and is often the **largest source of ETA error** on
+> multi-stop routes."*
+
+Uygulanan zincir (`lib/takip-eta.ts → durakEtaHesapla`):
+
+```
+araç → S1 → S2 → … → MÜŞTERİNİN DURAĞI
+  her bacak     : haversine × yol katsayısı ÷ etkin hız   (yarıçap düşülür)
+  her ARA durak : tahmini_sure_dk   (yoksa TAKIP_VARSAYILAN_SERVIS_DK = 5)
+```
+
+- **Müşterinin KENDİ servis süresi sayılmaz** — sorulan VARIŞ, ayrılış değil.
+- **Sabit süre uyarısının cevabı şemada zaten vardı:** `sefer_duraklari.tahmini_sure_dk`.
+  Planlayan kişi bir durağın 25 dakika süreceğini yazdıysa tahmin onu bilir;
+  kiracı varsayılanı yalnız alan boşsa devreye girer.
+- **Koordinatsız durak** bacak üretemez: yalnız servis süresi sayılır, zincir bir
+  sonraki bilinen noktaya atlar ve sonuç `etaKaba: true` ile işaretlenir — ekran
+  daha temkinli bir cümle kurar.
+- **Üst sınır 90 değil 240**, kademe büyüklükle kabalaşıyor (≤30 dk → 5, ≤90 → 10,
+  üstü → 15). 12 duraklı bir turda 90 dk tavanı her seferinde "90+" derdi.
+  Sınır artık gövdede taşınıyor (`eta.ustSinirDk`), ekrana gömülü değil.
+
+**Ölçülen fark (QA):** aynı araç konumu ve aynı sefer için
+**sefer bazlı link 20 dk**, **2. durağın müşterisi 60 dk** — aradaki 40 dakika
+1. durağa seyahat + o durağın 20 dakikalık planlanmış servis süresi.
+
+### 7.3 ÖNCE ÖLÇÜLDÜ — mevcut sefer bazlı linkler nasıl korunur
+
+Canlı sayım (25.08.2026): HAK61 ve Sendigo'da `sefer_takip_linkleri` **0 satır**
+(ne açık ne kapalı). galzura-demo anahtarsız, ölçülemedi. Yani bu bir **veri**
+taşıma sorunu değil, **sözleşme** sorunu:
+
+- `durak_id` nullable, `durak_bagli` varsayılanı `false` → mevcut her satır
+  otomatik olarak sefer bazlıdır, **hiçbir güncelleme gerekmez**.
+- Okuma yolu `durak_bagli=false` satırlarda 079'un kodunu çalıştırır ve ETA
+  fonksiyonu bile aynıdır: **`etaHesapla` DEĞİŞMEDİ**, `durakEtaHesapla` AYRI
+  eklendi.
+
+### 7.4 Üç kolonluk ayrım — ve neden iki kolon gerekti
+
+Durak **silinirse** ne olmalı? Üç seçenek de kusurluydu:
+
+| Seçenek | Kusur |
+|---|---|
+| `on delete cascade` | Link **satırı** yok olur. 079 linki bir KAYIT sayıyor ("kim üretti, kaç kez açıldı"); müşteriye link gönderdiğimizin izini silmek o duruşa aykırı. Müşteri "bulunamadı" görür → "yanlış kopyaladım" sanır. |
+| `on delete set null` tek başına | Link sessizce **sefer bazlı** linke dönüşür ve müşteri **başka bir müşterinin** durağının ETA'sını görmeye başlar. Kabul edilemez. |
+| `on delete restrict` | Yönetici durağı silemez. Link 2 saatte ölüyor; meşru bir işlemi geçici bir kayıt için bloklamak yanlış. |
+
+Seçilen: **`set null` + ayrı `durak_bagli` bayrağı.**
+
+```
+durak_bagli=false                → SEFER bazlı link (079 davranışı)
+durak_bagli=true,  durak_id dolu → DURAK bazlı link
+durak_bagli=true,  durak_id NULL → durağı silinmiş → LİNK KAPANDI
+```
+
+Uygulama katmanı ayrıca **durağı silmeden önce linklerini iptal ediyor**
+(`app/actions/duraklar.ts` → `revokeDurakLinks`): normal yolda müşteri
+*"gönderen linki kapattı"* görür, ki en doğru cümle odur. Üçüncü hâl yalnız ham
+SQL ile silinirse oluşur ve emniyet ağı olarak duruyor.
+
+### 7.5 Dördüncü ölüm yolu
+
+Link artık **dört** yoldan ölür: (a) süre doldu, (b) yönetici iptal etti,
+(c) sefer kapandı, (d) **durak kapandı** (tamamlandı/atlandı/silindi).
+
+⚠️ **Hangisi olduğu söylenmez.** "Teslimat yapıldı" ile "durak atlandı" müşteri
+için çok farklı iki haberdir ve ikisini de **satıcı** bildirmeli — bir takip linki
+bildirim kanalı değildir. Ayrıca "atlandı" demek, şoförün o gün ne yaptığını
+girişsiz bir sayfadan sızdırmak olurdu.
+
+🔴 **Ölçümle yakalanan hata:** dördüncü sebep eklendiğinde
+`app/api/takip/[token]/route.ts` içindeki ölü-sebep listesi güncellenmemişti ve
+uç **404** dönüyordu — yani kapanmış bir durağın müşterisine "böyle bir link yok"
+deniyordu ve o kişi linki yanlış kopyaladığını sanırdı. Liste artık
+`OLU_SEBEPLER` sabitinde: yeni bir ölüm yolu eklendiğinde tek yer değişir.
+
+### 7.6 Sızıntı — ölçümle
+
+Girişsiz gövdeye **dört alan** eklendi ve `lint:takip` muhafızı bunu yakaladı
+(tasarım gereği: yeni alan = yeni karar). Hepsi gerekçesiyle
+`scripts/check-takip-sizinti.mjs → IZINLI_ALANLAR` kaydına yazıldı.
+
+**Müşteriye gönderilmeyenler — ölçülerek doğrulandı** (hem JSON gövdesi hem
+sunucuda üretilen **HTML kaynağı** taranıyor):
+diğer durakların adı, adresi, notu ve koordinatı · şoför adı · plaka ·
+sefer/durak/şoför kimlikleri · **kendi durağının adı bile** ·
+**sıra numarası ve turdaki toplam durak sayısı**.
+
+Sıra numarası + toplam bilerek yok: ikisi rota büyüklüğünü ve müşterinin turdaki
+yerini ele verirdi. Giden tek sıra bilgisi **"önünüzde N durak var"**.
+
+**Gönderilenler:** aracın konumu · **kendi durağının** geometrisi · ETA ·
+"önünüzde N durak" (eşik altında) · **kendi durağının** zaman penceresi ·
+linkin bitiş anı · şoför adı (yalnız `TAKIP_SOFOR_ADI` açıksa).
+
+### 7.7 Kalan sınır
+
+Aracın **canlı konumu** her iki link türünde de gösteriliyor — özelliğin varlık
+sebebi bu. Yani müşteri, aracın kendi durağından önce nerelerde dolaştığını
+haritada izleyebilir. Bu bir sızıntı değil, **ürünün kendisi**; Onfleet, Track-POD
+ve Bringg de aynısını yapıyor. Bunu daraltmak (ör. yalnız son bacakta konum
+göstermek) ayrı bir üründür ve ölçülerek karar verilmeli.
+
+### 7.8 Prova
+
+```bash
+# Sunucu eylemleri + girişsiz okuma + HTTP ucu + mobil (40 iddia)
+ENV_FILE=<qa env> node --import ./scripts/ts-server.mjs scripts/verify-takip-durak.mjs
+
+# Sayfanın KAYNAĞI — sızıntı HTML düzeyinde
+set -a; . <qa env>; set +a
+npm run build && npx next start -p 3300 &
+node scripts/verify-takip-durak-render.mjs
+```
+
+⚠️ **Prova sırasında öğrenilen tuzak:** dolgu duraklarını `sira >= 100` ile
+silmek, o sırada geçici olarak 999'a taşınmış olan **ölçülen durağı da sildi** ve
+sonraki bütün iddialar yanlış sebeple düştü/geçti. Test verisini **konuma göre**
+silmek, ölçtüğün şeyi silmenin en kolay yoludur — kimlikle silin.

@@ -85,6 +85,7 @@ const ORDER = [
   "082_sefer_duraklari.sql",
   "083_takip_durak.sql",
   "084_haftalik_aksiyon.sql",
+  "085_sefer_karlilik.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

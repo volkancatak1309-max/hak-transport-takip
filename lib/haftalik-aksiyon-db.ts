@@ -18,6 +18,8 @@ import {
   kuralSkorDususu,
   kuralVardiyaKapanmadi,
   kuralYakitSapmasi,
+  kuralMusteriZarar,
+  ozneKimligi,
   susturulmusMu,
   BELGE_ESIK_GUN,
   IS_EMRI_ESIK_GUN,
@@ -31,6 +33,8 @@ import {
   type SusturmaKaydi,
   type Tarama,
 } from "@/lib/haftalik-aksiyon";
+import { ZARAR_MIN_SEFER, ZARAR_PENCERE_GUN } from "@/lib/karlilik";
+import { zararEdenMusteriler } from "@/lib/karlilik-db";
 
 /**
  * HAFTALIK AKSİYON — VERİ KATMANI (migration 084).
@@ -55,7 +59,7 @@ import {
 const TUR_COLS =
   "id, hafta_basi, uretildi_at, tarama, aksiyon_sayisi, elenen_sayisi, bildirim_alici, bildirim_jeton, bildirim_hata, created_at";
 const AKSIYON_COLS =
-  "id, tur_id, kural, worker_id, vehicle_id, oncelik, baslik, gerekce, kanit, hedef_yol, durum, kapatan, kapatildi_at, kapatma_notu, created_at";
+  "id, tur_id, kural, worker_id, vehicle_id, musteri_id, oncelik, baslik, gerekce, kanit, hedef_yol, durum, kapatan, kapatildi_at, kapatma_notu, created_at";
 
 export type HaftalikTur = {
   id: string;
@@ -76,6 +80,8 @@ export type HaftalikAksiyon = {
   kural: string;
   workerId: string | null;
   vehicleId: string | null;
+  /** Üçüncü özne ekseni (085) — müşteri. Kolon yoksa her zaman null. */
+  musteriId: string | null;
   oncelik: number;
   baslik: string;
   gerekce: string;
@@ -108,6 +114,7 @@ function aksiyonCevir(r: Record<string, unknown>): HaftalikAksiyon {
     kural: String(r.kural),
     workerId: r.worker_id ? String(r.worker_id) : null,
     vehicleId: r.vehicle_id ? String(r.vehicle_id) : null,
+    musteriId: r.musteri_id ? String(r.musteri_id) : null,
     oncelik: Number(r.oncelik),
     baslik: String(r.baslik),
     gerekce: String(r.gerekce),
@@ -171,14 +178,21 @@ export async function getTur(
 export async function susturmaKayitlari(): Promise<SusturmaKaydi[]> {
   const { data, error } = await supabaseAdmin
     .from("haftalik_aksiyonlar")
-    .select("kural, worker_id, vehicle_id, kapatildi_at")
+    .select("kural, worker_id, vehicle_id, musteri_id, kapatildi_at")
     .eq("durum", "ilgisiz")
     .order("kapatildi_at", { ascending: false })
     .limit(500);
   if (error || !data) return [];
   return (data as Record<string, unknown>[]).map((r) => ({
     kural: String(r.kural),
-    ozneId: r.worker_id ? String(r.worker_id) : r.vehicle_id ? String(r.vehicle_id) : null,
+    // ⚠️ SIRA `ozneKimligi` ve tekil indeksin coalesce sırasıyla AYNI olmalı.
+    ozneId: r.worker_id
+      ? String(r.worker_id)
+      : r.vehicle_id
+        ? String(r.vehicle_id)
+        : r.musteri_id
+          ? String(r.musteri_id)
+          : null,
     kapatildiAt: String(r.kapatildi_at),
   }));
 }
@@ -254,7 +268,7 @@ const GUN_MS = 86_400_000;
 /**
  * HAFTALIK TURU ÜRET.
  *
- * ═══ TEK GEÇİŞ, YEDİ KURAL ═══
+ * ═══ TEK GEÇİŞ, SEKİZ KURAL ═══
  *
  * Her kural kendi try/catch'inde: bir sinyal okunamazsa (migration yok, RPC
  * yok) tur DÜŞMEZ, o kural `atlandi` sayacıyla işaretlenir. Bir kuralın
@@ -321,6 +335,7 @@ export async function haftalikTuruUret(simdi: Date = new Date()): Promise<Uretim
         kural: a.kural,
         worker_id: a.workerId,
         vehicle_id: a.vehicleId,
+        musteri_id: a.musteriId,
         oncelik: a.oncelik,
         baslik: a.baslik.slice(0, 200),
         gerekce: a.gerekce.slice(0, 500),
@@ -368,11 +383,11 @@ export async function haftalikKuruKosum(
 }
 
 /**
- * YEDİ KURALI ÇALIŞTIR, ADAYLARI TOPLA — yazma YOK.
+ * SEKİZ KURALI ÇALIŞTIR, ADAYLARI TOPLA — yazma YOK.
  *
  * Her kural kendi try/catch'inde: bir sinyal okunamazsa (migration yok, RPC
  * yok) toplama DÜŞMEZ, o kural `atlandi` sayacıyla işaretlenir. Bir kuralın
- * arızası diğer altısını sessizce yok etmemeli.
+ * arızası diğer yedisini sessizce yok etmemeli.
  */
 async function adaylariTopla(
   simdi: Date
@@ -393,7 +408,7 @@ async function adaylariTopla(
       // Susturulmuş kalemler ÜRETİLMEZ ama "geçen" sayısına girer: eşiği
       // geçtiler, yalnız gösterilmiyorlar. Sayacın anlamı "eşiği geçen".
       for (const a of gecen) {
-        if (!susturulmusMu(susturmalar, a.kural, a.workerId ?? a.vehicleId, simdi)) {
+        if (!susturulmusMu(susturmalar, a.kural, ozneKimligi(a), simdi)) {
           adaylar.push(a);
         }
       }
@@ -544,6 +559,33 @@ async function adaylariTopla(
           kapanmayan: satirlar.filter((t) => !t.ended_at).length,
         }),
       ],
+    };
+  });
+
+  // ── 8) MÜŞTERİ ZARAR ETTİRİYOR (085)
+  await kuralKos("musteri_zarar", `katkı payı < 0 · ${ZARAR_MIN_SEFER}+ sefer`, async () => {
+    const { satirlar, aday, tabloYok } = await zararEdenMusteriler(simdi);
+    /**
+     * 085 UYGULANMAMIŞSA KURAL "ÇALIŞMADI" DER, "0 BULDU" DEMEZ.
+     * Bu ayrım panelin `tarama` bölümünün tek varlık sebebi: gelir tablosu
+     * olmayan bir kurulumda 0 kalem, sessiz bir arıza değil kayda geçmiş
+     * bir eksikliktir.
+     */
+    if (tabloYok) throw new Error("085 yok (sefer_gelirleri/musteriler)");
+    return {
+      aday,
+      cikanlar: satirlar.map((m) =>
+        kuralMusteriZarar({
+          musteriId: m.musteriId,
+          ad: m.ad,
+          seferSayisi: m.seferSayisi,
+          gelirEur: m.gelirEur,
+          maliyetEur: m.maliyetEur,
+          katkiPayiEur: m.katkiPayiEur,
+          minSefer: ZARAR_MIN_SEFER,
+          pencereGun: ZARAR_PENCERE_GUN,
+        })
+      ),
     };
   });
 

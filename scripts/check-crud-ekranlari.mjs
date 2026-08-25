@@ -44,6 +44,8 @@ const YAZMA = /(upsert|[Kk]aydet|^save[A-Z]|^create[A-Z]|Ekle|Olustur|Ac$|Gonder
  * yok ve kullanıcının geri alma yolu ne.
  */
 const MUAF = {
+  "app/admin/co2/CO2Client.tsx":
+    "Kayıt listesi değil, TEK ayar satırı (tenant_co2 singleton: esas, şebeke yoğunluğu, hedef). Silinecek satır yok; geri alma yolu önceki esası yeniden seçmektir. Panonun gösterdiği CO₂ hiçbir yerde SAKLANMIYOR — her istekte telemetri litresinden türetiliyor, dolayısıyla silinecek bir kayıt da yok.",
   "app/admin/odul/OdulClient.tsx":
     "Kayıt listesi değil, TEK ayar satırı (tenant_odul singleton). Silinecek satır yok; geri alma yolu kutuyu tekrar işaretlemektir. Ekranın gösterdiği rozetler (sofor_rozetleri) bilerek DEĞİŞMEZDİR: rozet kazanıldığı dönemin gerçeğidir, sonraki dönemde skor düşse de geri alınmaz — silinebilir olsaydı ödül anlamını yitirirdi.",
   "app/admin/mevzuat/MevzuatClient.tsx":

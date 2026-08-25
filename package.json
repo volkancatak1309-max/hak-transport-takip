@@ -41,6 +41,7 @@
     "verify:mevzuat": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-mevzuat.mjs",
     "verify:vardiya-duzelt": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-vardiya-duzelt.mjs",
     "verify:sofor-odul": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sofor-odul.mjs",
+    "verify:co2": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-co2.mjs",
     "verify:haftalik-render": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-haftalik-aksiyon-render.mjs",
     "verify:telegram-sokum": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-telegram-sokum.mjs",
     "verify:reopen-payload": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-reopen-payload.mjs",

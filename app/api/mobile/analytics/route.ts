@@ -24,6 +24,7 @@ import {
   rangeStartsBeforeEpoch,
   comparisonCrossesEpoch,
 } from "@/lib/config-epoch";
+import { co2Panosu } from "@/lib/co2-db";
 import { SAFETY_SCORE_CALIBRATED, FUEL_PRICE_EUR_PER_L } from "@/lib/tenant";
 import { aralikCoz, aralikHataAlanlari } from "../_rapor/aralik";
 
@@ -263,6 +264,25 @@ export async function GET(req: NextRequest) {
   const c = cozum.cozum;
 
   const epoch = await getLatestConfigEpoch();
+
+  /**
+   * CO₂ ÖZETİ (089) — pano ile AYNI motordan. İkinci bir hesap yazmak, mobil
+   * ile web'in farklı sayı göstermesine giden en kısa yol olurdu.
+   */
+  const co2Pano = await co2Panosu(c.range.start, c.range.end);
+  const co2 = {
+    kg: co2Pano.toplam.kg,
+    gKm: co2Pano.toplam.gKm,
+    litre: co2Pano.toplam.litre,
+    esas: co2Pano.ayar.esas,
+    kapsama: {
+      olculen: co2Pano.toplam.olculenArac,
+      toplam: co2Pano.toplam.toplamArac,
+      olculemeyenPlakalar: co2Pano.toplam.olculemeyenPlakalar,
+    },
+    hedefGKm: co2Pano.ayar.hedefGKm,
+    hedefTuttu: co2Pano.hedef ? co2Pano.hedef.tuttu : null,
+  };
   const trendBloke =
     !!c.onceki &&
     comparisonCrossesEpoch(c.range.start, c.range.end, c.onceki.start, c.onceki.end, epoch);
@@ -301,6 +321,15 @@ export async function GET(req: NextRequest) {
       ? { an: epoch.changedAt.toISOString(), not: epoch.note, params: epoch.params }
       : null,
     toplam,
+    /**
+     * CO₂ (089) — Analiz ekranındaki tek satırlık özet.
+     *
+     * ⚠️ `kg` null olabilir ve bu SIFIR DEĞİLDİR: aralıkta hiçbir aracın
+     * tüketimi ölçülemediyse emisyon bilinmiyordur. `kapsama` kaç araçtan
+     * kaçının ölçüldüğünü söyler; istemci sayıyı kapsamasız göstermemeli.
+     * `esas` TTW/WTW — hangi cetvelle ölçüldüğü sayının yanında durmalı.
+     */
+    co2,
     oncekiDonem: c.onceki
       ? {
           baslangic: c.onceki.start.toISOString(),

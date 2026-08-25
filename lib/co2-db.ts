@@ -1,0 +1,450 @@
+import "server-only";
+
+import { supabaseAdmin } from "@/lib/supabase";
+import { buildFuelReport } from "@/lib/reports";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { seferKmOlc } from "@/lib/karlilik-db";
+import { mapBounded } from "@/lib/db-fanout";
+import {
+  CO2_KATSAYI_SURUM,
+  co2Hesapla,
+  gPerKm,
+  hedefDurumu,
+  type CO2AracSatiri,
+  type CO2Esas,
+  type CO2MusteriSatiri,
+  type CO2SoforSatiri,
+  type CO2Toplam,
+} from "@/lib/co2";
+import type { FuelType } from "@/lib/types";
+
+/**
+ * CO₂ PANOSU — VERİ KATMANI (migration 089).
+ *
+ * ═══ GİRDİ: TELEMETRİ LİTRESİ, `fuel_entries` DEĞİL ═══
+ *
+ * ÖLÇÜLDÜ (HAK61, 25.08.2026): `fuel_entries` 1 satır, ONAYLI **0** — bugünkü
+ * CO₂ raporu 0 kg basardı. Telemetri ise 30 günde **2.584,7 L** ölçüyor
+ * (29 araçtan 23'ü). CO₂ artık `buildFuelReport`ten besleniyor.
+ *
+ * ⚠️ Bu dosya hiçbir tabloya YAZMAZ. Yakıt raporu, skor motoru ve maliyet
+ * motoru salt okunur.
+ */
+
+const TABLO_YOK = new Set(["PGRST205", "42P01", "42703"]);
+const tabloYokMu = (e: { code?: string; message?: string } | null) =>
+  !!e && (TABLO_YOK.has(e.code ?? "") || /schema cache|does not exist/i.test(e.message ?? ""));
+
+// ═══════════════════════════ KİRACI AYARI ════════════════════════════════
+
+export type CO2Ayari = {
+  esas: CO2Esas;
+  sebekeGkWh: number | null;
+  sebekeKaynak: string | null;
+  sebekeYil: number | null;
+  hedefGKm: number | null;
+  hedefYil: number | null;
+  tabloYok: boolean;
+};
+
+export const VARSAYILAN_CO2_AYARI: CO2Ayari = {
+  esas: "TTW",
+  sebekeGkWh: null,
+  sebekeKaynak: null,
+  sebekeYil: null,
+  hedefGKm: null,
+  hedefYil: null,
+  tabloYok: true,
+};
+
+export async function co2Ayari(): Promise<CO2Ayari> {
+  const { data, error } = await supabaseAdmin
+    .from("tenant_co2")
+    .select("esas, sebeke_g_kwh, sebeke_kaynak, sebeke_yil, hedef_g_km, hedef_yil")
+    .eq("id", "singleton")
+    .maybeSingle();
+  if (error || !data) return { ...VARSAYILAN_CO2_AYARI, tabloYok: tabloYokMu(error) };
+  const r = data as Record<string, unknown>;
+  const say = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  return {
+    esas: (r.esas === "WTW" ? "WTW" : "TTW") as CO2Esas,
+    sebekeGkWh: say(r.sebeke_g_kwh),
+    sebekeKaynak: r.sebeke_kaynak ? String(r.sebeke_kaynak) : null,
+    sebekeYil: say(r.sebeke_yil),
+    hedefGKm: say(r.hedef_g_km),
+    hedefYil: say(r.hedef_yil),
+    tabloYok: false,
+  };
+}
+
+export async function co2AyariYaz(
+  girdi: {
+    esas: CO2Esas;
+    sebekeGkWh: number | null;
+    sebekeKaynak: string | null;
+    sebekeYil: number | null;
+    hedefGKm: number | null;
+    hedefYil: number | null;
+  },
+  workerId: string | null
+): Promise<{ ok: boolean; hata?: string }> {
+  const { error } = await supabaseAdmin
+    .from("tenant_co2")
+    .update({
+      esas: girdi.esas,
+      sebeke_g_kwh: girdi.sebekeGkWh,
+      sebeke_kaynak: girdi.sebekeKaynak,
+      sebeke_yil: girdi.sebekeYil,
+      hedef_g_km: girdi.hedefGKm,
+      hedef_yil: girdi.hedefYil,
+      updated_at: new Date().toISOString(),
+      updated_by: workerId,
+    })
+    .eq("id", "singleton");
+  if (error) return { ok: false, hata: tabloYokMu(error) ? "tablo_yok" : "hata" };
+  return { ok: true };
+}
+
+// ═══════════════════════════ PANO ════════════════════════════════════════
+
+export type CO2Panosu = {
+  tabloYok: boolean;
+  ayar: CO2Ayari;
+  bas: string;
+  bit: string;
+  toplam: CO2Toplam;
+  araclar: CO2AracSatiri[];
+  soforler: CO2SoforSatiri[];
+  musteriler: CO2MusteriSatiri[];
+  /** Aylık seri — trend. */
+  aylik: { ay: string; kg: number | null; km: number | null; gKm: number | null }[];
+  hedef: ReturnType<typeof hedefDurumu>;
+  katsayiSurum: string;
+  /** Yakıt raporu hiç çalışmadıysa sebebi. */
+  yakitYok: string | null;
+};
+
+async function aracYakitTurleri(): Promise<{ harita: Map<string, FuelType>; kolonYok: boolean }> {
+  // test-visible: yalnız YAKIT TÜRÜ SÖZLÜĞÜ — hiçbir sayıyı toplama sokmaz.
+  // Panonun araç kümesi `buildFuelReport`ten geliyor ve test aracı ORADA
+  // eleniyor (QA'da ölçüldü: vehicles'ta TEST-001 var, panoda 4 araç). Bu
+  // harita yalnız o kümedeki id'ler için okunuyor; süzmek tek bir kg'ı bile
+  // değiştirmez, yalnız gereksiz bir sorgu daha eklerdi.
+  const { data, error } = await supabaseAdmin.from("vehicles").select("id, fuel_type");
+  if (error) {
+    /**
+     * 089 UYGULANMAMIŞSA HEPSİ DİZEL — kolon yokken bugünkü davranış buydu.
+     * Sessizce çökmek yerine eski davranışa düşüyoruz ve `kolonYok` ile
+     * ekranda söylüyoruz: "araç yakıt türü girilemiyor (089)".
+     */
+    return { harita: new Map(), kolonYok: tabloYokMu(error) };
+  }
+  return {
+    harita: new Map(
+      ((data ?? []) as { id: string; fuel_type: string | null }[]).map((v) => [
+        v.id,
+        (v.fuel_type ?? "diesel") as FuelType,
+      ])
+    ),
+    kolonYok: false,
+  };
+}
+
+/**
+ * CO₂ PANOSU.
+ *
+ * Litre `buildFuelReport`ten (telemetri), km aynı rapordan. Her araç kendi
+ * yakıt türünün katsayısıyla çarpılır; ölçülemeyen araç `null` döner ve
+ * plakası `olculemeyenPlakalar`da görünür — sessiz eksik YASAK.
+ */
+export async function co2Panosu(bas: Date, bit: Date): Promise<CO2Panosu> {
+  const ayar = await co2Ayari();
+  const { harita: turler, kolonYok } = await aracYakitTurleri();
+  const rapor = await buildFuelReport({ start: bas, end: bit });
+
+  const bosToplam: CO2Toplam = {
+    litre: null,
+    km: null,
+    kg: null,
+    gKm: null,
+    olculenArac: 0,
+    toplamArac: 0,
+    olculemeyenPlakalar: [],
+  };
+
+  if (!rapor.available) {
+    return {
+      tabloYok: ayar.tabloYok,
+      ayar,
+      bas: bas.toISOString(),
+      bit: bit.toISOString(),
+      toplam: bosToplam,
+      araclar: [],
+      soforler: [],
+      musteriler: [],
+      aylik: [],
+      hedef: null,
+      katsayiSurum: CO2_KATSAYI_SURUM,
+      yakitYok: rapor.unavailableReason ?? "bilinmiyor",
+    };
+  }
+
+  const araclar: CO2AracSatiri[] = (rapor.rows ?? []).map((r) => {
+    const fuelType = turler.get(r.vehicleId) ?? "diesel";
+    const sonuc = co2Hesapla({
+      litre: r.consumedLiters,
+      fuelType,
+      esas: ayar.esas,
+      sebekeGkWh: ayar.sebekeGkWh,
+      // Elektrikli araçta kWh ölçümü YOK: yakıt raporu litre/yüzde ekseninde
+      // çalışıyor. Bu yüzden WTW'de elektrikli araç `kwh_yok` döner — 0 değil.
+      kWh: null,
+    });
+    return {
+      vehicleId: r.vehicleId,
+      plate: r.plate,
+      fuelType,
+      litre: r.consumedLiters,
+      km: r.km,
+      kg: sonuc.kg,
+      gKm: gPerKm(sonuc.kg, r.km),
+      sebep: sonuc.kg === null ? sonuc.sebep : r.km === null ? "km_yok" : null,
+      katsayi: sonuc.katsayi,
+    };
+  });
+
+  const olculen = araclar.filter((a) => a.kg !== null);
+  const toplamKg = olculen.length ? olculen.reduce((s, a) => s + (a.kg ?? 0), 0) : null;
+  const toplamKm = olculen.length
+    ? olculen.reduce((s, a) => s + (a.km ?? 0), 0)
+    : null;
+  const toplamLitre = olculen.length
+    ? olculen.reduce((s, a) => s + (a.litre ?? 0), 0)
+    : null;
+
+  const toplam: CO2Toplam = {
+    litre: toplamLitre,
+    km: toplamKm,
+    kg: toplamKg,
+    gKm: gPerKm(toplamKg, toplamKm),
+    olculenArac: olculen.length,
+    toplamArac: araclar.length,
+    /**
+     * SESSİZ EKSİK YASAK: ölçülemeyen araçların PLAKASI dışarı çıkar.
+     * "23/29 araç" demek yetmez — hangi 6 araç olduğu görünmeli.
+     */
+    olculemeyenPlakalar: araclar.filter((a) => a.kg === null).map((a) => a.plate),
+  };
+
+  const soforler = await soforKirilimi(araclar, bas, bit);
+  const musteriler = await musteriKirilimi(araclar, bas, bit);
+  const aylik = await aylikSeri(bit, ayar, turler);
+
+  return {
+    tabloYok: ayar.tabloYok || kolonYok,
+    ayar,
+    bas: bas.toISOString(),
+    bit: bit.toISOString(),
+    toplam,
+    araclar: araclar.sort((a, b) => (b.kg ?? -1) - (a.kg ?? -1)),
+    soforler,
+    musteriler,
+    aylik,
+    hedef: hedefDurumu(toplam.gKm, ayar.hedefGKm),
+    katsayiSurum: CO2_KATSAYI_SURUM,
+    yakitYok: null,
+  };
+}
+
+/**
+ * ŞOFÖR KIRILIMI.
+ *
+ * Şoförün CO₂'si, sürdüğü ARAÇLARIN yoğunluğu × kendi ölçülen km'si.
+ * Aracın toplam CO₂'sini şoförlere bölmek yerine yoğunluk kullanılıyor:
+ * bölme, aynı aracı süren iki şoförden km'si ölçülemeyene de pay verirdi.
+ *
+ * ⚠️ ŞOFÖR TOPLAMI FİLO TOPLAMINA BİREBİR EŞİT OLMAYABİLİR — İKİ FARKLI
+ * KM KAYNAĞI. Filo km'si aracın ODOMETRE AÇIKLIĞINDAN (aralığın ilk ve son
+ * okuması), şoför km'si VARDİYA sayaç farklarından geliyor. QA'da ölçüldü:
+ * 3.980 km (odometre) vs 4.000 km (vardiya) → %0,5 fark; kaynak, aralığın
+ * son adımının odometre açıklığına girmemesi.
+ *
+ * Kaynakları birleştirmiyoruz çünkü ikisi de doğru: biri aracın gerçekten
+ * kat ettiği yol, diğeri şoförün vardiyada kat ettiği yol — araç vardiya
+ * dışında da hareket edebilir. Dışarıya verilen BEYAN filo ve müşteri
+ * satırıdır; şoför kırılımı iç kullanım içindir ve ekran bunu söyler.
+ */
+async function soforKirilimi(
+  araclar: CO2AracSatiri[],
+  bas: Date,
+  bit: Date
+): Promise<CO2SoforSatiri[]> {
+  const scope = await getTestScope();
+  const { data } = await withoutTestRows(
+    supabaseAdmin
+      .from("time_entries")
+      .select("worker_id, vehicle_id, start_km, end_km")
+      .gte("started_at", bas.toISOString())
+      .lte("started_at", bit.toISOString())
+      .limit(3000),
+    "worker_id",
+    scope.workerIds
+  );
+
+  const yogunluk = new Map(araclar.filter((a) => a.gKm !== null).map((a) => [a.vehicleId, a.gKm!]));
+
+  const kova = new Map<string, { km: number; kg: number; olculemeyenKm: number }>();
+  for (const ham of (data ?? []) as {
+    worker_id: string | null;
+    vehicle_id: string | null;
+    start_km: number | null;
+    end_km: number | null;
+  }[]) {
+    if (!ham.worker_id) continue;
+    const acc = kova.get(ham.worker_id) ?? { km: 0, kg: 0, olculemeyenKm: 0 };
+    const km =
+      ham.start_km !== null && ham.end_km !== null && ham.end_km > ham.start_km
+        ? ham.end_km - ham.start_km
+        : null;
+    const g = ham.vehicle_id ? yogunluk.get(ham.vehicle_id) : undefined;
+    if (km === null || g === undefined) {
+      // Ölçülemeyen vardiya toplama GİRMEZ ama sayılır — kapsama dürüstlüğü.
+      if (km !== null) acc.olculemeyenKm += km;
+    } else {
+      acc.km += km;
+      acc.kg += (km * g) / 1000;
+    }
+    kova.set(ham.worker_id, acc);
+  }
+
+  const ids = [...kova.keys()];
+  if (ids.length === 0) return [];
+  const { data: wData } = await supabaseAdmin.from("workers").select("id, name").in("id", ids);
+  const adlar = new Map(((wData ?? []) as { id: string; name: string }[]).map((w) => [w.id, w.name]));
+
+  return [...kova.entries()]
+    .map(([workerId, a]) => ({
+      workerId,
+      ad: adlar.get(workerId) ?? "—",
+      km: a.km > 0 ? a.km : null,
+      kg: a.km > 0 ? a.kg : null,
+      gKm: a.km > 0 ? (a.kg * 1000) / a.km : null,
+      olculemeyenKm: a.olculemeyenKm,
+    }))
+    .sort((a, b) => (b.kg ?? -1) - (a.kg ?? -1));
+}
+
+/**
+ * MÜŞTERİ KIRILIMI — İHALE FORMATI (085 sefer/müşteri ekseni).
+ *
+ * ⚠️ BU BİR PAYLAŞTIRMA DEĞİL, ÖLÇÜMDÜR:
+ *   seferin CO₂'si = SEFERİN ÖLÇÜLEN KM'Sİ × ARACIN ÖLÇÜLEN yoğunluğu
+ *
+ * Sefer km'si odometre penceresinden ölçülüyor (085) ve aracın g/km'si
+ * telemetri litresinden. İkisi de ölçüm; çarpımları da öyle. Km'si
+ * ölçülemeyen sefer toplama GİRMEZ ve ayrıca sayılır.
+ */
+async function musteriKirilimi(
+  araclar: CO2AracSatiri[],
+  bas: Date,
+  bit: Date
+): Promise<CO2MusteriSatiri[]> {
+  const { data, error } = await supabaseAdmin
+    .from("seferler")
+    .select("id, musteri_id, vehicle_id, yolda_at, tamamlandi_at")
+    .eq("durum", "tamamlandi")
+    .gte("tarih", bas.toISOString().slice(0, 10))
+    .lte("tarih", bit.toISOString().slice(0, 10))
+    .limit(1000);
+  if (error) return [];
+
+  const seferler = (data ?? []) as {
+    id: string;
+    musteri_id: string | null;
+    vehicle_id: string | null;
+    yolda_at: string | null;
+    tamamlandi_at: string | null;
+  }[];
+  if (seferler.length === 0) return [];
+
+  const yogunluk = new Map(araclar.filter((a) => a.gKm !== null).map((a) => [a.vehicleId, a.gKm!]));
+
+  const olculenler = await mapBounded(seferler, async (s) => {
+    const km = await seferKmOlc(s.vehicle_id, s.yolda_at, s.tamamlandi_at);
+    const g = s.vehicle_id ? yogunluk.get(s.vehicle_id) : undefined;
+    return { s, km: km.km, g: g ?? null };
+  });
+
+  const kova = new Map<string, { km: number; kg: number; sefer: number; olculemeyen: number }>();
+  for (const { s, km, g } of olculenler) {
+    const anahtar = s.musteri_id ?? "";
+    const acc = kova.get(anahtar) ?? { km: 0, kg: 0, sefer: 0, olculemeyen: 0 };
+    acc.sefer++;
+    if (km === null || g === null) acc.olculemeyen++;
+    else {
+      acc.km += km;
+      acc.kg += (km * g) / 1000;
+    }
+    kova.set(anahtar, acc);
+  }
+
+  const ids = [...kova.keys()].filter(Boolean);
+  const adlar = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: mData } = await supabaseAdmin.from("musteriler").select("id, ad").in("id", ids);
+    for (const m of (mData ?? []) as { id: string; ad: string }[]) adlar.set(m.id, m.ad);
+  }
+
+  return [...kova.entries()]
+    .map(([id, a]) => ({
+      musteriId: id || null,
+      ad: id ? (adlar.get(id) ?? "—") : "— müşteri atanmadı",
+      seferSayisi: a.sefer,
+      km: a.km > 0 ? a.km : null,
+      kg: a.km > 0 ? a.kg : null,
+      gKm: a.km > 0 ? (a.kg * 1000) / a.km : null,
+      olculemeyenSefer: a.olculemeyen,
+    }))
+    .sort((a, b) => (b.kg ?? -1) - (a.kg ?? -1));
+}
+
+/** Son 6 ayın CO₂ serisi — trend. */
+async function aylikSeri(
+  bit: Date,
+  ayar: CO2Ayari,
+  turler: Map<string, FuelType>
+): Promise<CO2Panosu["aylik"]> {
+  const cikti: CO2Panosu["aylik"] = [];
+  for (let i = 5; i >= 0; i--) {
+    const ayBit = new Date(Date.UTC(bit.getUTCFullYear(), bit.getUTCMonth() - i + 1, 1));
+    const ayBas = new Date(Date.UTC(bit.getUTCFullYear(), bit.getUTCMonth() - i, 1));
+    const r = await buildFuelReport({ start: ayBas, end: ayBit });
+    if (!r.available) {
+      cikti.push({ ay: ayBas.toISOString().slice(0, 7), kg: null, km: null, gKm: null });
+      continue;
+    }
+    let kg = 0;
+    let km = 0;
+    let varMi = false;
+    for (const row of r.rows ?? []) {
+      const s = co2Hesapla({
+        litre: row.consumedLiters,
+        fuelType: turler.get(row.vehicleId) ?? "diesel",
+        esas: ayar.esas,
+        sebekeGkWh: ayar.sebekeGkWh,
+        kWh: null,
+      });
+      if (s.kg === null || row.km === null) continue;
+      kg += s.kg;
+      km += row.km;
+      varMi = true;
+    }
+    cikti.push({
+      ay: ayBas.toISOString().slice(0, 7),
+      kg: varMi ? kg : null,
+      km: varMi ? km : null,
+      gKm: varMi ? gPerKm(kg, km) : null,
+    });
+  }
+  return cikti;
+}

@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
+import { DURAK_ACIK, durakOzetGovdesi, type DurakRow } from "@/lib/sefer-duraklari";
 
 /**
  * SEFER VERİ KATMANI (migration 066).
@@ -292,14 +293,34 @@ export async function iptalSefer(id: string): Promise<GecisSonuc | null> {
   return { ok: true, satir: data as unknown as SeferRow };
 }
 
-/** Mobil JSON gövdesi — dört uç da bunu döndürür. */
-export function seferGovdesi(s: SeferRow) {
+/**
+ * Mobil JSON gövdesi — dört uç da bunu döndürür.
+ *
+ * ⚠️ `duraklar` OPSİYONEL PARAMETRE, sorgu DEĞİL. Bu fonksiyon saf kalmalı:
+ * içine bir okuma koymak, 30 seferlik listeyi 30 gidiş dönüşe bölerdi (N+1).
+ * Çağıran durakları TOPLU okuyup buraya veriyor (listDuraklarBatch).
+ */
+export function seferGovdesi(s: SeferRow, duraklar?: DurakRow[]) {
+  const durakOzet = duraklar && duraklar.length > 0 ? durakOzetGovdesi(duraklar) : null;
+  /**
+   * ⚠️ `bolgeId` GERİYE UYUM İÇİN KORUNUYOR ama kaynağı değişti (082):
+   * durak listesi varsa SIRADAKİ (yoksa ilk) durağın bölgesi, yoksa eski
+   * `seferler.zone_id`. Yeni seferler o kolonu artık yazmıyor; alanı satırdan
+   * okumaya devam etseydik mobil "hedef yok" görürdü.
+   */
+  const sonrakiDurak =
+    duraklar && duraklar.length > 0
+      ? ([...duraklar].sort((a, b) => a.sira - b.sira).find((d) => DURAK_ACIK.includes(d.durum)) ??
+        [...duraklar].sort((a, b) => a.sira - b.sira)[0])
+      : null;
   return {
     id: s.id,
     tarih: s.tarih,
     soforId: s.worker_id,
     aracId: s.vehicle_id,
-    bolgeId: s.zone_id,
+    bolgeId: sonrakiDurak ? sonrakiDurak.zone_id : s.zone_id,
+    /** Durak ilerlemesi (082). Durak listesi yoksa null — "0/0" DEĞİL. */
+    duraklar: durakOzet,
     paketHedef: s.paket_hedef,
     notlar: s.notlar,
     durum: s.durum,

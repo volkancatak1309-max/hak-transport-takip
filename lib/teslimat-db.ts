@@ -1,15 +1,20 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
-import { tabloYokMu } from "@/lib/fault-reports";
+import { tabloYokMu, kolonYokMu } from "@/lib/fault-reports";
 
 /**
  * TESLİMAT KANITI (ePOD) — veri katmanı (migration 080).
  *
  * ═══ KANIT NEYE BAĞLI ═══
  *
- * Seferin BİR DURAĞINA (`sefer_id` + `durak_no`), sefere değil. Bugün her
- * seferde tek durak var (`durak_no = 1`); çok duraklı tura geçildiğinde aynı
- * tablo N satır taşır ve şema değişmez (080 başlığındaki gerekçe).
+ * Seferin BİR DURAĞINA, sefere değil. 082'den sonra bağ İKİ alanda duruyor:
+ *   · `durak_id` — KALICI bağ (`sefer_duraklari` satırı). Yeniden sıralamada
+ *     değişmez; kanıtın hangi teslimata ait olduğunu bu söyler.
+ *   · `durak_no` — yazıldığı ANDAKİ sıra. Bilgi amaçlı bir anlık görüntü;
+ *     durak listesi OLMAYAN seferlerde (082 öncesi ya da duraksız) tek bağdır
+ *     ve orada 1'dir.
+ * Tekillik de buna göre ikiye ayrıldı (082): duraklı seferde "bir durağın tek
+ * GEÇERLİ kanıtı", duraksız seferde eski `(sefer_id, durak_no)` garantisi.
  *
  * ═══ YAZMA TEK YÖNLÜ ═══
  *
@@ -28,7 +33,9 @@ export const TESLIMAT_KOVASI = "teslimat-kaniti";
 export type TeslimatGirdi = {
   seferId: string;
   workerId: string;
-  /** Seferin kaçıncı durağı; bugün daima 1. */
+  /** Kalıcı durak bağı (082). Duraksız seferde null. */
+  durakId?: string | null;
+  /** Yazıldığı andaki sıra — anlık görüntü. Duraksız seferde 1. */
   durakNo?: number;
   zoneId?: string | null;
   aliciAd?: string | null;
@@ -52,6 +59,7 @@ export type Teslimat = {
   id: string;
   seferId: string;
   durakNo: number;
+  durakId: string | null;
   workerId: string;
   zoneId: string | null;
   aliciAd: string | null;
@@ -67,8 +75,31 @@ export type Teslimat = {
   fotograflar: TeslimatFoto[];
 };
 
+/**
+ * ⚠️ İKİ KOLON LİSTESİ — 082 UYGULANMAMIŞ KURULUM İÇİN.
+ *
+ * `durak_id` 082 ile geliyor. Kolonu koşulsuz seçmek, 082'yi çalıştırmamış bir
+ * kiracıda TÜM ePOD okumasını 42703 ile düşürürdü — yani 080 ile gelen
+ * çalışan bir özelliği yeni bir migration'a rehin almak. Okuma önce yeni
+ * listeyle denenir, kolon yoksa ESKİ listeye düşer ve durum bir kez loglanır.
+ * Sessiz düşüş yok, kırılma da yok.
+ */
 const COLS =
+  "id, sefer_id, durak_no, durak_id, worker_id, zone_id, alici_ad, notlar, imza_svg, imza_yol, teslim_at, latitude, longitude, konum_dogruluk_m, iptal_at, iptal_sebep";
+const COLS_082_ONCESI =
   "id, sefer_id, durak_no, worker_id, zone_id, alici_ad, notlar, imza_svg, imza_yol, teslim_at, latitude, longitude, konum_dogruluk_m, iptal_at, iptal_sebep";
+
+let durakKolonuUyarildi = false;
+function durakKolonuYok(): string {
+  if (!durakKolonuUyarildi) {
+    durakKolonuUyarildi = true;
+    console.warn(
+      "[teslimat-db] `teslimatlar.durak_id` yok — migration 082 uygulanmamış. " +
+        "Kanıt okuması eski kolon listesine düştü; çok duraklı bağ KAPALI."
+    );
+  }
+  return COLS_082_ONCESI;
+}
 const FOTO_COLS = "id, teslimat_id, storage_path, taken_at, latitude, longitude";
 
 function cevir(r: Record<string, unknown>, fotolar: TeslimatFoto[]): Teslimat {
@@ -76,6 +107,7 @@ function cevir(r: Record<string, unknown>, fotolar: TeslimatFoto[]): Teslimat {
     id: String(r.id),
     seferId: String(r.sefer_id),
     durakNo: Number(r.durak_no ?? 1),
+    durakId: r.durak_id ? String(r.durak_id) : null,
     workerId: String(r.worker_id),
     zoneId: r.zone_id ? String(r.zone_id) : null,
     aliciAd: r.alici_ad ? String(r.alici_ad) : null,
@@ -128,6 +160,9 @@ export async function createTeslimat(
     .insert({
       sefer_id: g.seferId,
       durak_no: g.durakNo ?? 1,
+      // ⚠️ Yalnız DOLUYSA gönderiliyor: 082 uygulanmamış kurulumda `durak_id`
+      // kolonu yoktur ve null göndermek insert'i 42703 ile düşürürdü.
+      ...(g.durakId ? { durak_id: g.durakId } : {}),
       worker_id: g.workerId,
       zone_id: g.zoneId ?? null,
       alici_ad: alici,
@@ -186,14 +221,14 @@ export async function addTeslimatFoto(
 export async function listTeslimatBySefer(
   seferId: string
 ): Promise<{ teslimatlar: Teslimat[]; tabloYok: boolean }> {
-  const { data, error } = await supabaseAdmin
-    .from("teslimatlar")
-    .select(COLS)
-    .eq("sefer_id", seferId)
-    .order("durak_no");
+  const oku = (cols: string) =>
+    supabaseAdmin.from("teslimatlar").select(cols).eq("sefer_id", seferId).order("durak_no");
+
+  let { data, error } = await oku(COLS);
+  if (error && kolonYokMu(error)) ({ data, error } = await oku(durakKolonuYok()));
   if (error) return { teslimatlar: [], tabloYok: tabloYokMu(error) };
 
-  const satirlar = (data ?? []) as Record<string, unknown>[];
+  const satirlar = (data ?? []) as unknown as Record<string, unknown>[];
   if (satirlar.length === 0) return { teslimatlar: [], tabloYok: false };
 
   const idler = satirlar.map((r) => String(r.id));
@@ -225,11 +260,11 @@ export async function listTeslimatBySefer(
 
 /** Tek kanıt — sahiplik denetimi için (çağıran karşılaştırır). */
 export async function getTeslimat(id: string): Promise<Teslimat | null> {
-  const { data, error } = await supabaseAdmin
-    .from("teslimatlar")
-    .select(COLS)
-    .eq("id", id)
-    .maybeSingle();
+  const oku = (cols: string) =>
+    supabaseAdmin.from("teslimatlar").select(cols).eq("id", id).maybeSingle();
+
+  let { data, error } = await oku(COLS);
+  if (error && kolonYokMu(error)) ({ data, error } = await oku(durakKolonuYok()));
   if (error || !data) return null;
   const { data: fotoData } = await supabaseAdmin
     .from("teslimat_fotograflari")
@@ -243,7 +278,7 @@ export async function getTeslimat(id: string): Promise<Teslimat | null> {
     latitude: f.latitude == null ? null : Number(f.latitude),
     longitude: f.longitude == null ? null : Number(f.longitude),
   }));
-  return cevir(data as Record<string, unknown>, fotolar);
+  return cevir(data as unknown as Record<string, unknown>, fotolar);
 }
 
 /**

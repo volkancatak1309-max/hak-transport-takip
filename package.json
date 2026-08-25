@@ -44,7 +44,8 @@
     "lint:install-sql": "node scripts/check-install-sql.mjs",
     "lint:takip": "node scripts/check-takip-sizinti.mjs",
     "verify:takip-linki": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-takip-linki.mjs",
-    "lint:crud": "node scripts/check-crud-ekranlari.mjs"
+    "lint:crud": "node scripts/check-crud-ekranlari.mjs",
+    "verify:sefer-duraklari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sefer-duraklari.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

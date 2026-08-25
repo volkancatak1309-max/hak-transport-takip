@@ -11,6 +11,7 @@ import {
   seferGovdesi,
   type SeferYama,
 } from "@/lib/sefer-db";
+import { listDuraklar } from "@/lib/sefer-duraklari";
 import { govdeOku } from "../route";
 
 export const runtime = "nodejs";
@@ -73,7 +74,8 @@ export async function PATCH(
     if (!r.ok) {
       return mobileError(409, r.kod, { mevcutDurum: r.mevcut, sonrakiDurum: r.sonraki });
     }
-    return Response.json({ ok: true, sefer: seferGovdesi(r.satir) });
+    const { duraklar } = await listDuraklar(id);
+    return Response.json({ ok: true, sefer: seferGovdesi(r.satir, duraklar) });
   }
 
   // ── DÜZENLEME yolu
@@ -100,7 +102,25 @@ export async function PATCH(
   if ("aracId" in govde) {
     yama.vehicle_id = typeof govde.aracId === "string" && govde.aracId ? govde.aracId : null;
   }
+  /**
+   * ⚠️ `bolgeId` YALNIZ DURAKSIZ SEFERDE (082).
+   *
+   * Durak listesi olan bir seferde `seferler.zone_id`yi güncellemek HİÇBİR
+   * ŞEY yapmazdı: hedef çözümü duraklardan geliyor ve kolon okunmuyor. Sessizce
+   * kabul etmek "değiştirdim" yanılgısı üretirdi — o yüzden açıkça reddediliyor
+   * ve doğru uç adres olarak veriliyor. Duraksız seferde eski davranış aynen.
+   */
   if ("bolgeId" in govde) {
+    const { duraklar } = await listDuraklar(id);
+    if (duraklar.length > 0) {
+      return mobileError(409, "duraklarla_yonetiliyor", {
+        alan: "bolgeId",
+        durakSayisi: duraklar.length,
+        uc: `PATCH /api/mobile/sefer/${id}/duraklar/{durakId}`,
+        aciklama:
+          "Bu seferin hedefi durak listesinden gelir. Bölgeyi değiştirmek için ilgili durağı güncelleyin.",
+      });
+    }
     yama.zone_id = typeof govde.bolgeId === "string" && govde.bolgeId ? govde.bolgeId : null;
   }
   if ("paketHedef" in govde) {
@@ -143,7 +163,8 @@ export async function PATCH(
   try {
     const satir = await patchSefer(id, yama);
     if (!satir) return mobileError(404, "not_found");
-    return Response.json({ ok: true, sefer: seferGovdesi(satir) });
+    const { duraklar } = await listDuraklar(id);
+    return Response.json({ ok: true, sefer: seferGovdesi(satir, duraklar) });
   } catch (e) {
     const m = String((e as Error).message);
     if (m.includes(":23503:")) {

@@ -42,11 +42,20 @@ const MAX_FOTO = 5;
 
 export function TeslimatKanitiDialog({
   seferId,
+  durakId,
+  durakAd,
   acik,
   kapat,
   tamamlandi,
 }: {
   seferId: string;
+  /**
+   * Kanıtın bağlanacağı DURAK (082). Durakları olan bir seferde ZORUNLUDUR —
+   * sunucu da aynı şeyi söylüyor (`durak_secilmedi`). Duraksız seferde null.
+   */
+  durakId?: string | null;
+  /** Başlıkta gösterilen durak adı — şoför hangi teslimatı imzaladığını görsün. */
+  durakAd?: string | null;
   acik: boolean;
   kapat: () => void;
   tamamlandi: () => void;
@@ -86,6 +95,7 @@ export function TeslimatKanitiDialog({
 
     const fd = new FormData();
     fd.set("seferId", seferId);
+    if (durakId) fd.set("durakId", durakId);
     fd.set("imzaSvg", imza);
     fd.set("aliciAd", alici);
     fd.set("notlar", not);
@@ -128,7 +138,10 @@ export function TeslimatKanitiDialog({
     <Dialog open={acik} onOpenChange={(o) => !o && !gonderiliyor && kapat()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{t("baslik")}</DialogTitle>
+          {/* Durak adı başlıkta: şoför HANGİ teslimatı imzaladığını görmeli —
+              çok duraklı bir turda kanıtın yanlış durağa gitmesi geri
+              alınamaz (kayıt DEĞİŞMEZ, yalnız iptal edilebilir). */}
+          <DialogTitle>{durakAd ? `${t("baslik")} · ${durakAd}` : t("baslik")}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">

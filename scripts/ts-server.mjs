@@ -25,6 +25,7 @@ const HERE = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = path.resolve(HERE, "..");
 const STUB = path.join(HERE, "server-only-stub.mjs");
 const HEADERS_STUB = path.join(HERE, "next-headers-stub.mjs");
+const CACHE_STUB = path.join(HERE, "next-cache-stub.mjs");
 
 // ── env: lib/supabase.ts'ten ÖNCE ──────────────────────────────────────────
 const ENV_FILE = path.resolve(ROOT, process.env.ENV_FILE ?? ".env.local");
@@ -65,6 +66,10 @@ registerHooks({
     // `next/headers`: istek kapsamı olmadan fırlatır. Boş çerez deposu mobil
     // uçların ÜRETİMDEKİ durumudur (token var, çerez yok) — bkz. stub notu.
     if (specifier === "next/headers") return nextResolve(pathToFileURL(HEADERS_STUB).href, context);
+    // `next/cache`: `revalidatePath` istek kapsamı olmadan FIRLATIR. Sunucu
+    // eylemleri yazdıktan sonra onu çağırıyor; stub olmadan hiçbir yazma yolu
+    // betikten ölçülemez. Önbellek işareti bir iş kuralı değildir — bkz. stub.
+    if (specifier === "next/cache") return nextResolve(pathToFileURL(CACHE_STUB).href, context);
     // `next-intl/config`: next.config.ts → createNextIntlPlugin("./i18n/request.ts").
     // Aynı hedefe bağlanıyor — kurgu değil, derleyicinin yaptığının aynısı.
     if (specifier === "next-intl/config") {

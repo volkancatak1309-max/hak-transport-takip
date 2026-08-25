@@ -11,6 +11,7 @@ import {
   seferGovdesi,
   type SeferRow,
 } from "@/lib/sefer-db";
+import { listDuraklarBatch, insertDurak } from "@/lib/sefer-duraklari";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,12 +81,20 @@ export async function GET(req: NextRequest) {
     // satırını her hâlükârda görür (kendi verisi).
     const gorunen = yonetici ? await testiEle(satirlar) : satirlar;
 
+    /**
+     * DURAKLAR TEK SORGUDA (082) — sefer başına değil. Gövdeye yalnız ÖZET
+     * giriyor (kaç durak, kaçı bitti, sıradaki hangisi); satırlar
+     * `/sefer/[id]/duraklar` ucundan alınır. Listeyi durak satırlarıyla
+     * şişirmek, telefonun hiç göstermeyeceği yüzlerce satır demekti.
+     */
+    const { harita } = await listDuraklarBatch(gorunen.map((s) => s.id));
+
     return Response.json({
       ok: true,
       tarih: t.tarih,
       /** Kapsam yanıtta: istemci "hepsini mi görüyorum" sorusunu tahmin etmesin. */
       kapsam: yonetici ? "filo" : "kendi",
-      seferler: gorunen.map(seferGovdesi),
+      seferler: gorunen.map((s) => seferGovdesi(s, harita.get(s.id) ?? [])),
     });
   } catch (e) {
     return mobileError(503, "db_error", { sebep: String((e as Error).message).slice(0, 120) });
@@ -157,12 +166,46 @@ export async function POST(req: NextRequest) {
       tarih,
       worker_id: soforId,
       vehicle_id: aracId,
-      zone_id: bolgeId,
+      /**
+       * ⚠️ `zone_id` ARTIK YAZILMIYOR (082) — `bolgeId` 1 NUMARALI DURAĞA
+       * dönüşüyor. Sebep panel tarafıyla aynı: iki gerçek olmasın. Sözleşme
+       * korunuyor, çünkü yanıttaki `bolgeId` durak listesinden çözülüyor.
+       */
+      zone_id: null,
       paket_hedef: ph.deger,
       notlar,
       created_by: guard.actor.worker.id,
     });
-    return Response.json({ ok: true, sefer: seferGovdesi(satir) }, { status: 201 });
+
+    let durakKuruldu = true;
+    if (bolgeId) {
+      const { data: z } = await supabaseAdmin
+        .from("geofences")
+        .select("name")
+        .eq("id", bolgeId)
+        .maybeSingle();
+      // FK denetimi ARTIK BURADA: bölge yoksa sefer açılmış olur ve durak
+      // yazılamaz. Bu yüzden bölge ÖNCE doğrulanıyor.
+      if (!z) {
+        return mobileError(400, "invalid_field", { alan: "bolgeId", sebep: "bulunamadi" });
+      }
+      const r = await insertDurak(satir.id, {
+        ad: String((z as { name: string }).name).trim() || "Hedef",
+        zoneId: bolgeId,
+      });
+      durakKuruldu = r.ok;
+    }
+
+    const duraklar = durakKuruldu && bolgeId ? (await listDuraklarBatch([satir.id])).harita.get(satir.id) : [];
+    return Response.json(
+      {
+        ok: true,
+        sefer: seferGovdesi(satir, duraklar ?? []),
+        /** Hedef verildiği hâlde durak yazılamadıysa (082 yok) SESSİZ kalmıyoruz. */
+        ...(bolgeId && !durakKuruldu ? { uyari: "durak_kurulamadi" } : {}),
+      },
+      { status: 201 }
+    );
   } catch (e) {
     const m = String((e as Error).message);
     // FK ihlali: verilen araç/bölge yok. 503 değil 400 — girdi hatası.

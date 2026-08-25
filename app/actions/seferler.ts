@@ -18,6 +18,13 @@ import {
   type SeferRow,
 } from "@/lib/sefer-db";
 import {
+  listDuraklarBatch,
+  insertDurak,
+  durakOzeti,
+  seferHedefi,
+  type DurakRow,
+} from "@/lib/sefer-duraklari";
+import {
   createTakipLink,
   listTakipLinks,
   revokeTakipLink,
@@ -51,12 +58,39 @@ import { audit } from "@/lib/security-log";
  * takip linkine konu olurdu.
  */
 
+/**
+ * SEFERİN İLERLEMESİ — "12 duraktan 7'si bitti".
+ *
+ * `toplam === 0` iki farklı şey demek olabilir: durak listesi kurulmamış ya da
+ * 082 uygulanmamış. İkincisi `durakTabloYok` ile AYRI taşınıyor; ekran "durak
+ * ekleyin" ile "bu kurulumda kapalı" cümlelerini karıştırmasın.
+ */
+export type SeferIlerleme = {
+  toplam: number;
+  biten: number;
+  tamamlanan: number;
+  atlanan: number;
+  bekleyen: number;
+  /** Sıradaki durağın adı ve sırası — listede tek satırda gösterilir. */
+  sonrakiAd: string | null;
+  sonrakiSira: number | null;
+};
+
 export type SeferSatir = SeferRow & {
   sofor_ad: string;
   arac_plaka: string | null;
+  /**
+   * Seferin GÜNCEL hedefinin adı.
+   * ⚠️ Kaynak `seferler.zone_id` DEĞİL: durak listesi varsa SIRADAKİ durak,
+   * yoksa eski tek hedef (lib/sefer-duraklari.ts → seferHedefi). Tek çözüm
+   * noktası, iki gerçek doğmasın.
+   */
   bolge_ad: string | null;
-  /** Takip linki üretilebilir mi — araç VE hedef bölge şart. */
+  /** Çözülebilir (harita/ETA çizilebilir) bir hedef var mı — rozet bunu söyler. */
+  hedef_var: boolean;
+  /** Takip linki üretilebilir mi — araç VE çözülebilir bir hedef şart. */
   takip_uygun: boolean;
+  ilerleme: SeferIlerleme;
 };
 
 export type SeferGunu = {
@@ -78,7 +112,16 @@ export type SeferSecenekleri = {
 };
 
 export type SeferSonuc =
-  | { ok: true; id: string }
+  | {
+      ok: true;
+      id: string;
+      /**
+       * İlk durak GERÇEKTEN yazıldı mı (082). `false` = sefer açıldı ama hedefi
+       * kurulamadı — tipik sebebi 082'nin uygulanmamış olması. Sessiz kalmıyor:
+       * ekran uyarı gösteriyor.
+       */
+      durakKuruldu?: boolean;
+    }
   | { ok: false; hata: "kapsam_disi" | "acik_sefer_var" | "gecersiz" | "hata"; mesaj?: string };
 
 /** Şefin kapsamı; patronda UNRESTRICTED. */
@@ -109,7 +152,25 @@ export async function getSeferGunu(tarih?: string): Promise<SeferGunu> {
 
   const soforIds = [...new Set(kapsamli.map((s) => s.worker_id))];
   const aracIds = [...new Set(kapsamli.map((s) => s.vehicle_id).filter(Boolean))] as string[];
-  const bolgeIds = [...new Set(kapsamli.map((s) => s.zone_id).filter(Boolean))] as string[];
+
+  /**
+   * DURAKLAR TEK SORGUDA (082). Sefer başına bir sorgu atmak 30 seferlik bir
+   * günü 30 gidiş dönüşe bölerdi (N+1). 082 yoksa `tabloYok` gelir, harita boş
+   * kalır ve akış eski tek hedefli davranışa düşer.
+   */
+  const { harita: durakHarita } = await listDuraklarBatch(kapsamli.map((s) => s.id));
+
+  /**
+   * BÖLGE ADLARI — hem eski tek hedef hem duraklar için TEK okuma.
+   * `seferler.zone_id` artık YALNIZ durak listesi olmayan seferlerde anlamlı;
+   * ikisi de aynı `geofences` sorgusundan besleniyor.
+   */
+  const bolgeIds = [
+    ...new Set([
+      ...kapsamli.map((s) => s.zone_id),
+      ...[...durakHarita.values()].flat().map((d) => d.zone_id),
+    ].filter(Boolean)),
+  ] as string[];
 
   const [w, v, z] = await Promise.all([
     soforIds.length
@@ -129,13 +190,56 @@ export async function getSeferGunu(tarih?: string): Promise<SeferGunu> {
   return {
     tarih: gun,
     fleet,
-    seferler: kapsamli.map((s) => ({
-      ...s,
-      sofor_ad: ad.get(s.worker_id) ?? "—",
-      arac_plaka: s.vehicle_id ? (plaka.get(s.vehicle_id) ?? "—") : null,
-      bolge_ad: s.zone_id ? (bolge.get(s.zone_id) ?? "—") : null,
-      takip_uygun: Boolean(s.vehicle_id && s.zone_id),
-    })),
+    seferler: kapsamli.map((s) => {
+      const duraklar = durakHarita.get(s.id) ?? [];
+      const ilerleme = ilerlemeCevir(duraklar);
+      /**
+       * HEDEF ADI — duraklar varsa SIRADAKİ durak, yoksa eski tek hedef.
+       * Sorgusuz çözülüyor: durak adı zaten satırda (`ad`), bölge adı yukarıda
+       * toplu okundu.
+       */
+      const sonraki = durakOzeti(duraklar).sonraki;
+      const bolge_ad =
+        duraklar.length > 0
+          ? (sonraki?.ad ?? [...duraklar].sort((a, b) => b.sira - a.sira)[0]?.ad ?? null)
+          : s.zone_id
+            ? (bolge.get(s.zone_id) ?? "—")
+            : null;
+      /**
+       * TAKİP UYGUNLUĞU — araç + ÇÖZÜLEBİLİR hedef.
+       * Duraklı seferde hedef, sıradaki durağın bölgesi ya da koordinatıdır;
+       * duraksız seferde eski `zone_id`. Yalnız adı olan (koordinatsız) bir
+       * durak hedef sayılmaz: harita ve ETA onunla çizilemez.
+       */
+      const hedefVar =
+        duraklar.length > 0
+          ? duraklar.some((d) => d.zone_id !== null || (d.latitude !== null && d.longitude !== null))
+          : s.zone_id !== null;
+
+      return {
+        ...s,
+        sofor_ad: ad.get(s.worker_id) ?? "—",
+        arac_plaka: s.vehicle_id ? (plaka.get(s.vehicle_id) ?? "—") : null,
+        bolge_ad,
+        hedef_var: hedefVar,
+        takip_uygun: Boolean(s.vehicle_id && hedefVar),
+        ilerleme,
+      };
+    }),
+  };
+}
+
+/** `DurakOzeti` → ekranın taşıdığı sade biçim (durak satırları taşınmaz). */
+function ilerlemeCevir(duraklar: DurakRow[]): SeferIlerleme {
+  const o = durakOzeti(duraklar);
+  return {
+    toplam: o.toplam,
+    biten: o.biten,
+    tamamlanan: o.tamamlanan,
+    atlanan: o.atlanan,
+    bekleyen: o.bekleyen,
+    sonrakiAd: o.sonraki?.ad ?? null,
+    sonrakiSira: o.sonraki?.sira ?? null,
   };
 }
 
@@ -210,6 +314,18 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/;
  * belli olmayabilir; zorunlu kılmak yöneticiyi sahte bir araç seçmeye iterdi.
  * Ama ikisi dolu değilse TAKİP LİNKİ ÜRETİLEMEZ ve ekran bunu söylüyor
  * (`takip_uygun`). Teşvik ediliyor, dayatılmıyor.
+ *
+ * ═══ `zone_id` ARTIK YAZILMIYOR — İLK DURAK YAZILIYOR (082) ═══
+ *
+ * Formdaki "hedef bölge" seçimi `seferler.zone_id`ye değil, 1 NUMARALI DURAĞA
+ * dönüşüyor. Sebep tek cümle: iki gerçek olmasın. `zone_id` de yazılsaydı,
+ * yönetici 1. durağı silip yerine başkasını koyduğunda kolon BAYAT bir hedef
+ * taşımaya devam ederdi ve hedef çözümü ("durak yoksa zone_id") o bayat değere
+ * düşerdi. Kolon yalnız 082 ÖNCESİ satırlar için anlamlı kalıyor.
+ *
+ * ⚠️ 082 UYGULANMAMIŞSA sefer YİNE AÇILIR, yalnız durağı olmaz — hedefsiz bir
+ * sefer meşru (yukarıdaki gerekçe) ve kademeli düşüş deseni bunu gerektiriyor.
+ * Sessiz kalmıyor: `durakKuruldu` yanıtta taşınıyor ve ekran uyarıyor.
  */
 export async function seferOlustur(girdi: {
   tarih: string;
@@ -240,15 +356,37 @@ export async function seferOlustur(girdi: {
     const s = await insertSefer({
       tarih: girdi.tarih,
       worker_id: girdi.worker_id,
+      // ⚠️ zone_id BİLEREK null — hedef 1 numaralı DURAK olarak yazılıyor.
+      zone_id: null,
       vehicle_id: girdi.vehicle_id ?? null,
-      zone_id: girdi.zone_id ?? null,
       paket_hedef: girdi.paket_hedef ?? null,
       notlar: girdi.notlar?.trim() ? girdi.notlar.trim().slice(0, 500) : null,
       created_by: session.worker_id!,
     });
     await audit(session.worker_id ?? null, "create", `sefer:${s.id}`);
+
+    // ── İLK DURAK (082): formdaki hedef bölge seçimi.
+    let durakKuruldu = true;
+    if (girdi.zone_id) {
+      const { data: z } = await supabaseAdmin
+        .from("geofences")
+        .select("name")
+        .eq("id", girdi.zone_id)
+        .maybeSingle();
+      const r = await insertDurak(s.id, {
+        // Ad bölgenin O ANKİ adından donduruluyor (082 gerekçesi). Bölge
+        // bulunamazsa sefer düşmez: durak adsız kalmasın diye kaba bir yedek.
+        ad: ((z as { name: string } | null)?.name ?? "").trim() || "Hedef",
+        zoneId: girdi.zone_id,
+      });
+      durakKuruldu = r.ok;
+      if (!r.ok && r.sebep !== "tablo_yok") {
+        console.error(`[seferler] ilk durak yazılamadı (${s.id}): ${r.sebep} ${r.mesaj ?? ""}`);
+      }
+    }
+
     revalidatePath("/admin/seferler");
-    return { ok: true, id: s.id };
+    return { ok: true, id: s.id, durakKuruldu };
   } catch (e) {
     return { ok: false, hata: "hata", mesaj: String(e).slice(0, 120) };
   }
@@ -287,6 +425,14 @@ export type SoforSeferi = {
   tamamlandi_at: string | null;
   /** Bu sefere bırakılmış kanıt sayısı (080 yoksa 0). */
   kanitSayisi: number;
+  /**
+   * DURAK İLERLEMESİ (082) — "12 duraktan 7'si bitti".
+   *
+   * ⚠️ DURAK SATIRLARI BURADA TAŞINMIYOR, YALNIZ SAYAÇ. Bir ay 30 sefer × 80
+   * durak = 2400 satır demek ve bunun tamamı şoförün telefonuna inerdi. Satırlar
+   * İSTEK ÜZERİNE geliyor (`getSoforDuraklari`), açılan sefer için.
+   */
+  ilerleme: SeferIlerleme;
 };
 
 /**
@@ -351,23 +497,37 @@ export async function getSoforSeferleri(
     }
   }
 
+  // Duraklar TEK sorguda; satırlar değil yalnız SAYAÇ istemciye iniyor.
+  const { harita: durakHarita } = await listDuraklarBatch(satirlar.map((s) => s.id));
+
   return {
     ay: gecerli,
-    seferler: satirlar.map((s) => ({
-      id: s.id,
-      tarih: s.tarih,
-      durum: s.durum,
-      arac_plaka: s.vehicle_id ? (plaka.get(s.vehicle_id) ?? "—") : null,
-      bolge_ad: s.zone_id ? (bolge.get(s.zone_id) ?? "—") : null,
-      paket_hedef: s.paket_hedef,
-      paket_gerceklesen: s.paket_gerceklesen,
-      notlar: s.notlar,
-      kabul_at: s.kabul_at,
-      yolda_at: s.yolda_at,
-      vardi_at: s.vardi_at,
-      tamamlandi_at: s.tamamlandi_at,
-      kanitSayisi: kanitSayaci.get(s.id) ?? 0,
-    })),
+    seferler: satirlar.map((s) => {
+      const duraklar = durakHarita.get(s.id) ?? [];
+      const sonraki = durakOzeti(duraklar).sonraki;
+      return {
+        id: s.id,
+        tarih: s.tarih,
+        durum: s.durum,
+        arac_plaka: s.vehicle_id ? (plaka.get(s.vehicle_id) ?? "—") : null,
+        // Hedef adı: duraklar varsa SIRADAKİ durak, yoksa eski tek hedef.
+        bolge_ad:
+          duraklar.length > 0
+            ? (sonraki?.ad ?? [...duraklar].sort((a, b) => b.sira - a.sira)[0]?.ad ?? null)
+            : s.zone_id
+              ? (bolge.get(s.zone_id) ?? "—")
+              : null,
+        paket_hedef: s.paket_hedef,
+        paket_gerceklesen: s.paket_gerceklesen,
+        notlar: s.notlar,
+        kabul_at: s.kabul_at,
+        yolda_at: s.yolda_at,
+        vardi_at: s.vardi_at,
+        tamamlandi_at: s.tamamlandi_at,
+        kanitSayisi: kanitSayaci.get(s.id) ?? 0,
+        ilerleme: ilerlemeCevir(duraklar),
+      };
+    }),
   };
 }
 
@@ -441,10 +601,15 @@ export async function takipLinkiUret(
    * ⚠️ ARAÇ VE HEDEF ŞART — ama seferin kendisi için değil, LİNK için.
    * Araçsız bir link boş harita, hedefsiz bir link ETA'sız bir sayfa gösterirdi;
    * ikisi de müşteriye "bozuk" görünür. Sefer araçsız yaşayabilir, link yaşayamaz.
+   *
+   * ⚠️ HEDEF `zone_id` DEĞİL, ÇÖZÜLMÜŞ HEDEF (082): durak listesi varsa
+   * sıradaki durağın bölgesi/koordinatı, yoksa eski tek hedef. Kapıyı `zone_id`
+   * üzerinde bırakmak, duraklarla kurulmuş her seferi "hedefsiz" sayardı —
+   * yeni seferler artık o kolonu yazmıyor.
    */
-  if (!s.vehicle_id || !s.zone_id) {
-    return { ok: false, hata: "eksik_alan", mesaj: !s.vehicle_id ? "arac" : "bolge" };
-  }
+  if (!s.vehicle_id) return { ok: false, hata: "eksik_alan", mesaj: "arac" };
+  const hedef = await seferHedefi(s);
+  if (!hedef) return { ok: false, hata: "eksik_alan", mesaj: "bolge" };
 
   const r = await createTakipLink(seferId, session.worker_id ?? null, aliciNot?.trim() || null);
   if (!r.ok) {

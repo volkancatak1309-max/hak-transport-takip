@@ -17,7 +17,7 @@ import {
   saveVehicleEvents,
 } from "@/lib/telemetry";
 import { processAutoShifts, type AutoShiftSummary } from "@/lib/auto-shift";
-import { seferVarisKoprusu, type KopruOzeti } from "@/lib/sefer-bridge";
+import { seferVarisKoprusu, type KopruOzeti, type TurNoktasi } from "@/lib/sefer-bridge";
 import { sayacIle } from "@/lib/query-counter";
 import {
   acikZiyaretler,
@@ -377,18 +377,35 @@ async function runSync() {
   }
 
   /**
-   * SEFER VARIŞ KÖPRÜSÜ (Tur 3, migration 070) — ziyaretler YAZILDIKTAN sonra.
+   * SEFER VARIŞ KÖPRÜSÜ (Tur 3, migration 070; DURAK EKSENİ, migration 082) —
+   * ziyaretler YAZILDIKTAN sonra.
    *
    * Burada olmasının sebebi: ziyaretleri açan TEK yer bu tur. Damga, ziyaretin
    * açıldığı turda düşer ve yeni bir zamanlayıcı kaydı gerekmez (bu repoda
    * cron'lar dışarıdan tetikleniyor — periyodik bir iş hem kurulum ister hem
    * de sync'ten her zaman geç kalırdı).
    *
-   * SALT OKUMA + yalnız `seferler`e yazar; ziyaret motoruna dokunmaz.
-   * Kendi hata yolunda: throw etmez, turu düşürmez. Günün seferi yoksa tek bir
-   * ucuz sorgu atıp çıkar.
+   * ⚠️ NOKTALAR KÖPRÜYE VERİLİYOR — SIFIR EK SORGU (082). Serbest adresli
+   * (koordinatlı) durakların `zone_visits` karşılığı yoktur; varışları bu turun
+   * ZATEN BELLEKTE olan noktalarıyla ölçülüyor. Köprüye ayrı bir telemetri
+   * sorgusu yaptırmak, aynı satırları ikinci kez okumak olurdu.
+   *
+   * SALT OKUMA + yalnız `seferler` ve `sefer_duraklari`ya yazar; ziyaret
+   * motoruna dokunmaz. Kendi hata yolunda: throw etmez, turu düşürmez. Günün
+   * seferi yoksa tek bir ucuz sorgu atıp çıkar.
    */
-  const seferVaris: KopruOzeti = await seferVarisKoprusu();
+  const noktaHaritasi = new Map<string, TurNoktasi[]>();
+  for (const { v, points } of toplananlar) {
+    const konumlu = points
+      .filter((p) => p.latitude !== null && p.longitude !== null)
+      .map((p) => ({
+        latitude: p.latitude as number,
+        longitude: p.longitude as number,
+        recorded_at: p.recorded_at,
+      }));
+    if (konumlu.length > 0) noktaHaritasi.set(v.id, konumlu);
+  }
+  const seferVaris: KopruOzeti = await seferVarisKoprusu(new Date(), noktaHaritasi);
   if (seferVaris.hata) {
     console.error("[flespi/sync] sefer varış köprüsü:", seferVaris.hata);
   }

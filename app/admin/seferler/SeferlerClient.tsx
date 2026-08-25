@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ExternalLink,
   TriangleAlert,
+  ListOrdered,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,7 @@ import {
   type TakipLinkGorunum,
 } from "@/app/actions/seferler";
 import { getSeferTeslimatlari, teslimatIptalEt, type KanitGorunum } from "@/app/actions/teslimat";
+import { DuraklarBolumu } from "./DuraklarBolumu";
 import { ImzaGoster } from "@/components/teslimat/ImzaPad";
 
 /**
@@ -141,7 +143,7 @@ export function SeferlerClient({
                     {!s.takip_uygun && s.durum !== "iptal" && s.durum !== "tamamlandi" && (
                       <StatusChip tone="warning">
                         <TriangleAlert className="mr-1 inline size-3" />
-                        {t(s.vehicle_id ? "eksik_bolge" : s.zone_id ? "eksik_arac" : "eksik_ikisi")}
+                        {t(s.vehicle_id ? "eksik_bolge" : s.hedef_var ? "eksik_arac" : "eksik_ikisi")}
                       </StatusChip>
                     )}
                   </div>
@@ -161,6 +163,20 @@ export function SeferlerClient({
                     </span>
                     {s.vardi_at && (
                       <span className="nums">{t("vardi", { saat: formatTime(s.vardi_at) })}</span>
+                    )}
+                    {/*
+                      DURAK İLERLEMESİ (082) — "7/12". Sıradaki durağın adı da
+                      burada: yönetici listeyi açmadan "araç şu an nereye
+                      gidiyor" sorusunu cevaplayabilsin.
+                    */}
+                    {s.ilerleme.toplam > 0 && (
+                      <span className="nums inline-flex items-center gap-1">
+                        <ListOrdered className="size-3.5" />
+                        {t("durak_ilerleme", {
+                          biten: s.ilerleme.biten,
+                          toplam: s.ilerleme.toplam,
+                        })}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -185,6 +201,7 @@ export function SeferlerClient({
       {acikSefer && (
         <SeferDetayi
           sefer={acikSefer}
+          secenekler={secenekler}
           kapat={() => setAcikSefer(null)}
           yenile={() => basla(() => router.refresh())}
         />
@@ -232,6 +249,9 @@ function SeferFormu({
     setGonderiliyor(false);
     if (r.ok) {
       toast.success(t("olusturuldu"));
+      // Hedef seçildiği hâlde durak yazılamadıysa SESSİZ KALMA: sefer açıldı
+      // ama hedefsiz kaldı ve yönetici bunu ancak listede fark ederdi.
+      if (bolge && r.durakKuruldu === false) toast.warning(t("durak_kurulamadi"));
       setSofor("");
       setArac("");
       setBolge("");
@@ -373,10 +393,12 @@ function Secici({
 
 function SeferDetayi({
   sefer,
+  secenekler,
   kapat,
   yenile,
 }: {
   sefer: SeferSatir;
+  secenekler: SeferSecenekleri;
   kapat: () => void;
   yenile: () => void;
 }) {
@@ -535,6 +557,18 @@ function SeferDetayi({
               </ul>
             )}
           </div>
+
+          {/*
+            DURAKLAR — takip linklerinden ÖNCE. Sıra anlamlı: link üretmeden
+            önce yöneticinin hedefi kurmuş olması gerekiyor ve "eksik hedef"
+            uyarısının cevabı bu bölümde.
+          */}
+          <DuraklarBolumu
+            seferId={sefer.id}
+            seferAcik={acik}
+            secenekler={secenekler}
+            yenile={yenile}
+          />
 
           <TeslimatKaniti seferId={sefer.id} />
 

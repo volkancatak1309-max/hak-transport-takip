@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireWorker, requireFleetView } from "@/lib/session";
 import { getFleetScope, UNRESTRICTED } from "@/lib/fleet-scope";
 import { getSeferById, ACIK_DURUMLAR } from "@/lib/sefer-db";
+import { getDurak, listDuraklar } from "@/lib/sefer-duraklari";
 import { uploadReceipt, signedReceiptUrls } from "@/lib/storage";
 import {
   createTeslimat,
@@ -39,7 +40,16 @@ export type KanitSonuc =
   | { ok: true; id: string }
   | {
       ok: false;
-      hata: "sefer_yok" | "sefer_senin_degil" | "sefer_kapali" | "kanit_yok" | "durak_dolu" | "tablo_yok" | "hata";
+      hata:
+        | "sefer_yok"
+        | "sefer_senin_degil"
+        | "sefer_kapali"
+        | "kanit_yok"
+        | "durak_dolu"
+        | "durak_yok"
+        | "durak_secilmedi"
+        | "tablo_yok"
+        | "hata";
       mesaj?: string;
     };
 
@@ -58,6 +68,16 @@ function sayi(v: FormDataEntryValue | null): number | null {
  *
  * ⚠️ KAPANMIŞ SEFERE KANIT YOK. Tamamlanmış/iptal edilmiş bir sefere sonradan
  * kanıt eklemek, olayın kendisinden sonra delil üretmektir.
+ *
+ * ═══ KANIT DURAĞA BAĞLANIYOR (082) ═══
+ *
+ * Seferin durakları varsa `durakId` ZORUNLUDUR: hangi teslimatın kanıtı
+ * olduğu belirsiz bir delil, delil değildir. Duraksız seferde (082 öncesi ya da
+ * hedefsiz sefer) eski davranış aynen sürer — `durak_no = 1`.
+ *
+ * ⚠️ DURAK GERÇEKTEN BU SEFERİN Mİ: yol/gövde uyuşmazlığı imkânsız olmalı.
+ * Başka bir seferin durağına kanıt bağlamak, kanıtı başka bir işin altına
+ * yazmaktır.
  */
 export async function teslimatKanitiBirak(formData: FormData): Promise<KanitSonuc> {
   const session = await requireWorker();
@@ -71,12 +91,27 @@ export async function teslimatKanitiBirak(formData: FormData): Promise<KanitSonu
 
   const fotoSayisi = Number(formData.get("fotoSayisi") ?? 0);
 
+  // ── DURAK BAĞI (082)
+  const { duraklar } = await listDuraklar(seferId);
+  const durakId = String(formData.get("durakId") ?? "") || null;
+  let durak = null as Awaited<ReturnType<typeof getDurak>>;
+  if (durakId) {
+    durak = await getDurak(durakId);
+    if (!durak || durak.sefer_id !== seferId) return { ok: false, hata: "durak_yok" };
+  } else if (duraklar.length > 0) {
+    // Durakları olan seferde kanıt sahipsiz kalamaz.
+    return { ok: false, hata: "durak_secilmedi" };
+  }
+
   const r = await createTeslimat(
     {
       seferId,
       workerId: session.worker_id!,
-      durakNo: 1,
-      zoneId: sefer.zone_id,
+      durakId: durak?.id ?? null,
+      durakNo: durak?.sira ?? 1,
+      // Bölge: durağın bölgesi; durak yoksa (ya da serbest hedefliyse) seferin
+      // eski tek hedefi. Kanıt hangi sahada bırakıldıysa o.
+      zoneId: durak ? durak.zone_id : sefer.zone_id,
       aliciAd: (formData.get("aliciAd") as string) ?? null,
       notlar: (formData.get("notlar") as string) ?? null,
       imzaSvg: (formData.get("imzaSvg") as string) ?? null,

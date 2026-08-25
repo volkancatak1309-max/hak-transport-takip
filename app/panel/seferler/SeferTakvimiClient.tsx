@@ -10,6 +10,7 @@ import { formatTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { SoforSeferi } from "@/app/actions/seferler";
 import { TeslimatKanitiDialog } from "./TeslimatKanitiDialog";
+import { DuraklarSoforBolumu } from "./DuraklarSoforBolumu";
 
 /**
  * ŞOFÖRÜN SEFER TAKVİMİ — /panel/seferler.
@@ -201,11 +202,26 @@ export function SeferTakvimiClient({
               {s.notlar && <p className="text-sm break-words">{s.notlar}</p>}
 
               {/*
-                TESLİMAT KANITI — yalnız AÇIK seferde bırakılabilir. Kapanmış
-                bir sefere sonradan kanıt eklemek, olaydan sonra delil üretmek
-                olurdu (kural sunucuda da var: app/actions/teslimat.ts).
+                DURAK LİSTESİ (082) — sıralı, sıradaki durak vurgulu.
+                Duraklar varsa TESLİMAT KANITI DA BURADA: kanıt seferin
+                tamamına değil, BİR DURAĞA bırakılır ve hangi durak olduğu
+                belirsiz kalamaz.
               */}
-              {s.durum !== "tamamlandi" && s.durum !== "iptal" && (
+              <DuraklarSoforBolumu
+                seferId={s.id}
+                seferAcik={s.durum !== "tamamlandi" && s.durum !== "iptal"}
+                yenile={() => basla(() => router.refresh())}
+              />
+
+              {/*
+                TESLİMAT KANITI (sefer ekseni) — YALNIZ DURAKSIZ seferde.
+                Duraklı seferde bu düğme ikinci bir yol açardı ve sunucu onu
+                zaten reddediyor (`durak_secilmedi`); düğmeyi göstermek "tıkla,
+                hata al" akışı olurdu.
+                Kapanmış sefere kanıt yok: olaydan sonra delil üretmek olurdu
+                (kural sunucuda da var: app/actions/teslimat.ts).
+              */}
+              {s.durum !== "tamamlandi" && s.durum !== "iptal" && s.ilerleme.toplam === 0 && (
                 <div className="flex items-center gap-2 pt-1">
                   <Button
                     type="button"

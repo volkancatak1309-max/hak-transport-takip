@@ -10,6 +10,7 @@ import {
   TAKIP_YOL_KATSAYISI,
 } from "@/lib/tenant";
 import { etaHesapla, konumBayatMi, type EtaSonuc } from "@/lib/takip-eta";
+import { seferHedefi } from "@/lib/sefer-duraklari";
 
 /**
  * MÜŞTERİ CANLI TAKİP LİNKİ — veri katmanı (migration 079).
@@ -238,20 +239,24 @@ export async function readTakipByToken(token: string, simdi = new Date()): Promi
     return { ok: false, sebep: "sefer_kapandi" };
   }
 
-  // 3) HEDEF BÖLGE — yalnız geometri. Bölgenin ADI bile alınmıyor: müşteri
-  //    kendi adresini biliyor, isim ise kiracının müşteri listesinden bir veri.
-  let hedef: TakipGorunum["hedef"] = null;
-  if (sefer.zone_id) {
-    const { data: z } = await supabaseAdmin
-      .from("geofences")
-      .select("center_lat, center_lng, radius_m")
-      .eq("id", sefer.zone_id)
-      .maybeSingle();
-    if (z) {
-      const zz = z as { center_lat: number; center_lng: number; radius_m: number };
-      hedef = { lat: Number(zz.center_lat), lng: Number(zz.center_lng), yaricapM: Number(zz.radius_m) };
-    }
-  }
+  /**
+   * 3) HEDEF — yalnız GEOMETRİ. Hedefin ADI bile alınmıyor: müşteri kendi
+   *    adresini biliyor, isim ise kiracının müşteri listesinden bir veri.
+   *
+   * ⚠️ KAYNAK `seferler.zone_id` DEĞİL, ÇÖZÜLMÜŞ HEDEF (082): durak listesi
+   * varsa SIRADAKİ durağın bölgesi ya da koordinatı, yoksa eski tek hedef.
+   * Bitmiş bir durağı hedef göstermek, aracı çoktan geçtiği bir noktaya
+   * yaklaşıyormuş gibi gösterirdi.
+   *
+   * ⚠️ BİLİNEN SINIR: link SEFERE bağlı (079), durağa değil. Çok duraklı bir
+   * seferde müşteri kendi durağının değil ARACIN SIRADAKİ durağının ETA'sını
+   * görür. Yanlış değil, DAR — araç yaklaştıkça sıradaki durak müşterininki
+   * olur. Kapatmak 079'a `durak_id` eklemeyi gerektirir (bkz. lib/sefer-duraklari.ts).
+   */
+  const cozulen = await seferHedefi({ id: link.sefer_id, zone_id: sefer.zone_id });
+  const hedef: TakipGorunum["hedef"] = cozulen
+    ? { lat: cozulen.lat, lng: cozulen.lng, yaricapM: cozulen.yaricapM }
+    : null;
 
   // 4) KONUM — tek aracın son noktası, ANAHTARLI okuma. Plaka/filo SEÇİLMEZ.
   let konum: TakipGorunum["konum"] = null;

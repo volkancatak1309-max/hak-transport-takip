@@ -8,6 +8,7 @@ import {
   SOFOR_GECISLERI,
   type SoforGecis,
 } from "@/lib/sefer-db";
+import { listDuraklar } from "@/lib/sefer-duraklari";
 import { govdeOku } from "../../route";
 
 export const runtime = "nodejs";
@@ -77,7 +78,8 @@ export async function POST(
         istenen: hedef,
       });
     }
-    return Response.json({ ok: true, sefer: seferGovdesi(r.satir) });
+    const { duraklar } = await listDuraklar(id);
+    return Response.json({ ok: true, sefer: seferGovdesi(r.satir, duraklar) });
   } catch (e) {
     return mobileError(503, "db_error", { sebep: String((e as Error).message).slice(0, 120) });
   }

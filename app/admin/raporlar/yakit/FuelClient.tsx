@@ -16,6 +16,7 @@ import {
 } from "@/lib/metric-thresholds";
 import Link from "next/link";
 import type { CostReport, FuelReport, FuelRow } from "@/lib/reports";
+import type { PencereKapsami } from "@/lib/saklama";
 import type { RateOrigin } from "@/lib/cost-model";
 import { RateSourceChip } from "@/components/admin/RateSourceChip";
 import { noteExport } from "@/lib/audit-export-client";
@@ -33,10 +34,13 @@ export function FuelClient({
   report,
   cost,
   period,
+  kapsam,
 }: {
   report: FuelReport;
   cost: CostReport;
   period: { from: string; to: string; days: number };
+  /** İstenen pencere ham saklama sınırını aşıyor mu (090). */
+  kapsam: PencereKapsami;
 }) {
   const t = useTranslations("reports");
   const locale = useLocale();
@@ -339,7 +343,8 @@ export function FuelClient({
       const { downloadFuelPdf } = await import("@/components/pdf/FuelReport");
       await downloadFuelPdf({
         period: `${period.from} – ${period.to}`,
-        totalLiters: Math.round(report.totalConsumedLiters),
+        // Ölçülen araç yoksa PDF'e de 0 BASILMAZ (090).
+        totalLiters: report.measured === 0 ? null : Math.round(report.totalConsumedLiters),
         fleetL100: report.fleetLPer100Km === null ? "—" : num(report.fleetLPer100Km, 1),
         rows: report.rows.map((r) => ({
           plate: r.plate,
@@ -600,19 +605,57 @@ export function FuelClient({
       undefined
     );
 
+  /**
+   * SAKLAMA KAPSAMI ŞERİDİ (090).
+   *
+   * İstenen pencere ham saklama sınırını aşıyorsa ekran bunu SÖYLER. Aksi
+   * hâlde rapor, silinmiş günleri hiç olmamış gibi sayar ve başlıkta yine
+   * istenen dönemi yazar — yani sessizce küçük bir sayı üretir.
+   *
+   * ⚠️ Bu şerit "ölçülemedi ≠ 0" kuralının saklama ayağı. Rakiplerde
+   * karşılığı yok: Geotab/Verizon uzun varsayılan koyup sorumluluğu
+   * müşteriye devrediyor (docs/RAKIP-GDPR.md).
+   */
+  const kapsamSeridi =
+    kapsam.tur === "icinde" ? null : (
+      <p
+        className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
+        role="status"
+      >
+        <AlertTriangle className="mt-px size-3.5 shrink-0" />
+        <span>
+          {kapsam.tur === "tamamen_disi"
+            ? t("retention_out_of_scope", { days: kapsam.kayipGun })
+            : t("retention_partial_scope", { days: kapsam.kayipGun })}
+        </span>
+      </p>
+    );
+
   return (
     <div className="space-y-6">
+      {kapsamSeridi}
       {costBlock}
 
       <ReportStatBand
         stats={[
           {
             label: t("stat_total_fuel"),
-            value: `${num(report.totalConsumedLiters)} L`,
+            /**
+             * 🔴 "ÖLÇÜLEMEDİ ≠ 0" (090). Ölçülen araç YOKKEN eskiden "0 L"
+             * basılıyordu ve bu bir OLGU gibi okunuyordu.
+             *
+             * ÖLÇÜLDÜ (26.08.2026, veri olmayan pencere 01.03→01.04):
+             * available:true · totalConsumedLiters:0 · 29 araç · hasData 0.
+             * Aynı durumda CO₂ panosu doğru davranıp null + 29 plaka diyor.
+             */
+            value: report.measured === 0 ? "—" : `${num(report.totalConsumedLiters)} L`,
             // PARASAL KARŞILIK: çarpım sunucuda yapıldı, buraya hazır iniyor.
             // Fiyatın kaynağı/tarihi ve "kendi fiyatını girebilirsin" bilgisi
             // bandın altındaki notta (tek yerde, her karta tekrarlanmadan).
-            scope: `${t("scope_range")} · ${eur(report.totalCostEur)}`,
+            scope:
+              report.measured === 0
+                ? t("fuel_not_measured")
+                : `${t("scope_range")} · ${eur(report.totalCostEur)}`,
           },
           // FİLO ORTALAMASI — yalnız üç kapıyı geçen araçlardan (22.07.2026).
           // Eskiden satırda gizlediğimiz saçma değerlerin km'si ve litresi yine

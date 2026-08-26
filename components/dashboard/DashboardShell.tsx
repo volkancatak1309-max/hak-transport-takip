@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useRef, useState, useTransition, useEffect } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import {
+  Archive,
   ArrowLeft,
   LayoutDashboard,
   MapPinned,
@@ -210,6 +211,12 @@ export function DashboardShell({
         // değil) — oranlar FİLONUN TAMAMININ €/km'sini oynatır, şefin kapsamı
         // ise tek filo (bkz. app/actions/cost-rates.ts).
         { href: "/admin/ayarlar", label: t("settings"), icon: SlidersHorizontal },
+        // SAKLAMA POLİTİKASI (090) — Ayarlar'ın hemen ardında ama AYRI kalem.
+        // Bir AYAR değil bir BEYAN: dışarıya (müşteriye, iş müfettişliğine)
+        // gösterilecek sayı ve gerekçesi burada. Ayarlar içindeki bir satır
+        // olsaydı, denetimde "politikanız nerede yazılı" sorusunun cevabı bir
+        // alt sekme olurdu. Şefe KAPALI — süre tüm filonun beyanını değiştirir.
+        { href: "/admin/saklama", label: t("retention"), icon: Archive },
         ...(user.isOwner
           ? [{ href: "/admin/guvenlik", label: t("security"), icon: ShieldCheck }]
           : []),

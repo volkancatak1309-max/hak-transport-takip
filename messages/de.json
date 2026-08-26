@@ -77,7 +77,8 @@
     "profitability": "Rentabilität",
     "compliance": "Arbeitszeitrecht",
     "recognition": "Auszeichnungen",
-    "co2": "CO₂"
+    "co2": "CO₂",
+    "retention": "Datenaufbewahrung"
   },
   "izinler": {
     "title": "Urlaubskalender",
@@ -1833,7 +1834,10 @@
     "cost_rates_edit_link": "Sätze bearbeiten — Einstellungen › Kostensätze",
     "cost_rates_migration_note": "Die Sätze können nicht im Panel gepflegt werden: Migration 076 (tenant_cost_rates) wurde noch nicht ausgeführt. Die Berechnung nutzt vorerst die Setup-Werte.",
     "source_link": "zur Quelle",
-    "fuel_ref_stale_note": "Die Kraftstoffpreis-Referenz wurde seit {gun} Tagen nicht aktualisiert (Quelle {tarih}). Der Wert ist weiterhin echt, altert aber — Quelle oder Zeitplaner könnten ausgefallen sein."
+    "fuel_ref_stale_note": "Die Kraftstoffpreis-Referenz wurde seit {gun} Tagen nicht aktualisiert (Quelle {tarih}). Der Wert ist weiterhin echt, altert aber — Quelle oder Zeitplaner könnten ausgefallen sein.",
+    "fuel_not_measured": "nicht messbar — in diesem Zeitraum kein gemessenes Fahrzeug",
+    "retention_out_of_scope": "Der gewählte Zeitraum liegt vollständig außerhalb der Aufbewahrungsfrist für Rohdaten ({days} Tage). Da die Rohspur gelöscht wurde, ist dieser Zeitraum nicht messbar — die Lücke ist keine Null.",
+    "retention_partial_scope": "Die ersten {days} Tage des gewählten Zeitraums liegen außerhalb der Aufbewahrungsfrist für Rohdaten. Diese Tage fließen NICHT in die Summen ein; die Zahlen umfassen nur den aufbewahrten Teil."
   },
   "messages": {
     "title": "Nachrichten",
@@ -2532,5 +2536,42 @@
     "vazgec": "Abbrechen",
     "kaydet": "Speichern",
     "hata_hata": "Aktion nicht möglich"
+  },
+  "retention": {
+    "title": "Datenaufbewahrung",
+    "description": "Wie lange die GPS-Rohspur aufbewahrt wird. Abgeleitete Datensätze (Schicht, Alarm, Zone, Fahrt) sind davon nicht betroffen.",
+    "migration_missing": "Migration 090 wurde nicht ausgeführt — die Richtlinie ist noch nicht eingerichtet. db/migrations/090_saklama_politikasi.sql",
+    "purge_on": "Löschung AKTIV",
+    "purge_off": "Löschung INAKTIV",
+    "current_days": "{days} Tage",
+    "cutoff": "Stichtag: {date}",
+    "months_ready": "Monate mit Zusammenfassung",
+    "months_missing": "Monate ohne Zusammenfassung",
+    "shifts_unfrozen": "Nicht eingefrorene Schichten",
+    "days_label": "Aufbewahrungsfrist Rohspur (Tage)",
+    "days_hint": "Mindestens {min}, höchstens {max}. Standard {def}.",
+    "extend_warning": "Über {threshold} Tage ist eine schriftliche Begründung erforderlich. Frankreich (CNIL) nennt 2 Monate für Rohstandortdaten; Italien ahndete 180 Tage Aufbewahrung mit 50.000 €; Deutschland hielt 400 und 150 Tage für unverhältnismäßig.",
+    "reason_label": "Schriftliche Begründung",
+    "reason_placeholder": "z. B. für Lieferstreitigkeiten bei internationalen Fahrten nach Art. 32 CMR…",
+    "reason_hint": "Mindestens {min} Zeichen. Das ist die erste Frage bei einer Prüfung.",
+    "purge_toggle": "Automatische Löschung aktivieren",
+    "purge_toggle_hint": "Solange inaktiv, wird keine Zeile gelöscht, auch wenn der Zeitplan läuft. Vor der Aktivierung muss die Vorbereitung abgeschlossen sein.",
+    "save": "Speichern",
+    "saved": "Aufbewahrungseinstellung gespeichert",
+    "error_gun_araligi": "Frist außerhalb des zulässigen Bereichs",
+    "error_gerekce_gerekli": "Über 90 Tage ist eine schriftliche Begründung zwingend",
+    "error_gerekce_kisa": "Begründung zu kurz",
+    "error_tablo_yok": "Migration 090 wurde nicht ausgeführt",
+    "error_hata": "Speichern fehlgeschlagen",
+    "blocked_ayar_kapali": "Es wird nichts gelöscht, weil die Löschung inaktiv ist.",
+    "blocked_ozet_eksik": "Für einige Monate fehlt die Zusammenfassung; ohne sie beginnt keine Löschung.",
+    "blocked_km_donmadi": "Die km-Bewertung der Schichten wurde nicht eingefroren; das ist vor der Löschung erforderlich.",
+    "blocked_omur_izi_yok": "Die Geräte-Lebensspur wurde noch nicht geschrieben; sonst verschwindet die Warnung für stille Fahrzeuge.",
+    "blocked_silinecek_ay_yok": "Kein Monat liegt vollständig vor dem Stichtag — es gibt nichts zu löschen.",
+    "prep_title": "Vorbereitung",
+    "prep_desc": "Aktualisiert die Lebensspur, erzeugt fehlende Monatszusammenfassungen und friert die km-Bewertung der Schichten ein. Erst danach kann gelöscht werden.",
+    "prep_no_delete": "Diese Schaltfläche LÖSCHT KEINE ZEILE. Gelöscht wird nur über den Zeitplan und nur bei aktivem Schalter.",
+    "prep_run": "Vorbereitung ausführen",
+    "prep_done": "Vorbereitung fortgeschritten: {months} Monatszusammenfassungen, {shifts} Schichten eingefroren. Bei aktiver Löschung wären {rows} Zeilen entfallen."
   }
 }

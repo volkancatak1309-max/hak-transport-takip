@@ -90,6 +90,7 @@ const ORDER = [
   "087_vardiya_duzeltme_izi.sql",
   "088_sofor_odul.sql",
   "089_co2_panosu.sql",
+  "090_saklama_politikasi.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

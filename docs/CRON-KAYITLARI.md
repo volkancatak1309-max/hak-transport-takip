@@ -25,6 +25,7 @@ Vercel projesinden alınır.
 | 6 | Haftalık aksiyon | `/api/cron/haftalik-aksiyon` | `CRON_SECRET` | **haftada TAM 1 · Pazartesi 06:30** | Haftalık panel isteyen her kiracı (migration 084) |
 | 7 | Mevzuat erken uyarı | `/api/cron/mevzuat-tarama` | `CRON_SECRET` | **15 dakika** | Canlı mevzuat katmanı isteyen her kiracı (migration 086) |
 | 8 | Dönem skoru + rozet | `/api/cron/skor-donem` | `CRON_SECRET` | **haftada 1** | Ödül/liderlik isteyen her kiracı (migration 088) |
+| 9 | **Ham telemetri saklama** | `/api/cron/saklama` | `CRON_SECRET` | **günde 1 · gece 03:00** | Saklama politikası kuran her kiracı (migration 090) |
 | ~~9~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
 
 Sır iki biçimde de kabul edilir ve karşılaştırma zamanlama-güvenlidir
@@ -384,3 +385,69 @@ performans izlemeye elverişli bir düzenektir (bkz. `docs/SOFOR-ODUL.md` § 6).
 9. Ödül/liderlik istiyorsan **8**'i kur — önce `&geri=5` ile bir kez
    koştur ki geçmiş dönemler dolsun.
 10. Demo değilse **4**'ü kurma. `shift-watchdog` diye bir iş **yok**.
+
+---
+
+## 9 · Ham telemetri saklama — GÜNDE BİR, GECE
+
+**Migration 090.** Ham GPS izini 90 günde bir temizler. Ayrıntılı gerekçe ve
+katmanlı saklama modeli: [`docs/SAKLAMA-POLITIKASI.md`](SAKLAMA-POLITIKASI.md).
+
+```
+GET https://<dağıtım>/api/cron/saklama?secret=<CRON_SECRET>
+```
+
+Sıklık: **günde 1**, gece (03:00 önerilir — özet üretimi araç başına bir yakıt
+raporu koşusudur ve gündüz yükünü artırmasın).
+
+### 🔴 KURMADAN ÖNCE OKUYUN
+
+Bu cron **kurulsa bile hiçbir şey silmez**: `tenant_saklama.silme_acik`
+varsayılanı `false`. Silme, `/admin/saklama` ekranından bir insan anahtarı
+açana **ve** dört hazırlık kapısı tamamlanana kadar başlamaz.
+
+Yani kaydı **şimdi kurmak güvenlidir**: cron her gece hazırlığı ilerletir
+(ömür izi, aylık özet, km dondurma) ve silme kapalı kaldığı sürece yalnız
+"silinseydi şu kadar giderdi" diye rapor eder.
+
+### Kuru mod
+
+```
+GET https://<dağıtım>/api/cron/saklama?secret=<CRON_SECRET>&kuru=1
+```
+
+Hiçbir şey **yazmaz ve silmez** — yalnız ne olacağını sayar. İlk toplu
+silmeden önce bununla bakın.
+
+| Kod | Anlamı | Ne yapmalı |
+|-----|--------|------------|
+| 200 | Tur tamam | Gövdede `silme.izin` · `silme.engel` · `silme.uygulandi` |
+| 401 | Sır yanlış/tanımsız | Vercel env'i kontrol et |
+| 503 | migration **090** çalıştırılmamış | SQL'i çalıştır; tekrar denemek işe yaramaz |
+| 500 | Tur sırasında hata | Gövdedeki `error` alanına bak |
+
+### Gövdeyi okumak
+
+```json
+{
+  "ok": true,
+  "ayar":  { "hamGun": 90, "silmeAcik": false },
+  "kesim": "2026-05-28T…",
+  "omurIzi": 29,
+  "ozet":  { "yazilan": [...], "eksikKalan": [], "hazir": ["2026-04-01"] },
+  "km":    { "dondurulan": 3, "kalan": 0 },
+  "silme": { "izin": false, "engel": "ayar_kapali",
+             "telemetri": 600, "uygulandi": false }
+}
+```
+
+⚠️ `silme.telemetri` sayısı, `uygulandi:false` iken **"silinirdi"** demektir,
+"silindi" değil. İkisini karıştırmak, çalışmayan bir temizliği çalışıyor
+sanmaya götürür.
+
+### ⚠️ 4. iş ile karıştırmayın
+
+`/api/cron/demo-retention` **yalnız galzura-demo**'da çalışır, 14 gün tutar ve
+tenant kilitlidir; işi "demoda disk şişmesin". Bu iş bir **politika
+yürütücüsü**: özet üretir, iz dondurur, gerekçe kapısına bakar. İkisi ayrı
+kayıtlardır ve galzura-demo'da **ikisi de** kurulabilir.

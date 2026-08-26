@@ -40,8 +40,14 @@ const DE = {
   title: "Kraftstoffbericht",
   period: "Zeitraum",
   generatedAt: "Erstellt am",
-  summary: (total: number, fleet: string) =>
-    `Gesamtverbrauch: ${total} L · Flotte Ø: ${fleet} L/100km`,
+  /**
+   * ⚠️ total === null → "nicht messbar" (090). Ölçülmemiş bir dönemi
+   * "0 L" diye basmak, dışarıya verilen bir belgede yanlış beyandır.
+   */
+  summary: (total: number | null, fleet: string) =>
+    total === null
+      ? `Gesamtverbrauch: nicht messbar · Flotte Ø: ${fleet} L/100km`
+      : `Gesamtverbrauch: ${total} L · Flotte Ø: ${fleet} L/100km`,
   footer:
     "Verbrauch aus Füllstand (%) × Tankvolumen geschätzt · Diebstahl-Warnung: Füllstand fiel ohne Fahrzeugbewegung",
   headers: {
@@ -114,7 +120,7 @@ function Doc({
   rows,
 }: {
   period: string;
-  totalLiters: number;
+  totalLiters: number | null;
   fleetL100: string;
   rows: FuelPdfRow[];
 }) {
@@ -186,7 +192,7 @@ function Doc({
 
 export async function downloadFuelPdf(opts: {
   period: string;
-  totalLiters: number;
+  totalLiters: number | null;
   fleetL100: string;
   rows: FuelPdfRow[];
 }) {

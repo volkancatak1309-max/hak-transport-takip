@@ -77,7 +77,8 @@
     "profitability": "Profitability",
     "compliance": "Compliance",
     "recognition": "Recognition",
-    "co2": "CO₂"
+    "co2": "CO₂",
+    "retention": "Data retention"
   },
   "izinler": {
     "title": "Leave Calendar",
@@ -1833,7 +1834,10 @@
     "cost_rates_edit_link": "Edit rates — Settings › Cost rates",
     "cost_rates_migration_note": "Rates cannot be edited from the panel: migration 076 (tenant_cost_rates) has not been run yet. The calculation currently uses the setup values.",
     "source_link": "view source",
-    "fuel_ref_stale_note": "The fuel price reference has not been refreshed for {gun} days (source {tarih}). The number is still real but ageing — the source or the scheduler may have stopped."
+    "fuel_ref_stale_note": "The fuel price reference has not been refreshed for {gun} days (source {tarih}). The number is still real but ageing — the source or the scheduler may have stopped.",
+    "fuel_not_measured": "not measurable — no vehicle measured in this period",
+    "retention_out_of_scope": "The selected period lies entirely outside the raw-data retention window ({days} days). Because the raw trail was deleted, this period cannot be measured — the gap is not a zero.",
+    "retention_partial_scope": "The first {days} days of the selected period fall outside the raw-data retention window. Those days are NOT included in the totals; the figures cover only the retained part."
   },
   "messages": {
     "title": "Messages",
@@ -2532,5 +2536,42 @@
     "vazgec": "Cancel",
     "kaydet": "Save",
     "hata_hata": "Action failed"
+  },
+  "retention": {
+    "title": "Data retention policy",
+    "description": "How long the raw GPS trail is kept. Derived records (shifts, alarms, zones, trips) are unaffected by this period.",
+    "migration_missing": "Migration 090 has not been run — the policy is not installed yet. db/migrations/090_saklama_politikasi.sql",
+    "purge_on": "Deletion ON",
+    "purge_off": "Deletion OFF",
+    "current_days": "{days} days",
+    "cutoff": "Cut-off: {date}",
+    "months_ready": "Months summarised",
+    "months_missing": "Months missing a summary",
+    "shifts_unfrozen": "Shifts not frozen",
+    "days_label": "Raw trail retention (days)",
+    "days_hint": "At least {min}, at most {max}. Default {def}.",
+    "extend_warning": "Beyond {threshold} days a written justification is required. France (CNIL) states 2 months for raw location data; Italy fined a 180-day retention 50,000 EUR; Germany found 400 and 150 days disproportionate.",
+    "reason_label": "Written justification",
+    "reason_placeholder": "e.g. for delivery disputes on international trips under CMR Art. 32…",
+    "reason_hint": "At least {min} characters. This is the first question an audit will ask.",
+    "purge_toggle": "Enable automatic deletion",
+    "purge_toggle_hint": "While off, no row is deleted even if the scheduler runs. Preparation must be complete before enabling.",
+    "save": "Save",
+    "saved": "Retention setting saved",
+    "error_gun_araligi": "Period outside the permitted range",
+    "error_gerekce_gerekli": "A written justification is mandatory beyond 90 days",
+    "error_gerekce_kisa": "Justification too short",
+    "error_tablo_yok": "Migration 090 has not been run",
+    "error_hata": "Could not save",
+    "blocked_ayar_kapali": "Nothing is being deleted because deletion is off.",
+    "blocked_ozet_eksik": "Some months have no summary; deletion will not start until they do.",
+    "blocked_km_donmadi": "Shift km verdicts have not been frozen; this is required before deletion.",
+    "blocked_omur_izi_yok": "The device lifetime trail has not been written yet; deleting would lose the silent-vehicle warning.",
+    "blocked_silinecek_ay_yok": "No month lies entirely before the cut-off — there is nothing to delete.",
+    "prep_title": "Preparation",
+    "prep_desc": "Refreshes the lifetime trail, produces missing monthly summaries and freezes shift km verdicts. Deletion can only start once these are done.",
+    "prep_no_delete": "This button DELETES NOTHING. Deletion happens only via the scheduler and only when the switch is on.",
+    "prep_run": "Run preparation",
+    "prep_done": "Preparation advanced: {months} monthly summaries, {shifts} shifts frozen. Had deletion been on, {rows} rows would have gone."
   }
 }

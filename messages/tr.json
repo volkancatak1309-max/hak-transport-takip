@@ -77,7 +77,8 @@
     "profitability": "Kârlılık",
     "compliance": "Mevzuat",
     "recognition": "Ödül",
-    "co2": "CO₂"
+    "co2": "CO₂",
+    "retention": "Veri saklama"
   },
   "izinler": {
     "title": "İzin Takvimi",
@@ -1833,7 +1834,10 @@
     "cost_rates_edit_link": "Oranları düzenle — Ayarlar › Maliyet Oranları",
     "cost_rates_migration_note": "Oranlar panelden girilemiyor: migration 076 (tenant_cost_rates) henüz çalıştırılmamış. Hesap şimdilik kurulum değerleriyle çalışıyor.",
     "source_link": "kaynağa git",
-    "fuel_ref_stale_note": "Yakıt fiyatı referansı {gun} gündür tazelenmedi (kaynak {tarih}). Sayı hâlâ gerçek ama yaşlanıyor — kaynak ya da zamanlayıcı durmuş olabilir."
+    "fuel_ref_stale_note": "Yakıt fiyatı referansı {gun} gündür tazelenmedi (kaynak {tarih}). Sayı hâlâ gerçek ama yaşlanıyor — kaynak ya da zamanlayıcı durmuş olabilir.",
+    "fuel_not_measured": "ölçülemedi — bu dönemde ölçülen araç yok",
+    "retention_out_of_scope": "Seçilen dönem ham veri saklama süresinin tamamen dışında ({days} gün). Ham iz silindiği için bu dönem ölçülemez — gösterilen boşluk bir sıfır değildir.",
+    "retention_partial_scope": "Seçilen dönemin ilk {days} günü ham veri saklama süresinin dışında. Bu günler toplamlara GİRMEZ; sayılar yalnız saklanan kısmı kapsar."
   },
   "messages": {
     "title": "Mesajlar",
@@ -2532,5 +2536,42 @@
     "vazgec": "Vazgeç",
     "kaydet": "Kaydet",
     "hata_hata": "İşlem yapılamadı"
+  },
+  "retention": {
+    "title": "Veri saklama politikası",
+    "description": "Ham GPS izinin ne kadar saklanacağı. Türetilmiş kayıtlar (vardiya, alarm, bölge, sefer) bu süreden etkilenmez.",
+    "migration_missing": "Migration 090 çalıştırılmamış — politika henüz kurulu değil. db/migrations/090_saklama_politikasi.sql",
+    "purge_on": "Silme AÇIK",
+    "purge_off": "Silme KAPALI",
+    "current_days": "{days} gün",
+    "cutoff": "Kesim: {date}",
+    "months_ready": "Özeti hazır ay",
+    "months_missing": "Özeti eksik ay",
+    "shifts_unfrozen": "Dondurulmamış vardiya",
+    "days_label": "Ham iz saklama süresi (gün)",
+    "days_hint": "En az {min}, en çok {max}. Varsayılan {def}.",
+    "extend_warning": "{threshold} günün üstü yazılı gerekçe ister. Fransa (CNIL) ham konum için 2 ay diyor; İtalya 180 günlük saklamayı 50.000 € ile cezalandırdı; Almanya 400 ve 150 günü orantısız buldu.",
+    "reason_label": "Yazılı gerekçe",
+    "reason_placeholder": "Örn. CMR Md. 32 kapsamındaki uluslararası seferlerde teslimat anlaşmazlıkları için…",
+    "reason_hint": "En az {min} karakter. Denetimde sorulacak ilk soru budur.",
+    "purge_toggle": "Otomatik silmeyi aç",
+    "purge_toggle_hint": "Kapalıyken zamanlayıcı çalışsa bile hiçbir satır silinmez. Açmadan önce hazırlığın tamamlanması gerekir.",
+    "save": "Kaydet",
+    "saved": "Saklama ayarı kaydedildi",
+    "error_gun_araligi": "Süre izin verilen aralığın dışında",
+    "error_gerekce_gerekli": "90 günün üstü için yazılı gerekçe zorunlu",
+    "error_gerekce_kisa": "Gerekçe çok kısa",
+    "error_tablo_yok": "Migration 090 çalıştırılmamış",
+    "error_hata": "Kaydedilemedi",
+    "blocked_ayar_kapali": "Silme kapalı olduğu için hiçbir satır silinmiyor.",
+    "blocked_ozet_eksik": "Bazı ayların özeti yazılmadı; özet tamamlanmadan silme başlamaz.",
+    "blocked_km_donmadi": "Vardiya km yargısı dondurulmadı; silme öncesi bu şart.",
+    "blocked_omur_izi_yok": "Cihaz ömür izi henüz yazılmadı; silinirse sessiz araç uyarısı kaybolur.",
+    "blocked_silinecek_ay_yok": "Kesimin tamamen gerisinde kalan ay yok — silinecek bir şey bulunmuyor.",
+    "prep_title": "Hazırlık",
+    "prep_desc": "Ömür izini tazeler, eksik ay özetlerini üretir, vardiya km yargısını dondurur. Silme ancak bunlar bittiğinde başlayabilir.",
+    "prep_no_delete": "Bu düğme HİÇBİR SATIR SİLMEZ. Silme yalnız zamanlayıcıdan ve yalnız anahtar açıkken olur.",
+    "prep_run": "Hazırlığı yürüt",
+    "prep_done": "Hazırlık ilerledi: {months} ay özeti, {shifts} vardiya donduruldu. Silme açılsaydı {rows} satır giderdi."
   }
 }

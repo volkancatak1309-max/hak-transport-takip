@@ -7,6 +7,8 @@ import { buildFuelReport, buildCostReport, rangeLabel } from "@/lib/reports";
 import type { AnalyticsRangeKey } from "@/lib/analytics-shared";
 import { FuelClient } from "./FuelClient";
 import { audit } from "@/lib/security-log";
+import { saklamaAyari } from "@/lib/saklama-db";
+import { kesimTarihi, pencereKapsami } from "@/lib/saklama";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +34,28 @@ export default async function FuelReportPage({
   // ikiye katlanırdı (23.08.2026 ölçümü).
   const cost = await buildCostReport(range, {
     fleetLPer100Km: report.fleetLPer100Km,
-    measuredLiters: report.available ? report.totalConsumedLiters : null,
+    /**
+     * 🔴 `measured > 0` KAPISI (090). Eskiden yalnız `available` bakılıyordu
+     * ve ÖLÇÜLEN ARAÇ SIFIRKEN 0 litre geçiyordu — maliyet raporu da onu
+     * "0,00 €" diye basıyordu.
+     *
+     * ÖLÇÜLDÜ (HAK61 canlı, 26.08.2026, veri OLMAYAN pencere 01.03→01.04):
+     *   buildFuelReport → available:true · totalConsumedLiters:0 · 29 araç,
+     *                     hasData=true olan 0
+     *   buildCostReport → totalEur:0 · fuelEur:0
+     *   co2Panosu       → kg:null · 29 plaka "ölçülemedi"   ← DOĞRU olan bu
+     *
+     * Ölçülmemiş bir dönemi 0 diye basmak "ölçülemedi ≠ 0" kuralının tam
+     * ihlali. Saklama politikası (090) açıldığında bu kusur, gerçek veriyi
+     * uydurma sıfıra çeviren bir makineye dönüşürdü.
+     */
+    measuredLiters: report.available && report.measured > 0 ? report.totalConsumedLiters : null,
   });
+
+  // Pencere saklama sınırını aşıyor mu — aşıyorsa ekran SÖYLER, sayı uydurmaz.
+  const ayar = await saklamaAyari();
+  const kapsam = pencereKapsami(range.start, range.end, kesimTarihi(ayar.hamGun));
+
   const t = await getTranslations("reports");
 
   return (
@@ -55,7 +77,7 @@ export default async function FuelReportPage({
           customFrom={sp.baslangic ?? null}
           customTo={sp.bitis ?? null}
         >
-          <FuelClient report={report} cost={cost} period={rangeLabel(range)} />
+          <FuelClient report={report} cost={cost} period={rangeLabel(range)} kapsam={kapsam} />
         </ReportPageShell>
       </div>
     </DashboardShell>

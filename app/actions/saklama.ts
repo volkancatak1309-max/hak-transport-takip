@@ -6,161 +6,272 @@ import { audit } from "@/lib/security-log";
 import {
   saklamaAyari,
   saklamaAyariYaz,
-  silmeDurumu,
-  ayOzetiYaz,
-  omurIziniTazele,
-  kmDondur,
-  hamSil,
+  kategoriler,
+  yasalEsik,
+  uyarilar,
+  hazirlikDurumu,
+  hazirligiIlerlet,
+  manuelSil,
+  silmeIzi,
+  aralikSatirSayisi,
+  HAM_TABLOLAR,
+  type HamTablo,
+  type SilmeIziSatiri,
 } from "@/lib/saklama-db";
-import { ayarDenetle, type SaklamaAyari, type SilmeKapisi } from "@/lib/saklama";
+import {
+  ayarDenetle,
+  aralikDenetle,
+  araligiCoz,
+  silinebilirMi,
+  uyariAciliyeti,
+  type AralikTuru,
+  type KategoriSatiri,
+  type SaklamaAyari,
+  type SaklamaUyarisi,
+  type SilmeKapisi,
+  type VeriKategorisi,
+  type YasalEsik,
+} from "@/lib/saklama";
 
 /**
- * SAKLAMA POLİTİKASI — sunucu eylemleri (migration 090).
+ * SAKLAMA — sunucu eylemleri (migration 090).
  *
  * ═══ TEK KAPI: requireAdmin ═══
  *
- * Saklama süresini değiştirmek, ürünün dışarıya verdiği hukuki beyanı
- * değiştirmektir. Filo şefine açık DEĞİL — CO₂ esasında (089) ve giriş
- * kilidinde (042) verilen kararın aynısı.
+ * Uyarı eşiğini değiştirmek ve veri silmek, ürünün dışarıya verdiği hukuki
+ * beyanı ve müşterinin verisini etkiler. Filo şefine açık DEĞİL — CO₂
+ * esasında (089) ve giriş kilidinde (042) verilen kararın aynısı.
  *
- * ═══ ⚠️ SİLME BU DOSYADAN BAŞLATILAMAZ ═══
+ * ═══ 🔴 SİLME BİR İNSAN EYLEMİDİR ═══
  *
- * `hazirlikYurut` yalnız HAZIRLIK yapar (ömür izi + özet + km dondurma) ve
- * silmeyi KURU modda çağırır — yani ne olacağını sayar, hiçbir şey silmez.
- * Gerçek silme YALNIZ cron rotasından ve YALNIZ `silme_acik` açıkken olur.
- *
- * Sebebi: silme geri alınamaz. Bir ekran düğmesinin arkasına koymak, yanlış
- * sekmede bir tıklamayla 1,6 milyon satırı götürebilirdi.
+ * Otomatik silme YOK. `araligiSil` yalnız buradan çağrılır ve:
+ *   · aralığı KULLANICI seçer (hafta / ay / iki tarih arası)
+ *   · önce KURU mod ("şu kadar satır silinecek")
+ *   · çift onay: ikinci adımda kutuya elle "SIL" yazılır
+ *   · sebep zorunlu ve denetim izine yazılır
+ *   · 'yasal_zorunlu' kategori için buraya HİÇ GELİNMEZ — arayüz düğmeyi
+ *     çizmez; kapı yine de son savunma olarak duruyor
  */
 
 export type SaklamaPanosu = {
   ayar: SaklamaAyari;
-  kapi: SilmeKapisi;
-  kesim: string;
-  eksikAylar: string[];
-  hazirAylar: string[];
-  kmDonmamis: number;
+  uyarilar: (SaklamaUyarisi & { aciliyet: number })[];
+  kategoriler: KategoriSatiri[];
+  esik: YasalEsik | null;
+  izi: SilmeIziSatiri[];
+  /** Silinebilir ham tablolar — 'yasal_zorunlu' olanlar burada YOKTUR. */
+  silinebilirTablolar: { tablo: HamTablo; kategori: VeriKategorisi }[];
 };
 
 export async function getSaklamaPanosu(): Promise<SaklamaPanosu> {
   const session = await requireAdmin();
   await audit(session.worker_id ?? null, "page_view", "/admin/saklama");
-  return silmeDurumu();
+
+  const ayar = await saklamaAyari();
+  const [{ uyarilar: liste }, kats, esik, izi] = await Promise.all([
+    uyarilar(),
+    kategoriler(),
+    yasalEsik(ayar.ulkeKodu, "ham_konum"),
+    silmeIzi(20),
+  ]);
+
+  /**
+   * ⚠️ ARAYÜZ 'yasal_zorunlu' İÇİN SİLME SEÇENEĞİ GÖSTERMEZ.
+   *
+   * Liste burada süzülüyor, ekranda değil: seçenek hiç üretilmezse yanlışlıkla
+   * render edilemez. Reddetmek bir hatadır ve hata mesajı okunmayabilir;
+   * göstermemek bir tasarımdır.
+   */
+  const katMap = new Map(kats.filter((k) => k.kolonAdi === null).map((k) => [k.tabloAdi, k.kategori]));
+  const silinebilirTablolar = HAM_TABLOLAR.map((t) => ({
+    tablo: t,
+    // Sınıflandırılmamış tablo FAIL-CLOSED: 'yasal_zorunlu' sayılır.
+    kategori: katMap.get(t) ?? ("yasal_zorunlu" as VeriKategorisi),
+  })).filter((x) => silinebilirMi(x.kategori));
+
+  return {
+    ayar,
+    uyarilar: liste.map((u) => ({ ...u, aciliyet: uyariAciliyeti(u) })),
+    kategoriler: kats,
+    esik,
+    izi,
+    silinebilirTablolar,
+  };
 }
 
 export type SaklamaSonuc = { ok: true } | { ok: false; hata: string };
 
 export async function saklamaAyarKaydet(girdi: {
-  hamGun: number;
-  silmeAcik: boolean;
+  uyariGun: number;
+  ulkeKodu: string;
   gerekce: string | null;
 }): Promise<SaklamaSonuc> {
   const session = await requireAdmin();
 
-  /**
-   * ⚠️ GEREKÇE KAPISI. 90 günün üstünü YASAKLAMIYORUZ — bazı kiracının
-   * gerçek bir sebebi olabilir. Sebepsiz uzatmayı imkânsız kılıyoruz.
-   * Denetimde sorulacak ilk soru "neden bu kadar uzun"; cevabı ürünün
-   * içinde durmalı, birinin hafızasında değil.
-   */
-  const hata = ayarDenetle(girdi.hamGun, girdi.gerekce);
+  const hata = ayarDenetle(girdi.uyariGun, girdi.ulkeKodu);
   if (hata) return { ok: false, hata };
 
   const onceki = await saklamaAyari();
   const r = await saklamaAyariYaz(girdi, session.worker_id ?? null);
   if (!r.ok) return { ok: false, hata: r.hata ?? "hata" };
 
-  /**
-   * İZ: eski→yeni değerin ikisi de yazılır. "Kim ne zaman uzattı" sorusunun
-   * cevabı denetim kaydında durmalı; ayar tablosu yalnız SON hâli tutuyor.
-   */
+  // İZ: eski→yeni. "Kim ne zaman değiştirdi" denetim kaydında durmalı;
+  // ayar tablosu yalnız SON hâli tutuyor.
   await audit(
     session.worker_id ?? null,
     "update",
-    `saklama:${onceki.hamGun}→${girdi.hamGun}gun silme:${onceki.silmeAcik}→${girdi.silmeAcik}`
+    `saklama_uyari:${onceki.uyariGun}→${girdi.uyariGun}gun ulke:${onceki.ulkeKodu}→${girdi.ulkeKodu}`
   );
   revalidatePath("/admin/saklama");
   return { ok: true };
 }
 
-export type HazirlikSonuc = {
+// ═══════════════════════════ KURU MOD ════════════════════════════════════
+
+export type OnIzleme = {
   ok: boolean;
   hata?: string;
-  omurIzi: number;
-  ozetYazilan: string[];
-  kmDondurulan: number;
-  kmKalan: number;
-  /** KURU sayım: silme açılsaydı kaç satır giderdi. Hiçbir şey silinmedi. */
-  silinecekTelemetri: number;
-  silinecekKonum: number;
+  tablo: HamTablo;
+  aralikBas: string;
+  aralikBit: string;
+  satir: number;
+  kapi: SilmeKapisi;
+  hazirlik: { omurIzi: number; eksikAylar: string[]; kmDonmamis: number };
 };
 
 /**
- * HAZIRLIĞI İLERLET — ömür izi, eksik ay özetleri, km dondurma.
+ * 🔴 KURU MOD — "şu kadar satır silinecek". HİÇBİR ŞEY SİLMEZ.
  *
- * ⚠️ HİÇBİR SATIR SİLMEZ. Sondaki sayım KURU moddan gelir.
- *
- * Bir turda en fazla `AY_TAVANI` ay işlenir: her ay tam bir yakıt raporu
- * koşusudur (canlıda ~60 sn/tur ölçüldü) ve sunucu eylemi zaman aşımına
- * uğrarsa kullanıcı ne olduğunu bilemez. Tur tur ilerlemek, her turun kendi
- * başına tamamlanmış bir iş olmasını sağlar.
+ * Çift onayın BİRİNCİ ayağı budur: kullanıcı sayıyı görmeden "SIL" yazamaz.
  */
-const AY_TAVANI = 2;
-
-export async function hazirlikYurut(): Promise<HazirlikSonuc> {
+export async function silmeOnIzleme(girdi: {
+  tablo: HamTablo;
+  tur: AralikTuru;
+  referans?: string;
+  bas?: string;
+  bit?: string;
+}): Promise<OnIzleme> {
   const session = await requireAdmin();
+  const bos = {
+    tablo: girdi.tablo,
+    aralikBas: "",
+    aralikBit: "",
+    satir: 0,
+    kapi: { izin: false, engel: null, ayrinti: "" } as SilmeKapisi,
+    hazirlik: { omurIzi: 0, eksikAylar: [] as string[], kmDonmamis: 0 },
+  };
 
-  const omur = await omurIziniTazele();
-  if (!omur.ok) {
-    return {
-      ok: false,
-      hata: omur.hata ?? "omur_izi_hata",
-      omurIzi: 0,
-      ozetYazilan: [],
-      kmDondurulan: 0,
-      kmKalan: 0,
-      silinecekTelemetri: 0,
-      silinecekKonum: 0,
-    };
+  const a = araligiCoz(girdi.tur, girdi);
+  if (!a) return { ok: false, hata: "aralik_gecersiz", ...bos };
+  const aralikHatasi = aralikDenetle(a);
+  if (aralikHatasi) {
+    return { ok: false, hata: aralikHatasi, ...bos, aralikBas: a.bas.toISOString(), aralikBit: a.bit.toISOString() };
   }
 
-  const durum = await silmeDurumu();
-
-  const yazilan: string[] = [];
-  for (const ay of durum.eksikAylar.slice(0, AY_TAVANI)) {
-    const r = await ayOzetiYaz(ay);
-    if (!r.ok) {
-      return {
-        ok: false,
-        hata: r.hata ?? "ozet_hata",
-        omurIzi: omur.satir,
-        ozetYazilan: yazilan,
-        kmDondurulan: 0,
-        kmKalan: 0,
-        silinecekTelemetri: 0,
-        silinecekKonum: 0,
-      };
-    }
-    yazilan.push(ay);
-  }
-
-  const km = await kmDondur();
-  const kuru = await hamSil(durum.ayar.hamGun, true);
-
-  await audit(
-    session.worker_id ?? null,
-    "update",
-    `saklama_hazirlik:ozet=${yazilan.length} km=${km.dondurulan}`
-  );
-  revalidatePath("/admin/saklama");
+  const r = await manuelSil({
+    tablo: girdi.tablo,
+    aralik: a,
+    sebep: "",
+    onayMetni: "",
+    workerId: session.worker_id ?? null,
+    kuru: true,
+  });
+  const h = await hazirlikDurumu(a);
 
   return {
-    ok: true,
-    omurIzi: omur.satir,
-    ozetYazilan: yazilan,
-    kmDondurulan: km.dondurulan,
-    kmKalan: km.kalan,
-    silinecekTelemetri: kuru.telemetri,
-    silinecekKonum: kuru.konum,
+    ok: r.ok,
+    hata: r.hata,
+    tablo: girdi.tablo,
+    aralikBas: a.bas.toISOString(),
+    aralikBit: a.bit.toISOString(),
+    satir: r.satir,
+    kapi: r.kapi,
+    hazirlik: { omurIzi: h.omurIzi, eksikAylar: h.eksikAylar, kmDonmamis: h.kmDonmamis },
   };
+}
+
+/** Hazırlığı ilerletir. ⚠️ HİÇBİR SATIR SİLMEZ. */
+export async function hazirlikYurut(girdi: {
+  tur: AralikTuru;
+  referans?: string;
+  bas?: string;
+  bit?: string;
+}): Promise<{ ok: boolean; hata?: string; omurIzi: number; ozetYazilan: string[]; kmDondurulan: number; kmKalan: number }> {
+  const session = await requireAdmin();
+  const bos = { omurIzi: 0, ozetYazilan: [] as string[], kmDondurulan: 0, kmKalan: 0 };
+  const a = araligiCoz(girdi.tur, girdi);
+  if (!a) return { ok: false, hata: "aralik_gecersiz", ...bos };
+
+  const r = await hazirligiIlerlet(a);
+  if (r.ok) {
+    await audit(
+      session.worker_id ?? null,
+      "update",
+      `saklama_hazirlik:ozet=${r.ozetYazilan.length} km=${r.kmDondurulan}`
+    );
+    revalidatePath("/admin/saklama");
+  }
+  return r;
+}
+
+// ═══════════════════════════ GERÇEK SİLME ════════════════════════════════
+
+export type SilmeCevabi = {
+  ok: boolean;
+  hata?: string;
+  silinen: number;
+  kapi: SilmeKapisi;
+};
+
+/**
+ * 🔴 GERÇEK SİLME — geri alınamaz.
+ *
+ * Çift onayın İKİNCİ ayağı: `onayMetni` kutusuna elle "SIL" yazılmış olmalı.
+ * Sebep zorunlu ve denetim izine yazılır (kim, ne zaman, hangi aralık, kaç
+ * satır, neden).
+ *
+ * ⚠️ Kategori 'yasal_zorunlu' ise buraya hiç gelinmez: `getSaklamaPanosu`
+ * o tabloyu `silinebilirTablolar` listesine koymaz, ekran seçenek üretmez.
+ * `manuelSil` içindeki kapı SON savunmadır.
+ */
+export async function araligiSil(girdi: {
+  tablo: HamTablo;
+  tur: AralikTuru;
+  referans?: string;
+  bas?: string;
+  bit?: string;
+  sebep: string;
+  onayMetni: string;
+}): Promise<SilmeCevabi> {
+  const session = await requireAdmin();
+  const bosKapi: SilmeKapisi = { izin: false, engel: null, ayrinti: "" };
+
+  const a = araligiCoz(girdi.tur, girdi);
+  if (!a) return { ok: false, hata: "aralik_gecersiz", silinen: 0, kapi: bosKapi };
+
+  const oncekiSayi = await aralikSatirSayisi(girdi.tablo, a);
+
+  const r = await manuelSil({
+    tablo: girdi.tablo,
+    aralik: a,
+    sebep: girdi.sebep,
+    onayMetni: girdi.onayMetni,
+    workerId: session.worker_id ?? null,
+    kuru: false,
+  });
+
+  if (!r.ok) return { ok: false, hata: r.hata ?? "hata", silinen: 0, kapi: r.kapi };
+
+  /**
+   * İkinci iz: `saklama_silme_izi` hukuki kayıt, `security_log` operasyonel
+   * kayıt. İkisi ayrı sorulara cevap veriyor — biri "hangi veri gitti",
+   * diğeri "bu hesap ne yaptı".
+   */
+  await audit(
+    session.worker_id ?? null,
+    "delete",
+    `saklama_sil:${girdi.tablo} ${a.bas.toISOString().slice(0, 10)}→${a.bit.toISOString().slice(0, 10)} ${r.satir}/${oncekiSayi} satır`
+  );
+  revalidatePath("/admin/saklama");
+  return { ok: true, silinen: r.satir, kapi: r.kapi };
 }

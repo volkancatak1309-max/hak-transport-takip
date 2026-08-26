@@ -13,6 +13,7 @@ import {
 } from "@/lib/azg-rules";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AdminClient } from "./AdminClient";
+import { SaklamaUyariSeridi } from "@/components/admin/SaklamaUyariSeridi";
 import {
   workedMs,
   kmDiff,
@@ -423,6 +424,11 @@ export default async function AdminPage({
       }}
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6">
+        {/* SAKLAMA UYARISI (090) — panonun EN ÜSTÜ, Günün Panosu'ndan önce.
+            Öznesi kiracının kendisi olduğu için Dikkat panosuna kalem olarak
+            girmiyor; gerekçe bileşenin başlığında. Uyarı yoksa hiç render
+            edilmez (null döner). */}
+        <SaklamaUyariSeridi />
         <AdminClient
           /* Sef SADECE IZLER: Excel/PDF/AZG/Calisan Ekle, arsiv, sofor
              bildirimleri ve Kapat/Duzelt kisayollari gizlenir. Sunucu

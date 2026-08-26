@@ -20,6 +20,7 @@ import {
   kuralYakitSapmasi,
   AYIN_EN_IYISI_MIN_SKORLANAN,
   kuralAyinEnIyisi,
+  kuralSaklamaUyarisi,
   kuralMusteriZarar,
   ozneKimligi,
   susturulmusMu,
@@ -39,6 +40,7 @@ import { ZARAR_MIN_SEFER, ZARAR_PENCERE_GUN } from "@/lib/karlilik";
 import { zararEdenMusteriler } from "@/lib/karlilik-db";
 import { ROZET_SKOR_ESIK } from "@/lib/odul";
 import { donemleriOku } from "@/lib/odul-db";
+import { uyarilar as saklamaUyarilari } from "@/lib/saklama-db";
 
 /**
  * HAFTALIK AKSİYON — VERİ KATMANI (migration 084).
@@ -625,6 +627,49 @@ async function adaylariTopla(
           esik: ROZET_SKOR_ESIK,
           epokOncesi: enIyi.epokOncesi,
           donemBas: enIyi.donemBas,
+        }),
+      ],
+    };
+  });
+
+  // ── 10) SAKLAMA UYARISI (090) — öznesi KİRACININ KENDİSİ
+  await kuralKos("saklama_uyarisi", "uyarı eşiğini geçen ham konum satırı", async () => {
+    const { uyarilar: liste, hata } = await saklamaUyarilari();
+    /**
+     * 090 UYGULANMAMIŞSA KURAL "ÇALIŞMADI" DER, "0 BULDU" DEMEZ — aynı ayrım
+     * 088'de de yapılıyor ve panelin `tarama` bölümünün tek varlık sebebi bu.
+     */
+    if (hata === "migration_090_yok") throw new Error("090 yok (tenant_saklama)");
+    if (hata) throw new Error(hata.slice(0, 80));
+    if (liste.length === 0) return { aday: 0, cikanlar: [] };
+
+    /**
+     * ⚠️ TABLOLAR TEK KALEMDE TOPLANIYOR.
+     *
+     * device_telemetry ve driver_locations ayrı satırlar olarak geliyor ama
+     * yöneticinin yapacağı iş TEK: /admin/saklama'ya gidip karar vermek.
+     * İki kalem üretmek paneli kirletir ve tekil indeks zaten ikisini aynı
+     * kovaya düşürürdü (öznesi olmayan kalem → coalesce sentinel).
+     *
+     * En eski YAŞ, tabloların EN BÜYÜĞÜ: "ne kadar geciktiniz" sorusunun
+     * cevabı en kötü durumdur, ortalaması değil.
+     */
+    const toplamSatir = liste.reduce((a, u) => a + u.satirSayisi, 0);
+    const yaslar = liste.map((u) => u.enEskiGun).filter((x): x is number => x !== null);
+    const enEskiGun = yaslar.length ? Math.max(...yaslar) : null;
+    const ilk = liste[0];
+
+    return {
+      aday: liste.length,
+      cikanlar: [
+        kuralSaklamaUyarisi({
+          satirSayisi: toplamSatir,
+          enEskiGun,
+          uyariGun: ilk.uyariGun,
+          ulkeKodu: ilk.ulkeKodu,
+          // ⚠️ null ise kural cümlesinde SAYI GEÇMEZ — uydurma yok.
+          yasalEsikGun: ilk.yasalEsikGun,
+          yasalDayanak: ilk.yasalDayanak,
         }),
       ],
     };

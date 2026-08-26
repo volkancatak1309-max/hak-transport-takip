@@ -1,60 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { safeEqual } from "@/lib/secure-compare";
-import {
-  saklamaAyari,
-  omurIziniTazele,
-  ozetiEksikAylar,
-  ayOzetiYaz,
-  kmDondur,
-  kmDonmamisSayisi,
-  omurIziSayisi,
-  hamSil,
-  aylariSilinmisIsaretle,
-  type AyOzetSonucu,
-} from "@/lib/saklama-db";
-import { kesimTarihi, silmeKapisi } from "@/lib/saklama";
+import { omurIziniTazele, uyarilar, omurIziSayisi, saklamaAyari } from "@/lib/saklama-db";
+import { uyariAciliyeti, uyariVarMi } from "@/lib/saklama";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * HAM TELEMETRİ SAKLAMA — günlük cron (migration 090).
+ * SAKLAMA UYARISI — günlük cron (migration 090).
  *
- * ═══ DÖRT İŞ, KESİN SIRAYLA ═══
+ * ═══ 🔴 BU UÇ HİÇBİR ŞEY SİLMEZ ═══
  *
- *   1. ÖMÜR İZİ   — aracın ilk/son telemetri anını ham akıştan bağımsız yaz
- *   2. AYLIK ÖZET — kesimin gerisindeki her ay için raporun KENDİ cevabını dondur
- *   3. KM DONDUR  — vardiya km yargısını sabitle
- *   4. SİL        — ve YALNIZ 1-3 tamamsa
+ * İki iş yapar:
+ *   1. CİHAZ ÖMÜR İZİNİ TAZELER — aracın ilk/son telemetri anı ham akıştan
+ *      bağımsız yaşasın (yoksa silme sonrası "sessiz araç" uyarısı kaybolur)
+ *   2. UYARI ÜRETİR — "uyarı eşiğini geçen X satır ham konum veriniz var"
  *
- * ⚠️ SIRA TARTIŞMA DIŞI. 3'ü 4'ten sonra yapmak, düzeltmek istediği hatayı
- * kalıcılaştırır: ham gittikten sonra km kapısı her sıfır-farklı vardiyaya
- * sessizce "ölçülemedi" yazar — ve o bayrak kullanıcı seçimli aralıktaki
- * Excel/PDF çıktısına kadar gidiyor (app/admin/page.tsx:186).
+ * Silme YOK, silme anahtarı YOK, gün sayısına göre silen fonksiyon çağrısı
+ * YOK. Silmeye bir insan karar verir, /admin/saklama ekranından, aralığı
+ * kendisi seçerek, çift onayla ve denetim izine yazılarak.
  *
- * ═══ 🔴 FAIL-CLOSED ═══
+ * ═══ NEDEN ═══
  *
- * `tenant_saklama.silme_acik` varsayılanı **false**. Bu cron kaydı girilse,
- * doğru sırla çağrılsa bile ayar kapalıyken **TEK SATIR SİLİNMEZ** — 200
- * döner ve `silme: { izin:false, engel:"ayar_kapali" }` yazar. Sessizce
- * hiçbir şey yapmamak, çalışan bir temizlik sanılırdı.
+ * Saklama süresi ve silme kararı **veri sorumlusunundur** (müşteri); Galzura
+ * veri İŞLEYENDİR. Ürünün bir kiracının verisini kendi takvimine göre
+ * silmesi, işleyenin sorumlu yerine karar vermesi olurdu. Sistem "şu kadar
+ * satırınız eşiği geçti" der ve durur.
  *
- * Kapı dört şart arar (lib/saklama.ts silmeKapisi): ayar açık · ömür izi
- * yazılmış · km dondurulmuş · kesimin gerisindeki HER ayın özeti tam.
+ * ═══ ⚠️ YASAL ÇIPA UYDURULMAZ ═══
  *
- * ═══ `?kuru=1` ═══
- *
- * Hiçbir şey YAZMADAN ve SİLMEDEN ne olacağını gösterir: kaç satır silinirdi,
- * hangi ayların özeti eksik, kaç vardiya dondurulmamış. İlk toplu silmeden
- * önce bununla bakılır.
+ * Uyarı, kiracının kendi eşiğini (`tenant_saklama.uyari_gun`) ve —VARSA—
+ * `saklama_esikleri` tablosundaki DOĞRULANMIŞ yasal çıpayı taşır. O tablo
+ * bugün BOŞ; bu durumda `yasalEsikGun: null` döner ve ekran hiçbir sayı
+ * basmaz. Uydurma bir gün sayısı DACH müşterisine giderse sorumluluk doğar.
  *
  * ═══ NEDEN AYRI CRON, demo-retention'a EKLENMEDİ ═══
  *
- * `/api/cron/demo-retention` TENANT KİLİTLİ (yalnız galzura-demo) ve 14 gün
- * tutuyor; işi "demoda disk şişmesin". Bu rota bir POLİTİKA yürütücüsü:
- * özet üretir, izi dondurur, gerekçe kapısına bakar. İkisini birleştirmek
- * demo kilidini gerçek kiracıya açmak ya da politikayı demoya dayatmak
- * olurdu.
+ * `/api/cron/demo-retention` TENANT KİLİTLİ (yalnız galzura-demo), 14 gün
+ * tutar ve GERÇEKTEN SİLER; işi "demoda disk şişmesin". Bu uç bir UYARI
+ * üreticisidir ve hiçbir şey silmez. İkisini birleştirmek, demonun silme
+ * davranışını gerçek kiracıya taşıma riski olurdu.
  */
 
 function authorized(req: NextRequest): boolean {
@@ -67,83 +52,45 @@ function authorized(req: NextRequest): boolean {
   return false;
 }
 
-/** Bir turda yazılacak en fazla ay özeti — her ay tam bir yakıt raporu koşusu. */
-const TUR_BASINA_AY = 3;
-
 async function run(kuru: boolean) {
   const ayar = await saklamaAyari();
   if (ayar.tabloYok) {
     return {
       status: 503,
-      body: { ok: false, error: "migration_090_yok", hint: "db/migrations/090_saklama_politikasi.sql çalıştırılmadı" },
+      body: {
+        ok: false,
+        error: "migration_090_yok",
+        hint: "db/migrations/090_saklama_politikasi.sql çalıştırılmadı",
+      },
     };
   }
 
-  const kesim = kesimTarihi(ayar.hamGun);
-
-  // ── 1 · ÖMÜR İZİ ───────────────────────────────────────────────────────
+  // 1 · ÖMÜR İZİ — kuru modda YAZMAZ, yalnız mevcut satır sayısını okur.
   const omur = kuru ? { ok: true, satir: await omurIziSayisi() } : await omurIziniTazele();
   if (!omur.ok) {
     return { status: 503, body: { ok: false, error: (omur as { hata?: string }).hata ?? "omur_izi_hata" } };
   }
 
-  // ── 2 · AYLIK ÖZET ─────────────────────────────────────────────────────
-  const { eksik, hazir, hata: ozetHata } = await ozetiEksikAylar(kesim);
-  if (ozetHata) return { status: 503, body: { ok: false, error: ozetHata } };
+  // 2 · UYARI
+  const { uyarilar: liste, hata } = await uyarilar();
+  if (hata) return { status: 503, body: { ok: false, error: hata } };
 
-  const yazilan: AyOzetSonucu[] = [];
-  if (!kuru) {
-    for (const ay of eksik.slice(0, TUR_BASINA_AY)) {
-      const r = await ayOzetiYaz(ay);
-      if (!r.ok) return { status: 500, body: { ok: false, error: r.hata ?? "ozet_hata", ay } };
-      if (r.sonuc) yazilan.push(r.sonuc);
-    }
-  }
-
-  // ── 3 · KM DONDURMA ────────────────────────────────────────────────────
-  const km = kuru
-    ? { ok: true, dondurulan: 0, kalan: await kmDonmamisSayisi() }
-    : await kmDondur();
-  if (!km.ok) return { status: 500, body: { ok: false, error: (km as { hata?: string }).hata ?? "km_dondur_hata" } };
-
-  // ── 4 · SİLME KAPISI ───────────────────────────────────────────────────
-  // Özet/dondurma bu turda ilerlemiş olabilir → kapıya GÜNCEL sayılarla bak.
-  const kalanEksik = kuru ? eksik : eksik.slice(TUR_BASINA_AY);
-  const guncelHazir = kuru ? hazir : [...hazir, ...yazilan.map((y) => y.ay)];
-  const kapi = silmeKapisi({
-    silmeAcik: ayar.silmeAcik,
-    hazirAylar: guncelHazir,
-    ozetiEksikAylar: kalanEksik,
-    kmDonmamisVardiya: km.kalan,
-    omurIziSatir: omur.satir,
-  });
-
-  let silme: { telemetri: number; konum: number; tur: number } | null = null;
-  if (kapi.izin || kuru) {
-    const s = await hamSil(ayar.hamGun, kuru || !kapi.izin);
-    if (!s.ok) return { status: 500, body: { ok: false, error: s.hata ?? "silme_hata" } };
-    silme = { telemetri: s.telemetri, konum: s.konum, tur: s.tur };
-    if (kapi.izin && !kuru) await aylariSilinmisIsaretle(kapi.hazirAylar);
-  }
+  const aktif = liste.filter(uyariVarMi).map((u) => ({
+    ...u,
+    aciliyet: uyariAciliyeti(u),
+  }));
 
   return {
     status: 200,
     body: {
       ok: true,
       kuru,
-      ayar: { hamGun: ayar.hamGun, silmeAcik: ayar.silmeAcik, gerekce: ayar.gerekce },
-      kesim: kesim.toISOString(),
+      /** 🔴 Bu uç SİLMEZ. Alan bilerek burada: gövdeyi okuyan yanılmasın. */
+      silmeYapildi: false,
+      ayar: { uyariGun: ayar.uyariGun, ulkeKodu: ayar.ulkeKodu },
       omurIzi: omur.satir,
-      ozet: { yazilan, eksikKalan: kalanEksik, hazir: guncelHazir },
-      km: { dondurulan: km.dondurulan, kalan: km.kalan },
-      silme: {
-        izin: kapi.izin,
-        engel: kapi.engel,
-        ayrinti: kapi.ayrinti,
-        // kuru modda ya da kapı kapalıyken bu sayı "silinirdi", "silindi" değil.
-        ...(silme ?? { telemetri: 0, konum: 0, tur: 0 }),
-        uygulandi: kapi.izin && !kuru,
-      },
+      uyariSayisi: aktif.length,
+      uyarilar: aktif,
     },
   };
 }
@@ -152,7 +99,7 @@ async function handle(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
-  // `?kuru=1` — hiçbir şey yazmadan ve silmeden ne olacağını gösterir.
+  // `?kuru=1` — ömür izini bile YAZMADAN yalnız okur.
   const kuru = req.nextUrl.searchParams.get("kuru") === "1";
   const { status, body } = await run(kuru);
   return NextResponse.json(body, { status });

@@ -5,36 +5,46 @@ import { buildFuelReport } from "@/lib/reports";
 import { mapBounded } from "@/lib/db-fanout";
 import {
   VARSAYILAN_SAKLAMA_AYARI,
-  VARSAYILAN_HAM_GUN,
+  VARSAYILAN_UYARI_GUN,
+  aralikDenetle,
   aySiniri,
-  aySilinebilir,
-  ayBasi,
-  kesimTarihi,
+  aylar,
   silmeKapisi,
+  uyariCikarMi,
+  uyariKesimi,
+  type Aralik,
+  type KategoriSatiri,
   type SaklamaAyari,
+  type SaklamaUyarisi,
   type SilmeKapisi,
+  type VeriKategorisi,
+  type YasalEsik,
 } from "@/lib/saklama";
 
 /**
- * SAKLAMA POLİTİKASI — VERİ KATMANI (migration 090).
+ * SAKLAMA — VERİ KATMANI (migration 090).
  *
- * ═══ ÜÇ İŞ, KESİN SIRAYLA ═══
+ * ═══ 🔴 OTOMATİK SİLME YOK ═══
+ *
+ * Bu dosyada gün sayısına göre silen bir fonksiyon YOKTUR. Silme ARALIK alır
+ * ve YALNIZ `manuelSil` üzerinden, denetim izi yazılarak yapılır. Gece koşan
+ * iş `uyarilar()` çağırır ve durur.
+ *
+ * Neden: saklama süresi ve silme kararı veri SORUMLUSUNUNDUR (müşteri);
+ * Galzura veri işleyendir.
+ *
+ * ═══ HAZIRLIK — SİLMEDEN ÖNCE, HER ZAMAN ═══
  *
  *   1. ÖMÜR İZİ   — aracın ilk/son telemetri anını ham akıştan bağımsız yaz
- *   2. AYLIK ÖZET — kesimin gerisindeki her ay için raporun KENDİ cevabını dondur
- *   3. KM DONDUR  — vardiya km yargısını ham silinmeden ÖNCE sabitle
- *   ── ancak bundan SONRA ──
- *   4. SİL        — ve yalnız ayarı açık, özeti tam, kesimin tamamen
- *                   gerisindeki aylar için
+ *   2. AYLIK ÖZET — silinecek aralığın DEĞDİĞİ her ay için raporun cevabını dondur
+ *   3. KM DONDUR  — aralıktaki vardiyaların km yargısını sabitle
  *
- * ⚠️ SIRA TARTIŞMA DIŞI. 3'ü 4'ten sonra yapmak, düzeltmek istediği hatayı
+ * ⚠️ SIRA TARTIŞMA DIŞI. 3'ü silmeden sonra yapmak, düzeltmek istediği hatayı
  * kalıcılaştırır: ham gittikten sonra km kapısı her sıfır-farklı vardiyaya
  * sessizce "ölçülemedi" yazar.
  *
  * ⚠️ ÖZET RAPORUN KENDİ ÇIKTISIDIR. `buildFuelReport` ayın tamamı için TEK
- * pencere olarak çağrılıp sonucu yazılıyor — ikinci bir hesap YOK. İkinci
- * hesap, özetin raporla çelişmesine giden en kısa yoldur (aynı ders
- * lib/co2-db.ts ve mobil Analiz ucunda da yazılı).
+ * pencere olarak çağrılıp sonucu yazılıyor — ikinci bir hesap YOK.
  */
 
 const TABLO_YOK = new Set(["PGRST205", "42P01", "42703"]);
@@ -48,23 +58,26 @@ const fonksiyonYokMu = (e: { code?: string; message?: string } | null) =>
 
 export const HESAP_SURUMU = "090.1";
 
+/** Uyarı ve silme yüzeyindeki ham tablolar. */
+export const HAM_TABLOLAR = ["device_telemetry", "driver_locations"] as const;
+export type HamTablo = (typeof HAM_TABLOLAR)[number];
+
 // ═══════════════════════════ KİRACI AYARI ════════════════════════════════
 
 export async function saklamaAyari(): Promise<SaklamaAyari> {
   const { data, error } = await supabaseAdmin
     .from("tenant_saklama")
-    .select("ham_gun, silme_acik, gerekce, updated_at")
+    .select("uyari_gun, ulke_kodu, gerekce, updated_at")
     .eq("id", "singleton")
     .maybeSingle();
 
-  // 🔴 FAIL-CLOSED: tablo yoksa ya da okunamıyorsa silme KAPALI kabul edilir.
   if (error || !data) {
     return { ...VARSAYILAN_SAKLAMA_AYARI, tabloYok: tabloYokMu(error) };
   }
   const r = data as Record<string, unknown>;
   return {
-    hamGun: Number(r.ham_gun ?? VARSAYILAN_HAM_GUN),
-    silmeAcik: r.silme_acik === true,
+    uyariGun: Number(r.uyari_gun ?? VARSAYILAN_UYARI_GUN),
+    ulkeKodu: String(r.ulke_kodu ?? "AT"),
     gerekce: r.gerekce ? String(r.gerekce) : null,
     guncellendiAt: r.updated_at ? String(r.updated_at) : null,
     tabloYok: false,
@@ -72,14 +85,14 @@ export async function saklamaAyari(): Promise<SaklamaAyari> {
 }
 
 export async function saklamaAyariYaz(
-  girdi: { hamGun: number; silmeAcik: boolean; gerekce: string | null },
+  girdi: { uyariGun: number; ulkeKodu: string; gerekce: string | null },
   workerId: string | null
 ): Promise<{ ok: boolean; hata?: string }> {
   const { error } = await supabaseAdmin
     .from("tenant_saklama")
     .update({
-      ham_gun: girdi.hamGun,
-      silme_acik: girdi.silmeAcik,
+      uyari_gun: girdi.uyariGun,
+      ulke_kodu: girdi.ulkeKodu,
       gerekce: girdi.gerekce,
       updated_at: new Date().toISOString(),
       updated_by: workerId,
@@ -89,16 +102,117 @@ export async function saklamaAyariYaz(
   return { ok: true };
 }
 
-// ═══════════════════════════ 1 · ÖMÜR İZİ ════════════════════════════════
+// ═══════════════════════════ KATEGORİLER ═════════════════════════════════
+
+export async function kategoriler(): Promise<KategoriSatiri[]> {
+  const { data, error } = await supabaseAdmin
+    .from("veri_kategorileri")
+    .select("tablo_adi, kolon_adi, kategori, gerekce")
+    .order("kategori")
+    .order("tablo_adi");
+  if (error) return [];
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    tabloAdi: String(r.tablo_adi),
+    kolonAdi: r.kolon_adi ? String(r.kolon_adi) : null,
+    kategori: String(r.kategori) as VeriKategorisi,
+    gerekce: String(r.gerekce ?? ""),
+  }));
+}
 
 /**
- * Aracın ilk/son telemetri anını tazeler.
+ * Bir tablonun kategorisi.
  *
- * NEDEN ÖNCE: haftalık aksiyon K3 "sessiz araç" ve panodaki "sessiz cihaz"
- * alarmı aracın SON ham satırının yaşına bakıyor. 90 günden uzun susmuş bir
- * aracın tüm satırları silinince o araç uyarı listesinden SESSİZCE DÜŞER —
- * yani en çok ilgilenilmesi gereken araç görünmez olur.
+ * ⚠️ FAIL-CLOSED: kayıt YOKSA 'yasal_zorunlu' döner, yani silinemez. Bir
+ * tabloyu sınıflandırmayı unutmak, onu yanlışlıkla silinebilir yapmamalı.
  */
+export async function tabloKategorisi(tabloAdi: string): Promise<VeriKategorisi> {
+  const { data, error } = await supabaseAdmin
+    .from("veri_kategorileri")
+    .select("kategori")
+    .eq("tablo_adi", tabloAdi)
+    .is("kolon_adi", null)
+    .maybeSingle();
+  if (error || !data) return "yasal_zorunlu";
+  return String((data as Record<string, unknown>).kategori) as VeriKategorisi;
+}
+
+// ═══════════════════════════ YASAL EŞİK ══════════════════════════════════
+
+/**
+ * Ülke + veri türü için doğrulanmış yasal çıpa.
+ *
+ * ⚠️ Tablo BUGÜN BOŞ ve bu bilinçli — eşikler ayrı bir araştırma turuyla,
+ * kaynak linki ve doğrulanma tarihiyle doldurulacak. `null` dönmesi bir hata
+ * değil, "doğrulanmış çıpamız yok" beyanıdır.
+ */
+export async function yasalEsik(ulkeKodu: string, veriTuru: string): Promise<YasalEsik | null> {
+  const { data, error } = await supabaseAdmin
+    .from("saklama_esikleri")
+    .select("ulke_kodu, veri_turu, esik_gun, yasal_dayanak, kaynak_url, dogrulanma_tarihi")
+    .eq("ulke_kodu", ulkeKodu)
+    .eq("veri_turu", veriTuru)
+    .maybeSingle();
+  if (error || !data) return null;
+  const r = data as Record<string, unknown>;
+  return {
+    ulkeKodu: String(r.ulke_kodu),
+    veriTuru: String(r.veri_turu),
+    esikGun: r.esik_gun === null || r.esik_gun === undefined ? null : Number(r.esik_gun),
+    yasalDayanak: r.yasal_dayanak ? String(r.yasal_dayanak) : null,
+    kaynakUrl: r.kaynak_url ? String(r.kaynak_url) : null,
+    dogrulanmaTarihi: r.dogrulanma_tarihi ? String(r.dogrulanma_tarihi) : null,
+  };
+}
+
+// ═══════════════════════════ UYARI ═══════════════════════════════════════
+
+/**
+ * SİSTEMİN TEK ÇIKTISI — uyarı. Hiçbir şey silmez.
+ *
+ * `saklama_eski_satirlar` BRIN indeksi üzerinden sayar; 1,6 milyon satırda
+ * PostgREST tarafında `count: exact` ifade zaman aşımına takılıyordu
+ * (ölçüldü 26.08.2026), bu yüzden sayım SQL fonksiyonunda.
+ */
+export async function uyarilar(): Promise<{ uyarilar: SaklamaUyarisi[]; hata?: string }> {
+  const ayar = await saklamaAyari();
+  if (ayar.tabloYok) return { uyarilar: [], hata: "migration_090_yok" };
+
+  const kesim = uyariKesimi(ayar.uyariGun);
+  const { data, error } = await supabaseAdmin.rpc("saklama_eski_satirlar", {
+    p_kesim: kesim.toISOString(),
+  });
+  if (error) {
+    return { uyarilar: [], hata: fonksiyonYokMu(error) ? "migration_090_yok" : error.message };
+  }
+
+  const esik = await yasalEsik(ayar.ulkeKodu, "ham_konum");
+  const simdi = Date.now();
+  const out: SaklamaUyarisi[] = [];
+
+  for (const r of (data ?? []) as Record<string, unknown>[]) {
+    const tablo = String(r.tablo_adi);
+    const kategori = await tabloKategorisi(tablo);
+    const enEski = r.en_eski ? String(r.en_eski) : null;
+    out.push({
+      tabloAdi: tablo,
+      kategori,
+      satirSayisi: Number(r.satir_sayisi ?? 0),
+      enEski,
+      enEskiGun: enEski ? Math.floor((simdi - new Date(enEski).getTime()) / 86_400_000) : null,
+      uyariGun: ayar.uyariGun,
+      ulkeKodu: ayar.ulkeKodu,
+      // ⚠️ null = doğrulanmış çıpa yok. Ekran SAYI BASMAZ.
+      yasalEsikGun: esik?.esikGun ?? null,
+      yasalDayanak: esik?.yasalDayanak ?? null,
+      kaynakUrl: esik?.kaynakUrl ?? null,
+    });
+  }
+  // Uyarı yalnız KİŞİSEL veri için — araç künyesi kimseyi izlemiyor.
+  return { uyarilar: out.filter((u) => uyariCikarMi(u.kategori)) };
+}
+
+// ═══════════════════════════ 1 · ÖMÜR İZİ ════════════════════════════════
+
 export async function omurIziniTazele(): Promise<{ ok: boolean; satir: number; hata?: string }> {
   const { data, error } = await supabaseAdmin.rpc("refresh_telemetry_lifetime");
   if (error) {
@@ -115,6 +229,25 @@ export async function omurIziSayisi(): Promise<number> {
   return count ?? 0;
 }
 
+/**
+ * Elde GERÇEKTEN bulunan en eski ham kayıt — rapor kapsam şeridinin çıpası.
+ *
+ * ⚠️ Çıpa artık uyarı eşiği DEĞİL. Otomatik silme olmadığı için "90 günden
+ * eski veri yok" varsayımı YANLIŞ olurdu: kimse silmemişse veri orada durur
+ * ve rapor doğru çalışır. Şerit yalnız GERÇEKTEN eksik olanı söyler.
+ */
+export async function hamVeriBaslangici(): Promise<Date | null> {
+  const { data, error } = await supabaseAdmin
+    .from("vehicle_telemetry_lifetime")
+    .select("ilk_kayit")
+    .not("ilk_kayit", "is", null)
+    .order("ilk_kayit", { ascending: true })
+    .limit(1);
+  if (error || !data?.length) return null;
+  const v = (data[0] as Record<string, unknown>).ilk_kayit;
+  return v ? new Date(String(v)) : null;
+}
+
 // ═══════════════════════════ 2 · AYLIK ÖZET ══════════════════════════════
 
 export type AyOzetSonucu = {
@@ -129,17 +262,15 @@ export type AyOzetSonucu = {
  * Bir ayın özetini üretir ve yazar.
  *
  * ⚠️ TEK PENCERE. Ayın tamamı `buildFuelReport`e tek aralık olarak veriliyor.
- * Günlük parçalara bölüp toplamak yakıtı %15,6-28,9 şişiriyor (ÖLÇÜLDÜ,
- * bkz. lib/saklama.ts başlığı ve db/migrations/090). Aylık tek pencerenin
- * sapması %0,0 — çünkü bu, raporun kendi cevabının ta kendisi.
+ * Günlük parçalara bölüp toplamak yakıtı %15,6-28,9 şişiriyor (ÖLÇÜLDÜ).
+ * Aylık tek pencerenin sapması %0,0 — çünkü bu, raporun kendi cevabı.
  *
- * ⚠️ ÜZERİNE YAZMAZ: ham satırları silinmiş bir ay (`ham_silindi_at` dolu)
- * yeniden üretilemez; o satıra dokunulmaz.
+ * ⚠️ ÜZERİNE YAZMAZ: ham satırları silinmiş bir araç/ay (`ham_silindi_at`
+ * dolu) yeniden üretilemez; o satıra dokunulmaz.
  */
 export async function ayOzetiYaz(ay: string): Promise<{ ok: boolean; sonuc?: AyOzetSonucu; hata?: string }> {
   const { bas, bit } = aySiniri(ay);
 
-  // Odometre açıklığı + sayımlar: saf SQL'de doğru ve ucuz.
   const { data: spans, error: spanErr } = await supabaseAdmin.rpc("telemetry_month_spans", {
     p_from: bas.toISOString(),
     p_to: bit.toISOString(),
@@ -152,10 +283,8 @@ export async function ayOzetiYaz(ay: string): Promise<{ ok: boolean; sonuc?: AyO
     if (String(s.ay) === ay) spanMap.set(String(s.vehicle_id), s);
   }
 
-  // Yakıt/tüketim: raporun KENDİ motoru, ayın tamamı tek pencere.
   const rapor = await buildFuelReport({ start: bas, end: bit });
 
-  // Bu ayın ham verisi silinmiş araç/ay satırlarını KORU — üzerine yazma.
   const { data: mevcut } = await supabaseAdmin
     .from("vehicle_month_metrics")
     .select("vehicle_id, ham_silindi_at")
@@ -173,11 +302,9 @@ export async function ayOzetiYaz(ay: string): Promise<{ ok: boolean; sonuc?: AyO
 
   /**
    * ⚠️ DEĞERLER RAPORUN KENDİ SATIRINDAN alınıyor (FuelRow), SQL'den değil.
-   * `km`, `consumedLiters`, `zeroCount`, `unreliableSensor` — hepsi raporun
-   * kendi cevabı. SQL uçları (telemetry_month_spans) yalnız raporun
-   * ÜRETMEDİĞİ iki şey için: kapsama sayımı (ornek_sayisi) ve pencere uçları
-   * (ilk/son kayıt). İkisini karıştırmak, özetin raporla çelişmesine giden
-   * yol olurdu.
+   * SQL uçları (telemetry_month_spans) yalnız raporun ÜRETMEDİĞİ iki şey
+   * için: kapsama sayımı ve pencere uçları. İkisini karıştırmak, özetin
+   * raporla çelişmesine giden yol olurdu.
    */
   for (const r of rapor.rows ?? []) {
     const row = r as unknown as Record<string, unknown>;
@@ -196,11 +323,6 @@ export async function ayOzetiYaz(ay: string): Promise<{ ok: boolean; sonuc?: AyO
     /**
      * ⚠️ "ÖLÇÜLEMEDİ ≠ 0". Sebep dolu ise bu satır bir SIFIR DEĞİL, bir
      * BİLİNMEYENDİR ve rapor onu öyle gösterecek.
-     *
-     * Sıra önemli: cihaz hiç konuşmadıysa "cihaz_yok" (sensör suçlanmaz);
-     * konuştu ama sensörü güvenilmezse "sensor_arizali"; litre yoksa
-     * genellikle kapasite/okuma eksiği; litre var ama odometre yoksa km
-     * ölçülemez ve L/100km üretilemez.
      */
     let sebep: string | null = null;
     if (ornek === 0 || !hasData) sebep = "cihaz_yok";
@@ -252,37 +374,21 @@ export async function ayOzetiYaz(ay: string): Promise<{ ok: boolean; sonuc?: AyO
   };
 }
 
-/** Kesimin gerisindeki hangi aylarda ham var ama özet yok? */
-export async function ozetiEksikAylar(kesim: Date): Promise<{ eksik: string[]; hazir: string[]; hata?: string }> {
-  const { data: lifetime, error: lErr } = await supabaseAdmin
-    .from("vehicle_telemetry_lifetime")
-    .select("ilk_kayit");
-  if (lErr) return { eksik: [], hazir: [], hata: tabloYokMu(lErr) ? "migration_090_yok" : lErr.message };
-
-  const ilkler = ((lifetime ?? []) as Record<string, unknown>[])
-    .map((r) => (r.ilk_kayit ? new Date(String(r.ilk_kayit)) : null))
-    .filter((d): d is Date => d !== null);
-  if (ilkler.length === 0) return { eksik: [], hazir: [] };
-
-  const enEski = new Date(Math.min(...ilkler.map((d) => d.getTime())));
-  const adaylar: string[] = [];
-  const d = new Date(Date.UTC(enEski.getUTCFullYear(), enEski.getUTCMonth(), 1));
-  while (d.getTime() < kesim.getTime()) {
-    const ay = ayBasi(d);
-    if (aySilinebilir(ay, kesim)) adaylar.push(ay);
-    d.setUTCMonth(d.getUTCMonth() + 1);
-  }
+/** Verilen ARALIĞIN değdiği aylardan hangilerinin özeti yazılmamış? */
+export async function ozetiEksikAylar(a: Aralik): Promise<{ eksik: string[]; hazir: string[]; hata?: string }> {
+  const adaylar = aylar(a.bas, new Date(a.bit.getTime() - 1));
   if (adaylar.length === 0) return { eksik: [], hazir: [] };
 
-  const { data: ozet } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("vehicle_month_metrics")
     .select("ay")
     .in("ay", adaylar);
-  const yazili = new Set(((ozet ?? []) as Record<string, unknown>[]).map((r) => String(r.ay)));
+  if (error) return { eksik: adaylar, hazir: [], hata: tabloYokMu(error) ? "migration_090_yok" : error.message };
 
+  const yazili = new Set(((data ?? []) as Record<string, unknown>[]).map((r) => String(r.ay)));
   return {
-    eksik: adaylar.filter((a) => !yazili.has(a)),
-    hazir: adaylar.filter((a) => yazili.has(a)),
+    eksik: adaylar.filter((x) => !yazili.has(x)),
+    hazir: adaylar.filter((x) => yazili.has(x)),
   };
 }
 
@@ -294,60 +400,70 @@ export async function ozetiEksikAylar(kesim: Date): Promise<{ eksik: string[]; h
  * ⚠️ SIRA: silmeden ÖNCE. Sonra çalıştırılırsa ham gitmiş olur ve her
  * sıfır-farklı vardiyaya sessizce `false` yazar.
  *
- * Yargı, bugünkü kapının ta kendisi: sayaç farkı > 0 ise ölçülmüştür;
- * fark 0 ise ham telemetride vardiya penceresinde hareket (speed_kmh >= 5)
- * arayıp karar verilir. Ham hâlâ elimizdeyken sorulduğu için cevap doğru.
+ * Yargı, bugünkü kapının ta kendisi: sayaç farkı > 0 ise ölçülmüştür; fark 0
+ * ise ham telemetride vardiya penceresinde hareket (speed_kmh >= 5) arayıp
+ * karar verilir. Ham hâlâ elimizdeyken sorulduğu için cevap doğru.
+ *
+ * `aralik` verilirse yalnız o aralıktaki vardiyalar dondurulur — elle silme
+ * bir ARALIK işi olduğu için tüm tabloyu taramak gereksiz.
  */
 export async function kmDondur(
+  aralik?: Aralik,
   limit = 2000
 ): Promise<{ ok: boolean; dondurulan: number; kalan: number; hata?: string }> {
   /**
    * test-visible: BAKIM TARAMASI — test vardiyaları BİLEREK dahil.
    *
    * Bu sorgu kullanıcıya bir SAYI göstermiyor; ham silinmeden önce her
-   * kapanmış vardiyanın km yargısını sabitleyen bir bakım işi. Silme
-   * `device_telemetry`nin TAMAMINI siler — test aracının satırlarını da.
-   * Test vardiyalarını dışarıda bırakırsak onların yargısı silmeden SONRA
-   * sorulur ve sessizce "ölçülemedi"ye düşer; yani muhafızın önlemeye
-   * çalıştığı hatanın ta kendisini üretiriz.
+   * kapanmış vardiyanın km yargısını sabitleyen bir bakım işi. Silme seçilen
+   * aralığın TAMAMINI siler — test aracının satırlarını da. Test
+   * vardiyalarını dışarıda bırakırsak onların yargısı silmeden SONRA sorulur
+   * ve sessizce "ölçülemedi"ye düşer; yani muhafızın önlemeye çalıştığı
+   * hatanın ta kendisini üretiriz.
    *
    * Ayrıca `kalan` sayacı silme kapısını açıyor: dondurmadan hariç tutulan
    * ama sayımda görünen bir satır kapıyı SONSUZA KADAR kapalı tutardı.
-   * Dondurma ile sayım aynı kümeye bakmak ZORUNDA.
    */
   // test-visible: bakım taraması — gerekçe hemen yukarıda.
-  const { data, error } = await supabaseAdmin
+  let q = supabaseAdmin
     .from("time_entries")
     .select("id, started_at, ended_at, vehicle_id, start_km, end_km")
     .is("km_dondu", null)
-    .not("ended_at", "is", null)
-    .order("started_at", { ascending: true })
-    .limit(limit);
-  if (error) return { ok: false, dondurulan: 0, kalan: 0, hata: tabloYokMu(error) ? "migration_090_yok" : error.message };
+    .not("ended_at", "is", null);
+  if (aralik) {
+    q = q.gte("started_at", aralik.bas.toISOString()).lt("started_at", aralik.bit.toISOString());
+  }
+  const { data, error } = await q.order("started_at", { ascending: true }).limit(limit);
+  if (error) {
+    return { ok: false, dondurulan: 0, kalan: 0, hata: tabloYokMu(error) ? "migration_090_yok" : error.message };
+  }
 
   const satirlar = (data ?? []) as Record<string, unknown>[];
-  if (satirlar.length === 0) return { ok: true, dondurulan: 0, kalan: 0 };
+  if (satirlar.length === 0) return { ok: true, dondurulan: 0, kalan: await kmDonmamisSayisi(aralik) };
 
-  const sonuclar = await mapBounded(satirlar, async (t: Record<string, unknown>) => {
-    const bas = Number(t.start_km);
-    const bit = Number(t.end_km);
-    if (Number.isFinite(bas) && Number.isFinite(bit) && bit - bas > 0) {
-      return { id: String(t.id), olculdu: true };
-    }
-    // Fark 0 / yok → ham telemetride hareket var mı?
-    const vid = t.vehicle_id ? String(t.vehicle_id) : null;
-    if (!vid || !t.started_at || !t.ended_at) return { id: String(t.id), olculdu: false };
-    const { count } = await supabaseAdmin
-      .from("device_telemetry")
-      .select("id", { count: "exact", head: true })
-      .eq("vehicle_id", vid)
-      .gte("recorded_at", String(t.started_at))
-      .lte("recorded_at", String(t.ended_at))
-      .gte("speed_kmh", 5);
-    // Hareket VARSA araç gitmiş ama sayaç saymamış → ölçülemedi.
-    // Hareket YOKSA araç gerçekten durmuş → 0 km bir ÖLÇÜMDÜR.
-    return { id: String(t.id), olculdu: (count ?? 0) === 0 };
-  }, 6);
+  const sonuclar = await mapBounded(
+    satirlar,
+    async (t: Record<string, unknown>) => {
+      const bas = Number(t.start_km);
+      const bit = Number(t.end_km);
+      if (Number.isFinite(bas) && Number.isFinite(bit) && bit - bas > 0) {
+        return { id: String(t.id), olculdu: true };
+      }
+      const vid = t.vehicle_id ? String(t.vehicle_id) : null;
+      if (!vid || !t.started_at || !t.ended_at) return { id: String(t.id), olculdu: false };
+      const { count } = await supabaseAdmin
+        .from("device_telemetry")
+        .select("id", { count: "exact", head: true })
+        .eq("vehicle_id", vid)
+        .gte("recorded_at", String(t.started_at))
+        .lte("recorded_at", String(t.ended_at))
+        .gte("speed_kmh", 5);
+      // Hareket VARSA araç gitmiş ama sayaç saymamış → ölçülemedi.
+      // Hareket YOKSA araç gerçekten durmuş → 0 km bir ÖLÇÜMDÜR.
+      return { id: String(t.id), olculdu: (count ?? 0) === 0 };
+    },
+    6
+  );
 
   const simdi = new Date().toISOString();
   for (const grup of [true, false]) {
@@ -360,127 +476,265 @@ export async function kmDondur(
     if (uErr) return { ok: false, dondurulan: 0, kalan: satirlar.length, hata: uErr.message };
   }
 
-  // test-visible: yukarıdaki dondurma ile AYNI küme — bkz. kmDondur başlığı.
-  const { count: kalan } = await supabaseAdmin
-    .from("time_entries")
-    .select("id", { count: "exact", head: true })
-    .is("km_dondu", null)
-    .not("ended_at", "is", null);
-
-  return { ok: true, dondurulan: sonuclar.length, kalan: kalan ?? 0 };
+  return { ok: true, dondurulan: sonuclar.length, kalan: await kmDonmamisSayisi(aralik) };
 }
 
-export async function kmDonmamisSayisi(): Promise<number> {
+export async function kmDonmamisSayisi(aralik?: Aralik): Promise<number> {
   // test-visible: silme kapısının sayacı — dondurma ile AYNI kümeye bakmak
   // ZORUNDA, yoksa hariç tutulan satır kapıyı sonsuza kadar kapalı tutar.
-  const { count, error } = await supabaseAdmin
+  let q = supabaseAdmin
     .from("time_entries")
     .select("id", { count: "exact", head: true })
     .is("km_dondu", null)
     .not("ended_at", "is", null);
+  if (aralik) {
+    q = q.gte("started_at", aralik.bas.toISOString()).lt("started_at", aralik.bit.toISOString());
+  }
+  const { count, error } = await q;
   if (error) return 0;
   return count ?? 0;
 }
 
-// ═══════════════════════════ 4 · SİLME ═══════════════════════════════════
+// ═══════════════════════════ HAZIRLIK ════════════════════════════════════
 
-export type SilmeDurumu = {
-  ayar: SaklamaAyari;
-  kapi: SilmeKapisi;
-  kesim: string;
-  /** Kesimin gerisinde olup özeti YAZILMAMIŞ aylar. */
+export type HazirlikDurumu = {
+  omurIzi: number;
   eksikAylar: string[];
-  /** Özeti yazılmış, silinmeye hazır aylar. */
   hazirAylar: string[];
   kmDonmamis: number;
 };
 
-export async function silmeDurumu(): Promise<SilmeDurumu> {
-  const ayar = await saklamaAyari();
-  const kesim = kesimTarihi(ayar.hamGun);
-  const [{ eksik, hazir }, kmKalan, omur] = await Promise.all([
-    ozetiEksikAylar(kesim),
-    kmDonmamisSayisi(),
+export async function hazirlikDurumu(a: Aralik): Promise<HazirlikDurumu> {
+  const [omur, ozet, km] = await Promise.all([
     omurIziSayisi(),
+    ozetiEksikAylar(a),
+    kmDonmamisSayisi(a),
   ]);
-  const kapi = silmeKapisi({
-    silmeAcik: ayar.silmeAcik,
-    hazirAylar: hazir,
-    ozetiEksikAylar: eksik,
-    kmDonmamisVardiya: kmKalan,
-    omurIziSatir: omur,
-  });
+  return { omurIzi: omur, eksikAylar: ozet.eksik, hazirAylar: ozet.hazir, kmDonmamis: km };
+}
+
+/** Hazırlığı ilerletir. ⚠️ HİÇBİR SATIR SİLMEZ. */
+export async function hazirligiIlerlet(
+  a: Aralik,
+  ayTavani = 2
+): Promise<{
+  ok: boolean;
+  hata?: string;
+  omurIzi: number;
+  ozetYazilan: string[];
+  kmDondurulan: number;
+  kmKalan: number;
+}> {
+  const bos = { omurIzi: 0, ozetYazilan: [] as string[], kmDondurulan: 0, kmKalan: 0 };
+  const omur = await omurIziniTazele();
+  if (!omur.ok) return { ok: false, hata: omur.hata, ...bos };
+
+  const { eksik } = await ozetiEksikAylar(a);
+  const yazilan: string[] = [];
+  for (const ay of eksik.slice(0, ayTavani)) {
+    const r = await ayOzetiYaz(ay);
+    if (!r.ok) return { ok: false, hata: r.hata, ...bos, omurIzi: omur.satir, ozetYazilan: yazilan };
+    yazilan.push(ay);
+  }
+
+  const km = await kmDondur(a);
+  if (!km.ok) return { ok: false, hata: km.hata, ...bos, omurIzi: omur.satir, ozetYazilan: yazilan };
+
   return {
-    ayar,
-    kapi,
-    kesim: kesim.toISOString(),
-    eksikAylar: eksik,
-    hazirAylar: hazir,
-    kmDonmamis: kmKalan,
+    ok: true,
+    omurIzi: omur.satir,
+    ozetYazilan: yazilan,
+    kmDondurulan: km.dondurulan,
+    kmKalan: km.kalan,
   };
 }
+
+// ═══════════════════════════ ELLE SİLME ══════════════════════════════════
 
 const BATCH = 20_000;
 const MAX_TUR = 25;
 
+const SILME_RPC: Record<HamTablo, string> = {
+  device_telemetry: "purge_telemetry_range",
+  driver_locations: "purge_driver_locations_range",
+};
+
+/** Aralıktaki satır sayısı — silmeden ÖNCE göstermek için. */
+export async function aralikSatirSayisi(tablo: HamTablo, a: Aralik): Promise<number> {
+  const { count, error } = await supabaseAdmin
+    .from(tablo)
+    .select("id", { count: "exact", head: true })
+    .gte("recorded_at", a.bas.toISOString())
+    .lt("recorded_at", a.bit.toISOString());
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export type SilmeSonucu = {
+  ok: boolean;
+  hata?: string;
+  kuru: boolean;
+  tablo: HamTablo;
+  /** Kuru modda "silinecek", gerçek modda "silinen" satır sayısı. */
+  satir: number;
+  tur: number;
+  kapi: SilmeKapisi;
+};
+
 /**
- * Parça parça siler. Her tur kendi başına tamamlanmış bir iştir; yarıda
- * kesilse veri tutarlı kalır (054'ün dersi).
+ * 🔴 ELLE SİLME — TEK SİLME YOLU.
  *
- * ⚠️ `kuru` modda HİÇBİR satır silinmez, yalnız ne olacağı sayılır.
+ * `kuru: true` iken HİÇBİR ŞEY silinmez, yalnız kaç satır gideceği sayılır ve
+ * ön koşul kapısı gösterilir.
+ *
+ * Gerçek silmede ÖNCE denetim izi yazılır, SONRA silinir: iz yazılamıyorsa
+ * silme de olmaz. Tersi sıra, izsiz bir silme bırakabilirdi.
+ *
+ * ⚠️ Kapı altı şartı da denetler (lib/saklama.ts silmeKapisi). Kategori
+ * 'yasal_zorunlu' ise buraya hiç gelinmemesi gerekir — arayüz düğmeyi
+ * ÇİZMEZ — ama kapı yine de SON SAVUNMA olarak duruyor.
  */
-export async function hamSil(
-  hamGun: number,
-  kuru: boolean
-): Promise<{ ok: boolean; telemetri: number; konum: number; tur: number; hata?: string }> {
-  if (kuru) {
-    const kesim = kesimTarihi(hamGun).toISOString();
-    const [t, k] = await Promise.all([
-      supabaseAdmin.from("device_telemetry").select("id", { count: "exact", head: true }).lt("recorded_at", kesim),
-      supabaseAdmin.from("driver_locations").select("id", { count: "exact", head: true }).lt("recorded_at", kesim),
-    ]);
-    return { ok: true, telemetri: t.count ?? 0, konum: k.count ?? 0, tur: 0 };
+export async function manuelSil(girdi: {
+  tablo: HamTablo;
+  aralik: Aralik;
+  sebep: string;
+  onayMetni: string;
+  workerId: string | null;
+  kuru: boolean;
+}): Promise<SilmeSonucu> {
+  const { tablo, aralik, kuru } = girdi;
+
+  const kategori = await tabloKategorisi(tablo);
+  const hazirlik = await hazirlikDurumu(aralik);
+  const kapi = silmeKapisi({
+    kategori,
+    aralikHatasi: aralikDenetle(aralik),
+    ozetiEksikAylar: hazirlik.eksikAylar,
+    kmDonmamisVardiya: hazirlik.kmDonmamis,
+    omurIziSatir: hazirlik.omurIzi,
+    // Kuru modda onay/sebep henüz istenmez; kapı yalnız ÖN KOŞULLARI göstersin
+    // ki kullanıcı "SIL" yazmadan önce neyin eksik olduğunu görebilsin.
+    onayMetni: kuru ? "SIL" : girdi.onayMetni,
+    sebep: kuru ? "kuru mod on izleme" : girdi.sebep,
+  });
+
+  const sayi = await aralikSatirSayisi(tablo, aralik);
+
+  if (kuru) return { ok: true, kuru: true, tablo, satir: sayi, tur: 0, kapi };
+  if (!kapi.izin) {
+    return { ok: false, hata: kapi.engel ?? "kapi", kuru: false, tablo, satir: 0, tur: 0, kapi };
   }
 
-  let telemetri = 0;
+  // ⚠️ İZ ÖNCE. Silme geri alınamaz; iz yazılamıyorsa silme de olmamalı.
+  const { error: izErr } = await supabaseAdmin.from("saklama_silme_izi").insert({
+    silen_worker_id: girdi.workerId,
+    tablo_adi: tablo,
+    kategori,
+    aralik_bas: aralik.bas.toISOString(),
+    aralik_bit: aralik.bit.toISOString(),
+    satir_sayisi: sayi,
+    sebep: girdi.sebep.trim(),
+    onay_metni: girdi.onayMetni.trim(),
+  });
+  if (izErr) {
+    return {
+      ok: false,
+      hata: tabloYokMu(izErr) ? "migration_090_yok" : `iz_yazilamadi: ${izErr.message}`,
+      kuru: false,
+      tablo,
+      satir: 0,
+      tur: 0,
+      kapi,
+    };
+  }
+
+  let silinen = 0;
   let tur = 0;
   for (; tur < MAX_TUR; tur++) {
-    const { data, error } = await supabaseAdmin.rpc("purge_old_telemetry", { p_days: hamGun, p_limit: BATCH });
+    const { data, error } = await supabaseAdmin.rpc(SILME_RPC[tablo], {
+      p_from: aralik.bas.toISOString(),
+      p_to: aralik.bit.toISOString(),
+      p_limit: BATCH,
+    });
     if (error) {
       return {
         ok: false,
-        telemetri,
-        konum: 0,
-        tur,
         hata: fonksiyonYokMu(error) ? "migration_090_yok" : error.message,
+        kuru: false,
+        tablo,
+        satir: silinen,
+        tur,
+        kapi,
       };
     }
     const n = Number(data ?? 0);
-    telemetri += n;
+    silinen += n;
     if (n < BATCH) {
       tur++;
       break;
     }
   }
 
-  let konum = 0;
-  for (let i = 0; i < MAX_TUR; i++) {
-    const { data, error } = await supabaseAdmin.rpc("purge_old_driver_locations", { p_days: hamGun, p_limit: BATCH });
-    if (error) break; // driver_locations fonksiyonu yoksa telemetri sonucu yine geçerli
-    const n = Number(data ?? 0);
-    konum += n;
-    if (n < BATCH) break;
+  // Ham verisi giden ayları işaretle — özet artık YENİDEN ÜRETİLEMEZ.
+  if (tablo === "device_telemetry") {
+    await aylariSilinmisIsaretle(aylar(aralik.bas, new Date(aralik.bit.getTime() - 1)));
   }
 
-  return { ok: true, telemetri, konum, tur };
+  return { ok: true, kuru: false, tablo, satir: silinen, tur, kapi };
 }
 
-/** Silinen ayları özet tablosunda işaretle — o aylar artık yeniden üretilemez. */
-export async function aylariSilinmisIsaretle(aylar: string[]): Promise<void> {
-  if (aylar.length === 0) return;
+export async function aylariSilinmisIsaretle(aylarListe: string[]): Promise<void> {
+  if (aylarListe.length === 0) return;
   await supabaseAdmin
     .from("vehicle_month_metrics")
     .update({ ham_silindi_at: new Date().toISOString() })
-    .in("ay", aylar)
+    .in("ay", aylarListe)
     .is("ham_silindi_at", null);
+}
+
+// ═══════════════════════════ DENETİM İZİ ═════════════════════════════════
+
+export type SilmeIziSatiri = {
+  id: string;
+  silenAd: string | null;
+  silindiAt: string;
+  tabloAdi: string;
+  kategori: string;
+  aralikBas: string;
+  aralikBit: string;
+  satirSayisi: number;
+  sebep: string;
+};
+
+export async function silmeIzi(limit = 50): Promise<SilmeIziSatiri[]> {
+  const { data, error } = await supabaseAdmin
+    .from("saklama_silme_izi")
+    .select("id, silen_worker_id, silindi_at, tablo_adi, kategori, aralik_bas, aralik_bit, satir_sayisi, sebep")
+    .order("silindi_at", { ascending: false })
+    .limit(limit);
+  if (error) return [];
+
+  const satirlar = (data ?? []) as Record<string, unknown>[];
+  /**
+   * Şoför adı TÜRETİLMİŞ: izde yalnız kimlik duruyor. Adı ize yazmak, adı
+   * değişen bir kullanıcıda geçmişi yanlış gösterirdi (aynı ders 084'te).
+   */
+  const idler = [...new Set(satirlar.map((r) => r.silen_worker_id).filter(Boolean).map(String))];
+  const adlar = new Map<string, string>();
+  if (idler.length) {
+    const { data: w } = await supabaseAdmin.from("workers").select("id, name").in("id", idler);
+    for (const x of (w ?? []) as Record<string, unknown>[]) adlar.set(String(x.id), String(x.name));
+  }
+
+  return satirlar.map((r) => ({
+    id: String(r.id),
+    silenAd: r.silen_worker_id ? adlar.get(String(r.silen_worker_id)) ?? null : null,
+    silindiAt: String(r.silindi_at),
+    tabloAdi: String(r.tablo_adi),
+    kategori: String(r.kategori),
+    aralikBas: String(r.aralik_bas),
+    aralikBit: String(r.aralik_bit),
+    satirSayisi: Number(r.satir_sayisi ?? 0),
+    sebep: String(r.sebep ?? ""),
+  }));
 }

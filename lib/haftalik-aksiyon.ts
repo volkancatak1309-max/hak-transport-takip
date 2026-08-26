@@ -65,6 +65,20 @@ export const TABAN = {
   skor_dususu: 500,
   /** Yakıt sapması — para. */
   yakit_sapmasi: 400,
+  /**
+   * Saklama uyarısı (090) — ham konum verisi uyarı eşiğini geçti.
+   *
+   * TABAN 450: yakıt sapmasının (400) ÜSTÜNDE çünkü karşılığı para değil
+   * CEZA — İtalya'da bir filo işletmecisi 180 günlük saklama için 50.000 €
+   * ödedi. Skor düşüşünün (500) ALTINDA çünkü skor bir insanın sürüşüdür ve
+   * bugün kaza yapabilir; saklama aşımı bir gün içinde kötüleşmez.
+   *
+   * ⚠️ ÖZNESİ YOK (worker/vehicle/musteri üçü de null) — kiracının kendi
+   * durumu. Tekil indeks `coalesce(...)` ile tek kovaya düşürüyor, yani
+   * haftada EN FAZLA BİR saklama kalemi çıkar. Doğrusu da bu: aynı uyarıyı
+   * iki tabloya bölüp iki kalem üretmek paneli kirletirdi.
+   */
+  saklama_uyarisi: 450,
   /** Vardiya kapanmıyor — düzen/veri kalitesi. */
   vardiya_kapanmadi: 300,
   /**
@@ -777,5 +791,80 @@ export function kuralAyinEnIyisi(g: AyinEnIyisiGirdi): AksiyonAdayi | null {
       donemBas: g.donemBas,
     },
     hedefYol: `/admin/odul`,
+  };
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════
+// SAKLAMA UYARISI (090)
+// ══════════════════════════════════════════════════════════════════════════
+
+export type SaklamaGirdi = {
+  /** Uyarı eşiğini geçen TOPLAM ham satır (tüm kişisel-veri tabloları). */
+  satirSayisi: number;
+  /** En eski kaydın yaşı (gün). null = ölçülemedi. */
+  enEskiGun: number | null;
+  /** Kiracının kendi uyarı eşiği (gün). */
+  uyariGun: number;
+  ulkeKodu: string;
+  /**
+   * ⚠️ DOĞRULANMIŞ yasal çıpa. null = çıpa YOK ve cümlede SAYI GEÇMEZ.
+   * Uydurma bir gün sayısı DACH müşterisine giderse sorumluluk doğar.
+   */
+  yasalEsikGun: number | null;
+  yasalDayanak: string | null;
+};
+
+/**
+ * SAKLAMA UYARISI — "şu kadar satırınız eşiği geçti".
+ *
+ * ⚠️ BU BİR SİLME EMRİ DEĞİL. Kalem "silin" demez, "karar verin" der: silme
+ * kararı veri sorumlusunundur (müşteri), Galzura veri işleyendir.
+ *
+ * ⚠️ YASAL ÇIPA YOKSA CÜMLEDE SAYI GEÇMEZ. `yasalEsikGun === null` ise metin
+ * yalnız kiracının kendi eşiğini anar ve "ülke çıpası doğrulanmadı" der.
+ * Doğrulanmamış bir eşiği yazmak, uydurmakla aynı şeydir.
+ */
+export function kuralSaklamaUyarisi(g: SaklamaGirdi): AksiyonAdayi | null {
+  if (g.satirSayisi <= 0) return null;
+  // Eşiği geçmiş ama yaşı ölçülemiyorsa kalem üretme: "ne kadar geciktiniz"
+  // sorusuna cevap veremeyen bir uyarı, eyleme dönüşmez.
+  if (g.enEskiGun === null) return null;
+
+  const asim = g.enEskiGun - g.uyariGun;
+  if (asim <= 0) return null;
+
+  const cipa = g.yasalEsikGun !== null
+    ? `${g.ulkeKodu} için yasal çıpa ${g.yasalEsikGun} gün${g.yasalDayanak ? ` (${g.yasalDayanak})` : ""}.`
+    : `${g.ulkeKodu} için yasal çıpa HENÜZ DOĞRULANMADI — bu satırda bilerek sayı yazmıyoruz.`;
+
+  return {
+    kural: "saklama_uyarisi",
+    // ⚠️ Üçü de null: öznesi kiracının kendisi.
+    workerId: null,
+    vehicleId: null,
+    musteriId: null,
+    oncelik: oncelikHesapla({
+      kural: "saklama_uyarisi",
+      // Aciliyet AŞIMLA büyür: 91 günlük bir aşım hatırlatma, 400 günlük
+      // aşım Almanya'nın orantısız bulduğu bandın içi demektir.
+      aciliyet: Math.min((asim / Math.max(1, g.uyariGun)) * 100, EKSEN_TAVAN),
+      // Etki satır sayısıyla büyür ama LOGARİTMİK: 10 bin ile 1 milyon satır
+      // arasındaki fark, yöneticinin yapacağı işi 100 kat değiştirmiyor.
+      etki: Math.min(Math.log10(Math.max(10, g.satirSayisi)) * 20, EKSEN_TAVAN),
+    }),
+    baslik: `${g.satirSayisi.toLocaleString("de-AT")} ham konum satırı saklama eşiğini geçti — karar verin`,
+    gerekce: `En eski kayıt ${g.enEskiGun} günlük; kiracı eşiğiniz ${g.uyariGun} gün (aşım ${asim} gün). ${cipa} Silme kararı ve zamanı VERİ SORUMLUSUNUNDUR; sistem otomatik silmez.`,
+    kanit: {
+      olculen: g.enEskiGun,
+      esik: g.uyariGun,
+      birim: "gün",
+      satirSayisi: g.satirSayisi,
+      asimGun: asim,
+      ulkeKodu: g.ulkeKodu,
+      yasalEsikGun: g.yasalEsikGun,
+      yasalCipaDogrulandi: g.yasalEsikGun !== null,
+    },
+    hedefYol: "/admin/saklama",
   };
 }

@@ -7,8 +7,8 @@ import { buildFuelReport, buildCostReport, rangeLabel } from "@/lib/reports";
 import type { AnalyticsRangeKey } from "@/lib/analytics-shared";
 import { FuelClient } from "./FuelClient";
 import { audit } from "@/lib/security-log";
-import { saklamaAyari } from "@/lib/saklama-db";
-import { kesimTarihi, pencereKapsami } from "@/lib/saklama";
+import { hamVeriBaslangici } from "@/lib/saklama-db";
+import { pencereKapsami } from "@/lib/saklama";
 
 export const dynamic = "force-dynamic";
 
@@ -52,9 +52,16 @@ export default async function FuelReportPage({
     measuredLiters: report.available && report.measured > 0 ? report.totalConsumedLiters : null,
   });
 
-  // Pencere saklama sınırını aşıyor mu — aşıyorsa ekran SÖYLER, sayı uydurmaz.
-  const ayar = await saklamaAyari();
-  const kapsam = pencereKapsami(range.start, range.end, kesimTarihi(ayar.hamGun));
+  /**
+   * Pencere ELDEKİ verinin başlangıcından öncesine uzanıyor mu — uzanıyorsa
+   * ekran SÖYLER, sayı uydurmaz.
+   *
+   * ⚠️ Çıpa uyarı eşiği DEĞİL, verinin GERÇEK başlangıcı. Otomatik silme
+   * olmadığı için "90 günden eski veri yok" varsayımı YANLIŞ olurdu: kimse
+   * silmemişse veri orada durur ve rapor doğru çalışır. Şerit yalnız
+   * GERÇEKTEN eksik olanı söyler.
+   */
+  const kapsam = pencereKapsami(range.start, range.end, await hamVeriBaslangici());
 
   const t = await getTranslations("reports");
 

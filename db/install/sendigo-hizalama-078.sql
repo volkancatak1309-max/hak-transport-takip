@@ -6873,10 +6873,34 @@ notify pgrst, 'reload schema';
 -- ║  090_saklama_politikasi.sql                                         ║
 -- ╚═══════════════════════════════════════════════════════════════════════╝
 
--- HAK61 / Galzura Fleet — Migration 090 (HAM TELEMETRİ SAKLAMA POLİTİKASI)
+-- HAK61 / Galzura Fleet — Migration 090 (SAKLAMA: UYARI + ELLE SİLME)
 -- =====================================================================
--- Ham GPS izi için 90 GÜNLÜK saklama. Additive + idempotent.
--- Supabase SQL Editor'da çalıştırın.
+-- Additive + idempotent. Supabase SQL Editor'da çalıştırın.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔴 BU MIGRATION HİÇBİR OTOMATİK SİLME KURMAZ
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- Sistem **yalnız hesaplar ve UYARIR**. Silmeye bir insan karar verir,
+-- /admin/saklama ekranından, aralığı kendisi seçerek, çift onayla.
+--
+-- Neden: saklama süresi ve silme kararı **veri sorumlusunun** (müşterinin)
+-- kararıdır; Galzura veri İŞLEYENDİR. Ürünün bir kiracının verisini kendi
+-- takvimine göre silmesi, işleyenin sorumlu yerine karar vermesi olurdu.
+-- Gece koşan iş "şu kadar satırınız eşiği geçti" der ve durur.
+--
+-- Bu yüzden burada `silme_acik` diye bir anahtar YOK, gün sayısına göre
+-- silen bir fonksiyon YOK. Silme fonksiyonları ARALIK alır ve yalnız
+-- ekrandan, denetim izi yazılarak çağrılır.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔴 EŞİK DEĞERLERİ BU MIGRATION'DA UYDURULMUYOR
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- `saklama_esikleri` tablosu KURULUR ama **BOŞ BIRAKILIR**. Yasal eşikler
+-- ayrı bir araştırma turuyla, kaynak linki ve doğrulanma tarihiyle
+-- doldurulacak. Uydurma bir gün sayısı DACH müşterisine giderse sorumluluk
+-- doğar; ürün "eşik doğrulanmadı" demeyi, yanlış bir sayı demeye tercih eder.
 --
 -- ═══════════════════════════════════════════════════════════════════════
 -- ÖLÇÜM 1 — BUGÜN POLİTİKA YOK (HAK61 canlı, 26.08.2026)
@@ -6884,120 +6908,84 @@ notify pgrst, 'reload schema';
 --
 --   device_telemetry : 1.611.074 satır · en eski kayıt 13.07.2026 = 44 gün
 --
--- 44 gün CNIL'in 2 aylık çıtasının altında ama bu bir POLİTİKA değil, bir
--- TESADÜF: entegrasyon o gün başladı. Hiçbir mekanizma bu sayının 400 güne
--- çıkmasını engellemiyor. Migration 054 (purge_old_telemetry) YALNIZ
--- galzura-demo'da kurulu ve 14 gün tutuyor; gerçek kiracıda HİÇ YOK.
+-- 44 gün bir POLİTİKA değil bir TESADÜF: entegrasyon o gün başladı. Hiçbir
+-- mekanizma bu sayının 400 güne çıkmasını engellemiyor ve kimse haberdar
+-- olmuyor. Bu migration'ın asıl işi **görünürlük**.
 --
 -- ═══════════════════════════════════════════════════════════════════════
 -- 🔴 ÖLÇÜM 2 — GÜNLÜK ÖZET YANLIŞ SAYI ÜRETİYOR, AYLIK ÜRETMİYOR
 -- ═══════════════════════════════════════════════════════════════════════
 --
--- Canlıda ayrı bir oturumun bıraktığı `daily_vehicle_metrics` tablosu var
--- (20 satır · TEK gün 22.08.2026 · 20/30 araç · tek seferlik, yazan cron
--- yok, okuyan kod yok). Şekli GÜN başına tek satır: odometre başı/sonu,
--- yakıt başı/sonu.
---
--- Bu şeklin yeterli olup olmadığını ÖLÇTÜM. buildFuelReport'un 28 günlük
--- gerçek cevabı 2.602,6 L. Aynı pencere parçalara bölünüp toplandığında:
+-- buildFuelReport'un 28 günlük gerçek cevabı 2.602,6 L. Aynı pencere
+-- parçalara bölünüp toplandığında (HAK61 canlı):
 --
 --     parça |  toplam L | sapma
 --     ------+-----------+-------
 --        1g |    3009,9 | +15,6%   ← GÜNLÜK ÖZET
---        2g |    2986,0 | +14,7%
 --        7g |    2714,0 |  +4,3%
---       14g |    2591,9 |  -0,4%
 --       28g |    2602,5 |  -0,0%   ← AYLIK ÖZET
 --
 -- (14 günlük ikinci ölçüm: gerçek 1.194,98 L, günlük toplam 1.540,1 L = +%28,9)
 --
 -- SEBEP: yakıt motoru (027 + 052) ardışık okuma DİZİSİ üzerinde çalışıyor —
--- 30 satırlık de-glitch penceresi, 15 dakikalık seri birleştirme, dolum
--- tespiti. Gün sınırı bu diziyi kesiyor: gece yarısını aşan dolum iki kez
--- sayılıyor, kenar okumaları süzgeçten kaçıyor.
+-- 30 satırlık de-glitch penceresi, 15 dakikalık seri birleştirme. Gün sınırı
+-- diziyi kesiyor; gece yarısını aşan dolum iki kez sayılıyor.
 --
--- 🔑 KARAR: ÖZET KATMANI **AYLIK**. `daily_vehicle_metrics` bu iş için
--- KULLANILMIYOR ve bu migration ona DOKUNMUYOR (başka bir oturumun işi).
+-- 🔑 KARAR: ÖZET **AYLIK**. Canlıdaki `daily_vehicle_metrics` (20 satır, TEK
+-- gün, yazan/okuyan kod yok) bu iş için YANLIŞ ŞEKİL; bu migration ona
+-- DOKUNMUYOR.
 --
 -- ═══════════════════════════════════════════════════════════════════════
--- 🔴 ÖLÇÜM 3 — 10 YÜZEYDEN 7'Sİ SESSİZCE YANLIŞ SAYI ÜRETİRDİ
+-- 🔴 ÖLÇÜM 3 — SİLME HANGİ YÜZEYİ BOZAR
 -- ═══════════════════════════════════════════════════════════════════════
 --
 --   doğru çalışır : Mevzuat motoru · Bölge ziyaretleri (zone_visits KALICI)
---   boşalır       : Rota geçmişi (KURTARILAMAZ — özet tablosunda lat/lon yok)
---   sessizce yanlış: Yakıt · Maliyet(€/km) · CO₂ · Sefer kârlılığı ·
---                    Güvenlik skoru(payda) · Haftalık aksiyon(K3 sessiz_arac) ·
---                    Sessiz cihaz alarmı
+--   boşalır       : Rota geçmişi (KURTARILAMAZ — özette lat/lon yok, bilinçli)
+--   sessizce yanlış: Yakıt · Maliyet · CO₂ · Kârlılık · Skor(payda) ·
+--                    Haftalık K3 sessiz_arac · Sessiz cihaz alarmı
 --
--- VE EN KÖTÜSÜ BUGÜN DE VAR: veri OLMAYAN bir pencerede (01.03→01.04.2026)
--- ölçtüm —
---     buildFuelReport → available:true · totalConsumedLiters:0 · 29 araç
---     buildCostReport → totalEur:0 · fuelEur:0
---     co2Panosu       → kg:null · 29 plaka "ölçülemedi"   ✅ DOĞRU olan bu
---
--- Yani yakıt/maliyet raporu ölçülmemiş bir dönemi "0 L · 0,00 €" diye
--- basıyor. Silme açılırsa bu kusur GERÇEK VERİYİ uydurma sıfıra çeviren bir
--- makineye dönüşür. Bu yüzden ürün tarafında "kapsam dışı pencere"
--- sözleşmesi silmeden ÖNCE kurulmalıdır.
---
--- ═══════════════════════════════════════════════════════════════════════
--- ⚠️ BU MIGRATION HİÇBİR SATIR SİLMEZ
--- ═══════════════════════════════════════════════════════════════════════
---
--- `tenant_saklama.silme_acik` varsayılanı **false**. Migration tabloları ve
--- fonksiyonları kurar; silme, bir insan ayarı açana kadar BAŞLAMAZ. Cron
--- kaydı kurulsa bile kapalı ayarda 200 döner ve "kapali" der.
+-- Bu yüzden ELLE silme bile ön koşulsuz değildir: aylık özet yazılmadan,
+-- vardiya km yargısı dondurulmadan ve cihaz ömür izi çıkarılmadan bir aralık
+-- silinemez (bkz. lib/saklama.ts silmeKapisi).
 --
 -- ═══ RLS ═══
 -- Kapalı — şemanın geri kalanıyla tutarlı. Yalnız service-role yazar.
 -- =====================================================================
 -- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
--- ═════════════════════ 1 · KİRACI SAKLAMA AYARI ════════════════════════
+-- ═════════════════════ 1 · KİRACI UYARI AYARI ══════════════════════════
 
 create table if not exists public.tenant_saklama (
   -- 076/089'daki desen: tek satır, sabit anahtar.
   id text primary key default 'singleton' check (id = 'singleton'),
 
   /**
-   * HAM İZ SAKLAMA SÜRESİ (gün). VARSAYILAN 90.
+   * UYARI EŞİĞİ (gün) — kiracının kendi hedefi.
    *
-   * Neden 90 (gerekçe docs/SAKLAMA-POLITIKASI.md'de tam metin):
-   *   · CMR Md. 32 — uluslararası taşımada 1 yıllık zamanaşımı; teslimat
-   *     anlaşmazlığı tipik olarak ilk haftalarda çıkar, çeyrek yıl payı
-   *     operasyonel olarak yeterli.
-   *   · CNIL ham konum için 2 ay diyor — 90 gün bunun üstünde, bu yüzden
-   *     GEREKÇE yazılı olmak zorunda (bkz. belge).
-   *   · İtalya (Garante, 01/2025) 180 günü cezalandırdı — 50.000 €.
-   *   · Almanya 400 ve 150 günü orantısız buldu.
-   * 90 gün bu bandın ALT yarısında ve türetilmiş kayıtlar ayrıca yaşıyor.
+   * ⚠️ ADI BİLİNÇLİ `uyari_gun`, `saklama_gun` DEĞİL: bu sayı hiçbir şey
+   * silmez. "Bu kadar günü geçen ham satırınız var" uyarısının çıpasıdır.
+   * Silme kararı ve zamanı veri sorumlusundadır.
    *
-   * ALT SINIR 30: daha kısası ürünün kendi 30 günlük varsayılan pencerelerini
-   * (CO₂ panosu, kârlılık) kırar — yani ayar ekranın altını oyamaz.
-   * ÜST SINIR 400: Almanya'nın açıkça orantısız bulduğu sayı; ürün onu
-   * yazdırmaz.
+   * Varsayılan 90: CNIL'in ham konum için söylediği 2 ayın bir ay üstü,
+   * cezalandırılmış 180 günün yarısı (İtalya/Garante 01/2025, 50.000 €),
+   * Almanya'nın orantısız bulduğu 150 ve 400 günün çok altı. Tam gerekçe
+   * docs/SAKLAMA-POLITIKASI.md'de.
+   *
+   * ⚠️ Bu 90, `saklama_esikleri`ndeki YASAL çıpa DEĞİLDİR. Yasal çıpa ayrı
+   * tabloda durur ve bugün BOŞTUR (bkz. §3).
    */
-  ham_gun integer not null default 90
-    check (ham_gun between 30 and 400),
+  uyari_gun integer not null default 90
+    check (uyari_gun between 1 and 3650),
 
   /**
-   * 🔴 SİLME ANAHTARI — VARSAYILAN KAPALI.
+   * HANGİ ÜLKENİN YASAL ÇIPASI GÖSTERİLSİN.
    *
-   * Fail-closed: mekanizma kurulu olsa, cron kaydı girilmiş olsa bile
-   * kapalıyken TEK SATIR silinmez. Açmak bilinçli bir insan eylemidir ve
-   * `updated_by` ile ize düşer.
-   *
-   * Ayrıca kod tarafında ikinci bir kapı var: özeti YAZILMAMIŞ bir ay
-   * silinemez (bkz. §3 vehicle_month_metrics ve lib/saklama-db.ts).
+   * `saklama_esikleri` içinde bu ülkeye ait satır yoksa ekran "yasal çıpa
+   * doğrulanmadı" der ve HİÇBİR SAYI göstermez. Varsayılan 'AT' bir
+   * ÖLÇÜ değil, bir ARAMA ANAHTARIDIR — dağıtım Avusturya'da.
    */
-  silme_acik boolean not null default false,
+  ulke_kodu text not null default 'AT' check (ulke_kodu ~ '^[A-Z]{2}$'),
 
-  /**
-   * 90 GÜNÜN ÜSTÜ İÇİN YAZILI GEREKÇE.
-   *
-   * ⚠️ NULL = gerekçe yok. Kod, ham_gun > 90 iken gerekçe boşsa ayarı
-   * REDDEDER. Denetimde sorulacak ilk soru "neden bu kadar uzun" olacak;
-   * cevabı ürünün içinde durmalı, birinin hafızasında değil.
-   */
+  /** Kiracının uyarı eşiğini neden böyle seçtiği. Serbest metin. */
   gerekce text,
 
   updated_at timestamptz not null default now(),
@@ -7005,25 +6993,179 @@ create table if not exists public.tenant_saklama (
 );
 
 comment on table public.tenant_saklama is
-  'Ham telemetri saklama ayarı (090). Varsayılan 90 gün, silme KAPALI. 90 günün üstü yazılı gerekçe ister; alt sınır 30 (ürünün kendi pencerelerini kırmasın), üst sınır 400 (Almanya orantısız buldu).';
+  'Saklama UYARI ayarı (090). uyari_gun hiçbir şey SİLMEZ — uyarının çıpasıdır. Silme kararı veri sorumlusunda (müşteri); Galzura veri işleyendir.';
 
-comment on column public.tenant_saklama.silme_acik is
-  'FAIL-CLOSED silme anahtarı. false iken cron çalışsa bile hiçbir satır silinmez.';
+comment on column public.tenant_saklama.uyari_gun is
+  'Uyarı eşiği (gün). SİLMEZ. Yasal çıpa ayrı tabloda (saklama_esikleri) ve bugün BOŞ.';
 
 insert into public.tenant_saklama (id) values ('singleton') on conflict (id) do nothing;
 
--- ═════════════════════ 2 · CİHAZ ÖMÜR İZİ ══════════════════════════════
+-- ═════════════════════ 2 · VERİ KATEGORİLERİ ═══════════════════════════
+
+/**
+ * HER TABLO/KOLON ÜÇ KATEGORİDEN BİRİNE DÜŞER.
+ *
+ *   'kisisel'       → uyarı çıkar, ELLE silinebilir
+ *   'arac'          → serbest, uyarı çıkmaz
+ *   'yasal_zorunlu' → SİLİNEMEZ; arayüz silme seçeneğini GÖSTERMEZ
+ *
+ * ═══ HUKUKİ DAYANAK — AYRIM "ARAÇ MI ŞOFÖR MÜ" DEĞİL ═══
+ *
+ * GPS izi hukuken ŞOFÖRÜN kişisel verisidir, aracın değil. Aracın firmaya
+ * ait olması bunu DEĞİŞTİRMEZ. Doğru soru "o an araçta kim vardı": bir konum
+ * dizisi, o dizideki kişinin nerede olduğunu, ne zaman durduğunu, ne kadar
+ * çalıştığını anlatır. Bu yüzden `device_telemetry` 'arac' değil 'kisisel'.
+ *
+ * ⚠️ ARAYÜZ BU TABLOYU OKUR. 'yasal_zorunlu' bir satır için silme düğmesi
+ * render EDİLMEZ — "silme denendi ve reddedildi" değil, "seçenek hiç yok".
+ * Reddetmek bir hatadır ve hata mesajı okunmayabilir; göstermemek bir
+ * tasarımdır.
+ */
+create table if not exists public.veri_kategorileri (
+  tablo_adi text not null,
+  -- NULL = tablonun TAMAMI. Dolu = yalnız o kolon.
+  kolon_adi text,
+  kategori text not null check (kategori in ('kisisel', 'arac', 'yasal_zorunlu')),
+  /** Bu sınıflandırmanın NEDEN böyle olduğu. Boş bırakılamaz. */
+  gerekce text not null,
+  guncellendi_at timestamptz not null default now()
+);
+
+comment on table public.veri_kategorileri is
+  'Veri kategorilendirmesi (090): kisisel | arac | yasal_zorunlu. Arayüz bunu okur; yasal_zorunlu satır için silme seçeneği RENDER EDİLMEZ.';
+
+-- Tablo geneli satırlarda kolon NULL olduğu için basit UNIQUE yetmez.
+create unique index if not exists uq_veri_kategorileri
+  on public.veri_kategorileri (tablo_adi, coalesce(kolon_adi, '*'));
+
+/**
+ * BAŞLANGIÇ SINIFLANDIRMASI.
+ *
+ * ⚠️ Bunlar YASAL EŞİK DEĞİL, ürünün kendi sınıflandırmasıdır ve gerekçesi
+ * her satırda yazılı. Yasal SÜRELER bu tabloda DEĞİL, `saklama_esikleri`nde
+ * ve orası bugün BOŞ.
+ */
+insert into public.veri_kategorileri (tablo_adi, kolon_adi, kategori, gerekce) values
+  ('device_telemetry', null, 'kisisel',
+   'GPS izi hukuken ŞOFÖRÜN kişisel verisi; aracın firmaya ait olması bunu değiştirmez. Belirleyici soru: o an araçta kim vardı.'),
+  ('driver_locations', null, 'kisisel',
+   'Telefon GPS kalıntısı. Artık yazılmıyor ama içindeki geçmiş konum aynı hukuki kategoride.'),
+  ('idle_episodes', null, 'kisisel',
+   'Rölanti epizodu bir konum+süre kaydı; hangi şoförün nerede ne kadar beklediğini anlatır.'),
+  ('zone_visits', null, 'kisisel',
+   'Bölge ziyareti = kimin nerede olduğu. Ham izden TÜRETİLMİŞ ama aynı bilgiyi taşır.'),
+  ('vehicles', null, 'arac',
+   'Plaka, filo, yakıt türü, sayaç — araca ait teknik künye. Kişi belirtmez.'),
+  ('vehicle_month_metrics', null, 'arac',
+   'Aylık ARAÇ toplamı (090). Kişi ekseni yok, gün/saat kırılımı yok; kimin nerede olduğunu anlatmaz.'),
+  ('vehicle_telemetry_lifetime', null, 'arac',
+   'Aracın ilk/son telemetri ANI — cihazın yaşadığına dair iki damga. Konum içermez.'),
+  ('time_entries', null, 'yasal_zorunlu',
+   'AZG/ArbZG çalışma süresi kaydı. İş müfettişliğinin okuduğu belge; saklama süresi iş hukukunun konusudur, bu ekranın değil.'),
+  ('teslimat_kanitlari', null, 'yasal_zorunlu',
+   'ePOD teslimat kanıtı — HK080 tetikleyicisiyle DEĞİŞMEZ. CMR anlaşmazlığında kanıt olan kayıt budur.'),
+  ('shift_edit_log', null, 'yasal_zorunlu',
+   'Vardiya düzeltme denetim izi (087). Denetim izinin silinebilmesi, izin kendisini anlamsız kılar.'),
+  ('security_log', null, 'yasal_zorunlu',
+   'Oturum/eylem izi (045). Aynı gerekçe: iz silinebiliyorsa iz değildir.')
+on conflict (tablo_adi, coalesce(kolon_adi, '*')) do nothing;
+
+-- ═════════════════════ 3 · ÜLKE BAZLI YASAL EŞİKLER ════════════════════
+
+/**
+ * 🔴 BU TABLO BİLEREK BOŞ KURULUR.
+ *
+ * Yasal eşikler ayrı bir araştırma turuyla, HER SATIR İÇİN kaynak linki ve
+ * doğrulanma tarihiyle doldurulacak. Uydurma bir gün sayısı DACH müşterisine
+ * giderse sorumluluk doğar.
+ *
+ * `esik_gun` NULL olabilir ve bu bir EKSİKLİK DEĞİL, bir BEYANDIR:
+ * "bu ülke/veri türü için doğrulanmış bir çıpamız yok". Arayüz bu durumda
+ * hiçbir sayı göstermez, "yasal çıpa doğrulanmadı" der.
+ *
+ * ⚠️ `dogrulanma_tarihi` olmadan bir satır anlamsızdır: mevzuat değişir ve
+ * "ne zaman bakıldı" sorusu denetimde sorulur. Bu yüzden esik_gun doluysa
+ * dayanak, kaynak ve tarih de dolu olmak ZORUNDA (CHECK ile).
+ */
+create table if not exists public.saklama_esikleri (
+  ulke_kodu text not null check (ulke_kodu ~ '^[A-Z]{2}$'),
+  /** 'ham_konum' · 'calisma_suresi' · 'teslimat_kaniti' … serbest sözlük. */
+  veri_turu text not null,
+
+  /** ⚠️ NULL = DOĞRULANMIŞ ÇIPA YOK. 0 değil, boş değil — bilinmiyor. */
+  esik_gun integer check (esik_gun is null or esik_gun >= 0),
+
+  yasal_dayanak text,
+  kaynak_url text,
+  dogrulanma_tarihi date,
+
+  primary key (ulke_kodu, veri_turu),
+
+  /**
+   * Bir sayı yazıldıysa nereden geldiği de yazılmak ZORUNDA. Kaynaksız bir
+   * eşik, uydurma bir eşiktir.
+   */
+  constraint saklama_esikleri_kaynakli check (
+    esik_gun is null
+    or (yasal_dayanak is not null and kaynak_url is not null and dogrulanma_tarihi is not null)
+  )
+);
+
+comment on table public.saklama_esikleri is
+  'Ülke bazlı yasal saklama çıpaları (090). BİLEREK BOŞ KURULUR — eşikler ayrı bir araştırma turuyla kaynaklı doldurulacak. esik_gun NULL = doğrulanmış çıpa YOK.';
+
+comment on column public.saklama_esikleri.esik_gun is
+  'NULL = doğrulanmış çıpa yok (0 DEĞİL). Doluysa yasal_dayanak + kaynak_url + dogrulanma_tarihi de zorunlu (CHECK).';
+
+-- ⚠️ SATIR EKLENMİYOR. Bu boşluk bilinçlidir.
+
+-- ═════════════════════ 4 · ELLE SİLME DENETİM İZİ ══════════════════════
+
+/**
+ * HER ELLE SİLME BURAYA YAZILIR — silmeden ÖNCE.
+ *
+ * Kim, ne zaman, hangi tablo, hangi aralık, kaç satır, hangi sebeple.
+ * Sebep zorunlu: "neden sildiniz" sorusunun cevabı ürünün içinde durmalı,
+ * birinin hafızasında değil.
+ *
+ * ⚠️ Bu tablo `veri_kategorileri`nde 'yasal_zorunlu' — kendisi silinemez.
+ */
+create table if not exists public.saklama_silme_izi (
+  id uuid primary key default gen_random_uuid(),
+  silen_worker_id uuid references public.workers(id) on delete set null,
+  silindi_at timestamptz not null default now(),
+  tablo_adi text not null,
+  kategori text not null,
+  aralik_bas timestamptz not null,
+  aralik_bit timestamptz not null,
+  satir_sayisi bigint not null,
+  sebep text not null check (length(btrim(sebep)) >= 10),
+  /** Kullanıcının elle yazdığı onay metni — çift onayın ikinci ayağı. */
+  onay_metni text not null,
+  check (aralik_bit > aralik_bas)
+);
+
+comment on table public.saklama_silme_izi is
+  'Elle silme denetim izi (090). Her silme ÖNCE buraya yazılır: kim, ne zaman, hangi aralık, kaç satır, hangi sebeple. Kendisi yasal_zorunlu — silinemez.';
+
+create index if not exists idx_saklama_silme_izi_zaman
+  on public.saklama_silme_izi (silindi_at desc);
+
+insert into public.veri_kategorileri (tablo_adi, kolon_adi, kategori, gerekce) values
+  ('saklama_silme_izi', null, 'yasal_zorunlu',
+   'Silme denetim izinin kendisi. Silinebiliyorsa iz değildir.')
+on conflict (tablo_adi, coalesce(kolon_adi, '*')) do nothing;
+
+-- ═════════════════════ 5 · CİHAZ ÖMÜR İZİ ══════════════════════════════
 
 /**
  * ARACIN İLK/SON TELEMETRİ ANI — ham satırlar silinse de yaşar.
  *
- * NEDEN: haftalık aksiyon kuralı K3 "sessiz araç" ve yönetici panosundaki
- * "sessiz cihaz" alarmı, aracın SON ham satırının yaşına bakıyor. 90 günden
- * uzun susmuş bir aracın tüm satırları silinince `son_kayit` NULL döner ve
- * araç uyarı listesinden SESSİZCE DÜŞER — yani en çok ilgilenilmesi gereken
- * araç görünmez olur. Tam tersi bir sonuç.
- *
- * Bu tablo o iki sayıyı ham akıştan BAĞIMSIZ tutar. Tek satır/araç.
+ * NEDEN: haftalık aksiyon kuralı K3 "sessiz araç" ve panodaki "sessiz cihaz"
+ * alarmı, aracın SON ham satırının yaşına bakıyor. Uzun süredir susmuş bir
+ * aracın tüm satırları silinince `son_kayit` NULL döner ve araç uyarı
+ * listesinden SESSİZCE DÜŞER — en çok ilgilenilmesi gereken araç görünmez
+ * olur. Tam tersi bir sonuç.
  */
 create table if not exists public.vehicle_telemetry_lifetime (
   vehicle_id uuid primary key references public.vehicles(id) on delete cascade,
@@ -7036,35 +7178,32 @@ create table if not exists public.vehicle_telemetry_lifetime (
 comment on table public.vehicle_telemetry_lifetime is
   'Aracın ilk/son telemetri anı (090). Ham satırlar silinince "sessiz araç" uyarısının kaybolmaması için ham akıştan bağımsız tutulur.';
 
--- ═════════════════════ 3 · AYLIK ÖZET ══════════════════════════════════
+-- ═════════════════════ 6 · AYLIK ÖZET ══════════════════════════════════
 
 /**
  * AYLIK ARAÇ ÖZETİ — ham iz silindikten sonra raporun tek kaynağı.
  *
- * ⚠️ GRANÜLERLİK NEDEN AY: yukarıdaki ÖLÇÜM 2. Günlük özet yakıtı %15,6-28,9
- * şişiriyor çünkü yakıt motoru ardışık okuma DİZİSİ üzerinde çalışıyor ve
- * gün sınırı diziyi kesiyor. Aylık parça sapması %0,0.
+ * ⚠️ GRANÜLERLİK NEDEN AY: yukarıdaki ÖLÇÜM 2. Günlük özet yakıtı
+ * %15,6-28,9 şişiriyor; aylık parçanın sapması %0,0.
  *
  * 🔑 DEĞERLER NASIL ÜRETİLİR: raporun KENDİ motoru ayın tamamı için TEK
- * pencere olarak çağrılır ve çıktısı olduğu gibi yazılır. Yani özet,
- * raporun kendi cevabının dondurulmuş hâlidir — ikinci bir hesap değil.
- * İkinci bir hesap yazmak, özetin raporla çelişmesine giden en kısa yol
- * olurdu (aynı ders lib/co2-db.ts ve mobil Analiz ucunda da yazılı).
+ * pencere olarak çağrılır ve çıktısı olduğu gibi yazılır. Özet, raporun
+ * kendi cevabının dondurulmuş hâlidir — ikinci bir hesap değil.
  *
  * ⚠️ NE KURTARMAZ — dürüst liste:
  *   · ROTA GEÇMİŞİ. lat/lon burada YOK ve olamaz: bir ayın konum dizisini
- *     saklamak "ham izi sakla" demenin başka yolu olurdu. Rota, saklama
- *     süresi dolduğunda GERÇEKTEN kaybolur ve ekran bunu SÖYLER.
- *   · GÜN/SAAT KIRILIMI. Ay içi bir pencere (ör. 3-17 Mayıs) özetten
- *     üretilemez. Ekran "ay granülerliğinde" der, sayı uydurmaz.
- *   · VARDİYA EKSENİ. Şoför km'si vardiya penceresinden çıkıyor; onun
- *     dondurulması ayrı (bkz. §4 time_entries.km_dondu).
+ *     saklamak "ham izi sakla" demenin başka yolu olurdu.
+ *   · GÜN/SAAT KIRILIMI. Ay içi bir pencere özetten üretilemez.
+ *   · VARDİYA EKSENİ. Şoför km'si için ayrı dondurma var (§7).
+ *
+ * 🔑 Bu tablo `veri_kategorileri`nde 'arac': kişi ekseni ve gün kırılımı
+ * olmadığı için kimin nerede olduğunu anlatmaz.
  */
 create table if not exists public.vehicle_month_metrics (
   vehicle_id uuid not null references public.vehicles(id) on delete cascade,
 
-  -- Ayın İLK GÜNÜ (date). check ile zorlanıyor: yanlış granülerlikte satır
-  -- yazılırsa tablo sessizce gün-bazlı olur ve ÖLÇÜM 2'deki hata geri gelir.
+  -- Ayın İLK GÜNÜ. check ile zorlanıyor: yanlış granülerlikte satır yazılırsa
+  -- tablo sessizce gün-bazlı olur ve ÖLÇÜM 2'deki hata geri gelir.
   ay date not null check (ay = date_trunc('month', ay)::date),
 
   -- ── km (odometre açıklığı) ────────────────────────────────────────────
@@ -7090,23 +7229,20 @@ create table if not exists public.vehicle_month_metrics (
   /**
    * ⚠️ ÖLÇÜLEMEDİYSE SEBEBİ. NULL = ölçüldü.
    * 'cihaz_yok' · 'yetersiz_okuma' · 'sensor_arizali' · 'odometre_yok'
-   * Bu kolon olmadan özet tablosu "0 L" ile "ölçülemedi"yi ayıramaz ve
-   * ürünün en temel kuralı kırılır.
+   * Bu kolon olmadan özet "0 L" ile "ölçülemedi"yi ayıramaz.
    */
   olculemedi_sebep text,
 
-  -- ── köken ─────────────────────────────────────────────────────────────
   hesaplandi_at timestamptz not null default now(),
-  -- Motor değişirse eski özetler hangi sürümle üretildiğini taşısın.
   hesap_surumu text not null default '090.1',
-  -- Bu ayın ham satırları silindi mi? Silinmişse özet YENİDEN ÜRETİLEMEZ.
+  /** Bu ayın ham satırları silindi mi? Silinmişse özet YENİDEN ÜRETİLEMEZ. */
   ham_silindi_at timestamptz,
 
   primary key (vehicle_id, ay)
 );
 
 comment on table public.vehicle_month_metrics is
-  'Aylık araç özeti (090) — ham iz silindikten sonraki tek kaynak. Granülerlik AY: günlük parçalama yakıtı %15,6-28,9 şişiriyor (ölçüldü), aylık parçanın sapması %0,0. Değerler raporun KENDİ motorundan, ayın tamamı tek pencere olarak alınır.';
+  'Aylık araç özeti (090) — ham iz silindikten sonraki tek kaynak. Granülerlik AY: günlük parçalama yakıtı %15,6-28,9 şişiriyor (ölçüldü), aylık parçanın sapması %0,0.';
 
 comment on column public.vehicle_month_metrics.olculemedi_sebep is
   'NULL = ölçüldü. Dolu = bu araç/ay ölçülemedi ve SEBEBİ bu. "0" ile "bilinmiyor" bu kolonla ayrılır.';
@@ -7116,21 +7252,21 @@ comment on column public.vehicle_month_metrics.ham_silindi_at is
 
 create index if not exists idx_vmm_ay on public.vehicle_month_metrics (ay desc);
 
--- ═════════════════════ 4 · VARDİYA KM DONDURMA ═════════════════════════
+-- ═════════════════════ 7 · VARDİYA KM DONDURMA ═════════════════════════
 
 /**
  * VARDİYANIN KM ÖLÇÜM YARGISI — ham silinmeden ÖNCE dondurulur.
  *
  * NEDEN: lib/km-quality.ts iki kapıyla "bu vardiyanın km'si gerçekten 0 mı,
  * yoksa ölçülemedi mi" diye soruyor ve İKİNCİ KAPI ham telemetriye bakıyor
- * (vardiya penceresinde speed_kmh >= 5 okuma var mı). Ham silinince kapı
- * her sıfır-farklı vardiyayı "ölçülemedi"ye çevirir — sessizce, geriye
- * dönük ve KULLANICI SEÇİMLİ aralıktaki Excel/PDF çıktısına kadar.
+ * (vardiya penceresinde speed_kmh >= 5 okuma var mı). Ham silinince kapı her
+ * sıfır-farklı vardiyayı "ölçülemedi"ye çevirir — sessizce, geriye dönük ve
+ * KULLANICI SEÇİMLİ aralıktaki Excel/PDF çıktısına kadar.
  *
- * ⚠️ SIRA ŞARTI: bu kolon, silmenin İLK KOŞUSUNDAN ÖNCE doldurulmalıdır.
- * Sonra doldurulursa ham zaten gitmiş olur ve backfill her satıra sessizce
- * "ölçülemedi" yazar — düzeltmek istediği hatayı kalıcılaştırır.
- * Kod bu sırayı zorluyor: özet/dondurma tamamlanmamışsa silme reddedilir.
+ * ⚠️ SIRA ŞARTI: bu kolon, silmeden ÖNCE doldurulmalıdır. Sonra doldurulursa
+ * ham zaten gitmiş olur ve backfill her satıra sessizce "ölçülemedi" yazar —
+ * düzeltmek istediği hatayı kalıcılaştırır. Kod bu sırayı zorluyor: aralıkta
+ * dondurulmamış vardiya varsa silme REDDEDİLİR.
  */
 alter table public.time_entries
   add column if not exists km_dondu boolean;
@@ -7139,23 +7275,76 @@ alter table public.time_entries
   add column if not exists km_dondu_at timestamptz;
 
 comment on column public.time_entries.km_dondu is
-  'Ham silinmeden önce dondurulmuş km ölçüm yargısı (090). true = km ölçüldü, false = ölçülemedi, NULL = henüz dondurulmadı. lib/km-quality.ts ham yerine bunu okur.';
+  'Ham silinmeden önce dondurulmuş km ölçüm yargısı (090). true = ölçüldü, false = ölçülemedi, NULL = henüz dondurulmadı.';
 
--- ═════════════════════ 5 · SİLME FONKSİYONLARI ═════════════════════════
+-- ═════════════════════ 8 · ZAMAN İNDEKSİ ═══════════════════════════════
 
 /**
- * device_telemetry parça silme — 054'ün genelleştirilmiş hâli.
+ * BRIN — "kaç satırım eşiği geçti" sorusunun ucuz cevabı.
  *
- * 054 ile FARKLAR:
- *   · varsayılan p_days 14 → 90 (demo çağrısı p_days'i AÇIKÇA veriyor,
- *     yani galzura-demo'nun 14 günü DEĞİŞMEZ)
- *   · alt sınır 7'de KALDI — demo'yu kırmamak için bilinçli
+ * ÖLÇÜLDÜ (26.08.2026): `recorded_at` üzerinde ÖNDE GELEN kolonlu indeks yok
+ * (var olanlar `(vehicle_id, recorded_at)` ya da kısmi). 1,6 milyon satırda
+ * `count(*) where recorded_at < x` ifade zaman aşımına (8 sn) takıldı.
  *
- * ctid ile parça silme: tek `delete ... where recorded_at < x` 1,6 milyon
- * satırda statement timeout yer ve HİÇBİR ŞEY silinmez.
+ * BRIN seçildi çünkü `recorded_at` append-only ve fiziksel sırayla neredeyse
+ * birebir artıyor — btree'nin onda biri yer kaplar ve aralık taraması için
+ * yeterli. Uyarı sayacı ve aralık silme ikisi de bunu kullanır.
  */
-create or replace function public.purge_old_telemetry(
-  p_days int default 90,
+create index if not exists idx_device_telemetry_recorded_brin
+  on public.device_telemetry using brin (recorded_at);
+
+create index if not exists idx_driver_locations_recorded_brin
+  on public.driver_locations using brin (recorded_at);
+
+-- ═════════════════════ 9 · UYARI SAYACI ════════════════════════════════
+
+/**
+ * EŞİĞİ GEÇEN SATIR SAYISI — tablo tablo.
+ *
+ * Gece koşan iş bunu çağırır ve UYARI üretir. HİÇBİR ŞEY SİLMEZ.
+ *
+ * En eski kayıt da dönüyor: uyarı "kaç satır" demenin yanında "ne kadar
+ * eski" de demeli; 1.000 satır 91 günlük ise başka, 400 günlük ise başka bir
+ * cümledir.
+ */
+create or replace function public.saklama_eski_satirlar(p_kesim timestamptz)
+returns table (
+  tablo_adi text,
+  satir_sayisi bigint,
+  en_eski timestamptz
+)
+language sql
+stable
+as $$
+  select 'device_telemetry'::text, count(*), min(recorded_at)
+  from public.device_telemetry where recorded_at < p_kesim
+  union all
+  select 'driver_locations'::text, count(*), min(recorded_at)
+  from public.driver_locations where recorded_at < p_kesim
+$$;
+
+-- ═════════════════════ 10 · ARALIK SİLME ═══════════════════════════════
+
+/**
+ * 🔴 ARALIK ALIR, GÜN SAYISI ALMAZ — VE BU BİLİNÇLİ.
+ *
+ * "Şu kadar günden eskiyi sil" imzası, çağıranın takvimine göre çalışan bir
+ * otomatik temizliği DAVET EDER. Bu üründe silme kararı veri sorumlusunun
+ * ve her silme bir İNSAN SEÇİMİDİR: hangi hafta, hangi ay, hangi iki tarih
+ * arası. Fonksiyon o seçimi birebir uygular, kendi başına bir "eski" tanımı
+ * üretmez.
+ *
+ * ⚠️ Ön koşullar (özet yazıldı mı, km donduruldu mu, kategori silinebilir mi,
+ * çift onay verildi mi) UYGULAMA katmanında (lib/saklama-db.ts). Burada
+ * zorlanmıyor çünkü SQL katmanı "kim onayladı"yı bilemez; iki yerde iki
+ * yarım kapı olmasındansa tek yerde tam kapı olsun.
+ *
+ * ctid ile parça silme: tek `delete` 1,6 milyon satırda ifade zaman aşımı
+ * yer ve HİÇBİR ŞEY silinmez (054'ün dersi).
+ */
+create or replace function public.purge_telemetry_range(
+  p_from timestamptz,
+  p_to timestamptz,
   p_limit int default 20000
 )
 returns bigint
@@ -7163,15 +7352,17 @@ language plpgsql
 volatile
 as $$
 declare
-  v_cutoff timestamptz;
   v_deleted bigint;
 begin
-  v_cutoff := now() - make_interval(days => greatest(coalesce(p_days, 90), 7));
+  if p_from is null or p_to is null or p_to <= p_from then
+    raise exception 'gecersiz_aralik: p_from=% p_to=%', p_from, p_to;
+  end if;
 
   with victims as (
     select ctid
     from public.device_telemetry
-    where recorded_at < v_cutoff
+    where recorded_at >= p_from
+      and recorded_at <  p_to
     order by recorded_at
     limit greatest(coalesce(p_limit, 20000), 1)
   )
@@ -7185,25 +7376,20 @@ end;
 $$;
 
 /**
- * driver_locations parça silme — telefon GPS'inin kalıntısı.
+ * driver_locations ikizi.
  *
- * NOT: konum/rota tek kaynağı 019ae24'ten beri FMC003; driver_locations
- * artık YAZILMIYOR ama tablo duruyor ve içindeki geçmiş konum verisi
- * aynı hukuki kategoride. Saklama politikası onu da kapsar.
- *
- * ⚠️ ŞEMA CANLIDA DOĞRULANDI (26.08.2026): kolonlar
- *   id · worker_id · time_entry_id · latitude · longitude · accuracy · recorded_at
- * Zaman kolonu `recorded_at` (device_telemetry ile aynı ad) — `created_at`
- * bu tabloda YOK. Yine de AYRI fonksiyon: tek fonksiyona tablo adı
- * parametresi geçirmek (dinamik SQL) silme yüzeyini genişletirdi ve
- * "hangi tablo silinecek" kararını çağırana bırakırdı.
+ * ⚠️ ŞEMA CANLIDA DOĞRULANDI (26.08.2026): zaman kolonu `recorded_at`
+ * (`created_at` bu tabloda YOK). Yine de AYRI fonksiyon: tek fonksiyona
+ * tablo adı parametresi geçirmek (dinamik SQL) silme yüzeyini genişletirdi
+ * ve "hangi tablo silinecek" kararını çağırana bırakırdı.
  *
  * Bugünkü hacim ihmal edilebilir (~81 satır) — fonksiyon miktar için değil,
  * POLİTİKA BÜTÜNLÜĞÜ için var: konum verisi hangi tabloda durursa dursun
- * aynı süreye tabidir.
+ * aynı kategoridedir.
  */
-create or replace function public.purge_old_driver_locations(
-  p_days int default 90,
+create or replace function public.purge_driver_locations_range(
+  p_from timestamptz,
+  p_to timestamptz,
   p_limit int default 20000
 )
 returns bigint
@@ -7211,15 +7397,17 @@ language plpgsql
 volatile
 as $$
 declare
-  v_cutoff timestamptz;
   v_deleted bigint;
 begin
-  v_cutoff := now() - make_interval(days => greatest(coalesce(p_days, 90), 7));
+  if p_from is null or p_to is null or p_to <= p_from then
+    raise exception 'gecersiz_aralik: p_from=% p_to=%', p_from, p_to;
+  end if;
 
   with victims as (
     select ctid
     from public.driver_locations
-    where recorded_at < v_cutoff
+    where recorded_at >= p_from
+      and recorded_at <  p_to
     order by recorded_at
     limit greatest(coalesce(p_limit, 20000), 1)
   )
@@ -7232,12 +7420,14 @@ begin
 end;
 $$;
 
+-- ═════════════════════ 11 · ÖZET YARDIMCILARI ══════════════════════════
+
 /**
- * ÖZET ÜRETİMİ İÇİN AYLIK UÇ DEĞERLER — tek turda, araç × ay.
+ * AYLIK UÇ DEĞERLER — özet üretiminin SQL ayağı.
  *
- * Yakıt/tüketim raporun kendi motorundan alınıyor (uygulama katmanı);
- * burada YALNIZ odometre açıklığı ve sayım/uç bilgileri var, çünkü bunlar
- * saf SQL'de doğru ve ucuz. İkisini karıştırmamak bilinçli.
+ * Yakıt/tüketim raporun kendi motorundan alınıyor (uygulama katmanı); burada
+ * YALNIZ odometre açıklığı ve sayım/uç bilgileri var, çünkü bunlar saf
+ * SQL'de doğru ve ucuz. İkisini karıştırmamak bilinçli.
  */
 create or replace function public.telemetry_month_spans(
   p_from timestamptz,
@@ -7274,11 +7464,11 @@ as $$
 $$;
 
 /**
- * CİHAZ ÖMÜR İZİNİ TAZELE — ham silinmeden ÖNCE çağrılır.
+ * CİHAZ ÖMÜR İZİNİ TAZELE — silmeden ÖNCE çağrılır.
  *
- * `greatest`/`least` ile birleştirme: ham kısmen silinmiş olsa bile daha
- * eski bir `ilk_kayit` KAYBEDİLMEZ, daha yeni bir `son_kayit` GERİ GİTMEZ.
- * Yani fonksiyon defalarca çalıştırılabilir ve her koşuda doğrudur.
+ * `greatest`/`least` ile birleştirme: ham kısmen silinmiş olsa bile daha eski
+ * bir `ilk_kayit` KAYBEDİLMEZ, daha yeni bir `son_kayit` GERİ GİTMEZ. Yani
+ * fonksiyon defalarca çalıştırılabilir ve her koşuda doğrudur.
  */
 create or replace function public.refresh_telemetry_lifetime()
 returns bigint
@@ -7309,26 +7499,29 @@ notify pgrst, 'reload schema';
 -- ÇALIŞTIRDIKTAN SONRA BEKLENEN HÂL (doğrulama sorguları):
 --
 --   select * from public.tenant_saklama;
---   → 1 satır: singleton · ham_gun=90 · silme_acik=FALSE · gerekce=null
+--   → 1 satır: singleton · uyari_gun=90 · ulke_kodu='AT' · gerekce=null
+--     ⚠️ `silme_acik` diye bir kolon YOK — otomatik silme YOK.
 --
---   select count(*) from public.vehicle_month_metrics;
---   → 0   (özet henüz üretilmedi; cron ya da /admin/saklama üretir)
+--   select count(*) from public.saklama_esikleri;
+--   → 0        ⚠️ BİLEREK BOŞ. Yasal eşikler ayrı araştırma turuyla gelecek.
 --
---   select count(*) from public.vehicle_telemetry_lifetime;
---   → 0   (ilk refresh_telemetry_lifetime() çağrısında dolar)
+--   select kategori, count(*) from public.veri_kategorileri group by 1;
+--   → arac 3 · kisisel 4 · yasal_zorunlu 5
 --
---   select count(*) from public.time_entries where km_dondu is not null;
---   → 0   (dondurma ilk koşuda yapılır)
+--   select count(*) from public.saklama_silme_izi;
+--   → 0        (elle silme yapılmadı)
 --
 --   select proname from pg_proc where proname in
---     ('purge_old_telemetry','purge_old_driver_locations',
---      'telemetry_month_spans','refresh_telemetry_lifetime');
---   → 4 satır
+--     ('purge_telemetry_range','purge_driver_locations_range',
+--      'saklama_eski_satirlar','telemetry_month_spans',
+--      'refresh_telemetry_lifetime');
+--   → 5 satır
+--     ⚠️ `purge_old_telemetry` LİSTEDE YOK ve olmamalı — o 054'ün
+--        (galzura-demo) fonksiyonu, bu migration ona DOKUNMAZ.
 --
--- MEVCUT VERİYE ETKİSİ: **SIFIR SATIR SİLİNİR.** Bu migration yalnız tablo
--- ve fonksiyon kurar; `silme_acik` false olduğu için cron kaydı girilse
--- bile silme başlamaz. galzura-demo'nun 14 günlük temizliği de değişmez
--- (çağrı p_days'i açıkça veriyor).
+-- MEVCUT VERİYE ETKİSİ: **SIFIR SATIR SİLİNİR.** Bu migration tablo, indeks
+-- ve fonksiyon kurar. Silen tek yol /admin/saklama ekranıdır ve her çağrı
+-- saklama_silme_izi'ne yazılır.
 -- =====================================================================
 
 

@@ -44,6 +44,8 @@ const YAZMA = /(upsert|[Kk]aydet|^save[A-Z]|^create[A-Z]|Ekle|Olustur|Ac$|Gonder
  * yok ve kullanıcının geri alma yolu ne.
  */
 const MUAF = {
+  "app/admin/saklama/SaklamaClient.tsx":
+    "Kayit listesi degil: TEK ayar satiri (tenant_saklama singleton: uyari esigi, ulke kodu, gerekce) + bir SILME ARACI. Duzenlenecek/silinecek satir yok. Ekranin gosterdigi iki liste de bilerek DEGISMEZDIR: veri_kategorileri urunun hukuki siniflandirmasidir (yoneticinin degistirebilecegi bir sey degil) ve saklama_silme_izi bir DENETIM IZIDIR — silinebilen bir iz, iz degildir; tablo zaten kendi kategorisinde yasal_zorunlu. Ekranin ASIL silme islevi satir silme degil ARALIK silmedir ve kendi cift onayi, sebebi ve izi vardir.",
   "app/admin/co2/CO2Client.tsx":
     "Kayıt listesi değil, TEK ayar satırı (tenant_co2 singleton: esas, şebeke yoğunluğu, hedef). Silinecek satır yok; geri alma yolu önceki esası yeniden seçmektir. Panonun gösterdiği CO₂ hiçbir yerde SAKLANMIYOR — her istekte telemetri litresinden türetiliyor, dolayısıyla silinecek bir kayıt da yok.",
   "app/admin/odul/OdulClient.tsx":

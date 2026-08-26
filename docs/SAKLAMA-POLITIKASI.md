@@ -1,188 +1,210 @@
-# Ham telemetri saklama politikası — 90 gün
+# Veri saklama — uyarı + elle silme
 
 **Migration 090 · `/admin/saklama` · `lib/saklama.ts` + `lib/saklama-db.ts`**
 
 > Bu belge **müşteriye ve denetime gösterilmek üzere** yazılmıştır.
-> Almanca ve İngilizce özetler §9 ve §10'da.
+> Almanca ve İngilizce özetler §11 ve §12'de.
 >
 > Sayılar 26.08.2026'da HAK61 canlı verisinde ölçüldü.
 
 ---
 
-## 1 · Karar
+## 1 · 🔴 Sistem otomatik silmez
 
 | | |
 |---|---|
-| **Ham GPS izi** (`device_telemetry`, `driver_locations`) | **90 gün** |
-| **Türetilmiş kayıtlar** (vardiya, alarm, rölanti, bölge ziyareti, sefer, iş emri, belge) | **etkilenmez** — kendi hukuki süreleri geçerli |
-| **Aylık özet** (`vehicle_month_metrics`) | ham silindikten sonra da yaşar |
-| **Varsayılan silme anahtarı** | 🔴 **KAPALI** — açmak bilinçli bir insan eylemidir |
+| **Otomatik silme** | **YOK.** Ne cron, ne anahtar, ne zamanlayıcı. |
+| **Gece koşan iş** | yalnız **hesaplar ve uyarır** |
+| **Silme** | **yönetici** yapar: aralığı seçer, kuru modda sayıyı görür, çift onayla siler |
+| **Her silme** | denetim izine yazılır — kim, ne zaman, hangi aralık, kaç satır, hangi sebeple |
 
-Süre **kiracı ayarıdır**: alt sınır 30, üst sınır 400 gün.
-**90 günün üstü yazılı gerekçe ister** ve gerekçe ürünün içinde saklanır.
+### Sözleşme metnine girecek cümle
 
----
+> **Galzura veri işleyendir. Saklama süresi ve silme kararı veri
+> sorumlusundadır (müşteri).**
 
-## 2 · Neden 90 gün
-
-### 2.1 · Operasyonel ihtiyaç — CMR Md. 32
-
-Uluslararası karayolu taşımasında (CMR sözleşmesi) **zamanaşımı 1 yıldır**
-(kasıt hâlinde 3 yıl). Yani bir teslimat anlaşmazlığı teorik olarak bir yıl
-sonra da gündeme gelebilir.
-
-Ama **ham GPS izi** o tartışmanın kanıtı değildir. Kanıt olan şey
-**teslimat kaydıdır**: ePOD imzası, fotoğraf, an ve yer damgası (migration
-080) — ve o kayıt **değişmezdir** (HK080 tetikleyicisi) ve **silinmez**.
-Ham iz, o kaydın nasıl üretildiğinin ara ürünüdür.
-
-Pratikte anlaşmazlık **ilk haftalarda** çıkar. **Bir çeyrek yıllık pay**,
-"geçen ay şu teslimatta ne oldu" sorusunu ham izle cevaplamaya fazlasıyla
-yeter.
-
-### 2.2 · Denetim otoritelerinin çizdiği çerçeve
-
-| Otorite | Süre | Sonuç |
-|---|---|---|
-| **Fransa — CNIL** | ham konum verisi için **2 ay** | rehber ilkesi |
-| **İtalya — Garante** (Ocak 2025) | **180 gün** | 🔴 **50.000 € ceza** (Autotrasporti Cuccu Riccardo S.r.l.; GPS mola sırasında da açıktı, Md. 5, 13, 88 ihlali) |
-| **Almanya** | **400 gün** ve **150 gün** | orantısız bulundu |
-
-**90 gün bu bandın alt yarısındadır**: CNIL'in 2 ayının bir ay üstünde,
-cezalandırılmış 180 günün yarısı, orantısız bulunan 150 ve 400 günün çok
-altında.
-
-> ⚠️ **90 > 60 olduğu için gerekçe yazılıdır.** CNIL çıtasını aşan her gün
-> savunulmak zorundadır ve bu belge o savunmadır.
-
-### 2.3 · Rakiplerin varsayılanı — ayrıştığımız nokta
-
-| Sağlayıcı | Varsayılan | Çıtaya göre |
-|---|---|---|
-| **Geotab** | **2 yıl** (tavan 8 yıl) | CNIL'in **12 katı** |
-| **Verizon Connect** | **13 ay** | Almanya'nın orantısız bulduğu 400 güne eşit |
-| **Samsara** | **"müşteri olduğun sürece"** | üst sınır yok |
-| **Webfleet** | *"sözleşme sahibi karar verir"* | varsayılan yayımlanmamış |
-| **HAK61** | **90 gün** | CNIL + 30 gün |
-
-Ayrıntılı inceleme: [`docs/RAKIP-GDPR.md`](RAKIP-GDPR.md).
-
-Rakiplerin hepsi **işleyen** (processor) sıfatıyla süreyi müşteriye
-bırakıyor. Bu hukuken savunulabilir (GDPR Md. 28) **ama uzun varsayılan,
-hiçbir şey yapmayan müşteriyi doğrudan ihlale sokuyor** — İtalyan davasında
-ceza yiyen taraf tam olarak buydu: cihazı satan değil, **cihazı kullanan**.
-
-**Kararımız: uyumlu varsayılanla başlamak.** Uzatmak mümkün, ama sebepsiz
-değil.
+Bu, kodun kendisiyle tutarlıdır: üründe gün sayısına göre silen bir fonksiyon
+**yoktur**. `purge_telemetry_range` **aralık** alır ve yalnız `/admin/saklama`
+ekranından, denetim izi yazılarak çağrılır.
 
 ---
 
-## 3 · Ham veri ≠ türetilmiş veri
+## 2 · Veri kategorilendirmesi
 
-Bu ayrım politikanın belkemiğidir ve şemada **zaten kurulu**.
+Her tablo üç kategoriden birine düşer (`veri_kategorileri`):
 
-| Kayıt | Ne | Süre |
+| Kategori | Ne olur |
+|---|---|
+| **kişisel veri** | uyarı çıkar · **elle silinebilir** |
+| **araç verisi** | uyarı çıkmaz · elle silinebilir |
+| **yasal zorunlu** | 🔒 **SİLİNEMEZ** — arayüz silme seçeneğini **hiç göstermez** |
+
+### 🔑 Hukuki dayanak — ayrım "araç mı şoför mü" DEĞİL
+
+**GPS izi hukuken şoförün kişisel verisidir, aracın değil.** Aracın firmaya
+ait olması bunu değiştirmez. Doğru soru **"o an araçta kim vardı"**: bir konum
+dizisi, o dizideki kişinin nerede olduğunu, ne zaman durduğunu, ne kadar
+çalıştığını anlatır.
+
+### Bugünkü sınıflandırma
+
+| Tablo | Kategori | Gerekçe |
 |---|---|---|
-| `device_telemetry` | ham cihaz akışı — saniyeler aralıklı konum, hız, yakıt, odometre | **90 gün** |
-| `driver_locations` | telefon GPS kalıntısı (artık yazılmıyor) | **90 gün** |
-| `time_entries` | vardiya: başlangıç, bitiş, mola, km | kendi süresi |
-| `vehicle_events` | alarm/olay | kendi süresi |
-| `idle_episodes` · `zone_visits` | rölanti epizodu · bölge ziyareti | kendi süresi |
-| `seferler` · `teslimat_kanitlari` | sefer · ePOD (**değişmez**) | kendi süresi |
-| `vehicle_month_metrics` | **aylık özet** (090) | ham silindikten sonra da yaşar |
+| `device_telemetry` | **kişisel** | ham GPS izi — yukarıdaki dayanak |
+| `driver_locations` | **kişisel** | telefon GPS kalıntısı; artık yazılmıyor ama içerik aynı kategoride |
+| `idle_episodes` | **kişisel** | konum + süre: kim nerede ne kadar bekledi |
+| `zone_visits` | **kişisel** | kimin nerede olduğu; ham izden türetilmiş ama aynı bilgi |
+| `vehicles` | araç | plaka, filo, yakıt türü — kişi belirtmez |
+| `vehicle_month_metrics` | araç | aylık araç toplamı; kişi ekseni ve gün kırılımı yok |
+| `vehicle_telemetry_lifetime` | araç | iki zaman damgası; konum içermez |
+| `time_entries` | 🔒 **yasal zorunlu** | AZG/ArbZG çalışma süresi kaydı |
+| `teslimat_kanitlari` | 🔒 **yasal zorunlu** | ePOD — HK080 ile değişmez |
+| `shift_edit_log` | 🔒 **yasal zorunlu** | vardiya düzeltme denetim izi |
+| `security_log` | 🔒 **yasal zorunlu** | oturum/eylem izi |
+| `saklama_silme_izi` | 🔒 **yasal zorunlu** | silme izinin **kendisi** |
+
+⚠️ **FAIL-CLOSED:** sınıflandırılmamış bir tablo `yasal_zorunlu` sayılır. Bir
+tabloyu sınıflandırmayı unutmak, onu yanlışlıkla silinebilir yapamaz.
+
+⚠️ **Arayüz reddetmez, GÖSTERMEZ.** `yasal_zorunlu` tablolar silme seçicisine
+`<option>` olarak **hiç konmaz** (sunucuda süzülür). Reddetmek bir hatadır ve
+hata mesajı okunmayabilir; göstermemek bir tasarımdır.
+
+---
+
+## 3 · 🔴 Ülke bazlı yasal eşikler — tablo BOŞ
+
+`saklama_esikleri` tablosu kuruldu ve **bilerek boş bırakıldı**:
+
+```
+ulke_kodu · veri_turu · esik_gun · yasal_dayanak · kaynak_url · dogrulanma_tarihi
+```
+
+**`esik_gun = NULL` bir eksiklik değil, bir BEYANDIR:** "bu ülke/veri türü
+için doğrulanmış bir çıpamız yok". Ekran bu durumda **hiçbir sayı basmaz**:
+
+> *"AT için yasal çıpa HENÜZ DOĞRULANMADI — bu satırda bilerek sayı
+> yazmıyoruz."*
+
+Yasal eşikler **ayrı bir araştırma turuyla**, her satır için kaynak linki ve
+doğrulanma tarihiyle doldurulacak. Uydurma bir gün sayısı DACH müşterisine
+giderse sorumluluk doğar.
+
+⚠️ **Veritabanı bunu zorluyor:** `CHECK saklama_esikleri_kaynakli` — bir sayı
+yazıldıysa `yasal_dayanak`, `kaynak_url` ve `dogrulanma_tarihi` de dolu olmak
+zorunda. Kaynaksız eşik **yazılamaz** (QA'da doğrulandı).
+
+`dogrulanma_tarihi` şart, çünkü mevzuat değişir ve denetimde sorulacak soru
+"ne zaman bakıldı"dır.
+
+---
+
+## 4 · Uyarı eşiği — kiracının kendi çıpası
+
+`tenant_saklama.uyari_gun`, varsayılan **90**. ⚠️ Adı bilinçli `uyari_gun`:
+**hiçbir şey silmez.**
+
+### Neden 90
+
+- **CMR Md. 32** — uluslararası taşımada 1 yıllık zamanaşımı. Ama bir teslimat
+  anlaşmazlığının **kanıtı ePOD'dur** (imza, fotoğraf, an ve yer damgası,
+  migration 080) ve o kayıt **değişmezdir ve silinmez**. Ham iz, o kaydın ara
+  ürünüdür. Anlaşmazlık pratikte ilk haftalarda çıkar; çeyrek yıl operasyonel
+  olarak yeter.
+- **CNIL (Fransa)** ham konum verisi için **2 ay**.
+- **Garante (İtalya)**, Ocak 2025: **50.000 €** — 50 çekicide GPS mola
+  sırasında açık kalmış ve konum **180 gün** saklanmış (Md. 5, 13, 88).
+- **Almanya**: **400** ve **150 gün** orantısız bulundu.
+
+90 gün bu bandın alt yarısında. Kıyas için rakiplerin **varsayılanı**:
+**Geotab 2 yıl** · **Verizon Connect 13 ay** · **Samsara "müşteri olduğun
+sürece"** (ayrıntı: [`docs/RAKIP-GDPR.md`](RAKIP-GDPR.md)).
+
+> ⚠️ Bu 90, **yasal bir çıpa değildir**. Yasal çıpa §3'teki tabloda durur ve
+> bugün boştur.
+
+---
+
+## 5 · Ham veri ≠ türetilmiş veri
+
+Ham iz silinse bile şunlar **yaşar**: vardiya (`time_entries`), alarm
+(`vehicle_events`), rölanti (`idle_episodes`), bölge ziyareti (`zone_visits`),
+sefer, ePOD, ve **aylık özet** (`vehicle_month_metrics`).
 
 ### ⚠️ AZG çalışma süresi kaydı 24 ay saklanır — ama o GPS izi değildir
 
-Avusturya iş mevzuatı çalışma süresi kayıtlarının saklanmasını istiyor.
-Bu, **`time_entries`** satırıdır: kim, ne zaman başladı, ne zaman bitirdi,
-kaç dakika mola verdi. **Konum dizisi değil.**
+Avusturya iş mevzuatının istediği kayıt **`time_entries` satırıdır**: kim, ne
+zaman başladı, ne zaman bitirdi, kaç dakika mola. **Konum dizisi değil.**
 
-Ham izi silmek AZG yükümlülüğünü **etkilemez** — çünkü yükümlülüğün konusu
-olan kayıt ayrı bir tabloda duruyor ve silinmiyor. İkisini karıştırmak,
-"iş hukuku gereği GPS izini iki yıl tutmalıyım" gibi **yanlış** bir sonuca
-götürürdü.
+Ham izi silmek AZG yükümlülüğünü **etkilemez** — o kayıt ayrı tabloda ve
+`yasal_zorunlu` kategoride, yani **silinemez**. İkisini karıştırmak "iş hukuku
+gereği GPS izini iki yıl tutmalıyım" gibi **yanlış** bir sonuca götürürdü.
 
 ---
 
-## 4 · Katmanlı saklama modeli
+## 6 · Katmanlı saklama ve ⚠️ özet neden AYLIK
 
 ```
-  0 ─────────────── 90 gün ─────────────────────────────►  süresiz
-  │                    │
-  │  HAM İZ            │  AYLIK ÖZET + TÜRETİLMİŞ KAYITLAR
-  │  konum dizisi      │  araç × ay: km, litre, dolum, kapsama
-  │  saniye çözünürlük │  vardiya, alarm, bölge, sefer, ePOD
-  │                    │
-  └── silinir ─────────┘
+ham iz  ──── elle silinene kadar ────►
+   │
+   └─► AYLIK ÖZET (araç × ay: km, litre, dolum, kapsama) ── süresiz
 ```
-
-### ⚠️ Özet granülerliği **AY** — ölçümle seçildi
 
 `buildFuelReport`'un 28 günlük gerçek cevabı **2.602,6 L**. Aynı pencere
-parçalanıp toplandığında (HAK61 canlı, 26.08.2026):
+parçalanıp toplandığında (HAK61 canlı):
 
 | parça | toplam L | sapma |
 |---|---|---|
 | **1 gün** | 3.009,9 | **+%15,6** |
-| 2 gün | 2.986,0 | +%14,7 |
 | 7 gün | 2.714,0 | +%4,3 |
-| 14 gün | 2.591,9 | −%0,4 |
 | **28 gün** | 2.602,5 | **−%0,0** |
 
-İkinci ölçüm (14 günlük pencere): gerçek **1.194,98 L**, günlük parça
-toplamı **1.540,1 L** = **+%28,9**.
+İkinci ölçüm (14 günlük pencere): gerçek **1.194,98 L**, günlük parça toplamı
+**1.540,1 L** = **+%28,9**.
 
-**Sebep:** yakıt motoru (migration 027 + 052) ardışık okuma **dizisi**
-üzerinde çalışıyor — 30 satırlık de-glitch penceresi, 15 dakikalık seri
-birleştirme, dolum tespiti. Gün sınırı bu diziyi kesiyor; gece yarısını aşan
-dolum iki kez sayılıyor.
+**Sebep:** yakıt motoru (027 + 052) ardışık okuma **dizisi** üzerinde çalışıyor
+— 30 satırlık de-glitch penceresi, 15 dakikalık seri birleştirme. Gün sınırı
+diziyi kesiyor; gece yarısını aşan dolum iki kez sayılıyor.
 
-> 🔑 Bu yüzden özet **günlük değil aylık**, ve değerler **raporun kendi
-> motorundan** alınıyor: ay tek pencere olarak `buildFuelReport`e veriliyor
-> ve çıktısı olduğu gibi yazılıyor. Özet, raporun kendi cevabının
-> dondurulmuş hâlidir — ikinci bir hesap değil.
+> 🔑 Özet **raporun kendi cevabının dondurulmuş hâlidir**: ay tek pencere
+> olarak `buildFuelReport`e verilir ve çıktısı yazılır. İkinci bir hesap yok.
+> QA'da fark **0,00 L** ölçüldü.
 
 ---
 
-## 5 · Ne kurtarılır, ne kurtarılmaz — dürüst liste
+## 7 · Ne kurtarılır, ne kurtarılmaz
 
-Silmeden önce **10 yüzey tek tek ölçüldü**.
+Silmenin etkisi **10 yüzeyde tek tek ölçüldü**.
 
-| Yüzey | Ham silinince | Özet kurtarır mı |
+| Yüzey | Ham silinince | Kurtaran |
 |---|---|---|
-| Mevzuat erken uyarı | ✅ etkilenmez (yalnız açık vardiyaya bakıyor) | gerekmez |
-| Bölge ziyaretleri | ✅ etkilenmez (`zone_visits` **kalıcı** yazılıyor) | gerekmez |
-| €/km maliyet | ✅ payda `time_entries`ten (km kapısı hariç) | km dondurma ile |
-| Güvenlik skoru — ceza payı | ✅ `vehicle_events` + `idle_episodes` durur | gerekmez |
-| Güvenlik skoru — km paydası | ⚠️ ham odometreden | km dondurma ile |
-| Yakıt raporu | ⚠️ ham diziden | ✅ aylık özet |
-| CO₂ panosu | ⚠️ yakıttan besleniyor | ✅ aylık özet |
+| Mevzuat erken uyarı | ✅ etkilenmez | — |
+| Bölge ziyaretleri | ✅ etkilenmez (`zone_visits` kalıcı) | — |
+| €/km maliyet | ✅ payda `time_entries`ten | km dondurma |
+| Skor — ceza payı | ✅ `vehicle_events` durur | — |
+| Skor — km paydası | ⚠️ ham odometreden | km dondurma |
+| Yakıt · CO₂ | ⚠️ ham diziden | ✅ aylık özet |
 | Sefer kârlılığı | ⚠️ ham odometre uçlarından | ay granülerliğinde |
-| Haftalık aksiyon K3 "sessiz araç" | 🔴 araç listeden **düşerdi** | ✅ ömür izi |
-| **Rota geçmişi / oynatma** | 🔴 **boşalır** | ❌ **KURTARILAMAZ** |
+| Haftalık K3 "sessiz araç" | 🔴 araç listeden **düşerdi** | ✅ ömür izi |
+| **Rota geçmişi** | 🔴 **boşalır** | ❌ **KURTARILAMAZ** |
 
 ### 🔴 Rota geçmişi bilinçli olarak kurtarılmıyor
 
 Bir ayın konum dizisini özet tablosunda saklamak, **"ham izi sakla" demenin
-başka bir yolu** olurdu ve politikanın kendisini boşa çıkarırdı.
-
-Rota, saklama süresi dolduğunda **gerçekten kaybolur.** Ürünün borcu onu
-kurtarmak değil, **kaybolduğunu söylemek**: ekran "bu tarih saklama
-süresinin dışında" der, boş harita göstermez.
+başka bir yolu** olurdu. Rota, ham silindiğinde **gerçekten kaybolur**; ürünün
+borcu onu kurtarmak değil, **kaybolduğunu söylemek**.
 
 ### 🔴 Sessiz araç uyarısı — silmenin en ters sonucu
 
-Haftalık aksiyon kuralı K3 ve panodaki "sessiz cihaz" alarmı, aracın **son
-ham satırının yaşına** bakıyor. 90 günden uzun susmuş bir aracın tüm
-satırları silinince o araç uyarı listesinden **sessizce düşerdi** — yani
-**en çok ilgilenilmesi gereken araç görünmez olurdu**.
-
-`vehicle_telemetry_lifetime` tablosu (090) ilk/son telemetri anını ham
-akıştan **bağımsız** tutar. Silme, bu tablo yazılmadan **başlamaz**.
+Haftalık kural K3 ve "sessiz cihaz" alarmı aracın **son ham satırının yaşına**
+bakıyor. Uzun süre susmuş bir aracın satırları silinince o araç uyarı
+listesinden **sessizce düşerdi** — **en çok ilgilenilmesi gereken araç görünmez
+olurdu**. `vehicle_telemetry_lifetime` ilk/son anı ham akıştan **bağımsız**
+tutar ve o tablo yazılmadan silme **reddedilir**.
 
 ---
 
-## 6 · 🔴 Silmeden önce düzeltilen kusur
+## 8 · 🔴 Silmeden önce düzeltilen kusur
 
 Ham veri **olmayan** bir pencerede bugünkü davranış ölçüldü
 (01.03→01.04.2026, HAK61 canlı):
@@ -193,161 +215,163 @@ buildCostReport → totalEur:0 · fuelEur:0
 co2Panosu       → kg:null · 29 plaka "ölçülemedi"        ← DOĞRU olan bu
 ```
 
-Yakıt ve maliyet raporu, **ölçülmemiş bir dönemi "0 L · 0,00 €" diye olgu
-gibi basıyordu.** Silme açılsaydı bu kusur, **gerçek veriyi uydurma sıfıra
-çeviren bir makineye** dönüşürdü.
+Yakıt ve maliyet raporu **ölçülmemiş bir dönemi "0 L · 0,00 €" diye olgu gibi
+basıyordu.** Silme yapıldığında bu kusur, **gerçek veriyi uydurma sıfıra
+çeviren bir makineye** dönüşür.
 
-**Düzeltildi (090):**
-- Ölçülen araç 0 iken KPI bandı **"—" + "ölçülemedi"** yazıyor, 0 L değil.
-- Maliyet raporuna geçen litre `measured > 0` kapısından geçiyor.
-- PDF'te `totalLiters: null` → *"Gesamtverbrauch: nicht messbar"*.
-- İstenen pencere kesimi aşıyorsa **kapsam şeridi** görünüyor ve kaç günün
-  dışarıda kaldığını yazıyor.
+**Düzeltildi:** ölçülen araç 0 iken KPI **"—" + "ölçülemedi"** yazıyor ·
+maliyete geçen litre `measured > 0` kapısından geçiyor · PDF'te *"nicht
+messbar"* · pencere elde bulunan verinin başlangıcından öncesine uzanıyorsa
+**kapsam şeridi** çıkıyor.
+
+⚠️ Kapsam şeridinin çıpası **uyarı eşiği değil, verinin gerçek başlangıcıdır**:
+otomatik silme olmadığı için "90 günden eski veri yok" varsayımı yanlış olurdu.
 
 ---
 
-## 7 · Silme nasıl çalışır — dört kapı
+## 9 · Elle silme nasıl çalışır
 
 ```
-1 · ÖMÜR İZİ    aracın ilk/son telemetri anını yaz
-2 · AYLIK ÖZET  kesimin gerisindeki her ay için raporun cevabını dondur
-3 · KM DONDUR   vardiya km yargısını sabitle
-──── ancak bundan SONRA ────
-4 · SİL         ve yalnız kesimin TAMAMEN gerisindeki aylar için
+1 · ARALIK SEÇ     hafta · ay · iki tarih arası
+2 · KURU MOD       "şu kadar satır silinecek" — hiçbir şey silinmez
+3 · HAZIRLIK       ömür izi + aylık özet + km dondurma (eksikse)
+4 · SEBEP          zorunlu, en az 10 karakter
+5 · ÇİFT ONAY      kutuya elle "SIL" yazılır
+6 · SİL            önce denetim izi yazılır, sonra silinir
 ```
 
-**Dördü de sağlanmazsa silme reddedilir ve sebebi ekranda yazar.**
+### Altı kapı — hepsi geçilmeden silme olmaz
+
+| Kapı | Neyi korur |
+|---|---|
+| kategori silinebilir mi | yasal zorunlu veriyi |
+| aralık geçerli mi | geleceğe uzanan / 400 günden uzun aralığı |
+| onay metni "SIL" mi | kazara tıklamayı |
+| sebep yeterli mi | izsiz silmeyi |
+| ömür izi yazıldı mı | sessiz araç uyarısını |
+| aralığın ayları özetlendi mi | yakıt / CO₂ / kârlılık raporlarını |
+| aralığın vardiyaları donduruldu mu | km yargısını |
 
 ### ⚠️ Sıra tartışma dışı
 
 `km_dondu` adımı silmeden **önce** yapılmalıdır. Sonra yapılırsa ham zaten
 gitmiş olur ve dondurma her sıfır-farklı vardiyaya sessizce "ölçülemedi"
-yazar — **düzeltmek istediği hatayı kalıcılaştırır.** Ve o bayrak
-yöneticinin seçtiği aralıktaki Excel ve Almanca PDF çıktısına kadar gider.
+yazar — **düzeltmek istediği hatayı kalıcılaştırır.** Ve o bayrak yöneticinin
+seçtiği aralıktaki Excel ve Almanca PDF çıktısına kadar gider.
 
-### ⚠️ Kesimi ortadan bölen ay silinmez
+### ⚠️ İz ÖNCE yazılır
 
-Yarısı silinip yarısı kalan bir ay, ne özetiyle ne ham verisiyle tutarlı
-olurdu. Yalnız **tamamen** kesimin gerisinde kalan aylar silinir.
-
-### 🔴 Fail-closed
-
-`tenant_saklama.silme_acik` varsayılanı **false**. Migration çalıştırılsa,
-cron kaydı girilse, doğru sırla çağrılsa bile **kapalıyken tek satır
-silinmez**. Ekranda "Sil" düğmesi **yoktur** — silme geri alınamaz ve bir
-düğmenin arkasına konulamaz.
+Silme geri alınamaz; denetim izi yazılamıyorsa silme de olmaz. Tersi sıra,
+izsiz bir silme bırakabilirdi.
 
 ---
 
-## 8 · Bugünkü durum (26.08.2026, HAK61)
+## 10 · Bugünkü durum (26.08.2026, HAK61)
 
 | | |
 |---|---|
 | `device_telemetry` | **1.611.074 satır** |
 | En eski kayıt | **13.07.2026 = 44 gün** |
-| 90 günden eski satır | **0** |
-| Silme anahtarı | **KAPALI** |
+| Uyarı eşiğini (90 gün) geçen satır | **0** |
+| Otomatik silme | **yok — mimaride de yok** |
 
-**Bugün silinecek bir şey yok** — entegrasyon 13.07'de başladı. Mekanizma,
-veri 90 günü aştığında hazır olsun diye şimdi kuruluyor.
-
-Önceki durum: politika **yoktu**. 44 gün CNIL çıtasının altındaydı ama bu
-bir politika değil bir **tesadüftü**; hiçbir şey 400 güne gitmesini
-engellemiyordu.
+Bugün uyarı çıkmıyor. Önceki durum: görünürlük **yoktu** — 44 gün CNIL
+çıtasının altındaydı ama bu bir politika değil bir **tesadüftü** ve kimse
+haberdar olmuyordu.
 
 ---
 
-## 9 · Zusammenfassung (Deutsch)
+## 11 · Zusammenfassung (Deutsch)
 
-**Aufbewahrungsfrist für GPS-Rohdaten: 90 Tage.**
+**Das System löscht nichts automatisch.**
 
-Die GPS-Rohspur (`device_telemetry`, `driver_locations`) wird nach **90
-Tagen gelöscht**. **Abgeleitete Datensätze sind nicht betroffen**:
-Arbeitszeiten (`time_entries`), Alarme, Zonenbesuche, Fahrten und
-Liefernachweise (ePOD) bleiben nach ihren eigenen gesetzlichen Fristen
-erhalten.
+**Galzura ist Auftragsverarbeiter. Aufbewahrungsfrist und Löschentscheidung
+liegen beim Verantwortlichen (Kunde).** Der nächtliche Lauf **rechnet und
+warnt nur**; gelöscht wird ausschließlich manuell über `/admin/saklama`, mit
+selbst gewähltem Zeitraum, Trockenlauf, Pflichtbegründung, doppelter
+Bestätigung und vollständigem Prüfprotokoll.
 
-**Begründung der 90 Tage:**
-- **CMR Art. 32** sieht für den internationalen Straßengüterverkehr eine
-  Verjährung von einem Jahr vor. Der Beweis einer Lieferung ist jedoch der
-  **unveränderliche Liefernachweis** (ePOD mit Unterschrift, Foto, Zeit- und
-  Ortstempel), nicht die GPS-Rohspur. Streitigkeiten treten in der Praxis in
-  den ersten Wochen auf; ein Quartal genügt operativ.
-- **CNIL (Frankreich)** nennt für Rohstandortdaten **2 Monate**.
-- **Garante (Italien)** verhängte im Januar 2025 **50.000 €** unter anderem
-  wegen **180 Tagen** Aufbewahrung.
-- **Deutschland** hielt **400** und **150 Tage** für unverhältnismäßig.
+**Datenkategorien.** Jede Tabelle fällt in eine von drei Kategorien:
+*personenbezogen* (Warnung, löschbar), *Fahrzeugdaten* (frei),
+*gesetzlich vorgeschrieben* (**nicht löschbar — die Oberfläche bietet keine
+Option**). Rechtliche Grundlage: **die GPS-Spur ist rechtlich das
+personenbezogene Datum der fahrenden Person, nicht des Fahrzeugs.** Dass das
+Fahrzeug der Firma gehört, ändert daran nichts; entscheidend ist, **wer zu
+diesem Zeitpunkt im Fahrzeug saß**.
 
-90 Tage liegen in der unteren Hälfte dieses Rahmens. Zum Vergleich:
-**Geotab 2 Jahre**, **Verizon Connect 13 Monate**, **Samsara „solange Sie
-Kunde sind"**.
+**Gesetzliche Anker: Tabelle bewusst LEER.** `saklama_esikleri` wird angelegt,
+aber ohne Werte. `esik_gun = NULL` bedeutet: *für dieses Land liegt kein
+verifizierter Anker vor* — die Oberfläche nennt dann **keine Zahl**. Die Werte
+werden in einer eigenen Recherche mit Quelle und Prüfdatum ergänzt; eine
+erfundene Zahl würde Haftung auslösen.
 
-**Gestufte Aufbewahrung:** Rohdaten 90 Tage → **monatliche Zusammenfassung**
-(Fahrzeug × Monat: km, Liter, Betankungen, Abdeckung) unbefristet.
-Die Granularität ist **monatlich**, weil eine tagesweise Aggregation den
+**Warnschwelle 90 Tage (löscht nichts).** Begründung: CMR Art. 32 (Beweis ist
+der unveränderliche Liefernachweis, nicht die Rohspur) · CNIL: 2 Monate ·
+Garante (Italien) 01/2025: 50.000 € bei 180 Tagen Aufbewahrung · Deutschland:
+400 und 150 Tage unverhältnismäßig. Zum Vergleich: Geotab 2 Jahre, Verizon
+Connect 13 Monate, Samsara „solange Sie Kunde sind".
+
+**Gestufte Aufbewahrung:** Rohdaten → **monatliche Zusammenfassung**
+unbefristet. Monatlich, weil eine tagesweise Aggregation den
 Kraftstoffverbrauch messbar um **15,6–28,9 %** überschätzt.
 
-**Was nicht wiederherstellbar ist:** die **Streckenwiedergabe**. Das ist
-bewusst so — eine Monatsspur der Positionen zu speichern hieße, die Rohspur
-unter anderem Namen aufzubewahren. Der Bildschirm sagt dann ausdrücklich,
-dass der Zeitraum außerhalb der Aufbewahrungsfrist liegt.
-
-**Die automatische Löschung ist standardmäßig AUS** und beginnt erst, wenn
-Lebensspur, Monatszusammenfassung und eingefrorene km-Bewertung vollständig
-sind.
+**Nicht wiederherstellbar:** die **Streckenwiedergabe** — bewusst, denn eine
+Monatsspur der Positionen zu speichern hieße, die Rohspur unter anderem Namen
+aufzubewahren.
 
 ---
 
-## 10 · Summary (English)
+## 12 · Summary (English)
 
-**Raw GPS retention: 90 days.**
+**The system never deletes anything automatically.**
 
-The raw GPS trail (`device_telemetry`, `driver_locations`) is deleted after
-**90 days**. **Derived records are unaffected**: working-time records
-(`time_entries`), alarms, zone visits, trips and proof-of-delivery records
-(ePOD) are kept under their own statutory periods.
+**Galzura is the processor. The retention period and the decision to delete
+belong to the controller (the customer).** The nightly job only **calculates
+and warns**; deletion happens solely through `/admin/saklama` — a
+user-selected range, a dry run, a mandatory reason, a typed second
+confirmation, and a full audit trail.
 
-**Why 90 days:**
-- **CMR Art. 32** sets a one-year limitation period for international road
-  carriage. But the evidence in a delivery dispute is the **immutable proof
-  of delivery** (signature, photo, time and place stamp), not the raw GPS
-  trail. Disputes surface within the first weeks; a quarter is operationally
-  sufficient.
-- **CNIL (France)** states **2 months** for raw location data.
-- **Garante (Italy)** fined **€50,000** in January 2025, in part for a
-  **180-day** retention.
-- **Germany** found **400** and **150 days** disproportionate.
+**Data categories.** Every table falls into one of three: *personal data*
+(warned, deletable), *vehicle data* (free), *legally required* (**not
+deletable — the interface does not even offer the option**). Legal basis: **a
+GPS trail is legally the personal data of the person driving, not of the
+vehicle.** The vehicle belonging to the company does not change that; the
+deciding question is **who was in the vehicle at the time**.
 
-90 days sits in the lower half of that band. For comparison: **Geotab 2
-years**, **Verizon Connect 13 months**, **Samsara "as long as you are a
-customer"**.
+**Legal anchors: table deliberately EMPTY.** `saklama_esikleri` is created
+without values. `esik_gun = NULL` means *no verified anchor exists for this
+country* — and the interface then states **no figure at all**. The values will
+be filled in a dedicated research round with a source and a verification date;
+an invented number would create liability.
 
-**Tiered retention:** raw for 90 days → **monthly summary** (vehicle ×
-month: km, litres, refuels, coverage) kept indefinitely. Granularity is
-**monthly** because daily aggregation overstates fuel consumption by a
-measured **15.6–28.9 %**.
+**Warning threshold: 90 days (deletes nothing).** Rationale: CMR Art. 32 (the
+evidence is the immutable proof of delivery, not the raw trail) · CNIL: 2
+months · Garante (Italy) 01/2025: €50,000 over a 180-day retention · Germany:
+400 and 150 days disproportionate. For comparison: Geotab 2 years, Verizon
+Connect 13 months, Samsara "as long as you are a customer".
 
-**What cannot be recovered:** **route replay**. This is deliberate — storing
-a month of positions would be keeping the raw trail under another name. The
-screen states explicitly that the date falls outside the retention window.
+**Tiered retention:** raw data → **monthly summary** kept indefinitely.
+Monthly, because daily aggregation overstates fuel consumption by a measured
+**15.6–28.9 %**.
 
-**Automatic deletion is OFF by default** and starts only once the lifetime
-trail, monthly summaries and frozen km verdicts are all complete.
+**Not recoverable:** **route replay** — deliberately, since storing a month of
+positions would be keeping the raw trail under another name.
 
 ---
 
-## 11 · Kapılar
+## 13 · Kapılar
 
 | İşlem | Kapı |
 |---|---|
-| Politikayı görmek | `requireAdmin` — **filo şefine kapalı** |
-| Süreyi/anahtarı değiştirmek | `requireAdmin` + denetim izi (eski→yeni) |
+| Ekranı görmek | `requireAdmin` — **filo şefine kapalı** |
+| Uyarı eşiğini değiştirmek | `requireAdmin` + denetim izi (eski→yeni) |
 | Hazırlığı yürütmek | `requireAdmin` — **hiçbir satır silmez** |
-| **Silmek** | **YALNIZ cron** + `CRON_SECRET` + `silme_acik` + dört kapı |
+| **Silmek** | `requireAdmin` + altı kapı + çift onay + `saklama_silme_izi` |
+| Cron | `CRON_SECRET` — **ve o uç zaten silmiyor** |
 
 ---
 
-## 12 · Cron kaydı
+## 14 · Cron kaydı
 
 `docs/CRON-KAYITLARI.md` 9. iş. Günde bir kez, gece.
 
@@ -355,24 +379,15 @@ trail, monthly summaries and frozen km verdicts are all complete.
 GET https://<dağıtım>/api/cron/saklama?secret=<CRON_SECRET>
 ```
 
-Kuru mod (hiçbir şey yazmaz/silmez):
+**Bu uç hiçbir şey silmez.** İki iş yapar: cihaz ömür izini tazeler ve uyarı
+üretir. Gövdede `silmeYapildi: false` alanı bilerek vardır — gövdeyi okuyan
+yanılmasın.
 
-```
-GET https://<dağıtım>/api/cron/saklama?secret=<CRON_SECRET>&kuru=1
-```
-
-| Kod | Anlamı |
-|---|---|
-| 200 | Tur tamam — gövdede `silme.izin`, `silme.engel`, `ozet`, `km` |
-| 401 | Sır yanlış ya da `CRON_SECRET` tanımsız |
-| 503 | Migration **090** çalıştırılmamış |
-| 500 | Tur sırasında hata — gövdede sebep |
+`?kuru=1` ömür izini bile yazmaz, yalnız okur.
 
 ---
 
-## 13 · Prova (QA harness) — 83 iddia
-
-Üretim veritabanında silme provası yapılmaz; harness ayrı.
+## 15 · Prova (QA harness) — 165 iddia
 
 ```bash
 # Postgres + şema + 090
@@ -391,63 +406,90 @@ docker exec hak-qa psql -U postgres -d hak -c "
 
 # PostgREST + proxy + tohum, sonra:
 set -a; . <qa env>; set +a
-npm run verify:saklama            # 63 iddia — motor
+npm run verify:saklama                   # 128 iddia — motor
 npm run build && npx next start -p 3300 &
-node scripts/verify-saklama-ekran.mjs   # 20 iddia — ekran
+node scripts/verify-saklama-ekran.mjs    # 37 iddia — ekran
 ```
 
-### 🔑 Silme ÖNCE/SONRA — ölçülen tablo
+### 🔴 Cron hiçbir şey silmiyor — ölçüldü
+
+| Tur | Sonuç | Satır |
+|---|---|---|
+| sırsız | HTTP 401 | 1.000 |
+| `?kuru=1` | `silmeYapildi:false` · uyarı: 600 satır / 147 gün / **çıpa null** | 1.000 |
+| gerçek tur 1 | `silmeYapildi:false` · ömür izi 2 araç yazıldı | **1.000** |
+| gerçek tur 2 | aynı | **1.000** |
+| gerçek tur 3 | aynı | **1.000** |
+
+### 🔑 Elle silme ÖNCE/SONRA
 
 Tohum: 2 cihazlı + 1 cihazsız araç · **1.000 ham satır** (600 nisan, 400
-ağustos) · 3 vardiya. Kesim **28.05.2026**, yani nisan tamamen gerisinde.
+ağustos) · 3 vardiya.
 
 | Ölçüm | ÖNCE | SONRA | Karar |
 |---|---|---|---|
-| Ham satır — **nisan** | 600 | **0** | silindi |
-| Ham satır — **ağustos** | 400 | **400** | dokunulmadı |
+| Ham satır — nisan | 600 | **0** | seçilen aralık silindi |
+| Ham satır — ağustos | 400 | **400** | dokunulmadı |
 | Yakıt raporu — ağustos | 146,4 L | **146,4 L** | ✅ değişmedi |
 | Yakıt raporu — nisan | 207,6 L | **`null` · ölçülen 0** | ✅ **"ölçülemedi"**, 0 L DEĞİL |
-| **Aylık özet** — nisan | 207,6 L | **207,6 L** | ✅ ham gittikten sonra da ayakta |
-| Vardiya km yargısı (A: fark var) | — | **ölçüldü** | ✅ donduruldu |
-| Vardiya km yargısı (B: fark yok + hareket var) | — | **ölçülemedi** | ✅ ham olmadan üretilemezdi |
-| Ömür izi — nisan başlangıcı | — | **biliniyor** | ✅ sessiz araç uyarısı yaşıyor |
-| Türetilmiş kayıtlar (vardiya) | 3 | **3** | ✅ silinmedi |
+| **Aylık özet** — nisan | 207,6 L | **207,6 L** | ✅ ham gittikten sonra ayakta |
+| Vardiya km (fark var) | — | **ölçüldü** | ✅ donduruldu |
+| Vardiya km (fark yok + hareket var) | — | **ölçülemedi** | ✅ ham olmadan üretilemezdi |
+| Ömür izi — nisan | — | **biliniyor** | ✅ sessiz araç uyarısı yaşıyor |
+| Türetilmiş kayıtlar | 3 | **3** | ✅ silinmedi |
 
-**Özet, silmeden önceki raporun cevabıyla birebir aynı:** 207,6 vs 207,6
-(fark **0,00 L**). Çünkü özet ikinci bir hesap değil, raporun kendi cevabının
-dondurulmuş hâli.
+Özet ile raporun cevabı arasındaki fark **0,00 L**.
 
-### Fail-closed kanıtı
+### Çift onay ve kapı kanıtı
 
-| Durum | Sonuç | Silinen |
+| Deneme | Sonuç | Silinen |
 |---|---|---|
-| Ayar KAPALI, cron çalıştı | `izin:false · engel:ayar_kapali · uygulandi:false` | **0** |
-| Ayar AÇIK ama ömür izi yok | `izin:false · engel:omur_izi_yok` | **0** |
-| Kuru mod (`?kuru=1`) | `600 satır silinirdi` | **0** |
-| Dört kapı da açık | `izin:true · uygulandi:true` | **600** |
-| İkinci tur (idempotent) | `izin:true · uygulandi:true` | **0** |
+| ön koşullar eksik | `engel: omur_izi_yok` | **0** |
+| kuru mod | "600 satır silinecek" | **0** |
+| onay metni `"evet sil"` | `engel: onay_yanlis` | **0** |
+| sebep `"kisa"` | `engel: sebep_kisa` | **0** |
+| aralık geleceğe uzanıyor | `engel: aralik_gecersiz` | **0** |
+| reddedilen denemeler | denetim izine **yazılmadı** (0 kayıt) | — |
+| altı kapı da açık + `"SIL"` | ✅ | **600** |
 
-### Ay granülerliği kanıtı (tohum verisinde de)
+Denetim izinde: **kim** (QA Sofor Bir) · **ne zaman** · **hangi tablo** ·
+**kategori** · **aralık** (01.04 → 01.05) · **kaç satır** (600) · **sebep**.
 
-Aynı nisan penceresi: **aylık tek pencere 207,6 L** · **günlük parça toplamı
-256,8 L** → **+%23,7**. Canlı ölçümdeki yönün (+%15,6 / +%28,9) tohumda da
-görünmesi, sapmanın veriye değil **yapıya** ait olduğunu doğruluyor.
+### Kategori kanıtı
+
+- `device_telemetry` → **kişisel** · `time_entries` → **yasal zorunlu**
+- Sınıflandırılmamış tablo → **fail-closed `yasal_zorunlu`**
+- Silme seçicisinde `time_entries`, `teslimat_kanitlari`, `saklama_silme_izi`
+  **`<option>` olarak hiç yok** (HTML'de doğrulandı)
+
+### Yasal çıpa kanıtı
+
+- Tablo **boş** → ekran *"HENÜZ DOĞRULANMADI — bilerek sayı yazmıyoruz"*
+- Kaynaklı satır yazılınca → **"60 gün"** + dayanak görünüyor
+- **Kaynaksız eşik veritabanınca reddedildi** (`CHECK saklama_esikleri_kaynakli`)
 
 ### Bu provanın yakaladığı kusurlar
 
-1. **`mapBounded` argüman sırası** — `(items, limit, fn)` sanılmıştı, doğrusu
-   `(items, fn, limit)`. Tip kontrolü yakaladı.
-2. **`DateRange` anahtarları** — `{bas, bit}` yazılmıştı, `buildFuelReport`
-   `{start, end}` istiyor. İlk koşuda çöktü.
-3. **`driver_locations.created_at` yok** — kolon adı `recorded_at`. Migration
-   canlı şemaya sorularak düzeltildi; yazıldığı gibi kalsaydı silme fonksiyonu
-   **42703** ile düşerdi.
+1. **🔴 SIFIR satırlı tablo uyarı olarak basılıyordu.** `uyarilar()` kişisel
+   kategorideki her ham tabloyu döndürüyor; `driver_locations` bugün 0 satır
+   ve ekran *"0 satır ham konum veriniz eşiği geçti"* diye kendi içinde
+   çelişkili bir uyarı üretiyordu. `uyariVarMi` süzgeci eklendi.
+2. **`"use server"` dosyasının her export'u async olmalı** — `araligiCoz`
+   build'i düşürdü; saf katmana taşındı (zaten oraya aitti).
+3. **`driver_locations.created_at` yok** — kolon adı `recorded_at`. Canlı
+   şemaya sorularak düzeltildi; yazıldığı gibi kalsaydı **42703** ile düşerdi.
 4. **`start_source` CHECK'i** — tohum `'manual'` yazıyordu; izinli küme
    `self|auto|admin|chief`.
-5. **🔴 `NEXT_PUBLIC_*` derleme anında gömülür** — üretim env'iyle derlenmiş
-   `next start`, QA anahtarını **gerçek Supabase'e** gönderdi ve
-   *"Invalid API key"* aldı. QA yığınına bakan bir sunucu için **QA env'iyle
-   yeniden derlemek** şart. (Aynı ders 084'te de yazılı.)
-6. **Ölü sunucu portu tutuyordu** — `EADDRINUSE` sessizce logda kalmıştı ve
-   eski süreç cevap veriyordu; "düzeltme işe yaramadı" yanılgısı buradan
-   çıktı.
+5. **`mapBounded` argüman sırası** `(items, fn, limit)`.
+6. **🔴 `NEXT_PUBLIC_*` derleme anında gömülür** — üretim env'iyle derlenmiş
+   `next start`, QA anahtarını **gerçek Supabase'e** gönderdi ve *"Invalid API
+   key"* aldı. QA yığınına bakan sunucu için **QA env'iyle yeniden derlemek**
+   şart.
+7. **Ölü sunucu portu tutuyordu** — `EADDRINUSE` sessizce logda kalmış, eski
+   süreç cevap veriyordu; "düzeltme işe yaramadı" yanılgısı oradan çıktı.
+8. **İki yanlış-negatif iddia:** `"400 satır"` metni `"0 satır"`ı alt dizi
+   olarak içeriyor (sayı sınırı eklendi); ve şerit regex'i `href`in `class`tan
+   önce geldiğini varsayıyordu (Next tersini basıyor).
+9. **🔴 Python kaçışı `\b`'yi gerçek backspace karakterine çevirdi** — regex
+   hiç eşleşmedi ve kod yanlış sanıldı. Tüm 090 dosyaları kontrol karakterine
+   karşı tarandı, temiz.

@@ -55,7 +55,9 @@
     "verify:sefer-duraklari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sefer-duraklari.mjs",
     "verify:takip-durak": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-takip-durak.mjs",
     "verify:saklama": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-saklama.mjs",
-    "verify:saklama-ekran": "node scripts/verify-saklama-ekran.mjs"
+    "verify:saklama-ekran": "node scripts/verify-saklama-ekran.mjs",
+    "verify:takograf": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-takograf.mjs",
+    "verify:takograf-ekran": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-takograf-ekran.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

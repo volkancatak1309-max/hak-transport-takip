@@ -91,6 +91,7 @@ const ORDER = [
   "088_sofor_odul.sql",
   "089_co2_panosu.sql",
   "090_saklama_politikasi.sql",
+  "091_takograf.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

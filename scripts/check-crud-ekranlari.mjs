@@ -34,8 +34,15 @@ const TARANAN = ["app", "components/admin"];
 /** Ortak eylem kümesi — muhafızın aradığı işaret. */
 const ISARET = "CrudSatirEylemleri";
 
-/** Yazma eylemi adı kalıpları (import edilen isimlerde aranır). */
-const YAZMA = /(upsert|[Kk]aydet|^save[A-Z]|^create[A-Z]|Ekle|Olustur|Ac$|Gonder$)/;
+/**
+ * Yazma eylemi adı kalıpları (import edilen isimlerde aranır).
+ *
+ * ⚠️ `Yukle` 26.08.2026'da EKLENDİ. Muhafız bir kör noktayla doğmuştu: dosya
+ * YÜKLEMEK de bir yazmadır ama kalıp listesinde karşılığı yoktu, dolayısıyla
+ * takograf arşivi (091) hiç denetlenmeden geçiyordu. Kalıbı genişletmek 21
+ * ekranlık taramaya tek bir yeni bulgu ekledi (ölçüldü) — yan hasar yok.
+ */
+const YAZMA = /(upsert|[Kk]aydet|^save[A-Z]|^create[A-Z]|Ekle|Olustur|Yukle|Ac$|Gonder$)/;
 
 /**
  * BİLEREK MUAF ekranlar — her biri GEREKÇELİ.
@@ -46,6 +53,8 @@ const YAZMA = /(upsert|[Kk]aydet|^save[A-Z]|^create[A-Z]|Ekle|Olustur|Ac$|Gonder
 const MUAF = {
   "app/admin/saklama/SaklamaClient.tsx":
     "Kayit listesi degil: TEK ayar satiri (tenant_saklama singleton: uyari esigi, ulke kodu, gerekce) + bir SILME ARACI. Duzenlenecek/silinecek satir yok. Ekranin gosterdigi iki liste de bilerek DEGISMEZDIR: veri_kategorileri urunun hukuki siniflandirmasidir (yoneticinin degistirebilecegi bir sey degil) ve saklama_silme_izi bir DENETIM IZIDIR — silinebilen bir iz, iz degildir; tablo zaten kendi kategorisinde yasal_zorunlu. Ekranin ASIL silme islevi satir silme degil ARALIK silmedir ve kendi cift onayi, sebebi ve izi vardir.",
+  "app/admin/takograf/TakografClient.tsx":
+    "SILME BILEREK YOK ve olmayacak — urunun satis vaadi bu (091). Musteri .ddd dosyasini buraya denetimde istenince indirebilmek icin birakiyor; silinebilen bir arsiv arsiv degildir. Kural kodda degil VERITABANINDA zorlanir: takograf_dosya_silinemez tetikleyicisi her DELETE'i HK091 ile reddeder, ayristirilamamis dosya bile silinmez. DUZENLEME de yok: dosyanin kimligi (sha256, bayt, ad, yukleyen) HK091 ile degismezdir — yanlis dosya yuklendiginde geri alma yolu silmek degil DOGRUSUNU YUKLEMEKTIR, ikisi de arsivde durur ve hangisinin ne oldugu donem/ozne sutunlarindan gorulur. Kullanicinin duzeltebilecegi tek sey okunamamis dosyanin yeniden okunmasidir (takografYenidenOku) ve o satirda zaten var.",
   "app/admin/co2/CO2Client.tsx":
     "Kayıt listesi değil, TEK ayar satırı (tenant_co2 singleton: esas, şebeke yoğunluğu, hedef). Silinecek satır yok; geri alma yolu önceki esası yeniden seçmektir. Panonun gösterdiği CO₂ hiçbir yerde SAKLANMIYOR — her istekte telemetri litresinden türetiliyor, dolayısıyla silinecek bir kayıt da yok.",
   "app/admin/odul/OdulClient.tsx":

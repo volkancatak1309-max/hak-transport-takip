@@ -421,7 +421,13 @@ export type AuditAction =
   // duyuru tüm filoya gider. `audit_log.action` serbest metin (045'te CHECK
   // yok), yani yeni değer şema değişikliği İSTEMEZ.
   | "message_send"
-  | "message_broadcast";
+  | "message_broadcast"
+  // ── TAKOGRAF ARŞİVİ (091) ────────────────────────────────────────────────
+  // Bir .ddd dosyasını indirmek "rapor dışa aktarma" ile aynı şey DEĞİLDİR:
+  // dosya şoförün ham çalışma kaydıdır ve sistemden çıktığı an denetim izi
+  // bizde kalan tek kanıttır. export_pdf'e katsaydık "kim hangi şoförün ham
+  // verisini aldı" sorusu kalabalıkta kaybolurdu.
+  | "tacho_download";
 
 /**
  * Eylem izi yazar. ASLA throw etmez ve katman kapalıyken hiçbir şey yapmaz.

@@ -14,6 +14,7 @@ import {
   Truck,
   Users,
   Fuel,
+  Gauge,
   Receipt,
   Hexagon,
   Siren,
@@ -182,6 +183,14 @@ export function DashboardShell({
         { href: "/admin/haftalik", label: t("weekly"), icon: ClipboardCheck },
         { href: "/admin/karlilik", label: t("profitability"), icon: Euro },
         { href: "/admin/mevzuat", label: t("compliance"), icon: ShieldCheck },
+        // TAKOGRAF ARŞİVİ (091) — Mevzuat'ın HEMEN ardında, bilinçli.
+        // Mevzuat "kural ne diyor"u, bu ekran "kanıtım nerede"yi yanıtlıyor;
+        // denetimde sorulan .ddd dosyası buradan indiriliyor. Aynı aile.
+        // ŞEFE KAPALI: yükleme yetkisi yalnız yönetici (Volkan kararı) ve
+        // sayfa requireAdmin() ile korunuyor — şefe var olmayan bir kapı
+        // gösteren bağlantı bırakılmaz.
+        // BAYRAK YOK: arşiv bir modül değil, ürünün satış vaadi.
+        { href: "/admin/takograf", label: t("tacho"), icon: Gauge },
         { href: "/admin/odul", label: t("recognition"), icon: Award },
         { href: "/admin/co2", label: t("co2"), icon: Leaf },
         { href: "/admin/harita", label: t("map"), icon: MapPinned },

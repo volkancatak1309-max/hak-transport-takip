@@ -169,34 +169,83 @@ export async function yasalEsik(ulkeKodu: string, veriTuru: string): Promise<Yas
 /**
  * SİSTEMİN TEK ÇIKTISI — uyarı. Hiçbir şey silmez.
  *
- * `saklama_eski_satirlar` BRIN indeksi üzerinden sayar; 1,6 milyon satırda
- * PostgREST tarafında `count: exact` ifade zaman aşımına takılıyordu
- * (ölçüldü 26.08.2026), bu yüzden sayım SQL fonksiyonunda.
+ * ═══ 🔴 NEDEN RPC DEĞİL, TABLO BAŞINA AYRI SORGU ═══
+ *
+ * 090 `saklama_eski_satirlar` RPC'sini kuruyor (iki tabloyu `union all` ile
+ * tek ifadede sayan bir fonksiyon). CANLIDA ÖLÇÜLDÜ (HAK61, 26.08.2026,
+ * 1.620.323 satır):
+ *
+ *     RPC 1. çağrı (soğuk önbellek) : 8.388 ms → 57014 ZAMAN AŞIMI
+ *     RPC 1. çağrı (ikinci deneme)  : 7.380 ms → geçti, ama sınırda
+ *     RPC 2. çağrı (sıcak)          :   416 ms
+ *
+ * Sebep JENERİK PLAN DEĞİL — soğuk önbellek. Aynı sorgular tablo başına
+ * ayrı ayrı çalıştırıldığında 218-1.219 ms sürüyor.
+ *
+ * 🔑 BELİRLEYİCİ OLGU: statement timeout (8 sn) İFADEYE uygulanır, çağrıya
+ * değil (lib/reports.ts:1017'de de yazılı). Tek `union all` ifadesi iki
+ * tablonun taramasını AYNI 8 saniyeye sıkıştırıyor; ayrı ifadeler her biri
+ * kendi bütçesini alıyor.
+ *
+ * ⚠️ Gece koşan cron önbelleği HER ZAMAN soğuk bulur — o saatte o sayfalara
+ * dokunan başka kimse yok. Yani "ikinci çağrı hızlı" tesellisi cron için
+ * geçerli değil; ilk çağrı her gece ilk çağrıdır.
+ *
+ * İKİNCİ KAZANÇ — ARIZA YALITIMI: bir tablonun sorgusu düşerse diğeri
+ * ayakta kalır ve o tablo için "ölçülemedi" denir. Tek ifadede bir tablonun
+ * yavaşlığı DİĞERİNİN cevabını da götürüyordu; bu, "sessiz eksik YASAK"
+ * kuralının ihlaliydi.
+ *
+ * RPC şemada duruyor (teşhis ve elle sorgu için kullanışlı), ürün yolu
+ * ondan geçmiyor.
  */
 export async function uyarilar(): Promise<{ uyarilar: SaklamaUyarisi[]; hata?: string }> {
   const ayar = await saklamaAyari();
   if (ayar.tabloYok) return { uyarilar: [], hata: "migration_090_yok" };
 
-  const kesim = uyariKesimi(ayar.uyariGun);
-  const { data, error } = await supabaseAdmin.rpc("saklama_eski_satirlar", {
-    p_kesim: kesim.toISOString(),
-  });
-  if (error) {
-    return { uyarilar: [], hata: fonksiyonYokMu(error) ? "migration_090_yok" : error.message };
-  }
-
+  const kesim = uyariKesimi(ayar.uyariGun).toISOString();
   const esik = await yasalEsik(ayar.ulkeKodu, "ham_konum");
   const simdi = Date.now();
   const out: SaklamaUyarisi[] = [];
 
-  for (const r of (data ?? []) as Record<string, unknown>[]) {
-    const tablo = String(r.tablo_adi);
+  for (const tablo of HAM_TABLOLAR) {
     const kategori = await tabloKategorisi(tablo);
-    const enEski = r.en_eski ? String(r.en_eski) : null;
+    if (!uyariCikarMi(kategori)) continue;
+
+    // ── İFADE 1: kaç satır (kendi 8 sn bütçesi)
+    const { count, error: sayimHata } = await supabaseAdmin
+      .from(tablo)
+      .select("id", { count: "exact", head: true })
+      .lt("recorded_at", kesim);
+
+    /**
+     * ⚠️ ÖLÇÜLEMEDİ ≠ 0. Sayım düşerse bu tabloyu ATLAMIYORUZ ve 0 da
+     * DEMİYORUZ — tabloyu yoksaymak, uyarıyı sessizce kaybetmek olurdu.
+     * `satirSayisi: -1` diye bir şey de yok: satır listeye HİÇ girmiyor ve
+     * çağıran `hata` alanından haberdar oluyor.
+     */
+    if (sayimHata) {
+      if (tabloYokMu(sayimHata)) return { uyarilar: [], hata: "migration_090_yok" };
+      return { uyarilar: out, hata: `${tablo}: ${sayimHata.message}` };
+    }
+    const satirSayisi = count ?? 0;
+    if (satirSayisi === 0) continue; // sıfır satır uyarı DEĞİLDİR
+
+    // ── İFADE 2: en eski kayıt (ayrı bütçe; yalnız satır VARSA sorulur)
+    const { data: enEskiSatir } = await supabaseAdmin
+      .from(tablo)
+      .select("recorded_at")
+      .lt("recorded_at", kesim)
+      .order("recorded_at", { ascending: true })
+      .limit(1);
+    const enEski = enEskiSatir?.[0]
+      ? String((enEskiSatir[0] as Record<string, unknown>).recorded_at)
+      : null;
+
     out.push({
       tabloAdi: tablo,
       kategori,
-      satirSayisi: Number(r.satir_sayisi ?? 0),
+      satirSayisi,
       enEski,
       enEskiGun: enEski ? Math.floor((simdi - new Date(enEski).getTime()) / 86_400_000) : null,
       uyariGun: ayar.uyariGun,
@@ -207,8 +256,8 @@ export async function uyarilar(): Promise<{ uyarilar: SaklamaUyarisi[]; hata?: s
       kaynakUrl: esik?.kaynakUrl ?? null,
     });
   }
-  // Uyarı yalnız KİŞİSEL veri için — araç künyesi kimseyi izlemiyor.
-  return { uyarilar: out.filter((u) => uyariCikarMi(u.kategori)) };
+
+  return { uyarilar: out };
 }
 
 // ═══════════════════════════ 1 · ÖMÜR İZİ ════════════════════════════════

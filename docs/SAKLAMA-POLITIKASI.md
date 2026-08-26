@@ -468,6 +468,34 @@ Denetim izinde: **kim** (QA Sofor Bir) · **ne zaman** · **hangi tablo** ·
 - Kaynaklı satır yazılınca → **"60 gün"** + dayanak görünüyor
 - **Kaynaksız eşik veritabanınca reddedildi** (`CHECK saklama_esikleri_kaynakli`)
 
+### 🔴 CANLIDA yakalanan kusur — RPC soğuk önbellekte zaman aşımı
+
+Merge öncesi HAK61 canlısında ölçüldü (1.620.323 satır):
+
+| Çağrı | Süre | Sonuç |
+|---|---|---|
+| `saklama_eski_satirlar` RPC — 1. çağrı (soğuk) | **8.388 ms** | 🔴 **57014 zaman aşımı** |
+| aynı RPC — ikinci deneme | 7.380 ms | geçti, ama sınırda |
+| aynı RPC — sıcak | 416 ms | — |
+| **tablo başına ayrı sorgu** | **2.031 ms** | ✅ |
+
+Sebep **jenerik plan değil, soğuk önbellek**. Belirleyici olgu: **statement
+timeout (8 sn) İFADEYE uygulanır, çağrıya değil.** Tek `union all` ifadesi iki
+tablonun taramasını aynı 8 saniyeye sıkıştırıyordu; ayrı ifadeler her biri
+kendi bütçesini alıyor.
+
+⚠️ **Gece koşan cron önbelleği HER ZAMAN soğuk bulur** — o saatte o sayfalara
+dokunan başka kimse yok. "İkinci çağrı hızlı" tesellisi cron için geçerli
+değil: ilk çağrı her gece ilk çağrıdır.
+
+**İkinci kazanç — arıza yalıtımı:** bir tablonun sorgusu düşerse diğeri ayakta
+kalır. Tek ifadede bir tablonun yavaşlığı diğerinin cevabını da götürüyordu ve
+bu "sessiz eksik YASAK" kuralının ihlaliydi.
+
+Ürün yolu artık **tablo başına iki küçük ifade** kullanıyor
+(`lib/saklama-db.ts`). RPC şemada duruyor — teşhis ve elle sorgu için
+kullanışlı — ama ürün ondan geçmiyor. **Migration değişmedi.**
+
 ### Bu provanın yakaladığı kusurlar
 
 1. **🔴 SIFIR satırlı tablo uyarı olarak basılıyordu.** `uyarilar()` kişisel

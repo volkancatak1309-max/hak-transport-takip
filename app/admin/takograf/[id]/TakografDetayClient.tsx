@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -13,8 +13,12 @@ import {
   faaliyetToplami,
   muhurSebepKodu,
   muhurTonu,
+  olayMetinAnahtari,
+  olaylariSirala,
+  olayTekrarSayisi,
   sureBicim,
   type FaaliyetTuru,
+  type OlaySira,
 } from "@/lib/takograf";
 
 /**
@@ -65,6 +69,15 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
    */
   const soforVar = detay.faaliyetler.some((f) => f.workerAd || f.kartNo);
 
+  /**
+   * OLAY SIRASI — varsayılan KRONOLOJİK.
+   * Dosya sırası VU'nun saklama-gerekçesi öbekleri olduğu için tarihler ileri
+   * geri zıplıyordu; arşiv sözü gereği o sıra seçenek olarak duruyor.
+   */
+  const [olaySira, setOlaySira] = useState<OlaySira>("zaman");
+  const olaylar = useMemo(() => olaylariSirala(detay.olaylar, olaySira), [detay.olaylar, olaySira]);
+  const tekrar = useMemo(() => olayTekrarSayisi(detay.olaylar), [detay.olaylar]);
+
   /** Dosyanın bildirdiği dönem ile faaliyet günleri çelişiyor mu (ham veri). */
   const celiski = useMemo(
     () => donemCelismesi(d.donemBas, d.donemBit, detay.faaliyetler.map((f) => f.gun ?? f.baslangic)),
@@ -107,7 +120,7 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
       {ton === "uyari" && (
         <p
           role="status"
-          className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200"
+          className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200"
         >
           <AlertTriangle className="mt-px size-4 shrink-0" />
           <span>
@@ -121,7 +134,7 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
              * kodun üç dildeki karşılığı gösteriliyor.
              */}
             {sebepKodu ? (
-              <span className="mt-0.5 block text-xs opacity-80">
+              <span className="mt-0.5 block text-xs">
                 {t(`seal_reason_${sebepKodu}` as never)}
               </span>
             ) : null}
@@ -223,15 +236,26 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
                   {t("total_rows", { n: detay.faaliyetler.length })}
                 </td>
                 <td colSpan={5} className="px-3 py-2">
+                  {/**
+                   * 🔴 "—" İKİ AYRI ŞEYİ GİZLİYORDU. Ekranda "Hazır bekleme —"
+                   * yazıyordu ve bu hem "o türde hiç kayıt yok" hem "kayıt var
+                   * ama süresi ölçülemedi" demek olabiliyordu. Artık ikisi ayrı
+                   * kelimeyle söyleniyor; alttaki cümle de sayıyı bağlıyor.
+                   */}
                   <span className="tabular-nums">
-                    {t("act_surus")} {sureBicim(toplam.kirilim.surus) ?? "—"} ·{" "}
-                    {t("act_is")} {sureBicim(toplam.kirilim.is) ?? "—"} ·{" "}
-                    {t("act_hazir")} {sureBicim(toplam.kirilim.hazir) ?? "—"} ·{" "}
-                    {t("act_mola")} {sureBicim(toplam.kirilim.mola) ?? "—"}
+                    {(["surus", "is", "hazir", "mola"] as const).map((k, i) => (
+                      <span key={k}>
+                        {i > 0 ? " · " : ""}
+                        {t(`act_${k}` as never)}{" "}
+                        {toplam.sayim[k] === 0
+                          ? t("totals_no_record")
+                          : (sureBicim(toplam.kirilim[k]) ?? t("totals_none_measured"))}
+                      </span>
+                    ))}
                   </span>
                   {toplam.olculemeyen > 0 && (
-                    <span className="ml-2 text-muted-foreground">
-                      {t("unmeasured", { n: toplam.olculemeyen })}
+                    <span className="mt-0.5 block text-muted-foreground">
+                      {t("unmeasured_long", { n: toplam.olculemeyen })}
                     </span>
                   )}
                 </td>
@@ -257,23 +281,74 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
 
       {/* ── OLAYLAR ──────────────────────────────────────────────────── */}
       {detay.olaylar.length > 0 && (
-        <section className="space-y-2 rounded-xl border border-border/60 bg-card/60 p-4">
-          <h2 className="text-sm font-medium">{t("events_title")}</h2>
-          <p className="text-xs text-muted-foreground">{t("events_hint")}</p>
+        <section className="space-y-3 rounded-xl border border-border/60 bg-card/60 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-medium">{t("events_title")}</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">{t("events_hint")}</p>
+            </div>
+            {/**
+             * SIRALAMA DENETİMİ — Mobbin: Grok "Audit Log" ve PlanetScale
+             * "Audit log" ikisi de listenin sağ üstünde duran bir denetim
+             * koyuyor. Varsayılan kronolojik (Zoho CRM deseni: log tarihe
+             * göre iner), dosya sırası seçenek olarak kalır.
+             */}
+            <div className="flex items-center gap-1 rounded-lg border border-border/60 p-0.5 text-xs">
+              <span className="sr-only">{t("events_sort_label")}</span>
+              {(["zaman", "dosya"] as OlaySira[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={olaySira === m}
+                  onClick={() => setOlaySira(m)}
+                  className={`rounded-md px-2 py-1 transition-colors ${
+                    olaySira === m
+                      ? "bg-primary/10 text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t(m === "zaman" ? "events_sort_time" : "events_sort_file")}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/**
+           * TEKRAR AÇIKLAMASI — kayıt SİLİNMEZ, sebebi söylenir.
+           * Ölçüldü: aynı olay dosyada iki kez, farklı `recordPurpose` ile.
+           */}
+          {tekrar > 0 && (
+            <p className="flex items-start gap-2 rounded-lg border border-border/60 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
+              <Info className="mt-px size-3.5 shrink-0" />
+              <span>{t("events_duplicate_note")}</span>
+            </p>
+          )}
+
+          {/**
+           * SATIR — Mobbin/PlanetScale deseni: ÖNCE insan cümlesi, ARDINDAN
+           * ham makine kodu monospace künye olarak. Ham kod atılmıyor
+           * (denetimde sorulan odur), ama başrolde değil.
+           */}
           <ul className="divide-y divide-border/40 text-xs">
-            {detay.olaylar.slice(0, 200).map((o) => (
-              <li key={o.id} className="flex flex-wrap items-baseline gap-x-3 py-1.5">
-                <span className="font-mono">{o.tur ?? "—"}</span>
-                <span className="tabular-nums text-muted-foreground">
-                  {gun(o.bas)} {saat(o.bas)}
-                  {o.bit ? ` → ${saat(o.bit)}` : ""}
-                </span>
-                {o.ciddiyet && <span className="text-muted-foreground">{o.ciddiyet}</span>}
+            {olaylar.slice(0, 200).map((o) => (
+              <li key={o.id} className="py-2">
+                <p className="text-sm">{t(olayMetinAnahtari(o.tur) as never)}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
+                  <span className="tabular-nums">
+                    {gun(o.bas)} {saat(o.bas)}
+                    {o.bit ? ` → ${saat(o.bit)}` : ""}
+                  </span>
+                  <span aria-hidden>·</span>
+                  <code className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[11px]">
+                    {o.tur ?? "—"}
+                  </code>
+                  {o.ciddiyet && <span>{o.ciddiyet}</span>}
+                </div>
               </li>
             ))}
           </ul>
-          {detay.olaylar.length > 200 && (
-            <p className="text-xs text-muted-foreground">{t("events_more", { n: detay.olaylar.length - 200 })}</p>
+          {olaylar.length > 200 && (
+            <p className="text-xs text-muted-foreground">{t("events_more", { n: olaylar.length - 200 })}</p>
           )}
         </section>
       )}

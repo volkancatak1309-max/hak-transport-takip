@@ -271,7 +271,10 @@ function DurumDugmesi({
 }) {
   const secili =
     ton === "ok"
-      ? "border-accent-mint bg-accent-mint-soft text-accent-mint-text"
+      ? // accent-mint ailesi globals.css'te TANIMLI DEĞİL — üç sınıf da ölüydü
+        // ve "uygun" seçeneği renksiz kalıyordu (27.08.2026 muhafız bulgusu).
+        // accent-green tanımlı ve iki temada ayrı ayrı ayarlı.
+        "border-accent-green bg-accent-green/10 text-accent-green-text"
       : ton === "bad"
         ? "border-accent-coral bg-accent-coral-soft text-accent-coral-text"
         : "border-border bg-surface-panel text-foreground";

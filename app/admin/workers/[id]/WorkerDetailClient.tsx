@@ -245,7 +245,7 @@ export function WorkerDetailClient({
             {"note" in s && s.note ? (
               /* Eksik ölçüm SAYIYLA BİRLİKTE görünür — sessizce eksilen bir
                  toplam "az km yapmış" diye okunuyordu. */
-              <div className="mt-1 text-[11px] text-accent-amber-text">{s.note}</div>
+              <div className="mt-1 text-[11px] text-amber-800 dark:text-amber-200">{s.note}</div>
             ) : null}
           </div>
         ))}

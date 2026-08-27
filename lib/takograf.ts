@@ -179,6 +179,124 @@ export function muhurSebepKodu(ham: string | null | undefined): MuhurSebepKodu |
   return "bilinmiyor";
 }
 
+// ═══════════════════ OLAY / ARIZA KODLARI ═════════════════════════════════
+
+/**
+ * 🔴 27.08.2026 — mühür sebebiyle AYNI KUSUR, ikinci yüzeyde.
+ *
+ * Olay listesi ham enum adını basıyordu: `GENERAL_LAST_CARD_SESSION_NOT_
+ * CORRECTLY_CLOSED`, `SENSOR_SEC_NO_FURTHER_DETAILS` … İngilizce, teknik,
+ * müşterinin okuyamayacağı bir kimlik.
+ *
+ * Liste `tachograph-go`nun EventFaultType enum'unun TAMAMI — 49 değer
+ * (0-48), `proto/…/dd/v1/event_fault_type.proto`dan çıkarıldı. Yalnız bu
+ * dosyada görünen dördü değil, hepsi karşılanıyor: bir sonraki dosyada
+ * "GENERAL_OVER_SPEEDING" çıkarsa ekran yine Türkçe/Almanca/İngilizce
+ * konuşur.
+ *
+ * ⚠️ HAM KOD ATILMIYOR: veritabanında `takograf_olaylari.tur` kolonunda
+ * duruyor ve ekranda ikincil bir künye olarak (monospace) gösteriliyor —
+ * PlanetScale deseni. Denetimde sorulan şey ham koddur.
+ */
+export const OLAY_KODLARI = [
+  "EVENT_FAULT_TYPE_UNSPECIFIED", "EVENT_FAULT_TYPE_UNRECOGNIZED",
+  "GENERAL_NO_FURTHER_DETAILS", "GENERAL_INSERTION_OF_NON_VALID_CARD",
+  "GENERAL_CARD_CONFLICT", "GENERAL_TIME_OVERLAP",
+  "GENERAL_DRIVING_WITHOUT_APPROPRIATE_CARD", "GENERAL_CARD_INSERTION_WHILE_DRIVING",
+  "GENERAL_LAST_CARD_SESSION_NOT_CORRECTLY_CLOSED", "GENERAL_OVER_SPEEDING",
+  "GENERAL_POWER_SUPPLY_INTERRUPTION", "GENERAL_MOTION_DATA_ERROR",
+  "GENERAL_VEHICLE_MOTION_CONFLICT", "GENERAL_TIME_CONFLICT_GNSS_VS_VU",
+  "GENERAL_COMM_ERROR_REMOTE_COMM_FACILITY", "GENERAL_ABSENCE_OF_POSITION_INFO_FROM_GNSS",
+  "GENERAL_COMM_ERROR_EXTERNAL_GNSS_FACILITY", "GENERAL_GNSS_ANOMALY",
+  "VU_SEC_NO_FURTHER_DETAILS", "VU_SEC_MOTION_SENSOR_AUTH_FAILURE",
+  "VU_SEC_TACHOGRAPH_CARD_AUTH_FAILURE", "VU_SEC_UNAUTHORISED_CHANGE_OF_MOTION_SENSOR",
+  "VU_SEC_CARD_DATA_INPUT_INTEGRITY_ERROR", "VU_SEC_STORED_USER_DATA_INTEGRITY_ERROR",
+  "VU_SEC_INTERNAL_DATA_TRANSFER_ERROR", "VU_SEC_UNAUTHORISED_CASE_OPENING",
+  "VU_SEC_HARDWARE_SABOTAGE", "VU_SEC_TAMPER_DETECTION_OF_GNSS",
+  "VU_SEC_EXTERNAL_GNSS_FACILITY_AUTH_FAILURE", "VU_SEC_EXTERNAL_GNSS_FACILITY_CERT_EXPIRED",
+  "VU_SEC_INCONSISTENCY_MOTION_VS_ACTIVITY", "SENSOR_SEC_NO_FURTHER_DETAILS",
+  "SENSOR_SEC_AUTHENTICATION_FAILURE", "SENSOR_SEC_STORED_DATA_INTEGRITY_ERROR",
+  "SENSOR_SEC_INTERNAL_DATA_TRANSFER_ERROR", "SENSOR_SEC_UNAUTHORISED_CASE_OPENING",
+  "SENSOR_SEC_HARDWARE_SABOTAGE", "FAULT_REC_EQ_NO_FURTHER_DETAILS",
+  "FAULT_REC_EQ_VU_INTERNAL_FAULT", "FAULT_REC_EQ_PRINTER_FAULT",
+  "FAULT_REC_EQ_DISPLAY_FAULT", "FAULT_REC_EQ_DOWNLOADING_FAULT",
+  "FAULT_REC_EQ_SENSOR_FAULT", "FAULT_REC_EQ_INTERNAL_GNSS_RECEIVER",
+  "FAULT_REC_EQ_EXTERNAL_GNSS_FACILITY", "FAULT_REC_EQ_REMOTE_COMM_FACILITY",
+  "FAULT_REC_EQ_ITS_INTERFACE", "FAULT_REC_EQ_INTERNAL_SENSOR_FAULT",
+  "FAULT_CARD_NO_FURTHER_DETAILS",
+] as const;
+
+const OLAY_KUMESI: ReadonlySet<string> = new Set(OLAY_KODLARI);
+
+/**
+ * Ham olay kodunu i18n anahtarına çevirir.
+ *
+ * Tanınmayan kod `ev_bilinmiyor`a düşer — SATIR DÜŞMEZ, uydurma yapılmaz.
+ * Ekran ham kodu ayrıca gösterdiği için bilgi kaybı da olmaz.
+ */
+export function olayMetinAnahtari(ham: string | null | undefined): string {
+  const v = String(ham ?? "").trim().toUpperCase();
+  if (!v || !OLAY_KUMESI.has(v)) return "ev_bilinmiyor";
+  return `ev_${v.toLowerCase()}`;
+}
+
+// ═══════════════════ OLAY LİSTESİ — SIRA VE TEKRAR ════════════════════════
+
+export type OlaySira = "zaman" | "dosya";
+
+/**
+ * 🔴 TEKRAR DOSYADADIR, BİZDE DEĞİL — ÖLÇÜLDÜ (27.08.2026).
+ *
+ * vu-004-full.ddd: ham ağaçta 27 olay düğümü, servis 27 döndürüyor, panel 27
+ * yazıyor. Bire bir. Ama 27 kaydın 23'ü ayrı: dört olay İKİ KEZ saklanmış ve
+ * ikisinin `recordPurpose` değeri FARKLI (`LAST_IN_LAST_10_DAYS` ↔
+ * `MOST_SERIOUS_IN_LAST_10_DAYS`), `similarEventsNumber` de farklı (4↔0,
+ * 177↔0). AB araç ünitesi aynı olayı birden çok saklama gerekçesine
+ * girdiğinde her gerekçe için ayrı yazar.
+ *
+ * Bu yüzden TEKİLLEŞTİRMİYORUZ: kayıt silmek ham veriyi bozmaktır. Ekran
+ * tekrarın VARLIĞINI söyler, sebebini açıklar.
+ */
+export function olayTekrarSayisi(
+  satirlar: { tur: string | null; bas: string | null; bit: string | null }[]
+): number {
+  const say = new Map<string, number>();
+  for (const o of satirlar) {
+    const k = `${o.tur ?? ""}|${o.bas ?? ""}|${o.bit ?? ""}`;
+    say.set(k, (say.get(k) ?? 0) + 1);
+  }
+  let fazla = 0;
+  for (const n of say.values()) if (n > 1) fazla += n - 1;
+  return fazla;
+}
+
+/**
+ * Olayları sıralar. Varsayılan KRONOLOJİK.
+ *
+ * Dosya sırası anlamsız değildir — VU olayları saklama gerekçesine göre
+ * öbekler (önce "son 10 gün", sonra "en ciddi", sonra "en uzun"), bu yüzden
+ * tarihler ekranda ileri geri zıplıyordu. Kullanıcı bir olayı ararken bunu
+ * bulamaz. Yine de ARŞİV ürünüyüz: dosyadaki sıra bir bilgidir ve seçenek
+ * olarak korunuyor.
+ *
+ * ⚠️ Yeni dizi döner; girdiye dokunmaz. Zamanı olmayan satır SONA gider —
+ * atılmaz.
+ */
+export function olaylariSirala<T extends { sira: number; bas: string | null }>(
+  satirlar: T[],
+  mod: OlaySira
+): T[] {
+  const kopya = [...satirlar];
+  if (mod === "dosya") return kopya.sort((a, b) => a.sira - b.sira);
+  return kopya.sort((a, b) => {
+    if (!a.bas && !b.bas) return a.sira - b.sira;
+    if (!a.bas) return 1;
+    if (!b.bas) return -1;
+    if (a.bas === b.bas) return a.sira - b.sira;
+    return a.bas < b.bas ? -1 : 1;
+  });
+}
+
 // ═══════════════════ DÖNEM ↔ FAALİYET GÜNÜ ÇELİŞKİSİ ══════════════════════
 
 /**
@@ -322,6 +440,14 @@ export function faaliyetToplami(
 ): {
   toplam: number | null;
   kirilim: Record<FaaliyetTuru, number | null>;
+  /**
+   * Kategori başına SATIR sayısı — süreden bağımsız.
+   *
+   * 🔴 27.08.2026: "Hazır bekleme —" ekranda iki AYRI durumu aynı işaretle
+   * gösteriyordu: (a) o türde hiç kayıt yok, (b) kayıt var ama süresi
+   * ölçülemedi. İkisi farklı şeydir ve arşiv ürününde farkı yutmak olmaz.
+   */
+  sayim: Record<FaaliyetTuru, number>;
   olculemeyen: number;
 } {
   /**
@@ -340,19 +466,27 @@ export function faaliyetToplami(
     mola: null,
     bilinmiyor: null,
   };
+  const sayim: Record<FaaliyetTuru, number> = {
+    surus: 0,
+    is: 0,
+    hazir: 0,
+    mola: 0,
+    bilinmiyor: 0,
+  };
   let toplam: number | null = null;
   let olculemeyen = 0;
   for (const r of satirlar) {
+    const k = r.faaliyet ?? "bilinmiyor";
+    sayim[k]++;
     // ⚠️ Süresi ölçülemeyen satır TOPLAMA GİRMEZ ve AYRI SAYILIR.
     if (r.sureDk === null || !Number.isFinite(r.sureDk)) {
       olculemeyen++;
       continue;
     }
-    const k = r.faaliyet ?? "bilinmiyor";
     toplam = (toplam ?? 0) + r.sureDk;
     kirilim[k] = (kirilim[k] ?? 0) + r.sureDk;
   }
-  return { toplam, kirilim, olculemeyen };
+  return { toplam, kirilim, sayim, olculemeyen };
 }
 
 // ═══════════════════════ SERVİS YANIT SÖZLEŞMESİ ══════════════════════

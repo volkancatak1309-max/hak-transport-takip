@@ -122,7 +122,7 @@ export function SaklamaClient({ pano }: { pano: SaklamaPanosu }) {
     return (
       <div className="space-y-4">
         <PageHeader title={t("title")} description={t("description")} />
-        <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+        <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
           <AlertTriangle className="mt-px size-4 shrink-0" />
           <span>{t("migration_missing")}</span>
         </p>
@@ -163,7 +163,7 @@ export function SaklamaClient({ pano }: { pano: SaklamaPanosu }) {
           aktifUyarilar.map((u) => (
             <div
               key={u.tabloAdi}
-              className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
+              className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
             >
               <p className="flex items-start gap-2">
                 <AlertTriangle className="mt-px size-3.5 shrink-0" />

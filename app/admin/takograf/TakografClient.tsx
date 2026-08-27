@@ -127,7 +127,7 @@ export function TakografClient({ pano }: { pano: TakografPanosu }) {
     return (
       <div className="space-y-4">
         <PageHeader title={t("title")} description={t("description")} />
-        <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+        <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
           <AlertTriangle className="mt-px size-4 shrink-0" />
           <span>{t("migration_missing")}</span>
         </p>
@@ -155,7 +155,7 @@ export function TakografClient({ pano }: { pano: TakografPanosu }) {
 
       {/* ── SERVİS DURUMU — yalnız SORUN varsa ───────────────────────── */}
       {!pano.servisAyakta && (
-        <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+        <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
           <AlertTriangle className="mt-px size-3.5 shrink-0" />
           <span>{t("service_down")}</span>
         </p>
@@ -230,7 +230,7 @@ export function TakografClient({ pano }: { pano: TakografPanosu }) {
       {uyariSayisi > 0 && (
         <p
           role="status"
-          className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
+          className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
         >
           <AlertTriangle className="mt-px size-3.5 shrink-0" />
           <span>{t("seal_warning_strip", { count: uyariSayisi })}</span>
@@ -325,7 +325,7 @@ function Satir({
       <td className="px-3 py-2">
         <span
           className={`text-xs ${
-            ton === "uyari" ? "text-amber-300" : ton === "iyi" ? "text-foreground" : "text-muted-foreground"
+            ton === "uyari" ? "text-amber-800 dark:text-amber-300" : ton === "iyi" ? "text-foreground" : "text-muted-foreground"
           }`}
         >
           {t(`seal_${d.muhurDurumu}` as never)}

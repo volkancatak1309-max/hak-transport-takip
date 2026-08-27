@@ -75,7 +75,9 @@ export function CrudSatirEylemleri({
           aria-label={pasifMi ? t("activate") : t("deactivate")}
           title={pasifMi ? t("activate") : t("deactivate")}
         >
-          <Power className={`size-4 ${pasifMi ? "text-accent-mint-text" : ""}`} />
+          {/* accent-mint diye bir token YOK (27.08.2026 muhafız bulgusu) —
+              tanımlı ve tema-farkında olan accent-green kullanılır. */}
+          <Power className={`size-4 ${pasifMi ? "text-accent-green-text" : ""}`} />
         </Button>
       )}
 

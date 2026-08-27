@@ -161,7 +161,7 @@ export function ShiftSummaryCard({ entry, week, onLater }: Props) {
              toplama girmez ve kaç tanesi olduğu burada yazar. */
           <>
             {" · "}
-            <span className="text-accent-amber-text">
+            <span className="text-amber-800 dark:text-amber-200">
               {t("kmUnmeasuredShifts", { count: week.km.sinyalsiz })}
             </span>
           </>

@@ -45,7 +45,7 @@ export async function SaklamaUyariSeridi() {
   return (
     <Link
       href="/admin/saklama"
-      className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200 transition-colors hover:bg-amber-500/15"
+      className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 transition-colors hover:bg-amber-500/15"
     >
       <AlertTriangle className="mt-px size-3.5 shrink-0" />
       <span>

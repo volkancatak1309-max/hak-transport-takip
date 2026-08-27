@@ -8,7 +8,14 @@ import { AlertTriangle, ArrowLeft, Download, Info } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui-v2";
 import { takografIndirmeBaglantisi, type TakografDetay } from "@/app/actions/takograf";
-import { faaliyetToplami, muhurTonu, sureBicim, type FaaliyetTuru } from "@/lib/takograf";
+import {
+  donemCelismesi,
+  faaliyetToplami,
+  muhurSebepKodu,
+  muhurTonu,
+  sureBicim,
+  type FaaliyetTuru,
+} from "@/lib/takograf";
 
 /**
  * TEK DOSYANIN HAM VERİSİ (091).
@@ -43,6 +50,25 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
   const toplam = useMemo(
     () => faaliyetToplami(detay.faaliyetler.map((f) => ({ faaliyet: f.faaliyet, sureDk: f.sureDk }))),
     [detay.faaliyetler]
+  );
+
+  /** Mühür sebebi: HAM METİN DEĞİL, kapalı koddan üretilen cümle. */
+  const sebepKodu = muhurSebepKodu(d.muhurSebep);
+
+  /**
+   * ŞOFÖR SÜTUNU — 155 satır "—" basmaktansa bir kez AÇIKLA.
+   *
+   * Araç ünitesi indirmesinde faaliyet satırı şoför kimliği TAŞIMAZ; şoför
+   * ancak kart takma/çıkarma kayıtlarıyla (cardIwData) zaman+slot eşleşmesinden
+   * türetilir ve okuyucu servisi bugün bu bağı kurmuyor (27.08.2026 ölçümü).
+   * Sütunu boş bırakmak "şoför yok" gibi okunuyordu — yanlış.
+   */
+  const soforVar = detay.faaliyetler.some((f) => f.workerAd || f.kartNo);
+
+  /** Dosyanın bildirdiği dönem ile faaliyet günleri çelişiyor mu (ham veri). */
+  const celiski = useMemo(
+    () => donemCelismesi(d.donemBas, d.donemBit, detay.faaliyetler.map((f) => f.gun ?? f.baslangic)),
+    [d.donemBas, d.donemBit, detay.faaliyetler]
   );
 
   const indir = async () => {
@@ -86,17 +112,45 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
           <AlertTriangle className="mt-px size-4 shrink-0" />
           <span>
             <strong>{t("seal_warning_single")}</strong>
-            {d.muhurSebep ? <span className="mt-0.5 block text-xs opacity-80">{d.muhurSebep}</span> : null}
+            {/**
+             * 🔴 HAM HATA METNİ BASILMAZ. Eskiden `d.muhurSebep` doğrudan
+             * yazılıyordu ve müşteri şunu görüyordu (canlıda, 27.08.2026):
+             * "failed to extract Gen2 certificates: expected exactly 1 MSCA
+             *  certificate, got 0" — İngilizce, teknik, dört kez tekrarlı.
+             * Ham metin veritabanında KAYIT olarak duruyor; ekranda kapalı
+             * kodun üç dildeki karşılığı gösteriliyor.
+             */}
+            {sebepKodu ? (
+              <span className="mt-0.5 block text-xs opacity-80">
+                {t(`seal_reason_${sebepKodu}` as never)}
+              </span>
+            ) : null}
           </span>
         </p>
       )}
 
+      {/* ⚠️ Ham `ayristirmaHata` da BASILMAZ — aynı gerekçe. Durumun üç
+          dildeki uzun cümlesi kullanıcıya gerekeni zaten söylüyor. */}
       {d.ayristirmaDurumu !== "tamam" && (
         <p className="flex items-start gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-sm">
           <Info className="mt-px size-4 shrink-0 text-muted-foreground" />
+          <span>{t(`parse_${d.ayristirmaDurumu}_long` as never)}</span>
+        </p>
+      )}
+
+      {/**
+       * DÖNEM ↔ GÜN ÇELİŞKİSİ — veriyi DÜZELTMEZ, çeliştiğini SÖYLER.
+       * Ölçüldü: çelişki dosyanın içinde (gün kayıtları sabit bir başlangıca
+       * çekilmiş, genel bakış bloğu değil). Uydurmak yerine gösteriyoruz.
+       */}
+      {celiski && (
+        <p className="flex items-start gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-xs text-muted-foreground">
+          <Info className="mt-px size-3.5 shrink-0" />
           <span>
-            {t(`parse_${d.ayristirmaDurumu}_long` as never)}
-            {d.ayristirmaHata ? <span className="mt-0.5 block text-xs text-muted-foreground">{d.ayristirmaHata}</span> : null}
+            {t("period_mismatch", {
+              donem: `${gun(d.donemBas)} → ${gun(d.donemBit)}`,
+              gunler: celiski.ilk === celiski.son ? celiski.ilk : `${celiski.ilk} → ${celiski.son}`,
+            })}
           </span>
         </p>
       )}
@@ -116,7 +170,10 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
             <tr className="border-b border-border/60">
               {/* Fibery: satır numarası oluğu */}
               <th className="w-12 px-2 py-2 text-right font-medium">#</th>
-              <th className="px-3 py-2 text-left font-medium">{t("col_driver")}</th>
+              {/* Şoför sütunu YALNIZ dolduğunda kalır — 155 satır "—" bir
+                  bilgi değil, gürültüdür. Yokluğu tablonun altında bir kez
+                  açıklanıyor. */}
+              {soforVar && <th className="px-3 py-2 text-left font-medium">{t("col_driver")}</th>}
               <th className="px-3 py-2 text-left font-medium">{t("col_date")}</th>
               <th className="px-3 py-2 text-left font-medium">{t("col_activity")}</th>
               <th className="px-3 py-2 text-right font-medium">{t("col_start")}</th>
@@ -128,7 +185,7 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
           <tbody>
             {detay.faaliyetler.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-10 text-center">
+                <td colSpan={soforVar ? 8 : 7} className="px-3 py-10 text-center">
                   <p className="text-sm font-medium">{t("no_activity_title")}</p>
                   <p className="mx-auto mt-1 max-w-lg text-xs text-muted-foreground">{t("no_activity_body")}</p>
                 </td>
@@ -137,9 +194,11 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
               detay.faaliyetler.map((f, i) => (
                 <tr key={f.id} className="border-b border-border/40 last:border-0">
                   <td className="px-2 py-1.5 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</td>
-                  <td className="px-3 py-1.5">
-                    {f.workerAd ?? (f.kartNo ? <span className="font-mono text-xs">{f.kartNo}</span> : "—")}
-                  </td>
+                  {soforVar && (
+                    <td className="px-3 py-1.5">
+                      {f.workerAd ?? (f.kartNo ? <span className="font-mono text-xs">{f.kartNo}</span> : "—")}
+                    </td>
+                  )}
                   <td className="px-3 py-1.5 text-xs tabular-nums">{gun(f.gun ?? f.baslangic)}</td>
                   <td className="px-3 py-1.5">
                     <span className="inline-flex items-center gap-1.5 text-xs">
@@ -160,7 +219,7 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
           {detay.faaliyetler.length > 0 && (
             <tfoot className="border-t border-border/60 bg-card/60 text-xs">
               <tr>
-                <td colSpan={3} className="px-3 py-2 text-muted-foreground">
+                <td colSpan={soforVar ? 3 : 2} className="px-3 py-2 text-muted-foreground">
                   {t("total_rows", { n: detay.faaliyetler.length })}
                 </td>
                 <td colSpan={5} className="px-3 py-2">
@@ -181,6 +240,20 @@ export function TakografDetayClient({ detay }: { detay: TakografDetay }) {
           )}
         </table>
       </div>
+
+      {/**
+       * ŞOFÖR YOKLUĞUNU BİR KEZ AÇIKLA — 155 kez "—" basma.
+       * Ölçüldü (27.08.2026): araç ünitesi dosyasında faaliyet satırları kart
+       * numarası taşımıyor; kimlik ayrı bir blokta (kart takma/çıkarma) ve
+       * okuyucu bugün o bağı kurmuyor. "Şoför bilgisi yok" demek YANLIŞ
+       * olurdu — bilgi dosyada var, biz çıkarmıyoruz.
+       */}
+      {detay.faaliyetler.length > 0 && !soforVar && (
+        <p className="flex items-start gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-xs text-muted-foreground">
+          <Info className="mt-px size-3.5 shrink-0" />
+          <span>{t(d.tur === "vu" ? "driver_none_vu" : "driver_none_card")}</span>
+        </p>
+      )}
 
       {/* ── OLAYLAR ──────────────────────────────────────────────────── */}
       {detay.olaylar.length > 0 && (

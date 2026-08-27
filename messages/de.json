@@ -2644,6 +2644,24 @@
     "seal_dogrulandi": "Signatur gültig",
     "seal_dogrulanamadi": "Nicht verifizierbar",
     "seal_denenmedi": "Nicht geprüft",
+
+    "seal_reason_imza_yok": "In der Datei wurde keine digitale Signatur gefunden — eine Prüfung war nicht möglich.",
+
+    "seal_reason_imza_uyusmadi": "Die digitale Signatur passt nicht zur Datei — die Datei wurde möglicherweise verändert.",
+
+    "seal_reason_kok_sertifika_yok": "Das für die Prüfung nötige Stammzertifikat war nicht erreichbar.",
+
+    "seal_reason_bicim_okunamadi": "Der Signaturteil konnte nicht gelesen werden — unerwartetes Dateiformat.",
+
+    "seal_reason_bilinmiyor": "Die digitale Signatur konnte nicht geprüft werden.",
+
+    "parse_basarisiz_hint": "Details auf der Dateiseite",
+
+    "period_mismatch": "Die Aktivitätstage ({gunler}) liegen außerhalb des in der Datei angegebenen Downloadzeitraums ({donem}). Die Rohdaten werden unverändert angezeigt.",
+
+    "driver_none_vu": "Beim Massenspeicher-Download tragen die Aktivitätszeilen keine Fahrerkennung — der Fahrer wird aus den Karteneinsteck- und Kartenentnahme-Datensätzen eines eigenen Abschnitts abgeleitet. Diese Verknüpfung stellt der Leser noch nicht her.",
+
+    "driver_none_card": "Die Aktivitätszeilen dieser Datei enthalten keine Kartennummer.",
     "seal_warning_strip": "Bei {count} Dateien in dieser Liste konnte die Signatur nicht verifiziert werden — nicht für Kontrollen verwenden.",
     "seal_warning_single": "Bei dieser Datei konnte die Signatur nicht verifiziert werden — nicht für Kontrollen verwenden.",
     "parse_bekliyor": "Wartet auf Auswertung",

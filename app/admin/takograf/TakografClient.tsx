@@ -335,11 +335,15 @@ function Satir({
         <StatusChip tone={d.ayristirmaDurumu === "tamam" ? "info" : "neutral"}>
           {t(`parse_${d.ayristirmaDurumu}` as never)}
         </StatusChip>
-        {/* Whop: satır içi sorun metni */}
-        {d.ayristirmaHata && (
-          <div className="mt-0.5 max-w-56 truncate text-xs text-muted-foreground" title={d.ayristirmaHata}>
-            {d.ayristirmaHata}
-          </div>
+        {/**
+         * Whop deseni "satır içi sorun metni" der — ama metin BİZİM
+         * cümlemiz olmalı, kütüphanenin ham İngilizce hatası değil.
+         * 27.08.2026'da canlıda ham Go hatası müşteriye görünüyordu; ham
+         * metin artık yalnız veritabanında (kayıt), ekranda durumun kendi
+         * cümlesi var. Ayrıntı detay sayfasında.
+         */}
+        {d.ayristirmaDurumu === "basarisiz" && (
+          <div className="mt-0.5 max-w-56 text-xs text-muted-foreground">{t("parse_basarisiz_hint")}</div>
         )}
       </td>
       {/* Revolut: "tarih · kişi" ikinci satır */}

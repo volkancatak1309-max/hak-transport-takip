@@ -2644,6 +2644,24 @@
     "seal_dogrulandi": "Doğrulandı",
     "seal_dogrulanamadi": "Doğrulanamadı",
     "seal_denenmedi": "Denetlenmedi",
+
+    "seal_reason_imza_yok": "Dosyada dijital imza bulunamadı — doğrulama yapılamadı.",
+
+    "seal_reason_imza_uyusmadi": "Dijital imza dosyayla uyuşmuyor — dosya değişmiş olabilir.",
+
+    "seal_reason_kok_sertifika_yok": "Doğrulama için gereken kök sertifikaya ulaşılamadı.",
+
+    "seal_reason_bicim_okunamadi": "İmza bölümü okunamadı — dosya biçimi beklenenden farklı.",
+
+    "seal_reason_bilinmiyor": "Dijital imza doğrulanamadı.",
+
+    "parse_basarisiz_hint": "Ayrıntı dosya sayfasında",
+
+    "period_mismatch": "Faaliyet günleri ({gunler}) dosyanın bildirdiği indirme döneminin ({donem}) dışında. Ham veri olduğu gibi gösteriliyor, düzeltilmiyor.",
+
+    "driver_none_vu": "Araç ünitesi indirmesinde faaliyet satırları şoför kimliği taşımaz — şoför, ayrı bir bölümdeki kart takma/çıkarma kayıtlarından türetilir. Okuyucu bu bağı henüz kurmuyor.",
+
+    "driver_none_card": "Bu dosyanın faaliyet satırlarında kart numarası yok.",
     "seal_warning_strip": "Bu listedeki {count} dosyanın doğrulaması yapılamadı — denetimde kullanmayın.",
     "seal_warning_single": "Bu dosyanın doğrulaması yapılamadı — denetimde kullanmayın.",
     "parse_bekliyor": "Okunmayı bekliyor",

@@ -10,6 +10,7 @@ import {
   kimlikKisalt,
   muhurKodu,
   slotKodu,
+  tekrariSil,
   turTahmin,
   yuklemeDenetle,
   type AyristirmaDurumu,
@@ -398,7 +399,16 @@ export async function ayristirVeYaz(id: string, baytlar: Uint8Array): Promise<vo
     .update({
       nesil: c.nesil ?? null,
       muhur_durumu: muhurKodu(c.muhur_durumu),
-      muhur_sebep: c.muhur_sebep ?? null,
+      /**
+       * ⚠️ HAM METİN BURADA KALIR — bu KAYITTIR, ekran değil.
+       *
+       * Ekran artık bunu basmıyor (bkz. muhurSebepKodu); denetim izinde
+       * gerekirse ham sebep bu kolondan okunur. Yalnız TEKRARI temizleniyor:
+       * VU kimlik doğrulaması her imzalı kaydı ayrı deniyor ve aynı cümle
+       * kayıt başına bir kez birikiyor — ölçülen örnekte aynı cümle dört kez.
+       * Tekrarı saklamak kaydı okunmaz yapıyor, bilgi eklemiyor.
+       */
+      muhur_sebep: c.muhur_sebep ? tekrariSil(c.muhur_sebep) : null,
       ayristirma_durumu: "tamam",
       ayristirma_hata: null,
       ayristirici_surum: c.ayristirici_surum ?? null,

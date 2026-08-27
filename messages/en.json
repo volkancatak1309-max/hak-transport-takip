@@ -2644,6 +2644,24 @@
     "seal_dogrulandi": "Signature valid",
     "seal_dogrulanamadi": "Could not be verified",
     "seal_denenmedi": "Not checked",
+
+    "seal_reason_imza_yok": "No digital signature was found in the file — verification was not possible.",
+
+    "seal_reason_imza_uyusmadi": "The digital signature does not match the file — the file may have been altered.",
+
+    "seal_reason_kok_sertifika_yok": "The root certificate required for verification could not be reached.",
+
+    "seal_reason_bicim_okunamadi": "The signature section could not be read — unexpected file format.",
+
+    "seal_reason_bilinmiyor": "The digital signature could not be verified.",
+
+    "parse_basarisiz_hint": "Details on the file page",
+
+    "period_mismatch": "The activity days ({gunler}) fall outside the download period declared in the file ({donem}). The raw data is shown unchanged.",
+
+    "driver_none_vu": "In a vehicle-unit download the activity rows carry no driver identity — the driver is derived from the card insertion and withdrawal records in a separate section. The reader does not yet make that link.",
+
+    "driver_none_card": "The activity rows in this file contain no card number.",
     "seal_warning_strip": "The signature on {count} files in this list could not be verified — do not use them for official checks.",
     "seal_warning_single": "The signature on this file could not be verified — do not use it for official checks.",
     "parse_bekliyor": "Waiting to be read",

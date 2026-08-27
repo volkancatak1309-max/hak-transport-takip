@@ -63,6 +63,159 @@ export function muhurTonu(m: MuhurDurumu): "iyi" | "uyari" | "notr" {
   return "notr";
 }
 
+// ═══════════════════ MÜHÜR SEBEBİ — HAM METİN EKRANA ÇIKMAZ ═══════════════
+
+/**
+ * 🔴 27.08.2026 — CANLIDA YAKALANDI.
+ *
+ * Okuyucu servisi `muhur_sebep` alanına kütüphanenin HAM Go hata dizesini
+ * koyuyor (`servis/main.go`: `c.MuhurSebep = kisalt(aerr.Error(), 300)`) ve
+ * panel onu olduğu gibi basıyordu. Müşterinin gördüğü:
+ *
+ *   "failed to extract Gen2 certificates: expected exactly 1 MSCA
+ *    certificate, got 0 failed to extract Gen2 certificates: expected
+ *    exactly 1 MSCA certificate, got 0 failed to extract…"
+ *
+ * İngilizce, teknik ve DÖRT KEZ tekrarlı — çünkü VU kimlik doğrulaması her
+ * imzalı kaydı ayrı deniyor ve aynı hata kayıt başına bir kez birikiyor
+ * (ölçüldü: 3 gün kaydı + genel bakış).
+ *
+ * Kural: ham metin KAYIT (log), ekran değil. Ham dize veritabanında
+ * `takograf_dosyalari.muhur_sebep` kolonunda durmaya devam eder — denetim
+ * izinde gerekirse oradan okunur; ekranda yerine kapalı bir kod ve o kodun
+ * üç dildeki karşılığı gösterilir.
+ */
+export type MuhurSebepKodu =
+  /** Dosyada imza/sertifika bloğu YOK — doğrulanacak bir şey bulunamadı. */
+  | "imza_yok"
+  /** İmza var ama tutmadı — dosya değişmiş olabilir. */
+  | "imza_uyusmadi"
+  /** Kök/CA sertifikasına ulaşılamadı — bizim tarafımızdaki bir boşluk. */
+  | "kok_sertifika_yok"
+  /** İmza bölümü çözülemedi — biçim beklenenden farklı. */
+  | "bicim_okunamadi"
+  /** Tanınmayan sebep — yine de bir şey uydurmuyoruz. */
+  | "bilinmiyor";
+
+export const MUHUR_SEBEP_KODLARI: MuhurSebepKodu[] = [
+  "imza_yok",
+  "imza_uyusmadi",
+  "kok_sertifika_yok",
+  "bicim_okunamadi",
+  "bilinmiyor",
+];
+
+/**
+ * Aynı cümlenin arka arkaya tekrarını tek kopyaya indirir.
+ *
+ * Ölçülen girdi 300 baytlık kırpılmış bir dizeydi ve aynı cümleyi dört kez
+ * taşıyordu. Birim uzunluğunu SABİTLEMİYORUZ: ilk 24 karakterin ikinci kez
+ * göründüğü yer birimin sınırıdır. Son kopya kırpık olabilir (servis 300'de
+ * kesiyor), o yüzden "tam katı mı" diye bakmıyoruz — baştan tekrar YETER.
+ */
+export function tekrariSil(ham: string): string {
+  const s = ham.replace(/\s+/g, " ").trim();
+  if (s.length < 24) return s;
+  const iz = s.slice(0, 24);
+  const i = s.indexOf(iz, 1);
+  if (i < 12) return s;
+  const birim = s.slice(0, i).trim();
+  if (!birim) return s;
+  /**
+   * Kalan gerçekten bu birimin tekrarı mı?
+   *
+   * ⚠️ SON KOPYA KIRPIK OLABİLİR ve sonunda "…" taşır — servis dizeyi 300
+   * baytta kesip üç nokta ekliyor (`servis/main.go: kisalt`). İlk sürüm bunu
+   * hesaba katmıyordu ve GERÇEK girdide düştü (301 karakterlik canlı dize
+   * hiç kısalmadı, ölçüldü). Bu yüzden son parça birimin TAMAMI değil ÖN EKİ
+   * olabilir; eşleşme iki yönlü aranıyor.
+   */
+  for (let p = 0; p < s.length; p += i) {
+    const parca = s
+      .slice(p, p + i)
+      .trim()
+      .replace(/…+$/, "");
+    if (!parca) continue;
+    if (!birim.startsWith(parca) && !parca.startsWith(birim)) return s;
+  }
+  return birim.replace(/[\s…:-]+$/, "");
+}
+
+/**
+ * Ham hata dizesini KAPALI bir koda çevirir.
+ *
+ * Eşleştirme ölçülmüş sözcüklere dayanıyor — `tachograph-go` kimlik doğrulama
+ * yolundaki tüm `fmt.Errorf` metinleri tarandı (27.08.2026):
+ *   "certificate not found" · "expected exactly N … certificate, got"
+ *   "failed to extract Gen1/Gen2 certificates" · "no signature present"
+ *   "signature record not found" · "… verification failed" · "failed to get
+ *   root certificate" · "unsupported file type" · "failed to split/parse/
+ *   unmarshal" …
+ *
+ * ⚠️ SIRA ÖNEMLİ: "verification failed" önce denenir. "MSCA certificate
+ * verification failed" hem 'certificate' hem 'verification failed' içerir ve
+ * bu bir BULGUdur (imza tutmadı), boşluk değil.
+ *
+ * Boş/eksik sebep → null (ekran yalnız başlık cümlesini gösterir).
+ */
+export function muhurSebepKodu(ham: string | null | undefined): MuhurSebepKodu | null {
+  const v = tekrariSil(String(ham ?? "")).toLowerCase();
+  if (!v) return null;
+
+  if (/verification failed|authentication failed|invalid signature length/.test(v)) {
+    return "imza_uyusmadi";
+  }
+  if (/root certificate/.test(v)) return "kok_sertifika_yok";
+  if (
+    /certificate not found|expected exactly \d+ .*certificate|failed to extract gen[12] certificates|no signature present|signature record not found|record not found for authentication|insufficient data for/.test(
+      v
+    )
+  ) {
+    return "imza_yok";
+  }
+  if (/unsupported|unable to determine|failed to (split|parse|unmarshal)/.test(v)) {
+    return "bicim_okunamadi";
+  }
+  return "bilinmiyor";
+}
+
+// ═══════════════════ DÖNEM ↔ FAALİYET GÜNÜ ÇELİŞKİSİ ══════════════════════
+
+/**
+ * Dosyanın bildirdiği indirme dönemi ile faaliyet satırlarının günleri
+ * birbirini tutuyor mu?
+ *
+ * 🔴 27.08.2026'da canlıda görüldü: özet "2025-11-28 → 2026-03-11" derken
+ * 155 satırın hepsi "2024-01-01" diyordu. ÖLÇÜLDÜ — okuma hatası DEĞİL:
+ * dosyadaki üç gün kaydının üçü de `dateOfDay = 2024-01-01T00:00:00Z`
+ * taşıyor, `downloadablePeriod` ise 2025-2026. Yani çelişki DOSYANIN İÇİNDE
+ * (anonimleştirme zaman damgalarını sabit bir başlangıca çekmiş, genel bakış
+ * bloğuna dokunmamış).
+ *
+ * Bu yüzden veriyi DÜZELTMİYORUZ — uydurmak olurdu. Ekran ham veriyi
+ * gösterir ve çeliştiğini SÖYLER; kullanıcı iki sayıyı yan yana görüp
+ * "hangisi doğru" diye tahmin etmek zorunda kalmaz.
+ *
+ * `null` = söylenecek bir şey yok (dönem yok, gün yok ya da tutarlı).
+ */
+export function donemCelismesi(
+  donemBas: string | null,
+  donemBit: string | null,
+  gunler: (string | null)[]
+): { ilk: string; son: string } | null {
+  const g = [...new Set(gunler.filter(Boolean).map((x) => String(x).slice(0, 10)))].sort();
+  if (g.length === 0) return null;
+  const bas = (donemBas ?? "").slice(0, 10);
+  const bit = (donemBit ?? "").slice(0, 10);
+  if (!bas || !bit) return null;
+  // Tek bir gün bile aralığın içindeyse çelişki DEMİYORUZ: gerçek dosyalarda
+  // dönemin dışına taşan tek tük kayıt olabilir; iddia ancak HİÇBİRİ
+  // içeride değilse kurulur.
+  const iceride = g.some((x) => x >= bas && x <= bit);
+  if (iceride) return null;
+  return { ilk: g[0], son: g[g.length - 1] };
+}
+
 // ═══════════════════════════ YÜKLEME DENETİMİ ═════════════════════════
 
 export type YuklemeHatasi =

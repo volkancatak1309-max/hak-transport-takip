@@ -544,6 +544,7 @@
     "litre": "Yakıt",
     "mesafe": "Mesafe",
     "olculemedi": "ölçülemedi",
+    "hesaplanmadi": "hesaplanmadı",
     "kapsama": "{toplam} araçtan {olculen} tanesinin tüketimi ölçüldü",
     "olculemeyen_plakalar": "Ölçülemeyen araçlar: {plakalar}",
     "hedef_tuttu": "Hedef tutuyor — {hedef} g/km hedefine göre {fark} g/km altında (%{yuzde})",

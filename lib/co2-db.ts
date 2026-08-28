@@ -116,8 +116,24 @@ export type CO2Panosu = {
   araclar: CO2AracSatiri[];
   soforler: CO2SoforSatiri[];
   musteriler: CO2MusteriSatiri[];
-  /** Aylık seri — trend. */
-  aylik: { ay: string; kg: number | null; km: number | null; gKm: number | null }[];
+  /**
+   * Aylık seri — trend.
+   *
+   * `kaynak` (S4, 28.08.2026) — `kg: null`'ın İKİ ayrı anlamını ayırır:
+   *   'tablo'         → `vehicle_month_metrics`ten okundu (kapanmış ay)
+   *   'canli'         → o an hesaplandı (açık ay, ya da tabloda satır yoktu)
+   *   'hesaplanmadi'  → 🔴 SATIR YOK ve canlı hesap da yapılmadı.
+   *                     `kg: null` burada "ölçülemedi" DEĞİL, "bilinmiyor"dur.
+   * Ekran ikisini AYNI göstermemeli: "ölçülemedi" bir ölçüm yargısıdır,
+   * "hesaplanmadı" bir eksikliktir. (Uydurma sayı yasağının aynı kökü.)
+   */
+  aylik: {
+    ay: string;
+    kg: number | null;
+    km: number | null;
+    gKm: number | null;
+    kaynak: "tablo" | "canli" | "hesaplanmadi";
+  }[];
   hedef: ReturnType<typeof hedefDurumu>;
   katsayiSurum: string;
   /** Yakıt raporu hiç çalışmadıysa sebebi. */
@@ -415,36 +431,113 @@ async function aylikSeri(
   turler: Map<string, FuelType>
 ): Promise<CO2Panosu["aylik"]> {
   const cikti: CO2Panosu["aylik"] = [];
+
+  /**
+   * ═══ S4 (28.08.2026) — KAPANMIŞ AYLAR HAZIR TABLODAN ═══════════════════
+   *
+   * Eskiden bu döngü altı ayı da `buildFuelReport` ile SIRAYLA hesaplıyordu.
+   * ÖLÇÜLDÜ (HAK61 canlı): **1.112 sorgu / 23,58 sn** — ve altı ayın DÖRDÜ
+   * tamamen BOŞTU (telemetri 13.07.2026'da başlıyor), yani 712 sorgu ve
+   * ~8,95 sn sıfır bilgi için harcanıyordu. Ayrıntı: `docs/AYLIK-METRIK.md`.
+   *
+   * `vehicle_month_metrics` (090) bu iş için kurulmuştu ama yazanı yalnız
+   * silme-hazırlığı ekranıydı, o yüzden tablo boştu. Artık gece cron'u
+   * dolduruyor (`/api/cron/aylik-metrik`).
+   *
+   * 🔑 AY SINIRI AYNI: `ayOzetiYaz` → `aySiniri()` → `Date.UTC(y, m-1, 1)`;
+   * buradaki pencere de `Date.UTC(...)`. İkisi de UTC, birebir aynı pencere —
+   * yani tablodan okumak canlı hesapla AYNI sayıyı verir (kontrol edildi).
+   *
+   * ⚠️ AÇIK AY ASLA TABLODAN OKUNMAZ. İçinde bulunulan ay her gün değişir;
+   * gece yazılmış satır sabaha bayat olur. O ay HER ZAMAN canlı hesaplanır.
+   *
+   * ⚠️ GERİ DÜŞÜŞ: kapanmış bir ayın satırı yoksa (cron kurulmamış / yeni
+   * kiracı) o ay CANLI hesaplanır — davranış eskisiyle birebir aynı, yalnız
+   * kazanç gerçekleşmez. Tablo hiç yoksa (090 koşmamış) hepsi canlıya düşer.
+   */
+  const aylar: { ay: string; bas: Date; bit: Date; acik: boolean }[] = [];
   for (let i = 5; i >= 0; i--) {
-    const ayBit = new Date(Date.UTC(bit.getUTCFullYear(), bit.getUTCMonth() - i + 1, 1));
     const ayBas = new Date(Date.UTC(bit.getUTCFullYear(), bit.getUTCMonth() - i, 1));
-    const r = await buildFuelReport({ start: ayBas, end: ayBit });
-    if (!r.available) {
-      cikti.push({ ay: ayBas.toISOString().slice(0, 7), kg: null, km: null, gKm: null });
-      continue;
+    const ayBit = new Date(Date.UTC(bit.getUTCFullYear(), bit.getUTCMonth() - i + 1, 1));
+    aylar.push({ ay: ayBas.toISOString().slice(0, 7), bas: ayBas, bit: ayBit, acik: i === 0 });
+  }
+
+  /** Kapanmış ayların hazır satırları — TEK sorgu, araç sayısından bağımsız. */
+  const hazir = new Map<string, { litre: number | null; km: number | null; sebep: string | null }[]>();
+  const kapali = aylar.filter((a) => !a.acik).map((a) => `${a.ay}-01`);
+  if (kapali.length > 0) {
+    const { data, error } = await supabaseAdmin
+      .from("vehicle_month_metrics")
+      .select("ay, litre, km, olculemedi_sebep, vehicle_id")
+      .in("ay", kapali);
+    if (!error) {
+      for (const r of (data ?? []) as Record<string, unknown>[]) {
+        const anahtar = String(r.ay).slice(0, 7);
+        const liste = hazir.get(anahtar) ?? [];
+        liste.push({
+          litre: r.litre === null || r.litre === undefined ? null : Number(r.litre),
+          km: r.km === null || r.km === undefined ? null : Number(r.km),
+          sebep: r.olculemedi_sebep ? String(r.olculemedi_sebep) : null,
+          // vehicle_id yakıt türü haritası için gerekli
+          ...({ vid: String(r.vehicle_id) } as object),
+        } as { litre: number | null; km: number | null; sebep: string | null });
+        hazir.set(anahtar, liste);
+      }
     }
+    // error hâlinde `hazir` boş kalır → hepsi canlı yola düşer (geri düşüş).
+  }
+
+  /** Bir satır kümesinden ay toplamını üretir — tablo ve canlı yol ORTAK. */
+  const topla = (
+    satirlar: { litre: number | null; km: number | null; sebep: string | null; vid: string }[]
+  ) => {
     let kg = 0;
     let km = 0;
     let varMi = false;
-    for (const row of r.rows ?? []) {
-      const s = co2Hesapla({
-        litre: row.consumedLiters,
-        fuelType: turler.get(row.vehicleId) ?? "diesel",
+    for (const s of satirlar) {
+      if (s.sebep !== null) continue; // ölçülemedi — SIFIR DEĞİL, atlanır
+      const h = co2Hesapla({
+        litre: s.litre,
+        fuelType: turler.get(s.vid) ?? "diesel",
         esas: ayar.esas,
         sebekeGkWh: ayar.sebekeGkWh,
         kWh: null,
       });
-      if (s.kg === null || row.km === null) continue;
-      kg += s.kg;
-      km += row.km;
+      if (h.kg === null || s.km === null) continue;
+      kg += h.kg;
+      km += s.km;
       varMi = true;
     }
-    cikti.push({
-      ay: ayBas.toISOString().slice(0, 7),
-      kg: varMi ? kg : null,
-      km: varMi ? km : null,
-      gKm: varMi ? gPerKm(kg, km) : null,
-    });
+    return varMi
+      ? { kg, km, gKm: gPerKm(kg, km) }
+      : { kg: null, km: null, gKm: null };
+  };
+
+  for (const a of aylar) {
+    const hazirSatir = a.acik ? undefined : (hazir.get(a.ay) as
+      | { litre: number | null; km: number | null; sebep: string | null; vid: string }[]
+      | undefined);
+
+    if (hazirSatir && hazirSatir.length > 0) {
+      cikti.push({ ay: a.ay, ...topla(hazirSatir), kaynak: "tablo" });
+      continue;
+    }
+
+    // Açık ay, ya da kapanmış ama satırı olmayan ay → CANLI.
+    const r = await buildFuelReport({ start: a.bas, end: a.bit });
+    if (!r.available) {
+      cikti.push({ ay: a.ay, kg: null, km: null, gKm: null, kaynak: "hesaplanmadi" });
+      continue;
+    }
+    const satirlar = (r.rows ?? []).map((row) => ({
+      litre: row.consumedLiters ?? null,
+      km: row.km ?? null,
+      // Canlı yolda "ölçülemedi" yargısı raporun kendi alanlarından türer.
+      sebep: row.consumedLiters === null || row.consumedLiters === undefined ? "yetersiz_okuma" : null,
+      vid: row.vehicleId,
+    }));
+    cikti.push({ ay: a.ay, ...topla(satirlar), kaynak: "canli" });
   }
+
   return cikti;
 }

@@ -26,6 +26,7 @@ Vercel projesinden alınır.
 | 7 | Mevzuat erken uyarı | `/api/cron/mevzuat-tarama` | `CRON_SECRET` | **15 dakika** | Canlı mevzuat katmanı isteyen her kiracı (migration 086) |
 | 8 | Dönem skoru + rozet | `/api/cron/skor-donem` | `CRON_SECRET` | **haftada 1** | Ödül/liderlik isteyen her kiracı (migration 088) |
 | 9 | **Saklama UYARISI** (silmez) | `/api/cron/saklama` | `CRON_SECRET` | **günde 1 · gece 03:00** | Saklama katmanı kuran her kiracı (migration 090) |
+| 10 | **Aylık metrik** (kapanmış ay özeti) | `/api/cron/aylik-metrik` | `CRON_SECRET` | **günde 1 · gece 03:30** | CO₂/yakıt aylık trendi isteyen her kiracı (migration 090) |
 | ~~9~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
 
 Sır iki biçimde de kabul edilir ve karşılaştırma zamanlama-güvenlidir
@@ -435,3 +436,58 @@ GET https://<dağıtım>/api/cron/saklama?secret=<CRON_SECRET>&kuru=1
 `/api/cron/demo-retention` **yalnız galzura-demo**'da çalışır, 14 gün tutar,
 tenant kilitlidir ve **GERÇEKTEN SİLER**; işi "demoda disk şişmesin". Bu iş bir
 **uyarı üreticisidir** ve hiçbir şey silmez. İkisi ayrı kayıtlardır.
+
+---
+
+## 10 · Aylık metrik — GÜNDE BİR, GECE (S4)
+
+**Migration 090** (tablo zaten kurulu, yeni migration YOK).
+Ayrıntı: [`docs/AYLIK-METRIK.md`](AYLIK-METRIK.md).
+
+```
+GET https://<dağıtım>/api/cron/aylik-metrik?secret=<CRON_SECRET>
+```
+
+Sıklık: **günde 1**, gece **03:30** (saklama 03:00'te koşuyor, aynı dakikaya
+binmesin).
+
+### Ne yapar
+
+`vehicle_month_metrics` tablosuna **KAPANMIŞ** ayların araç × ay özetini yazar
+(litre, km, ölçülemedi sebebi). CO₂ panosunun aylık serisi artık o tablodan
+okuyor; eskiden altı ayı da canlı hesaplıyordu — **ölçüldü: 1.112 sorgu /
+23,58 sn, ve altı ayın DÖRDÜ tamamen boştu.**
+
+### 🔴 Açık ayı YAZMAZ
+
+İçinde bulunulan ay her gün değişir; gece yazılan satır sabaha bayat olur.
+Açık ay okuma anında **canlı** hesaplanır. Gövdedeki `acikAyYazilmadi` alanı
+hangi ayın atlandığını söyler.
+
+### Geç gelen telemetri
+
+Bir ay kapandığı gece YAZILMAZ; `?gecikme=` gün beklenir (varsayılan **2**).
+flespi kesinti sonrası geriye yazabiliyor (28.08'de 11.455 satır). O ay
+bu arada canlı yoldan okunur, yani bekleme hiçbir ekranı geciktirmez.
+
+| Parametre | Varsayılan | Ne yapar |
+|---|---|---|
+| `geri` | 6 | Kaç kapanmış ay kapsansın (1–24) |
+| `gecikme` | 2 | Ay kapandıktan sonra kaç gün beklensin (0–30) |
+| `tazele=1` | — | Satırı olan ayları da yeniden yaz (geç veri geldiyse) |
+| `kuru=1` | — | HİÇBİR ŞEY YAZMAZ, ne yapacağını söyler |
+
+### Yanıt kodları
+
+| Kod | Anlamı | Ne yapmalı |
+|-----|--------|------------|
+| 200 | Tur tamam (`yazilan`, `aylar[]`, `acikAyYazilmadi`) | — |
+| 401 | Sır yanlış/tanımsız | Vercel env'i kontrol et |
+| 503 | migration **090** çalıştırılmamış | SQL'i çalıştır |
+
+**İDEMPOTENT:** ikinci çağrı `tazele` verilmedikçe yazılmış ayları atlar ve
+`yazilan: 0` döner.
+
+⚠️ **Bu kayıt kurulmazsa ekran bozulmaz**, yalnız yavaş kalır: aylık seri
+canlı yola düşer (bugünkü davranış) ve satırı olmayan ay "hesaplanmadı"
+gösterilir — **"0" DEĞİL.**

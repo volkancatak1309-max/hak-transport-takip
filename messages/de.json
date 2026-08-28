@@ -544,6 +544,7 @@
     "litre": "Kraftstoff",
     "mesafe": "Strecke",
     "olculemedi": "nicht messbar",
+    "hesaplanmadi": "nicht berechnet",
     "kapsama": "Von {toplam} Fahrzeugen wurde der Verbrauch bei {olculen} gemessen",
     "olculemeyen_plakalar": "Nicht messbare Fahrzeuge: {plakalar}",
     "hedef_tuttu": "Ziel erreicht — {fark} g/km unter dem Ziel von {hedef} g/km ({yuzde} %)",

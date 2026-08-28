@@ -179,8 +179,21 @@ export function CO2Client({ pano, yonetici }: { pano: CO2Panosu; yonetici: boole
           {pano.aylik.map((a) => (
             <li key={a.ay} className="rounded-lg border border-border px-3 py-2 text-xs">
               <div className="nums text-muted-foreground">{a.ay}</div>
+              {/*
+                🔴 "ölçülemedi" ile "hesaplanmadı" AYNI ŞEY DEĞİL (S4).
+                İlki bir ÖLÇÜM YARGISI: ay hesaplandı, o ayda hiçbir aracın
+                tüketimi ölçülemedi. İkincisi bir EKSİKLİK: o ayın özeti hiç
+                üretilmemiş (gece cron'u kurulmamış ya da henüz koşmamış).
+                İkisini aynı göstermek, bilinmeyeni ölçülmüş gibi sunardı.
+              */}
               <div className="nums font-medium">
-                {a.kg === null ? <span className="text-muted-foreground">{t("olculemedi")}</span> : `${kg(a.kg)} kg`}
+                {a.kg !== null ? (
+                  `${kg(a.kg)} kg`
+                ) : a.kaynak === "hesaplanmadi" ? (
+                  <span className="text-muted-foreground italic">{t("hesaplanmadi")}</span>
+                ) : (
+                  <span className="text-muted-foreground">{t("olculemedi")}</span>
+                )}
               </div>
               {a.gKm !== null && <div className="nums text-muted-foreground">{say(a.gKm, 0)} g/km</div>}
             </li>

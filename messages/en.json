@@ -544,6 +544,7 @@
     "litre": "Fuel",
     "mesafe": "Distance",
     "olculemedi": "not measured",
+    "hesaplanmadi": "not computed",
     "kapsama": "Consumption measured on {olculen} of {toplam} vehicles",
     "olculemeyen_plakalar": "Vehicles not measurable: {plakalar}",
     "hedef_tuttu": "On target — {fark} g/km below the {hedef} g/km target ({yuzde} %)",

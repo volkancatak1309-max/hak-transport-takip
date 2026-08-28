@@ -118,6 +118,13 @@ const HARIC = {
     "SIFIR DDL — saf veri onarımı (HAK61'de 18 numaradaki ulusal trunk sıfırı). " +
     "Boş bir veritabanında yedi ifadesinin hepsi no-op; kalıcı şema katkısı YOK. " +
     "030'un bıraktığı biçim kısıtı zaten kurulu, yani şema 078'e birebir eşit.",
+  "093_mukerrer_indeks_dusur.sql":
+    "CANLI ŞEMA ONARIMI — düşürdüğü `idx_device_telemetry_fuel` indeksini " +
+    "HİÇBİR migration yaratmıyor (ad depoda hiç geçmiyor; canlı HAK61'e elle " +
+    "açılmış, 053'ün kurduğunun birebir aynısı). Yeni bir kiracıda o indeks " +
+    "zaten hiç oluşmaz, yani bu dosya sıfırdan kurulumda no-op'tur. Ayrıca " +
+    "`set local lock_timeout` içeriyor ve kurulum dosyasının tek büyük " +
+    "işleminde çalıştırılması o ayarı bütün kuruluma taşırdı.",
 };
 
 // ─── KÖPRÜ: hiçbir migration'ın yaratmadığı kolon ────────────────────────────

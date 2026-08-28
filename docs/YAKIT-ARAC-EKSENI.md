@@ -216,3 +216,82 @@ yalnız eski (yavaş) yola döndürür. Kod tarafını geri almak gerekmez.
   bu fonksiyon zaten boş döner (hem eski hem yeni), ama ayrıca ölçmedim
 - 7 günden uzun pencerelerde SQL-katmanı eşdeğerliği — uygulama katmanında
   28 günlük pencerede doğrulandı, SQL katmanında 7 günlük veriyle
+
+---
+
+## 10 · DAĞITIM SONRASI ÖLÇÜM (28.08.2026 13:21–13:30 UTC)
+
+094 + 095 üç kiracıda da koştu ve kapıyı geçti; kod `main`'e alındı (9838abb).
+Aşağısı HAK61'de **salt okuma** ile alınan sonrası ölçümüdür.
+
+### 10.1 Uçlar
+
+| uç | ÖNCE (migration var, kod eski) | SONRA | kazanç |
+|---|---:|---:|---:|
+| `/api/mobile/analytics/co2` | 19,83 sn | **15,30 sn** | **1,3×** |
+| `/api/mobile/analytics` | 1,34 sn | 1,30 sn | 1,0× (yakıt yolunu çağırmıyor) |
+
+### 10.2 🔴 Yakıt rakamları DEĞİŞMEDİ — uygulama katmanında doğrulandı
+
+`buildFuelReport`, üç **sabit** pencerede, yeni kodla:
+
+| pencere | hedef (deploy öncesi) | ölçülen | sonuç |
+|---|---:|---:|---|
+| 01–15 Ağu | 1187,7800000000002 | 1187,7800000000002 | ✅ birebir |
+| 15–22 Ağu | 592,1300000000001 | 592,1300000000001 | ✅ birebir |
+| 01–28 Ağu | 2129,2700000000004 | 2129,2700000000004 | ✅ birebir |
+
+Son ondalık basamağa kadar aynı. HAK61'de müşteriye giden yakıt rakamı oynamadı.
+
+### 10.3 57014 kapısı — önceki iddiam FAZLA GENİŞTİ, düzeltiyorum
+
+46 günlük pencerede, bugün ölçülen:
+
+| fonksiyon | sonuç |
+|---|---|
+| `report_fuel_stats` (YÜZDE, kapsamsız) | 🔴 **hâlâ 57014** |
+| `report_fuel_stats_vehicle` ×29, mapBounded(6) | 6,90 sn · en kötü ifade 3,66 sn · **0 hata** · tavana 2,2× |
+| `report_fuel_volume_stats` (LİTRE, kapsamsız) | 5,72 sn · **hiç zaman aşımına düşmedi** |
+| `report_fuel_volume_stats_vehicle` ×29 | 2,93 sn · en kötü 1,53 sn · **0 hata** · tavana **5,2×** |
+
+**Düzeltme:** § 1'de "094 46 günlük 57014'ü kapatıyor" demiştim. Doğrusu:
+57014 **YÜZDE hattının kapsamsız gövdesine** aitti ve **hâlâ orada** — ama o
+gövde 052'den beri yalnız geri düşüş yolu, ürün ona uğramıyor. **Litre hattı
+zaten timeout almıyordu**; 094'ün kazandırdığı şey timeout'u kapatmak değil,
+tavana payı **1,4× → 5,2×** çıkarmak. Fark önemli: biri "arıza giderildi",
+öteki "arızaya mesafe açıldı".
+
+### 10.4 Tahmin tuttu mu — evet, ama yolu farklıydı
+
+Tahminim: `co2Panosu` 36,7 → **10–15 sn**. Gerçek: **15,3 sn** — aralığın üst
+ucu. Ama kazancın dağılımı beklediğim gibi değil:
+
+```
+36,7 sn  →  18,7–19,8 sn   Vercel bölge değişikliği (dub1)   ← büyük pay
+19,8 sn  →  15,3 sn        094/095 araç ekseni               ← bu turun payı
+```
+
+**Neden 094'ün payı küçük kaldı — ölçüldü:**
+
+| aylık seri penceresi | kapsamsız | araç eksenli | oran |
+|---|---:|---:|---:|
+| Ağustos (dolu) | 4,70 sn | **2,38 sn** | **1,98× hızlı** |
+| Temmuz (kısmen dolu) | 1,03 sn | 0,81 sn | 1,26× hızlı |
+| **Haziran (BOŞ)** | **0,09 sn** | **0,58 sn** | 🔴 **0,15× — YAVAŞ** |
+
+HAK61'in telemetrisi **13.07.2026**'da başlıyor. `aylikSeri` son 6 ayı
+tarıyor, yani **yarısı boş**. Boş pencerede kapsamsız sürüm hiçbir şey
+taramadan 90 ms'de döner; araç eksenli sürüm **29 ayrı çağrı** yapar ve her
+biri ~25 ms RTT öder → **~0,6 sn sabit taban**.
+
+> 🔑 **Genel kural olarak kayda geçsin:** araç-ekseni fan-out'unun
+> `29 × RTT ≈ 0,6–0,7 sn`'lik bir TABANI var. Pencere yeterince doluysa
+> kazanır (Ağustos 1,98×), boşsa **kaybeder**. Bu, S4'ün (aylık seriyi
+> `vehicle_month_metrics`ten okumak) neden hâlâ doğru iş olduğunu güçlendiriyor:
+> orada 6 rapor tek sorguya iner ve boş ay sorunu tamamen ortadan kalkar.
+
+### 10.5 flespi akışı — kesintisiz
+
+Push'tan sonra 6 örnek (13:21–13:26 UTC), hepsinde akıyor: son yazma 15–19 sn,
+son 5 dk 334–412 satır, giriş sorgusu 200, 29 araç, `vin` NULL 0.
+Kesinti olmadı, geri alma gerekmedi.

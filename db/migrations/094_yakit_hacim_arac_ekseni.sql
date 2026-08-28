@@ -39,9 +39,16 @@
 -- 🔑 GÖVDE BİREBİR AYNI — TEK FARK BİR `where` SATIRI
 -- ═══════════════════════════════════════════════════════════════════════
 --
--- Aşağıdaki fonksiyon 039'un gövdesinin KOPYASIDIR. Değişen tek şey:
+-- Aşağıdaki fonksiyon 039'un gövdesinin KOPYASIDIR. İKİ fark var:
 --
---     +  where dt.vehicle_id = p_vehicle_id
+--     +  where dt.vehicle_id = p_vehicle_id          ← kapsama (bu migration'ın işi)
+--     ~  odo - prev_odo < 1  →  between -1 and 1     ← HİZALAMA (095 ile birlikte)
+--
+-- İkincisi 28.08.2026 akşamı eklendi: eşdeğerlik kapısı HAK61'de düştü ve
+-- sebebin CANLIDAKİ fonksiyonun depodan farklı olduğu ölçümle bulundu.
+-- Ayrıntı aşağıda, düşüş filtresinin başında. **095 bu migration'la BİRLİKTE
+-- çalıştırılmalıdır** — yalnız 094 koşulursa kapsamsız (geri düşüş) sürüm
+-- farklı sayı verir ve eşdeğerlik kapısı bu kez Sendigo/demo'da düşer.
 --
 -- `partition by b.vehicle_id` / `partition by c.vehicle_id` ve
 -- `group by vehicle_id` BİLEREK KORUNDU. Tek araçlık girdide bunlar
@@ -134,15 +141,40 @@ as $$
     coalesce(sum(fuel - prev_fuel) filter (
       where prev_fuel is not null and fuel - prev_fuel >= 5
     ), 0)                                           as refill_l,
-    -- ŞÜPHELİ DÜŞÜŞ: araç HAREKET ETMEDEN (odometre ilerlemeden) ≥5 L düşüş.
-    -- Odometre yoksa bayrak YOK (temkinli: az sayar, uydurmaz).
+    /**
+     * ŞÜPHELİ DÜŞÜŞ — odometre penceresi `between -1 and 1`.
+     *
+     * 🔴 BU 039'DAN FARKLI VE BİLEREK. 039 `odo - prev_odo < 1` yazıyor;
+     * burası HAK61'in CANLI davranışına hizalanmıştır. Gerekçe ve ölçüm:
+     * `docs/YAKIT-DUSUS-FARKI.md`. Özet: 28.08.2026'da eşdeğerlik kapısı
+     * HAK61'de düştü ve sebep 094 değil, CANLIDAKİ fonksiyonun depodan
+     * farklı olmasıydı (elle yapılmış, repoda kaydı olmayan bir müdahale).
+     * Depo `< 1` diyor, canlı `between -1 and 1` diyordu.
+     *
+     * Karar (Volkan, 28.08.2026): canlı biçim DOĞRU kabul edilir. Yakıt
+     * hırsızlığı uyarısı kaçırılmamalı — fazla uyarı incelenip elenir,
+     * eksik olan hiç görülmez. `< 1` seçilseydi HAK61'in müşteriye giden
+     * "şüpheli kayıp" rakamı bir gecede %8,1 düşerdi (43 olay · 373,2 L,
+     * 20–27 Ağu penceresinde ölçüldü).
+     *
+     * ⚠️ SINIRIN NE YAPTIĞI — ÖLÇÜLDÜ, FOLKLOR DEĞİL:
+     *   · `+1` sınırı ÇALIŞIYOR: 43 olay / 373,2 L (7 gün) · 67 / 542,7 (9 gün)
+     *   · `-1` sınırı BUGÜN ÖLÜ: tam −1 km fark HAM VERİDE HİÇ YOK (0 satır)
+     *   · Odometre gerçekten 25 kez geri gitti (147.097 satırda) ama hepsi
+     *     **1 km'den fazla** geri — yani `between` onları KAPSAMIYOR.
+     * Yani "negatif taraf bozuk odometreyi yakalıyor" cümlesi ölçümle
+     * DESTEKLENMİYOR. Sınır yine de korundu: canlı davranışı birebir
+     * korumak, gerekçesi zayıf bir sınırı budamaktan önceliklidir.
+     *
+     * Odometre yoksa bayrak YOK (temkinli: az sayar, uydurmaz).
+     */
     count(*) filter (
       where prev_fuel is not null and prev_fuel - fuel >= 5
-        and prev_odo is not null and odo is not null and odo - prev_odo < 1
+        and prev_odo is not null and odo is not null and odo - prev_odo between -1 and 1
     )::bigint                                       as drop_count,
     coalesce(sum(prev_fuel - fuel) filter (
       where prev_fuel is not null and prev_fuel - fuel >= 5
-        and prev_odo is not null and odo is not null and odo - prev_odo < 1
+        and prev_odo is not null and odo is not null and odo - prev_odo between -1 and 1
     ), 0)                                           as drop_l,
     coalesce(max(abs(fuel - prev_fuel)) filter (where prev_fuel is not null), 0)
                                                     as max_step_l

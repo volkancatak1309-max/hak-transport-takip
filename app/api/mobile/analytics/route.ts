@@ -24,7 +24,8 @@ import {
   rangeStartsBeforeEpoch,
   comparisonCrossesEpoch,
 } from "@/lib/config-epoch";
-import { co2Panosu } from "@/lib/co2-db";
+// co2Panosu import'u KALDIRILDI (28.08.2026) — CO₂ artık
+// `/api/mobile/analytics/co2` ucunda. Gerekçe aşağıda, `co2` alanının başında.
 import { SAFETY_SCORE_CALIBRATED, FUEL_PRICE_EUR_PER_L } from "@/lib/tenant";
 import { aralikCoz, aralikHataAlanlari } from "../_rapor/aralik";
 
@@ -266,22 +267,50 @@ export async function GET(req: NextRequest) {
   const epoch = await getLatestConfigEpoch();
 
   /**
-   * CO₂ ÖZETİ (089) — pano ile AYNI motordan. İkinci bir hesap yazmak, mobil
-   * ile web'in farklı sayı göstermesine giden en kısa yol olurdu.
+   * ═══ 🔴 CO₂ BURADAN ÇIKARILDI (28.08.2026) — ÖLÇÜMLE ══════════════════
+   *
+   * `co2Panosu()` bu satırda çağrılıyordu ve ekranın AÇILIŞINI rehin
+   * alıyordu. Ölçüldü (HAK61 canlı, salt okuma):
+   *
+   *     bu uç TOPLAM        1.301 çağrı · 41,8 sn
+   *       └─ co2Panosu()    1.115 çağrı · 36,7 sn   ← %86
+   *
+   * Sebep `lib/co2-db.ts:415` → `aylikSeri()`: son 6 ay `for` döngüsünde,
+   * SIRAYLA, her ay için tam bir `buildFuelReport`. Yani 1 + 6 = 7 ardışık
+   * yakıt raporu (tek rapor ölçüldü: 171 çağrı / 11,0 sn).
+   *
+   * Mobil istemci 14 sn ve 30 sn'de vazgeçiyordu → Analiz ekranı veriye
+   * HİÇ ulaşamıyordu. Tek satırlık bir CO₂ özeti bütün ekranı düşürüyordu.
+   *
+   * ⚠️ VE İSRAF: bu uç `co2Panosu`nun YALNIZCA `toplam` + `ayar` + `hedef`
+   * alanlarını okuyordu. `aylik`, `araclar`, `soforler`, `musteriler` hiç
+   * kullanılmıyordu — yani 7 raporun 6'sı hesaplanıp ATILIYORDU.
+   *
+   * Yeni yer: `GET /api/mobile/analytics/co2` (aynı aralık dili, aynı yetki).
+   * Ayrıntı: `docs/ANALIZ-YAVASLIK.md` · `docs/MOBIL-CO2-AYIRMA.md`.
+   *
+   * ═══ ALAN NEDEN SİLİNMEDİ ═════════════════════════════════════════════
+   *
+   * `co2` anahtarı ŞEKLİYLE duruyor, yalnız değerleri null. Silseydik
+   * `data.co2.kg` okuyan bugünkü istemci PATLARDI. `kg: null` ise bu ucun
+   * ZATEN belgelenmiş ve istemcide karşılanan bir durumu ("ölçülemedi").
+   * Yani bu geçiş istemci güncellenmeden de güvenlidir: CO₂ satırı
+   * "ölçülemedi" gösterir, ekranın geri kalanı AÇILIR.
    */
-  const co2Pano = await co2Panosu(c.range.start, c.range.end);
   const co2 = {
-    kg: co2Pano.toplam.kg,
-    gKm: co2Pano.toplam.gKm,
-    litre: co2Pano.toplam.litre,
-    esas: co2Pano.ayar.esas,
-    kapsama: {
-      olculen: co2Pano.toplam.olculenArac,
-      toplam: co2Pano.toplam.toplamArac,
-      olculemeyenPlakalar: co2Pano.toplam.olculemeyenPlakalar,
-    },
-    hedefGKm: co2Pano.ayar.hedefGKm,
-    hedefTuttu: co2Pano.hedef ? co2Pano.hedef.tuttu : null,
+    kg: null,
+    gKm: null,
+    litre: null,
+    esas: null,
+    kapsama: { olculen: 0, toplam: 0, olculemeyenPlakalar: [] as string[] },
+    hedefGKm: null,
+    hedefTuttu: null,
+    /**
+     * 🔑 İSTEMCİ İÇİN GEÇİŞ İŞARETİ. Doluysa: "CO₂ bu uçta HESAPLANMADI,
+     * ölçülemedi DEĞİL". İstemci bu alanı görüyorsa CO₂ satırını gizlemeli
+     * ya da sekmeye yönlendirmeli; "0 kg" ya da "ölçülemedi" YAZMAMALI.
+     */
+    ayriUc: "/api/mobile/analytics/co2",
   };
   const trendBloke =
     !!c.onceki &&
@@ -322,12 +351,20 @@ export async function GET(req: NextRequest) {
       : null,
     toplam,
     /**
-     * CO₂ (089) — Analiz ekranındaki tek satırlık özet.
+     * CO₂ (089) — 🔴 ARTIK BU UÇTA HESAPLANMIYOR (28.08.2026).
      *
-     * ⚠️ `kg` null olabilir ve bu SIFIR DEĞİLDİR: aralıkta hiçbir aracın
-     * tüketimi ölçülemediyse emisyon bilinmiyordur. `kapsama` kaç araçtan
-     * kaçının ölçüldüğünü söyler; istemci sayıyı kapsamasız göstermemeli.
-     * `esas` TTW/WTW — hangi cetvelle ölçüldüğü sayının yanında durmalı.
+     * Alan ŞEKLİYLE duruyor ama bütün değerleri null ve `ayriUc` dolu:
+     * hesap `GET /api/mobile/analytics/co2` ucuna taşındı (aynı aralık dili,
+     * aynı yetki). Sebep: `co2Panosu()` bu ucun 41,8 sn'sinin 36,7'siydi ve
+     * istemci 14/30 sn'de vazgeçtiği için EKRANIN TAMAMI açılmıyordu.
+     *
+     * ⚠️ İSTEMCİ AYRIMI YAPMALI — `ayriUc` doluysa CO₂ "ölçülemedi" DEĞİL,
+     * "burada hesaplanmadı"dır. İkisini karıştırmak, ölçülemeyen bir dönemi
+     * ölçülmüş gibi göstermek kadar yanlıştır.
+     *
+     * Yeni uçtaki `ozet` alanı bu nesnenin BİREBİR aynı şeklidir; istemcinin
+     * mevcut çizim kodu oradan beslenebilir. Orada `kg` null ise ANLAMI
+     * eskisi gibidir: ölçülemedi, sıfır değil.
      */
     co2,
     oncekiDonem: c.onceki

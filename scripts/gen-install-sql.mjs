@@ -92,6 +92,8 @@ const ORDER = [
   "089_co2_panosu.sql",
   "090_saklama_politikasi.sql",
   "091_takograf.sql",
+  // 092 U-ETDS'e ayrıldı · 093 canlı şema onarımı (HARIC — aşağıda)
+  "094_yakit_hacim_arac_ekseni.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

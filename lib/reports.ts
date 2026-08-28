@@ -1084,17 +1084,67 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   // etkilenmez, litre araçları eskisi gibi "Veri yok" kalır.
   const volStats = new Map<string, FuelVolumeStatRow>();
   {
-    const { data: volData, error: volErr } = await supabaseAdmin.rpc(
-      "report_fuel_volume_stats",
-      { p_from: startISO, p_to: endISO }
+    /**
+     * ── ARAÇ EKSENİ (094) — 052'nin YÜZDE için yaptığının LİTRE ikizi ──────
+     *
+     * Bu blok 28.08.2026'ya kadar `report_fuel_volume_stats`i KAPSAMSIZ tek
+     * gövde olarak, her rapor render'ında koşulsuz çağırıyordu. Ölçüldü
+     * (HAK61 canlı): **5.086 / 4.582 ms**, ve `co2Panosu()` bu raporu tek
+     * açılışta 7 kez koşturuyor (1 aralık + 6 aylık seri) — yani ~35 sn'nin
+     * kaynağı buydu. Yüzde ikizi 46 günlük pencerede zaten `57014` alıyor;
+     * kapsamsız litre gövdesi aynı duvara koşuyordu.
+     *
+     * Sıra ve gerekçe yüzde yolunun AYNISI (yukarısı): `mapBounded(6)` —
+     * statement timeout ÇAĞRIYA değil İFADEYE uygulanır, sınırsız fan-out
+     * her ifadenin kendi süresini uzatır.
+     *
+     * ── GERİ DÜŞÜŞ KORUNDU ────────────────────────────────────────────────
+     * 094 uygulanmamış kiracıda RPC yok → `missing_function` → KAPSAMSIZ
+     * 039 yoluna düşülür ve davranış birebir eskisi olur. Yani bu deploy
+     * migration'dan ÖNCE de güvenlidir.
+     *
+     * ── SESSİZ BOŞ, SESSİZ YANLIŞ DEĞİL ───────────────────────────────────
+     * Litre yolu yüzdenin YOKLUĞUNDA devreye giren ikincil hattır; bir
+     * aracın sorgusu düşerse o araç eskisi gibi "Veri yok" kalır (yüzde
+     * yolundaki `failedPlates` muhasebesi burada YOK — davranış değişmesin
+     * diye bilerek eklenmedi). Zaman aşımı bir kez, SIRAYLA tekrarlanır:
+     * tekrar turunda rakip ifade yoktur.
+     */
+    const volPer = await mapBounded(vehicles, (v) =>
+      supabaseAdmin.rpc("report_fuel_volume_stats_vehicle", {
+        p_from: startISO,
+        p_to: endISO,
+        p_vehicle_id: v.id,
+      })
     );
-    if (!volErr) {
-      for (const s of (volData ?? []) as FuelVolumeStatRow[]) {
-        // GÜRÜLTÜ MUHAFIZI: sıçraması eşiği aşan seri hiç kabul edilmez.
-        if (Number(s.max_step_l) > FUEL_VOLUME_MAX_STEP_L) continue;
-        if (Number(s.sample_count) === 0) continue;
-        volStats.set(s.vehicle_id, s);
+    const volMissing = volPer.find(
+      (r) => r.error && classifyRpcError(r.error) === "missing_function"
+    );
+    let volRows: FuelVolumeStatRow[];
+    if (volMissing) {
+      const { data: volData, error: volErr } = await supabaseAdmin.rpc(
+        "report_fuel_volume_stats",
+        { p_from: startISO, p_to: endISO }
+      );
+      volRows = volErr ? [] : ((volData ?? []) as FuelVolumeStatRow[]);
+    } else {
+      const volRetry = volPer
+        .map((r, i) => (isTimeoutError(r.error) ? i : -1))
+        .filter((i) => i >= 0);
+      for (const i of volRetry) {
+        volPer[i] = await supabaseAdmin.rpc("report_fuel_volume_stats_vehicle", {
+          p_from: startISO,
+          p_to: endISO,
+          p_vehicle_id: vehicles[i].id,
+        });
       }
+      volRows = volPer.flatMap((r) => (r.data ?? []) as FuelVolumeStatRow[]);
+    }
+    for (const s of volRows) {
+      // GÜRÜLTÜ MUHAFIZI: sıçraması eşiği aşan seri hiç kabul edilmez.
+      if (Number(s.max_step_l) > FUEL_VOLUME_MAX_STEP_L) continue;
+      if (Number(s.sample_count) === 0) continue;
+      volStats.set(s.vehicle_id, s);
     }
   }
 

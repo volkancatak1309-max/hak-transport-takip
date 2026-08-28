@@ -54,6 +54,12 @@ type VehRow = {
   flespi_device_id: number;
   /** Ziyaret satırına donduruluyor (FAZ C) — araç el değiştirirse geçmiş bozulmasın. */
   assigned_worker_id: string | null;
+  /**
+   * VIN — YALNIZ "yazmaya gerek var mı?" kapısı için okunuyor (28.08.2026).
+   * Ayrı sorgu AÇILMADI, mevcut select'e kolon olarak katıldı.
+   * Gerekçe ve ölçüm: docs/VIN-ISTEK-DUZELTME.md.
+   */
+  vin: string | null;
 };
 
 async function runSync() {
@@ -63,7 +69,7 @@ async function runSync() {
   // o aracın telemetrisini sessizce durdururdu.
   const { data, error } = await supabaseAdmin
     .from("vehicles")
-    .select("id, plate, flespi_device_id, assigned_worker_id")
+    .select("id, plate, flespi_device_id, assigned_worker_id, vin")
     .not("flespi_device_id", "is", null);
   if (error) {
     // Don't swallow a vehicles-query failure as a silent { ok:true, vehicles:0 }:
@@ -205,9 +211,32 @@ async function runSync() {
       // DTC işleri BU DÖNGÜDE DEĞİL — telemetri yazıldıktan sonraki ikinci
       // geçişte (#84 Adım 3, sıra bağımlılığı yukarıda anlatıldı). Girdileri
       // burada toplanır.
-      // VIN tek seferlik backfill — kendi try/catch'inde; GPS akışını düşürmez.
+      /**
+       * VIN tek seferlik backfill — kendi try/catch'inde; GPS akışını düşürmez.
+       *
+       * ═══ İKİ KAPI, BİRİ İSTEMCİDE BİRİ SUNUCUDA (28.08.2026) ═══
+       *
+       * `v.vin === null` kapısı buraya EKLENDİ; `maybeBackfillVin` içindeki
+       * `.is("vin", null)` kapısı YERİNDE DURUYOR ve kaldırılmayacak — ikinci
+       * çağıran (`/api/flespi/ingest`) yalnız ona güveniyor.
+       *
+       * NEDEN GEREKLİ: cihaz VIN'i "bir kez" değil HER mesaj partisinde
+       * gönderiyor, dolayısıyla `vin` her turda dolu çıkıyordu ve UPDATE
+       * koşulsuz gidiyordu. Sunucudaki kapı isteği reddetmiyor, yalnız 0
+       * satır eşleştiriyor: istek gidiyor, işlem kuruluyor, boş dönüyor.
+       * Ölçüldü (HAK61 canlı, pg_stat_statements): 370.013 çağrı ve
+       * 29 aracın 29'unda `vin` DOLU → çağrıların TAMAMI boşa gitmiş.
+       *
+       * ⚠️ BELLEKTEKİ DEĞER BAYAT OLABİLİR — VE BU ZARARSIZ. `vehicles.vin`i
+       * yazan TEK yer `maybeBackfillVin` (arandı: yönetici formu bu kolonu
+       * ne insert ne update ediyor) ve o yalnız `.is("vin", null)` ile yazar.
+       * Yani değer tur içinde YALNIZ null → dolu yönünde değişebilir:
+       *   • bellek null, DB dolmuş  → istek gider, sunucu kapısı 0 satır
+       *     eşleştirir. Bugünkü davranışın aynısı, zarar yok.
+       *   • bellek dolu, DB null    → İMKÂNSIZ; hiçbir yol vin'i null'a çevirmiyor.
+       */
       const vin = points.find((p) => p.vin)?.vin ?? null;
-      if (vin) {
+      if (vin && v.vin === null) {
         try {
           await maybeBackfillVin(v.id, vin);
         } catch (err) {

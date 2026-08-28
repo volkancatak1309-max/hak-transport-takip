@@ -220,9 +220,48 @@ async function geriOkumaMuhafizi(rows: Record<string, unknown>[]): Promise<void>
   try {
     const anlar = rows.map((r) => String(r.recorded_at)).sort();
     const araclar = [...new Set(rows.map((r) => String(r.vehicle_id)))];
+    /**
+     * `select("id")` — `select("*")` DEĞİL. Buradaki tek çıktı `count`;
+     * `head: true` olduğu için dönen satır zaten yok.
+     *
+     * ⚠️ BU BİR HIZ DÜZELTMESİ DEĞİL — ÖLÇÜLDÜ, FARK YOK.
+     * Bu sorgu 28.08.2026'da pg_stat_statements'ta HAK61'in EN PAHALI
+     * ifadesiydi (28.309 sn / 25.366 çağrı / ort. 1.116 ms) ve şüpheli
+     * `select("*")` idi. Sıra-adil ölçüm (9 tur, adaylar her turda
+     * döndürülerek — HAK61 canlı, 1,71 M satır, salt okuma) bunu ÇÜRÜTTÜ:
+     *
+     *     pencere        eşleşen      select=*   select=id   select=vehicle_id
+     *     ─────────────  ───────────  ─────────  ──────────  ─────────────────
+     *     31 sn (normal)          24    145 ms     146 ms       153 ms
+     *     3 sa (telafi)       15.995    144 ms     153 ms       152 ms
+     *     46 gün (tüm)     1.709.176    400 ms     404 ms       394 ms
+     *
+     * Sebep: `pgrst_source` CTE'si tek kez kullanıldığı için satır içi
+     * açılıyor ve planlayıcı sayım-dışı çıktı kolonlarını zaten buduyor.
+     * (İlk denememde 9,4× fark görünmüştü; o SIRA ARTEFAKTIYDI — `*` soğuk
+     * önbelleği ödüyor, hemen ardından koşan aday bedavaya hızlı çıkıyordu.
+     * Bu tablo o hatayı düzelten ölçümdür.)
+     *
+     * ⚠️ 1.116 ms ORTALAMASI KOLON LİSTESİNDEN DEĞİLDİ. O sayı sunucu
+     * Micro'dayken (1 GB bellek) birikti; aynı sorgu Small'da ~145 ms
+     * (~60 ms gerçek DB zamanı, kalanı ağ). Teşhis `docs/HAK61-SAGLIK.md`:
+     * çalışma kümesi RAM'e sığmıyordu.
+     *
+     * O HÂLDE NEDEN DEĞİŞTİ: davranış birebir aynı (aşağıda), risk sıfır,
+     * ve tam satır referansı (`tbl.*`) planlayıcının budayamadığı tek şekil
+     * — eşzamanlı yük altında ölçemediğim bir gerileme payı bırakmıyor.
+     * Ayrıca kodun geri kalanındaki dört sayım sorgusu (km-quality,
+     * reports, saklama-db, demo-retention) zaten `select("id", …)`; burası
+     * tek istisnaydı.
+     *
+     * ✅ DAVRANIŞ AYNI — DOĞRULANDI: PostgREST'in `count=exact`i SATIR
+     * sayar, kolonun dolu olup olmadığına bakmaz. Aynı pencerelerde
+     * `select=*`, `select=id` ve `select=fuel_volume_l` (satırların
+     * %65'inde NULL) AYNI sayıyı döndürdü.
+     */
     const { count, error } = await supabaseAdmin
       .from("device_telemetry")
-      .select("*", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true })
       .in("vehicle_id", araclar)
       .gte("recorded_at", anlar[0])
       .lte("recorded_at", anlar[anlar.length - 1]);

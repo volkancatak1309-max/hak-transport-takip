@@ -16,11 +16,13 @@
 | Demo neden HAK61'in 2 katı? | **"Demo'da veri az" varsayımı yanlış kurulmuş.** Süre araç/sorgu sayısıyla değil, pencereye düşen **telemetri satırıyla** ölçekleniyor. En güçlü aday: demo'nun son 6 ayında **dolu ay sayısı fazla**. Bölge farkı en fazla ~2,5 sn açıklar. | § 1 |
 | Cron kurulunca kaç saniye? | **34,61 → 18,11 sn** (HAK61 yerel, ölçüldü). Vercel karşılığı ≈ **8 sn** `[oran varsayımı]` | § 2 |
 | Açık ayın tek başına maliyeti? | **9,30 sn** (HAK61) · **7,62 sn** (Sendigo) — cron sonrası taban budur | § 3 |
-| Cron sonrası hâlâ 8+ sn mi? | **Evet.** Ve kalan sürenin **~%97'si tek bir kusur**: açık ay her istekte **İKİ KEZ** hesaplanıyor. | § 4 |
+| Cron sonrası hâlâ 8+ sn mi? | **Evet, ~18 sn yerel / ~8 sn Vercel.** Kalan süre **iki AYRI pencerenin iki AYRI raporu**; biri diğerinden türetilemez. | § 4 |
 
-🔴 **Turun en büyük bulgusu cron'la ilgili değil:** `co2Panosu` açık ayı iki
-ayrı yoldan hesaplıyor ve **birebir aynı sonucu** üretiyor (litre farkı
-`0,0000`). Cron kurulsa bile bu 9 saniye yerinde kalır.
+🔴 **31.08 akşamı DÜZELTME:** bu belgenin ilk sürümü "açık ay iki kez
+hesaplanıyor, biri silinebilir" diyordu. **Yanlıştı** — ölçümü gerçek uç
+penceresiyle değil, kendi seçtiğim takvim-ayı penceresiyle almıştım. Gerçek
+uç `range=ay` için **kayan 30 gün** veriyor; iki pencere farklı ve
+**108,20 litre** fark üretiyor. Ayrıntı ve yeni ölçüm: § 4.
 
 ---
 
@@ -32,12 +34,17 @@ ayrı yoldan hesaplıyor ve **birebir aynı sonucu** üretiyor (litre farkı
 
 | pencere | süre | sorgu | ölçülen/araç | pencereye düşen `device_telemetry` satırı |
 |---|---:|---:|---:|---:|
-| gün (son 24 sa) | 2,85 sn | 191 | 17/29 | 32.845 |
-| hafta (son 7 gün) | 3,56 sn | 193 | 17/29 | 242.503 |
-| ay (ay başı →) | 9,04 sn | 199 | 22/29 | 1.104.213 |
+| son 24 saat | 2,85 sn | 191 | 17/29 | 32.845 |
+| son 7 gün | 3,56 sn | 193 | 17/29 | 242.503 |
+| UTC ay başı → şimdi | 9,04 sn | 199 | 22/29 | 1.104.213 |
 
 **Sorgu sayısı neredeyse sabit (191 → 199), süre 3,2× artıyor.** Yani fan-out
 tabanı değil, taranan veri belirliyor.
+
+⚠️ Bu üç pencere **elle kuruldu**, `computeAnalyticsRange` ile değil (§ 4.1'in
+konusu olan hata). Ucun gerçek pencereleriyle alınan ölçüm § 4.2'de: `gun`
+2,90 sn · `hafta` 3,65 sn · `ay` 8,78 sn — **aynı mertebe**, yani buradaki
+"süre satır sayısıyla ölçekleniyor" sonucu etkilenmiyor.
 
 ### 1.2 Karşı-ölçüm: az araç ≠ hızlı
 
@@ -175,7 +182,12 @@ Vercel'de 15,30 sn ölçülmüştü ([`YAKIT-ARAC-EKSENI.md`](YAKIT-ARAC-EKSENI.
 |---|---:|---:|
 | bugün | 34,61 sn | 15,30 sn *(ölçüldü)* |
 | cron sonrası | 18,11 sn | **≈ 8,0 sn** |
-| + çift hesap da kalkarsa | 10,57 sn | **≈ 4,7 sn** |
+
+⚠️ İlk sürümde burada bir "+ çift hesap da kalkarsa 10,57 sn" satırı vardı;
+**geri çekildi** (§ 4). Cron sonrası ölçüm gerçek uç penceresiyle
+(`computeAnalyticsRange("ay")` = kayan 30 gün) tekrarlandı: **18,09 sn ·
+406 sorgu** — takvim-ayı penceresiyle alınan 18,11 sn ile aynı, yani § 2'nin
+sonucu bu hatadan etkilenmiyor.
 
 ⚠️ Oranın sabit olduğu **varsayım**: Vercel'in fan-out paralelliği bu
 makineninkinden farklı olabilir. Gerçek sayı ancak deploy sonrası ölçülür.
@@ -199,70 +211,113 @@ Bunu kanıtlayan ölçüm: `aylikSeri`'nin **altı ayı da** tablodan gelmiş gi
 
 ---
 
-## 4 · 🔴 KALAN SÜRENİN ~%97'Sİ: AÇIK AY İKİ KEZ HESAPLANIYOR
+## 4 · 🔴 Ö1 KAPANDI — "çift hesap" diye bir şey yok
 
-### 4.1 Bulgu
+### 4.1 İlk iddia ve nasıl çürüdü
 
-`co2Panosu` açık ayı iki ayrı yoldan hesaplıyor:
+Bu belgenin ilk sürümü şunu söylüyordu: `co2Panosu` açık ayı iki kez
+hesaplıyor, litre farkı `0,0000`, biri silinebilir → 18,11 sn'den 10,57 sn'ye.
 
-| # | çağrı | pencere | süre | sorgu |
-|---|---|---|---:|---:|
-| (3) | `buildFuelReport(bas, bit)` — ucun seçilen aralığı | ay başı → **şimdi** | 8,81 sn | 199 |
-| (6) | `aylikSeri` son elemanı — açık ay | ay başı → **ay sonu** | 9,30 sn | 199 |
-
-`range=ay` seçiliyken bu iki pencere **aynı veriyi** tarıyor. Ölçüldü:
+**Ölçüm hatalıydı.** `co2Panosu(ayBas, simdi)` diye çağırmıştım; `ayBas` benim
+elle kurduğum **UTC takvim ayı başıydı**. Gerçek uç öyle çağırmıyor:
 
 ```
-(3) litre 3895,27      (6) litre 3895,27      fark 0,0000
+app/api/mobile/analytics/co2/route.ts:71
+  co2Panosu(c.range.start, c.range.end)      ← aralikCoz → computeAnalyticsRange
 ```
 
-Cron sonrası kalan 18,11 sn'nin dağılımı:
+`computeAnalyticsRange` (`lib/analytics.ts`) **hiçbir anahtarda takvim ayı
+vermiyor** — 27.07.2026 Volkan kararıyla `hafta`/`ay` kayan pencereye çevrildi:
+
+| anahtar | pencere |
+|---|---|
+| `gun` | bugün başı → bugün sonu (Viyana) |
+| `hafta` | kayan **7** gün |
+| `ay` | kayan **30** gün |
+| `ozel` | `from`/`to` — Viyana gün sınırları |
+| `tumzaman` | `FLEET_EPOCH` → bugün sonu |
+
+`aylikSeri`'nin açık ayı ise **UTC takvim ayı**: `Date.UTC(y, m, 1)` →
+`Date.UTC(y, m+1, 1)`. Bu ikisi yapısal olarak farklı.
+
+**Ders:** UI-path proof, ucun çalıştırdığı yolu *birebir* tekrarlamak
+demek — pencereyi kendim kurduğum an ölçtüğüm şey artık o uç değildi.
+
+### 4.2 Ölçüm: pencereler örtüşmüyor, sonuçlar farklı
+
+HAK61 canlı, 31.08.2026 11:52 UTC, salt okuma:
 
 ```
-(3) seçilen pencere       8,81 sn   199 sorgu
-(6) açık ay               9,30 sn   199 sorgu   ← aynı veri, ikinci kez
-şoför/müşteri/ayar/tablo  1,62 sn     8 sorgu
-                         ────────   ─────────
-                          19,7 sn   406 sorgu   (ölçülen 18,11 — paralellik)
+AÇIK AY (aylikSeri)   2026-08-01T00:00:00Z → 2026-09-01T00:00:00Z
+range=gun             2026-08-30T22:00:00Z → 2026-08-31T21:59:59Z
+range=hafta           2026-08-24T22:00:00Z → 2026-08-31T21:59:59Z
+range=ay              2026-08-01T22:00:00Z → 2026-08-31T21:59:59Z   ← 22:00, 00:00 değil
+range=tumzaman        2026-06-01T00:00:00Z → 2026-08-31T21:59:59Z
+range=ozel(01→31)     2026-07-31T22:00:00Z → 2026-08-31T21:59:59Z
+web (varsayılan)      2026-08-01T11:52:16Z → 2026-08-31T11:52:16Z
 ```
 
-⚠️ Tekrar **yalnız `range=ay`'da tam**. `range=hafta`'da pencereler farklı
-(hafta 3,56 sn + açık ay 9,30 sn), yani tekrar yok ama aylık seri yine de
-tam bedelini alıyor — kullanıcının ölçümünde `hafta` 23,4 sn olmasının sebebi
-bu.
+**Hiçbiri açık ayla aynı değil** — en yakını `range=ay`, o da Viyana saat
+dilimi yüzünden 2 saat kaymış. Sonuçlar:
 
-### 4.2 Öneriler — etki sırasına göre
+| pencere | süre | sorgu | litre | km | kapsama | açık ayla aynı mı |
+|---|---:|---:|---:|---:|---:|---|
+| **AÇIK AY** | 8,85 sn | 199 | **3.895,27** | 20.620 | 22/29 | — |
+| `gun` | 2,90 sn | 191 | 1.010,32 | 779 | 17/29 | **HAYIR** (−2.884,95) |
+| `hafta` | 3,65 sn | 193 | 1.991,98 | 4.442 | 16/29 | **HAYIR** (−1.903,29) |
+| `ay` | 8,78 sn | 199 | 3.787,07 | 19.579 | 22/29 | **HAYIR** (−108,20) |
+| `tumzaman` | 12,88 sn | 201 | 5.408,35 | 30.865 | 24/29 | **HAYIR** (+1.513,08) |
+| `ozel(01→31)` | 8,98 sn | 199 | 3.895,27 | 20.620 | 22/29 | değer aynı — **ama pencere değil** |
+| web varsayılan | 9,48 sn | 199 | 3.799,27 | 19.705 | 22/29 | **HAYIR** (−96,00) |
 
-**Ö1 · Açık ayın çift hesabını tekle indir** `[sunucu, en büyük kazanç]`
-`range=ay` seçiliyken `aylikSeri`'nin açık ay elemanı, ucun zaten hesapladığı
-(3) sonucundan türetilebilir; pencereler farklıysa (hafta/gün) eski yola
-düşülür. Ölçülen kazanç: **18,11 → 10,57 sn** yerel, Vercel ≈ **8,0 → 4,7 sn**.
-Tek bir yerde, davranış değişmeden. **Bu turda uygulanmadı** — görev "ölç ve
-öner" idi.
+`ozel(01→31)` satırı tuzak: litre tesadüfen tutuyor (kayan 2 saatte veri
+yok), **pencere sınırları eşit değil**. Sonuç eşitliğini önceden bilmek
+mümkün olmadığı için bunu koşul yapmak, sessiz yanlış sayı üretmenin yolu
+olurdu.
 
-**Ö2 · Kısmi sonuç: önce toplam, sonra aylık seri** `[ekran + uç]`
-Uç bugün her şeyi bitirip tek yanıt veriyor. `ozet` (seçilen pencerenin
-toplamı) **8,8 sn**'de hazır; `aylik` ise +9,3 sn sonra. Ekranın beklediği ilk
-sayı ilk gelirse kullanıcı yarım dakika değil ~4 sn bekler.
-İki yol var: ayrı bir `?parca=ozet|aylik` parametresi, ya da mevcut ucun
-`aylik: null` ile erken dönüp aylık seriyi ikinci bir çağrıya bırakması.
-Bu, [`ANALIZ-YAVASLIK.md`](ANALIZ-YAVASLIK.md)'deki ayırma kararının aynısı —
-orada CO₂ Analiz ekranını rehin alıyordu, burada aylık seri özeti rehin alıyor.
+### 4.3 Neden türetme de mümkün değil
 
-**Ö3 · İlerleme göstergesi** `[ekran, ucuz]`
-Belirsiz çark yerine adım adım: "yakıt okunuyor → aylık seri (3/6)".
-Uç bugün ara durum yayınlamıyor, ama Ö2 uygulanırsa iki aşama doğal olarak
-görünür hâle gelir. Tek başına süreyi kısaltmaz, **algılanan** süreyi kısaltır.
+"Seçilen pencere açık ayı kapsıyorsa açık ayı ondan çıkar" da yürümez:
+`buildFuelReport`'un `consumedLiters` değeri **pencere-bağımlı** —
+`Math.max(0, refillL + (first − last))`, yani pencerenin İLK ve SON yakıt
+okumasına dayanıyor (`lib/reports.ts`). Alt pencerenin toplamı üst
+pencereninkinden aritmetikle çıkarılamaz; `tumzaman` satırı bunu gösteriyor
+(5.408 ≠ 3.895 + kalan).
 
-**Ö4 · İptal düğmesi** `[ekran, ucuz]`
-`AbortController` ile isteği iptal et. Sunucu tarafında iş devam eder
-(istemci bağlantıyı kesse de fonksiyon çalışmayı sürdürür), yani maliyet
-düşmez — yalnız kullanıcı kilitli kalmaz. 90 sn'lik istemci sınırı zaten
-aşılmıyor, o yüzden bu **öncelik sırasında sonuncu**.
+**Sonuç: Ö1 uygulanamaz.** Kod yazılmadı — koşul hiçbir çağırıcıda
+sağlanmadığı için yazılacak şey ölü kod olurdu.
 
-**Sıralama önerisi:** Ö1 (sunucu, ölçülmüş 1,7× kazanç) → Ö2 (algılanan süre
-30 sn'den ~4 sn'ye) → Ö3 → Ö4. Cron kaydı ise bunlardan **bağımsız ve önce**
-gelmeli: tek başına 1,9× getiriyor ve hiçbir kod değişikliği istemiyor.
+### 4.4 Denenen alternatif: iki raporu paralelleştirmek — 1,10×, yetersiz
+
+İki rapor farklı ama **sıralı** koşuyor. `Promise.all` ile ölçüldü (HAK61,
+ısınma turundan sonra):
+
+```
+SIRALI   17,05 sn
+PARALEL  15,48 sn      → 1,10×
+  seçilen pencere  sıralı 3787,07 22/29 | paralel 3787,07 22/29  → AYNI
+  açık ay          sıralı 3895,27 22/29 | paralel 3895,27 22/29  → AYNI
+```
+
+Sonuç ve kapsama korunuyor ama kazanç **%10**. Sebebi ölçülmüş bir olgu: her
+rapor zaten 29 araçlık fan-out yapıyor, PostgREST doygun — eşzamanlılığı
+artırmak pay getirmiyor (aynı tavan `mapBounded` ölçümünde de görülmüştü).
+**Uygulanmadı**; 1,10× için müşteriye giden bir hesabı yeniden dizmeye değmez.
+
+### 4.5 Geriye kalan tek kaldıraç: Ö2
+
+Cron sonrası 18,1 sn'nin dağılımı (gerçek uç penceresiyle, 406 sorgu):
+
+```
+(3) seçilen pencere — range=ay    8,78 sn   199 sorgu   ← ekranın istediği sayı
+(6) aylikSeri açık ayı            8,85 sn   199 sorgu   ← trend grafiğinin son noktası
+şoför/müşteri/ayar/tablo          ~1,6 sn     8 sorgu
+```
+
+İkisi de gerekli, ikisi de pahalı, biri diğerini kapsamıyor. Ama **ekranın
+ilk göstereceği sayı yalnız (3)'e bağlı.** Yani süreyi kısaltmak yerine
+**bekleyişi bölmek** kalıyor — Ö2. Ö1 ve paralelleştirme kapandığı için
+Ö2 artık *ilk* seçenek, alternatif değil.
 
 ---
 
@@ -276,3 +331,6 @@ gelmeli: tek başına 1,9× getiriyor ve hiçbir kod değişikliği istemiyor.
 - **Vercel'deki gerçek cron-sonrası süre** — § 2.4 oran varsayımı. Cron
   kurulduktan sonra ölçülmeli.
 - **Cron'un gerçek yazma turu** — HAK61 salt okuma; upsert hiç gönderilmedi.
+- **Ö2'nin gerçek kazancı** — ölçülmedi; uç bölünmeden önce ölçülemez.
+- **`ozel` dışındaki pencerelerin açık ayla örtüştüğü bir tarih var mı** —
+  aranmadı; `range=ay` Viyana/UTC kayması yüzünden hiçbir gün örtüşmez.

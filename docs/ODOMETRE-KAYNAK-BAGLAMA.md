@@ -13,7 +13,7 @@
 | Sorgu maliyeti kabul edilebilir mi? | **Uygulamada temizleme HAYIR** — 20,3× yavaş, 590.084 satır. **SQL'de EVET** — 1 sorgu, bugünküyle aynı süre. § 1 |
 | DO-777GS raporlarda 36.187 mi diyordu? | 🔴 **HAYIR.** Ölçüldü: raporlar zaten **1.141** diyordu. 36.187 yalnız `telemetry_month_spans` çıktısıydı ve o kolon hiçbir ekranda okunmuyor. § 3 |
 | 096 yeterli miydi? | **HAYIR** — ölçümle bulundu, üç araçta hâlâ imkansız değer üretiyor. 097 gerekti. § 2 |
-| Kazanç? | km'si ölçülen **25 → 29 araç**, filo km **16.596 → 18.577** (+%11,9), L/100km **21 → 23 araç**, `buildFuelReport` **5,96 → 5,11 sn** ve **60 sorgu → 1**. § 4 |
+| Kazanç? | km'si ölçülen **25 → 29 araç**, filo km **16.596 → 18.577** (+%11,9), L/100km **21 → 23 araç**, odometre sorgusu **60 → 1**. ⚠️ Süre **düşmedi, %13 arttı** (5,96 → 6,73 sn) — öngörü tutmadı, § 9.3. |
 
 ---
 
@@ -130,11 +130,13 @@ Yani %3.070'lik hata gerçekti ama **görünmez** bir kolondaydı.
 ## 4 · ÖLÇÜM — 097 öncesi / sonrası
 
 `buildFuelReport` + `buildDistanceReport` + `buildSpeedReport`, 2026-07, HAK61.
-"Sonrası" için RPC `lib/odometre.ts` çıktısıyla şimlendi (097 çalıştırılmadı).
+"Sonrası" için RPC `lib/odometre.ts` çıktısıyla şimlendi (o an 097
+çalıştırılmamıştı). ⚠️ **Şim ağ maliyetini içermiyordu** — süre satırı bu
+yüzden yanıltıcı; 097 canlıyken alınan gerçek ölçüm § 9.3'te.
 
 | | 097 öncesi | 097 sonrası |
 |---|---:|---:|
-| `buildFuelReport` süresi | 5,96 sn | **5,11 sn** *(1,17× hızlı)* |
+| `buildFuelReport` süresi | 5,96 sn | **5,11 sn** *(1,17× hızlı)* ⚠️ **bu sayı ŞİMLİ ölçümdür; gerçeği 6,73 sn — § 9.3**|
 | odometre sorgusu | 60 | **1** |
 | km'si ölçülen araç | 25/29 | **29/29** |
 | **filo km** | **16.596** | **18.577** *(+1.981 · %11,9)* |

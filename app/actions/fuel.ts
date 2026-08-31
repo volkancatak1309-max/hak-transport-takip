@@ -250,6 +250,15 @@ export async function generateCO2Report(month: string): Promise<CO2Result> {
   const totalLiters = vehicles.reduce((s, v) => s + v.liters, 0);
   const totalCo2 = vehicles.reduce((s, v) => s + v.co2Kg, 0);
   const totalKm = vehicles.reduce((s, v) => s + v.km, 0);
+  /**
+   * 🔴 ORAN KÜMESİ: `avgGPerKm`in payı ve paydası AYNI araçlardan gelmeli.
+   * `km = max(0, maxKm - minKm)` tek fişli araçta **0** olur; o araç CO₂'sini
+   * paya ekleyip paydaya 0 eklerse oran şişer — `lib/co2-db.ts`teki kusurun
+   * birebir aynısı. Ayrıntı: `docs/ORAN-KUME-KURALI.md`.
+   */
+  const oranKumesi = vehicles.filter((v) => v.km > 0);
+  const oranCo2 = oranKumesi.reduce((s, v) => s + v.co2Kg, 0);
+  const oranKm = oranKumesi.reduce((s, v) => s + v.km, 0);
 
   return {
     ok: true,
@@ -259,7 +268,10 @@ export async function generateCO2Report(month: string): Promise<CO2Result> {
       totalLiters,
       totalCo2,
       totalKm,
-      avgGPerKm: totalKm > 0 ? (totalCo2 * 1000) / totalKm : null,
+      avgGPerKm: oranKm > 0 ? (oranCo2 * 1000) / oranKm : null,
+      /** Oranın kaç araçtan geldiği — toplamlarınkiyle aynı olmak zorunda değil. */
+      oranAracSayisi: oranKumesi.length,
+      aracSayisi: vehicles.length,
       vehicles,
     },
   };

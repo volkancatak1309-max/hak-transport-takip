@@ -276,7 +276,24 @@ export function eksendeTopla(
         gelirEur: gelir,
         maliyetEur: maliyet,
         katkiPayiEur: katki,
-        marj: gelir > 0 ? katki / gelir : null,
+        /**
+         * 🔴 ORAN KÜMESİ: marj YALNIZ ölçümü TAM satırlarda hesaplanır.
+         *
+         * `gelir` her seferden toplanıyor, `maliyet` ise yalnız
+         * `atfedilenEur !== null` olanlardan. Maliyeti ölçülemeyen bir sefer
+         * gelirini paya sokup maliyetini sokmazsa katkı payı — dolayısıyla
+         * marj — ŞİŞER. Bu, "en kârlı müşteri" listesinde bir kez zaten
+         * yaşandı (aşağıdaki `uclar` başlığı) ve orada sıralama kapısıyla
+         * çözülmüştü; sayının KENDİSİ hâlâ şişik kalıyordu.
+         *
+         * Ölçümü eksik satırda marj `null` — "0 marj" DEĞİL, "bilinmiyor".
+         * `maliyetsizSefer` / `eksikMaliyetliSefer` sayaçları hangi satırın
+         * neden dışarıda kaldığını söylüyor. `docs/ORAN-KUME-KURALI.md`.
+         */
+        marj:
+          gelir > 0 && s.maliyetsizSefer === 0 && s.eksikMaliyetliSefer === 0
+            ? katki / gelir
+            : null,
       };
     })
     .sort((a, b) => b.katkiPayiEur - a.katkiPayiEur || a.ad.localeCompare(b.ad));

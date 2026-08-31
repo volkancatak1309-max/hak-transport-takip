@@ -235,6 +235,10 @@ async function panoHesapla(bas: Date, bit: Date, parca: CO2Parca): Promise<CO2Pa
     olculenArac: 0,
     toplamArac: 0,
     olculemeyenPlakalar: [],
+    kgArac: 0,
+    kmArac: 0,
+    oranArac: 0,
+    oranDisiPlakalar: [],
   };
 
   /**
@@ -302,27 +306,53 @@ async function panoHesapla(bas: Date, bit: Date, parca: CO2Parca): Promise<CO2Pa
     };
   });
 
-  const olculen = araclar.filter((a) => a.kg !== null);
-  const toplamKg = olculen.length ? olculen.reduce((s, a) => s + (a.kg ?? 0), 0) : null;
-  const toplamKm = olculen.length
-    ? olculen.reduce((s, a) => s + (a.km ?? 0), 0)
-    : null;
-  const toplamLitre = olculen.length
-    ? olculen.reduce((s, a) => s + (a.litre ?? 0), 0)
-    : null;
+  /**
+   * 🔴 ORAN KÜMESİ KURALI — üç ayrı küme, tek oran.
+   *
+   * Her toplam kendi kümesinden; oran YALNIZ iki değerin de ölçüldüğü
+   * kümeden. Kümeler o anki veriden türer: araç eklenince, bir araç bakıma
+   * girince ya da cihazı susunca kendiliğinden değişir. Hiçbir yere sabit
+   * sayı yazılmaz.
+   *
+   * ⚠️ Eski hâli `kg`'yi `kg !== null` kümesinden, `km`'yi AYNI listeden
+   * `a.km ?? 0` ile alıyordu: km'si olmayan araç paya kg ekliyor, paydaya
+   * 0 ekliyordu. HAK61 2026-07'de ölçüldü — 286,3 yerine 268,3 g/km,
+   * **%6,7 şişik**. Ayrıntı: `docs/ORAN-KUME-KURALI.md`.
+   */
+  const kgOlculen = araclar.filter((a) => a.kg !== null);
+  const kmOlculen = araclar.filter((a) => a.km !== null);
+  const litreOlculen = araclar.filter((a) => a.litre !== null);
+  /** ORAN KÜMESİ: pay ve payda buradan, başka hiçbir yerden. */
+  const oranKumesi = araclar.filter((a) => a.kg !== null && a.km !== null);
+
+  // oran-kume: küme çağrıdan ÖNCE filtrelenmiş halde geliyor (kgOlculen /
+  // kmOlculen / oranKumesi); buradaki `?? 0` yalnız tür kapısıdır, hiçbir
+  // satırı sessizce 0 saymaz. Oran `oranKumesi`nden hesaplanıyor.
+  const topla = <T,>(k: T[], al: (x: T) => number | null) =>
+    k.length ? k.reduce((s, x) => s + (al(x) ?? 0), 0) : null;
+
+  const toplamKg = topla(kgOlculen, (a) => a.kg);
+  const toplamKm = topla(kmOlculen, (a) => a.km);
+  const toplamLitre = topla(litreOlculen, (a) => a.litre);
 
   const toplam: CO2Toplam = {
     litre: toplamLitre,
     km: toplamKm,
     kg: toplamKg,
-    gKm: gPerKm(toplamKg, toplamKm),
-    olculenArac: olculen.length,
+    /** Pay ve payda AYNI kümeden — `toplamKg`/`toplamKm` DEĞİL. */
+    gKm: gPerKm(topla(oranKumesi, (a) => a.kg), topla(oranKumesi, (a) => a.km)),
+    olculenArac: kgOlculen.length,
     toplamArac: araclar.length,
     /**
      * SESSİZ EKSİK YASAK: ölçülemeyen araçların PLAKASI dışarı çıkar.
      * "23/29 araç" demek yetmez — hangi 6 araç olduğu görünmeli.
      */
     olculemeyenPlakalar: araclar.filter((a) => a.kg === null).map((a) => a.plate),
+    kgArac: kgOlculen.length,
+    kmArac: kmOlculen.length,
+    oranArac: oranKumesi.length,
+    /** kg'si var ama orana giremeyen araçlar — km'si ölçülemediği için. */
+    oranDisiPlakalar: kgOlculen.filter((a) => a.km === null).map((a) => a.plate),
   };
 
   const soforler = await soforKirilimi(araclar, bas, bit);

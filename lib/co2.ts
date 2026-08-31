@@ -182,16 +182,42 @@ export type CO2MusteriSatiri = {
   olculemeyenSefer: number;
 };
 
+/**
+ * 🔴 ORAN KÜMESİ KURALI (31.08.2026).
+ *
+ * Her toplam KENDİ kümesinden gelir; oran ise İKİ değerin de ölçüldüğü
+ * kümeden. Kümeler dinamiktir — araç sayısına, bakıma, cihaz arızasına göre
+ * kendiliğinden değişir; hiçbir yere sabit sayı yazılmaz.
+ *
+ * Eski hâli `gKm`'yi bozuyordu (HAK61 2026-07'de ölçüldü): `kg` toplamı
+ * `kg !== null` araçlardan (24), `km` toplamı aynı listeden ama `a.km ?? 0`
+ * ile — km'si olmayan araç **kg'sini paya ekliyor, km'sini paydaya
+ * eklemiyordu**. Sonuç 286,3 g/km; doğrusu 268,3 → **%6,7 şişik**.
+ * Ayrıntı: `docs/ORAN-KUME-KURALI.md`.
+ */
 export type CO2Toplam = {
+  /** Litresi ölçülen araçların toplamı. */
   litre: number | null;
+  /** Km'si ölçülen araçların toplamı — litre kümesiyle AYNI OLMAK ZORUNDA DEĞİL. */
   km: number | null;
+  /** CO₂'si hesaplanabilen araçların toplamı. */
   kg: number | null;
+  /** 🔴 YALNIZ kg'si VE km'si birlikte bilinen araçlardan. */
   gKm: number | null;
   /** Litresi ölçülen araç / toplam araç — kapsama. */
   olculenArac: number;
   toplamArac: number;
   /** Litresi ölçülemeyen araçların plakaları — sessiz eksik YASAK. */
   olculemeyenPlakalar: string[];
+  /**
+   * HANGİ SAYI KAÇ ARAÇTAN — üçü ayrı, çünkü kümeler ayrı.
+   * `oranArac <= min(kgArac, kmArac)` her zaman.
+   */
+  kgArac: number;
+  kmArac: number;
+  oranArac: number;
+  /** Oran kümesinin dışında kalan ama kg'si olan araçların plakaları. */
+  oranDisiPlakalar: string[];
 };
 
 /** Hedefe göre durum. Hedef yoksa null. */
@@ -234,6 +260,13 @@ export type CO2ReportData = {
   totalCo2: number;
   totalKm: number;
   avgGPerKm: number | null;
+  /**
+   * ORAN KÜMESİ — `avgGPerKm` kaç araçtan geldi. Toplamlarınkiyle aynı olmak
+   * zorunda değil: km'si 0 olan araç toplamlara girer, orana GİRMEZ.
+   * Eski çağıranlarda undefined olabilir.
+   */
+  oranAracSayisi?: number;
+  aracSayisi?: number;
   vehicles: CO2Vehicle[];
   /** 089 — hangi esasla üretildi. Eski çağıranlarda undefined olabilir. */
   esas?: CO2Esas;

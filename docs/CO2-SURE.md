@@ -359,10 +359,22 @@ ilk göstereceği sayı yalnız (3)'e bağlı.** Yani süreyi kısaltmak yerine
 ?bolum=<başka>   → 400 invalid_bolum { alan:"bolum", gecerli:["ozet","aylik"] }
 ```
 
-🔴 `bolum=ozet` yanıtında `pano.aylik` alanı **hiç yoktur** — boş dizi
-gönderilseydi istemci onu "trend boş" diye çizebilirdi. Aynı sebeple
-`bolum=aylik` yanıtında `ozet` yoktur: boş bir özet "0 kg" olarak
-çizilebilirdi. Ne döndüğü gövdedeki `bolum` alanında yazar.
+🔴 **İKİ YANITIN ŞEKLİ AYNI DEĞİL — aylık seri yer değiştirir:**
+
+| yanıt | aylık seri nerede | `ozet` | `pano` |
+|---|---|---|---|
+| `bolum=tam` | **`pano.aylik`** içinde | var | var |
+| `bolum=ozet` | **hiç yok** | var | var (`aylik` alanı olmadan) |
+| `bolum=aylik` | **üst seviyede `aylik`** — `pano.aylik` DEĞİL | **yok** | **yok** |
+
+Yani `bolum=aylik` yanıtında `pano` diye bir alan **bulunmaz**; seriyi
+`govde.aylik` olarak okursun. Boş dizi/boş özet göndermemenin sebebi:
+`pano.aylik: []` gelseydi istemci onu "trend boş" diye, boş bir `ozet`i de
+"0 kg" diye çizebilirdi. Ne döndüğü gövdedeki `bolum` alanında yazar.
+
+⚠️ Bu satır 31.08 akşamı **düzeltildi**: ilk sürüm yalnız "`bolum=ozet`
+yanıtında `pano.aylik` yok" diyordu ve okuyanı aylık seriyi ikinci çağrıda
+da `pano.aylik` altında aramaya götürüyordu. Mobil CC ölçüp bildirdi.
 
 Kod tarafında `lib/co2-db.ts` üç giriş noktası veriyor: `co2Panosu` (bugünkü,
 değişmedi), `co2PanosuOzet`, `co2PanosuAylik` — üçü de tek `panoHesapla`ya
@@ -371,19 +383,63 @@ düşüyor. Web ekranının server action'ı (`app/actions/co2.ts`) `co2Panosu`
 
 ### 6.3 Ölçüm — HAK61 canlı, her range
 
-| range | TAM | **`bolum=ozet`** | `bolum=aylik` | ikisi paralel |
-|---|---:|---:|---:|---:|
-| `gun` | 27,18 sn · 1311q | **3,37 sn · 198q** | 23,79 sn · 1115q | 24,31 sn |
-| `hafta` | 27,91 sn · 1313q | **4,47 sn · 200q** | 23,54 sn · 1115q | 24,36 sn |
-| `ay` | 32,67 sn · 1319q | **9,37 sn · 206q** | 23,57 sn · 1115q | 24,40 sn |
-| `tumzaman` | 35,63 sn · 1321q | **13,60 sn · 208q** | 22,75 sn · 1115q | 26,11 sn |
-| `ozel(01→31)` | 32,08 sn · 1319q | **9,73 sn · 206q** | 23,21 sn · 1115q | 23,65 sn |
+**Cron KURULMADAN önce** (tablo boş, altı ay canlı):
 
-**Ekrandaki ilk sayı 27–36 sn yerine 3,4–13,6 sn'de hazır.**
+| range | TAM | **`bolum=ozet`** | `bolum=aylik` |
+|---|---:|---:|---:|
+| `gun` | 27,18 sn · 1311q | **3,37 sn · 198q** | 23,79 sn · 1115q |
+| `hafta` | 27,91 sn · 1313q | **4,47 sn · 200q** | 23,54 sn · 1115q |
+| `ay` | 32,67 sn · 1319q | **9,37 sn · 206q** | 23,57 sn · 1115q |
+| `tumzaman` | 35,63 sn · 1321q | **13,60 sn · 208q** | 22,75 sn · 1115q |
+| `ozel(01→31)` | 32,08 sn · 1319q | **9,73 sn · 206q** | 23,21 sn · 1115q |
 
-⚠️ `bolum=aylik` bugün ~23 sn çünkü **cron henüz kurulmadı** — altı ay canlı
-hesaplanıyor. Cron kurulunca bu ayak ~9 sn'ye iner (§ 2), yani trend grafiği
-de ~9 sn'de dolar. İki iyileştirme birbirini besliyor.
+**Cron KOŞTUKTAN sonra** (aynı script, aynı makine, 31.08 akşamı — HAK61'de
+174 satır yazıldı):
+
+| range | TAM | **`bolum=ozet`** | **`bolum=aylik`** |
+|---|---:|---:|---:|
+| `gun` | **13,47 sn · 398q** | 3,29 sn · 198q | **8,86 sn · 202q** |
+| `hafta` | **13,41 sn · 400q** | 4,14 sn · 200q | **8,67 sn · 202q** |
+| `ay` | **17,86 sn · 406q** | 8,88 sn · 206q | **8,91 sn · 202q** |
+| `tumzaman` | **25,00 sn · 408q** | 13,08 sn · 208q | **8,99 sn · 202q** |
+| `ozel(01→31)` | **18,02 sn · 406q** | 9,42 sn · 206q | **8,93 sn · 202q** |
+
+**Tahmin tuttu:**
+
+| öngörü | beklenen | ölçülen | |
+|---|---|---|---|
+| `bolum=aylik` cron sonrası | ~9 sn | **8,67–8,99 sn** | ✅ |
+| TAM (`range=ay`), § 2 simülasyonu | 18,11 sn · 406q | **17,86 sn · 406q** | ✅ %1,4 sapma, sorgu birebir |
+| aylık ayağın sorgusu | — | 1115q → **202q** | 5,5× |
+
+§ 2'deki cron-sonrası simülasyon (`upsert`i HTTP'de yakalayıp satırları
+belleğe alma) gerçek yazmayla **doğrulandı**: 18,11 sn tahminine karşı ölçülen
+17,86 sn, sorgu sayısı 406'ya karşı 406.
+
+`bolum=ozet` süresi beklendiği gibi **değişmedi** (3,37→3,29 · 9,37→8,88):
+o ayak aylık seriye hiç dokunmuyor, cron onu hızlandırmıyor. İki iyileştirme
+farklı ayakları vuruyor ve toplamda birbirini besliyor:
+**ilk sayı 3,3 sn · trend 8,9 sn · ikisi birden 17,9 sn** (önce 32,7 sn).
+
+### 6.3b Cron koştu — canlı durum (31.08.2026)
+
+| kiracı | `vehicle_month_metrics` | not |
+|---|---|---|
+| **HAK61** | **174 satır** (29 araç × 6 ay), hepsi `hesap_surumu='095.1'` | 2026-07: 21 ölçülen · **1.392,10 L** — cron gövdesindeki `litre:1392,1` ile birebir |
+| **Sendigo** | 🔴 **0 satır** | uç 200 döndü ama tablo boş — aşağıya bak |
+| **galzura-demo** | ⬜ `ÖLÇÜLEMEDİ` | service key yok |
+
+🔴 **Sendigo'da tablo hâlâ boş.** Bu belgenin baştan beri uyardığı durum
+(`CRON-KAYITLARI.md` § 10: *"200 tek başına 'yazdı' demek DEĞİLDİR"*).
+Üç olası sebep, hepsi gövdeden ayırt edilir:
+- test çağrısı **`&kuru=1`** ile yapıldıysa hiçbir şey yazılmaz (`kuru:true`)
+- gerçek tur henüz koşmadıysa ilk yazma **gece 03:30**'da olur
+- ay bazında hata varsa `aylar[]` içinde `durum:"hata"` görünür ama HTTP yine 200
+
+Ayırt etmek için Sendigo'nun yanıt gövdesindeki `yazilan` ve `aylar[].durum`
+alanlarına bakmak yeterli. Kodun kendisi Sendigo'da çalışıyor: `ayOzetiYaz`
+beş ay için yazmadan koşturuldu, beşi de `ok=true` döndü ve 20 satır üretti
+(§ 2.3).
 
 ### 6.4 Sonuç eşitliği — kanıt
 
@@ -410,6 +466,14 @@ kalmıyor. Bu yüzden eşitlik **kapanmış pencerede** sınandı — CSV Tur 2'
 kullanılan aynı teknik. Kapsama sayısı (`olculen/toplamArac`) ve
 `olculemeyenPlakalar` listesi de karşılaştırmaya dahil edildi.
 
+⚠️ **Cron sonrası aylık seride de aynı kayma kalıyor — ve kalmalı.** Seri
+artık 5 ay `kaynak:"tablo"` (sabit, cron'un yazdığı satır) + 1 ay
+`kaynak:"canli"` (açık ay, her çağrıda yeniden hesaplanır). Açık ay tanımı
+gereği kayar; iki ardışık ölçüm arasındaki fark oradan gelir, tablodan
+değil. `range=gun` turunda altı ayın altısı da aynı çıktı, ama bu garanti
+değil — açık ayın sabit kalması yalnız o an telemetri düşmediği anlamına
+gelir.
+
 ### 6.5 📱 MOBİL İSTEMCİDE NE GEREKİYOR (CC'ye)
 
 **Bugünkü davranış hiç değişmedi** — istemci hiçbir şey yapmazsa uç aynı
@@ -427,9 +491,14 @@ gövdeyi döndürmeye devam eder. Aşağısı hızlanmayı almak için:
 2. **Aralık parametreleri aynen korunur** (`range`, `from`, `to`). İki çağrı
    **aynı** aralığı taşımalı, yoksa özet ile trendin dönemi ayrışır.
 
-3. **`bolum` alanını oku, alanın varlığına güvenme.** `bolum:"ozet"` gelen
-   yanıtta `pano.aylik` yoktur; bunu "trend boş" diye çizme, "henüz gelmedi"
-   olarak göster.
+3. 🔴 **Aylık seriyi doğru yerden oku — yanıt şekli değişiyor:**
+   ```
+   bolum=tam    → govde.pano.aylik
+   bolum=aylik  → govde.aylik          ← pano YOK, ozet YOK
+   bolum=ozet   → aylık seri hiç yok
+   ```
+   `bolum=ozet` yanıtında serinin yokluğunu "trend boş" diye çizme, "henüz
+   gelmedi" olarak göster. `bolum` alanını oku; alanın varlığına güvenme.
 
 4. **`aylik[].kaynak` üç değer alır** ve üçü ayrı gösterilmeli:
    `tablo` (hesaplanmış) · `canli` (o an hesaplandı) · `hesaplanmadi`

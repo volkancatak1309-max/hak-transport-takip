@@ -45,11 +45,23 @@ export const dynamic = "force-dynamic";
  * yanıtta bekletiliyor. `?bolum=` bekleyişi bölüyor:
  *
  *   (yok)          → BUGÜNKÜ TAM GÖVDE — eski istemci hiç değişmeden çalışır
- *   ?bolum=ozet    → `ozet` + `pano` (aylik alanı YOK) · ~9 sn
- *   ?bolum=aylik   → yalnız `aylik` · ~9 sn
+ *                     aylık seri `pano.aylik` içinde
+ *   ?bolum=ozet    → `ozet` + `pano`; aylık seri HİÇ YOK
+ *   ?bolum=aylik   → seri ÜST SEVİYEDE `aylik`; `ozet` ve `pano` HİÇ YOK
  *
- * İki çağrı PARALEL atılabilir; toplam duvar saati ~18 sn'den ~9 sn'ye iner
- * ve ekrandaki ilk sayı ~9 sn'de görünür.
+ * ⚠️ Aylık serinin YERİ değişiyor: tam gövdede `pano.aylik`, kendi
+ * çağrısında `aylik`. İkisini aynı yerde arayan istemci ikinci çağrıda
+ * boş bulur (mobil CC 31.08'de tam bunu ölçüp bildirdi).
+ *
+ * İki çağrı PARALEL atılabilir; ekrandaki ilk sayı özet ayağıyla gelir.
+ * HAK61 canlı, cron KOŞTUKTAN sonra ölçüldü (31.08.2026):
+ *
+ *     range=gun    TAM 13,47 sn · ozet  3,29 sn · aylik 8,86 sn
+ *     range=ay     TAM 17,86 sn · ozet  8,88 sn · aylik 8,91 sn
+ *     tumzaman     TAM 25,00 sn · ozet 13,08 sn · aylik 8,99 sn
+ *
+ * Cron öncesi aylık ayak ~23 sn sürüyordu (1.115 sorgu); şimdi 202 sorgu.
+ * Ayrıntı: `docs/CO2-SURE.md` § 6.
  *
  * ⚠️ Neden ayrı uç değil: yetki (`requireMobileAdmin`) ve aralık dili
  * (`aralikCoz`) ikinci kez kurulurdu; "son 30 gün" iki yüzeyde iki pencereye
@@ -104,9 +116,10 @@ export async function GET(req: NextRequest) {
   };
 
   /**
-   * 🔴 AYLIK SERİ YALNIZ KENDİ ÇAĞRISINDA. `ozet`/`pano` YOK — kasıtlı:
-   * boş bir `ozet` göndermek, istemcinin onu "0 kg" diye çizmesine davetiye
-   * olurdu. Alan yoksa okunamaz.
+   * 🔴 AYLIK SERİ YALNIZ KENDİ ÇAĞRISINDA ve ÜST SEVİYEDE (`aylik`), tam
+   * gövdedeki gibi `pano.aylik` altında DEĞİL. `ozet`/`pano` bu yanıtta hiç
+   * yok — kasıtlı: boş bir `ozet` göndermek, istemcinin onu "0 kg" diye
+   * çizmesine davetiye olurdu. Alan yoksa okunamaz.
    */
   if (bolum === "aylik") {
     const p = await co2PanosuAylik(c.range.start, c.range.end);

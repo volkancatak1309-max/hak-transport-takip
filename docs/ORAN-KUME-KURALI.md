@@ -220,9 +220,140 @@ Bu bir regex taraması, tip denetimi değil:
   kodu görmez: `filter(a => a.kg !== null)` ile `filter(a => a.km !== null)`
   toplamlarını bölmek sözdizimsel olarak temiz görünür.
 
-Son madde gerçek bir boşluk. Kapatmanın yolu tip düzeyinde bir "küme
-etiketi" olurdu (aynı etiketli iki toplam bölünebilsin); **bu turda
-yapılmadı**, ayrı iş.
+Son madde gerçek bir boşluktu. **Kapatıldı** — tip düzeyinde küme etiketi:
+§ 6. Muhafız yine de duruyor: ikisi farklı şeyleri yakalıyor (`?? 0` kalıbı
+vs küme uyuşmazlığı) ve `kume()`/`topla()` kullanmayan yeni kodda muhafız tek
+savunma hattı.
+
+---
+
+## 6 · TİP DÜZEYİNDE KÜME ETİKETİ — muhafızın boşluğu kapatıldı
+
+> 31.08.2026 · Dal `fix/oran-kume-tip`. § 4.2'de yazılı boşluğun kapatılması.
+
+### 6.1 Kapatılan boşluk
+
+Muhafız `reduce(… ?? 0)` kalıbını arıyor. Ama pay ve paydayı **iki ayrı
+filtreden** alan kod o kalıbı hiç kullanmaz ve sözdizimsel olarak tertemiz
+görünür:
+
+```ts
+const kgT = araclar.filter(a => a.kg !== null).reduce((s,a) => s + a.kg!, 0);
+const kmT = araclar.filter(a => a.km !== null).reduce((s,a) => s + a.km!, 0);
+gPerKm(kgT, kmT)      // ← iki AYRI küme; muhafız sessiz, sayı yanlış
+```
+
+Testle de bulunamaz: kg kümesi km kümesinin alt kümesiyken sayı **tesadüfen
+doğru** çıkar — `gun`/`hafta`/`ay` pencerelerinde tam bu oluyordu (§ 2.1).
+Kusur yalnız km'si ölçülemeyen bir araç olduğunda görünür.
+
+### 6.2 Tasarım — `lib/oran-kume.ts`
+
+Toplam, geldiği kümenin **etiketini tipte taşır**; `oran()` iki ucun
+etiketinin aynı olmasını şart koşar.
+
+```ts
+declare const ETIKET: unique symbol;
+export type Toplam<K extends string> = number & { readonly [ETIKET]: K };
+export type Kume<K extends string, T> = { readonly etiket: K; readonly ogeler: readonly T[] };
+
+export function kume<const K extends string, T>(etiket: K, ogeler: readonly T[]): Kume<K, T>;
+export function topla<K extends string, T>(k: Kume<K, T>, al: (x: T) => number | null): Toplam<K> | null;
+
+/** 🔴 Pay ve payda AYNI etiketten. */
+export function oran<K extends string>(
+  pay: Toplam<K> | null,
+  payda: Toplam<NoInfer<K>> | null
+): number | null;
+```
+
+Üç tasarım kararı:
+
+| karar | neden |
+|---|---|
+| `number & { [ETIKET]: K }` (branded type) | Etiket **yalnız tipte** yaşar. Çalışma anında sıradan `number`: aritmetik, JSON, karşılaştırma normal. Ne ek nesne, ne ek ayırma, ne ölçülebilir maliyet. |
+| **`NoInfer<K>`** ikinci argümanda | Onsuz TypeScript `K`'yı iki argümandan birden çıkarsar ve `"kg" \| "km"` **birleşimini kabul ederdi** — kural sessizce delinirdi. `NoInfer` ile `K` yalnız `pay`dan çıkarsanır, `payda` uymak zorunda kalır. (TS 5.4+; bu depo 5.9.3.) |
+| Etiket kümeyi **tanımlayan koşulu** anlatır (`"kg"`, `"km"`, `"kg+km"`) | `"hepsi"`, `"liste"` gibi adlar kuralı anlamsızlaştırır: iki farklı filtre aynı etiketi alıp birbirine karışabilir. |
+
+### 6.3 Kanıt 1 — tip gerçek kodda kırıyor
+
+`lib/co2-db.ts`'te `gKm` satırı **kasten** bozuldu (pay `kgK`, payda `kmK`):
+
+```
+lib/co2-db.ts(346,47): error TS2345:
+  Argument of type 'Toplam<"km"> | null' is not assignable to
+  parameter of type 'Toplam<"kg"> | null'.
+    Types of property '[ETIKET]' are incompatible.
+      Type '"km"' is not assignable to type '"kg"'.
+```
+
+**Aynı bozulmada muhafız yeşil kaldı:**
+`✓ ORAN KÜMESİ — '?? 0' ile toplanıp orana giren değer yok`
+
+İkisi birbirini tamamlıyor: muhafız `?? 0` kalıbını, tip küme uyuşmazlığını
+yakalıyor. Bozulma geri alındı; `tsc` 0.
+
+### 6.4 Kanıt 2 — kalıcı derleme-anı testi
+
+`lib/oran-kume.tip-testi.ts` her `tsc --noEmit` koşusunda sınanır.
+`@ts-expect-error` **tersine** çalışır: altındaki satır hata vermezse derleme
+kırılır — yani kuralın delindiği gün bu dosya kırmızıya döner.
+
+| test | ne sınıyor |
+|---|---|
+| `dogruKullanim` | tek kümeden iki uç — hata vermemeli |
+| `muhafizinKacirdigiVaka` | 🔴 iki ayrı filtre, `?? 0` YOK — muhafız görmez, tip görür |
+| `birlesimGecmemeli` | `NoInfer` kapısı: `"kg" \| "km"` birleşimi kabul edilmemeli |
+| `ayniKumeFarkliAlan` | aynı kümeden farklı alanlar (kg/km) — **serbest**, kural kümeyle ilgili, alanla değil |
+
+`tsc` bu dosyayla birlikte **0 hata** veriyor; yani dört beklentinin dördü de
+tutuyor.
+
+### 6.5 Mevcut düzeltmelerin yeni ifadesi
+
+```ts
+// lib/co2-db.ts
+const kgK    = kume("kg",    araclar.filter(a => a.kg    !== null));
+const kmK    = kume("km",    araclar.filter(a => a.km    !== null));
+const litreK = kume("litre", araclar.filter(a => a.litre !== null));
+const oranK  = kume("kg+km", araclar.filter(a => a.kg !== null && a.km !== null));
+
+kg:    topla(kgK,    a => a.kg)
+km:    topla(kmK,    a => a.km)
+litre: topla(litreK, a => a.litre)
+gKm:   oranOlcekli(topla(oranK, a => a.kg), topla(oranK, a => a.km), 1000)
+```
+
+`app/actions/fuel.ts` aynı desende: `kume("co2+km", vehicles.filter(v => v.km > 0))`.
+
+**`lib/karlilik.ts` bilerek DIŞARIDA.** Oradaki kusur küme uyuşmazlığı değil:
+kümeler aynı (tüm seferler), sorun bir ucun **eksik ölçülmesiydi**
+(`atfedilenEur === null`). Çare de küme değil kapı: `marj` yalnız
+`maliyetsizSefer === 0 && eksikMaliyetliSefer === 0` satırlarda hesaplanıyor
+(§ 3.1/3). Küme tipini oraya zorlamak, çözdüğünden fazla gürültü üretirdi.
+
+### 6.6 Davranış değişmedi — ölçüldü
+
+Refactor sonrası HAK61 canlı (salt okuma), Temmuz penceresi:
+
+```
+üst kart : kg 3921,61 · km 16596 · g/km 268,30
+trend    : kg 3675,14 · km 13698 · g/km 268,30      → AYNI
+kapsama  : kg 24 · km 25 · ORAN 21 / 29
+```
+
+Refactor öncesiyle **birebir aynı**. Tip yalnız derleme anında yaşıyor.
+
+### 6.7 Ne hâlâ kapalı değil
+
+- Toplam **başka dosyada** üretilip burada bölünüyorsa etiket taşınır ama
+  yalnız `oran()`/`oranOlcekli()` üzerinden geçerse. Çıplak `/` operatörü
+  hâlâ serbest — `Toplam<K>` bir `number` olduğu için `a / b` derlenir.
+  Kapatmanın yolu `Toplam<K>`'yı `number`dan ayırmak olurdu; o zaman her
+  aritmetik işlem sarmalayıcı isterdi ve maliyet faydayı aşardı.
+- Kural yalnız **bu iki yardımcıyı kullanan** kodda geçerli. Yeni bir oran
+  yazan, `kume()`/`topla()` kullanmayı seçmezse tip devreye girmez —
+  muhafız orada ikinci savunma hattı olarak kalıyor.
 
 ---
 
@@ -236,6 +367,8 @@ yapılmadı**, ayrı iş.
 | `lib/karlilik.ts` | `marj` yalnız ölçümü tam satırlarda |
 | `scripts/check-oran-kume.mjs` | **YENİ** muhafız |
 | `package.json` | `lint:oran-kume` + `verify` zinciri |
+| `lib/oran-kume.ts` | **YENİ** — küme etiketi tipi (§ 6) |
+| `lib/oran-kume.tip-testi.ts` | **YENİ** — kalıcı derleme-anı testi (§ 6.4) |
 
 **Doğrulama:** `tsc` 0 · `build` başarılı · `lint:oran-kume` YEŞİL ·
 `check-test-filters` 1 bulgu (taban, değişmedi) · eslint 43/28/15 (taban,

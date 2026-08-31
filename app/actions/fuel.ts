@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { kume, topla, oranOlcekli } from "@/lib/oran-kume";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
 import { requireWorker, requireAdmin } from "@/lib/session";
@@ -256,9 +257,7 @@ export async function generateCO2Report(month: string): Promise<CO2Result> {
    * paya ekleyip paydaya 0 eklerse oran şişer — `lib/co2-db.ts`teki kusurun
    * birebir aynısı. Ayrıntı: `docs/ORAN-KUME-KURALI.md`.
    */
-  const oranKumesi = vehicles.filter((v) => v.km > 0);
-  const oranCo2 = oranKumesi.reduce((s, v) => s + v.co2Kg, 0);
-  const oranKm = oranKumesi.reduce((s, v) => s + v.km, 0);
+  const oranK = kume("co2+km", vehicles.filter((v) => v.km > 0));
 
   return {
     ok: true,
@@ -268,9 +267,13 @@ export async function generateCO2Report(month: string): Promise<CO2Result> {
       totalLiters,
       totalCo2,
       totalKm,
-      avgGPerKm: oranKm > 0 ? (oranCo2 * 1000) / oranKm : null,
+      avgGPerKm: oranOlcekli(
+        topla(oranK, (v) => v.co2Kg),
+        topla(oranK, (v) => v.km),
+        1000
+      ),
       /** Oranın kaç araçtan geldiği — toplamlarınkiyle aynı olmak zorunda değil. */
-      oranAracSayisi: oranKumesi.length,
+      oranAracSayisi: oranK.ogeler.length,
       aracSayisi: vehicles.length,
       vehicles,
     },

@@ -1,7 +1,7 @@
 # Odometre kuralını asıl kaynağa bağlama
 
-> 31.08.2026 · Dal `fix/odometre-kaynak` · **push/deploy YOK** ·
-> migration **097 ÇALIŞTIRILMADI**. Ölçüm HAK61'de **salt okuma**.
+> 31.08.2026 · Dal `fix/odometre-kaynak` → **main'de** · migration **097 üç
+> kiracıda çalıştırıldı** (Volkan). Ölçüm HAK61'de **salt okuma**.
 > Öncesi: [`BOZUK-TELEMETRI.md`](BOZUK-TELEMETRI.md)
 
 ---
@@ -226,14 +226,102 @@ rahat yeter.
 
 ---
 
+## 9 · 097 CANLI — doğrulama (31.08.2026 akşamı)
+
+097 üç kiracıda çalıştırıldı, kod main'e alındı, üç kiracıda deploy
+**success**. HAK61 canlı, salt okuma:
+
+### 9.1 RPC devrede
+
+```
+fleet_odometer_spans        ✅ 29 araç · 2,02 sn
+buildFuelReport sorgu dökümü:
+    device_telemetry                      81   ← yakıt penceresi fan-out'u
+    rpc:report_fuel_stats_vehicle         29
+    rpc:report_fuel_volume_stats_vehicle  29
+    rpc:fleet_odometer_spans               1   ← ÖNCE 60 device_telemetry idi
+    vehicles 2 · workers 2                     TOPLAM 144
+```
+
+### 9.2 Sayılar — öngörü 6/6 tuttu
+
+| ölçüm | önce | **gerçek** | öngörü | |
+|---|---:|---:|---:|---|
+| km'si ölçülen araç | 25/29 | **29/29** | 29/29 | ✅ |
+| filo km (yakıt raporu) | 16.596 | **18.577** | 18.577 | ✅ |
+| L/100km ölçülen araç | 21 | **23** | 23 | ✅ |
+| mesafe raporu km | 16.596 | **18.577** | 18.577 | ✅ |
+| mesafe kapsama | 25/29 | **29/29** | 29/29 | ✅ |
+| hız `per100Km` ölçülen | 25/29 | **29/29** | 29/29 | ✅ |
+
+Kazanılan dört araç, **birebir**:
+
+```
+DO-753GS  981 km            DO-512GT  757 km · L/100km 7,05
+DO-571GR  248 km · 16,03    DO-505GS   50 km
+```
+
+### 9.3 🔴 SÜRE ÖNGÖRÜSÜ TUTMADI — sebebi ölçüldü
+
+| | öngörü | gerçek |
+|---|---:|---:|
+| `buildFuelReport` | 5,11 sn *(1,17× hızlı)* | **6,73 sn** *(3 tur medyan)* — 097 öncesi 5,96 sn'ydi |
+
+**%13 YAVAŞLADI, hızlanmadı.** Sebep, ölçüm yönteminin kusuru: § 4'teki
+"sonrası" turunda RPC bir **şimle** karşılanıyordu, yani ağ maliyeti sıfırdı.
+Gerçek RPC **2,02 sn** sürüyor. Aradaki fark (6,73 − 5,11 ≈ 1,6 sn) tam olarak
+bu.
+
+Karşılaştırma dürüst hâliyle:
+
+```
+097 öncesi   5,96 sn · odometre için 60 paralel `limit 1` sorgusu (mapBounded 6)
+097 sonrası  6,73 sn · odometre için 1 ağır pencere-fonksiyonu sorgusu (2,02 sn)
+```
+
+60 hafif indeksli sorgu, 1 ağır sorgudan **hızlıydı**. Sorgu sayısı düştü ama
+duvar saati arttı. **Kabul edildi**: +0,77 sn karşılığında 4 araç kazanıldı ve
+km'ler doğrulandı. Doğruluk hız için feda edilmez — ama ölçüm bunu "hızlanma"
+diye satmamalı.
+
+⚠️ § 8'de bu risk zaten yazılıydı: *"`fleet_odometer_spans` süresi
+`telemetry_month_spans` ölçüsünden türetildi, **ölçülmedi**"*. Türetim yanlış
+çıktı.
+
+### 9.4 Tazelemenin gerçek etkisi — ölçüldü (yazmadan)
+
+`ayOzetiYaz("2026-07-01")` 097 canlıyken koşturuldu, `upsert` HTTP katmanında
+yakalanıp gönderilmedi:
+
+| alan | değişen araç |
+|---|---:|
+| `km` | **7** |
+| `olculemedi_sebep` | **3** |
+| `odometre_ilk` / `odometre_son` | 16 |
+
+```
+ölçülen araç   21 → 24        litre 1.392,10 → 1.485,46  (+93,36 L)
+```
+
+Sebep değişen üç araç: `DO-512GT` · `DO-571GR` · `DO-505GS` —
+`odometre_yok` → `null`. Bu tam olarak
+[`ORAN-KUME-KURALI.md`](ORAN-KUME-KURALI.md) § 1'deki üç araç: litresi bilinen
+ama km'si olmadığı için CO₂ **oran kümesinin dışında** kalanlar. Artık
+içerideler.
+
+🔴 **BOZUK-TELEMETRI.md § 4.2'deki "müşteri rakamı değişmez" tespiti artık
+GEÇERSİZ.** O, 096 için doğruydu (`km` başka kaynaktan geliyordu). 097 + bu
+bağlama işi o kaynağı da düzelttiği için tazeleme **gerçekten değiştiriyor**.
+
+---
+
 ## 8 · ÖLÇEMEDİKLERİM
 
-- **097'nin gerçek SQL çıktısı** — migration çalıştırılmadı; ölçüm
-  `lib/odometre.ts` (aynı kural, JS) ile yapıldı. SQL'in birebir aynı sonucu
-  verdiği ancak çalıştırıldıktan sonra doğrulanabilir (§ 7/1).
-- **`fleet_odometer_spans` süresi** — `telemetry_month_spans` ölçüsünden
-  (2,99 sn) türetildi; ay gruplaması olmadığı için daha hızlı olması beklenir,
-  **ölçülmedi**.
+- ✅ **097'nin gerçek SQL çıktısı** — çalıştırıldı, doğrulandı (§ 9.2).
+  Volkan'ın eşdeğerlik sorgusu: 29/29 araç, imkansız değer yok, en yüksek
+  km 2.011 (DO-788GS).
+- ✅ **`fleet_odometer_spans` süresi** — ölçüldü: **2,02 sn**. Türetim
+  yanlıştı, § 9.3.
 - **Sendigo / galzura-demo etkisi** — bozuk okuma envanteri o kiracılarda
   çıkarılmadı.
 - **2026-08 ve öncesi aylar** — yalnız 2026-07 ölçüldü.

@@ -173,10 +173,59 @@ async function aracYakitTurleri(): Promise<{ harita: Map<string, FuelType>; kolo
  * yakıt türünün katsayısıyla çarpılır; ölçülemeyen araç `null` döner ve
  * plakası `olculemeyenPlakalar`da görünür — sessiz eksik YASAK.
  */
+/**
+ * HANGİ PARÇA HESAPLANSIN — Ö2, kısmi sonuç (31.08.2026).
+ *
+ * ═══ NEDEN ═══════════════════════════════════════════════════════════════
+ * Pano iki PAHALI ve BİRBİRİNDEN BAĞIMSIZ iş yapıyor (HAK61 canlı, ölçüldü):
+ *
+ *   gövde  → `buildFuelReport(seçilen pencere)`   8,78 sn · 199 sorgu
+ *   aylık  → `aylikSeri` (son 6 ay)               8,85 sn · 199 sorgu
+ *
+ * Ekranın ilk göstereceği sayı yalnız GÖVDEYE bağlı; aylık seri trend
+ * grafiğinin verisi. Bugün ikisi tek yanıtta bekletiliyor, yani kullanıcı
+ * hazır olan sayıyı 8,85 sn fazladan bekliyor.
+ *
+ * 🔴 İkisi BİRLEŞTİRİLEMEZ — denendi ve ölçümle çürütüldü: pencereler
+ * örtüşmüyor (`range=ay` kayan 30 gün, aylık seri UTC takvim ayı) ve
+ * `consumedLiters` pencere-bağımlı olduğu için biri diğerinden türetilemez.
+ * Ayrıntı: `docs/CO2-SURE.md` § 4. Geriye kalan tek kaldıraç BEKLEYİŞİ
+ * BÖLMEK — bu tip onu sağlıyor.
+ *
+ * ⚠️ `aylik: false` iken `CO2Panosu.aylik` **boş dizi** döner. Boş dizi
+ * "veri yok" DEĞİL, "bu çağrıda istenmedi" demektir; ayrımı yüzeye çıkarmak
+ * ÇAĞIRANIN işidir (uç bunu `bolum` alanıyla söylüyor). Sessiz eksik yasağı
+ * burada da geçerli: `aylik: []`'i "trend boş" diye çizen bir ekran yanlış
+ * yapar.
+ */
+export type CO2Parca = {
+  /** Seçilen pencerenin raporu: `toplam`, `araclar`, `soforler`, `musteriler`. */
+  govde: boolean;
+  /** Son 6 ayın serisi. Yalnız `bit` + ayar + yakıt türlerine bağlı. */
+  aylik: boolean;
+};
+
+/** Bugünkü davranış — ikisi de. Mevcut çağıranların hiçbiri değişmedi. */
 export async function co2Panosu(bas: Date, bit: Date): Promise<CO2Panosu> {
+  return panoHesapla(bas, bit, { govde: true, aylik: true });
+}
+
+/** Yalnız gövde — ekranın ilk göstereceği sayı. Aylık seri hesaplanmaz. */
+export async function co2PanosuOzet(bas: Date, bit: Date): Promise<CO2Panosu> {
+  return panoHesapla(bas, bit, { govde: true, aylik: false });
+}
+
+/**
+ * Yalnız aylık seri. `bas` OKUNMAZ — seri `bit`in ayından geriye 6 ay.
+ * İmzada durmasının tek sebebi diğer ikisiyle aynı çağrı şeklini korumak.
+ */
+export async function co2PanosuAylik(bas: Date, bit: Date): Promise<CO2Panosu> {
+  return panoHesapla(bas, bit, { govde: false, aylik: true });
+}
+
+async function panoHesapla(bas: Date, bit: Date, parca: CO2Parca): Promise<CO2Panosu> {
   const ayar = await co2Ayari();
   const { harita: turler, kolonYok } = await aracYakitTurleri();
-  const rapor = await buildFuelReport({ start: bas, end: bit });
 
   const bosToplam: CO2Toplam = {
     litre: null,
@@ -187,6 +236,30 @@ export async function co2Panosu(bas: Date, bit: Date): Promise<CO2Panosu> {
     toplamArac: 0,
     olculemeyenPlakalar: [],
   };
+
+  /**
+   * Yalnız aylık seri isteniyor: seçilen pencerenin raporu HİÇ çalışmaz.
+   * `yakitYok` burada null — o yargı raporun kendi cevabıdır, rapor
+   * çağrılmadıysa "yakıt yok" demeye hakkımız da yok.
+   */
+  if (!parca.govde) {
+    return {
+      tabloYok: ayar.tabloYok || kolonYok,
+      ayar,
+      bas: bas.toISOString(),
+      bit: bit.toISOString(),
+      toplam: bosToplam,
+      araclar: [],
+      soforler: [],
+      musteriler: [],
+      aylik: parca.aylik ? await aylikSeri(bit, ayar, turler) : [],
+      hedef: null,
+      katsayiSurum: CO2_KATSAYI_SURUM,
+      yakitYok: null,
+    };
+  }
+
+  const rapor = await buildFuelReport({ start: bas, end: bit });
 
   if (!rapor.available) {
     return {
@@ -254,7 +327,7 @@ export async function co2Panosu(bas: Date, bit: Date): Promise<CO2Panosu> {
 
   const soforler = await soforKirilimi(araclar, bas, bit);
   const musteriler = await musteriKirilimi(araclar, bas, bit);
-  const aylik = await aylikSeri(bit, ayar, turler);
+  const aylik = parca.aylik ? await aylikSeri(bit, ayar, turler) : [];
 
   return {
     tabloYok: ayar.tabloYok || kolonYok,

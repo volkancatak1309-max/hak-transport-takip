@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { requireMobileAdmin } from "@/lib/mobile-scope";
 import { mobileError } from "@/lib/mobile-auth";
-import { co2Panosu } from "@/lib/co2-db";
+import { co2Panosu, co2PanosuOzet, co2PanosuAylik } from "@/lib/co2-db";
 import { aralikCoz, aralikHataAlanlari } from "../../_rapor/aralik";
 
 export const runtime = "nodejs";
@@ -36,6 +36,27 @@ export const dynamic = "force-dynamic";
  * 🔴 İSTEMCİ BU UCU BUGÜN AÇILIŞTA ÇAĞIRMAMALI. Kullanıcı CO₂ sekmesine
  * dokununca, kendi yükleniyor durumuyla ve uzun timeout'la çağırmalı.
  *
+ * ═══ `?bolum=` — KISMİ SONUÇ (Ö2, 31.08.2026) ════════════════════════════
+ *
+ * Uç iki PAHALI ve bağımsız iş yapıyor (HAK61 canlı, ölçüldü):
+ *     gövde (seçilen pencere raporu)  8,78 sn
+ *     aylık seri (son 6 ay)           8,85 sn
+ * Ekranın ilk göstereceği sayı yalnız GÖVDEYE bağlı, ama bugün ikisi tek
+ * yanıtta bekletiliyor. `?bolum=` bekleyişi bölüyor:
+ *
+ *   (yok)          → BUGÜNKÜ TAM GÖVDE — eski istemci hiç değişmeden çalışır
+ *   ?bolum=ozet    → `ozet` + `pano` (aylik alanı YOK) · ~9 sn
+ *   ?bolum=aylik   → yalnız `aylik` · ~9 sn
+ *
+ * İki çağrı PARALEL atılabilir; toplam duvar saati ~18 sn'den ~9 sn'ye iner
+ * ve ekrandaki ilk sayı ~9 sn'de görünür.
+ *
+ * ⚠️ Neden ayrı uç değil: yetki (`requireMobileAdmin`) ve aralık dili
+ * (`aralikCoz`) ikinci kez kurulurdu; "son 30 gün" iki yüzeyde iki pencereye
+ * ayrılırsa yönetici sayıyı bulamaz — `_rapor/aralik.ts` başlığındaki aynı
+ * gerekçe. Neden akış (streaming) değil: RN istemcisinde kısmi JSON ayrıştırma
+ * ve ayrı hata yolu gerekir, kazanç aynı.
+ *
  * Kalıcı çözüm bu dosyada DEĞİL, iki yerde:
  *   S2 — `report_fuel_volume_stats` araç eksenine çevrilecek (rapor başına
  *        ~5 sn'lik kapsamsız tek gövde; `docs/HAK61-SAGLIK.md` § 8.2)
@@ -68,17 +89,50 @@ export async function GET(req: NextRequest) {
   }
   const c = cozum.cozum;
 
-  const pano = await co2Panosu(c.range.start, c.range.end);
+  const bolumHam = url.searchParams.get("bolum");
+  if (bolumHam !== null && bolumHam !== "ozet" && bolumHam !== "aylik") {
+    return mobileError(400, "invalid_bolum", { alan: "bolum", gecerli: ["ozet", "aylik"] });
+  }
+  const bolum: "ozet" | "aylik" | "tam" = bolumHam ?? "tam";
+
+  const donem = {
+    tur: c.tur,
+    baslangic: c.range.start.toISOString(),
+    bitis: c.range.end.toISOString(),
+    from: c.from,
+    to: c.to,
+  };
+
+  /**
+   * 🔴 AYLIK SERİ YALNIZ KENDİ ÇAĞRISINDA. `ozet`/`pano` YOK — kasıtlı:
+   * boş bir `ozet` göndermek, istemcinin onu "0 kg" diye çizmesine davetiye
+   * olurdu. Alan yoksa okunamaz.
+   */
+  if (bolum === "aylik") {
+    const p = await co2PanosuAylik(c.range.start, c.range.end);
+    return Response.json({
+      ok: true,
+      bolum,
+      donem,
+      aylik: p.aylik,
+      katsayiSurum: p.katsayiSurum,
+      tabloYok: p.tabloYok,
+    });
+  }
+
+  const pano = bolum === "ozet"
+    ? await co2PanosuOzet(c.range.start, c.range.end)
+    : await co2Panosu(c.range.start, c.range.end);
 
   return Response.json({
     ok: true,
-    donem: {
-      tur: c.tur,
-      baslangic: c.range.start.toISOString(),
-      bitis: c.range.end.toISOString(),
-      from: c.from,
-      to: c.to,
-    },
+    /**
+     * Hangi parçanın döndüğü GÖVDEDE yazar. `bolum:"ozet"` iken `pano.aylik`
+     * alanı **hiç yoktur** — boş dizi olarak gönderilseydi "trend boş" diye
+     * çizilebilirdi; sessiz eksik yasağı.
+     */
+    bolum,
+    donem,
     /** `/api/mobile/analytics`in eski `co2` alanıyla BİREBİR aynı şekil. */
     ozet: {
       kg: pano.toplam.kg,
@@ -101,7 +155,7 @@ export async function GET(req: NextRequest) {
       araclar: pano.araclar,
       soforler: pano.soforler,
       musteriler: pano.musteriler,
-      aylik: pano.aylik,
+      ...(bolum === "tam" ? { aylik: pano.aylik } : {}),
     },
   });
 }

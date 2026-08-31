@@ -321,6 +321,111 @@ ilk göstereceği sayı yalnız (3)'e bağlı.** Yani süreyi kısaltmak yerine
 
 ---
 
+## 6 · Ö2 UYGULANDI — `?bolum=` ile kısmi sonuç (31.08.2026)
+
+> Dal `perf/co2-kismi-sonuc`. **Push/deploy YOK.** HAK61 salt okuma.
+
+### 6.1 Karar: `?bolum=` parametresi — neden diğer ikisi değil
+
+| seçenek | neden seçilmedi / seçildi |
+|---|---|
+| İki ayrı uç | Yetki (`requireMobileAdmin`) ve aralık dili (`aralikCoz`) **ikinci kez** kurulurdu. `_rapor/aralik.ts` başlığındaki gerekçe aynen geçerli: "son 30 gün" iki yüzeyde iki pencereye ayrılırsa yönetici Analiz'deki sayıyı raporda bulamaz. |
+| Akış (streaming) | RN istemcisinde kısmi JSON ayrıştırma + ayrı hata yolu gerekir; yarıda kesilen bir gövdenin hangi parçasının geçerli olduğu istemcinin sorumluluğuna geçer. Kazanç aynı, kırılma yüzeyi büyük. |
+| **`?bolum=`** ✅ | Tek uç, tek yetki, tek aralık dili. **Parametre yoksa bugünkü tam gövde döner** → eski istemci hiç değişmeden çalışır. İki çağrı istemci tarafında paralel atılabilir. |
+
+### 6.2 Sözleşme — eski istemci kırılmıyor
+
+```
+(parametre yok)  → { ok, bolum:"tam",   donem, ozet, pano{…, aylik} }   ← BUGÜNKÜ GÖVDE
+?bolum=ozet      → { ok, bolum:"ozet",  donem, ozet, pano{…} }          ← aylik alanı YOK
+?bolum=aylik     → { ok, bolum:"aylik", donem, aylik, katsayiSurum, tabloYok }
+?bolum=<başka>   → 400 invalid_bolum { alan:"bolum", gecerli:["ozet","aylik"] }
+```
+
+🔴 `bolum=ozet` yanıtında `pano.aylik` alanı **hiç yoktur** — boş dizi
+gönderilseydi istemci onu "trend boş" diye çizebilirdi. Aynı sebeple
+`bolum=aylik` yanıtında `ozet` yoktur: boş bir özet "0 kg" olarak
+çizilebilirdi. Ne döndüğü gövdedeki `bolum` alanında yazar.
+
+Kod tarafında `lib/co2-db.ts` üç giriş noktası veriyor: `co2Panosu` (bugünkü,
+değişmedi), `co2PanosuOzet`, `co2PanosuAylik` — üçü de tek `panoHesapla`ya
+düşüyor. Web ekranının server action'ı (`app/actions/co2.ts`) `co2Panosu`
+çağırmayı sürdürüyor, **dokunulmadı**.
+
+### 6.3 Ölçüm — HAK61 canlı, her range
+
+| range | TAM | **`bolum=ozet`** | `bolum=aylik` | ikisi paralel |
+|---|---:|---:|---:|---:|
+| `gun` | 27,18 sn · 1311q | **3,37 sn · 198q** | 23,79 sn · 1115q | 24,31 sn |
+| `hafta` | 27,91 sn · 1313q | **4,47 sn · 200q** | 23,54 sn · 1115q | 24,36 sn |
+| `ay` | 32,67 sn · 1319q | **9,37 sn · 206q** | 23,57 sn · 1115q | 24,40 sn |
+| `tumzaman` | 35,63 sn · 1321q | **13,60 sn · 208q** | 22,75 sn · 1115q | 26,11 sn |
+| `ozel(01→31)` | 32,08 sn · 1319q | **9,73 sn · 206q** | 23,21 sn · 1115q | 23,65 sn |
+
+**Ekrandaki ilk sayı 27–36 sn yerine 3,4–13,6 sn'de hazır.**
+
+⚠️ `bolum=aylik` bugün ~23 sn çünkü **cron henüz kurulmadı** — altı ay canlı
+hesaplanıyor. Cron kurulunca bu ayak ~9 sn'ye iner (§ 2), yani trend grafiği
+de ~9 sn'de dolar. İki iyileştirme birbirini besliyor.
+
+### 6.4 Sonuç eşitliği — kanıt
+
+**Kapanmış pencerede (30.08 00:00–23:59 UTC) TAM ve `ozet` BİREBİR AYNI:**
+
+```
+TAM : kg 9,24 · litre 3,5 · km 64 · kapsama 4/29 · 25 plaka
+OZET: kg 9,24 · litre 3,5 · km 64 · kapsama 4/29 · 25 plaka   → ✅ aynı
+aylık seri: altı ayın altısı da birebir aynı (TAM vs bolum=aylik)
+```
+
+**Canlı pencerede küçük farklar çıkıyor — kodun değil, verinin.** Aynı
+fonksiyon (`co2Panosu`), aynı pencere, üç kez arka arkaya:
+
+```
+telemetri satırı: 33.151 → 33.155 → 33.161 → 33.170   (+19 satır / 80 sn)
+1. TAM: kg 2667,7728 · litre 1010,52 · km 776
+2. TAM: kg 2667,7728 · litre 1010,52 · km 776   = 1. ile aynı
+3. TAM: kg 2667,7728 · litre 1010,52 · km 777   ← 2.'den FARKLI
+```
+
+flespi akarken bugünü içeren hiçbir pencere iki ölçüm arasında sabit
+kalmıyor. Bu yüzden eşitlik **kapanmış pencerede** sınandı — CSV Tur 2'de
+kullanılan aynı teknik. Kapsama sayısı (`olculen/toplamArac`) ve
+`olculemeyenPlakalar` listesi de karşılaştırmaya dahil edildi.
+
+### 6.5 📱 MOBİL İSTEMCİDE NE GEREKİYOR (CC'ye)
+
+**Bugünkü davranış hiç değişmedi** — istemci hiçbir şey yapmazsa uç aynı
+gövdeyi döndürmeye devam eder. Aşağısı hızlanmayı almak için:
+
+1. **Tek çağrı yerine iki çağrı:**
+   ```
+   GET /api/mobile/analytics/co2?range=<...>&bolum=ozet    → ~3–14 sn
+   GET /api/mobile/analytics/co2?range=<...>&bolum=aylik   → ~23 sn (cron sonrası ~9)
+   ```
+   🔴 `Promise.all` **KULLANMA** — o ikisini de bekletir ve kazancı yok eder.
+   İkisini aynı anda başlat, ama **ayrı ayrı** ele al: özet gelir gelmez
+   ekrana bas, aylık seriyi geldiğinde ekle.
+
+2. **Aralık parametreleri aynen korunur** (`range`, `from`, `to`). İki çağrı
+   **aynı** aralığı taşımalı, yoksa özet ile trendin dönemi ayrışır.
+
+3. **`bolum` alanını oku, alanın varlığına güvenme.** `bolum:"ozet"` gelen
+   yanıtta `pano.aylik` yoktur; bunu "trend boş" diye çizme, "henüz gelmedi"
+   olarak göster.
+
+4. **`aylik[].kaynak` üç değer alır** ve üçü ayrı gösterilmeli:
+   `tablo` (hesaplanmış) · `canli` (o an hesaplandı) · `hesaplanmadi`
+   (🔴 `kg:null` burada "0" değil "bilinmiyor").
+
+5. **Zaman aşımı:** özet ayağı için 30 sn yeter; aylık ayağı için **90 sn**
+   korunmalı (cron kurulana kadar ~23 sn, `tumzaman` daha uzun sürebilir).
+
+6. **Hata yalıtımı:** aylık ayağı başarısız olursa özet ekranda KALMALI.
+   İki çağrı bağımsız; birinin hatası diğerini düşürmemeli.
+
+---
+
 ## 5 · ÖLÇEMEDİKLERİM
 
 - **galzura-demo'da hiçbir şey** — service key yok `ÖLÇÜLEMEDİ`. § 1.4'teki

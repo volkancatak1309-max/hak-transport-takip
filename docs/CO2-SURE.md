@@ -512,6 +512,133 @@ gövdeyi döndürmeye devam eder. Aşağısı hızlanmayı almak için:
 
 ---
 
+## 7 · 🔴 CRON GÖVDESİ ≠ TABLO — ve asıl kusur başka yerde
+
+> 31.08.2026 · HAK61 salt okuma. Soru: cron `olculen:21 · litre:1392,1`
+> dedi, tabloda `litre_dolu 24 · 1485,5` var. Aynı ay, aynı koşum.
+
+### 7.1 Üç olasılık — ikisi ölçümle ELENDİ
+
+| olasılık | ölçüm | sonuç |
+|---|---|---|
+| Cron iki kez koştu, ikincisi fazla araç yakaladı | `hesaplandi_at` damgaları: **tek damga** `2026-08-31T12:46:08`, 29 satırın hepsi | ❌ elendi |
+| Arada telemetri geriye yazıldı | tek damga + `hesap_surumu` tek (`095.1`); ikinci yazma yok | ❌ elendi |
+| **İki sayım farklı şey sayıyor** | aşağıda | ✅ **sebep bu** |
+
+### 7.2 Sebep: `olculemedi_sebep IS NULL` ≠ `litre IS NOT NULL`
+
+2026-07'nin 29 satırının dökümü:
+
+| `olculemedi_sebep` | satır | litre dolu | km dolu | litre toplamı |
+|---|---:|---:|---:|---:|
+| `null` (ölçüldü) | **21** | 21 | 21 | **1.392,10** |
+| `cihaz_yok` | 5 | 0 | 4 | 0,00 |
+| **`odometre_yok`** | **3** | **3** | **0** | **93,36** |
+
+Fark tam olarak `odometre_yok` sebepli üç araç: **litresi var, km'si yok.**
+
+```
+sebep=odometre_yok  litre=53,40   km=null  odo_ilk=0  odo_son=99540   ornek=30707
+sebep=odometre_yok  litre=39,76   km=null  odo_ilk=0  odo_son=95765   ornek=27243
+sebep=odometre_yok  litre= 0,20   km=null  odo_ilk=0  odo_son=120899  ornek=2263
+                    ───────
+                     93,36
+```
+
+`odometre_ilk = 0` — sayaç ilk okuması sıfır geldiği için km açıklığı
+anlamsız olurdu (0 → 99.540). `lib/km-quality.ts` kapısı bunu reddedip
+`km = null` yapıyor; `ayOzetiYaz` da `km === null` görünce
+`olculemedi_sebep = "odometre_yok"` yazıyor. **İkisi de doğru davranıyor**
+([[km-olculemedi-null]] kararının ta kendisi: sahte "0 km" yasak).
+
+**Yani ne cron yanlış yazdı, ne tablo yanlış tutuyor.** İki soru var, iki
+cevap:
+
+| soru | cevap |
+|---|---|
+| "Temmuz'da litresi **ve** km'si bilinen kaç araç, ne kadar yakıt?" | **21 · 1.392,10 L** ← cron gövdesinin `olculen`i |
+| "Temmuz'da litresi bilinen kaç araç, ne kadar yakıt?" | **24 · 1.485,46 L** ← `litre IS NOT NULL` |
+
+Benim ilk raporumdaki "21 / 1.392,10 — cron gövdesiyle birebir" ifadesi
+doğruydu ama **eksikti**: hangi sayımla saydığımı yazmamıştım
+(`olculemedi_sebep IS NULL`). İki sayımın var olduğunu belirtmeliydim.
+
+### 7.3 🔴 ASIL KUSUR: aynı ekranda iki sayım karışıyor
+
+Fark akademik değil. `co2Panosu(2026-07)` çağrıldığında **aynı ekranın iki
+parçası farklı sayıma dayanıyor** (ölçüldü):
+
+| | kg | km | g/km | kapsama |
+|---|---:|---:|---:|---:|
+| **Üst kart** (`toplam`) | **3.921,61** | 13.698 | **286,3** | 24/29 |
+| **Trend** (`aylik[2026-07]`) | **3.675,14** | 13.698 | **268,3** | 21 araç |
+| fark | **246,47 kg (%6,3)** | 0 | **%6,7 şişik** | |
+
+Sebep `lib/co2-db.ts`'te, iki filtrenin ayrışması:
+
+```
+co2Panosu.toplam  →  olculen = araclar.filter(a => a.kg !== null)
+                     kg litreden hesaplanır, km GEREKMEZ → 3 araç GİRER
+                     toplamKm = olculen.reduce((s,a) => s + (a.km ?? 0), 0)
+                                                              ^^^^^^^^^
+                                     km null olan araç 0 ekler ama kg'si sayılır
+
+aylikSeri.topla() →  if (s.sebep !== null) continue        → 3 araç ELENİR
+                     if (h.kg === null || s.km === null) continue
+```
+
+**Payda 21 araçtan, pay 24 araçtan.** Sonuç: üst karttaki g/km oranı
+**%6,7 yüksek** çıkıyor — km'si bilinmeyen aracın emisyonu paya giriyor,
+kilometresi paydaya girmiyor.
+
+⚠️ **Bu kusur cron'un ya da tablonun getirdiği bir şey DEĞİL.** Aylık serinin
+canlı yolu da aynı `topla()`yı kullanıyor: S4 öncesi ölçümde de 2026-07 için
+`canli / 3675,1` çıkmıştı. Tablo yalnız farkı **görünür** yaptı.
+
+**Hangisi müşteriye gitmeli** — bu bir ürün kararı, bu turda **verilmedi**:
+- **g/km oranı için trend doğru**: km'si bilinmeyen aracı tamamen dışarıda
+  bırakıyor, oran tutarlı.
+- **Toplam litre/kg için üst kart daha eksiksiz**: o 93,36 L gerçekten
+  tüketildi ve gerçekten CO₂ üretti; yalnız hangi mesafede olduğu bilinmiyor.
+- **Bugünkü hâli ikisinin arası ve savunulamaz**: pay 24'ten, payda 21'den.
+
+En küçük düzeltme `toplamKm`'yi kg ile aynı kümeden almak ya da g/km'yi
+yalnız `km !== null` araçlardan hesaplamak olurdu. **Kod DEĞİŞTİRİLMEDİ.**
+
+### 7.4 Boş ay satırları — gerekli, ölçüldü
+
+Şubat–Haziran için 29'ar satır (`kg: null`, hepsi `cihaz_yok`) tabloda
+duruyor. "Hiç yazılmasa mı?" sorusu ölçüldü — satırlar şimle kaldırılıp
+`co2Panosu` yeniden koşturuldu:
+
+| | süre | sorgu | seri |
+|---|---:|---:|---|
+| bugün (145 boş satır var) | **12,11 sn** | **398** | 03–07 `tablo`, 08 `canli` |
+| satırlar hiç yazılmasaydı | **20,00 sn** | **1.110** | 03–06 **`canli`**, 07 `tablo`, 08 `canli` |
+| fark | **+7,89 sn** | **+712** | |
+
+**Gösterilen değerler İKİ DURUMDA DA AYNI** (`kg: null`); değişen yalnız
+`kaynak` etiketi ve **maliyet**. Yani boş ay satırının işi tek: *"bu ay
+hesaplandı, sonuç veri yok"* diyip 178 sorgu/ay'lık canlı taramayı önlemek.
+Satır olmasaydı ekran aynı şeyi gösterir, sadece 8 saniye daha geç.
+
+**İleride ne işe yarayacak** — ve bir risk:
+
+🔴 **Geriye telemetri gelirse boş ay satırı KENDİLİĞİNDEN güncellenmez.**
+Cron'un atlama kapısı yalnız *"o ayın satırı var mı"* diye bakıyor
+(`yazilmis.has(a.ay) && !o.tazele` → `atlandi_var`). 28.08'de 4 saatlik
+kesinti sonrası 11.455 satır geriye düşmüştü; benzer bir telafi Şubat–Haziran'a
+veri getirirse o aylar **boş görünmeye devam eder**. Düzeltmenin tek yolu
+`?tazele=1`. Bu, `CRON-KAYITLARI.md` § 10'da yazılı ama boş ay satırlarının
+bunu *kalıcı* hâle getirdiği yazılı değildi — artık yazılı.
+
+**Küçük yan bulgu:** cron `geri=6` ile **2026-02'yi de** yazdı (29 satır), ama
+`aylikSeri` son 6 ayı okuyor — bugün 2026-03…2026-08. Yani 2026-02'nin 29
+satırı bugün **hiçbir yerde okunmuyor**. Zararsız (174 satırlık tabloda 29
+satır), ay ilerledikçe pencereye girer.
+
+---
+
 ## 5 · ÖLÇEMEDİKLERİM
 
 - **galzura-demo'da hiçbir şey** — service key yok `ÖLÇÜLEMEDİ`. § 1.4'teki
@@ -522,6 +649,10 @@ gövdeyi döndürmeye devam eder. Aşağısı hızlanmayı almak için:
 - **Vercel'deki gerçek cron-sonrası süre** — § 2.4 oran varsayımı. Cron
   kurulduktan sonra ölçülmeli.
 - **Cron'un gerçek yazma turu** — HAK61 salt okuma; upsert hiç gönderilmedi.
-- **Ö2'nin gerçek kazancı** — ölçülmedi; uç bölünmeden önce ölçülemez.
+- **Ö2'nin gerçek kazancı** — ✅ ölçüldü, § 6.3.
+- **Üst kart / trend sayım farkının diğer aylara etkisi** — yalnız 2026-07
+  ölçüldü. Açık ayda (2026-08) ve diğer kiracılarda `ÖLÇÜLMEDİ`.
+- **`odometre_ilk = 0` neden geliyor** — üç aracın sayacı sıfır okuyor; bunun
+  cihaz mı kurulum mu olduğu bu turda `ÖLÇÜLMEDİ`.
 - **`ozel` dışındaki pencerelerin açık ayla örtüştüğü bir tarih var mı** —
   aranmadı; `range=ay` Viyana/UTC kayması yüzünden hiçbir gün örtüşmez.

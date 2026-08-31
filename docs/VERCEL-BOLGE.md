@@ -7,6 +7,20 @@
 
 ---
 
+> 🔴 **31.08.2026 — BU BELGE KISMEN BAYAT.** Fonksiyon bölgesi DEĞİŞMİŞ.
+> `x-vercel-id` yeniden ölçüldü (5 örnek × 3 kiracı, hepsi tutarlı):
+>
+> | kiracı | fonksiyon | Supabase | |
+> |---|---|---|---|
+> | HAK61 | **`dub1`** (Dublin) | eu-west-1 (Dublin) | ✅ aynı bölge |
+> | Sendigo | **`fra1`** (Frankfurt) | eu-central-1 (Frankfurt) | ✅ aynı bölge |
+> | galzura-demo | **`fra1`** (Frankfurt) | eu-central-1 (Frankfurt) | ✅ aynı bölge |
+>
+> Yani aşağıdaki "iad1" tespiti ve ona dayanan **92 ms/sorgu** rakamı artık
+> geçerli değil; § 3'ün "beklenen kazanç ≈ 5,8 sn" öngörüsü büyük ölçüde
+> **gerçekleşmiş** görünüyor. Yeni RTT ölçülmedi — o ayrı bir tur.
+> Bunun CO₂ süresine etkisi: [`CO2-SURE.md`](CO2-SURE.md) § 1.3a.
+
 ## 0 · KISA CEVAP
 
 | soru | cevap | nasıl |

@@ -29,16 +29,24 @@ Vercel projesinden alınır.
 | 10 | **Aylık metrik** (kapanmış ay özeti) | `/api/cron/aylik-metrik` | `CRON_SECRET` | **günde 1 · gece 03:30** | CO₂/yakıt aylık trendi isteyen her kiracı (migration 090) |
 | ~~9~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
 
-Sır iki biçimde de kabul edilir ve karşılaştırma zamanlama-güvenlidir
-(`safeEqual`):
+### 🔴 SIR **BAŞLIKLA** GÖNDERİLİR — sorgu dizesi YASAK
 
 ```
-GET https://<alan-adı>/<yol>?secret=<SIR>
-GET https://<alan-adı>/<yol>          + Authorization: Bearer <SIR>
+GET https://<alan-adı>/<yol>
+Authorization: Bearer <SIR>
 ```
 
-`?secret=` dış zamanlayıcılar için, `Bearer` Vercel Cron için pratiktir
-(Vercel başlığı kendisi ekler). `POST` da aynı gövdeyi çalıştırır.
+Kod iki biçimi de kabul eder (`safeEqual`, zamanlama-güvenli) ama **kayıt
+kurarken yalnız başlık kullanılır.** Sebep: sorgu dizesi sunucu erişim
+kayıtlarına, ara vekillere ve tarayıcı geçmişine **düz metin** düşer; bir
+kere sızan sır sekiz cron ucunun tamamını açar (hepsi aynı `CRON_SECRET`).
+Başlık bu yüzeylerin hiçbirine yazılmaz.
+
+⚠️ `?secret=` biçimi kodda **kasıtlı duruyor** — elle teşhis için
+(`curl` ile tek seferlik) ve eski kayıtlar kırılmasın diye. Yeni kayıt
+kurarken kullanılmaz; bu belgedeki tüm örnekler başlık biçimindedir.
+
+`POST` da aynı gövdeyi çalıştırır.
 
 > **Sır tanımsızsa uç KAPALIDIR (fail-closed) ve 401 döner.** Env'i unutmak
 > "herkese açık" anlamına gelemez — ama zamanlayıcıda da sessiz bir 401
@@ -445,11 +453,38 @@ tenant kilitlidir ve **GERÇEKTEN SİLER**; işi "demoda disk şişmesin". Bu i�
 Ayrıntı: [`docs/AYLIK-METRIK.md`](AYLIK-METRIK.md).
 
 ```
-GET https://<dağıtım>/api/cron/aylik-metrik?secret=<CRON_SECRET>
+GET https://<dağıtım>/api/cron/aylik-metrik
+Authorization: Bearer <CRON_SECRET>
 ```
 
-Sıklık: **günde 1**, gece **03:30** (saklama 03:00'te koşuyor, aynı dakikaya
-binmesin).
+Sıklık: **günde 1**, gece **03:30 Europe/Vienna** (saklama 03:00'te koşuyor,
+aynı dakikaya binmesin). Zamanlayıcıda saat dilimi **Europe/Vienna** seçilmeli
+— UTC bırakılırsa iş yazın 05:30, kışın 04:30 Viyana'da koşar; ikisi de gece
+penceresinin içinde ama kayıt "03:30'da koşuyor" diye okunur ve bir sonraki
+kişi yanlış saati arar.
+
+### Kiracı kiracı — kurulacak tam kayıt
+
+| kiracı | tam URL | 090 | durum |
+|---|---|---|---|
+| **HAK61** | `https://hak-transport-takip.vercel.app/api/cron/aylik-metrik` | ✅ ölçüldü | KUR |
+| **Sendigo** | `https://sendigo-delta.vercel.app/api/cron/aylik-metrik` | ✅ ölçüldü | KUR |
+| **galzura-demo** | `https://demo.galzura.com/api/cron/aylik-metrik` | ⬜ ölçülemedi | önce `&kuru=1` |
+
+Üçünde de: yöntem **GET**, başlık **`Authorization: Bearer <o kiracının
+CRON_SECRET'i>`**, saat **03:30 Europe/Vienna**, sıklık **günde 1**.
+Sır kiracıya özeldir — biri diğerinde çalışmaz.
+
+⚠️ **`CRON_SECRET` her kiracıda tanımlı mı — DIŞARIDAN ÖLÇÜLEMEZ.** Uç env
+tanımsızken de yanlış sırda da aynı `401 {"ok":false,"error":"unauthorized"}`
+gövdesini döndürüyor (`authorized()` env yoksa ilk satırda çıkar). Üç kiracıda
+da geçersiz sırla sondalandı, üçü de 401 verdi — bu **yalnız ucun ayakta
+olduğunu** kanıtlar, env'in varlığını değil. Ayrım iki yoldan biriyle çözülür:
+
+1. Vercel panelinde **Settings → Environment Variables** listesine bakmak
+   (ya da `vercel env ls <proje>`), ya da
+2. **kaydı kurup ilk çağrının 200 döndüğünü görmek** — zaten bu belgenin
+   baştaki kuralı. 401 gelirse env eksik ya da sır yanlış demektir.
 
 ### Ne yapar
 

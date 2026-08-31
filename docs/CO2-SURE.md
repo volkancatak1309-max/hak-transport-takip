@@ -13,7 +13,7 @@
 
 | soru | cevap | nasıl |
 |---|---|---|
-| Demo neden HAK61'in 2 katı? | **"Demo'da veri az" varsayımı yanlış kurulmuş.** Süre araç/sorgu sayısıyla değil, pencereye düşen **telemetri satırıyla** ölçekleniyor. En güçlü aday: demo'nun son 6 ayında **dolu ay sayısı fazla**. Bölge farkı en fazla ~2,5 sn açıklar. | § 1 |
+| Demo neden HAK61'in 2 katı? | **"Demo'da veri az" varsayımı yanlış kurulmuş.** Süre araç/sorgu sayısıyla değil, pencereye düşen **telemetri satırıyla** ölçekleniyor. **Tek kalan aday:** demo'nun son 6 ayında **dolu ay sayısı fazla**. Bölge hipotezi 31.08'de ölçümle ÇÜRÜTÜLDÜ — üç kiracı da kendi Supabase bölgesinde koşuyor. | § 1 |
 | Cron kurulunca kaç saniye? | **34,61 → 18,11 sn** (HAK61 yerel, ölçüldü). Vercel karşılığı ≈ **8 sn** `[oran varsayımı]` | § 2 |
 | Açık ayın tek başına maliyeti? | **9,30 sn** (HAK61) · **7,62 sn** (Sendigo) — cron sonrası taban budur | § 3 |
 | Cron sonrası hâlâ 8+ sn mi? | **Evet, ~18 sn yerel / ~8 sn Vercel.** Kalan süre **iki AYRI pencerenin iki AYRI raporu**; biri diğerinden türetilemez. | § 4 |
@@ -61,7 +61,24 @@ o hâlde hızlı olmalı" çıkarımı bu yüzden yürümüyor.
 
 ### 1.3 Üç hipotez, ölçüm ışığında
 
-**a) Bölge farkı — açıklıyor ama küçük.** `VERCEL-BOLGE.md` § 3 modeli:
+**a) Bölge farkı — 🔴 31.08 akşamı ÇÜRÜTÜLDÜ.** `x-vercel-id` yeniden
+ölçüldü (5 örnek × 3 kiracı, `/api/cron/aylik-metrik`, geçersiz sırla):
+
+```
+HAK61        fra1::dub1   ← Supabase eu-west-1 (Dublin)      AYNI BÖLGE
+Sendigo      fra1::fra1   ← Supabase eu-central-1 (Frankfurt) AYNI BÖLGE
+galzura-demo fra1::fra1   ← Supabase eu-central-1 (Frankfurt) AYNI BÖLGE
+```
+
+**Her kiracı zaten kendi Supabase'iyle aynı bölgede koşuyor.** Yani demo'nun
+yavaşlığında bölge payı yok — bu hipotez kapandı ve (c) tek aday kaldı.
+⚠️ Bu aynı zamanda § 2.4'teki "Vercel oranı 0,442"yi de bayatlatıyor: o oran
+28.08'de HAK61 iad1'deyken ölçülen 15,30 sn'ye dayanıyordu. Yeni bölgede
+gerçek Vercel süresi **ölçülmedi**.
+
+Aşağısı 28.08 tarihli ESKİ analizdir, kayıt için duruyor:
+
+**a-eski) Bölge farkı — açıklıyor ama küçük.** `VERCEL-BOLGE.md` § 3 modeli:
 `t = 198 ms + derinlik × RTT`. HAK61 CO₂ ucu Vercel'de 15,30 sn →
 derinlik ≈ (15.300 − 198) / 92 ≈ **164**. Fonksiyon iad1'de, HAK61 Supabase'i
 Dublin'de, demo'nunki Frankfurt'ta. Frankfurt iad1'e ~15 ms daha uzaksa:

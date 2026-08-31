@@ -496,6 +496,32 @@ sıfırdan büyük mü, `aylar[]` içinde `"hata"` var mı.
 bakıyor; kısmi yazılmış bir ayı (ör. 29 aracın 3'ü) `atlandi_var` sayıp
 geçer — düzeltmenin tek yolu `?tazele=1`.
 
+### Hangi kiracıda kurulabilir — 31.08.2026 ÖLÇÜMÜ
+
+Bu iş migration **090**'a bağlı. 090'ın koşup koşmadığı kiracı kiracı
+**ölçüldü** (PostgREST, salt okuma: altı tablo + beş RPC envanteri):
+
+| Kiracı | Dağıtım | 090 | Uç canlıda | Karar |
+|---|---|---|---|---|
+| **HAK61** | `hak-transport-takip.vercel.app` | ✅ 6/6 tablo · 5/5 RPC | ✅ 401 (404 değil) | **KURULABİLİR** |
+| **Sendigo** | `sendigo-delta.vercel.app` | ✅ 6/6 tablo · 5/5 RPC | ✅ 401 (404 değil) | **KURULABİLİR** |
+| **galzura-demo** | *repoda yazılı değil* | ⬜ `ÖLÇÜLEMEDİ` — service key yok | ⬜ ölçülemedi | **ÖNCE ÖLÇ** |
+
+`vehicle_month_metrics` her iki ölçülen kiracıda da **0 satır** — yani cron
+hiç koşmamış ve ilk tur temiz bir tabloya yazacak.
+
+🔑 **galzura-demo'yu ölçmenin yolu, anahtar istemeden:** kuru mod hiçbir şey
+yazmaz, yalnız okur.
+
+```
+GET https://<galzura-dağıtımı>/api/cron/aylik-metrik?secret=<CRON_SECRET>&kuru=1
+```
+
+- **200** → 090 var, kayıt kurulabilir
+- **503** → `detay` alanını oku; gerçekten `migration_090_yok` ise önce
+  `db/migrations/090_saklama_politikasi.sql` çalıştırılmalı
+- **401** → o kiracının `CRON_SECRET`'i tanımsız ya da yanlış
+
 ### 31.08.2026 — kayıt kurulmadan önce düzeltilen iki kusur
 
 Bu uç kurulmadan yapılan ölçümde **hiçbir şey yazamayacak** durumdaydı:

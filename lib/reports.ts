@@ -11,6 +11,7 @@ import {
   shiftWindowsForScoring,
   workerDrivingAt,
   scoreMinKmForWorkedDays,
+  getFleetDistanceSpans,
   getVehicleDistanceSpan,
   getVehicleFuelSpan,
   listVehiclesAndWorkers,
@@ -242,11 +243,21 @@ async function loadBase(range: DateRange) {
   const [events, idleEpisodes, spanEntries] = await Promise.all([
     listEventsInRange(startISO, endISO),
     listIdleEpisodesInRange(startISO, endISO),
-    // Eşzamanlılık tavanı: araç başına İKİ sorgu (bkz. lib/db-fanout.ts).
-    mapBounded(
-      vehicles,
-      async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
-    ),
+    /**
+     * ODOMETRE AÇIKLIĞI — önce filo geneli RPC (097), yoksa araç-araç.
+     * RPC bozuk okumaları SQL'de eliyor; araç-araç yolu ham uç okumayı alır
+     * ve tek bozuk satırda aracı `inconsistent` yapar. Maliyet ölçümü ve
+     * gerekçe: `lib/analytics.ts` → `getFleetDistanceSpans`.
+     */
+    (async () => {
+      const filo = await getFleetDistanceSpans(startISO, endISO);
+      if (filo) return vehicles.map((v) => [v.id, filo.get(v.id) ?? BOS_SPAN] as const);
+      // Eşzamanlılık tavanı: araç başına İKİ sorgu (bkz. lib/db-fanout.ts).
+      return mapBounded(
+        vehicles,
+        async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
+      );
+    })(),
   ]);
   return {
     startISO,
@@ -342,6 +353,12 @@ export async function buildSpeedReport(range: DateRange): Promise<SpeedReport> {
     vehicleCount: rows.length,
   };
 }
+
+/**
+ * RPC hiç satır döndürmeyen araç: o pencerede odometre okuması YOK.
+ * "0 km" DEĞİL — ölçülemedi (bkz. lib/km-quality.ts dersi).
+ */
+const BOS_SPAN = { km: null, reason: "no_odometer", firstAt: null, lastAt: null } as const;
 
 /** FİLO MESAFE — odometre uç-noktaları (getVehicleDistanceKm, km-guard dahil). */
 export async function buildDistanceReport(range: DateRange): Promise<DistanceReport> {
@@ -1153,10 +1170,13 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   // 22.07.2026: artık ölçüm PENCERESİ de geliyor (aşağıdaki 3. kapı için).
   // Eşzamanlılık tavanı: bu fan-out araç başına İKİ sorgu açıyor, yani sınırsız
   // hâlinde 60 ifade. Yakıt RPC'siyle aynı gerekçe (bkz. lib/db-fanout.ts).
-  const distEntries = await mapBounded(
-    vehicles,
-    async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
-  );
+  const filoSpan = await getFleetDistanceSpans(startISO, endISO);
+  const distEntries = filoSpan
+    ? vehicles.map((v) => [v.id, filoSpan.get(v.id) ?? BOS_SPAN] as const)
+    : await mapBounded(
+        vehicles,
+        async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
+      );
   const distByVehicle = new Map(distEntries);
 
   // Yakıt okumalarının ölçüm penceresi — odometre penceresiyle kıyaslanacak.

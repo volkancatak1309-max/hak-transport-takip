@@ -104,10 +104,43 @@ export function odometreTemizle(okumalar: readonly OdometreOkumasi[]): OdometreO
     return b.odometer_km - a.odometer_km <= mumkunArtisKm(dt);
   };
 
+  /**
+   * 🔴 ARDIŞIK EŞİT DEĞER BLOĞU TEK BİRİMDİR (31.08.2026, ölçümle bulundu).
+   *
+   * Komşu çifte bakmak yetmiyor: DO-505GS'te ayın başında **13 ardışık sıfır**
+   * var. `0 → 0` geçişi fiziksel olarak kusursuz (artış 0), yani kapı onları
+   * geçiriyor; yalnız son sıfır `0 → 120.849` çiftinde takılıyor ve geriye
+   * 12 sıfır kalıyor — `min` hâlâ 0. DO-512GT çözülmüştü çünkü sıfırı TEKTİ.
+   *
+   * Doğrusu: bir okumayı SONRAKİ FARKLI DEĞERE bağlamak. Böylece eşit blok
+   * bütün olarak soyulur. Ek sabit gerekmez — kuralın kendi uzantısı.
+   */
+  const sonrakiFarkli = (i: number) => {
+    for (let j = i + 1; j < monoton.length; j++) {
+      if (monoton[j].odometer_km !== monoton[i].odometer_km) return j;
+    }
+    return -1;
+  };
+  const oncekiFarkli = (i: number) => {
+    for (let j = i - 1; j >= 0; j--) {
+      if (monoton[j].odometer_km !== monoton[i].odometer_km) return j;
+    }
+    return -1;
+  };
+
   let bas = 0;
-  while (monoton.length - bas >= 2 && !bagli(monoton[bas], monoton[bas + 1])) bas++;
+  for (;;) {
+    const j = sonrakiFarkli(bas);
+    if (j === -1 || bagli(monoton[bas], monoton[j])) break;
+    bas = j;
+  }
   let son = monoton.length;
-  while (son - bas >= 2 && !bagli(monoton[son - 2], monoton[son - 1])) son--;
+  for (;;) {
+    const i = son - 1;
+    const j = oncekiFarkli(i);
+    if (j === -1 || j < bas || bagli(monoton[j], monoton[i])) break;
+    son = j + 1;
+  }
 
   return monoton.slice(bas, son);
 }

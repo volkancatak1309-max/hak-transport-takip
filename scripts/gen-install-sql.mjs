@@ -96,6 +96,7 @@ const ORDER = [
   "094_yakit_hacim_arac_ekseni.sql",
   "095_yakit_dusus_kapisi_hizalama.sql",
   "096_odometre_bozuk_okuma.sql",
+  "097_odometre_blok_ve_filo_span.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

@@ -725,6 +725,79 @@ export function computeOwnerlessEvents(
   return { scorable, attributed, ownerless, outOfRoster, vehicles };
 }
 
+/** RPC yok = migration 097 çalıştırılmamış. Bir kez öğrenilir, tekrar denenmez. */
+const RPC_YOK = new Set(["PGRST202", "42883"]);
+let filoSpanRpcVar: boolean | null = null;
+
+/**
+ * FİLO GENELİ ODOMETRE AÇIKLIĞI — tek sorgu, bozuk okuma SQL'de elenmiş.
+ *
+ * ═══ NEDEN TEK ÇAĞRI ══════════════════════════════════════════════════════
+ * `getVehicleDistanceSpan` araç başına İKİ sorgu atıyor ve ham ilk/son okumayı
+ * alıyor. Cihaz tekil bozuk odometre bildirdiğinde (ölçüldü: 114 sıfır + 123
+ * monotonluk ihlali) o uç satır ya açıklığı şişiriyor ya `inconsistent`
+ * dedirtip aracı ölçüm dışı bırakıyor.
+ *
+ * Temizleme SERİ ister. Sorgu maliyeti ölçüldü (HAK61, 2026-07, 30 araç):
+ *
+ *     bugünkü (araç başına 2 sorgu)        2,85 sn ·  60 sorgu ·       2 satır
+ *     tüm seriyi çekip uygulamada temizle 57,87 sn · 605 sorgu · 590.084 satır
+ *     SQL RPC (tüm filo tek sorgu)         2,99 sn ·   1 sorgu ·      29 satır
+ *
+ * Uygulamada temizleme **20,3× yavaş** — kabul edilmedi. Kural SQL'de
+ * (migration 097), burası yalnız çağırıyor.
+ *
+ * ⚠️ FAIL-SAFE: RPC yoksa (097 çalıştırılmamış) `null` döner ve çağıran
+ * bugünkü araç-araç yoluna düşer. Davranış değişmez, yalnız kazanç gerçekleşmez.
+ */
+export async function getFleetDistanceSpans(
+  startISO: string,
+  endISO: string
+): Promise<Map<string, VehicleDistanceSpan> | null> {
+  if (filoSpanRpcVar === false) return null;
+  const { data, error } = await supabaseAdmin.rpc("fleet_odometer_spans", {
+    p_from: startISO,
+    p_to: endISO,
+  });
+  if (error) {
+    if (RPC_YOK.has(error.code ?? "") || /could not find the function/i.test(error.message ?? "")) {
+      filoSpanRpcVar = false;
+      return null;
+    }
+    // Geçici hata: RPC'yi ölü sayma, bu turda geri düş.
+    return null;
+  }
+  filoSpanRpcVar = true;
+  const out = new Map<string, VehicleDistanceSpan>();
+  const spanDays = Math.max(
+    1,
+    (new Date(endISO).getTime() - new Date(startISO).getTime()) / 86_400_000
+  );
+  for (const r of (data ?? []) as Record<string, unknown>[]) {
+    const vid = String(r.vehicle_id);
+    const a = r.odometre_ilk === null ? null : Number(r.odometre_ilk);
+    const b = r.odometre_son === null ? null : Number(r.odometre_son);
+    const firstAt = (r.ilk_an as string | null) ?? null;
+    const lastAt = (r.son_an as string | null) ?? null;
+    if (a === null || b === null) {
+      out.set(vid, { km: null, reason: "no_odometer", firstAt, lastAt });
+      continue;
+    }
+    const diff = b - a;
+    /**
+     * Makullük kapısı UYGULAMADA kalıyor: SQL fiziksel imkansızlığı eliyor,
+     * bu kapı "bu pencerede bu kadar yol mümkün mü" diye soruyor. İkisi ayrı
+     * soru; SQL'e taşımak `MAX_PLAUSIBLE_KM_PER_DAY`i iki yerde yaşatırdı.
+     */
+    if (diff < 0 || diff > spanDays * MAX_PLAUSIBLE_KM_PER_DAY) {
+      out.set(vid, { km: null, reason: "inconsistent", firstAt, lastAt });
+      continue;
+    }
+    out.set(vid, { km: diff, reason: null, firstAt, lastAt });
+  }
+  return out;
+}
+
 export async function getVehicleDistanceSpan(
   vehicleId: string,
   startISO: string,

@@ -116,14 +116,19 @@ değişikliği gerektirmiyor:
 Boş bir migration yazmak, kurulum SQL'ini ve dört hizalama dosyasını sebepsiz
 şişirirdi.
 
-⚠️ **Ama bir şey kayda geçmeli:** `hesap_surumu` sabiti hâlâ **`'090.1'`**
-(`lib/saklama-db.ts:59`). 095 düşüş kapısını değiştirdi (`< 1` →
+✅ **Sürüm etiketi çekildi (31.08.2026).** `hesap_surumu` sabiti artık
+**`'095.1'`** (`lib/saklama-db.ts`). 095 düşüş kapısını değiştirdi (`< 1` →
 `between -1 and 1`), yani 095 ÖNCESİ yazılmış satırların `dusus_sayisi`/
-`dusus_yuzde` alanları bugünkü motorla üretilenden farklı olurdu. Tablo bugün
-**boş** olduğu için pratik sonucu yok ve **bu turda dokunmadım** — ama ilk
-satır yazılmadan önce sürüm etiketi `'095.1'`e çekilmelidir. Aksi hâlde
-bayat satır ile taze satır ayırt edilemez. **CO₂ trendi bu alanları
-KULLANMIYOR** (yalnız `litre` + `km`), o yüzden S4 bundan etkilenmiyor.
+`dusus_yuzde` alanları bugünkü motorla üretilenden farklı olurdu. Bump
+yapıldığında tablo **iki kiracıda da ölçülerek boştu** (HAK61 `*/0`,
+Sendigo `*/0`), yani karışık sürümlü satır riski hiç doğmadı — geriye dönük
+düzeltme gerekmiyor. **CO₂ trendi bu alanları KULLANMIYOR** (yalnız `litre` +
+`km`), o yüzden S4 bundan etkilenmiyor.
+
+⚠️ **Kolon varsayılanı hâlâ `'090.1'`** (`090_saklama_politikasi.sql:364` ve
+dört kurulum dosyası). Ölü bir varsayılan: `ayOzetiYaz` her satırda değeri
+AÇIKÇA gönderiyor, yani varsayılan hiç devreye girmiyor. Sırf onu değiştirmek
+için migration yazmak §2.4'ün kendi gerekçesine aykırı olurdu.
 
 ---
 
@@ -246,7 +251,7 @@ olur.
 | 090 koşmamış kiracı | cron **503** döner; okuma yolu canlıya düşer |
 | Açık ay yanlışlıkla yazılır | cron açık ayı **hiç aday listesine almıyor**; yanıt `acikAyYazilmadi` ile söylüyor |
 | Ham silinmiş ay üzerine yazılır | `ayOzetiYaz` `ham_silindi_at` dolu satıra **dokunmuyor** (090'dan beri) |
-| `hesap_surumu` bayat | § 2.4 — ilk satır yazılmadan `'095.1'`e çekilmeli |
+| `hesap_surumu` bayat | ✅ KAPANDI — tablo boşken `'095.1'`e çekildi (§ 2.4) |
 
 ### 6.2 🔴 YANLIŞ DOLDUĞUNU NASIL FARK EDERİZ — doğrulama yolu
 
@@ -281,10 +286,56 @@ toplamı, tablonun `sum(litre)`si ile **son ondalığa kadar** eşleşmeli.
 Bu karşılaştırmayı yapan bir `verify:aylik-metrik` betiği **yazılmadı** —
 ayrı iş olarak sıraya alınmalı.
 
+### 6.2b 🔴 CRON KURULMADAN ÖNCE YAKALANAN İKİ KUSUR (31.08.2026)
+
+Kayıt kurulmadan yapılan ölçüm turunda, uç **hiçbir şey yazamayacak**
+durumdaydı. İkisi de düzeltildi; ikisi de canlıda ölçülerek kanıtlandı.
+
+**1 · Ay biçimi — cron 200 dönerken TEK SATIR yazmıyordu.**
+`vehicle_month_metrics.ay` bir `date` kolonu. Cron `ayAnahtari()` ile
+`"2026-07"` üretip `ayOzetiYaz()`e geçiriyordu; o dizgi üç yerde HAM
+kullanılıyor. HAK61'de salt-okuma ile ölçüldü:
+
+```
+GET /vehicle_month_metrics?ay=eq.2026-07     → 400  22007
+    "invalid input syntax for type date: "2026-07""
+GET /vehicle_month_metrics?ay=eq.2026-07-01  → 200  []
+```
+
+Üç kırılma noktası, biri **tamamen sessiz**:
+
+| # | yer | `"2026-07"` ile | görünürlük |
+|---|---|---|---|
+| 1 | upsert yükü | 22007 → `durum:"hata"` | gürültülü |
+| 2 | `.eq("ay", …)` `ham_silindi_at` kapısı | 22007, hata yutuluyor → `dokunma` boş | yarı-sessiz |
+| 3 | `telemetry_month_spans` karşılaştırması | hata yok, eşleşme yok → `spanMap` boş | **sessiz** |
+
+3. maddenin bedeli: odometre uçları, `ilk_kayit`/`son_kayit` ve
+`yakit_ornek_sayisi` null'a düşer, `ornek_sayisi` sessizce rapor alanına
+kayar — ve `ornek === 0` doğrudan `olculemedi_sebep = "cihaz_yok"` üretir.
+Yani yalnız upsert'i düzeltmek, gürültülü arızayı **sessiz yanlış veriyle**
+takas ederdi. Çare tek noktada: cron `` ayOzetiYaz(`${ay}-01`) `` çağırıyor —
+`aySiniri()` iki biçimde de aynı pencereyi verdiği için (ölçüldü) hesaplanan
+ay değişmiyor, ve diğer çağıran (`ozetiEksikAylar` → `ayBasi()`) ile aynı
+sözleşmeye oturuyor.
+
+**2 · `gecikme` varsayılanı 2 değil 0'dı.** `Number(null) === 0` ve
+`0 >= 0 && 0 <= 30` → ayrıştırıcı varsayılana hiç düşmüyordu. Yani çıplak
+`?secret=…` çağrısı bir ayı, kapandığının **ertesi gecesi** yazardı; bu
+belgenin geç-telemetri koruması fiilen KAPALIYDI. (`geri`de görünmüyordu:
+`0 >= 1` yanlış olduğu için oraya varsayılan geliyordu.) Ayrıştırıcı artık
+parametre yok/boşken varsayılana düşüyor — kayıt komutuna `&gecikme=2`
+yazmak **artık gerekmiyor**, ama yazmak da zarar vermez.
+
+Ayrıca: `maxDuration = 300` eklendi (kardeş cron'larla aynı; ilk tur altı ayı
+birden yazıyor) ve 503 gövdesine `detay` alanı kondu — koşul çıplak
+`if (okuHata)` olduğu için geçici bir DB hatası da `migration_090_yok`
+etiketiyle 503 döner, gerçek sebep artık gövdede.
+
 ### 6.3 Ne YAPILMADI
 
 - Migration — **gerekmedi** (§ 2.4)
-- `hesap_surumu` bumpı — bilinçli ertelendi (§ 2.4)
+- ~~`hesap_surumu` bumpı~~ — ✅ **yapıldı** 31.08.2026, tablo boşken (§ 2.4)
 - Otomatik bayatlık denetimi — bilinçli ertelendi (§ 3)
 - `verify:aylik-metrik` doğrulama betiği — **yazılmadı**, sıraya alınmalı
 - Cron kaydı — Volkan kuracak (`docs/CRON-KAYITLARI.md` § 10)

@@ -481,12 +481,30 @@ bu arada canlı yoldan okunur, yani bekleme hiçbir ekranı geciktirmez.
 
 | Kod | Anlamı | Ne yapmalı |
 |-----|--------|------------|
-| 200 | Tur tamam (`yazilan`, `aylar[]`, `acikAyYazilmadi`) | — |
+| 200 | Tur tamam (`yazilan`, `aylar[]`, `acikAyYazilmadi`) | ⚠️ aşağıya bak |
 | 401 | Sır yanlış/tanımsız | Vercel env'i kontrol et |
-| 503 | migration **090** çalıştırılmamış | SQL'i çalıştır |
+| 503 | migration **090** çalıştırılmamış — **ya da** geçici DB hatası | Gövdedeki `detay` alanını oku; 090 gerçekten yoksa SQL'i çalıştır |
+
+🔴 **200 tek başına "yazdı" demek DEĞİLDİR.** Ay bazındaki başarısızlık HTTP
+kodunu değiştirmiyor: bir ay hata alırsa `aylar[]` içinde
+`durum:"hata", sebep:"…"` görünür ama yanıt yine `200 / ok:true` döner.
+**Kaydı kurduktan sonra ilk çağrının gövdesine bak**, koda değil: `yazilan`
+sıfırdan büyük mü, `aylar[]` içinde `"hata"` var mı.
 
 **İDEMPOTENT:** ikinci çağrı `tazele` verilmedikçe yazılmış ayları atlar ve
-`yazilan: 0` döner.
+`yazilan: 0` döner. Atlama kararı **yalnız o ayın satırı var mı** diye
+bakıyor; kısmi yazılmış bir ayı (ör. 29 aracın 3'ü) `atlandi_var` sayıp
+geçer — düzeltmenin tek yolu `?tazele=1`.
+
+### 31.08.2026 — kayıt kurulmadan önce düzeltilen iki kusur
+
+Bu uç kurulmadan yapılan ölçümde **hiçbir şey yazamayacak** durumdaydı:
+cron ayı `"2026-07"` biçiminde geçiriyordu ama `vehicle_month_metrics.ay`
+bir `date` kolonu → PostgREST **22007** döndürüyordu, üstelik uç yine
+`200 / ok:true` diyordu. İkincisi: `gecikme` parametresi verilmediğinde
+varsayılan 2 yerine **0** oluyordu (`Number(null) === 0`), yani geç gelen
+telemetri beklemesi fiilen kapalıydı. İkisi de düzeltildi; ayrıntı ve canlı
+ölçüm: [`docs/AYLIK-METRIK.md`](AYLIK-METRIK.md) § 6.2b.
 
 ⚠️ **Bu kayıt kurulmazsa ekran bozulmaz**, yalnız yavaş kalır: aylık seri
 canlı yola düşer (bugünkü davranış) ve satırı olmayan ay "hesaplanmadı"

@@ -56,7 +56,17 @@ const FONKSIYON_YOK = new Set(["PGRST202", "42883"]);
 const fonksiyonYokMu = (e: { code?: string; message?: string } | null) =>
   !!e && (FONKSIYON_YOK.has(e.code ?? "") || /could not find the function/i.test(e.message ?? ""));
 
-export const HESAP_SURUMU = "090.1";
+/**
+ * Satırı ÜRETEN motorun sürümü. Okuma yolu bunu KULLANMIYOR — damgadır:
+ * bayat satır ile taze satırı ayırt etmenin tek yolu.
+ *
+ * 090.1 → 095.1 (31.08.2026): 095 düşüş kapısını değiştirdi
+ * (`odo - prev_odo < 1` → `between -1 and 1`), yani 095 öncesi bir motorla
+ * yazılmış `dusus_sayisi`/`dusus_yuzde` bugünkü motorla üretilenden farklı
+ * olurdu. Tablo bumpı yapıldığında ÜÇ KİRACIDA DA BOŞTU (ölçüldü: HAK61 0,
+ * Sendigo 0 satır), yani geriye dönük karışık sürüm riski hiç doğmadı.
+ */
+export const HESAP_SURUMU = "095.1";
 
 /** Uyarı ve silme yüzeyindeki ham tablolar. */
 export const HAM_TABLOLAR = ["device_telemetry", "driver_locations"] as const;

@@ -4,6 +4,12 @@ import { ayOzetiYaz } from "@/lib/saklama-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/**
+ * İlk tur `geri=6` ile altı ayı birden yazar; her ay ~180-200 sorgu ve araç
+ * ekseninde fan-out. Kardeş cron'lar (`skor-donem`, `haftalik-aksiyon`,
+ * `mevzuat-tarama`) da 300 bildiriyor.
+ */
+export const maxDuration = 300;
 
 /**
  * AYLIK METRİK — gece cron'u (S4). `vehicle_month_metrics` (migration 090).
@@ -114,7 +120,17 @@ async function run(o: { geri: number; gecikmeGun: number; tazele: boolean; kuru:
   if (okuHata) {
     return {
       status: 503,
-      body: { ok: false, error: "migration_090_yok", hint: "db/migrations/090_saklama_politikasi.sql çalıştırılmadı" },
+      body: {
+        ok: false,
+        error: "migration_090_yok",
+        hint: "db/migrations/090_saklama_politikasi.sql çalıştırılmadı",
+        /**
+         * ⚠️ Koşul çıplak `if (okuHata)` — geçici bir DB hatası ya da ifade
+         * zaman aşımı da bu etiketle 503 döner. Etiketi tanı sanma; gerçek
+         * sebep burada.
+         */
+        detay: okuHata.message ?? null,
+      },
     };
   }
   const yazilmis = new Set(
@@ -137,7 +153,18 @@ async function run(o: { geri: number; gecikmeGun: number; tazele: boolean; kuru:
       sonuc.push({ ay: a.ay, durum: "yazildi", sebep: "kuru" });
       continue;
     }
-    const r = await ayOzetiYaz(a.ay);
+    /**
+     * 🔴 TAM TARİH ZORUNLU. `vehicle_month_metrics.ay` bir `date` kolonu;
+     * `ayOzetiYaz` aldığı dizgiyi üç yerde HAM olarak kullanıyor (upsert
+     * yükü, `.eq("ay", …)` kapısı, `telemetry_month_spans` karşılaştırması).
+     * `"2026-07"` geçirmek canlıda ölçüldü: PostgREST **22007
+     * "invalid input syntax for type date"** döndürüyor — yani cron
+     * 200/`ok:true` dönerken TEK SATIR yazmıyordu. Diğer çağıran
+     * (`ozetiEksikAylar` → `ayBasi()`) zaten `YYYY-MM-01` veriyor; sözleşme bu.
+     * `aySiniri()` iki biçimde de AYNI pencereyi veriyor (ölçüldü), yani
+     * hesaplanan ay değişmiyor.
+     */
+    const r = await ayOzetiYaz(`${a.ay}-01`);
     if (!r.ok) {
       sonuc.push({ ay: a.ay, durum: "hata", sebep: r.hata });
       continue;
@@ -172,8 +199,17 @@ async function handle(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
   const sp = req.nextUrl.searchParams;
+  /**
+   * 🔴 `Number(null) === 0`. Eski hâli parametre YOKKEN varsayılana düşmüyordu:
+   * `gecikme` için 0 >= 0 ve 0 <= 30 sağlandığı için **0** dönüyordu, yani
+   * belgelenmiş 2 günlük "geç gelen telemetri" beklemesi fiilen KAPALIYDI ve
+   * çıplak `?secret=…` çağrısı ayı, kapandığının ertesi gecesi yazardı.
+   * (`geri`de görünmüyordu: 0 >= 1 yanlış olduğu için varsayılana düşüyordu.)
+   */
   const say = (ad: string, varsayilan: number, enAz: number, enCok: number) => {
-    const n = Number(sp.get(ad));
+    const ham = sp.get(ad);
+    if (ham === null || ham.trim() === "") return varsayilan;
+    const n = Number(ham);
     return Number.isFinite(n) && n >= enAz && n <= enCok ? n : varsayilan;
   };
   const { status, body } = await run({

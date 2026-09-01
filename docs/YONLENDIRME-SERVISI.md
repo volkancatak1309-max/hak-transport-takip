@@ -1,8 +1,10 @@
 # Yönlendirme servisi — `POST /api/kiraci-bul`
 
-**Durum:** 🔴 **TASARIM + REFERANS UYGULAMA. HİÇBİR DEPOYA KOD YAZILMADI.**
-Hedef depo bu depo **değil** (§ 1) ve henüz açılmadı — görevin kuralı gereği
-bekletiliyor.
+**Durum:** ✅ **DEPO AÇILDI, KOD YAZILDI, VERCEL PROJESİ KURULDU** (§ 10).
+Depo: `volkancatak1309-max/galzura-kiraci-bul` (private) · yerelde
+`Desktop/business/galzura-kiraci-bul`.
+🔴 **PUSH ve DEPLOY YOK** — commit'ler yerelde bekliyor.
+⏳ Kalan iki iş Volkan'da: Cloudflare DNS kaydı ve Vercel env'leri (§ 11).
 **Ölçüm tarihi:** 01.09.2026 · canlı uçlar + Vercel CLI, **salt okuma**.
 **Karşı taraf:** [`KIRACI-SORGU-UCU.md`](KIRACI-SORGU-UCU.md) — kiracı panelindeki
 uç, üç kiracıda da canlı ve kabul testi **19/19**.
@@ -13,8 +15,8 @@ uç, üç kiracıda da canlı ve kabul testi **19/19**.
 
 | Soru | Cevap |
 |---|---|
-| **Hangi depo?** | 🔴 **Bu depo DEĞİL.** `galzura.com` → Vercel projesi `galzura-software`; **Git'e bağlı değil**, CLI ile atılmış 43 günlük statik site (§ 1) |
-| **Önerim** | Yeni, ayrı depo + ayrı Vercel projesi + `kiraci.galzura.com` alt alanı — pazarlama sitesiyle aynı projeye KOYMA (§ 1.3) |
+| **Hangi depo?** | Bu depo DEĞİL. Ölçüldü: `galzura.com` → `galzura-software`, **Git'e bağlı değil**, CLI ile atılmış statik site (§ 1) |
+| **Ne yapıldı** | ✅ Ayrı private depo `galzura-kiraci-bul` + ayrı Vercel projesi + Git bağlantısı kuruldu (§ 10). Push/deploy YOK |
 | Girdi | `{"telefon":"+43…"}` — PIN **yok**, gövdede gelirse 400 |
 | Çıktı | Yalnız o numaranın **kendi** kiracıları: `kod` + `ad` + `adres`; eşleşme yoksa **boş liste** |
 | Sorgu biçimi | Üç kiracıya **paralel**, `Promise.allSettled`, **hepsi beklenir** |
@@ -95,8 +97,10 @@ hepsi yukarıdaki ölçümden:
 > o zaman `galzura-software` önce **Git'e bağlanmalı**, yoksa muhafız ve inceleme
 > hiç kurulamaz.
 
-**Bu yüzden kod buraya yazılmadı.** § 7'deki referans uygulama, depo açılınca
-kopyalanacak hâlde. Kararı sen ver, depoyu aç, dosyaları oraya taşıyayım.
+> ✅ **UYGULANDI (01.09.2026).** Depo `galzura-kiraci-bul` adıyla açıldı ve
+> Vercel projesi kuruldu — ayrıntı ve kurulum kaydı § 10'da. § 7'deki referans
+> uygulama gerçek koda çevrildi; adres olarak `kiraci.galzura.com` hedefleniyor
+> ve DNS kaydı § 11.1'de bekliyor.
 
 ---
 
@@ -640,3 +644,176 @@ kasıtlı olarak boz, muhafızın kırıldığını gör, geri yükle).
 | 4 | **Soğuk başlangıç ayrıştırılmadı** | 2500 ms marjın gerekçesi bu belirsizlik. Servis canlıya çıkınca gerçek kuyruk ölçülüp daraltılabilir |
 | 5 | **APK'daki firma seçici hâlâ yerinde** | Servis hazır olsa da liste kalkmadan sızıntı sürüyor — mobil deponun işi |
 | 6 | **galzura-demo kadrosu ölçülemedi** | service_role anahtarı verilmiyor; uç üzerinden dolaylı ölçüldü (§ 5) |
+
+---
+
+## 10. Kurulum kaydı — 01.09.2026
+
+### Araçlar (önce ölçüldü)
+
+| Araç | Durum |
+|---|---|
+| `gh` 2.92.0 | ✅ giriş var (`volkancatak1309-max`), scope'lar `repo`, `workflow`, `read:org`, `gist` |
+| `vercel` 58.9.0 | ✅ oturum açık (`volkancatak1309-max`) |
+| Cloudflare | ❌ **hiçbir şey yok** — `wrangler` yok, `flarectl` yok, `CLOUDFLARE_*`/`CF_*` env yok, `~/.cloudflared` / `~/.wrangler` yok |
+
+Cloudflare kimliği olmadığı için **DNS kaydı yapılamadı** (§ 11.1).
+
+### Yapılanlar
+
+| Adım | Sonuç |
+|---|---|
+| Depo | `volkancatak1309-max/galzura-kiraci-bul` — **private**, boş başlatıldı (README/gitignore/license yok) |
+| Kod | Üç commit, **yalnız yerelde** — `055e120`, `8d6ba32`, `808fd82` |
+| Vercel projesi | `galzura-kiraci-bul` (`prj_rmoDWhG5EZ5ONpH3A0azIREZ6K84`) |
+| Git bağlantısı | ✅ doğrulandı — `vercel git connect` ikinci çağrıda *"already connected"* dedi |
+| Bölge | `fra1` — hem her rotada `preferredRegion` hem `vercel.json` |
+| **Push / deploy** | ❌ **YAPILMADI** (görevin kuralı) |
+
+### 🔴 Yakalanan tuzak: çatı ön ayarı "Other"
+
+Proje CLI ile **boş** oluşturulduğu için Vercel çatıyı tespit edemedi ve
+`Framework Preset: Other`, `Output Directory: public` yazdı — oysa bu bir
+Next.js uygulaması. Ayar böyle kalsaydı dağıtım yanlış şeyi servis ederdi.
+
+Bu, `galzura-software` projesinde **bugün de duran** ayarın aynısı (§ 1.1) —
+yani rastlantı değil, CLI ile boş proje açmanın standart sonucu.
+
+Panelden değil **dosyadan** düzeltildi:
+
+```json
+{ "framework": "nextjs", "regions": ["fra1"] }
+```
+
+`vercel.json` panel ayarını **ezer** ve karar depoda kayıtlı kalır. Yerel
+`vercel build` ile doğrulandı: `Detected Next.js version: 16.2.6`, iki uç da
+fonksiyon olarak üretildi.
+
+> Yerel `vercel build` sonunda `EPERM: symlink` hatası veriyor. Bu **Windows'un
+> symlink izni**, yapılandırma sorunu değil — Vercel'in Linux derleyicisi
+> yaşamaz. Derlemenin Next.js'i tanıdığı ve fonksiyonları ürettiği hata
+> ÖNCESİNDE görüldü.
+
+### Doğrulama
+
+| Adım | Sonuç |
+|---|---|
+| `npx tsc --noEmit` | 0 hata |
+| `npx eslint` | 0 problem |
+| `npm run build` | ✅ iki uç da `ƒ` (dinamik) |
+| `npm run lint:kiracilar` | **6/6** |
+| Muhafız arıza enjeksiyonu | **7 kasıtlı bozma → 7 yakalama** |
+| Canlı kabul · Tur 1 (gerçek üç kiracı) | **12/12** |
+| Canlı kabul · Tur 2 (sahte arızalı kiracı) | 5 arıza kipi × 3 denetim = **15/15** |
+
+**Kiracı tarafında hiçbir yazma yok** — sorgu ucu yalnız `SELECT` yapıyor.
+
+#### Tur 1'in en önemli satırı
+
+Gerçek bir yönetici numarası sorulduğunda servis **üç kiracıyı birden** döndürdü:
+
+```
+→ eşleşen kiracılar: hak61, sendigo, galzura-demo
+sağlık ucu: hak61 hazir 120 ms · sendigo hazir 144 ms · galzura-demo hazir 119 ms
+```
+
+§ 7.1'deki çoklu eşleşme, artık **servisin kendisinden** uçtan uca kanıtlı.
+
+#### Tur 2 — kural 4'ün asıl kanıtı
+
+Sahte bir kiracı ölçülen bozuk davranışları taklit etti. Beşinde de `tam:false`
+döndü, liste kirlenmedi, gövdeye kiracı kodu sızmadı:
+
+| Arıza | Sonuç |
+|---|---|
+| `html200` (200 + HTML, `/_not-found` deseni) | `tam:false` · 347 ms |
+| `503 yapilandirilmadi` | `tam:false` · 166 ms |
+| `kodYanlis` (başka kiracının kodu) | `tam:false` · 151 ms |
+| `varYok` (JSON ama `var` alanı yok) | `tam:false` · 162 ms |
+| `askida` (hiç cevap vermiyor) | `tam:false` · **2523 ms** ← 2500 ms zaman aşımı çalışıyor |
+
+Ve **gerçek numarayla**, bir kiracı 200+HTML dönerken:
+
+```
+eşleşen kiracılar : hak61, sendigo      ← sağlam ikisi NORMAL döndü
+tam               : false               ← üçüncüsü "hayır"a ÇEVRİLMEDİ
+gövde alanları    : kiracilar,ok,tam    ← kiracı kodu sızmadı
+```
+
+Kural 4 tam olarak buydu: arızalı bir kiracının personeli, listeden sessizce
+düşmez — cevap "eksik" olarak işaretlenir.
+
+### ⚠️ Muhafızın kendi iki zayıflığı (enjeksiyonda yakalandı)
+
+Muhafız ilk yazımda **geçiyordu ama iki deliği vardı**:
+
+1. **K3** cevap alanlarını regex'le "geziyor"du ve `{ok, kiracilar, tam}`
+   gövdesinde **`tam`ı kaçırıyordu** — önceki eşleşme ayırıcı virgülü
+   tüketiyordu. Yani gövdeye sızmış bir alan varken yeşil kalabilirdi.
+   Virgülle bölmeye çevrildi; `lib/kapi.ts` de taranıyor.
+2. **K6** yalnız `"application/json" dizesi geçiyor mu` diye bakıyordu. O dize
+   istek **başlıklarında** da geçtiği için, koruma `if (false)` yapılıp devre
+   dışı bırakıldığında muhafız **yeşil kaldı**. Üç koşulun tam metnini arayacak
+   şekilde sıkılaştırıldı.
+
+Ders: bir muhafızın geçmesi, çalıştığını kanıtlamaz. **Arıza enjeksiyonu
+olmadan muhafız yazılmaz.**
+
+---
+
+## 11. ⏳ Volkan'da kalan iki iş
+
+### 11.1 Cloudflare DNS — `kiraci.galzura.com`
+
+Bende Cloudflare kimliği **yok**, bu adım yapılamadı.
+
+Cloudflare panelinde `galzura.com` bölgesi → **DNS** → **Add record**:
+
+| Alan | Değer |
+|---|---|
+| Type | **CNAME** |
+| Name | **`kiraci`** |
+| Target | **`cname.vercel-dns.com`** |
+| Proxy status | **DNS only** (gri bulut — 🔴 turuncu DEĞİL) |
+| TTL | Auto |
+
+> 🔴 **Proxy neden KAPALI:** Cloudflare turuncu buluttayken araya kendi
+> önbelleği, WAF'ı ve zaman aşımları giriyor. Bu giriş yolunda bir "Cache
+> Everything" kuralı, yönlendirme cevabını önbelleğe alır ve **yanlış kişiyi
+> yanlış kiracıya** gönderir. Gecikme gerekçesi değil (ölçüldü: Cloudflare
+> yavaşlatmıyor, § 1.3) — **yapılandırma yüzeyini** kesmek için.
+
+Sonra Vercel'de: **galzura-kiraci-bul → Settings → Domains → Add** →
+`kiraci.galzura.com`.
+
+### 11.2 Vercel env — proje `galzura-kiraci-bul`
+
+**Environment: Production** (dördü de), tipi **Sensitive**:
+
+| Değişken | Değer |
+|---|---|
+| `GALZURA_APP_KEY` | yeni üretilecek — mobil uygulamaya da girilecek |
+| `KIRACI_SIR_HAK61` | HAK61 panelindeki `KIRACI_SORGU_SECRET` ile **aynı** |
+| `KIRACI_SIR_SENDIGO` | Sendigo panelindeki ile **aynı** |
+| `KIRACI_SIR_GALZURA_DEMO` | galzura-demo panelindeki ile **aynı** |
+
+> ⚠️ **Env girmek tek başına yetmez: sonra REDEPLOY.** Vercel env'i, eklendikten
+> SONRA yapılan bir dağıtımla etkinleşir. 01.09'da HAK61'de tam olarak bu
+> atlandı ve panel `503` döndü ([`KIRACI-SORGU-UCU.md`](KIRACI-SORGU-UCU.md) § 15).
+
+Dağıtımdan sonra tek komutla doğrulanır:
+
+```bash
+curl -s https://kiraci.galzura.com/api/kiraci-bul/saglik \
+  -H "x-galzura-app: $GALZURA_APP_KEY"
+# {"ok":true,"hazir":3,"toplam":3,…}
+```
+
+`hazir < toplam` ise hangi kiracının `sir_yok` / `eski_surum` / `ulasilamadi`
+olduğunu aynı cevap söyler.
+
+### 11.3 Push ve ilk dağıtım — **senin iznin bekleniyor**
+
+Kod yerelde üç commit hâlinde hazır. "Push et" dediğinde:
+`git push -u origin main` → Vercel Git bağlantısı ilk üretim dağıtımını
+tetikler.

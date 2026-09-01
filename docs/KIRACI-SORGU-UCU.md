@@ -1,6 +1,8 @@
 # Kiracı sorgu ucu — `POST /api/mobile/kiraci-sorgu`
 
-**Durum:** dalda (`feat/kiraci-sorgu-ucu`), main'e dokunulmadı, deploy YOK.
+**Durum:** ✅ **MAIN'DE, ÜÇ KİRACIDA DA CANLI** (`8c14ba0`, 01.09.2026).
+⏳ `KIRACI_SORGU_SECRET` env'i **hiçbir kiracıda girilmedi** — uç şu an
+üçünde de `503 yapilandirilmadi` dönüyor (tasarım gereği; § 13).
 **Ölçüm tarihi:** 01.09.2026 · HAK61 ve Sendigo canlı veritabanları, **salt okuma**.
 **Kod:** `app/api/mobile/kiraci-sorgu/route.ts` · `lib/auth-core.ts` (ortak çekirdek)
 **Muhafız:** `npm run lint:kiraci-sorgu` · **Canlı kanıt:** `npm run verify:kiraci-sorgu`
@@ -524,7 +526,7 @@ her dal `return` ediyordu). `bcrypt.compare` **her yolda tam bir kez** ve kapıd
 | 1 | **galzura-demo ölçülemedi** | service_role anahtarı verilmiyor (karar kayıtlı). Kod ve şema özdeş olduğu için uç orada da çalışır; **kadro sayısı ve çakışma ölçülmedi**. `KIRACI_SORGU_SECRET` oraya da girilmeli |
 | 2 | **Yönlendirme servisi yazılmadı** | Bu görevin kapsamı 2. adım. § 7'deki beş madde karşı tarafa geçmeli |
 | 3 | **Mobil APK'daki firma seçici hâlâ yerinde** | Kaldırma mobil deponun işi. Uç hazır olsa da liste kalkmadan sızıntı sürüyor |
-| 4 | **Deploy yok** | Dal `feat/kiraci-sorgu-ucu`, main'e dokunulmadı, push yok — görevin kuralı |
+| 4 | **Env üç kiracıda da BEKLİYOR** | Kod canlı, uç `503 yapilandirilmadi` diyor. Sırlar üretildi ve Volkan'a verildi (**repoya yazılmadı**); Vercel'e girilince § 14'teki curl ile doğrulanacak |
 | 5 | **`canonicalPhone` devirgen değil** | § 3. Bugün yalnız Sendigo'nun test hesabını etkiliyor, gerçek personeli değil. Düzeltilecekse `lib/phone.ts`te düzeltilir ve **giriş de** düzelir; ayrı bir iş |
 | 6 | **`npm run verify` ESLint tarafı hâlâ kırmızı** | Mevcut duruma ait (CLAUDE.md). Bu dal sayıyı **artırmadı**: 43 problem / 28 hata → **43 problem / 28 hata**, `lint:test-filters` tek bulgusu aynı (`lib/auto-shift.ts:825`). Ölçüm `git stash push -u` ile önce/sonra alındı |
 
@@ -541,3 +543,101 @@ her dal `return` ediyordu). `bcrypt.compare` **her yolda tam bir kez** ve kapıd
 | `scripts/measure-kiraci-sorgu-zamanlama.mjs` | § 4 ölçümü (sınıf içi gürültü tabanı) |
 | `scripts/measure-kiraci-sorgu-kapsam.mjs` | § 3, § 5, § 7 ölçümü (maruziyet · biçim · çakışma) |
 | `.env.example` · `docs/YENI-MUSTERI-KURULUM.md` | `KIRACI_SORGU_SECRET` + kabul testi 8. satır |
+
+---
+
+## 13. Yayın kaydı — 01.09.2026
+
+`feat/kiraci-sorgu-ucu` → `main`, **ileri sarma** (fast-forward). Gönderilen iki
+commit yalnız bu işe ait; daldaki diğer 28 commit (takograf · yakıt · CO₂ · cron ·
+odometre) **zaten `origin/main`de vardı**, yerel `main` referansı bayattı çünkü
+başka bir worktree'de checkout'lu duruyor.
+
+```
+cde9402..8c14ba0  feat/kiraci-sorgu-ucu -> main
+  2432f85 feat(kiraci-sorgu): mobil giris yonlendirmesi icin evet/hayir ucu
+  8c14ba0 docs(kiraci-sorgu): olmayan rota 200+HTML donuyor
+```
+
+### Öncesi / sonrası
+
+| Denetim | ÖNCE (`cde9402`, canlı) | SONRA (`8c14ba0`) |
+|---|---|---|
+| `npx tsc --noEmit` | 0 hata | 0 hata |
+| `npm run build` | ✓ derlendi | ✓ derlendi · `/api/mobile/kiraci-sorgu` manifest'te |
+| 13 muhafız | 12 ✓ · `test-filters` ✗ (1 bulgu, bilinen) | 12 ✓ · `test-filters` ✗ (**aynı** 1 bulgu) |
+| `lint:kiraci-sorgu` | — betik yok | ✓ 6/6 |
+| ESLint | 43 problem (28 hata, 15 uyarı) | **43 problem (28 hata, 15 uyarı)** |
+
+> ⚠️ İlk `tsc` turu **kirli ölçümdü**: `.next/types/validator.ts` bir önceki
+> derlemeden kalmış ve olmayan rotayı arıyordu. `.next` silinip yeniden ölçüldü.
+> Ders: sürüm karşılaştırırken `.next` temizlenmeden `tsc` çalıştırılmaz.
+
+### Dağıtım sonrası — SALT OKUMA
+
+**Uç canlı, üç kiracıda da fail-closed** (env henüz yok):
+
+| Kiracı | POST | GET | Başlıklar |
+|---|---|---|---|
+| HAK61 | `503` `{"ok":false,"hata":"yapilandirilmadi"}` · `application/json` | `405 sadece_post` | `no-store, private` · `noindex, nofollow` |
+| Sendigo | aynı | aynı | aynı |
+| galzura-demo | aynı | aynı | aynı |
+
+**"Hayır" DEĞİL, "beni kurmadınız"** — tasarımın en önemli maddesi canlıda
+doğrulandı (§ 6).
+
+> Not: env girilmeden **PIN'li gövde de `503`** dönüyor, `400` değil. Doğru
+> sıra bu: sır kapısı gövde ayrıştırmadan ÖNCE. Env girildikten sonra
+> `pin_gonderilmemeli` + `400` görülecek.
+
+**flespi akışı kesilmedi:**
+
+| | HAK61 önce | HAK61 sonra | Sendigo önce | Sendigo sonra |
+|---|---|---|---|---|
+| Son satırın yaşı | 17 sn | **19 sn** | 67 sn | **123 sn** |
+| Yutulma gecikmesi | 5 sn | 6 sn | 25 sn | 50 sn |
+| Son 15 dk | 873 satır · 15 araç | **812 satır · 13 araç** | 140 satır · 1 araç | **168 satır · 1 araç** |
+| Son 60 dk | 3.808 satır | 3.701 satır | 452 satır | 482 satır |
+
+Sayılardaki oynama REST-poll döngüsünün normal dalgalanması; ikisinde de son
+satır dakikalar içinde ve akış sürüyor. (`scripts/measure-yayin-sagligi.mjs`)
+
+---
+
+## 14. ⏳ SIRADAKİ ADIM — env girildikten sonra tek curl
+
+Volkan Vercel'e `KIRACI_SORGU_SECRET`i girip **redeploy** ettikten sonra
+(env değişikliği tek başına çalışan dağıtıma yansımaz), her kiracı için:
+
+```bash
+SIR='<o kiracının sırrı>'
+curl -s -w '
+→ HTTP %{http_code} · %{content_type}
+'   -X POST https://demo.galzura.com/api/mobile/kiraci-sorgu   -H "authorization: Bearer $SIR"   -H 'content-type: application/json'   -d '{"telefon":"+436600000042"}'
+```
+
+**Beklenen:**
+
+```
+{"ok":true,"var":false,"kod":"galzura-demo"}
+→ HTTP 200 · application/json
+```
+
+Bu tek istek **beş şeyi birden** kanıtlar: rota dağıtıldı (JSON döndü) · env
+girildi (`503` değil) · sır iki tarafta aynı (`401` değil) · veritabanına
+ulaşılıyor (`db_hatasi` değil) · doğru kiracıya bağlanıldı (`kod`).
+
+| Gelen | Anlamı |
+|---|---|
+| `503 yapilandirilmadi` | env girilmemiş **ya da girilip redeploy edilmemiş** |
+| `401 yetkisiz` | sır curl'deki ile Vercel'dekinden farklı |
+| `503 db_hatasi` | env var, sır doğru, ama Supabase'e ulaşılamıyor |
+| `200` + HTML (`kod` yok) | yanlış adres ya da dağıtım geride (§ 7.5) |
+| `"kod"` beklenenden başka | yanlış kiracıya bakılıyor |
+
+**Tam kanıt için** `+436600000042` yerine o kiracıda **kayıtlı bir yönetici
+numarası** yazın; beklenen `"var":true`. Yalnız `false` yolu, sorgunun doğru
+Supabase projesine gittiğini kanıtlamaz — kayıt bulan bir istek kanıtlar.
+
+⚠️ Sır komut satırında geçiyor: `SIR` değişkenini kullanın ve iş bitince kabuk
+geçmişini temizleyin (`history -d`).

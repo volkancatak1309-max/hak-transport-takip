@@ -21,7 +21,7 @@
 | Yeni kiracıda | kod olarak **kendiliğinden var**; env **girilmeli**, girilmezse 503 der (§ 6) |
 | Migration | **yok** — kullandığı üç kolon da şema 001'den beri mevcut |
 
-**Üç bulgu, sırayla önem:**
+**Dört bulgu, sırayla önem:**
 
 1. 🔴 **İki numara HEM HAK61'de HEM Sendigo'da kayıtlı** (ikisi de aktif yönetici).
    Yayılma modeli bugün **iki "evet"** üretiyor. Yönlendirme servisi ilk evette
@@ -30,6 +30,9 @@
    bir katman yukarıda, **yönlendirme servisinin kendisinde** duruyor. → § 4.3
 3. Sendigo'da uç **8 aktif kişiden yalnız 3'üne** "evet" diyecek — şoför paneli
    kapalı olduğu için. Bu bir kusur değil, girişin bugünkü davranışı. → § 5
+4. 🔴 Bu uygulama, **olmayan bir yola `200` + HTML** döndürüyor (`X-Matched-Path:
+   /_not-found`, ölçüldü). `status === 200` denetimi "cevap geldi" anlamına
+   GELMEZ; servis `content-type: application/json` de aramalı. → § 7.5
 
 ---
 
@@ -366,7 +369,36 @@ gömülmez — telefon bu ucu hiç çağırmaz, yönlendirme servisini çağır�
 Yönlendirme servisinin **kendi** kapısı (telefon → servis) ayrı bir konu ve bu
 belgenin kapsamı dışında.
 
-### 7.5 Kiracı adresleri servis tarafında
+### 7.5 🔴 `200` "cevap geldi" DEMEK DEĞİLDİR — ölçüldü
+
+Yayın öncesi üç kiracıya da uç henüz yokken sorduk. Beklenen `404`'tü;
+**gelen `200` oldu:**
+
+```
+$ curl -s -D - -X POST https://hak-transport-takip.vercel.app/api/mobile/kiraci-sorgu \
+       -H 'content-type: application/json' -d '{"telefon":"+436600000042"}'
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+X-Matched-Path: /_not-found          ← rota YOK
+<!DOCTYPE html><html … data-tenant="hak61" …
+```
+
+Bu uygulama, eşleşmeyen yolda kendi "bulunamadı" **sayfasını** `200` ile
+döndürüyor. Yani `res.ok` / `status === 200` denetimi **yalanlanabilir**:
+dağıtılmamış, yanlış adresli ya da hiç güncellenmemiş bir kiracı "cevap verdi"
+gibi görünür.
+
+**Sözleşme:** yönlendirme servisi bir cevabı ancak şu üçü birden sağlıyorsa
+kabul etmeli:
+
+1. `content-type` **`application/json`** — HTML gelirse cevap değil, sayfadır
+2. Gövde ayrıştırılabiliyor ve **`ok` alanı var**
+3. `var` alanı **boolean**
+
+Üçünden biri tutmuyorsa cevap **"hayır" değil, "bilinmiyor"** (§ 7.3) — ve
+loglanmalı: bu, o kiracının dağıtımının geride kaldığının tek işareti.
+
+### 7.6 Kiracı adresleri servis tarafında
 
 Uç yalnız `kod` (kiracı kodu) döner, adres dönmez — adresi zaten servis biliyor
 (o çağırdı). `kod`, yanlış eşlenmiş bir kayıt olup olmadığını anlamak için.

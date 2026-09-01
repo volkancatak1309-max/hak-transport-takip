@@ -889,3 +889,76 @@ zinciri kapanır.
 Zincirin gerçek son halkası — doğru PIN ile giriş — **telefondan, Volkan
 tarafından** yapılır. Onu bir betikle taklit etmek, canlı müşteri verisine
 yazmak demektir.
+
+---
+
+## 13. Yayın — 01.09.2026 · ✅ CANLI
+
+`https://kiraci.galzura.com` · dağıtım `● Ready` (25 sn) · commit `c197c3e`.
+
+### 🔴 İlk push BLOKLANDI — sebep commit yazarıydı
+
+İlk push (`ff38448`) dağıtılmadı ve bu **sessiz bir arıza** oldu:
+
+| Nerede | Ne görünüyordu |
+|---|---|
+| Vercel | dağıtım `UNKNOWN`, derleme `[0ms]`, süre `?` |
+| `vercel inspect --logs` | **hiç günlük yok** — "neden derlenmedi" diye bakacak yer yok |
+| `kiraci.galzura.com` | `404 DEPLOYMENT_NOT_FOUND` (11 dakika boyunca) |
+| **GitHub** | `Vercel — Deployment was blocked` · **failure** ← tek konuşan yer |
+
+Teşhis GitHub'a yazarı çözdürerek yapıldı:
+
+```bash
+gh api repos/…/commits/ff38448 --jq '{yazar:.commit.author.email, hesap:(.author.login // "ESLESMIYOR")}'
+# {"yazar":"…@proton.me","hesap":"ESLESMIYOR — hicbir GitHub hesabina bagli degil"}
+
+gh api repos/…/hak-transport-takip/commits/f52cc84 --jq '…'
+# {"yazar":"volkancatak1309@gmail.com","hesap":"volkancatak1309-max"}   ← sorunsuz dagitilan
+```
+
+**Sebep:** commit'ler, hesaba bağlı OLMAYAN bir e-posta ile imzalanmıştı
+(deponun kendi `git config` değeri doğruydu, üzerine yazılmıştı). Vercel, Git
+ile tetiklenen dağıtımlarda **commit yazarını** hesapla eşleştiriyor;
+eşleşmezse dağıtım **başlamıyor bile**.
+
+**Çözüm:** depo git ayarı düzeltildi, doğru e-postayla yeni bir commit atıldı →
+`Deployment has completed · success`. Geçmiş **yeniden yazılmadı**: dağıtımı
+tetikleyen, push edilen HEAD'dir. (Önceki dört commit'in yazarı bağlı değil;
+geçmişin de düzeltilmesi isteniyorsa ayrı bir iş.) Tuzak servis deposunun
+README'sine yazıldı.
+
+### Kabul testi — 15/15
+
+| Denetim | Sonuç |
+|---|---|
+| Sağlık ucu | ✅ `hazir 3/3` — hak61 142 ms · sendigo 130 ms · galzura-demo 125 ms |
+| Kayıtsız numara | ✅ `[]`, `tam:true` |
+| **Gerçek yönetici numarası** | ✅ **üç kiracı da döndü** — `hak61, sendigo, galzura-demo` |
+| Kiracı satırı alanları | ✅ yalnız `kod`/`ad`/`adres` |
+| **Tam akış** — dönen üç adresin her biri canlı giriş ucu | ✅ 3/3, **sıfır yazma** |
+| Gövdede PIN | ✅ `400 pin_gonderilmemeli` |
+| Anahtar yok / yanlış | ✅ `401` |
+| Telefon yok / kısa | ✅ `400` |
+| GET | ✅ `405` |
+| Sağlık ucu anahtarsız | ✅ `401` |
+| `no-store` + `noindex` | ✅ |
+
+### Paralellik ve yazmama, ölçümle
+
+**Paralel:** üç kiracıya sorulan tam istek **0,29–0,38 sn** sürüyor. Sıralı
+olsaydı üç kiracının toplamı (~0,4 sn *kiracı başına* ağ dahil) çok daha uzun
+olurdu; ölçülen süre `max(kiracılar)` davranışıyla uyumlu.
+
+**Kiracılara yazma YOK — doğrulandı.** Tüm turlardan sonra `login_attempts`
+tablosunda en yeni başarısız giriş denemesi HAK61'de **313 dakika**, Sendigo'da
+**1170 dakika** öncesine ait. Yani kabul testi tek bir satır bile yazmadı;
+"tam akış" adımı boş gövdeyle çalıştığı için kilit merdivenine dokunmadı.
+
+### Zincirin son halkası
+
+Kalan tek adım **doğru PIN ile gerçek giriş** ve o telefondan yapılır — betikle
+taklit etmek canlı müşteri verisine yazmak olurdu. Mobil taraf da bekliyor:
+`lib/companies.ts` (193 satır, gömülü liste **ve** `REMOTE_COMPANIES_URL` uzak
+listesi) kalkıp yerine bu servis çağrısı gelmeli. ⚠️ Uzaktan **liste** çekmek,
+gömülü listeyle aynı sızıntıdır — yeni akış numara sorar, liste istemez.

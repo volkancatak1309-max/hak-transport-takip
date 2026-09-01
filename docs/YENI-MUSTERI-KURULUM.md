@@ -148,6 +148,7 @@ tenant kodu için varlıklar zaten `public/brands/<tenant>/` altında aranır.
 | `FLESPI_TOKEN` | flespi REST token'ı |
 | `FLESPI_SYNC_SECRET` | `/api/flespi/sync` ve `/api/flespi/ingest` koruması |
 | `CRON_SECRET` | `/api/cron/*` uçlarının koruması (yakıt fiyatı · belge uyarısı · demo temizliği) — bkz. [`CRON-KAYITLARI.md`](CRON-KAYITLARI.md) |
+| `KIRACI_SORGU_SECRET` | `/api/mobile/kiraci-sorgu` koruması — **mobil giriş yönlendirmesi buna bağlı.** Tanımsız bırakılırsa uç 503 döner ve bu kiracının personeli mobilden hiçbir yere yönlenemez. Ayrı bir değer üretin (`CRON_SECRET` kopyalanmaz) ve **aynı değeri galzura.com yönlendirme servisine de girin.** Bilinçli olarak kimliksiz istiyorsanız değer `acik`. Bkz. [`KIRACI-SORGU-UCU.md`](KIRACI-SORGU-UCU.md) |
 
 ### Marka + kurulum modu env
 
@@ -233,6 +234,7 @@ Sıra önemli — her adım bir öncekine dayanıyor:
 | 5 | PDF anteti doğru | `/admin` → rapor indir → firma adı/adres/sicil satırı **gözle** kontrol |
 | 6 | Marka | sekme başlığı, favicon, giriş ekranı logosu, footer |
 | 7 | Kapalı modüller | kapalı bayrakların menüde/formda izi yok |
+| 8 | Mobil giriş yönlendirmesi | `curl -s -X POST https://<domain>/api/mobile/kiraci-sorgu -H "authorization: Bearer $KIRACI_SORGU_SECRET" -H 'content-type: application/json' -d '{"telefon":"<kayıtlı bir yönetici numarası>"}'` → **200**. `503` = env girilmemiş, `401` = sır yönlendirme servisindekiyle aynı değil. Gövdede `"var":true` bekleniyor |
 
 ---
 

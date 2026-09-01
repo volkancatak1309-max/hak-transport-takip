@@ -64,6 +64,68 @@ export type AuthWorker = {
   counts_as_driver: boolean | null;
 };
 
+/**
+ * TELEFON → KAYIT eşleştirmesi. **TEK KAYNAK.**
+ *
+ * Giriş (`verifyCredentials`) ve kiracı sorgusu ucu
+ * (`/api/mobile/kiraci-sorgu`) AYNI eşleştirmeyi kullanmak ZORUNDA. İkisi ayrı
+ * yazılsaydı biri `phoneVariants`i, öteki düz `eq("phone")`yi kullanır ve
+ * "sorguda var, girişte yok" durumu doğardı: yönlendirme kullanıcıyı doğru
+ * kiracıya gönderir, o kiracı da "telefon veya PIN hatalı" derdi. Kullanıcı
+ * için bu, hiç yönlendirilmemekten daha kötüdür — hangi kapının kapalı olduğunu
+ * bile göremez.
+ *
+ * ⚠️ KOLON LİSTESİ ÇAĞIRANDAN GELİR, eşleştirme buradan. Sorgu ucu `pin_hash`
+ * OKUMAZ; hash'i hiç çekmemek, çekip atmaktan iyidir (ileride eklenecek bir
+ * teşhis logu onu basamaz).
+ *
+ * `.limit(2)` ve ilk satırın alınması bilinçli: `workers.phone` tabloda UNIQUE
+ * ama VARYANTLAR unique değildir — aynı kişi "+43660…" ve "+430660…" olarak iki
+ * satırda durabilir. Böyle bir kurulumda sorgu iki satır döner; ikisi de aynı
+ * kişidir ve ilkini almak doğru cevabı verir.
+ */
+export async function findWorkerByPhone(
+  rawPhone: string,
+  columns: string
+): Promise<{ ok: true; row: Record<string, unknown> | null } | { ok: false }> {
+  const { data, error } = await supabaseAdmin
+    .from("workers")
+    .select(columns)
+    .in("phone", phoneVariants(rawPhone))
+    .limit(2);
+  if (error) return { ok: false };
+  // `unknown` üzerinden: kolon listesi ÇALIŞMA ANINDA geldiği için supabase-js
+  // satır tipini çıkaramıyor ve `GenericStringError` varsayıyor. Tip güvenliği
+  // çağıranda kuruluyor (AuthWorker / iki bayrak) — burada dar bir kaçış.
+  const row = (data?.[0] ?? null) as unknown as Record<string, unknown> | null;
+  return { ok: true, row };
+}
+
+/**
+ * KİMLİK KAPISI — "bu hesap bu kurulumda giriş yapabilir mi", PIN'den BAĞIMSIZ.
+ *
+ * İki koşul da KURULUMA ait KALICI olgulardır, o anki oturuma değil:
+ *   • `is_active`  — hesap kapatılmışsa hiçbir PIN açmaz.
+ *   • şoför paneli — kapalı kiracıda (Sendigo) şoförün gideceği yer yoktur;
+ *     kayıtları AZG/vardiya raporu için durur ama panele/mobile giremez.
+ *
+ * BURAYA GİRMEYENLER (bilinçli): erişim kapıları 046 — cihaz onayı, ülke,
+ * saat aralığı, ölü adam anahtarı. Onlar OTURUM ekseninde ve o AN'a bağlı;
+ * kimlik "bu numara buraya ait mi" sorusunun cevabını değiştirmezler. Kiracı
+ * sorgusu ucu bu ayrımın üstüne kuruludur (bkz. docs/KIRACI-SORGU-UCU.md § 5).
+ *
+ * Tek fonksiyon olmasının sebebi: kural iki yerde işletiliyor (giriş + sorgu
+ * ucu) ve biri değişip öteki kalırsa kullanıcı sonsuz döngüye düşer —
+ * yönlendirme "buraya git" der, giriş "sen kimsin" der.
+ * `scripts/check-kiraci-sorgu.mjs` iki tarafın da bunu çağırdığını denetler.
+ */
+export function workerCanSignIn(w: {
+  is_active: boolean;
+  is_admin: boolean;
+}): boolean {
+  return w.is_active === true && (DRIVER_PANEL_ENABLED || w.is_admin === true);
+}
+
 export type CredentialResult =
   | { ok: true; worker: AuthWorker }
   | {
@@ -185,17 +247,11 @@ export async function verifyCredentials(input: {
 
   // Tek bir `eq` yerine varyant listesi: workers.phone alanında Avusturya
   // ulusal trunk sıfırı bazı kayıtlarda var ("+430660…"), bazılarında yok
-  // ("+43660…"). Şoför hangisini yazarsa yazsın kaydı bulmalı. Varyantlar
-  // birbirini dışlar (aynı numaranın iki yazımı), bu yüzden en fazla bir
-  // kayıt döner; yine de savunmacı biçimde ilki alınır.
-  const { data: matches, error } = await supabaseAdmin
-    .from("workers")
-    .select(WORKER_COLUMNS)
-    .in("phone", phoneVariants(parsed.data.phone))
-    .limit(2);
-
-  if (error) return { ok: false, reason: "db" };
-  const worker = (matches?.[0] ?? null) as AuthWorker | null;
+  // ("+43660…"). Şoför hangisini yazarsa yazsın kaydı bulmalı. Eşleştirme
+  // `findWorkerByPhone`ta — kiracı sorgusu ucu de AYNI fonksiyonu çağırıyor.
+  const found = await findWorkerByPhone(parsed.data.phone, WORKER_COLUMNS);
+  if (!found.ok) return { ok: false, reason: "db" };
+  const worker = found.row as AuthWorker | null;
 
   // Always run exactly one bcrypt compare — against the real hash, or a dummy
   // when the phone is unknown — so timing doesn't reveal whether the phone
@@ -205,21 +261,21 @@ export async function verifyCredentials(input: {
     parsed.data.pin,
     worker?.pin_hash ?? DUMMY_PIN_HASH
   );
-  const authed = !!worker && worker.is_active && pinOk;
 
-  if (!authed || !worker) {
-    return failureResult(await registerFailure(identifier));
-  }
-
-  // ŞOFÖR PANELİ KAPALI MÜŞTERİ (Sendigo): şoförün gideceği bir yer yok.
-  // Kayıtları AZG/vardiya raporu için sistemde DURUR — takip araç ekseninde
-  // yürür — ama panele giremezler. Hata mesajı bilerek diğerleriyle AYNI
-  // ("invalid"): "bu telefon kayıtlı ama yetkisiz" demek hesap sayımına
-  // (account enumeration) kapı açardı, yukarıdaki tüm tasarım bunu önlüyor.
+  // ÜÇ RET SEBEBİ TEK DALDA — ve bu bilinçli. Bilinmeyen telefon, pasif hesap,
+  // yanlış PIN ve "şoför paneli kapalı müşteride şoför" (Sendigo) AYNI cevabı
+  // alır: "invalid". Ayrıştırmak, "bu telefon kayıtlı ama yetkisiz" demek olurdu
+  // ve hesap sayımına (account enumeration) kapı açardı — yukarıdaki dummy-hash
+  // düzeneğinin tamamı bunu önlemek için var.
   //
-  // Mobil uç da aynı kapıdan geçer: mobil, şoför panelinin yerine geçen yüzey
-  // olduğu için paneli kapatmış bir kiracıda mobil de şoföre kapalıdır.
-  if (!DRIVER_PANEL_ENABLED && !worker.is_admin) {
+  // Kurulum kapısı artık `workerCanSignIn`da: kiracı sorgusu ucu de AYNI
+  // yordamı çağırıyor, böylece "sorgu evet der, giriş hayır der" durumu
+  // yapısal olarak imkânsız (bkz. scripts/check-kiraci-sorgu.mjs).
+  //
+  // ⚠️ SIRA KORUNDU: bcrypt karşılaştırması kapıdan ÖNCE ve HER YOLDA tam bir
+  // kez koşar. Kapıyı öne almak, panele kapalı bir kiracıda "kayıtlı numara"yı
+  // hızlı cevapla ele verirdi.
+  if (!worker || !pinOk || !workerCanSignIn(worker)) {
     return failureResult(await registerFailure(identifier));
   }
 

@@ -817,3 +817,75 @@ olduğunu aynı cevap söyler.
 Kod yerelde üç commit hâlinde hazır. "Push et" dediğinde:
 `git push -u origin main` → Vercel Git bağlantısı ilk üretim dağıtımını
 tetikler.
+
+---
+
+## 12. Dağıtım öncesi son durum — 01.09.2026
+
+### Ölçülen (salt okuma)
+
+| Kontrol | Sonuç | Nasıl |
+|---|---|---|
+| **DNS** `kiraci.galzura.com` | ✅ **yayılmış** — CNAME → `cname.vercel-dns.com` | üç ayrı çözücüde tutarlı: yerel, `1.1.1.1`, `8.8.8.8` |
+| Dönen IP'ler | `76.76.21.x` / `66.33.60.x` = **Vercel** | Cloudflare IP'si (`104.x`/`172.67.x`) **değil** → proxy gerçekten KAPALI ✓ |
+| **TLS** | ✅ geçerli (`ssl_verify_result 0`) | `curl -w '%{ssl_verify_result}'` |
+| Alan adı → proje | ✅ bağlı | `X-Vercel-Error: DEPLOYMENT_NOT_FOUND` — alan adı projeye gidiyor, sadece dağıtım yok |
+| Vercel env (Production) | `KIRACI_SIR_HAK61` · `KIRACI_SIR_SENDIGO` · `KIRACI_SIR_GALZURA_DEMO` ✓ · `GALZURA_APP_KEY` ⏳ | `vercel env ls production` (yalnız ADLAR) |
+| Dağıtım | **yok** — `Latest Production URL: --` | `vercel project ls` |
+
+**DNS bekleme süresi: YOK.** Sorulan "ne kadar sürer" sorusunun cevabı ölçümle
+verildi — zaten yayılmış. Cloudflare kendi otoriter sunucusunda değişikliği
+anında uygular; proxy kapalı olduğu için araya CDN önbelleği de girmiyor. TLS
+sertifikası da çıkmış durumda.
+
+### 🔴 Sıra: "redeploy" DEĞİL, TEK dağıtım
+
+Bu projenin **hiç dağıtımı yok**, dolayısıyla "yeniden dağıtma" diye bir adım
+yok. Doğru sıra:
+
+1. `GALZURA_APP_KEY` Vercel'e girilir (Production, Sensitive).
+2. **Sonra** push edilir → Git bağlantısı **ilk** dağıtımı tetikler.
+3. O dağıtım dört env'i de **hazır bulur**. İkinci bir dağıtıma gerek YOK.
+
+Bu, HAK61'de yaşanan tuzağın tersi: orada dağıtım env'den ÖNCEYDİ, o yüzden
+redeploy gerekti. Burada env'i önce girmek o adımı tamamen ortadan kaldırıyor.
+
+### Push sonrası doğrulama
+
+```bash
+# 1) Sağlık — tek komut, üç kiracıyı birden ölçer
+curl -s https://kiraci.galzura.com/api/kiraci-bul/saglik \
+  -H "x-galzura-app: $GALZURA_APP_KEY"
+# beklenen: {"ok":true,"hazir":3,"toplam":3,"zamanAsimiMs":2500,"kiracilar":[…]}
+
+# 2) Tam kabul testi — sağlık + kayıtsız numara + gerçek numara + tam akış
+cd galzura-kiraci-bul
+BASE=https://kiraci.galzura.com APP_KEY=… GERCEK_NUMARA=… \
+  node scripts/verify-kiraci-bul.mjs
+```
+
+`hazir < toplam` ise aynı cevap **hangi kiracının** ve **neden** olduğunu söyler:
+
+| `durum` | Anlamı |
+|---|---|
+| `hazir` | Kiracı düzgün cevap veriyor |
+| `sir_yok` | Bu projede o kiracının `KIRACI_SIR_*` env'i yok |
+| `eski_surum` | Kiracı `200+HTML` ya da `503` dönüyor → o kiracının paneli env'siz ya da dağıtımı geride |
+| `ulasilamadi` | Ağ / zaman aşımı |
+
+### Tam akış — son adım neden yazma İÇERMİYOR
+
+Kabul testi, servisin döndürdüğü **her adres için** `/api/mobile/auth/login`
+ucuna boş gövde (`{}`) gönderir ve `400 missing_fields` bekler. Böylece
+"yönlendirme doğru adresi verdi ve o adres gerçekten çalışan bir giriş ucu"
+zinciri kapanır.
+
+> ⚠️ **Yanlış PIN ile denenmez.** Başarısız bir giriş `login_attempts`e satır
+> YAZAR ve kilit merdivenini ilerletir — canlı müşteride gerçek bir kişinin
+> kilitlenmesine katkı yapardı. Boş gövde ise `verifyCredentials`a **hiç
+> girmeden** döner (kaynakta doğrulandı: alan denetimi route'un ilk adımı;
+> galzura-demo'da canlı olarak da ölçüldü). **Sıfır yazma.**
+
+Zincirin gerçek son halkası — doğru PIN ile giriş — **telefondan, Volkan
+tarafından** yapılır. Onu bir betikle taklit etmek, canlı müşteri verisine
+yazmak demektir.

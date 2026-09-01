@@ -1,8 +1,9 @@
 # Kiracı sorgu ucu — `POST /api/mobile/kiraci-sorgu`
 
-**Durum:** ✅ **MAIN'DE, ÜÇ KİRACIDA DA CANLI** (`8c14ba0`, 01.09.2026).
-⏳ `KIRACI_SORGU_SECRET` env'i **hiçbir kiracıda girilmedi** — uç şu an
-üçünde de `503 yapilandirilmadi` dönüyor (tasarım gereği; § 13).
+**Durum:** ✅ **MAIN'DE CANLI** (`8c14ba0`, 01.09.2026).
+✅ **Sendigo ve galzura-demo tam çalışıyor** — `var:true` yolu dahil kanıtlandı.
+🔴 **HAK61 hâlâ `503 yapilandirilmadi`**: env Production'da VAR ama eklendikten
+sonra **redeploy edilmedi** — canlı dağıtım env'den 2 saat eski (§ 15).
 **Ölçüm tarihi:** 01.09.2026 · HAK61 ve Sendigo canlı veritabanları, **salt okuma**.
 **Kod:** `app/api/mobile/kiraci-sorgu/route.ts` · `lib/auth-core.ts` (ortak çekirdek)
 **Muhafız:** `npm run lint:kiraci-sorgu` · **Canlı kanıt:** `npm run verify:kiraci-sorgu`
@@ -641,3 +642,101 @@ Supabase projesine gittiğini kanıtlamaz — kayıt bulan bir istek kanıtlar.
 
 ⚠️ Sır komut satırında geçiyor: `SIR` değişkenini kullanın ve iş bitince kabuk
 geçmişini temizleyin (`history -d`).
+
+---
+
+## 15. Kabul testi — 01.09.2026, env girildikten sonra
+
+`npm run verify:kiraci-sorgu-canli` · **salt okuma, hiçbir yazma yok.**
+Sırlar depo dışındaki bir dosyadan okunur; betikte ve komut satırında sır yoktur.
+
+### Sonuç tablosu
+
+| # | Durum | HAK61 | Sendigo | galzura-demo |
+|---|---|---|---|---|
+| 1 | doğru sır · **kayıtsız** numara | 🔴 `503 yapilandirilmadi` | ✅ `200` `{"ok":true,"var":false,"kod":"sendigo"}` | ✅ `200` `{"ok":true,"var":false,"kod":"galzura-demo"}` |
+| 2 | doğru sır · **KAYITLI** numara → `var:true` | 🔴 ölçülemedi | ✅ `200` `var:true` · 1. denemede | ✅ `200` `var:true` · 1. denemede |
+| 3 | **yanlış** sır | 🔴 ölçülemedi | ✅ `401 yetkisiz` | ✅ `401 yetkisiz` |
+| 4 | sır **yok** | 🔴 ölçülemedi | ✅ `401 yetkisiz` | ✅ `401 yetkisiz` |
+| 5 | gövdede **PIN** | 🔴 ölçülemedi | ✅ `400 pin_gonderilmemeli` | ✅ `400 pin_gonderilmemeli` |
+
+**Çapraz sır** (bir kiracının sırrı başkasında geçmemeli):
+
+| Kimin sırrı | Nereye | Sonuç |
+|---|---|---|
+| HAK61 | Sendigo | ✅ `401 yetkisiz` |
+| HAK61 | galzura-demo | ✅ `401 yetkisiz` |
+| Sendigo | HAK61 | ⏳ **ÖLÇÜLEMEDİ** — hedefte env yok |
+| galzura-demo | HAK61 | ⏳ **ÖLÇÜLEMEDİ** — hedefte env yok |
+
+> ⚠️ İlk turda betik bu iki `503`'ü "SIRLAR KARIŞIYOR" diye **bulgu sandı**.
+> Yanlış: env'i olmayan kiracı sırra **hiç bakmadan** çıkar, yani çapraz sızıntı
+> ne kanıtlanır ne çürütülür — sonuç ÖLÇÜLEMEDİ'dir. Betik düzeltildi; kendi
+> ölçemediğini bulgu sanan bir test, bulgusuz bir testten daha zararlıdır.
+
+**Toplam: 12/17 geçti · 2 ölçülemedi · 5 bulgu — hepsi tek bir kök nedenden.**
+
+### 🔴 HAK61: env VAR, redeploy YOK
+
+Dışarıdan `503` üç şeye birden benzer (env yok / yanlış kapsam / redeploy yok).
+Vercel CLI ile — **salt okuma** — ayrıştırıldı:
+
+```
+$ vercel env ls production          # yalnız ADLAR, değerler "Hidden"
+  KIRACI_SORGU_SECRET   Hidden   Sensitive   Production   9m ago     ← VAR
+
+$ vercel ls hak-transport-takip     # en yeni Production dağıtımı
+  2h   …-5tsv6uyzw-…   ● Ready   Production                          ← 2 SAAT ÖNCE
+```
+
+Env **9 dakika** önce eklendi; canlı dağıtım **2 saat** önce (benim push'umdan).
+Yani env eklendikten sonra **hiç dağıtım olmadı**. Kıyas iki kiracıda net:
+
+| Kiracı | En yeni Production dağıtımı | Env eklenmesi | Sonuç |
+|---|---|---|---|
+| Sendigo | **9 dk** önce | 9 dk | ✅ çalışıyor |
+| galzura-demo | **8 dk** önce | ~9 dk | ✅ çalışıyor |
+| **HAK61** | **2 saat** önce | 9 dk | 🔴 `503` |
+
+**Çözüm:** HAK61 projesinde Vercel → Deployments → en son üretim dağıtımı →
+**Redeploy**. Kod değişikliği gerekmiyor; yeni bir push da gerekmiyor.
+
+> ⚠️ Ben bir ara "HAK61 redeploy edildi, `dpl_` kimliği değişti" demiştim —
+> **yanlıştı.** Kimlik benim push'um yüzünden değişmişti; ölçüm push ÖNCESİ bir
+> değerle push SONRASI bir değeri karşılaştırıyordu. Dağıtım YAŞI doğru ölçüttü,
+> kimlik değişimi değil.
+
+### Redeploy sonrası koşulacak
+
+```bash
+npm run verify:kiraci-sorgu-canli     # SIRLAR_ENV ile
+```
+
+Beklenen: **17/17**, ölçülemeyen yok.
+
+---
+
+## 16. Çoklu "evet" — canlı uçlarla yeniden ölçüldü
+
+§ 7.1'deki ölçüm iki veritabanını karşılaştırıyordu ve galzura-demo'yu
+**kapsayamıyordu** (anahtarı yok). Uç canlıya çıkınca demo da ölçülebilir hâle
+geldi: numara **ucun kendisine** sorulur — yönlendirme servisinin göreceğinin
+birebir aynısı. (`scripts/measure-kiraci-sorgu-caprazlama.mjs`)
+
+| Numara (maskeli) | Rol | HAK61 | Sendigo | galzura-demo | "evet" |
+|---|---|---|---|---|---|
+| `+90…` | yönetici | ⏳ 503 | **EVET** | **EVET** | **2+?** |
+| `+43…` | yönetici | ⏳ 503 | **EVET** | **EVET** | **2+?** |
+| `+43…` ×2 | yönetici | ⏳ 503 | hayır | hayır | 0+? |
+| `+43…` ×3 | şoför | ⏳ 503 | hayır | hayır | 0+? |
+
+**İki numara üç kiracıdan ikisinde birden hesaba sahip** — HAK61 düzelince
+büyük olasılıkla **üç**. § 7.1'de "iki kiracı" olan bulgu, aslında **üç
+kurulumun tamamına** yayılıyor.
+
+Şoförlerin hiçbiri başka kiracıda çıkmıyor: izolasyon doğru çalışıyor, çakışma
+yalnız **birden çok kurulumu yöneten kişide**.
+
+► Bu, § 7.1/7.2'deki sözleşmeyi zorunlu kılar: **paralel sor, hepsini bekle,
+birden fazla eşleşme varsa kullanıcıya seçtir.** İlk "evet"te durmak, o iki
+kişiyi rastgele bir kiracıya gönderirdi.

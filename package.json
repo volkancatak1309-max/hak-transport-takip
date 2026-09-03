@@ -54,6 +54,7 @@
     "lint:mobil-uc-1": "node scripts/check-mobil-uc-1.mjs",
     "verify:mobil-uc-1": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server-kuru.mjs scripts/verify-mobil-uc-1.mjs",
     "measure:mobil-uc1-zemin": "node scripts/measure-mobil-uc1-zemin.mjs",
+    "verify:mobil-uc-1-canli": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-mobil-uc-1-canli.mjs",
     "verify:kiraci-sorgu-canli": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-alias.mjs scripts/verify-kiraci-sorgu-canli.mjs",
     "verify:kiraci-sorgu": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-kiraci-sorgu.mjs",
     "verify:takip-linki": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-takip-linki.mjs",

@@ -1,6 +1,6 @@
 # Mobil Uç Tur 1 — Kendi PIN'i + Vardiya başlatma/düzeltme
 
-**Tarih:** 03.09.2026 · **Dal:** `feat/mobil-uc-1` · **Durum:** dalda bitti, kanıtlı, **PUSH YOK**
+**Tarih:** 03.09.2026 · **Dal:** `feat/mobil-uc-1` · **Durum:** ✅ **CANLIDA KANITLANDI** (galzura-demo)
 **Kapsam:** `MOBIL-YETKI-ENVANTERI.md` maddeleri **#3/#4/#5** (kendi PIN'i) ve **#6/#7** (vardiya başlatma + düzeltme)
 **Karar (Volkan):** Panel ve mobil aynı işlevsellikte, aynı güçte.
 
@@ -123,9 +123,9 @@ girerdi), yalnız güveni bozardı.
 
 Migration 044 yoksa `tokenIptal:false` döner ve bunu açıkça söyler — sessizce
 "iptal edildi" demek, yapılmamış bir iptali yapılmış göstermek olurdu.
-**Ölçüldü:** 044 hem HAK61'de hem Sendigo'da **var** (`token_version` kolonu),
-yani üç kiracının ikisinde iptal gerçekten işliyor (galzura-demo ölçülemedi,
-§ 6).
+**Ölçüldü:** 044 **ÜÇ KİRACIDA DA var** (`token_version` kolonu). galzura-demo'da
+iptalin gerçekten işlediği canlı koşumda görüldü: `token_version` 13 → 17
+(§ 4.5).
 
 **Tarayıcı oturumu etkilenmez** — ayrı yol (iron-session çerezi). Panelde açık
 bir oturum varsa devam eder; kullanıcı yeniden giriş yapınca yeni PIN geçerli
@@ -394,6 +394,64 @@ düşmesi beklenen bir uç yok; kod yine de kolonsuz geri düşüşleri taşıyo
 
 `login_attempts` gerçekten işliyor: HAK61'de **64 satır**, Sendigo'da **1**.
 
+### 4.5 🔴 CANLIDA KANIT — galzura-demo, gerçek yazma
+
+`ENV_FILE=.env.galzura-demo … scripts/verify-mobil-uc-1-canli.mjs` · **31/31 iddia geçti**
+
+Dört ucun **gerçek route handler'ları**, **gerçek veritabanına** karşı koştu.
+Betik iki emniyet taşıyor: şim devredeyse durur, ve proje referansı
+`omgnkvoulndbglmxlvzc` (galzura-demo) değilse **çalışmayı reddeder** — HAK61 ve
+Sendigo'da asla koşamaz.
+
+**Test hesabı:** `+90123456789` ("TEST", `9b69ef0f…`), açık vardiyası
+`fa1be738…` (04:02'de otomatik açılmış), atanmış aracı `W-GF-129`.
+
+| Adım | Ölçüm |
+|---|---|
+| **Yanlış mevcut PIN** | `403 mevcut_pin_hatali` · `login_attempts` **9 → 10** · PIN değişmedi · `token_version` **15** sabit |
+| **Doğru PIN → değişim** | `200` · hash artık `740193`'ü doğruluyor, **eski PIN geçersiz** · `token_version` **15 → 16** · `login_attempts` **10 → 9** (sıfırlandı) · yeni token `verifyMobileRequest`ten **geçti** (çağıran cihaz düşmedi) |
+| **PIN geri alma** | `200` · hash yine `183434` · `token_version` **16 → 17** |
+| **Açık vardiya varken başlat** | `409 active` · `time_entries` **527 → 527** (yazma yok) |
+| **`islem=km`** | `200` · `start_km` **85177 → 85184** · `shift_edit_log` **4 → 5** · `updated_by`=yönetici · iz kaynağı `km` · **geri alındı → 85177** |
+| **`islem=kapat`** | `200` · `ended_at`=`10:30:53Z` · `end_reason=admin` · `shift_edit_log` **6 → 8** (ended_at + end_km) · iz sebebi taşıyor |
+| **Yeniden başlat** | `200` · `yenidenAcildi=true` · `time_entries` **527 → 527** (yeni satır YOK) · `ended_at` **null'a döndü** · `started_at` **04:02:18 korundu** · kapanış artıkları temizlendi |
+
+**Kilit sayacının canlıda gerçekten işlediği** böyle ölçüldü: yanlış PIN satırı
+yazdı, doğru PIN sildi. Kuru koşum bunu yükten çıkarıyordu; burada tablo sayıldı.
+
+> ⚠️ **Ölçüm aracının kendisinde bir kusur çıktı ve düzeltildi.** İlk koşumda
+> `login_attempts` sayımı `0 → 0` diyordu; sebep ürün değil betikti:
+> `.or("id.not.is.null")` filtresi kullanılıyordu ve **o tabloda `id` kolonu
+> yok** (anahtar `identifier`). PostgREST hatayı `error`da veriyor, `count` null
+> kalıyor, `?? 0` onu "sıfır satır" gibi gösteriyordu. Filtre kaldırıldı, hata
+> artık yutulmuyor — ikinci koşumda gerçek sayılar (9 → 10 → 9) çıktı.
+
+**Kiracı bayrağı uyarısı:** koşum `SHIFT_PER_DAY=one` ile yapıldı (varsayılan).
+galzura-demo'nun **canlı Vercel env değeri okunamıyor**. Dolaylı ölçüm
+belirsiz: 527 vardiyada aynı şoför+aynı gün **3 çift satır** var (kural
+öncesinden kalmış olabilir). `'many'` modda 7. adım yeniden açmaz, **yeni satır**
+açar.
+
+**Bırakılanlar / geri alınanlar:**
+
+| | Başlangıç | Son | |
+|---|---|---|---|
+| `pin_hash` | `183434` | **`183434`** | ✅ geri alındı |
+| açık vardiya | `fa1be738` açık, `start_km` 85177 | **aynı**, `started_at` korundu | ✅ geri alındı |
+| `time_entries` | 527 | **527** | ✅ satır eklenmedi |
+| `shift_edit_log` | 0 | **0** | ✅ 8 QA satırı silindi |
+| `login_attempts` | 9 | **9** | ✅ |
+| `workers.token_version` | 13 | **17** | ⚠️ **geri alınamaz** — dört PIN değişimi (iki koşum). Geri çekmek iptal edilmiş token'ları CANLANDIRIRDI. Etkisi: bu test hesabının eski mobil oturumları düştü. |
+| `updated_at` / `updated_by` | — | yeniden açma damgası | ⚠️ kalıcı |
+
+🔴 **`shift_edit_log` satırları neden silindi:** tablo koşum öncesi **boştu**,
+yani 8 satırın tamamı testin artığıydı — gerçek bir operasyonel düzeltmenin izi
+değil. Bırakılsalardı demo kiracıda o vardiya "elle düzeltilmiş" rozeti
+taşırdı. Gerçek bir izi silmek denetim kaydını anlamsız kılardı; burada
+silinen, kaydın kendisi değil test gürültüsüydü.
+
+---
+
 ---
 
 ## 5. Bilinçli kararlar — özet
@@ -416,8 +474,8 @@ düşmesi beklenen bir uç yok; kod yine de kolonsuz geri düşüşleri taşıyo
 
 | # | Konu | Durum |
 |---|---|---|
-| 1 | **galzura-demo şema ölçümü** | ⏳ **BEKLİYOR** — bu çalışma ağacında service anahtarı YOK. HAK61 ve Sendigo ölçüldü (0 eksik); üçüncü kiracı için anahtar ya da bir ölçüm yolu gerekiyor. |
-| 2 | **Canlı YAZMA kanıtı** | ⏳ **BEKLİYOR** — aynı sebep. HAK61 salt okuma (Volkan kuralı), galzura-demo anahtarsız. Davranış kuru koşumla, zemin canlı okumayla kanıtlandı; **gerçek bir INSERT/UPDATE hiçbir kiracıda denenmedi.** |
+| 1 | **galzura-demo şema ölçümü** | ✅ **KAPANDI** (03.09) — service anahtarı verildi, ölçüldü: **6 tablo / 56 kolon, 0 eksik**. Üç kiracı da hizada. |
+| 2 | **Canlı YAZMA kanıtı** | ✅ **KAPANDI** (03.09) — galzura-demo'da **31/31 iddia**, gerçek PIN değişimi + km düzeltme + kapatma + yeniden açma. Bkz. § 4.5. HAK61 ve Sendigo'ya **dokunulmadı**. |
 | 3 | **Hız sınırı (rate limit)** | Yok — kardeş yazma uçlarıyla aynı durum. PIN ucunda kilit merdiveni fiilen bir sınır işlevi görüyor; başlatma/düzeltme uçlarında sınır yok. |
 | 4 | **Şef için düzeltme yolu** | Kapsam dışı bırakıldı — panelde de yok. Açılacaksa kapsam denetimiyle birlikte tasarlanmalı. |
 | 5 | **`deleteEntryAction` (vardiya silme)** | Mobil ucu **yok**. Görevde sayılan beş eylemin dışındaydı; kasıtlı olarak açılmadı. |

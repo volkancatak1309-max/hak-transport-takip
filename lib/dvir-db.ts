@@ -400,3 +400,30 @@ export async function deleteDvirMadde(id: string): Promise<SilmeSonucu> {
   }
   return { ok: true };
 }
+
+/**
+ * 🔴 `setYanitFoto` YAZILDI VE KALDIRILDI (03.09.2026) — ŞEMA İZİN VERMİYOR.
+ *
+ * Mobil için "kusur fotoğrafını sonradan ekle/değiştir" ucu tasarlanmıştı.
+ * Canlıda ilk denemede `HK081` ile reddedildi ve sebebi 081'de yazılı:
+ *
+ *   create trigger trg_dvir_yanit_degismez before update on dvir_yanitlari
+ *     → raise exception 'kontrol yaniti DEGISTIRILEMEZ'
+ *
+ * Yanıt satırı üzerinde HİÇBİR update kabul edilmiyor — `dvir_formlari`daki
+ * gibi alan alan değil, KOŞULSUZ. Yani bir kontrol formunun fotoğrafı ancak
+ * form YAZILIRKEN (insert) konabilir; sonradan eklemek, değiştirmek ve silmek
+ * şema düzeyinde kapalı.
+ *
+ * Bu bir eksik değil, 081'in kararı: kontrol formu bir beyandır ve beyan
+ * sonradan güzelleştirilemez. Düzeltmenin yolu YENİ FORM doldurmaktır
+ * (081'in kendi yorumu bunu söylüyor).
+ *
+ * Not bırakılıyor çünkü aynı ucu ikinci kez tasarlamak, aynı duvara ikinci
+ * kez çarpmak olurdu.
+ */
+
+/** Formu yazan çekirdeğin girdisi — fotoğraf YOLLARI çağıranda çözülür. */
+export type DvirGonderimGirdi = Omit<FormGirdi, "yanitlar"> & {
+  yanitlar: YanitGirdi[];
+};

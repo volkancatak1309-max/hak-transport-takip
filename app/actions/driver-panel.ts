@@ -21,7 +21,7 @@ import type { DriverReportType } from "@/lib/types";
  * vardiyayı SUNUCU tarafında çözer — istemciden time_entry_id kabul edilmez.
  */
 
-const PHOTO_BUCKET = "shift-photos";
+import { SHIFT_PHOTO_KOVA as PHOTO_BUCKET } from "@/lib/driver-panel-kova";
 
 /** Geri Al penceresi: istemci tostu 5 sn, sunucu emniyeti 10 dk. */
 const UNDO_WINDOW_MS = 10 * 60 * 1000;

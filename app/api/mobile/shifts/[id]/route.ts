@@ -1,5 +1,13 @@
 import type { NextRequest } from "next/server";
 import { verifyMobileRequest, mobileError } from "@/lib/mobile-auth";
+import { requireMobileAdmin } from "@/lib/mobile-scope";
+import {
+  correctShiftFields,
+  correctShiftKm,
+  closeShiftByAdmin,
+} from "@/lib/shift-correct";
+import { listShiftEdits } from "@/lib/shift-edit-log";
+import { revalidatePath } from "next/cache";
 import { getManagedFleet, getFleetScope, UNRESTRICTED } from "@/lib/fleet-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { workedMs, kmDiff } from "@/lib/format";
@@ -311,6 +319,20 @@ export async function GET(
     },
     pencere: { baslangic: winStart, bitis: winEnd, acikVardiya: acik },
     /**
+     * DÜZELTME İZİ (087) — YALNIZ PATRONDA, şefte ve şoförde null.
+     *
+     * PATCH bu satırı değiştirebiliyorsa değişikliğin GÖRÜNÜR olması aynı
+     * yüzeyin parçasıdır: panelde düzeltme formunun yanında "Düzenleme
+     * geçmişi" çekmecesi var (getShiftEditsAction) ve o da requireAdmin.
+     * İz olmadan mobil, kaydı değiştirebilen ama kimin değiştirdiğini
+     * göremeyen bir yüzey olurdu.
+     *
+     * `shift_edit_log` tablosu ya da 087 kolonları yoksa listShiftEdits boş
+     * dizi döner (kendi içinde dayanıklı) — "geçmiş yok" görünür, hata değil.
+     * null ile boş dizi FARKLI: null "yetkin yok", [] "değişiklik yok".
+     */
+    duzeltmeIzi: isAdmin ? await listShiftEdits(id) : null,
+    /**
      * Telemetri bloklarının NEDEN null olduğu. `null` üç ayrı şey demek
      * olabilirdi (yetki yok / araç bağı yok / veri yok); ekran hangisini
      * yazacağını bilmeli.
@@ -324,4 +346,177 @@ export async function GET(
     yakit,
     rota,
   });
+}
+
+/**
+ * PATCH /api/mobile/shifts/[id] — YÖNETİCİ VARDİYAYI DÜZELTİR.
+ *
+ * Panelde ÜÇ ayrı eylem var ve üçü de aynı satıra yazıyor. Bu uç onları tek
+ * adreste toplar ama BİRLEŞTİRMEZ: gövdedeki `islem` alanı hangisinin
+ * çalışacağını söyler ve her biri kendi doğrulamasını, kendi iz kaynağını
+ * (`shift_edit_log.kaynak`) korur.
+ *
+ *   islem: "duzelt" → editEntryAction        · kaynak "duzeltme"
+ *   islem: "km"     → adminUpdateKmAction    · kaynak "km"
+ *   islem: "kapat"  → adminCloseShiftAction  · kaynak "kapatma"
+ *
+ * ── NEDEN TEK UÇ, NEDEN AYRI `islem` ───────────────────────────────────────
+ * Üçü de "bu vardiyayı değiştir" demek ve REST'te bu PATCH'tir; ayrı adresler
+ * (`/km`, `/kapat`) aynı kaynağın üç adı olurdu. Ama semantikleri farklı ve
+ * bu fark GÖVDEDEN OKUNAMAZ: "kapat" işleminde `ended_at` İSTEMCİDEN GELMEZ,
+ * sunucu onu aracın son telemetrisinden türetir. Alan varlığına bakarak karar
+ * veren bir uç ("ended_at yoksa kapat demektir") ilk eksik alanda yanlış işi
+ * yapardı. `islem` alanı o belirsizliği kökten kaldırıyor.
+ *
+ * ── SEBEP ZORUNLU (087) ─────────────────────────────────────────────────────
+ * `duzelt` ve `kapat` için `sebep` en az 3 karakter olmalı — Avusturya iş
+ * müfettişliği AZG raporunu okuyor ve o raporu besleyen üç alan
+ * (`started_at`, `ended_at`, `break_minutes`) yöneticinin değiştirebildiği
+ * alanlar. "Bu çalışma saati neden değişti?" sorusunun cevabı kayıtta olmak
+ * zorunda. `km` işleminde sebep sabit ("Km düzeltmesi") — panelin bugünkü
+ * davranışı bu ve DEĞİŞTİRİLMEDİ.
+ *
+ * ── KAPI: YALNIZ PATRON ─────────────────────────────────────────────────────
+ * `requireMobileAdmin` — panelde üç eylem de `requireAdmin()` ile korunuyor.
+ * FİLO ŞEFİ 403 alır ve bu bir eksik değil, PARİTE: şef panelde de bu
+ * eylemlere erişemiyor. Kapsamlı bir şef düzeltme yolu ayrı bir karardır
+ * (yazma yetkisi + kapsam denetimi birlikte tasarlanmalı) ve BU TURDA YOK.
+ *
+ * ── GET'TEN FARKLI KAPI, BİLEREK ───────────────────────────────────────────
+ * Aynı dosyadaki GET şoföre KENDİ vardiyasını, şefe kapsamındakini gösteriyor.
+ * PATCH'in kapısı DAHA DAR ve bu tutarsızlık değil: okuma ile yazma farklı
+ * yetkilerdir. Şoför kendi vardiyasını GÖRÜR ama SAATİNİ DEĞİŞTİREMEZ — yasal
+ * kaydı düzelten kişi ile kaydın öznesi aynı olamaz.
+ *
+ * ── HATA KODLARI ────────────────────────────────────────────────────────────
+ *   401 missing_token / invalid_token / revoked / inactive   (ortak kapı)
+ *   403 admin_required
+ *   400 invalid_json · missing_fields · gecersiz_islem
+ *       errReasonShort · errKmNeg · errKmRange · errDate
+ *       km_low:<bitis>:<baslangic> · km_high:<fark>:<tavan>
+ *       undelivered_over:… · undelivered_max:… (paket tavanı)
+ *   409 no_active            — `kapat` istendi ama vardiya zaten kapalı
+ *   500 write_failed         — ham DB yazma hatası (detay `detail` alanında)
+ */
+const ISLEMLER = new Set(["duzelt", "km", "kapat"]);
+
+/**
+ * İstemci hatası sayılan dizgeler. Listede OLMAYAN her dizge 500'dür ve
+ * gövdede aynen döner — ham bir DB mesajını 400 diye göstermek, sunucu
+ * arızasını istemcinin suçu gibi gösterirdi (kardeş uçlarla aynı ilke).
+ */
+const CLIENT_ERRORS = new Set([
+  "validation",
+  "errReasonShort",
+  "errKmNeg",
+  "errKmRange",
+  "errDate",
+  "errPin",
+]);
+
+function statusForCorrect(error: string): number {
+  if (error === "no_active") return 409;
+  if (CLIENT_ERRORS.has(error)) return 400;
+  if (
+    error.startsWith("km_low:") ||
+    error.startsWith("km_high:") ||
+    error.startsWith("undelivered_over:") ||
+    error.startsWith("undelivered_max:") ||
+    error.startsWith("undelivered_")
+  ) {
+    return 400;
+  }
+  return 500;
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const guard = await requireMobileAdmin(req);
+  if (!guard.ok) return guard.response;
+  const aktorId = guard.actor.worker.id;
+
+  const { id } = await params;
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return mobileError(400, "invalid_json");
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return mobileError(400, "invalid", { alan: "govde", sebep: "nesne_degil" });
+  }
+  const g = body as Record<string, unknown>;
+
+  const islem = g.islem;
+  if (typeof islem !== "string" || !ISLEMLER.has(islem)) {
+    return mobileError(400, "gecersiz_islem", {
+      alan: "islem",
+      izinli: [...ISLEMLER],
+    });
+  }
+
+  let r: { ok: true } | { ok: false; error: string };
+
+  if (islem === "km") {
+    // `bitisKm` AÇIKÇA null gönderilebilir: açık vardiyanın bitiş sayacı yok.
+    // Alan HİÇ gönderilmediyse de null sayılır — panelin boş input'u ile aynı.
+    const bas = g.baslangicKm ?? g.startKm;
+    if (bas === undefined || bas === null) {
+      return mobileError(400, "missing_fields", { alan: "baslangicKm" });
+    }
+    const bit = g.bitisKm ?? g.endKm ?? null;
+    r = await correctShiftKm(aktorId, id, Number(bas), bit === null ? null : Number(bit));
+  } else if (islem === "kapat") {
+    const sebep = g.sebep ?? g.reason;
+    if (typeof sebep !== "string") {
+      return mobileError(400, "missing_fields", { alan: "sebep" });
+    }
+    r = await closeShiftByAdmin(aktorId, id, sebep);
+  } else {
+    // duzelt — alan seti panelin formuyla BİREBİR. `id` GÖVDEDEN DEĞİL YOLDAN
+    // gelir: iki yerden gelen bir kimlik, birinin diğerini ezmesi demektir.
+    const sebep = g.sebep ?? g.reason;
+    if (typeof sebep !== "string") {
+      return mobileError(400, "missing_fields", { alan: "sebep" });
+    }
+    if (g.baslangic === undefined && g.started_at === undefined) {
+      return mobileError(400, "missing_fields", { alan: "baslangic" });
+    }
+    if (g.baslangicKm === undefined && g.start_km === undefined) {
+      return mobileError(400, "missing_fields", { alan: "baslangicKm" });
+    }
+    r = await correctShiftFields(aktorId, {
+      id,
+      started_at: g.baslangic ?? g.started_at,
+      ended_at: g.bitis ?? g.ended_at ?? null,
+      start_km: g.baslangicKm ?? g.start_km,
+      end_km: g.bitisKm ?? g.end_km ?? null,
+      plate: g.plaka ?? g.plate ?? null,
+      notes: g.notlar ?? g.notes ?? null,
+      break_minutes: g.molaDk ?? g.break_minutes ?? null,
+      start_package_count: g.paketAlinan ?? g.start_package_count ?? null,
+      undelivered_count: g.paketTeslimEdilemeyen ?? g.undelivered_count ?? null,
+      reason: sebep,
+    });
+  }
+
+  if (!r.ok) {
+    const status = statusForCorrect(r.error);
+    return status === 500
+      ? mobileError(500, "write_failed", { detail: r.error })
+      : mobileError(status, r.error);
+  }
+
+  let panelTazelendi = true;
+  try {
+    revalidatePath("/admin");
+    revalidatePath("/panel");
+  } catch {
+    panelTazelendi = false;
+  }
+
+  return Response.json({ ok: true, islem, vardiyaId: id, panelTazelendi });
 }

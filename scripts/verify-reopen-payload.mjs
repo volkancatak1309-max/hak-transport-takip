@@ -4,11 +4,16 @@
  *
  * `still_active_asked_at` sökülen watchdog'un damgasıydı; katman kalkınca
  * yazanı da okuyanı da kalmadı. İki yeniden-açma yükünden çıkarıldı
- * (app/actions/shift.ts: şoför yolu + yönetici/şef yolu).
+ * (şoför yolu + yönetici/şef yolu).
+ *
+ * ⚠️ 03.09.2026 — YÜKLER `app/actions/shift.ts`ten `lib/shift-start.ts`e
+ * TAŞINDI (mobil başlatma uçlarıyla tek kaynak). Bu betik o dosyayı parse
+ * ediyor. Ortak alanlar artık `reopenClearFields()` gövdesinde; iki çağrı
+ * yeri yalnız kendine özgü alanları ekliyor, o yüzden yük = ortak ∪ özgü.
  *
  * ── YÖNTEM: YÜK KAYNAKTAN OKUNUR, ELLE YAZILMAZ ───────────────────────────
  * Testin kendi payload'ını uydurması, "kodun gönderdiği şey" yerine "benim
- * sandığım şey"i ölçerdi. Bu yüzden `app/actions/shift.ts` PARSE EDİLİR ve
+ * sandığım şey"i ölçerdi. Bu yüzden `lib/shift-start.ts` PARSE EDİLİR ve
  * iki yeniden-açma nesnesinin ANAHTARLARI oradan çıkarılır; canlı denemede
  * o anahtar kümesi kullanılır. Kaynak değişirse test de değişir.
  *
@@ -57,11 +62,16 @@ console.log(`║ an  ${new Date().toISOString()}`);
 
 try {
   // ── 1. KAYNAK: iki yükte de kolon var mı ─────────────────────────────────
-  console.log("\n── 1. KAYNAK YÜKLERİ (app/actions/shift.ts) ──");
-  const src = await fs.readFile("app/actions/shift.ts", "utf8");
+  console.log("\n── 1. KAYNAK YÜKLERİ (lib/shift-start.ts) ──");
+  const src = await fs.readFile("lib/shift-start.ts", "utf8");
 
-  const soforYuk = anahtarlar(src, '.from("time_entries")\n      .update({\n        ended_at: null,');
-  const yoneticiYuk = anahtarlar(src, "const reopenBase: Record<string, unknown> = {");
+  // ORTAK ALANLAR — `reopenClearFields()` gövdesi. İki yol da bunu yayıyor.
+  const ortak = anahtarlar(src, "function reopenClearFields(") ?? [];
+  // ÖZGÜ ALANLAR — her çağrı yerinin spread'den SONRA eklediği anahtarlar.
+  const soforOzgu = anahtarlar(src, ".update({\n        ...reopenClearFields(") ?? [];
+  const yoneticiOzgu = anahtarlar(src, "const reopenBase: Record<string, unknown> = {") ?? [];
+  const soforYuk = [...new Set([...ortak, ...soforOzgu])];
+  const yoneticiYuk = [...new Set([...ortak, ...yoneticiOzgu])];
 
   iddia("şoför yolu yükü okundu", Array.isArray(soforYuk) && soforYuk.length > 5, `${soforYuk?.length} anahtar`);
   iddia("yönetici/şef yolu yükü okundu", Array.isArray(yoneticiYuk) && yoneticiYuk.length > 5, `${yoneticiYuk?.length} anahtar`);
@@ -73,8 +83,9 @@ try {
     iddia(`${ad} yükünde summary_notified_at KORUNDU`, y.includes("summary_notified_at"), null);
     iddia(`${ad} yükü vardiyayı AÇIYOR (ended_at null'a çekiliyor)`, y.includes("ended_at"), null);
   }
-  iddia("kodda still_active_asked_at'e YAZAN kalmadı",
-    !/still_active_asked_at\s*:/.test(src), null);
+  const shiftSrc = await fs.readFile("app/actions/shift.ts", "utf8");
+  iddia("kodda still_active_asked_at'e YAZAN kalmadı (çekirdek + action)",
+    !/still_active_asked_at\s*:/.test(src) && !/still_active_asked_at\s*:/.test(shiftSrc), null);
 
   // ── 2. HAZIRLIK: test personeli + KAPANMIŞ vardiya ───────────────────────
   console.log("\n── 2. CANLI DENEME ──");

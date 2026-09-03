@@ -14,22 +14,15 @@ import {
   UNRESTRICTED,
   type FleetScope,
 } from "@/lib/fleet-scope";
-import {
-  editEntrySchema,
-  MAX_ODOMETER,
-  MAX_PER_SHIFT_KM,
-  MAX_COUNT,
-} from "@/lib/validation";
-import { SHIFT_PER_DAY } from "@/lib/tenant";
-import { startOfTodayVienna } from "@/lib/format";
-import { checkUndelivered } from "@/lib/package-limits";
-import { logShiftEdit, listShiftEdits } from "@/lib/shift-edit-log";
-import { seferePaketBaglaVardiyadan } from "@/lib/sefer-bridge";
-import { evaluateDepotGate, resolveShiftStartAt } from "@/lib/depot";
-import { latestVehicleTelemetry } from "@/lib/telemetry";
-import { resolveStartKm, resolveEndKm } from "@/lib/auto-shift";
-import { hasShiftToday } from "@/lib/shift-day";
+import { MAX_COUNT } from "@/lib/validation";
+import { listShiftEdits } from "@/lib/shift-edit-log";
 import { endShiftForWorker } from "@/lib/shift-end";
+import { startShiftSelf, startShiftForWorkerCore } from "@/lib/shift-start";
+import {
+  correctShiftFields,
+  correctShiftKm,
+  closeShiftByAdmin,
+} from "@/lib/shift-correct";
 
 export type ShiftResult = {
   ok: boolean;
@@ -42,333 +35,37 @@ export type ShiftResult = {
 /**
  * Manuel vardiya başlatma (şoför paneli bekleme ekranı).
  *
- * Kontak sinyali gecikirse ya da hiç gelmezse şoför vardiyayı kendi başlatır.
- * Araç ilişkisinin TEK kaynağı vehicles.assigned_worker_id'dir — şoför araç
- * seçmez, atanmış aracıyla açar. Yazılan satır lib/auto-shift.ts'in yazdığıyla
- * aynı kolon setine sahiptir; farklar bilinçli:
- *   • auto_started=false  → auto-shift bu vardiyayı ASLA otomatik kapatmaz
- *     (auto-shift.ts: `if (!vehicleShift || !vehicleShift.auto_started) continue`);
- *     başlatan bitirir.
- *   • confirmation_status="confirmed" → başlatma zaten şoförün kendi eylemi,
- *     bir saniye sonra "VARDİYAYI ONAYLA" kartını göstermek anlamsız olurdu.
- * vehicle_id HER ZAMAN doldurulur: auto-shift açık vardiyaları hem worker'a hem
- * araca göre indeksler; boş bırakmak kontak açılınca ikinci satır riskidir.
+ * BAŞLATMA KURALLARI lib/shift-start.ts'te — MOBİLLE TEK KAYNAK (03.09.2026).
+ * Buradan çıkarılmasının sebebi mobil başlatma ucunun
+ * (POST /api/mobile/shifts/start) aynı vardiyayı açması gerekmesi;
+ * lib/shift-end.ts'in 22.08.2026'da kapanış için yaptığının aynısı.
+ *
+ * Bu action'ın SÖZLEŞMESİ DEĞİŞMEDİ: aynı hata dizgeleri (`inactive_worker`,
+ * `no_vehicle`, `vehicle_unavailable`, `active`, `day_done`, `outside_depot`,
+ * ham DB mesajı) ve `reopened` bayrağı aynen dönüyor, dolayısıyla
+ * PanelClient'ın hata eşlemesi olduğu gibi çalışıyor.
  */
 export async function startShiftManualAction(
-  /**
-   * GEÇİCİ ARAÇ (22.07.2026). Verilirse vardiya BU araçla açılır; şoförün
-   * atanmış aracı (vehicles.assigned_worker_id) DEĞİŞMEZ — o kalıcı ilişki,
-   * bu ise "bugün hangi araçla" sorusunun cevabıdır ve time_entries.vehicle_id
-   * üzerinde yaşar. Ertesi gün yeni satır yine atanmış araçla açılır;
-   * temizlenecek bir durum YOKTUR.
-   */
+  /** GEÇİCİ ARAÇ (22.07.2026) — bkz. lib/shift-start.ts startShiftSelf. */
   overrideVehicleId?: string
 ): Promise<ShiftResult> {
   const session = await requireWorker();
-
-  // 0) Çalışan hâlâ aktif mi? requireWorker BUNU KAPSAMAZ: is_active yalnız
-  //    girişte bir kez bakılıyor (app/actions/auth.ts) ve oturum çerezi 30 gün
-  //    yaşıyor. İşten ayrılan şoförün telefonu aksi hâlde ay sonuna kadar
-  //    vardiya açabilirdi. auto-shift aynı kontrolü yapıyor (w.is_active).
-  const { data: me } = await supabaseAdmin
-    .from("workers")
-    .select("is_active")
-    .eq("id", session.worker_id!)
-    .maybeSingle();
-  if (!me || me.is_active !== true) return { ok: false, error: "inactive_worker" };
-
-  // 1) Araç. Şoför geçici araç seçtiyse O, seçmediyse atanmış aracı.
-  //    "active" katılığı iki yolda da aynı: bakımdaki araçla vardiya açılmaz.
-  //
-  //    ÇÖZÜM ERTELENDİ, ÇAĞRI YERİ AŞAĞIDA (14.08.2026). Eskiden bu blok burada
-  //    ÇALIŞIYOR ve `no_vehicle` ile ERKEN DÖNÜYORDU — yani yeniden açma dalına
-  //    (madde 2b) hiç varılamıyordu. Ataması olmayan şoförde (Sendigo,
-  //    DRIVER_VEHICLE_CHOICE='free': canlıda 5 aracın yalnız test aracı atanmış)
-  //    "VARDİYAYI YENİDEN AÇ" düğmesi bu yüzden "Sana atanmış araç yok" diyordu:
-  //    yeniden açılacak satırın ARACI ZATEN BELLİYKEN kod onu aramaya gidiyordu.
-  //    Artık çözüm ihtiyaç anında yapılır ve yeniden açmada satırın kendi aracı
-  //    yedektir. HAK61'de (atamalı mod) sorgu aynı sorgu, sonuç aynı sonuç.
-  const resolveVehicle = async (): Promise<
-    | { ok: true; veh: { id: string; plate: string; status: string } }
-    | { ok: false; error: string }
-  > => {
-    if (overrideVehicleId) {
-      const { data } = await supabaseAdmin
-        .from("vehicles")
-        .select("id, plate, status, is_test")
-        .eq("id", overrideVehicleId)
-        .maybeSingle();
-      // Test aracı seçiciye hiç gelmiyor; yine de sunucu son sözü söyler.
-      if (!data || data.is_test === true) return { ok: false, error: "no_vehicle" };
-      if ((data.status as string) !== "active") {
-        return { ok: false, error: "vehicle_unavailable" };
-      }
-      return {
-        ok: true,
-        veh: {
-          id: data.id as string,
-          plate: data.plate as string,
-          status: data.status as string,
-        },
-      };
-    }
-    const { data } = await supabaseAdmin
-      .from("vehicles")
-      .select("id, plate, status")
-      .eq("assigned_worker_id", session.worker_id!)
-      .neq("status", "inactive")
-      .order("plate")
-      .limit(1)
-      .maybeSingle();
-    if (!data) return { ok: false, error: "no_vehicle" };
-    if ((data.status as string) !== "active") {
-      return { ok: false, error: "vehicle_unavailable" };
-    }
-    return {
-      ok: true,
-      veh: {
-        id: data.id as string,
-        plate: data.plate as string,
-        status: data.status as string,
-      },
-    };
-  };
-
-  // 2) Çift açık vardiya guard'ı (startShiftAction ile aynı). DB tarafında
-  //    uq_time_entries_one_open partial unique index son sözü söyler.
-  const { data: active } = await supabaseAdmin
-    .from("time_entries")
-    .select("id")
-    .eq("worker_id", session.worker_id!)
-    .is("ended_at", null)
-    .maybeSingle();
-  if (active) return { ok: false, error: "active" };
-
-  // 2a) ARAÇ guard'ı KALDIRILDI (22.07.2026, Volkan kararı). Eskiden aynı
-  //     araçta ikinci açık vardiya `vehicle_busy` ile reddediliyordu. Artık
-  //     ENGELLENMİYOR: şoför paneldeki seçicide "bu aracı şu an X kullanıyor"
-  //     uyarısını görür ve yine de devam edebilir (kural 3). Sahada iki kişinin
-  //     aynı araca binmesi gerçek bir durum; yazılım onu yasaklamak yerine
-  //     GÖRÜNÜR kılıyor — yönetici Araçlar sayfasında iki şoförü de görür ve
-  //     km çift sayımı rozetle işaretlenir.
-  //     DB tarafı zaten güvenli: uq_time_entries_one_open worker_id bazlıdır,
-  //     yani bir şoförün iki açık vardiyası hâlâ imkânsız.
-
-  // 2b) GÜNDE TEK VARDİYA (lib/shift-day.ts) — artık çıkmaz sokak DEĞİL.
-  //
-  //     Kural aynı kalıyor: bir şoförün bir Viyana gününde EN FAZLA BİR vardiya
-  //     SATIRI olur. Ama "bugün zaten kapattın" demek yerine o satırı YENİDEN
-  //     AÇIYORUZ. Gerekçe (22.07.2026): kapanış artık yalnız insan eliyle
-  //     oluyor ve tek yanlış dokunuş şoförün gününü bitiriyordu — kurtarma yolu
-  //     yalnız yöneticideydi. Yeniden açmak yeni satır üretmediği için "günde
-  //     tek vardiya" muhasebesi bozulmaz; gün sonunda yine tek kayıt kalır.
-  //
-  //     Kapanışa ait ne varsa temizlenir: imza (vardiya bitmediği için geçersiz),
-  //     km/kapanış sebebi ve watchdog sayacı. break_minutes ve start_km korunur —
-  //     aynı vardiyanın devamıdır. undelivered_count sıfırlanır ki kapanış formu
-  //     yeniden sorsun; cargo_count kapanışta zaten yeniden türetilir.
-  //
-  //     SHIFT_PER_DAY='many' (Sendigo, 14.08.2026): kural BU KİRACIDA YOK.
-  //     Gece vardiyası + gündüz çağrı işi aynı güne düşüyor ve ikincisi
-  //     GERÇEKTEN ayrı bir vardiyadır. Yeniden açma o gün için YANLIŞ cevaptır:
-  //     started_at/ended_at üzerine yazar, yani birinci vardiyayı SİLER. Canlıda
-  //     görüldü (14.08.2026, Sendigo): Can Özsavaş'ın 07:10→09:28 vardiyası
-  //     yönetici "yeniden aç" dediğinde 20:00 başlangıcıyla ezildi, satır
-  //     created_at=05:10 damgasıyla tek başına kaldı ve sabahki 2 sa 18 dk
-  //     kayboldu. 'many' modda bu dal ATLANIR, aşağıda YENİ SATIR açılır.
-  if (SHIFT_PER_DAY === "one" && (await hasShiftToday(session.worker_id!))) {
-    const { data: todays } = await supabaseAdmin
-      .from("time_entries")
-      .select("id, vehicle_id, plate")
-      .eq("worker_id", session.worker_id!)
-      .gte("started_at", startOfTodayVienna().toISOString())
-      .not("ended_at", "is", null)
-      .order("ended_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    // Kapanmış vardiya bulunamadıysa kural gerçekten uygulanır (savunmacı: açık
-    // vardiya ihtimali yukarıdaki guard'da zaten elendi).
-    if (!todays) return { ok: false, error: "day_done" };
-
-    // ARAÇ: seçilen/atanan, yoksa SATIRIN KENDİ ARACI. Yeniden açma yeni bir
-    // araç ilişkisi kurmuyor — var olanı sürdürüyor; şoför araç seçmediyse
-    // ve ataması da yoksa doğru cevap "hata" değil, sabahki araçtır.
-    // `vehicle_unavailable` YEDEKLENMEZ: bakımdaki araçla vardiya sürdürülmez.
-    const rv = await resolveVehicle();
-    let veh: { id: string; plate: string };
-    if (rv.ok) {
-      veh = rv.veh;
-    } else if (rv.error === "no_vehicle" && !overrideVehicleId && todays.vehicle_id) {
-      veh = { id: todays.vehicle_id as string, plate: (todays.plate as string) ?? "—" };
-    } else {
-      return { ok: false, error: rv.error };
-    }
-
-    // ⚠️ `still_active_asked_at` BU YÜKTEN ÇIKARILDI (21.08.2026). O kolon
-    // sökülen watchdog'un damgasıydı; katman kalkınca yazanı da okuyanı da
-    // kalmadı, yani burada null'a çekmek ölü bir kolona yazmaktı. Kolonun
-    // kendisi ayrı bir DDL ile düşecek — SIRA ÖNEMLİ: kolon önce düşseydi bu
-    // update 42703 verir ve aşağıdaki geri-düşüş yolu da aynı kolonu taşıdığı
-    // için ikinci kez patlardı; yani vardiya yeniden AÇILAMAZDI.
-    // ARAÇ da yazılır (03.08.2026). Eskiden yeniden açma vehicle_id ve plate'e
-    // HİÇ dokunmuyordu: şoför günün ikinci açılışında BAŞKA araç seçse bile
-    // vardiya sabahki araçla devam ediyordu — telemetri, km ve rapor yanlış
-    // araca yazılıyordu. Yönetici/şef yolu (aşağıda) ikisini zaten yazıyordu;
-    // iki yeniden-açma yolu bu noktada ayrışmıştı, artık aynı.
-    const { error: reopenErr } = await supabaseAdmin
-      .from("time_entries")
-      .update({
-        ended_at: null,
-        end_km: null,
-        end_reason: null,
-        auto_ended: false,
-        summary_notified_at: null,
-        summary_confirmed_at: null,
-        summary_confirmed_by: null,
-        undelivered_count: null,
-        vehicle_id: veh.id,
-        plate: veh.plate,
-        updated_at: new Date().toISOString(),
-        updated_by: session.worker_id,
-      })
-      .eq("id", todays.id as string)
-      .eq("worker_id", session.worker_id!)
-      .not("ended_at", "is", null);
-
-    if (reopenErr) {
-      // 23505 = uq_time_entries_one_open: aynı saniyede başka bir yol vardiya
-      // açtıysa bu hata değil, "zaten aktif" durumudur.
-      if (/duplicate key|23505/i.test(reopenErr.message)) {
-        return { ok: false, error: "active" };
-      }
-      return { ok: false, error: reopenErr.message };
-    }
-
-    revalidatePath("/panel");
-    revalidatePath("/admin");
-    return { ok: true, reopened: true };
-  }
-
-  // YENİ SATIR yolu — araç burada çözülür (yeniden açmanın yedeği yok: yeni
-  // vardiya gerçek bir araç ister).
-  const rvNew = await resolveVehicle();
-  if (!rvNew.ok) return { ok: false, error: rvNew.error };
-  const veh = rvNew.veh;
-
-  // DEPO KAPISI (Modül 6) — YALNIZ yeni vardiya için (yeniden-açma yukarıda döndü;
-  // yolda olan şoför devam ederken depoda olması beklenmez). Mesai depoda başlar:
-  // araç KESİN depo dışında + muafiyet yoksa vardiya AÇILMAZ. Belirsiz/cihaz-ölü/
-  // muafiyet → izin ver ama "konum doğrulanamadı" işaretle. Sunucu son sözü söyler:
-  // buton pasif olsa da action doğrudan çağrılıp kilit aşılamasın (fail-closed).
-  const depotGate = await evaluateDepotGate(veh.id, session.worker_id!);
-  if (depotGate.blocked) return { ok: false, error: "outside_depot" };
-
-  // 3) Başlangıç km: odometre → aracın son biten vardiyası → 0. Şoför
-  //    "Ayarlar → Başlangıç KM"den düzeltebilir.
-  const latest = await latestVehicleTelemetry(veh.id as string);
-  const startKm = await resolveStartKm(
-    veh.id as string,
-    latest?.odometer_km,
-    latest?.recorded_at
-  );
-
-  // 3a) BAŞLANGIÇ ANI — "şimdi" DEĞİL (25.07.2026). Mesai depoda başlar, şoför
-  //     ise depoya vardıktan bir süre sonra butona basıyor; butona basma anını
-  //     yazmak mesaiyi sistematik olarak kısa gösteriyordu. Sıra (lib/depot.ts):
-  //     bugünkü depo girişi → son 14 günün ortalama geliş saati → now.
-  //     Şoför saat SEÇEMEZ, girmez; hesap tamamen sunucuda.
-  //     confirmed_at bilinçli olarak AYRI ve "şimdi": onay anı gerçekten şimdi.
-  const resolvedStart = await resolveShiftStartAt(veh.id as string);
-  const startedIso = resolvedStart.at;
-  const confirmedIso = new Date().toISOString();
-  const { data: ins, error } = await supabaseAdmin
-    .from("time_entries")
-    .insert({
-      worker_id: session.worker_id!,
-      vehicle_id: veh.id,
-      plate: veh.plate,
-      started_at: startedIso,
-      start_km: startKm,
-      break_minutes: 0,
-      auto_started: false,
-      confirmation_status: "confirmed",
-      confirmed_at: confirmedIso,
-    })
-    .select("id")
-    .maybeSingle();
-  if (error) {
-    // 23505 = uq_time_entries_one_open. Şoför butona bastığı saniyede cron
-    // kontaktan açtıysa bu bir hata değil, "zaten aktif" durumudur.
-    if (/duplicate key|23505/i.test(error.message)) {
-      return { ok: false, error: "active" };
-    }
-    return { ok: false, error: error.message };
-  }
-
-  // İKİ AYRI OLGU, İKİ AYRI BAYRAK (038, 27.07.2026). Eskiden ikisi de tek
-  // `location_unverified`e yığılıyordu ve pano "konum doğrulanmadı" derken
-  // vakaların çoğunda konum DOĞRULANMIŞTI (27.07: 8 kaydın 7'si depodaydı):
-  //   • location_unverified  → depo kapısı konumu doğrulayamadı: cihaz sessiz/
-  //     ölü ya da yönetici muafiyeti. ARAÇTAN SİNYAL YOK.
-  //   • start_time_estimated → araç depoda AMA started_at depo girişinden
-  //     türetilemedi (kademe 2 ortalama / kademe 3 "şimdi"). SAAT TAHMİNİ.
-  // İkisi aynı anda da düşebilir (cihaz ölü → hem konum hem saat bilinmez).
-  //
-  // Best-effort: kolon yoksa sessiz geç; manuel başlatma ASLA kolon eksikliğiyle
-  // kırılmamalı.
-  if ((depotGate.unverified || !resolvedStart.verified) && ins?.id) {
-    const entryId = ins.id as string;
-    const flags: Record<string, boolean> = {};
-    if (depotGate.unverified) flags.location_unverified = true;
-    if (!resolvedStart.verified) flags.start_time_estimated = true;
-    try {
-      const upd = await supabaseAdmin
-        .from("time_entries")
-        .update(flags)
-        .eq("id", entryId);
-      // 038 uygulanmamış ortam: yeni kolon yok → eski bayrağı tek başına yaz.
-      // (Yalnız saat tahminiyse yazacak bir şey yok; sessizce geçilir.)
-      if (
-        upd.error &&
-        /start_time_estimated|column/i.test(upd.error.message) &&
-        flags.location_unverified
-      ) {
-        await supabaseAdmin
-          .from("time_entries")
-          .update({ location_unverified: true })
-          .eq("id", entryId);
-      }
-    } catch {
-      // kolon yok / hata → işaret düşmez, vardiya sağlam
-    }
-  }
-
+  const r = await startShiftSelf(session.worker_id!, { overrideVehicleId });
+  if (!r.ok) return { ok: false, error: r.error };
 
   revalidatePath("/panel");
   revalidatePath("/admin");
-  return { ok: true };
+  // `reopened` yalnız TRUE iken alan olarak dönüyordu; şekli koruyoruz.
+  return r.reopened ? { ok: true, reopened: true } : { ok: true };
 }
 
 /**
  * YÖNETİCİ / FİLO ŞEFİ, bir personelin vardiyasını ELLE başlatır (Modül 7 telafi).
  *
- * Depo-tetikli otomatik vardiya telemetri düştüğünde açılmaz (bkz. lib/depot.ts);
- * o boşlukta mesaiyi insan eliyle başlatmanın yolu budur. startShiftManualAction'dan
- * FARKI: o requireWorker() ile YALNIZ kendisi için açar; bu ise BAŞKASI adına açar
- * ve yetkiyi requireManualStartAuth ile denetler (patron=herkes, şef=yalnız kendi
- * filosu, fail-closed). İçini (resolveStartKm, insert kolon seti, one-open guard,
- * günde-tek-vardiya + yeniden-açma) startShiftManualAction ile paylaşır.
- *
- * Bilinçli farklar:
- *   • started_at ÇAĞIRANDAN gelir (geri-tarihlenebilir: "mesaiye 06:30'da başladı").
- *     Bugünün Viyana günü içinde ve gelecekte olmayan bir an olmalı.
- *   • DEPO KİLİDİ UYGULANMAZ: araç şu an sahada olabilir (telemetri düştüğü için
- *     zaten buradayız); yönetici/şef bilerek override ediyor. Kilit koysaydık
- *     "araç depo dışında" diye başlatmayı engellerdi — telafinin amacına aykırı.
- *   • start_source = rol ('admin'|'chief'), started_by = eylemi yapan → iz + panel
- *     Dikkat kalemi (yalnız 'chief' bildirimi gösterir). Bildirim = PANEL (Volkan
- *     kararı): push yok, start_source kalıcı olduğu için Dikkat panosu türetir.
+ * Yetki kapısı `requireManualStartAuth` (lib/session.ts → lib/manual-start-scope.ts),
+ * başlatma gövdesi lib/shift-start.ts. İkisi de mobil `POST
+ * /api/mobile/shifts/start-for` ile ORTAK; bu action yalnız kimliği oturumdan
+ * çözüp sonucu panelin sözleşmesine çeviriyor.
  */
 export async function startShiftForWorkerAction(input: {
   workerId: string;
@@ -380,185 +77,13 @@ export async function startShiftForWorkerAction(input: {
   const auth = await requireManualStartAuth(input.workerId);
   if (!auth.ok) return { ok: false, error: auth.error };
 
-  // Hedef şoför hâlâ kadroda mı?
-  const { data: target } = await supabaseAdmin
-    .from("workers")
-    .select("id, is_active, is_admin, counts_as_driver")
-    .eq("id", input.workerId)
-    .maybeSingle();
-  if (!target || target.is_active !== true) {
-    return { ok: false, error: "inactive_worker" };
-  }
-  // Yönetici adına vardiya AÇILAMAZ. Seçici (roster) zaten yöneticileri
-  // göstermiyor ama bu sunucu kapısı istemciye güvenmez: böyle bir satır
-  // açılırsa Analiz, AZG ve tüm raporlara GERÇEK vardiya gibi girer ve şoför
-  // metriklerini kalıcı olarak kirletir (canlıda iki demo satır tam olarak
-  // bunu yapmıştı). Şefler is_admin=false olduğu için bu kapıya TAKILMAZ.
-  //
-  // MUAFİYET (migration 041): counts_as_driver=true olan yönetici roster'a
-  // GİRER (lib/driver-scope.ts onu elemiyor) ve Günün Panosu'nda "Vardiya
-  // Başlat" düğmesiyle görünür. Kapı buradaki ham is_admin kontrolüyle kalsaydı
-  // düğme sunucuda "not_a_driver" ile reddedilirdi: listede duran ama
-  // çalışmayan bir eylem. Koşul kapsamla AYNI cümleyi kurar — ayrışamaz.
-  if (target.is_admin === true && target.counts_as_driver !== true) {
-    return { ok: false, error: "not_a_driver" };
-  }
-
-  // Araç: verilen (override) ya da atanmış. active + test-değil şartı iki yolda da.
-  let veh: { id: string; plate: string } | null = null;
-  if (input.vehicleId) {
-    const { data } = await supabaseAdmin
-      .from("vehicles")
-      .select("id, plate, status, is_test, assigned_worker_id")
-      .eq("id", input.vehicleId)
-      .maybeSingle();
-    if (!data || data.is_test === true) return { ok: false, error: "no_vehicle" };
-    if ((data.status as string) !== "active") {
-      return { ok: false, error: "vehicle_unavailable" };
-    }
-    // Şef YALNIZ kendi filosundaki aracı VEYA şoförün atanmış aracını seçebilir.
-    if (auth.role === "chief") {
-      const inScope =
-        auth.scope.isFleetVehicle(data.id as string) ||
-        (data.assigned_worker_id as string | null) === input.workerId;
-      if (!inScope) return { ok: false, error: "vehicle_out_of_scope" };
-    }
-    veh = { id: data.id as string, plate: data.plate as string };
-  } else {
-    const { data } = await supabaseAdmin
-      .from("vehicles")
-      .select("id, plate, status")
-      .eq("assigned_worker_id", input.workerId)
-      .neq("status", "inactive")
-      .order("plate")
-      .limit(1)
-      .maybeSingle();
-    if (!data) return { ok: false, error: "no_vehicle" };
-    if ((data.status as string) !== "active") {
-      return { ok: false, error: "vehicle_unavailable" };
-    }
-    veh = { id: data.id as string, plate: data.plate as string };
-  }
-
-  // Başlangıç anı: bugünün Viyana günü içinde + gelecekte değil (60 sn tolerans).
-  const startedMs = new Date(input.startedAt).getTime();
-  if (!Number.isFinite(startedMs)) return { ok: false, error: "invalid_time" };
-  if (startedMs > Date.now() + 60_000) return { ok: false, error: "future_time" };
-  if (startedMs < startOfTodayVienna().getTime()) {
-    return { ok: false, error: "not_today" };
-  }
-  const startedIso = new Date(startedMs).toISOString();
-
-  // Çift açık vardiya guard'ı (DB'de uq_time_entries_one_open son sözü söyler).
-  const { data: active } = await supabaseAdmin
-    .from("time_entries")
-    .select("id")
-    .eq("worker_id", input.workerId)
-    .is("ended_at", null)
-    .maybeSingle();
-  if (active) return { ok: false, error: "active" };
-
-  // GÜNDE TEK VARDİYA: bugün kapanmış vardiya varsa YENİDEN AÇ (yeni satır üretme).
-  // SHIFT_PER_DAY='many' kiracısında bu dal ATLANIR — bkz. startShiftManualAction
-  // madde 2b: yeniden açma started_at'in üzerine yazdığı için ikinci vardiyayı
-  // eklemez, birincisini SİLER.
-  if (SHIFT_PER_DAY === "one" && (await hasShiftToday(input.workerId))) {
-    const { data: todays } = await supabaseAdmin
-      .from("time_entries")
-      .select("id")
-      .eq("worker_id", input.workerId)
-      .gte("started_at", startOfTodayVienna().toISOString())
-      .not("ended_at", "is", null)
-      .order("ended_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (!todays) return { ok: false, error: "day_done" };
-
-    const reopenBase: Record<string, unknown> = {
-      ended_at: null,
-      end_km: null,
-      end_reason: null,
-      auto_ended: false,
-      summary_notified_at: null,
-      summary_confirmed_at: null,
-      summary_confirmed_by: null,
-      undelivered_count: null,
-      started_at: startedIso,
-      vehicle_id: veh.id,
-      plate: veh.plate,
-      updated_at: new Date().toISOString(),
-      updated_by: auth.actorId,
-    };
-    const reopen = { ...reopenBase, started_by: auth.actorId, start_source: auth.role };
-    let up = await supabaseAdmin
-      .from("time_entries")
-      .update(reopen)
-      .eq("id", todays.id as string)
-      .eq("worker_id", input.workerId)
-      .not("ended_at", "is", null);
-    if (up.error && /start_source|started_by|column/i.test(up.error.message)) {
-      // 037 öncesi: iz kolonları yok → kolonsuz yeniden dene (iz eksik, vardiya açık).
-      up = await supabaseAdmin
-        .from("time_entries")
-        .update(reopenBase)
-        .eq("id", todays.id as string)
-        .eq("worker_id", input.workerId)
-        .not("ended_at", "is", null);
-    }
-    if (up.error) {
-      if (/duplicate key|23505/i.test(up.error.message)) {
-        return { ok: false, error: "active" };
-      }
-      return { ok: false, error: up.error.message };
-    }
-    revalidatePath("/panel");
-    revalidatePath("/admin");
-    revalidatePath("/admin/workers");
-    return { ok: true, reopened: true };
-  }
-
-  // Yeni satır. km: odometre → aracın son biten vardiyası → 0 (resolveStartKm).
-  const latest = await latestVehicleTelemetry(veh.id);
-  const startKm = await resolveStartKm(veh.id, latest?.odometer_km, latest?.recorded_at);
-
-  const insertBase: Record<string, unknown> = {
-    worker_id: input.workerId,
-    vehicle_id: veh.id,
-    plate: veh.plate,
-    started_at: startedIso,
-    start_km: startKm,
-    break_minutes: 0,
-    // auto_started=false → auto-shift bu vardiyayı ASLA otomatik kapatmaz.
-    auto_started: false,
-    // Yetkili bir eylem; şoför onayı beklemez.
-    confirmation_status: "confirmed",
-    confirmed_at: startedIso,
-  };
-  const insertAudit = { ...insertBase, started_by: auth.actorId, start_source: auth.role };
-
-  let res = await supabaseAdmin
-    .from("time_entries")
-    .insert(insertAudit)
-    .select("id")
-    .maybeSingle();
-  if (res.error && /start_source|started_by|column/i.test(res.error.message)) {
-    res = await supabaseAdmin
-      .from("time_entries")
-      .insert(insertBase)
-      .select("id")
-      .maybeSingle();
-  }
-  if (res.error) {
-    if (/duplicate key|23505/i.test(res.error.message)) {
-      return { ok: false, error: "active" };
-    }
-    return { ok: false, error: res.error.message };
-  }
+  const r = await startShiftForWorkerCore(auth, input);
+  if (!r.ok) return { ok: false, error: r.error };
 
   revalidatePath("/panel");
   revalidatePath("/admin");
   revalidatePath("/admin/workers");
-  return { ok: true };
+  return r.reopened ? { ok: true, reopened: true } : { ok: true };
 }
 
 /**
@@ -728,8 +253,10 @@ export async function updatePackageCountAction(
 }
 
 /**
- * Admin corrects the start/end odometer of ANY shift (open or closed). Validates
- * non-negative and end ≥ start; stamps the audit columns (updated_at/updated_by).
+ * KM DÜZELTMESİ — gövde lib/shift-correct.ts'te (MOBİLLE TEK KAYNAK, 03.09.2026).
+ *
+ * Bu action'ın SÖZLEŞMESİ DEĞİŞMEDİ: aynı hata dizgeleri (`errKmNeg`,
+ * `errKmRange`, `km_low:<e>:<s>`, `km_high:<fark>:<tavan>`, ham DB mesajı).
  */
 export async function adminUpdateKmAction(
   entryId: string,
@@ -737,43 +264,8 @@ export async function adminUpdateKmAction(
   endKm: number | null
 ): Promise<ShiftResult> {
   const session = await requireAdmin();
-  const s = Math.floor(Number(startKm));
-  if (!Number.isFinite(s) || s < 0) return { ok: false, error: "errKmNeg" };
-  if (s > MAX_ODOMETER) return { ok: false, error: "errKmRange" };
-
-  let e: number | null = null;
-  if (endKm !== null && endKm !== undefined && String(endKm) !== "") {
-    e = Math.floor(Number(endKm));
-    if (!Number.isFinite(e) || e < 0) return { ok: false, error: "errKmNeg" };
-    if (e > MAX_ODOMETER) return { ok: false, error: "errKmRange" };
-    if (e < s) return { ok: false, error: `km_low:${e}:${s}` };
-    if (e - s > MAX_PER_SHIFT_KM) return { ok: false, error: `km_high:${e - s}:${MAX_PER_SHIFT_KM}` };
-  }
-
-  // Düzenleme izi için önceki km değerleri (bkz. lib/shift-edit-log.ts).
-  const { data: beforeKm } = await supabaseAdmin
-    .from("time_entries")
-    .select("start_km, end_km")
-    .eq("id", entryId)
-    .maybeSingle();
-
-  const kmUpdate = {
-    start_km: s,
-    end_km: e,
-    updated_at: new Date().toISOString(),
-    updated_by: session.worker_id,
-  };
-  const { error } = await supabaseAdmin
-    .from("time_entries")
-    .update(kmUpdate)
-    .eq("id", entryId);
-
-  if (error) return { ok: false, error: error.message };
-
-  await logShiftEdit(entryId, session.worker_id ?? null, beforeKm ?? null, kmUpdate, {
-    reason: "Km düzeltmesi (panel)",
-    kaynak: "km",
-  });
+  const r = await correctShiftKm(session.worker_id, entryId, startKm, endKm);
+  if (!r.ok) return { ok: false, error: r.error };
 
   revalidatePath("/admin");
   revalidatePath("/panel");
@@ -781,124 +273,34 @@ export async function adminUpdateKmAction(
 }
 
 /**
- * Yönetici, KAPANMAMIŞ bir vardiyayı kapatır ("Kapanmamış Vardiyalar" kartı).
+ * KAPANMAMIŞ VARDİYAYI YÖNETİCİ KAPATIR — gövde lib/shift-correct.ts'te
+ * (MOBİLLE TEK KAYNAK, 03.09.2026). Sebep ZORUNLU, iz ZORUNLU (087).
  *
- * Neden gerekli (22.07.2026): otomatik kapanış kaldırıldı, yani unutulan
- * vardiyayı kapatacak tek mekanizma watchdog'un şoföre sorduğu soruydu — ve o
- * fiilen ölüydü: hiçbir şoför o kanala bağlı değildi, watchdog yalnız
- * yöneticilere haber verip damga atıyordu (katman 20.08.2026'da tamamen
- * söküldü). Telafi yolu
- * olmadan "vardiyayı sadece personel kapatır" kuralı, unutulan vardiyanın
- * günlerce açık kalması demekti (canlı: 27 saat açık kayıt).
- *
- * Bitiş anı "şimdi" DEĞİL: aracın son telemetri kaydı tercih edilir — sökülen
- * watchdog kapanışıyla birebir aynı kural. 27 saattir açık
- * duran bir vardiyayı "şimdi"ye kapatmak 27 saatlik çalışma yazardı.
- * Bitiş km'si de manuel kapanışla aynı kaynaktan türetilir (resolveEndKm).
- */
-/**
- * KAPANMAMIŞ VARDİYAYI YÖNETİCİ KAPATIR — SEBEP ZORUNLU, İZ ZORUNLU (087).
- *
- * 🔴 ÖNCEDEN İZ BIRAKMIYORDU. Bu eylem `ended_at` ve `end_km` yazıyor;
- * `ended_at` AZG raporunu doğrudan besleyen üç alandan biri. `editEntryAction`
- * iz bırakırken kapatmanın bırakmaması, aynı tabloya iki farklı standart
- * uygulamaktı — ve denetimde "bu bitiş saatini kim koydu" sorusu cevapsız
- * kalıyordu.
+ * SÖZLEŞME DEĞİŞMEDİ: `errReasonShort`, `no_active`, ham DB mesajı.
  */
 export async function adminCloseShiftAction(
   entryId: string,
   reason: string
 ): Promise<ShiftResult> {
   const session = await requireAdmin();
-
-  const sebep = (reason ?? "").trim();
-  if (sebep.length < 3) return { ok: false, error: "errReasonShort" };
-
-  const { data: entry } = await supabaseAdmin
-    .from("time_entries")
-    .select("id, worker_id, vehicle_id, started_at, start_km, confirmation_status")
-    .eq("id", entryId)
-    .is("ended_at", null)
-    .maybeSingle();
-  if (!entry) return { ok: false, error: "no_active" };
-
-  // Bitiş anı: aracın son telemetrisi → yoksa şimdi. Vardiya başlangıcından
-  // önceye asla düşmez (bozuk telemetride negatif süre üretmesin).
-  let endedIso = new Date().toISOString();
-  if (entry.vehicle_id) {
-    const { data: lastFix } = await supabaseAdmin
-      .from("device_telemetry")
-      .select("recorded_at")
-      .eq("vehicle_id", entry.vehicle_id as string)
-      .gte("recorded_at", entry.started_at as string)
-      .order("recorded_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (lastFix?.recorded_at) endedIso = lastFix.recorded_at as string;
-  }
-
-  let endKm: number | null = null;
-  if (entry.vehicle_id) {
-    const latest = await latestVehicleTelemetry(entry.vehicle_id as string);
-    endKm = await resolveEndKm(
-      entry.vehicle_id as string,
-      { started_at: entry.started_at as string, start_km: entry.start_km as number },
-      endedIso,
-      latest?.odometer_km,
-      latest?.recorded_at
-    );
-  }
-
-  const { error } = await supabaseAdmin
-    .from("time_entries")
-    .update({
-      ended_at: endedIso,
-      end_km: endKm,
-      end_reason: "admin",
-      summary_notified_at: endedIso,
-      updated_at: new Date().toISOString(),
-      updated_by: session.worker_id,
-    })
-    .eq("id", entryId)
-    .is("ended_at", null);
-
-  if (error) return { ok: false, error: error.message };
-
-  /**
-   * DENETİM İZİ — kapatma da bir düzeltmedir.
-   *
-   * `before` yalnız değişen iki alanı taşır: `ended_at` zaten null'dı,
-   * `end_km` de. Log yazıcısı değişen alanları kendisi süzer.
-   */
-  await logShiftEdit(
-    entryId,
-    session.worker_id ?? null,
-    { ended_at: null, end_km: null },
-    { ended_at: endedIso, end_km: endKm },
-    { reason: sebep, kaynak: "kapatma" }
-  );
-
-  // Başlangıç onayı verilmeden kapanan vardiya "onaysız" işaretlenir — manuel
-  // kapanıştaki desenin aynısı (best-effort, kapanışı geri döndürmez).
-  await supabaseAdmin
-    .from("time_entries")
-    .update({ confirmation_status: "unconfirmed" })
-    .eq("id", entryId)
-    .eq("confirmation_status", "pending")
-    .then(
-      () => {},
-      () => {}
-    );
+  const r = await closeShiftByAdmin(session.worker_id, entryId, reason);
+  if (!r.ok) return { ok: false, error: r.error };
 
   revalidatePath("/admin");
   revalidatePath("/panel");
   return { ok: true };
 }
 
+/**
+ * TAM DÜZELTME — gövde lib/shift-correct.ts'te (MOBİLLE TEK KAYNAK, 03.09.2026).
+ *
+ * SÖZLEŞME DEĞİŞMEDİ: şema mesaj anahtarları, `km_low:…`, paket tavanı kodları
+ * ve ham DB mesajı aynı sırayla dönüyor.
+ */
 export async function editEntryAction(formData: FormData): Promise<ShiftResult> {
   const session = await requireAdmin();
 
-  const parsed = editEntrySchema.safeParse({
+  const r = await correctShiftFields(session.worker_id, {
     id: formData.get("id"),
     started_at: formData.get("started_at"),
     ended_at: formData.get("ended_at") || null,
@@ -911,97 +313,7 @@ export async function editEntryAction(formData: FormData): Promise<ShiftResult> 
     undelivered_count: formData.get("undelivered_count") || null,
     reason: formData.get("reason") || "",
   });
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
-  }
-
-  // PAKET MANTIĞI ŞOFÖRLE AYNI (22.07.2026). Yönetici de "teslim edilen"i elle
-  // giremez; alınan − geri getirilen olarak hesaplanır. Böylece düzeltme
-  // sırasında tutarsız üçlü (alınan/teslim/geri) oluşturulamaz — eskiden
-  // türetilmiş alan düzenlenebilirken kaynak alanlar düzenlenemiyordu.
-  const taken = parsed.data.start_package_count ?? null;
-  const returned = parsed.data.undelivered_count ?? null;
-  if (returned !== null) {
-    const bound = checkUndelivered(returned, taken);
-    if (!bound.ok) return { ok: false, error: bound.code };
-  }
-  const derivedCargo =
-    taken !== null && returned !== null ? Math.max(0, taken - returned) : null;
-
-  const startedAtIso = new Date(parsed.data.started_at).toISOString();
-  const endedAtIso = parsed.data.ended_at ? new Date(parsed.data.ended_at).toISOString() : null;
-
-  if (
-    endedAtIso &&
-    parsed.data.end_km !== null &&
-    parsed.data.end_km !== undefined &&
-    parsed.data.end_km < parsed.data.start_km
-  ) {
-    return { ok: false, error: `km_low:${parsed.data.end_km}:${parsed.data.start_km}` };
-  }
-
-  // ARAÇ REFERANSI SENKRONU (03.08.2026). Form yalnız `plate` metnini
-  // düzenletiyor; vehicle_id'ye hiç dokunulmuyordu ve iki referans ayrışıyordu
-  // (satırda "W-1234" yazarken telemetri/km başka aracın id'sinden okunuyordu).
-  // Artık plaka bir araca çözülüyorsa vehicle_id de o araca yazılır. Çözülmüyorsa
-  // (bilinmeyen/boş plaka) null yazılır: yanlış aracı asılı bırakmaktansa bağı
-  // yokuz demek dürüsttür — hiçbir yüzey "bilinmiyor"u sayı gibi göstermiyor.
-  const plateText = (parsed.data.plate ?? "").trim();
-  let nextVehicleId: string | null = null;
-  if (plateText) {
-    const { data: vehRow } = await supabaseAdmin
-      .from("vehicles")
-      .select("id")
-      .ilike("plate", plateText)
-      .limit(1)
-      .maybeSingle();
-    nextVehicleId = (vehRow?.id as string | undefined) ?? null;
-  }
-
-  const update: Record<string, unknown> = {
-    started_at: startedAtIso,
-    ended_at: endedAtIso,
-    start_km: parsed.data.start_km,
-    end_km: parsed.data.end_km,
-    plate: parsed.data.plate,
-    vehicle_id: nextVehicleId,
-    notes: parsed.data.notes,
-    break_minutes: parsed.data.break_minutes ?? 0,
-    start_package_count: taken,
-    undelivered_count: returned,
-    updated_at: new Date().toISOString(),
-    updated_by: session.worker_id,
-  };
-  // Teslim edilen yalnız ikisi de biliniyorsa yazılır; biri boşsa mevcut
-  // değeri EZMEYİZ (yarım veriyle uydurma sayı üretmek yerine dokunmayız).
-  if (derivedCargo !== null) update.cargo_count = derivedCargo;
-
-  // Değişiklik izini yazabilmek için ÖNCEKİ hâli okuyoruz (AZG yasal rapor:
-  // started_at/ended_at/break_minutes doğrudan bu tablodan besleniyor).
-  const { data: before } = await supabaseAdmin
-    .from("time_entries")
-    .select(
-      "started_at, ended_at, start_km, end_km, plate, vehicle_id, notes, break_minutes, start_package_count, undelivered_count, cargo_count"
-    )
-    .eq("id", parsed.data.id)
-    .maybeSingle();
-
-  const { error } = await supabaseAdmin
-    .from("time_entries")
-    .update(update)
-    .eq("id", parsed.data.id);
-
-  if (error) return { ok: false, error: error.message };
-
-  await logShiftEdit(parsed.data.id, session.worker_id ?? null, before ?? null, update, {
-    reason: parsed.data.reason,
-    kaynak: "duzeltme",
-  });
-
-  // SEFER PAKET KÖPRÜSÜ (Tur 3) — yönetici teslim sayısını düzeltirse seferin
-  // taşıdığı rakam da tazelensin; yoksa sefer düzeltilmiş vardiyanın YANLIŞ
-  // sayısını taşımaya devam ederdi.
-  await seferePaketBaglaVardiyadan(parsed.data.id);
+  if (!r.ok) return { ok: false, error: r.error };
 
   revalidatePath("/admin");
   revalidatePath("/panel");

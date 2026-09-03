@@ -41,3 +41,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .playwright-mcp/
+
+# kuru koşum yükleyicisinin ürettiği sahte env (scripts/ts-server-kuru.mjs)
+# Gerçek anahtar TAŞIMAZ ama .env adıyla depoda durmasına gerek yok:
+# yükleyici yoksa kendisi üretiyor.
+scripts/kuru.env

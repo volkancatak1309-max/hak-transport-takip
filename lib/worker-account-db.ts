@@ -2,9 +2,10 @@ import "server-only";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
 import { assertOwnerWritable } from "@/lib/owner-scope";
-import { adminSetPinSchema } from "@/lib/validation";
-import { bumpTokenVersion } from "@/lib/mobile-auth";
+import { adminSetPinSchema, changePinSchema } from "@/lib/validation";
+import { bumpTokenVersion, readTokenVersion } from "@/lib/mobile-auth";
 import { auditChange } from "@/lib/audit-change";
+import { verifyOwnPin } from "@/lib/auth-core";
 
 /**
  * PERSONEL HESABI YAZMA ÇEKİRDEĞİ — panel ve mobil TEK yerden yazar.
@@ -215,5 +216,149 @@ export async function setWorkerActive(
     aktif: hedefAktif,
     ayrilisTarihi: hedefAktif ? null : eskiAyrilis,
     tokenIptal,
+  };
+}
+
+// ── KENDİ PIN'İ ─────────────────────────────────────────────────────────────
+
+export type OwnPinSonuc =
+  | {
+      ok: true;
+      /** false → migration 044 yok; DİĞER cihazlardaki anahtarlar ölmedi. */
+      tokenIptal: boolean;
+      /** İptal sonrası sürüm. Çağıran ÇAĞIRAN CİHAZA yeni token bununla mühürler. */
+      tokenSurumu: number | null;
+      /** Yönetici hesabı mı — çağıran yeni token'ı bu bayrakla mühürler. */
+      isAdmin: boolean;
+    }
+  | {
+      ok: false;
+      sebep:
+        | "mevcut_pin_gecersiz"
+        | "mevcut_pin_hatali"
+        | "kilitli"
+        | "yeni_pin_gecersiz"
+        | "ayni_pin"
+        | "not_found"
+        | "write_failed";
+      /** Yalnız yeni_pin_gecersiz: zod mesaj anahtarı ("errPin" | "errPinWeak" | "errPinMismatch"). */
+      pinKod?: string;
+      /** Yalnız kilitli. */
+      retryAfter?: number;
+      lockedUntil?: string;
+    };
+
+/**
+ * KULLANICI KENDİ PIN'İNİ DEĞİŞTİRİR — mevcut PIN + yeni PIN.
+ *
+ * ═══ PANELDEKİ KARŞILIĞI VE FARKI ═════════════════════════════════════════
+ *
+ * Panelde `changePinAction` (app/actions/auth.ts) var ve o mevcut PIN'i
+ * SORMUYOR — çünkü tek girildiği yer `/pin` ekranı, yani `must_change_pin`
+ * bayrağıyla zorunlu değişim. Orada kullanıcı kimliğini bir adım önce PIN'le
+ * kanıtlamış oluyor ve oturum çerezi o kanıtı taşıyor.
+ *
+ * Mobil YOL FARKLI: access token 15 dakika, refresh token 30 GÜN yaşıyor ve
+ * telefon diskinde duruyor. "Ayarlar → PIN değiştir" her an açılabilir. Mevcut
+ * PIN sorulmasaydı, çalınmış bir telefon PIN'i değiştirip asıl sahibini kendi
+ * hesabından KİLİTLERDİ. Bu yüzden mevcut PIN kapısı eklendi — ve o kapı
+ * girişin sayacını kullanıyor (lib/auth-core.ts → verifyOwnPin), kendi sayacını
+ * kurmuyor.
+ *
+ * ── DEĞİŞMEYEN KURALLAR (panelle ORTAK, kopyalanmadı) ─────────────────────
+ *   • Yeni PIN  → `changePinSchema` — pinSchema (6 hane + zayıf değil) +
+ *     `pin_confirm` eşleşmesi. `adminSetPinSchema` DEĞİL: 123456 istisnası
+ *     yalnız YÖNETİCİNİN atadığı geçici PIN içindir, kullanıcı onu kendi
+ *     kalıcı PIN'i yapamaz (lib/validation.ts).
+ *   • "Aynı PIN"  → reddedilir. Panelde bu `bcrypt.compare(yeni, mevcutHash)`
+ *     ile ölçülüyor çünkü orada mevcut PIN BİLİNMİYOR. Burada biliniyor
+ *     (kullanıcı yazdı ve doğrulandı), o yüzden düz karşılaştırma AYNI
+ *     sonucu verir ve bir bcrypt turu harcamaz.
+ *   • `must_change_pin` → false. Zorunlu değişim akışının kapanış adımı.
+ *   • `bumpTokenVersion` → panelin `changePinAction`ı da çağırıyor. PIN
+ *     değişince eski PIN'le alınmış anahtarlar ölmeli.
+ *
+ * ── İZ YOK ────────────────────────────────────────────────────────────────
+ * `setWorkerPin` ile aynı karar: PIN değişimi `auditChange`e girmiyor
+ * (maskeleme kuralları ayrıca düşünülmeli). Bilinçli eksik, parite korunuyor.
+ *
+ * ── PATRON KAPISI ÇAĞRILMIYOR ─────────────────────────────────────────────
+ * `assertOwnerWritable(x, x)` tanım gereği her zaman `ok` döner (owner-scope.ts:201,
+ * "kendi kaydına dokunmak serbest"). Çağırmak sorgu bile atmayacaktı ama
+ * okuyanı "burada bir kapı var" diye yanıltırdı: kendi PIN'ini değiştirmenin
+ * patron korumasıyla İLGİSİ YOK.
+ */
+export async function changeOwnPin(girdi: {
+  workerId: string;
+  mevcutPin: unknown;
+  yeniPin: unknown;
+  yeniPinTekrar: unknown;
+  /** Kilit sayacının anahtarı ip|telefon — çağıran istek başlığından çözer. */
+  ip: string;
+}): Promise<OwnPinSonuc> {
+  // 1) MEVCUT PIN — giriş sayacıyla ortak kapı (kilit merdiveni dahil).
+  const dogrulama = await verifyOwnPin({
+    workerId: girdi.workerId,
+    pin: girdi.mevcutPin,
+    ip: girdi.ip,
+  });
+  if (!dogrulama.ok) {
+    if (dogrulama.reason === "locked") {
+      return {
+        ok: false,
+        sebep: "kilitli",
+        retryAfter: dogrulama.retryAfter,
+        lockedUntil: dogrulama.lockedUntil,
+      };
+    }
+    if (dogrulama.reason === "validation") return { ok: false, sebep: "mevcut_pin_gecersiz" };
+    if (dogrulama.reason === "db") return { ok: false, sebep: "not_found" };
+    return { ok: false, sebep: "mevcut_pin_hatali" };
+  }
+
+  // 2) YENİ PIN — panelin `/pin` ekranıyla BİREBİR aynı şema.
+  const parsed = changePinSchema.safeParse({
+    pin: girdi.yeniPin,
+    pin_confirm: girdi.yeniPinTekrar,
+  });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      sebep: "yeni_pin_gecersiz",
+      pinKod: parsed.error.issues[0]?.message ?? "errPin",
+    };
+  }
+
+  // 3) AYNI PIN — "değiştirdim" diyip aynısını yazmak değişim değildir.
+  if (parsed.data.pin === String(girdi.mevcutPin ?? "").trim()) {
+    return { ok: false, sebep: "ayni_pin" };
+  }
+
+  // 4) YAZMA. `is_admin` de okunur: çağıran yeni token'ı onunla mühürleyecek.
+  const { data: worker } = await supabaseAdmin
+    .from("workers")
+    .select("id, is_admin")
+    .eq("id", girdi.workerId)
+    .maybeSingle();
+  if (!worker) return { ok: false, sebep: "not_found" };
+
+  const pin_hash = await bcrypt.hash(parsed.data.pin, 10);
+  const { error } = await supabaseAdmin
+    .from("workers")
+    .update({ pin_hash, must_change_pin: false })
+    .eq("id", girdi.workerId);
+  if (error) return { ok: false, sebep: "write_failed" };
+
+  // 5) TOKEN İPTALİ — eski PIN'le alınmış TÜM anahtarlar ölür. Çağıran cihaz
+  //    da bunlara dahildir; uç ona yeni sürümle yeni bir çift verir, yoksa
+  //    kullanıcı kendi değişikliğiyle kendini dışarı atardı.
+  const tokenIptal = await bumpTokenVersion(girdi.workerId);
+  const surum = await readTokenVersion(girdi.workerId);
+
+  return {
+    ok: true,
+    tokenIptal,
+    tokenSurumu: surum.status === "ok" ? surum.value : null,
+    isAdmin: worker.is_admin === true,
   };
 }

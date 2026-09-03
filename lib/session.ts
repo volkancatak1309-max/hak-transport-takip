@@ -5,10 +5,11 @@ import { redirect } from "next/navigation";
 import type { SessionData, VehicleFleet } from "./types";
 import {
   getManagedFleet,
-  getFleetScope,
-  UNRESTRICTED,
-  type FleetScope,
 } from "./fleet-scope";
+import {
+  resolveManualStartAuth,
+  type ManualStartAuth as ManualStartAuthType,
+} from "./manual-start-scope";
 import { supabaseAdmin } from "./supabase";
 import { SECURITY_LAYER_ENABLED, ACCESS_GATES_ENABLED } from "./tenant";
 import { cache } from "react";
@@ -267,47 +268,24 @@ export async function requireFleetView() {
  * ya da action'ı açmaz. UI'da butonu göstermek/gizlemek yalnız kozmetik; son
  * sözü BU kapı söyler (buton doğrudan çağrılıp yetki aşılamasın).
  */
-export type ManualStartAuth =
-  | {
-      ok: true;
-      actorId: string;
-      actorName: string;
-      role: "admin" | "chief";
-      scope: FleetScope;
-    }
-  | { ok: false; error: "unauthorized" | "out_of_scope" };
+export type { ManualStartAuth } from "./manual-start-scope";
 
+/**
+ * Panelin kapısı — kimliği OTURUMDAN çözer, kararı çekirdeğe verir.
+ *
+ * Kural gövdesi lib/manual-start-scope.ts'e taşındı (03.09.2026): mobil uç
+ * `POST /api/mobile/shifts/start-for` aynı kapıyı işletiyor ve orada oturum
+ * çerezi yok. DAVRANIŞ DEĞİŞMEDİ — aynı sıra, aynı hata dizgeleri
+ * ("unauthorized" | "out_of_scope"), aynı fail-closed kapsam.
+ */
 export async function requireManualStartAuth(
   targetWorkerId: string
-): Promise<ManualStartAuth> {
+): Promise<ManualStartAuthType> {
   const session = await getSession();
-  if (!session.worker_id) return { ok: false, error: "unauthorized" };
-
-  if (session.is_admin) {
-    return {
-      ok: true,
-      actorId: session.worker_id,
-      actorName: session.name ?? "—",
-      role: "admin",
-      scope: UNRESTRICTED,
-    };
-  }
-
-  const fleet = await getManagedFleet(session.worker_id);
-  if (!fleet) return { ok: false, error: "unauthorized" };
-
-  const scope = await getFleetScope(fleet);
-  // Hedef şoför şefin kapsamında değilse (ya da kapsam boş kaldıysa) → red.
-  if (!scope.isFleetWorker(targetWorkerId)) {
-    return { ok: false, error: "out_of_scope" };
-  }
-  return {
-    ok: true,
-    actorId: session.worker_id,
-    actorName: session.name ?? "—",
-    role: "chief",
-    scope,
-  };
+  return resolveManualStartAuth(
+    { id: session.worker_id, name: session.name, isAdmin: !!session.is_admin },
+    targetWorkerId
+  );
 }
 
 /**

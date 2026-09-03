@@ -1,7 +1,7 @@
 import "server-only";
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase";
-import { loginSchema } from "@/lib/validation";
+import { loginSchema, loginPinSchema } from "@/lib/validation";
 import { phoneVariants } from "@/lib/phone";
 import { DRIVER_PANEL_ENABLED } from "@/lib/tenant";
 import {
@@ -281,4 +281,99 @@ export async function verifyCredentials(input: {
 
   await clearFailures(identifier);
   return { ok: true, worker };
+}
+
+/**
+ * KENDİ PIN'İNİ DOĞRULAR — "bu oturumun sahibi mevcut PIN'i biliyor mu".
+ *
+ * ═══ NEDEN BURADA, KENDİ DOSYASINDA DEĞİL ═══════════════════════════════════
+ *
+ * `POST /api/mobile/me/pin` mevcut PIN'i soruyor ve bu, girişten SONRA gelen
+ * ikinci bir PIN kapısıdır. Kendi sayacını kursaydı ortaya GİRİŞTEN GEVŞEK bir
+ * kapı çıkardı: çalınmış bir access token'la sınırsız PIN denemesi yapılabilir,
+ * yani token hırsızlığı PIN hırsızlığına yükseltilebilirdi. Bu yüzden kapı
+ * girişin KENDİ sayacını kullanır — `login_attempts`, aynı `identifier`, aynı
+ * `MAX_FAILURES`, aynı `LOCK_STEPS_MS` merdiveni. Sayaç ortaktır: giriş
+ * ekranında yapılan hatalarla uygulama içinde yapılanlar TEK havuzda toplanır.
+ *
+ * `registerFailure` / `failureResult` / `clearFailures` bu dosyada dışa
+ * aktarılmamış yardımcılar. Onları export etmek yerine kapıyı buraya koymak
+ * bilinçli: dışarı açılan her yardımcı, ileride başka bir yerde YARIM bir
+ * merdiven kurulmasının davetidir.
+ *
+ * ── MEVCUT PIN'E `loginPinSchema` UYGULANIR, `pinSchema` DEĞİL ─────────────
+ * Kullanıcının BUGÜNKÜ PIN'i eski 4 haneli olabilir (bkz. loginPinSchema notu).
+ * Katı şemayı mevcut PIN'e uygulamak, tam da yeni PIN'e geçmek isteyen o
+ * kullanıcıyı kapıda çevirirdi. Katı kural YENİ PIN'e uygulanır — orası
+ * `changePinSchema`nın işi ve o kural panelle ortaktır.
+ *
+ * ── ZAMANLAMA ──────────────────────────────────────────────────────────────
+ * `verifyCredentials`teki dummy-hash düzeneği BURADA GEREKMİYOR: kimlik zaten
+ * token'dan çözülmüş, "bu hesap var mı" sorusu sorulmuyor. Yine de kayıt
+ * okunamazsa dummy ile bir karşılaştırma koşulur — hesap silinmiş/okunamıyorken
+ * cevabın anında dönmesi gereksiz bir sinyaldir.
+ */
+export type OwnPinResult =
+  | { ok: true; phone: string; pinHash: string }
+  | {
+      ok: false;
+      reason: "validation" | "db" | "invalid" | "locked";
+      retryAfter?: number;
+      lockedUntil?: string;
+    };
+
+export async function verifyOwnPin(input: {
+  workerId: string;
+  pin: unknown;
+  ip: string;
+}): Promise<OwnPinResult> {
+  const parsed = loginPinSchema.safeParse(input.pin);
+  if (!parsed.success) return { ok: false, reason: "validation" };
+
+  // Telefon SAYACIN ANAHTARI olduğu için önce okunur: kilit kimliği
+  // ip|telefon biçiminde (lib/login-lock.ts) ve giriş yolu da aynı satıra
+  // yazıyor. worker_id ile anahtarlamak ikinci bir sayaç kurmak olurdu.
+  const { data, error } = await supabaseAdmin
+    .from("workers")
+    .select("phone, pin_hash")
+    .eq("id", input.workerId)
+    .maybeSingle();
+  if (error) return { ok: false, reason: "db" };
+
+  const phone = (data?.phone as string | undefined) ?? "";
+  const hash = (data?.pin_hash as string | undefined) ?? DUMMY_PIN_HASH;
+
+  // Telefonu olmayan kayıt sayaca bağlanamaz. Bu kurulumda olamaz
+  // (workers.phone NOT NULL) ama olursa kapı KAPALI kalır: sayaçsız bir PIN
+  // kapısı, merdivensiz bir kapıdır.
+  if (!phone) return { ok: false, reason: "db" };
+
+  const identifier = lockIdentifier(input.ip, phone);
+
+  // Kilit kapısı bcrypt'ten ÖNCE — kilitliyken CPU yakılmaz (giriş ile aynı sıra).
+  const { data: gate } = await supabaseAdmin
+    .from("login_attempts")
+    .select("locked_until")
+    .eq("identifier", identifier)
+    .maybeSingle();
+  if (gate?.locked_until) {
+    const remainingMs = new Date(gate.locked_until).getTime() - Date.now();
+    if (remainingMs > 0) {
+      return {
+        ok: false,
+        reason: "locked",
+        retryAfter: Math.ceil(remainingMs / 1000),
+        lockedUntil: gate.locked_until as string,
+      };
+    }
+  }
+
+  const pinOk = await bcrypt.compare(parsed.data, hash);
+  if (!data || !pinOk) {
+    const f = await registerFailure(identifier);
+    return failureResult(f) as OwnPinResult;
+  }
+
+  await clearFailures(identifier);
+  return { ok: true, phone, pinHash: hash };
 }

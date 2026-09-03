@@ -1,6 +1,10 @@
 import "server-only";
 import { verifyMobileRequest, mobileError, type MobileWorker } from "@/lib/mobile-auth";
 import { getManagedFleet, getFleetScope, UNRESTRICTED, type FleetScope } from "@/lib/fleet-scope";
+import {
+  resolveManualStartAuth,
+  type ManualStartAuth,
+} from "@/lib/manual-start-scope";
 import type { VehicleFleet } from "@/lib/types";
 
 /**
@@ -117,4 +121,44 @@ export async function requireMobileFleetView(req: Request): Promise<MobileGuard>
   if (!fleet) return deny(403, "fleet_view_required");
   const fleetScope = await getFleetScope(fleet);
   return { ok: true, actor: { worker: auth.worker, fleet, isChief: true, fleetScope } };
+}
+
+/**
+ * MANUEL VARDİYA BAŞLATMA KAPISI — `requireManualStartAuth`ın JSON dönen ikizi.
+ *
+ * Kural GÖVDESİ ortak (lib/manual-start-scope.ts): patron herkes için, filo
+ * şefi YALNIZ kendi filosundaki hedef şoför için yetkili, kapsam çözülemezse
+ * RED (fail-closed). Burada yeniden yazılmış tek bir kural yok — bu fonksiyon
+ * yalnız kimliği token'dan çözüp kararı çekirdeğe soruyor.
+ *
+ * ⚠️ Kardeş kapılardan FARKI hedefe bağlı olması: `requireMobileAdmin` bir
+ * rol sorar, bu ise "bu aktör BU şoför için yetkili mi" sorar. Bu yüzden
+ * hedef kimliği parametredir ve gövdeden okunduğu yerde SUNUCU son sözü
+ * söyler (istemcinin gönderdiği workerId bir istektir, bir yetki değil).
+ *
+ * `is_admin` token'daki `adm` iddiasından DEĞİL, `verifyMobileRequest`in her
+ * istekte DB'den tazelediği kayıttan gelir.
+ */
+export type MobileManualStartGuard =
+  | { ok: true; auth: Extract<ManualStartAuth, { ok: true }>; worker: MobileWorker }
+  | { ok: false; response: Response };
+
+export async function requireMobileManualStart(
+  req: Request,
+  targetWorkerId: string
+): Promise<MobileManualStartGuard> {
+  const gate = await verifyMobileRequest(req);
+  if (!gate.ok) return { ok: false, response: mobileError(gate.status, gate.code) };
+
+  const auth = await resolveManualStartAuth(
+    { id: gate.worker.id, name: gate.worker.name, isAdmin: gate.worker.is_admin },
+    targetWorkerId
+  );
+  if (!auth.ok) {
+    // Panelde bu iki hâl `unauthorized` / `out_of_scope` dizgeleriyle dönüyor;
+    // aynı dizgeler HTTP 403 gövdesinde de aynen taşınır — istemci "yetkin yok"
+    // ile "bu şoför senin filonda değil" ayrımını görebilsin.
+    return { ok: false, response: mobileError(403, auth.error) };
+  }
+  return { ok: true, auth, worker: gate.worker };
 }

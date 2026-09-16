@@ -58,6 +58,12 @@ const GUARDED = [
   "vehicle_events",
   "idle_episodes",
   "worker_leaves",
+  // 16.09.2026'da EKLENDİ (099). Araç eksenli ve yönetici yüzeyinde okunuyor →
+  // yukarıdaki kurala göre listeye girer. Bugünkü tek okuması BİLİNÇLİ MUAF
+  // (`// test-visible:`, lib/fleets-db.ts): denetim izinden test aracını elemek
+  // izi yalancı yapar. Listeye girmesinin sebebi tam da bu — muafiyet GÖRÜNÜR
+  // ve gerekçeli olsun, tablonun listede olmaması sayesinde sessizce geçmesin.
+  "fleet_move_log",
 ];
 
 /** Zincirde bunlardan biri varsa sorgu ANAHTARLI sayılır. */

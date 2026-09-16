@@ -98,6 +98,7 @@ const ORDER = [
   "096_odometre_bozuk_okuma.sql",
   "097_odometre_blok_ve_filo_span.sql",
   "098_yukleme_hiz_siniri.sql",
+  "099_filo_tasima_izi.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

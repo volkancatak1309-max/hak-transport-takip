@@ -194,8 +194,16 @@ kontrol("yalnız personel gönderilebilir", (() => { const r = atamaGirdisiniAyi
 const listeSrc = kodOku("app/api/mobile/fleets/route.ts");
 const adSrc = kodOku("app/api/mobile/fleets/[id]/route.ts");
 const atamaSrc = kodOku("app/api/mobile/fleets/[id]/atamalar/route.ts");
+const geriAlSrc = kodOku("app/api/mobile/fleets/atamalar/[batchId]/geri-al/route.ts");
+const gecmisSrc = kodOku("app/api/mobile/fleets/[id]/gecmis/route.ts");
 
-for (const [ad, src] of [["liste/yeni", listeSrc], ["adlandırma", adSrc], ["atama", atamaSrc]]) {
+for (const [ad, src] of [
+  ["liste/yeni", listeSrc],
+  ["adlandırma", adSrc],
+  ["atama", atamaSrc],
+  ["geri alma", geriAlSrc],
+  ["geçmiş", gecmisSrc],
+]) {
   kontrol(`${ad} kapısı requireMobileAdmin`, src.includes("requireMobileAdmin("));
   // Şef bu uçlara GİREMEZ: kendi filosuna karşı filodan araç çekebilirdi.
   kontrol(`${ad} daha gevşek kapı KULLANMIYOR`, !/requireMobileWorker\(|requireMobileFleetView\(/.test(src));
@@ -206,8 +214,38 @@ for (const [ad, src] of [["liste/yeni", listeSrc], ["adlandırma", adSrc], ["ata
 kontrol("liste ucu GET+POST dışında yöntem açmıyor", !/export async function (PUT|DELETE|PATCH)\b/.test(listeSrc));
 kontrol("adlandırma ucu PATCH dışında yöntem açmıyor", !/export async function (GET|POST|PUT|DELETE)\b/.test(adSrc));
 kontrol("atama ucu POST dışında yöntem açmıyor", !/export async function (GET|PUT|DELETE|PATCH)\b/.test(atamaSrc));
-// Filo SİLME bu turda YOK — hiçbir uç DELETE açmamalı.
-kontrol("hiçbir filo ucu DELETE açmıyor", ![listeSrc, adSrc, atamaSrc].some((s) => /export async function DELETE\b/.test(s)));
+kontrol("geri alma ucu POST dışında yöntem açmıyor", !/export async function (GET|PUT|DELETE|PATCH)\b/.test(geriAlSrc));
+kontrol("geçmiş ucu GET dışında yöntem açmıyor", !/export async function (POST|PUT|DELETE|PATCH)\b/.test(gecmisSrc));
+// Filo SİLME YOK — hiçbir uç DELETE açmamalı (iz satırı da silinmez).
+kontrol(
+  "hiçbir filo ucu DELETE açmıyor",
+  ![listeSrc, adSrc, atamaSrc, geriAlSrc, gecmisSrc].some((s) => /export async function DELETE\b/.test(s))
+);
+
+// ── Geri alma ucunun sözleri ───────────────────────────────────────────────
+// Şekli bozuk batch kimliği 22P02 ile 503'e dönmemeli: erken reddedilir.
+kontrol("geri alma batchId'yi uuid olarak DENETLİYOR", /uuidMu\(batchId\)/.test(geriAlSrc));
+kontrol("geri alma bilinmeyen batch'te 404", /mobileError\(404,\s*"not_found"\)/.test(geriAlSrc));
+kontrol("geri alma ikinci kez 409 conflict", /mobileError\(409,\s*"conflict"/.test(geriAlSrc) && /zaten_geri_alindi/.test(geriAlSrc));
+/**
+ * ⚠️ ATLANAN ARAÇ SESSİZ GEÇİLEMEZ. Araç araya giren bir taşımayla başka
+ * filoya gitmişse geri alınamaz; yanıt bunu AYRI listede söylemeli, yoksa
+ * "geri alındı" denip araç karşı filoda kalırdı.
+ */
+kontrol("geri alma atlananları AYRI listede söylüyor", /atlandi:\s*sonuc\.atlandi/.test(geriAlSrc));
+kontrol("geri alma geri alınanları söylüyor", /geriAlindi:\s*sonuc\.geriAlindi/.test(geriAlSrc));
+
+// ── Geçmiş ucunun sözleri ──────────────────────────────────────────────────
+kontrol("geçmiş kırpmayı gizlemiyor", /kirpildi:\s*sonuc\.kirpildi/.test(gecmisSrc));
+kontrol("geçmiş UYGULANAN limiti söylüyor", /limit:\s*sonuc\.limit/.test(gecmisSrc));
+kontrol("geçmiş tavanı yanıtta söylüyor", /enFazlaLimit:\s*GECMIS_TAVANI/.test(gecmisSrc));
+// 099 yokken boş liste DEĞİL hata: "hiç taşınmadı" ile "iz tutulmuyor" ayrı şeyler.
+kontrol("geçmiş 099 yokken 503 döndürüyor", /mobileError\(503,\s*"db_error"/.test(gecmisSrc));
+
+// Taşıma ucu geri almanın anahtarını DÖNDÜRMELİ; yoksa geri alma çağrılamaz.
+kontrol("atama ucu batchId döndürüyor", /batchId:\s*sonuc\.batchId/.test(atamaSrc));
+// Taşıyanın kimliği uçtan geçmeli — ize "kim" yazılabilsin.
+kontrol("atama ucu taşıyanı moveToFleet'e geçiriyor", /guard\.actor\.worker\.id/.test(atamaSrc));
 
 kontrol("liste ucu tavanı yanıtta söylüyor", /enFazlaFilo:\s*FILO_TAVANI/.test(listeSrc));
 kontrol("liste ucu boş listenin SEBEBİNİ taşıyor", /tabloDurumu:/.test(listeSrc));
@@ -250,12 +288,31 @@ kontrol("sayım kırpması ölçülüyor", /count:\s*"exact"/.test(dbSrc) && /sa
  * — tek düğme, iki karar.
  */
 const updateBloklari = dbSrc.match(/\.update\(\{[^}]*\}\)/g) ?? [];
-kontrol("iki güncelleme var (ad + filo)", updateBloklari.length === 2, updateBloklari.join(" | "));
-kontrol("filo güncellemesi YALNIZ fleet yazıyor", updateBloklari.includes(".update({ fleet: kod })"), updateBloklari.join(" | "));
+/**
+ * 16.09.2026 — TAŞIMA RPC'YE TAŞINDI (099). Eskiden burada İKİ PostgREST
+ * güncellemesi vardı (ad + filo) ve denetim "filo güncellemesi yalnız fleet
+ * yazıyor" diyordu. Artık filo güncellemesi `public.filo_tasi` gövdesinde, iz
+ * yazmasıyla AYNI işlemde. Söz değişmedi, YERİ değişti: aşağıdaki DDL
+ * denetimleri aynı şeyi SQL üzerinde doğruluyor.
+ */
+kontrol("tek PostgREST güncellemesi kaldı (yalnız ad)", updateBloklari.length === 1, updateBloklari.join(" | "));
 kontrol("ad güncellemesi YALNIZ name yazıyor", updateBloklari.includes(".update({ name: ad })"), updateBloklari.join(" | "));
-kontrol("hiçbir güncelleme assigned_worker_id'ye dokunmuyor", !updateBloklari.some((b) => b.includes("assigned_worker_id")));
-// Zaten hedefte olan araç güncellemenin DIŞINDA: dönen satır "gerçekten değişen".
-kontrol("zaten hedefte olan araç güncellenmiyor", /\.neq\("fleet",\s*kod\)/.test(dbSrc));
+kontrol("hiçbir PostgREST güncellemesi assigned_worker_id'ye dokunmuyor", !updateBloklari.some((b) => b.includes("assigned_worker_id")));
+/**
+ * ⚠️ DOĞRUDAN UPDATE'E GERİ DÖNÜŞ YASAK. `.from("vehicles").update(…)` geri
+ * gelirse taşıma yine çalışır ama İZSİZ olur — ve geri alma tam o araçlarda
+ * sessizce başarısız olur. Kusurun görünmez olduğu yer burası.
+ */
+kontrol("taşıma vehicles'a DOĞRUDAN update atmıyor", !/\.from\("vehicles"\)[\s\S]{0,160}\.update\(/.test(dbSrc));
+kontrol("taşıma filo_tasi RPC'sini çağırıyor", /\.rpc\("filo_tasi"/.test(dbSrc));
+kontrol("geri alma filo_tasima_geri_al RPC'sini çağırıyor", /\.rpc\("filo_tasima_geri_al"/.test(dbSrc));
+// 099 yoksa taşıma YAPILMAZ: izsiz taşımaya sessizce düşmek en kötü seçenek.
+kontrol("099 yokken taşıma iz_yok ile REDDEDİLİYOR", /RPC_YOK/.test(dbSrc) && /sebep:\s*"iz_yok"/.test(dbSrc));
+kontrol("RPC_YOK kümesi PGRST202+42883", /"PGRST202",\s*"42883"/.test(dbSrc));
+// Geri alma iz satırını SİLMEZ (damga basar) — silme denetimi yukarıda zaten var.
+kontrol("geri alma batchId ile çalışıyor", /p_batch:\s*batchId/.test(dbSrc));
+// Taşıyanın kimliği ize gitmeli; null geçilirse "kim" sorusu cevapsız kalır.
+kontrol("taşıyan kimliği RPC'ye geçiyor", /p_by:\s*tasiyanId/.test(dbSrc));
 // Kod ASLA yeniden yazılmaz: 30 araç satırında yazılı olan şey odur.
 kontrol("yeniden adlandırma code'a dokunmuyor", !/\.update\(\{[^}]*code:/.test(dbSrc));
 // En küçük boş yuva: silme sonrası yuva ölmesin, aynı istek aynı sırayı hedeflesin.
@@ -311,6 +368,82 @@ kontrol(
   "059'da e-posta/plaka YOK (gizlilik)",
   !/@[\w.-]+\.\w{2,}/.test(ddl) && !/\b[A-ZÄÖÜ]{1,2}-\d{3,5}\s?[A-Z]{0,2}\b/.test(ddl),
   (/\b[A-ZÄÖÜ]{1,2}-\d{3,5}\s?[A-Z]{0,2}\b/.exec(ddl) ?? [""])[0]
+);
+
+// ══ 11 · DDL (migration 099 — taşıma izi + geri alma) ══════════════════════
+const ddl99 = hamOku("db/migrations/099_filo_tasima_izi.sql");
+const ddl99Kod = ddl99.replace(/^\s*--.*$/gm, "");
+
+kontrol("099 begin/commit içinde", /^begin;/m.test(ddl99Kod) && /^commit;/m.test(ddl99Kod));
+kontrol("099 iz tablosunu tanımlıyor", /create table if not exists public\.fleet_move_log/.test(ddl99Kod));
+kontrol("099 batch_id zorunlu", /batch_id uuid not null/.test(ddl99Kod));
+/**
+ * ⚠️ vehicle_id'ye FK KONMAMALI. Araç silindiğinde cascade izi de silerdi ve
+ * "o araç hangi filodaydı" sorusu cevapsız kalırdı — iz, izlediği şeyden uzun
+ * yaşamalı (leave_edit_log.leave_id ile aynı karar).
+ */
+kontrol(
+  "099 vehicle_id'ye FK KOYMUYOR",
+  /vehicle_id uuid not null/.test(ddl99Kod) &&
+    !/vehicle_id uuid[^,]*references/.test(ddl99Kod),
+  (/vehicle_id uuid[^,]*/.exec(ddl99Kod) ?? [""])[0]
+);
+// Damga NULL olabilmeli: henüz geri alınmamış satır normaldir.
+kontrol("099 undone_at NULL olabiliyor", /undone_at timestamptz,/.test(ddl99Kod) && !/undone_at timestamptz not null/.test(ddl99Kod));
+kontrol("099 batch indeksi kuruyor", /create index if not exists fleet_move_log_batch_idx/.test(ddl99Kod));
+kontrol("099 araç+an indeksi kuruyor", /create index if not exists fleet_move_log_vehicle_idx[\s\S]{0,80}\(vehicle_id, moved_at desc\)/.test(ddl99Kod));
+kontrol("099 idempotent (if not exists)", (ddl99Kod.match(/if not exists/g) ?? []).length >= 4);
+
+/**
+ * ⚠️ updated_at DEFAULT ALMAMALI. `default now()` deseydi mevcut 30 araç
+ * "az önce güncellendi" damgası alırdı — uydurulmuş bir zaman damgası, boş bir
+ * kolondan kötüdür çünkü ilkine güvenilir.
+ */
+kontrol("099 vehicles.updated_at ekliyor", /alter table public\.vehicles\s*\n?\s*add column if not exists updated_at timestamptz/.test(ddl99Kod));
+kontrol("099 updated_at'e DEFAULT vermiyor", !/updated_at timestamptz[^;]*default/.test(ddl99Kod));
+kontrol("099 updated_at'i geriye dönük DOLDURMUYOR", !/update public\.vehicles\s+set updated_at/i.test(ddl99Kod));
+
+kontrol("099 taşıma fonksiyonunu kuruyor", /create or replace function public\.filo_tasi\(/.test(ddl99Kod));
+kontrol("099 geri alma fonksiyonunu kuruyor", /create or replace function public\.filo_tasima_geri_al\(/.test(ddl99Kod));
+/**
+ * ⚠️ İZ, GÜNCELLEMENİN ŞARTI. İki fonksiyon da tek ifadede hem `vehicles`ı
+ * günceller hem `fleet_move_log`a yazar/damgalar. `insert into
+ * public.fleet_move_log` taşıma fonksiyonundan çıkarsa "best-effort iz"e
+ * dönmüş oluruz ve geri alma güvenilmez hâle gelir.
+ */
+kontrol("099 taşıma fonksiyonu iz YAZIYOR", /insert into public\.fleet_move_log/.test(ddl99Kod));
+/**
+ * ⚠️ TAŞIMA ŞOFÖR ATAMASINA DOKUNMAZ — kural artık SQL'de yaşıyor.
+ * Dosyanın hiçbir yerinde `assigned_worker_id` geçmemeli.
+ */
+kontrol("099 assigned_worker_id'ye HİÇ dokunmuyor", !/assigned_worker_id/.test(ddl99Kod));
+// Zaten hedefte olan araç güncellenmez: "değişen" gerçekten değişen olsun.
+kontrol("099 zaten hedefte olan aracı DIŞARIDA bırakıyor", /v\.fleet is distinct from p_kod/.test(ddl99Kod));
+// Geri alma araya giren taşımayı EZMEZ.
+kontrol("099 geri alma yalnız yerinde duran aracı döndürüyor", /mevcut is not distinct from to_fleet/.test(ddl99Kod));
+// İz satırı SİLİNMEZ, damgalanır.
+kontrol("099 iz satırını SİLMİYOR", !/delete from public\.fleet_move_log/i.test(ddl99Kod));
+kontrol("099 geri almayı damgayla işaretliyor", /set undone_at = now\(\),/.test(ddl99Kod) && /undone_by = p_by/.test(ddl99Kod));
+// Sentinel sözleşmesi: uç 404/409 ayrımını buradan yapıyor.
+kontrol("099 'yok' ve 'zaten_geri_alindi' sentinel'leri var", /'yok'::text/.test(ddl99Kod) && /'zaten_geri_alindi'::text/.test(ddl99Kod));
+// Yeni fonksiyonlar PostgREST'te görünmezse ilk çağrı PGRST202 alır.
+kontrol("099 PostgREST önbelleğini tazeliyor", /notify pgrst, 'reload schema'/.test(ddl99Kod));
+// Kiracı kolonu YOK ve olmamalı (her kiracı ayrı veritabanı).
+kontrol("099 kiracı kolonu AÇMIYOR", !/tenant_id|company_id|kiraci_id/.test(ddl99Kod));
+// Mevcut veriyi bozacak hiçbir şey yok.
+kontrol("099 hiçbir kolon DÜŞÜRMÜYOR", !/drop column/i.test(ddl99Kod));
+kontrol("099 hiçbir tablo DÜŞÜRMÜYOR", !/drop table/i.test(ddl99Kod));
+/**
+ * DDL kaydı durumunu SÖYLEMELİ (059'daki kuralın aynısı). Çalıştırıldığında bu
+ * satır "SUPABASE'DE ÇALIŞTIRILDI" ile değiştirilecek ve denetim de o gün
+ * güncellenecek — ikisi birlikte kayar, biri diğerini yalanlamaz.
+ */
+kontrol("099 çalıştırılma durumunu kayda geçiriyor", /HENÜZ ÇALIŞTIRILMADI|SUPABASE'DE ÇALIŞTIRILDI/.test(ddl99));
+// Gizlilik: DDL'e gerçek plaka/e-posta yazılmaz (031'deki kural).
+kontrol(
+  "099'da e-posta/plaka YOK (gizlilik)",
+  !/@[\w.-]+\.\w{2,}/.test(ddl99) && !/\b[A-ZÄÖÜ]{1,2}-\d{3,5}\s?[A-Z]{0,2}\b/.test(ddl99),
+  (/\b[A-ZÄÖÜ]{1,2}-\d{3,5}\s?[A-Z]{0,2}\b/.exec(ddl99) ?? [""])[0]
 );
 
 // ── Sonuç ──────────────────────────────────────────────────────────────────

@@ -397,6 +397,25 @@ export async function renameFleet(
 const CHECK_VIOLATION = "23514";
 const FK_VIOLATION = "23503";
 
+/**
+ * Fonksiyon YOK — migration 099 çalıştırılmamış. `lib/saklama-db.ts` ve
+ * `lib/reports.ts` ile AYNI küme; PGRST202 PostgREST'in şema önbelleğinden,
+ * 42883 doğrudan PostgreSQL'den gelir.
+ *
+ * ⚠️ BU DURUMDA TAŞIMA YAPILMAZ. Eski doğrudan `update`e düşmek kolay olurdu
+ * ama izsiz bir taşıma üretirdi ve geri alma tam o araçlarda sessizce
+ * çalışmazdı. "İz yazılamıyorsa taşıma da olmaz" kuralı burada başlıyor.
+ */
+const RPC_YOK = new Set(["PGRST202", "42883"]);
+
+/** public.filo_tasi dönüş satırı (099). */
+type TasimaSatiri = {
+  batch_id: string;
+  vehicle_id: string;
+  plate: string;
+  from_fleet: string;
+};
+
 export type TasinanArac = {
   id: string;
   plaka: string;
@@ -417,6 +436,13 @@ export type TasimaSonucu =
   | {
       ok: true;
       filo: FiloTanimi;
+      /**
+       * Bu dokunuşun kimliği (099). Geri alma ucu BUNU alır.
+       *
+       * Hiçbir araç taşınmadıysa NULL: boş bir taşımaya kimlik vermek, geri
+       * alacak hiçbir şeyi olmayan bir "geri al" düğmesi üretirdi.
+       */
+      batchId: string | null;
       arac: {
         istenen: number;
         tasindi: TasinanArac[];
@@ -425,7 +451,7 @@ export type TasimaSonucu =
       };
       personel: PersonelSonucu[];
     }
-  | { ok: false; sebep: "filo_yok" | "gecersiz_filo" | "hata" };
+  | { ok: false; sebep: "filo_yok" | "gecersiz_filo" | "iz_yok" | "hata" };
 
 /**
  * Araçları ve/veya personeli hedef filoya taşı — TEK istek, TEK güncelleme.
@@ -458,7 +484,9 @@ export type TasimaSonucu =
 export async function moveToFleet(
   kod: string,
   aracIdleri: string[],
-  personelIdleri: string[]
+  personelIdleri: string[],
+  /** Taşımayı yapan yönetici — ize yazılır (099). */
+  tasiyanId: string | null
 ): Promise<TasimaSonucu> {
   const tanim = await filoTanimlari();
   if (!tanim.ok) return { ok: false, sebep: "hata" };
@@ -518,26 +546,46 @@ export async function moveToFleet(
   const zatenOrada = hepsi.filter((id) => aracBilgi.get(id)!.filo === kod);
   const tasinacak = hepsi.filter((id) => aracBilgi.get(id)!.filo !== kod);
 
-  let tasinanIdler: string[] = [];
+  /**
+   * ── GÜNCELLEME + İZ TEK İŞLEMDE (099) ─────────────────────────────────────
+   * Burada bir `.update()` YOK ve olmamalı. PostgREST'te her istek kendi
+   * işlemidir; "önce güncelle, sonra iz yaz" deseydik ikincisi düştüğünde araç
+   * TAŞINMIŞ ama izi OLMAYAN bir durumda kalırdı — ve geri alma tam o araçta
+   * çalışmazdı. `public.filo_tasi` ikisini tek ifadede yapar: iz yazılamazsa
+   * güncelleme de geri sarılır.
+   *
+   * "Zaten hedefte olan araç güncellenmez" kuralı da fonksiyonun içine taşındı
+   * (`v.fleet is distinct from p_kod`); dönen satırlar GERÇEKTEN değişenlerdir.
+   */
+  let tasindi: TasinanArac[] = [];
+  let batchId: string | null = null;
   if (tasinacak.length > 0) {
-    const { data, error } = await supabaseAdmin
-      .from("vehicles")
-      .update({ fleet: kod })
-      .in("id", tasinacak)
-      // Yarışta araya giren bir güncelleme aracı zaten hedefe koymuşsa satır
-      // dönmesin: "değişti" sayısı gerçekten değişeni saysın.
-      .neq("fleet", kod)
-      .select("id");
+    const { data, error } = await supabaseAdmin.rpc("filo_tasi", {
+      p_kod: kod,
+      p_arac_ids: tasinacak,
+      p_by: tasiyanId,
+    });
     if (error) {
       const c = error.code ?? "";
       // 059 öncesi tanınmayan filo (CHECK) ya da 059 sonrası olmayan filo (FK).
       if (c === CHECK_VIOLATION || c === FK_VIOLATION) {
         return { ok: false, sebep: "gecersiz_filo" };
       }
+      // 099 çalıştırılmamış: taşıma YAPILMAZ (izsiz taşımaya düşmek yerine).
+      if (RPC_YOK.has(c)) return { ok: false, sebep: "iz_yok" };
       return { ok: false, sebep: "hata" };
     }
-    tasinanIdler = ((data ?? []) as { id: string }[]).map((v) => v.id);
+    const satirlar = (data ?? []) as TasimaSatiri[];
+    // Plaka ve önceki filo İZDEN okunuyor, ön okumadaki kopyadan değil:
+    // yazılan şey ile söylenen şey aynı satırdan gelsin.
+    tasindi = satirlar.map((r) => ({
+      id: r.vehicle_id,
+      plaka: r.plate,
+      oncekiFilo: r.from_fleet,
+    }));
+    batchId = satirlar[0]?.batch_id ?? null;
   }
+  const tasinanIdler = tasindi.map((t) => t.id);
 
   const tasinanKume = new Set(tasinanIdler);
   const personel: PersonelSonucu[] = personelIdleri.map((id) => {
@@ -558,16 +606,242 @@ export async function moveToFleet(
   return {
     ok: true,
     filo: disari(hedef, await etiketciGerekirse([hedef])),
+    batchId,
     arac: {
       istenen: aracIdleri.length,
-      tasindi: tasinanIdler.map((id) => ({
-        id,
-        plaka: aracBilgi.get(id)!.plaka,
-        oncekiFilo: aracBilgi.get(id)!.filo,
-      })),
+      tasindi,
       zatenOrada,
       bulunamadi,
     },
     personel,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GERİ ALMA (099)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** public.filo_tasima_geri_al dönüş satırı. */
+type GeriAlmaHam = {
+  durum: "yok" | "zaten_geri_alindi" | "geri_alindi" | "atlandi";
+  vehicle_id: string | null;
+  plate: string | null;
+  hedef_filo: string | null;
+  mevcut_filo: string | null;
+};
+
+export type GeriAlmaSatiri = {
+  aracId: string;
+  /** Araç silinmişse null — iz yaşar, araç yaşamayabilir. */
+  plaka: string | null;
+  /** Geri alındıysa: döndüğü filo. Atlandıysa: dönmesi GEREKEN filo. */
+  hedefFilo: string;
+  /** Geri alındıysa: terk edilen filo. Atlandıysa: aracın ŞU ANDAKİ filosu. */
+  mevcutFilo: string | null;
+};
+
+export type GeriAlmaSonucu =
+  | { ok: true; geriAlindi: GeriAlmaSatiri[]; atlandi: GeriAlmaSatiri[] }
+  | { ok: false; sebep: "yok" | "zaten_geri_alindi" | "iz_yok" | "hata" };
+
+/**
+ * Bir taşıma dokunuşunu geri al — araçları `from_fleet`'e döndürür.
+ *
+ * ── NEDEN BATCH, ARAÇ DEĞİL ────────────────────────────────────────────────
+ * Taşıma ucu tek bir KARAR kaydeder ("şunlar artık bu filoda"); geri alma da o
+ * kararı bütün olarak geri alır. Araç araç geri alma, kullanıcıyı beş düğmeye
+ * basmaya zorlar ve yarım geri alınmış bir karar bırakırdı.
+ *
+ * ── ARAYA GİREN TAŞIMA EZİLMEZ ─────────────────────────────────────────────
+ * Araç bu arada BAŞKA bir filoya taşınmışsa (mevcut ≠ to_fleet) o araç ATLANIR
+ * ve yanıtta `atlandi` listesinde görünür. Geri alma sonraki kararı ezmemeli:
+ * eski bir düğme, yeni bir gerçeği geri almaz. Sessizce ezmek en kötüsü olurdu
+ * — iki yönetici birbirinin işini fark etmeden bozar.
+ *
+ * ── SATIR SİLİNMEZ ─────────────────────────────────────────────────────────
+ * Geri alma iz satırına `undone_at`/`undone_by` damgası basar. Silmek, geri
+ * almanın kendisini de görünmez yapardı; oysa o da bir yönetici eylemi.
+ */
+export async function undoFleetMove(
+  batchId: string,
+  geriAlanId: string | null
+): Promise<GeriAlmaSonucu> {
+  const { data, error } = await supabaseAdmin.rpc("filo_tasima_geri_al", {
+    p_batch: batchId,
+    p_by: geriAlanId,
+  });
+  if (error) {
+    const c = error.code ?? "";
+    if (RPC_YOK.has(c)) return { ok: false, sebep: "iz_yok" };
+    return { ok: false, sebep: "hata" };
+  }
+
+  const satirlar = (data ?? []) as GeriAlmaHam[];
+  // Tek satırlık sentinel cevaplar: batch hiç yok / açık satır kalmamış.
+  if (satirlar.length === 1 && satirlar[0].vehicle_id === null) {
+    const d = satirlar[0].durum;
+    if (d === "yok") return { ok: false, sebep: "yok" };
+    if (d === "zaten_geri_alindi") return { ok: false, sebep: "zaten_geri_alindi" };
+    return { ok: false, sebep: "hata" };
+  }
+
+  const cevir = (r: GeriAlmaHam): GeriAlmaSatiri => ({
+    aracId: r.vehicle_id as string,
+    plaka: r.plate,
+    hedefFilo: r.hedef_filo as string,
+    mevcutFilo: r.mevcut_filo,
+  });
+
+  return {
+    ok: true,
+    geriAlindi: satirlar.filter((r) => r.durum === "geri_alindi").map(cevir),
+    atlandi: satirlar.filter((r) => r.durum === "atlandi").map(cevir),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GEÇMİŞ (099)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GECMIS_VARSAYILAN = 50;
+/** Geçmiş listesi tavanı — mobil liste tavanıyla (lib/mobile-list.ts) aynı. */
+export const GECMIS_TAVANI = 200;
+
+type HareketHam = {
+  batch_id: string;
+  vehicle_id: string;
+  from_fleet: string;
+  to_fleet: string;
+  moved_by: string | null;
+  moved_at: string;
+  undone_at: string | null;
+  undone_by: string | null;
+};
+
+export type KisiOzet = { id: string; ad: string | null };
+
+export type HareketSatiri = {
+  batchId: string;
+  aracId: string;
+  /** Araç silinmişse null. */
+  plaka: string | null;
+  kaynakFilo: string;
+  hedefFilo: string;
+  /** Bu filo AÇISINDAN yön: araç buraya mı geldi, buradan mı gitti. */
+  yon: "geldi" | "gitti";
+  an: string;
+  tasiyan: KisiOzet | null;
+  /** Geri alındıysa damga; alınmadıysa null. */
+  geriAlma: { an: string; kim: KisiOzet | null } | null;
+};
+
+export type GecmisSonucu =
+  | { ok: true; hareketler: HareketSatiri[]; limit: number; kirpildi: boolean }
+  | { ok: false; sebep: "tablo_yok" | "hata" };
+
+/**
+ * Bir filoya GELEN ve o filodan GİDEN hareketler, en yeniden eskiye.
+ *
+ * ── NEDEN İKİ YÖN BİRLİKTE ─────────────────────────────────────────────────
+ * "Bu filonun geçmişi" sorusunun cevabı tek yönlü olamaz: araç buradan
+ * çıktıysa da bu filonun başına gelen bir şeydir. Yalnız `to_fleet` süzseydik
+ * ekran, filonun küçüldüğü günleri hiç göstermezdi.
+ *
+ * ── KIRPILDI SÖYLENİR ──────────────────────────────────────────────────────
+ * `limit + 1` okunur; fazladan satır geldiyse liste kırpılmıştır ve bu
+ * gizlenmez (25.07.2026'daki sessiz 1000-satır kırpması dersi).
+ *
+ * ── PLAKA ve AD AYRI, ANAHTARLI OKUMALARLA ─────────────────────────────────
+ * PostgREST gömmesi burada KULLANILAMAZ: `moved_by` ve `undone_by` AYNI
+ * tabloya iki ayrı FK'dir, gömme belirsizleşir ve kısıt adına bağlanmak
+ * gerekirdi. Bunun yerine sayfadaki kimlikler için tek `.in()` okuması —
+ * dosyadaki plaka eşlemesiyle aynı desen, N+1 yok.
+ */
+export async function listFleetMoves(
+  kod: string,
+  limit?: number
+): Promise<GecmisSonucu> {
+  const n = Math.min(
+    GECMIS_TAVANI,
+    Math.max(1, Math.floor(limit ?? GECMIS_VARSAYILAN))
+  );
+
+  // test-visible: DENETİM İZİ. Test aracının taşınması da yöneticinin verdiği
+  // gerçek bir karardır; geçmişten elenirse iz, olmuş bir şeyi olmamış gösterir.
+  // Listeleme uçlarındaki eleme GÖRÜNÜRLÜK içindir (test kaydı ekranı kirletmesin),
+  // iz için değil — kardeş uçlarla farkı bilinçli.
+  const { data, error } = await supabaseAdmin
+    .from("fleet_move_log")
+    .select(
+      "batch_id, vehicle_id, from_fleet, to_fleet, moved_by, moved_at, undone_at, undone_by"
+    )
+    .or("from_fleet.eq." + kod + ",to_fleet.eq." + kod)
+    .order("moved_at", { ascending: false })
+    .limit(n + 1);
+  if (error) {
+    return { ok: false, sebep: tabloYokMu(error) ? "tablo_yok" : "hata" };
+  }
+
+  const ham = (data ?? []) as unknown as HareketHam[];
+  const kirpildi = ham.length > n;
+  const satirlar = kirpildi ? ham.slice(0, n) : ham;
+
+  // ── Plakalar: sayfadaki araç kimlikleri için TEK anahtarlı okuma ──────────
+  // test-visible: iz kaydı DENETİM izidir — test aracının taşınması da
+  // yöneticinin yaptığı bir iştir ve geçmişten silinmesi izi yalancı yapardı.
+  // (Listeleme uçlarındaki eleme GÖRÜNÜRLÜK içindir, denetim izi için değil.)
+  const plakaByArac = new Map<string, string>();
+  const aracIdleri = [...new Set(satirlar.map((r) => r.vehicle_id))];
+  if (aracIdleri.length > 0) {
+    const { data: vData, error: vErr } = await supabaseAdmin
+      .from("vehicles")
+      .select("id, plate")
+      .in("id", aracIdleri);
+    // Sessiz eksik YASAK: plaka okunamadıysa "araç silinmiş" gibi görünürdü.
+    if (vErr) return { ok: false, sebep: "hata" };
+    for (const v of (vData ?? []) as { id: string; plate: string }[]) {
+      plakaByArac.set(v.id, v.plate);
+    }
+  }
+
+  // ── Kişiler: taşıyan + geri alan, TEK anahtarlı okuma ────────────────────
+  // test-visible: aynı gerekçe — izin kime ait olduğu elenirse iz eksilir.
+  const adById = new Map<string, string | null>();
+  const kisiIdleri = [
+    ...new Set(
+      satirlar.flatMap(
+        (r) => [r.moved_by, r.undone_by].filter(Boolean) as string[]
+      )
+    ),
+  ];
+  if (kisiIdleri.length > 0) {
+    const { data: wData, error: wErr } = await supabaseAdmin
+      .from("workers")
+      .select("id, name")
+      .in("id", kisiIdleri);
+    if (wErr) return { ok: false, sebep: "hata" };
+    for (const w of (wData ?? []) as { id: string; name: string | null }[]) {
+      adById.set(w.id, w.name);
+    }
+  }
+
+  const kisi = (id: string | null): KisiOzet | null =>
+    id ? { id, ad: adById.get(id) ?? null } : null;
+
+  return {
+    ok: true,
+    limit: n,
+    kirpildi,
+    hareketler: satirlar.map((r) => ({
+      batchId: r.batch_id,
+      aracId: r.vehicle_id,
+      plaka: plakaByArac.get(r.vehicle_id) ?? null,
+      kaynakFilo: r.from_fleet,
+      hedefFilo: r.to_fleet,
+      yon: r.to_fleet === kod ? ("geldi" as const) : ("gitti" as const),
+      an: r.moved_at,
+      tasiyan: kisi(r.moved_by),
+      geriAlma: r.undone_at ? { an: r.undone_at, kim: kisi(r.undone_by) } : null,
+    })),
   };
 }

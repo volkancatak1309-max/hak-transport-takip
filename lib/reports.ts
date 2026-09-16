@@ -1265,13 +1265,37 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
       const s = stats.get(v.id);
       return !s || Number(s.sample_count) === 0;
     });
-    const volPer = await mapBounded(litreGerekenler, (v) =>
-      supabaseAdmin.rpc("report_fuel_volume_stats_vehicle", {
-        p_from: startISO,
-        p_to: endISO,
-        p_vehicle_id: v.id,
-      })
-    );
+    /**
+     * ── ÖN-ETİKETLİ LİTRE YOLU (migration 103, 17.09.2026) ────────────
+     *
+     * 101+102 yüzde hattını %40 hızlandırınca aşama ölçümü (galzura-demo,
+     * "ay") en pahalı kalemin ARTIK LİTRE olduğunu gösterdi:
+     *     yüzde ×29  7.151 → 4.296 ms   ·   LİTRE ×10  5.171 ms
+     * 103, 101'in birebir ikizi (`fuel_volume_seri` + v2). Aynı melez
+     * okuma, aynı geri düşüş, AYNI BAYRAK.
+     *
+     * ⚠️ v2 yoksa (103 uygulanmamış) LİTRE HATTI KOMPLE eskiye döner —
+     * yarısı yeni yarısı eski bir sonuç ÜRETİLMEZ. Yüzde hattı bundan
+     * bağımsız: 101 var 103 yok olabilir ve her iki hat da doğru çalışır.
+     */
+    const litreRpc = YAKIT_OZET_ENABLED
+      ? "report_fuel_volume_stats_vehicle_v2"
+      : "report_fuel_volume_stats_vehicle";
+    const litreCagir = (rpc: string) =>
+      mapBounded(litreGerekenler, (v) =>
+        supabaseAdmin.rpc(rpc, {
+          p_from: startISO,
+          p_to: endISO,
+          p_vehicle_id: v.id,
+        })
+      );
+    let volPer = await litreCagir(litreRpc);
+    if (
+      litreRpc !== "report_fuel_volume_stats_vehicle" &&
+      volPer.some((r) => r.error && classifyRpcError(r.error) === "missing_function")
+    ) {
+      volPer = await litreCagir("report_fuel_volume_stats_vehicle");
+    }
     const volMissing = volPer.find(
       (r) => r.error && classifyRpcError(r.error) === "missing_function"
     );
@@ -1287,7 +1311,8 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
         .map((r, i) => (isTimeoutError(r.error) ? i : -1))
         .filter((i) => i >= 0);
       for (const i of volRetry) {
-        volPer[i] = await supabaseAdmin.rpc("report_fuel_volume_stats_vehicle", {
+        // ⚠️ Tekrar AYNI sürümle (yüzde hattındaki kuralın aynısı).
+        volPer[i] = await supabaseAdmin.rpc(litreRpc, {
           p_from: startISO,
           p_to: endISO,
           // ⚠️ İNDİS `litreGerekenler`e ait, `vehicles`e DEĞİL.

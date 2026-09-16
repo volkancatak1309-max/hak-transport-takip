@@ -102,6 +102,7 @@ const ORDER = [
   "100_shift_odometer_spans_zaman.sql",
   "101_yakit_seri_etiket.sql",
   "102_yakit_v2_pencere_duzeltme.sql",
+  "103_yakit_hacim_seri_etiket.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

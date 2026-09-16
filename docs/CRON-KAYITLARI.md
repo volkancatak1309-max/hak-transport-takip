@@ -27,7 +27,7 @@ Vercel projesinden alınır.
 | 8 | Dönem skoru + rozet | `/api/cron/skor-donem` | `CRON_SECRET` | **haftada 1** | Ödül/liderlik isteyen her kiracı (migration 088) |
 | 9 | **Saklama UYARISI** (silmez) | `/api/cron/saklama` | `CRON_SECRET` | **günde 1 · gece 03:00** | Saklama katmanı kuran her kiracı (migration 090) |
 | 10 | **Aylık metrik** (kapanmış ay özeti) | `/api/cron/aylik-metrik` | `CRON_SECRET` | **günde 1 · gece 03:30** | CO₂/yakıt aylık trendi isteyen her kiracı (migration 090) |
-| 11 | **Yakıt serisi etiketi** | `/api/cron/yakit-etiket` | `CRON_SECRET` | **günde 1 · gece 03:15 Europe/Vienna** | Yakıt raporu/CO₂/filo karşılaştırması hızlansın isteyen her kiracı (migration 101) |
+| 11 | **Yakıt serisi etiketi** (yüzde + litre) | `/api/cron/yakit-etiket` | `CRON_SECRET` | **günde 1 · gece 03:15 Europe/Vienna** | Yakıt raporu/CO₂/filo karşılaştırması hızlansın isteyen her kiracı (migration 101+102+103) |
 | ~~9~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
 
 ### 🔴 SIR **BAŞLIKLA** GÖNDERİLİR — sorgu dizesi YASAK
@@ -586,9 +586,15 @@ Authorization: Bearer <CRON_SECRET>
 
 ### Ne yapar
 
-`fuel_seri` tablosunu (migration 101) günceller: her yakıt okuması için
-**±30 komşusundaki en yüksek seviye** (`bwd_max` / `fwd_max`). Yazma
+İKİ tabloyu **tek koşuda** günceller: `fuel_seri` (yüzde, migration 101) ve
+`fuel_volume_seri` (litre, migration 103). Her yakıt okuması için
+**±30 komşusundaki en yüksek değer** (`bwd_max` / `fwd_max`). Yazma
 **upsert**, anahtar `(vehicle_id, recorded_at)`.
+
+⚠️ Ayrı kayıt açılmadı: ikisi de aynı ham tabloyu okuyor, aynı 30 satırlık
+örtüşmeyi kullanıyor ve aynı gecede tazelenmesi gerekiyor. İki kayıt olsaydı
+biri unutulup hatlar ayrışabilirdi. **103 uygulanmamışsa tur DÜŞMEZ** —
+`yazilanLitre: null` döner, yüzde hattı normal yazılır.
 
 Varsayılan aralık: **dün 00:00 (kiracı saatiyle) → şimdi.** Yani dün yeniden
 yazılır ve bugünün kapanmış kısmı eklenir. Dünü yeniden yazmanın iki sebebi
@@ -646,7 +652,7 @@ değerlerle yeniden yazar; yarıda kalan backfill baştan da koşturulabilir.
   söyler (tur bitmez, düşen gün gizlenmez)
 - **400 `aralik_cok_genis`** → 31 günden uzun aralık istendi
 - **503 `migration_101_yok`** → `db/migrations/101_yakit_seri_etiket.sql`
-  çalıştırılmamış
+  çalıştırılmamış (litre için 103 ayrı: eksikse yalnız `yazilanLitre` null olur)
 - **401** → `CRON_SECRET` tanımsız ya da yanlış
 
 ### Kill-switch

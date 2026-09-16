@@ -16,8 +16,9 @@ export const maxDuration = 300;
  *
  * ═══ 🔴 NE YAZAR, NE YAZMAZ ════════════════════════════════════════════════
  *
- * YAZAR : `fuel_seri` — okuma başına `bwd_max`/`fwd_max` (±30 komşudaki en
- *         yüksek yakıt seviyesi). Yazma **upsert**, `(vehicle_id, recorded_at)`.
+ * YAZAR : `fuel_seri` (yüzde, 101) VE `fuel_volume_seri` (litre, 103) —
+ *         okuma başına `bwd_max`/`fwd_max` (±30 komşudaki en yüksek değer).
+ *         Yazma **upsert**, `(vehicle_id, recorded_at)`. İkisi TEK koşuda.
  * YAZMAZ: `device_telemetry`ye, yakıt raporuna, hiçbir ekrana DOKUNMAZ.
  *         Hiçbir şey SİLMEZ. Bu uç kapalı kalsa bile yakıt raporu doğru
  *         çalışır — yalnız yavaş çalışır (bkz. lib/tenant.ts
@@ -129,16 +130,50 @@ function gunAraligi(ymd: string): { bas: string; bit: string } | null {
   return null;
 }
 
-type GunSonucu = { gun: string; yazilan: number | null; hata?: string };
+type GunSonucu = {
+  gun: string;
+  yazilan: number | null;
+  yazilanLitre?: number | null;
+  hata?: string;
+};
 
-async function etiketle(bas: string, bit: string, arac: string | null): Promise<number> {
+/**
+ * İKİ HAT, TEK KOŞU (migration 103, 17.09.2026).
+ *
+ * `fuel_seri` (yüzde, 101) ve `fuel_volume_seri` (litre, 103) AYNI aralık
+ * için doldurulur. Ayrı cron kaydı açılmadı: ikisi de aynı ham tabloyu
+ * okuyor, aynı 30 satırlık örtüşmeyi kullanıyor ve aynı gecede tazelenmesi
+ * gerekiyor. İki kayıt olsaydı biri unutulup hatlar ayrışabilirdi.
+ *
+ * ⚠️ LİTRE HATTI EKSİKSE TUR DÜŞMEZ. 103 uygulanmamış bir kiracıda litre
+ * fonksiyonu yoktur; o durumda `yazilanLitre` null döner ve yüzde hattı
+ * normal yazılır — rapor da zaten litre için eski yola düşer.
+ */
+async function etiketle(
+  bas: string,
+  bit: string,
+  arac: string | null
+): Promise<{ yuzde: number; litre: number | null }> {
   const { data, error } = await supabaseAdmin.rpc("yakit_seri_etiketle", {
     p_from: bas,
     p_to: bit,
     p_vehicle_id: arac,
   });
   if (error) throw new Error(`${error.code ?? ""} ${error.message}`.trim());
-  return Number(data ?? 0);
+
+  const { data: dataL, error: errL } = await supabaseAdmin.rpc(
+    "yakit_hacim_seri_etiketle",
+    { p_from: bas, p_to: bit, p_vehicle_id: arac }
+  );
+  if (errL) {
+    const yok = /PGRST202|42883|could not find the function|does not exist/i.test(
+      `${errL.code ?? ""} ${errL.message ?? ""}`
+    );
+    // 103 yoksa sessiz geç; başka hata turu düşürür.
+    if (!yok) throw new Error(`${errL.code ?? ""} ${errL.message}`.trim());
+    return { yuzde: Number(data ?? 0), litre: null };
+  }
+  return { yuzde: Number(data ?? 0), litre: Number(dataL ?? 0) };
 }
 
 export async function GET(req: NextRequest) {
@@ -222,12 +257,18 @@ export async function GET(req: NextRequest) {
   const t0 = Date.now();
   const sonuclar: GunSonucu[] = [];
   let toplam = 0;
+  let toplamLitre = 0;
 
   try {
     if (varsayilan) {
       const n = await etiketle(varsayilan.bas, varsayilan.bit, arac);
-      toplam += n;
-      sonuclar.push({ gun: `${varsayilan.bas.slice(0, 10)}→şimdi`, yazilan: n });
+      toplam += n.yuzde;
+      toplamLitre += n.litre ?? 0;
+      sonuclar.push({
+        gun: `${varsayilan.bas.slice(0, 10)}→şimdi`,
+        yazilan: n.yuzde,
+        yazilanLitre: n.litre,
+      });
     } else {
       for (const g of gunler) {
         const d = gunAraligi(g);
@@ -237,8 +278,9 @@ export async function GET(req: NextRequest) {
         }
         try {
           const n = await etiketle(d.bas, d.bit, arac);
-          toplam += n;
-          sonuclar.push({ gun: g, yazilan: n });
+          toplam += n.yuzde;
+          toplamLitre += n.litre ?? 0;
+          sonuclar.push({ gun: g, yazilan: n.yuzde, yazilanLitre: n.litre });
         } catch (e) {
           // Bir günün düşmesi turu bitirmez; hangi günün düştüğü SÖYLENİR.
           sonuclar.push({ gun: g, yazilan: null, hata: String(e).slice(0, 160) });
@@ -259,28 +301,31 @@ export async function GET(req: NextRequest) {
   }
 
   // Kapsama: teşhis için, hangi araç nereye kadar etiketli.
-  let kapsama: { arac: number; enEski: string | null; enYeni: string | null } | null = null;
-  const { data: kap } = await supabaseAdmin
-    .from("fuel_seri_kapsama")
-    .select("vehicle_id, ilk_an, son_an");
-  if (kap) {
-    const satirlar = kap as { vehicle_id: string; ilk_an: string; son_an: string }[];
-    kapsama = {
+  type Kapsama = { arac: number; enEski: string | null; enYeni: string | null } | null;
+  const kapsamaOku = async (gorunum: string): Promise<Kapsama> => {
+    const { data } = await supabaseAdmin.from(gorunum).select("vehicle_id, ilk_an, son_an");
+    if (!data) return null;
+    const satirlar = data as { vehicle_id: string; ilk_an: string; son_an: string }[];
+    return {
       arac: satirlar.length,
       enEski: satirlar.length ? satirlar.map((r) => r.ilk_an).sort()[0] : null,
       enYeni: satirlar.length ? satirlar.map((r) => r.son_an).sort().slice(-1)[0] : null,
     };
-  }
+  };
+  const kapsama = await kapsamaOku("fuel_seri_kapsama");
+  const kapsamaLitre = await kapsamaOku("fuel_volume_seri_kapsama");
 
   const dusenGun = sonuclar.filter((s) => s.hata).length;
   return NextResponse.json({
     ok: dusenGun === 0,
     yazilan: toplam,
+    yazilanLitre: toplamLitre,
     gun: sonuclar.length,
     dusenGun,
     ms: Date.now() - t0,
     sonuclar,
     kapsama,
+    kapsamaLitre,
   });
 }
 

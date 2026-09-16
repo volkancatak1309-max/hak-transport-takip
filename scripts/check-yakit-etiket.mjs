@@ -33,6 +33,8 @@ const kontrol = (ad, kosul, kanit = "") => {
 const m052 = oku("db/migrations/052_shift_distance_and_refill_merge.sql");
 const m101 = oku("db/migrations/101_yakit_seri_etiket.sql");
 const m102 = oku("db/migrations/102_yakit_v2_pencere_duzeltme.sql");
+const m103 = oku("db/migrations/103_yakit_hacim_seri_etiket.sql");
+const m094 = oku("db/migrations/094_yakit_hacim_arac_ekseni.sql");
 const raporLib = oku("lib/reports.ts");
 const tenantLib = oku("lib/tenant.ts");
 const cron = oku("app/api/cron/yakit-etiket/route.ts");
@@ -228,6 +230,137 @@ kontrol(
 kontrol("cron 101 yoksa AÇIKÇA söylüyor", /migration_101_yok/.test(cron));
 kontrol("cron düşen günü gizlemiyor", /dusenGun/.test(cron));
 
+// ── 7 · LİTRE HATTI (103) ──────────────────────────────────────────────────
+/**
+ * 103, 101'in ikizidir AMA litre motoru (094) yüzde motorunun (052) KOPYASI
+ * DEĞİL. Üç kural ayrışıyor ve üçü de sessizce bozulabilir:
+ *   eşik 5 (10 değil) · UÇ SATIR İSTİSNASI YOK · SERİ BİRLEŞTİRME YOK.
+ * Denetimler yine 094'ün gövdesini ölçüt alıyor — sabitler buraya yazılmıyor.
+ */
+const v1l = govde(m094, "report_fuel_volume_stats_vehicle");
+const v2l = govde(m103, "report_fuel_volume_stats_vehicle_v2");
+kontrol("094'te report_fuel_volume_stats_vehicle duruyor", v1l !== null);
+kontrol("103'te report_fuel_volume_stats_vehicle_v2 var", v2l !== null);
+kontrol(
+  "103 ESKİ litre fonksiyonunu DÜŞÜRMÜYOR",
+  !/drop\s+function[^;]*report_fuel_volume_stats_vehicle\s*\(/i.test(m103)
+);
+kontrol("103 tek transaction", /^begin;/m.test(m103) && /^commit;/m.test(m103));
+kontrol("103 şema yeniden yüklenmesini bildiriyor", /notify pgrst/.test(m103));
+kontrol(
+  "fuel_volume_seri additive + doğru anahtar",
+  /create table if not exists public\.fuel_volume_seri/.test(m103) &&
+    /primary key \(vehicle_id, recorded_at\)/.test(m103)
+);
+kontrol(
+  "103 geri alma yolunu başlıkta yazıyor",
+  /drop table if exists public\.fuel_volume_seri/.test(m103)
+);
+kontrol(
+  "103 device_telemetry'ye ALTER/UPDATE yapmıyor",
+  !/alter table[^;]*device_telemetry/i.test(m103) &&
+    !/update\s+public\.device_telemetry/i.test(m103)
+);
+
+const etiketleL = govde(m103, "yakit_hacim_seri_etiketle");
+kontrol("yakit_hacim_seri_etiketle var", etiketleL !== null);
+if (etiketleL) {
+  kontrol(
+    "🔑 litre etiketlemesi İKİ yandan 30'ar satır genişliyor",
+    /order by dt\.recorded_at desc\s*\n\s*limit 30/.test(etiketleL) &&
+      /order by dt\.recorded_at asc\s*\n\s*limit 30/.test(etiketleL)
+  );
+  kontrol(
+    "litre etiketlemesi fuel_volume_l okuyor (fuel_level_pct DEĞİL)",
+    /fuel_volume_l is not null/.test(etiketleL) && !/fuel_level_pct/.test(etiketleL)
+  );
+  kontrol(
+    "litre yazması YALNIZ aralık içine",
+    /where p\.recorded_at >= p_from\s*\n\s*and p\.recorded_at <= p_to/.test(etiketleL)
+  );
+  kontrol(
+    "litre etiketlemesi upsert",
+    /on conflict \(vehicle_id, recorded_at\) do update/.test(m103)
+  );
+  const c1 = v1l ? v1l.match(/rows between (\d+) preceding and current row/) : null;
+  const c2 = etiketleL.match(/rows between (\d+) preceding and current row/);
+  kontrol(
+    "🔑 litre etiket çerçevesi 094 ile AYNI",
+    c1 !== null && c2 !== null && c1[1] === c2[1],
+    `094=${c1 ? c1[1] : "?"} · etiket=${c2 ? c2[1] : "?"}`
+  );
+}
+
+if (v1l && v2l) {
+  const L_ESIK = [
+    ["de-glitch eşiği (5, 10 DEĞİL)", /bwd_max - fuel >= (\d+) and fwd_max - fuel >= \d+/],
+    ["dolum adım eşiği", /fuel - prev_fuel >= (\d+)/],
+    ["sifon düşüş eşiği", /prev_fuel - fuel >= (\d+)/],
+    ["sifon odometre kapısı", /odo - prev_odo between (-?\d+ and -?\d+)/],
+  ];
+  const v2ln = kodu(v2l).replace(/bwd_w/g, "bwd_max").replace(/fwd_w/g, "fwd_max");
+  for (const [ad, desen] of L_ESIK) {
+    const a = kodu(v1l).match(desen);
+    const b = v2ln.match(desen);
+    kontrol(
+      `🔑 litre v2 eşiği 094 ile AYNI — ${ad}`,
+      a !== null && b !== null && a[1] === b[1],
+      `094=${a ? a[1] : "?"} · v2=${b ? b[1] : "?"}`
+    );
+  }
+  kontrol(
+    "🔑 litre v2'de UÇ SATIR İSTİSNASI YOK (094 gibi)",
+    !/rn = 1\s+then/.test(kodu(v2l)) && !/rn = cnt then/.test(kodu(v2l))
+  );
+  kontrol(
+    "🔑 litre v2'de SERİ BİRLEŞTİRME YOK (094 gibi)",
+    !/run_id/.test(kodu(v2l)) && !/interval '15 minutes'/.test(kodu(v2l))
+  );
+  kontrol(
+    "🔑 litre v2'de O(n²) çerçeve YOK",
+    !/rows between current row and unbounded following/.test(kodu(v2l))
+  );
+  kontrol(
+    "🔑 litre v2 ileri kenarı desc-artımlı çerçeveyle",
+    /order by n\.recorded_at desc rows between unbounded preceding and current row/.test(kodu(v2l))
+  );
+  kontrol(
+    "🔑 litre v2 pencere KENARINI yeniden hesaplıyor",
+    /rn <= 31/.test(kodu(v2l)) && /rn > n\.cnt - 31/.test(kodu(v2l))
+  );
+  kontrol(
+    "🔑 litre kuyruğunun örtüşmesi base'e İKİNCİ KEZ girmiyor",
+    /k\.recorded_at >= e\.t/.test(kodu(v2l))
+  );
+  kontrol(
+    "litre v2 aynı 11 ölçüm kolonunu döndürüyor",
+    ["sample_count","avg_l","min_l","max_l","first_l","last_l","refill_count","refill_l","drop_count","drop_l","max_step_l"]
+      .every((k) => v2l.includes(`as ${k}`))
+  );
+}
+
+kontrol(
+  "🔑 yakıt raporu litre hattını da bayrağa bağladı",
+  /YAKIT_OZET_ENABLED[\s\S]{0,140}report_fuel_volume_stats_vehicle_v2/.test(raporLib)
+);
+kontrol(
+  "🔑 litre v2 yoksa LİTRE HATTI komple eskiye dönüyor",
+  /missing_function[\s\S]{0,220}litreCagir\("report_fuel_volume_stats_vehicle"\)/.test(raporLib)
+);
+kontrol(
+  "litre zaman aşımı tekrarı AYNI sürümle",
+  /volPer\[i\] = await supabaseAdmin\.rpc\(litreRpc,/.test(raporLib)
+);
+kontrol(
+  "🔑 cron AYNI koşuda İKİ tabloyu da dolduruyor",
+  /yakit_seri_etiketle/.test(cron) && /yakit_hacim_seri_etiketle/.test(cron)
+);
+kontrol(
+  "cron 103 yoksa TUR DÜŞMÜYOR (litre sessiz geçiliyor)",
+  /errL[\s\S]{0,400}PGRST202[\s\S]{0,400}litre: null/.test(cron)
+);
+kontrol("cron litre kapsamasını da bildiriyor", /kapsamaLitre/.test(cron));
+
 // ── 6 · BELGE ──────────────────────────────────────────────────────────────
 kontrol("CRON-KAYITLARI'na 11 numaralı iş girdi", /\| 11 \|[^|]*yakit-etiket|\/api\/cron\/yakit-etiket/.test(cronDoc));
 kontrol("belgede 03:15 Europe/Vienna yazıyor", /03:15/.test(cronDoc) && /Europe\/Vienna/.test(cronDoc));
@@ -235,7 +368,7 @@ kontrol("belgede kill-switch yazılı", /YAKIT_OZET_ENABLED/.test(cronDoc));
 
 // ── SONUÇ ──────────────────────────────────────────────────────────────────
 if (dusen.length === 0) {
-  console.log(`✓ yakıt etiketi muhafızı: ${gecen} denetim geçti (101 + v2 eşikleri + geri düşüş + cron).`);
+  console.log(`✓ yakıt etiketi muhafızı: ${gecen} denetim geçti (101+102+103 · eşikler + geri düşüş + cron).`);
   process.exit(0);
 }
 console.log(`✗ YAKIT ETİKETİ MUHAFIZI — ${dusen.length}/${gecen + dusen.length} denetim düştü:\n`);

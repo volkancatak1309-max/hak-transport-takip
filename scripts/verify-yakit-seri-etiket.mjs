@@ -53,6 +53,13 @@ const V1 = m052.slice(v1Bas, m052.indexOf("$$;", v1Bas) + 3);
 const temizle = (x) => x.replace(/notify pgrst[^;]*;/g, "");
 const M101 = temizle(readFileSync(join(KOK, "db/migrations/101_yakit_seri_etiket.sql"), "utf8"));
 const M102 = temizle(readFileSync(join(KOK, "db/migrations/102_yakit_v2_pencere_duzeltme.sql"), "utf8"));
+const M103 = temizle(readFileSync(join(KOK, "db/migrations/103_yakit_hacim_seri_etiket.sql"), "utf8"));
+
+/** LİTRE hattının v1'i — 094'ten, kopyalanmadan. */
+const m094 = readFileSync(join(KOK, "db/migrations/094_yakit_hacim_arac_ekseni.sql"), "utf8");
+const v1vBas = m094.indexOf("create or replace function public.report_fuel_volume_stats_vehicle(");
+if (v1vBas < 0) throw new Error("094'te report_fuel_volume_stats_vehicle bulunamadı");
+const V1V = m094.slice(v1vBas, m094.indexOf("$$;", v1vBas) + 3);
 
 let gecen = 0;
 const dusen = [];
@@ -76,22 +83,30 @@ await q(`create table device_telemetry (
   vehicle_id uuid not null references vehicles(id),
   recorded_at timestamptz not null,
   fuel_level_pct numeric,
+  fuel_volume_l numeric,
   odometer_km numeric,
   unique (vehicle_id, recorded_at)
 )`);
 await q(V1);
+await q(V1V);
 await db.exec(M101);
 await db.exec(M102);
-console.log(`\n═══ PGlite · şema + 052'nin v1'i + migration 101 + 102 ═══`);
+await db.exec(M103);
+console.log(`\n═══ PGlite · şema + 052'nin v1'i + migration 101 + 102 + 103 ═══`);
 {
   const r = await q(`select
     (select count(*) from information_schema.tables where table_schema='public' and table_name='fuel_seri')::int tablo,
     (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='public' and p.proname in ('yakit_seri_etiketle','report_fuel_stats_vehicle_v2'))::int fn,
+      where n.nspname='public' and p.proname in ('yakit_seri_etiketle','report_fuel_stats_vehicle_v2',
+        'yakit_hacim_seri_etiketle','report_fuel_volume_stats_vehicle_v2'))::int fn,
     (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='public' and p.proname='report_fuel_stats_vehicle')::int eski`);
+      where n.nspname='public' and p.proname in ('report_fuel_stats_vehicle','report_fuel_volume_stats_vehicle'))::int eski`);
   const x = r.rows[0];
-  ok("101+102 uygulandı: tablo 1 · yeni fonksiyon 2 · ESKİSİ duruyor", x.tablo === 1 && x.fn === 2 && x.eski === 1, `${x.tablo}/${x.fn}/${x.eski}`);
+  ok(
+    "101+102+103 uygulandı: tablo 1 · yeni fonksiyon 4 · ESKİ İKİSİ duruyor",
+    x.tablo === 1 && x.fn === 4 && x.eski === 2,
+    `tablo ${x.tablo} · yeni ${x.fn} · eski ${x.eski}`
+  );
 }
 
 // ── SENTETİK SERİ ─────────────────────────────────────────────────────────
@@ -124,6 +139,7 @@ let toplam = 0;
 for (let a = 0; a < ARAC.length; a++) {
   const satir = [];
   let fuel = 90 - a * 5;
+  let litre = 100 - a * 8;
   let odo = 100000 + a * 5000;
   for (let g = 0; g < GUN; g++) {
     for (let k = 0; k < GUNLUK; k++) {
@@ -181,13 +197,59 @@ for (let a = 0; a < ARAC.length; a++) {
       if (a === 1 && ((g % 6 === 3 && k >= 286) || (g % 6 === 4 && k <= 2))) {
         y = Math.max(0, fuel - 22);
       }
-      satir.push([ARAC[a], t.toISOString(), Number(y.toFixed(2)), Number(odo.toFixed(1))]);
+      /**
+       * ── LİTRE SERİSİ (103) ────────────────────────────────────────────
+       * Yüzdeden BAĞIMSIZ bir seri; 094'ün kuralları başka (eşik 5, uç satır
+       * istisnası YOK, seri birleştirme YOK). Kusurlar o kurallara göre
+       * yerleştirildi:
+       *   · eşiğin İKİ YANINDA dolum adımı (5,5 L ve 4,5 L)
+       *   · tek satırlık çukur (-12 L) → de-glitch temizlemeli
+       *   · pencerenin BAŞINA ve SONUNA oturan çok satırlı çukur
+       *   · SİFON: -9 L, odometre SABİT (kapıdan geçmeli)
+       *   · SAHTE SİFON: -9 L ama odometre 3 km artmış (kapıdan GEÇMEMELİ)
+       */
+      if (k / 12 >= 6 && k / 12 < 18) litre -= 0.05 + a * 0.01;
+      if (g % 4 === (a + 1) % 4 && k === 16 * 12) litre += 38;
+      if (g % 5 === 1 && k === 8 * 12) litre += 5.5;
+      if (g % 5 === 4 && k === 8 * 12) litre += 4.5;
+      if (litre < 4) litre = 4 + Math.abs((idx * 3) % 2);
+      if (litre > 120) litre = 120;
+      let yl = litre;
+      if (idx > 0 && idx % 450 === 0) yl = Math.max(0, litre - 12);
+      if (a === 2 && g === 7 && k <= 9) yl = Math.max(0, litre - 14);
+      if (a === 2 && ((g === 8 && k >= 278) || (g === 9 && k === 0)))
+        yl = Math.max(0, litre - 14);
+      /**
+       * ⚠️ EŞİK SINIRINDA LİTRE KUSURLARI — arıza enjeksiyonunda bulundu.
+       * İlk hâlde çukurlar -12/-14 L, sifon -9 L idi; 094'ün 5 L eşiğini 6'ya
+       * çekmek çıktıyı HİÇ değiştirmiyordu, yani kanıt o eşiği ÖLÇMÜYORDU.
+       *   · 5,5 L'lik TEK SATIRLIK çukur → eşik 5'te temizlenir, 6'da kalır
+       *   · 5,5 L'lik KALICI düşüş (odometre sabit) → drop_count eşiğe duyarlı
+       */
+      if (idx > 0 && idx % 733 === 0) yl = Math.max(0, litre - 5.5);
+      let odoYazilan = odo;
+      if (a === 0 && g === 15 && k === 50) { litre -= 5.5; yl = litre; }
+      /**
+       * ⚠️ ODOMETRE GERİ GİTMİŞ sifon — `between -1 and 1` ile `< 1` ancak
+       * BURADA ayrışır (negatif fark `< 1`e girer, `between`e girmez). 094'ün
+       * kendi ölçümü canlıda 25 kez 1 km'den fazla geri gidiş bulmuştu.
+       */
+      if (a === 2 && g === 24 && k === 40) { litre -= 9; yl = litre; odoYazilan = odo - 5; }
+      if (a === 1 && g === 18 && k === 40) { litre -= 9; yl = litre; }
+      if (a === 1 && g === 22 && k === 40) { litre -= 9; yl = litre; odoYazilan = odo + 3; }
+      satir.push([
+        ARAC[a],
+        t.toISOString(),
+        Number(y.toFixed(2)),
+        Number(yl.toFixed(2)),
+        Number(odoYazilan.toFixed(1)),
+      ]);
     }
   }
   for (let i = 0; i < satir.length; i += 1000) {
     const d = satir.slice(i, i + 1000);
-    const vals = d.map((_, j) => `($${j * 4 + 1},$${j * 4 + 2},$${j * 4 + 3},$${j * 4 + 4})`).join(",");
-    await q(`insert into device_telemetry (vehicle_id, recorded_at, fuel_level_pct, odometer_km) values ${vals}`, d.flat());
+    const vals = d.map((_, j) => `($${j * 5 + 1},$${j * 5 + 2},$${j * 5 + 3},$${j * 5 + 4},$${j * 5 + 5})`).join(",");
+    await q(`insert into device_telemetry (vehicle_id, recorded_at, fuel_level_pct, fuel_volume_l, odometer_km) values ${vals}`, d.flat());
   }
   toplam += satir.length;
 }
@@ -206,11 +268,25 @@ async function gunGunEtiketle(ilk, sonGun) {
   return n;
 }
 
+/** LİTRE hattının cron ikizi — cron aynı koşuda iki tabloyu da doldurur. */
+async function gunGunEtiketleHacim(ilk, sonGun) {
+  let n = 0;
+  for (let g = ilk; g < sonGun; g++) {
+    const r = await q(`select public.yakit_hacim_seri_etiketle($1::timestamptz,$2::timestamptz,null) as n`, [
+      new Date(T0 + g * 86400000).toISOString(),
+      new Date(T0 + (g + 1) * 86400000 - 1).toISOString(),
+    ]);
+    n += Number(r.rows[0].n);
+  }
+  return n;
+}
+
 const KOLON = ["sample_count","avg_pct","min_pct","max_pct","first_pct","last_pct","refill_count","refill_pct","drop_count","drop_pct"];
-const kanonik = (r) =>
+const KOLON_L = ["sample_count","avg_l","min_l","max_l","first_l","last_l","refill_count","refill_l","drop_count","drop_l","max_step_l"];
+const kanonik = (r, kolonlar = KOLON) =>
   r === undefined
     ? "SATIR YOK"
-    : KOLON.map((k) => `${k}=${r[k] === null ? "null" : Number(r[k]).toPrecision(12)}`).join(" ");
+    : kolonlar.map((k) => `${k}=${r[k] === null ? "null" : Number(r[k]).toPrecision(12)}`).join(" ");
 
 const PENCERELER = [
   ["7 gün", 5, 12],
@@ -242,16 +318,45 @@ async function kiyasla(etiket) {
   }
 }
 
+/** LİTRE hattının ikizi - 094 vs 103. */
+async function kiyaslaHacim(etiket) {
+  for (const [ad, g1, g2] of PENCERELER) {
+    const f = new Date(T0 + g1 * 86400000).toISOString();
+    const t = new Date(T0 + g2 * 86400000).toISOString();
+    let esit = 0;
+    let ilkFark = "";
+    for (const v of ARAC) {
+      const a = await q(`select * from public.report_fuel_volume_stats_vehicle($1::timestamptz,$2::timestamptz,$3::uuid)`, [f, t, v]);
+      const b = await q(`select * from public.report_fuel_volume_stats_vehicle_v2($1::timestamptz,$2::timestamptz,$3::uuid)`, [f, t, v]);
+      const ka = kanonik(a.rows[0], KOLON_L);
+      const kb = kanonik(b.rows[0], KOLON_L);
+      if (ka === kb) esit++;
+      else if (!ilkFark) ilkFark = `
+      v1: ${ka}
+      v2: ${kb}`;
+    }
+    ok(
+      `LİTRE · ${etiket} · ${ad} · v2 = v1 BAYT-BAYT`,
+      esit === ARAC.length,
+      esit === ARAC.length ? `${esit}/${ARAC.length} araç` : ilkFark
+    );
+  }
+}
+
 // ── 1) TAM ETİKET, GÜN GÜN ÜRETİLMİŞ ──────────────────────────────────────
 console.log(`\n────────── 1 · etiket GÜN GÜN üretildi (cron simülasyonu) ──────────`);
 const yazilan = await gunGunEtiketle(0, GUN);
+const yazilanL = await gunGunEtiketleHacim(0, GUN);
 const say = await q(`select count(*)::int n from public.fuel_seri`);
+const sayL = await q(`select count(*)::int n from public.fuel_volume_seri`);
 ok(
   "30 günlük etiket GÜN GÜN yazıldı",
   say.rows[0].n === toplam && yazilan === toplam,
   `${GUN} çağrı · upsert ${yazilan} · tabloda ${say.rows[0].n}`
 );
+console.log(`     litre etiketi: upsert ${yazilanL} · tabloda ${sayL.rows[0].n}`);
 await kiyasla("tam etiket");
+await kiyaslaHacim("tam etiket");
 
 // ── 2) 090 VAKASI ─────────────────────────────────────────────────────────
 console.log(`\n────────── 2 · 090 vakası: günlük parçalama vs tek pencere ──────────`);
@@ -294,18 +399,24 @@ ok(
 console.log(`\n────────── 3 · melez okuma (ilk 20 gün etiketli, kalanı canlı) ──────────`);
 await q(`truncate public.fuel_seri`);
 await gunGunEtiketle(0, 20);
+await q(`truncate public.fuel_volume_seri`);
+await gunGunEtiketleHacim(0, 20);
 const kismi = await q(`select count(*)::int n, max(recorded_at) son from public.fuel_seri`);
 console.log(`     etiketli ${kismi.rows[0].n} satır · son ${String(kismi.rows[0].son).slice(0, 16)} (10 gün ETİKETSİZ)`);
 await kiyasla("melez");
+await kiyaslaHacim("melez");
 
 // ── 4) TABLO BOŞ: v2 tamamen canlı ────────────────────────────────────────
 console.log(`\n────────── 4 · etiket tablosu BOŞ (migration öncesi / kill-switch) ──────────`);
 await q(`truncate public.fuel_seri`);
+await q(`truncate public.fuel_volume_seri`);
 await kiyasla("boş tablo");
+await kiyaslaHacim("boş tablo");
 
 // ── 5) TEKRAR ÇALIŞTIRILABİLİRLİK ─────────────────────────────────────────
 console.log(`\n────────── 5 · idempotans ──────────`);
 await gunGunEtiketle(0, GUN);
+await gunGunEtiketleHacim(0, GUN);
 /**
  * ⚠️ Toplam `numeric`e YUVARLANARAK alınıyor. `sum(double precision)`
  * kayan nokta toplamı olduğu için tarama sırasına göre son basamakta
@@ -314,6 +425,7 @@ await gunGunEtiketle(0, GUN);
  */
 const ilkHal = await q(`select count(*)::int n, sum(round(bwd_max::numeric,6)) b, sum(round(fwd_max::numeric,6)) f from public.fuel_seri`);
 await gunGunEtiketle(0, GUN);
+await gunGunEtiketleHacim(0, GUN);
 const ikinciHal = await q(`select count(*)::int n, sum(round(bwd_max::numeric,6)) b, sum(round(fwd_max::numeric,6)) f from public.fuel_seri`);
 ok(
   "aynı gün ikinci kez etiketlenince satır ve değerler DEĞİŞMİYOR",
@@ -330,21 +442,29 @@ await db.exec(`
   drop function if exists public.yakit_seri_etiketle(timestamptz, timestamptz, uuid);
   drop view if exists public.fuel_seri_kapsama;
   drop table if exists public.fuel_seri;
+  drop function if exists public.report_fuel_volume_stats_vehicle_v2(timestamptz, timestamptz, uuid);
+  drop function if exists public.yakit_hacim_seri_etiketle(timestamptz, timestamptz, uuid);
+  drop view if exists public.fuel_volume_seri_kapsama;
+  drop table if exists public.fuel_volume_seri;
 `);
 {
   const r = await q(`select
-    (select count(*) from information_schema.tables where table_schema='public' and table_name='fuel_seri')::int tablo,
+    (select count(*) from information_schema.tables where table_schema='public'
+      and table_name in ('fuel_seri','fuel_volume_seri'))::int tablo,
     (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-      where n.nspname='public' and p.proname='report_fuel_stats_vehicle')::int eski,
+      where n.nspname='public'
+        and p.proname in ('report_fuel_stats_vehicle','report_fuel_volume_stats_vehicle'))::int eski,
     (select count(*) from device_telemetry)::int ham`);
   const x = r.rows[0];
   ok(
-    "geri alma: 101 tamamen kalktı · ESKİ fonksiyon ve HAM veri sağlam",
-    x.tablo === 0 && x.eski === 1 && x.ham === toplam,
+    "geri alma: 101+103 tamamen kalktı · ESKİ İKİ fonksiyon ve HAM veri sağlam",
+    x.tablo === 0 && x.eski === 2 && x.ham === toplam,
     `tablo ${x.tablo} · eski ${x.eski} · ham ${x.ham}`
   );
   const a = await q(`select * from public.report_fuel_stats_vehicle($1::timestamptz,$2::timestamptz,$3::uuid)`, [f30, t30, ARAC[0]]);
-  ok("geri alındıktan sonra eski yol hâlâ çalışıyor", a.rows.length === 1, `${a.rows[0]?.sample_count} satır`);
+  ok("geri alındıktan sonra eski YUZDE yolu hâlâ çalışıyor".replace("YUZDE","YÜZDE"), a.rows.length === 1, `${a.rows[0]?.sample_count} satır`);
+  const av = await q(`select * from public.report_fuel_volume_stats_vehicle($1::timestamptz,$2::timestamptz,$3::uuid)`, [f30, t30, ARAC[0]]);
+  ok("geri alındıktan sonra eski LİTRE yolu hâlâ çalışıyor", av.rows.length === 1, `${av.rows[0]?.sample_count} satır`);
 }
 
 console.log(

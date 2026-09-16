@@ -16,7 +16,7 @@
  *
  * Kullanım: npm run lint:yakit-etiket
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -360,6 +360,99 @@ kontrol(
   /errL[\s\S]{0,400}PGRST202[\s\S]{0,400}litre: null/.test(cron)
 );
 kontrol("cron litre kapsamasını da bildiriyor", /kapsamaLitre/.test(cron));
+
+// ── 8 · ODOMETRE KAPISI · TEK KURAL, TEK KAYNAK (104) ─────────────────────
+/**
+ * 🔴 BU BÖLÜM 28.08.2026 + 17.09.2026 VAKASININ MUHAFIZI.
+ *
+ * O gün ölçülen şey şuydu: HAK61'in CANLI fonksiyonu depodan farklıydı
+ * (`between -1 and 1` vs `< 1`) ve fark müşteriye giden "şüpheli yakıt kaybı"
+ * rakamıydı. Karar: canlı biçim doğru, üç kiracı ona hizalanır. O karar
+ * 094+095 ile LİTRE hattına uygulandı ama **YÜZDE hattı unutuldu** — 20 gün
+ * boyunca iki hat farklı kural taşıdı ve kimse fark etmedi. 104 onu kapattı.
+ *
+ * Aynı şey bir daha olmasın diye kural artık TEK KAYNAKTAN okunuyor:
+ * `report_fuel_volume_stats_vehicle` (094, kararın yazıldığı yer) ne diyorsa
+ * diğer DÖRT fonksiyon da onu demek zorunda. Eşik bu dosyaya YAZILMIYOR —
+ * yarın kural değişirse denetim kendiliğinden yeni kurala göre bakar, ama
+ * fonksiyonlardan biri geride kalırsa DÜŞER.
+ *
+ * "Yürürlükteki tanım" = o fonksiyonu tanımlayan EN YÜKSEK numaralı migration.
+ * Tarihi bir dosyayı okumak, kiracıda koşan gövdeyi değil geçmişi doğrulardı.
+ */
+const MIG_DIZIN = join(KOK, "db/migrations");
+const MIG_DOSYALAR = readdirSync(MIG_DIZIN)
+  .filter((f) => /^\d{3}_.*\.sql$/.test(f))
+  .sort();
+
+/** Bir fonksiyonun YÜRÜRLÜKTEKİ gövdesi + hangi migration'dan geldiği. */
+function yururlukte(ad) {
+  let bulunan = null;
+  for (const f of MIG_DOSYALAR) {
+    const g = govde(readFileSync(join(MIG_DIZIN, f), "utf8"), ad);
+    if (g !== null) bulunan = { dosya: f, govde: g };
+  }
+  return bulunan;
+}
+
+const YAKIT_FONKSIYONLARI = [
+  "report_fuel_volume_stats_vehicle", // ← KAYNAK (094, kararın yazıldığı yer)
+  "report_fuel_volume_stats",
+  "report_fuel_stats",
+  "report_fuel_stats_vehicle",
+  "report_fuel_stats_vehicle_v2",
+];
+const KAPI_DESEN = /odo - prev_odo\s+(between\s+-?\d+\s+and\s+-?\d+|<=?\s*-?\d+|>=?\s*-?\d+)/;
+
+const kapilar = [];
+for (const ad of YAKIT_FONKSIYONLARI) {
+  const y = yururlukte(ad);
+  kontrol(`kapı · ${ad} depoda tanımlı`, y !== null, ad);
+  if (!y) continue;
+  const m = kodu(y.govde).match(KAPI_DESEN);
+  kontrol(`kapı · ${ad} odometre kapısı taşıyor`, m !== null, y.dosya);
+  kapilar.push({ ad, dosya: y.dosya, kapi: m ? m[1].replace(/\s+/g, " ") : null });
+}
+
+if (kapilar.length === YAKIT_FONKSIYONLARI.length && kapilar.every((k) => k.kapi)) {
+  const kaynak = kapilar[0];
+  for (const k of kapilar.slice(1)) {
+    kontrol(
+      `🔑 kapı TEK KURAL — ${k.ad} (${k.dosya}) = ${kaynak.ad} (${kaynak.dosya})`,
+      k.kapi === kaynak.kapi,
+      `${kaynak.ad}="${kaynak.kapi}" · ${k.ad}="${k.kapi}"`
+    );
+  }
+  /**
+   * Yürürlükteki hâlde ESKİ biçimin kalıntısı kalmamalı. Yorumlar sökülüyor:
+   * 095/104'ün başlıkları eski biçimi ANLATIYOR ve anlatmaya devam etmeli.
+   */
+  for (const k of kapilar) {
+    const y = yururlukte(k.ad);
+    kontrol(
+      `kapı · ${k.ad} gövdesinde eski "< 1" biçimi KALMADI`,
+      !/odo - prev_odo < 1/.test(kodu(y.govde)),
+      k.dosya
+    );
+  }
+}
+
+kontrol(
+  "104 üç YÜZDE fonksiyonunu birlikte hizalıyor",
+  ["report_fuel_stats(", "report_fuel_stats_vehicle(", "report_fuel_stats_vehicle_v2("].every(
+    (x) => oku("db/migrations/104_yuzde_odo_kapisi_hizalama.sql").includes(`create or replace function public.${x}`)
+  )
+);
+kontrol(
+  "104 tek transaction + notify",
+  /^begin;/m.test(oku("db/migrations/104_yuzde_odo_kapisi_hizalama.sql")) &&
+    /^commit;/m.test(oku("db/migrations/104_yuzde_odo_kapisi_hizalama.sql")) &&
+    /notify pgrst/.test(oku("db/migrations/104_yuzde_odo_kapisi_hizalama.sql"))
+);
+kontrol(
+  "104 eski migration'lara DOKUNMUYOR (095 kalıbı)",
+  !/drop\s+function/i.test(oku("db/migrations/104_yuzde_odo_kapisi_hizalama.sql"))
+);
 
 // ── 6 · BELGE ──────────────────────────────────────────────────────────────
 kontrol("CRON-KAYITLARI'na 11 numaralı iş girdi", /\| 11 \|[^|]*yakit-etiket|\/api\/cron\/yakit-etiket/.test(cronDoc));

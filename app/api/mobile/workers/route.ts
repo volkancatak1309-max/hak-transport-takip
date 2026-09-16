@@ -61,9 +61,28 @@ type WorkerRow = {
  * gösteriyor. Mobilde süzme sunucuda olmak zorunda (sayfalama), bu yüzden
  * VARSAYILAN da panelin gördüğüyle hizalandı — aksi hâlde aynı kadro için
  * panel 31, uygulama 33 derdi.
- *   ?aktif yok / =1  → yalnız aktif   (panel varsayılanı)
+ *   ?aktif yok / =1  → yalnız aktif, AYRILANLAR HARİÇ  (panel varsayılanı)
  *   ?aktif=0         → yalnız pasif
  *   ?aktif=all       → tümü           (panelin "Tümü" seçeneği)
+ *   ?aktif=eski      → yalnız ayrılanlar (panelin "Eski Personeller" bölümü)
+ *
+ * ── AYRILAN PERSONEL VARSAYILANDAN DÜŞER (16.09.2026) ─────────────────────
+ * Panel ana kadroyu `roster = workers.filter(w => !w.terminated_at)` ile
+ * kuruyor ve ayrılanları AYRI bir "Eski Personeller" bölümüne alıyor — bu
+ * eleme `is_active`'ten BAĞIMSIZ. Bu uçta `terminated_at` üzerinde hiçbir
+ * kural yoktu, yalnız `is_active` süzülüyordu.
+ *
+ * Bugün iki yüzey TESADÜFEN aynı sonucu veriyor (ölçüldü, HAK61 16.09.2026:
+ * 2 ayrılan kişinin ikisi de `is_active=false`, yani zaten düşüyorlardı).
+ * Ama kural olarak ayrışıyorlardı: `terminated_at` dolu + `is_active=true`
+ * bir kayıt panelde "Eski Personeller"e giderken mobil listede NORMAL AKTİF
+ * ÇALIŞAN gibi görünürdü. Uyuyan kusur; kapatıldı.
+ *
+ * ⚠️ `?aktif=0` ve `?aktif=all` BİLEREK dokunulmadı (Volkan kararı): ikisi de
+ * ayrılanları döndürmeye devam eder. Panelin "Pasif" sekmesi ayrılanları
+ * ELER (roster içinde süzüyor), yani bu iki değerde parite TAM DEĞİL —
+ * ayrılan + pasif bir kişi mobilde `?aktif=0`'da görünür, panelin Pasif
+ * sekmesinde görünmez. Bilinen ve kabul edilmiş fark.
  */
 export async function GET(req: NextRequest) {
   const guard = await requireMobileAdmin(req);
@@ -86,8 +105,18 @@ export async function GET(req: NextRequest) {
   // test-filtered: withoutTestRows — panelin Çalışanlar listesiyle aynı eleme.
   q = withoutTestRows(q, "id", scope.workerIds);
   q = withoutOwner(q, "id", ownerScope);
-  if (aktifParam === "1") q = q.eq("is_active", true);
-  else if (aktifParam === "0") q = q.eq("is_active", false);
+  if (aktifParam === "eski") {
+    // Yalnız ayrılanlar — panelin "Eski Personeller" bölümünün karşılığı.
+    // `is_active` SORULMAZ: ayrılmış biri pasif de olabilir aktif de kalmış
+    // olabilir (kayıt pasifleştirilmeden çıkış işlenmişse), ikisi de "eski".
+    q = q.not("terminated_at", "is", null);
+  } else if (aktifParam === "1") {
+    // Ayrılan elemesi `is_active`'ten AYRI bir koşul: ikisi birlikte uygulanır
+    // ki `terminated_at` dolu ama hâlâ `is_active=true` olan kayıt da düşsün.
+    q = q.eq("is_active", true).is("terminated_at", null);
+  } else if (aktifParam === "0") {
+    q = q.eq("is_active", false);
+  }
 
   const { data, count, error } = await q.range(
     page.offset,

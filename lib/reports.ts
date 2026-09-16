@@ -30,6 +30,7 @@ import { getTestScope, dropTestRows, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { markKmMeasured } from "@/lib/km-quality";
 import { markKmKarar } from "@/lib/km-axis";
+import { kmRaporDegeri } from "@/lib/km-ui";
 import { AZG_DAILY_MAX_MS } from "@/lib/azg-rules";
 import {
   FUEL_PRICE_EUR_PER_L,
@@ -37,6 +38,7 @@ import {
   FUEL_PRICE_AS_OF,
   FUEL_PRICE_IS_CUSTOM,
   SCORE_THRESHOLD_WORKED_DAYS,
+  KM_EKSENI_KESIM_TARIHI,
 } from "@/lib/tenant";
 import { resolveCostRates } from "@/lib/cost-rates-db";
 import {
@@ -131,7 +133,24 @@ export type PerformanceRow = {
   name: string;
   shifts: number;
   workedMs: number;
+  /**
+   * ═══ ÜÇ KM ALANI, ÜÇ AYRI SORU (13. madde Adım 5) ═══
+   *
+   * `km`      → çekirdeğin kararı (cihaz → sayaç → null). EKRAN bunu
+   *             basar: Analiz/Performans bugünün en iyi ölçümünü gösterir.
+   * `kmRapor` → kesim kuralının seçtiği eksen (lib/km-ui.ts
+   *             `kmRaporDegeri`). KÂĞIT bunu basar: basılmış bir belge
+   *             bugün yeniden üretildiğinde AYNI sayıyı vermek zorunda.
+   * `kmSayac` → saf sayaç farkı, dondurulmamış hâliyle. Hiçbir yüzey
+   *             basmaz; kesim öncesi "ikisi eşit" iddiasını ölçen
+   *             muhafız/denetim için duruyor.
+   *
+   * `km` ile `kmRapor` kesim tarihinden ÖNCEKİ aralıklarda ayrışır ve bu
+   * kasıtlıdır — ekran ileri gitti, kâğıt geçmişine sadık kaldı.
+   */
   km: number | null;
+  kmSayac: number | null;
+  kmRapor: number | null;
   delivered: number;
   undelivered: number;
   /** Analiz'deki güvenlik skorunun AYNISI (null = yeterli km yok). */
@@ -514,7 +533,21 @@ export async function buildPerformanceReport(
     evByWorker.set(wid, a);
   }
 
-  type ShiftAcc = { shifts: number; ms: number; km: number; hasKm: boolean; delivered: number; undelivered: number };
+  type ShiftAcc = {
+    shifts: number;
+    ms: number;
+    /** Çekirdek ekseni (cihaz → sayaç). EKRANIN sayısı. */
+    km: number;
+    hasKm: boolean;
+    /** Saf sayaç farkı (end_km − start_km). Muhafızın kıyas ekseni. */
+    kmSayac: number;
+    hasKmSayac: boolean;
+    /** Kesim kuralının seçtiği eksen. KÂĞIDIN sayısı. */
+    kmRapor: number;
+    hasKmRapor: boolean;
+    delivered: number;
+    undelivered: number;
+  };
   const shiftByWorker = new Map<string, ShiftAcc>();
   // GÜN KIRILIMI aynı döngüde toplanır (bkz. PerformanceDaily). AYRI bir
   // döngüde toplanamaz: `workedMs` AÇIK vardiyada `Date.now()` okur, yani iki
@@ -531,12 +564,44 @@ export async function buildPerformanceReport(
     const km = e.km_karar.km;
     const a =
       shiftByWorker.get(e.worker_id) ??
-      { shifts: 0, ms: 0, km: 0, hasKm: false, delivered: 0, undelivered: 0 };
+      {
+        shifts: 0,
+        ms: 0,
+        km: 0,
+        hasKm: false,
+        kmSayac: 0,
+        hasKmSayac: false,
+        kmRapor: 0,
+        hasKmRapor: false,
+        delivered: 0,
+        undelivered: 0,
+      };
     a.shifts += 1;
     a.ms += ms;
     if (km !== null) {
       a.km += km;
       a.hasKm = true;
+    }
+    /**
+     * RAPOR EKSENLERİ (13. madde Adım 5). Ekran `km`i kullanır (çekirdek,
+     * kesim yok); KÂĞIT `kmRapor`u kullanır (kesim kuralı). `kmSayac` eski
+     * ekseni saf hâliyle taşır — muhafız "kesim öncesi ikisi eşit" iddiasını
+     * onunla ölçüyor.
+     *
+     * ⚠️ `kmRapor` VARDİYA VARDİYA toplanır, iki toplamdan biri SEÇİLEREK
+     * değil. Sebebi somut: kesimi ORTASINDAN geçen bir aralıkta (ör. 25.09 →
+     * 05.10) doğru cevap ne saf sayaç ne saf çekirdektir — her vardiya kendi
+     * tarihine ait ekseni taşımalı. Tek toplamı seçmek o aralığı yanlış yapardı.
+     */
+    const sayacKm = kmDiff(e);
+    if (sayacKm !== null) {
+      a.kmSayac += sayacKm;
+      a.hasKmSayac = true;
+    }
+    const { km: raporKm } = kmRaporDegeri(e, KM_EKSENI_KESIM_TARIHI);
+    if (raporKm !== null) {
+      a.kmRapor += raporKm;
+      a.hasKmRapor = true;
     }
     // Teslim edilen yalnız KAPANMIŞ vardiyada gerçektir (açık vardiyada
     // cargo_count hâlâ gün başı yer tutucusu) — panoyla aynı kural.
@@ -610,6 +675,8 @@ export async function buildPerformanceReport(
       shifts: s?.shifts ?? 0,
       workedMs: s?.ms ?? 0,
       km: s?.hasKm ? s.km : null,
+      kmSayac: s?.hasKmSayac ? s.kmSayac : null,
+      kmRapor: s?.hasKmRapor ? s.kmRapor : null,
       delivered: s?.delivered ?? 0,
       undelivered: s?.undelivered ?? 0,
       safetyScore: sc?.score ?? null,

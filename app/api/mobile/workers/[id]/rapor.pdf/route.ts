@@ -14,7 +14,7 @@ import { PerformanceDoc } from "@/components/pdf/server/PerformanceDoc";
 import { mintFingerprint } from "@/lib/pdf-fingerprint";
 import { audit } from "@/lib/security-log";
 import { clientIpFromHeaders } from "@/lib/auth-core";
-import { FILE_PREFIX_LOWER, REPORT_EMPTY } from "@/lib/report-de";
+import { FILE_PREFIX_LOWER, REPORT_EMPTY, kmDipnotMetni } from "@/lib/report-de";
 import { formatDurationShort } from "@/lib/format";
 import { TENANT_TZ } from "@/lib/tz";
 import { DONEMLER, donemCoz } from "../../../_performans/donem";
@@ -202,7 +202,15 @@ export async function GET(
               skor: row.safetyScore === null ? REPORT_EMPTY : String(row.safetyScore),
               vardiya: String(row.shifts),
               calisma: formatDurationShort(row.workedMs, dil ?? "de"),
-              km: row.km === null ? REPORT_EMPTY : String(Math.round(row.km)),
+              /**
+               * ⚠️ `kmRapor`, `km` DEĞİL (13. madde Adım 5). Ekran çekirdeği
+               * (cihaz → sayaç) basar; KÂĞIT kesim kuralına uyar, çünkü bu
+               * belge dışarı çıkıyor: bugün basılan Ağustos raporu ile üç ay
+               * önce basılmış olanı AYNI sayıyı vermek zorunda. Kural tek
+               * yerde (lib/km-ui.ts `kmRaporDegeri`), burada yalnız seçilmiş
+               * değer okunuyor — Schichtbericht/CSV ile aynı kaynak.
+               */
+              km: row.kmRapor === null ? REPORT_EMPTY : String(Math.round(row.kmRapor)),
               teslim: String(row.delivered),
               teslimEdilemeyen: String(row.undelivered),
               ihlal: String(row.events),
@@ -217,6 +225,9 @@ export async function GET(
         yetersizVeri: String(rapor.rows.filter((r) => r.safetyScore === null).length),
       },
       skorNotu,
+      // Dipnot Schichtbericht ile AYNI fonksiyondan; dönem kesimden
+      // tamamen öncedeyse null döner ve belge eskisiyle bayt-bayt aynı kalır.
+      kmNote: kmDipnotMetni(d.range.end.toISOString(), dil ?? undefined),
       // Filigran: belgeyi İSTEYEN kişi (raporu yazılan şoför değil).
       kullanici: guard.actor.worker.name,
       isaret,

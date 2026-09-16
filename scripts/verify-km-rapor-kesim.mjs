@@ -232,6 +232,165 @@ for (const [ad, bas, bit] of DONEMLER) {
   }
 }
 
+
+// ══ SÜRÜCÜ PERFORMANSI PDF (ikinci commit) ═════════════════════════════════
+/**
+ * Bu belge Adım 4'te SESSİZCE eksen değiştirmişti: `row.km` çekirdeğe bağlanmış,
+ * kesim kuralı ise yalnız CSV + Schichtbericht'e konmuştu. Yani basılmış bir
+ * Ağustos performans raporu bugün yeniden alındığında BAŞKA bir km veriyordu.
+ * Burada ölçülen tam olarak bu: artık vermiyor.
+ *
+ * ÖNCE = 13. madde hiç yokken ne basılırdı → `kmDiff` toplamı (km_measured
+ * kapısıyla). `PerformanceRow.kmSayac` o formülün ta kendisi; ayrıca ham
+ * veritabanından BAĞIMSIZ olarak da toplanıp çapraz doğrulanıyor.
+ */
+console.log(`\n────────── Sürücü Performansı PDF ──────────`);
+const { buildPerformanceReport } = await import("@/lib/reports");
+
+/** Rotanın bastığı hücrenin birebir kopyası (route.ts:~205). */
+const hucre = (v) => (v === null ? REPORT_EMPTY : String(Math.round(v)));
+
+for (const [ad, bas, bit] of DONEMLER) {
+  const range = { start: new Date(`${bas}T00:00:00.000Z`), end: new Date(`${bit}T23:59:59.999Z`) };
+  const rapor = await buildPerformanceReport(range);
+  const kesimSonrasi = kmDipnotGerekli(`${bit}T23:59:59.999Z`, KM_EKSENI_KESIM_TARIHI);
+
+  if (!kesimSonrasi) {
+    const sapan = rapor.rows.filter((r) => hucre(r.kmRapor) !== hucre(r.kmSayac));
+    ok(
+      `🔑 ${ad} performans PDF km hücresi BAYT-BAYT aynı (${rapor.rows.length} şoför)`,
+      sapan.length === 0,
+      sapan.length
+        ? sapan.slice(0, 4).map((r) => `${r.name}: ${hucre(r.kmSayac)}→${hucre(r.kmRapor)}`).join(" · ")
+        : `${rapor.rows.length}/${rapor.rows.length} satır`
+    );
+    // Adım 4'ün sessiz kaymasının BÜYÜKLÜĞÜ — bu commit'in neyi düzelttiği.
+    const kayan = rapor.rows.filter((r) => hucre(r.km) !== hucre(r.kmRapor));
+    console.log(
+      `  Adım 4'te kayan satır: ${kayan.length}/${rapor.rows.length}` +
+        (kayan.length
+          ? ` · örnek ${kayan.slice(0, 3).map((r) => `${r.name} ${hucre(r.kmRapor)}→${hucre(r.km)}`).join(" · ")}`
+          : "")
+    );
+    ok(
+      `${ad} ekran (row.km) ile kâğıt (row.kmRapor) AYRIŞIYOR — kural ölçülebilir`,
+      kayan.length > 0 || rapor.rows.length === 0,
+      `${kayan.length} satır`
+    );
+  }
+
+  // ── ÇAPRAZ DOĞRULAMA: ham veritabanından bağımsız toplam ────────────────
+  const { data: ham2 } = await supabaseAdmin
+    .from("time_entries")
+    .select("*")
+    .gte("started_at", `${bas}T00:00:00.000Z`)
+    .lte("started_at", `${bit}T23:59:59.999Z`);
+  const k2 = await markKmMeasured(ham2 ?? []);
+  const bagimsiz = new Map();
+  for (const e of k2) {
+    if (!e.worker_id) continue;
+    const a = bagimsiz.get(e.worker_id) ?? { n: 0, km: 0, var: false };
+    a.n += 1;
+    const v = eskiKm(e);
+    if (v !== null) { a.km += v; a.var = true; }
+    bagimsiz.set(e.worker_id, a);
+  }
+  /**
+   * Yalnız VARDİYA SAYISI tutan şoförler kıyaslanır. Tutmuyorsa kapsam farkı
+   * vardır (test aracı süzgeci, patron kapsamı) — o satırı "düştü" saymak
+   * yanlış olurdu, kıyas dışı bırakılıp sayısı yazılır.
+   */
+  let kiyaslanan = 0;
+  const capraz = [];
+  for (const r of rapor.rows) {
+    const b = bagimsiz.get(r.workerId);
+    if (!b || b.n !== r.shifts) continue;
+    kiyaslanan++;
+    const beklenen = b.var ? b.km : null;
+    if (!kesimSonrasi && hucre(r.kmRapor) !== hucre(beklenen)) {
+      capraz.push(`${r.name}: ${hucre(beklenen)}≠${hucre(r.kmRapor)}`);
+    }
+  }
+  if (!kesimSonrasi) {
+    ok(
+      `${ad} ham veriden BAĞIMSIZ sayaç toplamı = PDF hücresi`,
+      capraz.length === 0,
+      capraz.length ? capraz.slice(0, 4).join(" · ") : `${kiyaslanan}/${rapor.rows.length} şoför kıyaslandı`
+    );
+  }
+}
+
+// ── Sentetik kesim sonrası: aynı şoför, yalnız tarih değişti ───────────────
+/**
+ * Ekim'de vardiya yok; kuralı gerçek bir Eylül şoförü üzerinden ölçüyoruz.
+ * Satırların tarihi BELLEKTE kesim sonrasına taşınıyor (DB'ye yazma YOK) ve
+ * PDF hücresi `kmRaporDegeri` ile yeniden toplanıyor — raporun kullandığı
+ * fonksiyonun ta kendisi.
+ */
+console.log(`\n────────── sentetik: performans PDF kesim sonrası ──────────`);
+const { data: eylulTum } = await supabaseAdmin
+  .from("time_entries")
+  .select("*")
+  .gte("started_at", "2026-09-01T00:00:00.000Z")
+  .lte("started_at", "2026-09-30T23:59:59.999Z")
+  .not("ended_at", "is", null);
+const eylulTumK = await markKmKarar(await markKmMeasured(eylulTum ?? []));
+const soforGrup = new Map();
+for (const e of eylulTumK) {
+  if (!e.worker_id) continue;
+  soforGrup.set(e.worker_id, [...(soforGrup.get(e.worker_id) ?? []), e]);
+}
+const topla = (satirlar, tarihli) => {
+  let t = 0, v = false;
+  for (const e of satirlar) {
+    const { km } = kmRaporDegeri(tarihli ? { ...e, started_at: `${KM_EKSENI_KESIM_TARIHI}T08:00:00.000Z` } : e, KM_EKSENI_KESIM_TARIHI);
+    if (km !== null) { t += km; v = true; }
+  }
+  return v ? t : null;
+};
+const denekSofor = [...soforGrup.entries()].find(
+  ([, s]) => hucre(topla(s, false)) !== hucre(topla(s, true))
+);
+if (!denekSofor) {
+  console.log("  (iki eksenin AYRIŞTIĞI şoför yok — denetim atlandı, sebebi yazıldı)");
+} else {
+  const [wid, satirlar] = denekSofor;
+  const oncesi = hucre(topla(satirlar, false));
+  const sonrasi = hucre(topla(satirlar, true));
+  console.log(`  denek ${wid.slice(0, 8)} · ${satirlar.length} vardiya · ${oncesi} → ${sonrasi}`);
+  ok("🔑 sentetik kesim sonrası PDF km hücresi YENİ eksene geçti", oncesi !== sonrasi, `${oncesi} → ${sonrasi}`);
+  const cekirdek = satirlar.reduce(
+    (a, e) => (e.km_karar.km === null ? a : { t: a.t + e.km_karar.km, v: true }),
+    { t: 0, v: false }
+  );
+  ok(
+    "yeni değer ÇEKİRDEĞİN toplamı (uydurma değil)",
+    sonrasi === hucre(cekirdek.v ? cekirdek.t : null),
+    `${sonrasi} vs ${hucre(cekirdek.v ? cekirdek.t : null)}`
+  );
+}
+
+// ── Dipnot: üç dil, aynı metin kaynağı ─────────────────────────────────────
+console.log(`\n────────── performans PDF dipnotu ──────────`);
+const ekimISO = "2026-10-31T23:59:59.999Z";
+const agustosISO = "2026-08-31T23:59:59.999Z";
+for (const dl of ["de", "tr", "en"]) {
+  const m = kmDipnotMetni(ekimISO, dl);
+  ok(`dipnot ${dl} BASILIYOR`, typeof m === "string" && m.includes(KM_EKSENI_KESIM_TARIHI.slice(8, 10)), m ?? "null");
+}
+ok(
+  "üç dil BİRBİRİNDEN farklı (tek dil kopyalanmamış)",
+  new Set(["de", "tr", "en"].map((d) => kmDipnotMetni(ekimISO, d))).size === 3
+);
+ok("🔑 Ağustos performans PDF'inde dipnot YOK", kmDipnotMetni(agustosISO, "de") === null);
+
+// ── Rota gerçekten kmRapor okuyor mu (kaynak denetimi) ─────────────────────
+const rota = readFileSync("app/api/mobile/workers/[id]/rapor.pdf/route.ts", "utf8");
+ok("rota km hücresinde row.kmRapor kullanıyor", /km:\s*row\.kmRapor/.test(rota));
+ok("rota ham çekirdeği (row.km) km hücresine BASMIYOR", !/km:\s*row\.km\s*===/.test(rota));
+ok("rota dipnotu PerformanceDoc'a geçiriyor", /kmNote:\s*kmDipnotMetni\(/.test(rota));
+
+
 console.log(
   `\n${dusen.length === 0 ? "✓" : "✗"} km rapor kesimi: ${gecen}/${gecen + dusen.length} denetim geçti` +
     (dusen.length ? `\nDÜŞEN:\n${dusen.map((d) => `  · ${d.b}  [${d.kanit}]`).join("\n")}` : "")

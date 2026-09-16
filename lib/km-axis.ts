@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { markKmMeasured, type KmShiftRow } from "@/lib/km-quality";
 import { kmDiff } from "@/lib/format";
 import { MAX_PLAUSIBLE_KM_PER_DAY } from "@/lib/analytics";
+import type { KmKaynak } from "@/lib/km-ui";
 
 /**
  * VARDİYA KM'SİNİN EKSENİ — TEK KARAR NOKTASI (13. madde, 16.09.2026).
@@ -56,7 +57,10 @@ import { MAX_PLAUSIBLE_KM_PER_DAY } from "@/lib/analytics";
 export const KAPSAMA_TOLERANS_DK = 15;
 const KAPSAMA_TOLERANS_MS = KAPSAMA_TOLERANS_DK * 60_000;
 
-export type KmKaynak = "cihaz" | "sayac" | "olculmedi" | "bilinmiyor";
+// `KmKaynak` tipi lib/km-ui.ts'te (İSTEMCİ-GÜVENLİ dosya) tanımlı ve buradan
+// yeniden dışa açılıyor: istemci bileşenleri `server-only` olan bu modülü içe
+// aktaramaz, ama ikisi de AYNI tipi konuşmak zorunda.
+export type { KmKaynak };
 
 export type KmKarari = {
   km: number | null;
@@ -249,6 +253,61 @@ function kapsamaYeterli(s: SpanRow): boolean {
   const son = Date.parse(s.son_an);
   if (!Number.isFinite(bit) || !Number.isFinite(son)) return false;
   return bit - son <= KAPSAMA_TOLERANS_MS;
+}
+
+/** Kararı iliştirilmiş satır — `markKmMeasured`ın `km_measured`i ile aynı desen. */
+export type WithKmKarar<T> = T & { km_karar: KmKarari };
+
+/**
+ * SATIRLARA KARARI İLİŞTİR — `markKmMeasured`ın İKİZİ (13. madde Adım 4).
+ *
+ * ═══ NEDEN GEREKLİ ═══════════════════════════════════════════════════════
+ * Panel yüzeylerinin çoğu İSTEMCİ bileşeni (AdminClient, WorkerDetailClient,
+ * HistoryClient, ShiftSummaryCard) ve `kmDiff(e)`yi kendileri çağırıyordu.
+ * Bu modül `server-only`; istemci onu içe AKTARAMAZ. Karar bu yüzden sunucuda
+ * verilip satıra yazılıyor, tıpkı `km_measured` gibi — istemci hesap yapmaz,
+ * hazır sonucu okur.
+ *
+ * Alternatifi kuralı istemciye taşımaktı; o da 052'yi tarayıcıdan çağırmak ya
+ * da kuralın ikinci bir kopyasını yazmak demekti. İkisi de tek-kaynak ilkesini
+ * bozardı.
+ *
+ * ⚠️ TEK RPC. Pencere satır kümesinden türetilir; satır başına çağrı YOK.
+ */
+export async function markKmKarar<T extends KmShiftRow & { id: string }>(
+  rows: T[]
+): Promise<WithKmKarar<T>[]> {
+  if (rows.length === 0) return [];
+  const pencere = kmPencere(rows);
+  const { karar } = pencere
+    ? await kmEkseniCoz(rows, pencere)
+    : { karar: new Map<string, KmKarari>() };
+  return rows.map((r) => ({
+    ...r,
+    // Karar üretilemediyse (pencere yok / RPC düştü) sayaç eksenine düşülür ve
+    // kaynak "bilinmiyor" der — sessizce "sayac" demek, ölçülmemiş bir kapıyı
+    // geçmiş göstermek olurdu.
+    km_karar: karar.get(r.id) ?? { km: kmDiff(r), kaynak: "bilinmiyor" as const },
+  }));
+}
+
+/**
+ * Karar haritasından bir vardiyanın km'sini oku — ÜÇ UCUN ORTAK OKUYUCUSU.
+ *
+ * ⚠️ `?? yedek` YAZILMAZ. "Karar YOK" ile "karar NULL dedi" farklı şeylerdir:
+ * ikincisi `olculmedi` kararıdır ve yedeğe düşmemelidir (yedek de zaten null
+ * olurdu ama mantık yanlış olurdu — yarın yedek değişirse ölçülemeyen vardiya
+ * sessizce bir sayı kazanırdı). `has()` ile ayrılıyor.
+ *
+ * Yedek YALNIZ karar üretilemediğinde devreye girer: pencere boş ya da RPC
+ * düştü. O durumda elde olan sayaç ekseni gösterilir, sessiz null değil.
+ */
+export function kmOku(
+  karar: Map<string, KmKarari>,
+  id: string,
+  yedek: number | null
+): number | null {
+  return karar.has(id) ? karar.get(id)!.km : yedek;
 }
 
 /**

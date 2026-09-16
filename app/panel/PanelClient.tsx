@@ -1,5 +1,6 @@
 "use client";
 
+import type { KmKararli } from "@/lib/km-ui";
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
@@ -98,7 +99,7 @@ type AssignedVehicle = {
 
 type Props = {
   active: TimeEntry | null;
-  pendingSummary: TimeEntry | null;
+  pendingSummary: (TimeEntry & KmKararli) | null;
   totals: Totals;
   assignedVehicle: AssignedVehicle | null;
   /** Bugün (Viyana günü) bir vardiya açılmış mı — günde tek vardiya kuralı. */

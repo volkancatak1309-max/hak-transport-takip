@@ -7,6 +7,7 @@ import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { HistoryClient } from "./HistoryClient";
 import type { TimeEntry } from "@/lib/types";
 import { markKmMeasured } from "@/lib/km-quality";
+import { markKmKarar } from "@/lib/km-axis";
 import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +43,10 @@ export default async function HistoryPage({
     .range(offset, offset + PAGE_SIZE - 1);
 
   // Cihazı sessiz vardiyada km bir ölçüm değil → kmDiff null döner → "—".
-  const entries = await markKmMeasured((data ?? []) as TimeEntry[]);
+  // 13. madde Adım 4: km kararı da iliştirilir (cihaz → sayaç → null).
+  const entries = await markKmKarar(
+    await markKmMeasured((data ?? []) as TimeEntry[])
+  );
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
   return (

@@ -29,6 +29,7 @@ import {
 import { getTestScope, dropTestRows, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { markKmMeasured } from "@/lib/km-quality";
+import { markKmKarar } from "@/lib/km-axis";
 import { AZG_DAILY_MAX_MS } from "@/lib/azg-rules";
 import {
   FUEL_PRICE_EUR_PER_L,
@@ -435,7 +436,15 @@ export async function buildPerformanceReport(
   );
   // km_measured: cihazı sessiz vardiyanın 0 km'si ölçüm değildir → kmDiff null
   // döner → satır "—" olur ve toplama girmez (bkz. lib/km-quality.ts).
-  const entries = await markKmMeasured((entryData ?? []) as TimeEntry[]);
+  /**
+   * KM EKSENİ (13. madde Adım 4, 16.09.2026): satırlara km KARARI da
+   * iliştiriliyor. `row.km` ve `totalKm` artık `kmDiff` değil
+   * çekirdeğin kararı — cihaz (052, kapsama yeterli) → sayaç → null.
+   * TEK RPC; satır başına çağrı yok.
+   */
+  const entries = await markKmKarar(
+    await markKmMeasured((entryData ?? []) as TimeEntry[])
+  );
 
   // ÇALIŞILAN GÜN eşiği — Analiz sayfasıyla AYNI kapı, aynı kaynak (`entries`).
   const workedDaysByWorker = workedDaysFromEntries(entries);
@@ -517,7 +526,9 @@ export async function buildPerformanceReport(
   for (const e of entries) {
     if (!e.worker_id) continue;
     const ms = workedMs(e);
-    const km = kmDiff(e);
+    // Çekirdeğin kararı (cihaz → sayaç → null). `kmDiff` artık yalnız
+    // çekirdeğin İÇİNDE, yedek eksen olarak yaşıyor.
+    const km = e.km_karar.km;
     const a =
       shiftByWorker.get(e.worker_id) ??
       { shifts: 0, ms: 0, km: 0, hasKm: false, delivered: 0, undelivered: 0 };
@@ -639,7 +650,7 @@ export async function buildPerformanceReport(
      * toplama 0 katıyor ve rapor "tam ölçüldü" görünüyordu; artık eksik olduğu
      * bandın kendisinde yazılı.
      */
-    kmMeasuredShifts: entries.filter((e) => kmDiff(e) !== null).length,
+    kmMeasuredShifts: entries.filter((e) => e.km_karar.km !== null).length,
     kmUnmeasuredShifts: entries.filter(
       (e) => e.end_km !== null && e.start_km !== null && kmDiff(e) === null
     ).length,

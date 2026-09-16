@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { mobileError } from "@/lib/mobile-auth";
 import { getLoginLockState } from "@/lib/login-lock";
 import { workedMs, kmDiff, startOfMonthVienna } from "@/lib/format";
-import { kmEkseniCoz, kmPencere, kaynakSay } from "@/lib/km-axis";
+import { kmEkseniCoz, kmPencere, kaynakSay, kmOku } from "@/lib/km-axis";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 import type { TimeEntry } from "@/lib/types";
 import { getOwnerScope } from "@/lib/owner-scope";
@@ -115,7 +115,8 @@ export async function GET(
     buAy: {
       vardiya: month.length,
       calismaMs: month.reduce((a, e) => a + workedMs(e), 0),
-      km: sum(month.map((e) => kmDiff(e))),
+      // Ay toplamı ARTIK çekirdekten: her vardiya kendi ekseninden, sonra Σ.
+      km: sum(month.map((e) => kmOku(kmEksen.karar, e.id, kmDiff(e)))),
       // Ay toplamı tek bir eksenden gelmez — kaç vardiya hangi ekseni SEÇERDİ.
       kmKaynakDagilim: kaynakSay(month, kmEksen.karar),
       paketTeslim: sum(month.map((e) => e.cargo_count)),
@@ -127,7 +128,7 @@ export async function GET(
       acik: e.ended_at === null,
       plaka: e.plate,
       sureMs: workedMs(e),
-      km: kmDiff(e),
+      km: kmOku(kmEksen.karar, e.id, kmDiff(e)),
       kmKaynak: kmEksen.karar.get(e.id)?.kaynak ?? "bilinmiyor",
       molaDk: e.break_minutes ?? 0,
     })),

@@ -1,7 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
-import { startOfTodayVienna, kmDiff } from "@/lib/format";
+import { startOfTodayVienna } from "@/lib/format";
 import { markKmMeasured } from "@/lib/km-quality";
+import { markKmKarar } from "@/lib/km-axis";
 import { computeLiveStatus } from "@/lib/vehicle-ui";
 import { latestVehicleTelemetry, listActiveDtc, type VehicleDtcRow } from "@/lib/telemetry";
 import { getTestScope, dropTestRows } from "@/lib/test-data";
@@ -271,7 +272,9 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
   // km_measured: cihazı sessiz vardiyada `end_km - start_km` bir ölçüm değildir
   // (bkz. lib/km-quality.ts). Bu araç ölü cihazlı ise satırların hepsi
   // işaretlenir ve aşağıdaki km hesapları "0" yerine null üretir.
-  const shifts = await markKmMeasured(
+  // 13. madde Adım 4: karar da iliştiriliyor — araç ekranlarındaki km artık
+  // çekirdekten (cihaz → sayaç → null), tek RPC.
+  const shifts = await markKmKarar(await markKmMeasured(
     (entries ?? []) as (Pick<
       TimeEntry,
       | "id"
@@ -284,7 +287,7 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
       | "start_package_count"
       | "cargo_count"
     > & { vehicle_id: string | null })[]
-  );
+  ));
 
   const workerIds = new Set<string>();
   if (vehicle.assigned_worker_id) workerIds.add(vehicle.assigned_worker_id);
@@ -329,8 +332,8 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
     if (startKm === null) startKm = s.start_km;
     if (s.end_km !== null) {
       endKm = s.end_km;
-      // kmDiff cihazı sessiz vardiyada null döner → hasKm true OLMAZ → "—".
-      const d = kmDiff(s);
+      // Karar cihazı sessiz vardiyada null döner → hasKm true OLMAZ → "—".
+      const d = s.km_karar.km;
       if (d === null) kmUnmeasured++;
       else {
         km += d;
@@ -350,7 +353,8 @@ export async function getVehicleDetail(id: string): Promise<VehicleDetail | null
     driver_name: s.worker_id ? names.get(s.worker_id) ?? null : null,
     start_km: s.start_km,
     end_km: s.end_km,
-    km: kmDiff(s),
+    km: s.km_karar.km,
+    kmKaynak: s.km_karar.kaynak,
     ended: s.ended_at !== null,
   }));
 

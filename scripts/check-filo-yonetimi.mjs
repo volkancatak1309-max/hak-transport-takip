@@ -370,6 +370,72 @@ kontrol(
   (/\b[A-ZÄÖÜ]{1,2}-\d{3,5}\s?[A-Z]{0,2}\b/.exec(ddl) ?? [""])[0]
 );
 
+// ══ 10b · KARŞILAŞTIRMA UCU (9D) ═══════════════════════════════════════════
+const karsSrc = kodOku("app/api/mobile/fleets/karsilastir/route.ts");
+const karsLib = kodOku("lib/fleet-compare.ts");
+
+/**
+ * ⚠️ KAPI BİLEREK FARKLI. Kardeş filo uçları requireMobileAdmin (tanımı
+ * DEĞİŞTİRİYORLAR); bu salt okuma ve şefin kendi filosunun karnesini görmesi
+ * yönettiği işin ta kendisi. Kapı YUKARI kayarsa şef kendi ekranını kaybeder,
+ * AŞAĞI kayarsa (requireMobileWorker) şoför filo karnesini görür.
+ */
+kontrol("karşılaştırma kapısı requireMobileFleetView", /requireMobileFleetView\(/.test(karsSrc));
+kontrol("karşılaştırma daha gevşek kapı KULLANMIYOR", !/requireMobileWorker\(/.test(karsSrc));
+kontrol("karşılaştırma GET dışında yöntem açmıyor", !/export async function (POST|PUT|DELETE|PATCH)\b/.test(karsSrc));
+kontrol("karşılaştırma DB'ye DOĞRUDAN yazmıyor", !/supabaseAdmin/.test(karsSrc));
+// Hız sınırı: OKUMA kalıbı (süreç içi), 098'in yazma tablosu DEĞİL.
+kontrol("karşılaştırma hız sınırı uyguluyor", /sinirDenetle\(/.test(karsSrc));
+kontrol("hız sınırı OKUMA kalıbından (upload_rate DEĞİL)", /@\/lib\/rate-limit/.test(karsSrc) && !/upload_rate|hizSiniriHarca/.test(karsSrc));
+kontrol("hız sınırı kişiye bağlı (IP'ye değil)", /guard\.actor\.worker\.id/.test(karsSrc));
+kontrol("hız sınırı aşımında 429 + Retry-After", /status: 429/.test(karsSrc) && /"Retry-After"/.test(karsSrc));
+// `gun`/`tumzaman` BİLEREK yok: günlük pencerede yakıt ölçülemiyor.
+kontrol("dönem kümesi hafta|ay|ozel", /\["hafta", "ay", "ozel"\]/.test(karsSrc));
+kontrol("geçersiz dönem 400", /mobileError\(400,\s*"invalid_donem"/.test(karsSrc));
+kontrol("ozel'de tarih ZORUNLU", /missing_fields/.test(karsSrc) && /invalid_tarih/.test(karsSrc));
+
+/**
+ * ⚠️ BU UCUN TEK SÖZÜ: YENİ FORMÜL YOK. Metrik kendi hesaplanmaya başlarsa
+ * Analiz'le sessizce ayrışır — kullanıcı iki ekranda iki sayı görür ve
+ * hangisinin doğru olduğunu kimse söyleyemez.
+ */
+for (const [ad, desen] of [
+  ["alarm → computeTopDriversByType", /computeTopDriversByType\(/],
+  ["rölanti → computeIdleWaste", /computeIdleWaste\(/],
+  ["km/vardiya → getWorkerShiftDistance", /getWorkerShiftDistance\(/],
+  ["yakıt → buildFuelReport", /buildFuelReport\(/],
+  ["skor → buildPerformanceReport", /buildPerformanceReport\(/],
+  ["araç/kişi → listFleets", /listFleets\(/],
+  ["yakıt € → resolveCostRates", /resolveCostRates\(/],
+]) {
+  kontrol(`karşılaştırma ${ad} kullanıyor`, desen.test(karsLib));
+}
+// Yakıt € DÖNEM BİTİŞİNE göre fiyatlanır: biten bir olguyu bugünkü fiyatla
+// etiketlemek, olmayan bir fiyatla fiyatlamaktır.
+kontrol("yakıt € dönem bitişine göre (asOf=range.end)", /resolveCostRates\([\s\S]{0,120}range\.end/.test(karsLib));
+// Σ(filolar) === kaynak toplam kimliği YANITTA döner.
+kontrol("denklik bloğu yanıtta", /denklik:\s*sonuc\.denklik/.test(karsSrc) && /esit:/.test(karsLib));
+kontrol("denklik beş metriği de kapsıyor", ["km", "vardiya", "alarm", "yakitLitre", "rolantiSaat"].every((m) => new RegExp(`${m}:\\s*\\{`).test(karsLib)));
+// Sahipsiz kova GİZLENMEZ — gizlenseydi Σ < toplam olur, fark kaybolurdu.
+kontrol("sahipsiz kova yanıtta", /sahipsiz:\s*sonuc\.sahipsiz/.test(karsSrc));
+// Şef YALNIZ kendi filosunu görür; "diğerleri" toplamı bile sızmamalı.
+kontrol("şefte sahipsiz kovası açılmıyor", /if \(!scope\.restricted\) kovalar\.push\(null\)/.test(karsLib));
+kontrol("şef kapsamı fleetScope'tan", /guard\.actor\.fleetScope/.test(karsSrc));
+// km 0 iken alarm/100km UYDURULMAZ.
+kontrol("km 0 ise kmBasinaAlarm null", /if \(km <= 0\) return null/.test(karsLib));
+// 1000 satır tavanı: kırpılma gizlenmez.
+kontrol("kırpılma yanıtta söyleniyor", /kirpildi:\s*sonuc\.kirpildi/.test(karsSrc) && /POSTGREST_TAVAN/.test(karsLib));
+// Bir toplayıcı düşerse yarım karne DEĞİL hata.
+kontrol("toplayıcı düşerse 503 (yarım karne yok)", /catch\s*\{[\s\S]{0,200}mobileError\(503/.test(karsSrc));
+/**
+ * ⚠️ VARDİYA YÜKLEMİ ANALİZ'LE HİZALI. 052 aralıkla KESİŞEN vardiyaları
+ * döndürüyor; Analiz aralıkta BAŞLAYANLARI sayıyor. Süzgeç kalkarsa HAK61'de
+ * ölçülen fark geri gelir (ay: 425 vs 419, 16.09.2026).
+ */
+kontrol("vardiya yüklemi started_at ile hizalı", /w\.startMs >= araStart && w\.startMs <= araEnd/.test(karsLib));
+// km vardiya düzeyinden okunur (araç eksenli toplam, şoförden oranlama YOK).
+kontrol("km vardiya penceresinden okunuyor", /w\.km \?\? 0/.test(karsLib));
+
 // ══ 11 · DDL (migration 099 — taşıma izi + geri alma) ══════════════════════
 const ddl99 = hamOku("db/migrations/099_filo_tasima_izi.sql");
 const ddl99Kod = ddl99.replace(/^\s*--.*$/gm, "");

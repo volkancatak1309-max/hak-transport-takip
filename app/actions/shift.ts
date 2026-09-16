@@ -217,8 +217,20 @@ export async function addBreakMinutesAction(minutes: number): Promise<ShiftResul
  * updateStartKmAction (şoförün kendi başlangıç km'sini düzeltmesi) 21.07.2026'da
  * KALDIRILDI. Km artık cihazdan türetiliyor (odometre → GPS), şoför hiçbir yerde
  * sayaç girmez — düzeltme yolu da kalırsa yanlış değerin geri sızacağı kapı
- * açık kalırdı. Yanlış türetilmiş bir km'yi YÖNETİCİ düzeltir:
- * adminUpdateKmAction (components/KmEditButton).
+ * açık kalırdı.
+ *
+ * 16.09.2026 — AYNI GEREKÇE YÖNETİCİ İÇİN DE UYGULANDI. O gün "yanlış türetilmiş
+ * bir km'yi YÖNETİCİ düzeltir" diye bırakılmış olan iki panel yüzeyi kaldırıldı:
+ *   · components/KmEditButton.tsx            (SİLİNDİ)
+ *   · AdminClient düzeltme formundaki start_km/end_km alanları (KALDIRILDI)
+ * Şoför için doğru olan gerekçe yönetici için de doğruydu: ölçülen bir sayının
+ * üstüne elle yazabilen bir kapı, ölçümü ölçüm olmaktan çıkarır.
+ *
+ * ⚠️ `adminUpdateKmAction` (aşağıda) ve mobil `islem:"km"` DURUYOR — istek
+ * "düzenleme yüzeyi gitsin, uç/çekirdek kalsın" idi. Yani km düzeltmesi artık
+ * panelden TIKLANAMAZ ama sözleşme yerinde: bir gün cihaz ölçümü toptan
+ * bozulursa geri dönülecek yol duruyor. Panelde bu action'ı çağıran hiçbir
+ * bileşen kalmadı.
  */
 
 /**
@@ -302,12 +314,38 @@ export async function adminCloseShiftAction(
 export async function editEntryAction(formData: FormData): Promise<ShiftResult> {
   const session = await requireAdmin();
 
+  const id = formData.get("id");
+
+  /**
+   * ── KM FORMDAN GELMİYOR, KAYITTAN OKUNUYOR (16.09.2026) ───────────────────
+   *
+   * Panel formundaki `start_km`/`end_km` alanları KALDIRILDI (km yalnız
+   * cihazdan). Çekirdek `correctShiftFields` iki alanı hâlâ ZORUNLU istiyor ve
+   * bu bilinçli: sözleşme değişmedi, yalnız düzenleme yüzeyi gitti.
+   *
+   * Boş geçseydik şema `start_km`i reddeder ve SAAT düzeltmesi de çalışmazdı —
+   * AZG raporunu besleyen tek düzeltme yolu kapanırdı. O yüzden değerler
+   * kayıttan okunup AYNEN geri yazılıyor: mobil istemcinin `islem:"duzelt"`te
+   * yaptığının aynısı.
+   *
+   * ⚠️ FormData'da km gelirse bile KULLANILMAZ. Okuma DB'den; istemcinin
+   * gönderdiği bir km değeri (elle istek, eski önbellekten kalmış form) sessizce
+   * kabul edilmez. Kapı kapalıysa arka kapısı da kapalı olmalı.
+   */
+  const { data: mevcut, error: okumaHatasi } = await supabaseAdmin
+    .from("time_entries")
+    .select("start_km, end_km")
+    .eq("id", typeof id === "string" ? id : "")
+    .maybeSingle();
+  if (okumaHatasi) return { ok: false, error: "db_error" };
+  if (!mevcut) return { ok: false, error: "not_found" };
+
   const r = await correctShiftFields(session.worker_id, {
-    id: formData.get("id"),
+    id,
     started_at: formData.get("started_at"),
     ended_at: formData.get("ended_at") || null,
-    start_km: formData.get("start_km"),
-    end_km: formData.get("end_km") || null,
+    start_km: mevcut.start_km,
+    end_km: mevcut.end_km,
     plate: formData.get("plate") || null,
     notes: formData.get("notes") || null,
     break_minutes: formData.get("break_minutes") || null,

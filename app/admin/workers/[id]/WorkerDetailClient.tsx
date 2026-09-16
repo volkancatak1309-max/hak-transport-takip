@@ -25,7 +25,6 @@ import {
   buildShiftReportRow,
   FILE_PREFIX_LOWER,
 } from "@/lib/report-de";
-import { KmEditButton } from "@/components/KmEditButton";
 import { EditWorkerDialog } from "@/components/admin/EditWorkerDialog";
 import { licenseState, LICENSE_BADGE } from "@/lib/worker-ui";
 import { cn } from "@/lib/utils";
@@ -315,9 +314,10 @@ export function WorkerDetailClient({
                       >
                         {e.notes ?? "—"}
                       </span>
-                      <span className="w-8 shrink-0 text-right">
-                        <KmEditButton entryId={e.id} startKm={e.start_km} endKm={e.end_km} />
-                      </span>
+                      {/* KM DÜZELTME DÜĞMESİ KALDIRILDI (16.09.2026): km artık
+                          yalnız cihazdan okunuyor, elle yazılmıyor. Satırdaki
+                          km DEĞERİ olduğu gibi duruyor — kaldırılan şey
+                          düzenleme yolu, gösterim değil. */}
                     </li>
                   );
                 })}

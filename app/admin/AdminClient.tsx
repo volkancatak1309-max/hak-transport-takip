@@ -1120,16 +1120,20 @@ export function AdminClient({
                   <Input id="e_end" type="datetime-local" name="ended_at" defaultValue={editOpen.ended_at ? toLocalInput(editOpen.ended_at) : ""} className="h-10" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="e_sk">{t("editStartKm")}</Label>
-                  <Input id="e_sk" type="number" name="start_km" defaultValue={editOpen.start_km} required className="h-10" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="e_ek">{t("editEndKm")}</Label>
-                  <Input id="e_ek" type="number" name="end_km" defaultValue={editOpen.end_km ?? ""} className="h-10" />
-                </div>
-              </div>
+              {/* ── KM ALANLARI KALDIRILDI (16.09.2026) ──────────────────────
+                  Km artık YALNIZ CİHAZDAN. Şoför sayaç girmiyor (7099184) ve
+                  odometre→GPS zinciri km'yi kendi ölçüyor; elle düzeltme yolu
+                  bırakmak, ölçülen bir sayının üstüne yazabilen bir kapı
+                  bırakmaktı. Bu form artık FormData'ya `start_km`/`end_km`
+                  KOYMUYOR — editEntryAction onları kayıttaki değeriyle geri
+                  yazar (mobil istemcinin yaptığı ile aynı).
+
+                  Uç ve çekirdek (correctShiftFields, editEntrySchema) iki alanı
+                  KABUL ETMEYE DEVAM EDİYOR: kaldırılan şey düzenleme YÜZEYİ,
+                  sözleşme değil. Mevcut kayıtlara dokunulmadı.
+
+                  ⚠️ Saat ve mola alanları AYNEN DURUYOR — AZG raporunu besleyen
+                  üç alan onlar (started_at · ended_at · break_minutes). */}
               <div className="space-y-1.5">
                 <Label htmlFor="e_br">{t("tblBreak")}</Label>
                 <Input id="e_br" type="number" name="break_minutes" defaultValue={editOpen.break_minutes ?? 0} className="h-10" />

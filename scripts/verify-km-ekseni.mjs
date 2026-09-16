@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
- * KM EKSENİ ADIM 1+2 — CANLI kanıt. **SALT OKUMA.**
+ * KM EKSENİ — ÇEKİRDEK ve ETİKET SÖZLEŞMESİ. CANLI kanıt, **SALT OKUMA.**
  *
- * Bu turun tek sözü şu: **SAYI DEĞİŞMEDİ, yalnız ETİKET eklendi.** Betik onu
- * bit-bit doğrular — dört ucun `km` alanını çekirdek devredeyken ve devre dışı
- * bırakılmışken karşılaştırır.
+ * ⚠️ 16.09.2026: bu betik Adım 1+2 için yazılmıştı ve sözü "SAYI DEĞİŞMEDİ"
+ * idi. Adım 3 sayıyı çekirdeğe bağlayınca o söz geçersiz kaldı; denetimler
+ * yeni sözleşmeye çevrildi — "uçtaki `km`, çekirdeğin kararının TA KENDİSİ".
+ * Ölçüm tarafı (etiket dağılımı, tolerans, gecikme medyanı) aynen duruyor.
+ * Sayının DEĞİŞİMİNİ ölçen tablo ayrı betikte: verify-km-ekseni-adim3.mjs.
  *
  * Yazma yok, HAK61 dâhil her kiracıda güvenle koşar.
  *
@@ -15,7 +17,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { issueTokens } from "@/lib/mobile-auth";
 import { kmDiff } from "@/lib/format";
 import { markKmMeasured } from "@/lib/km-quality";
-import { kmEkseniCoz, kmPencere, kaynakSay, KAPSAMA_TOLERANS_DK } from "@/lib/km-axis";
+import { kmEkseniCoz, kmPencere, kaynakSay, kmOku, KAPSAMA_TOLERANS_DK } from "@/lib/km-axis";
 
 if (supabaseAdmin?.__MOCK__ === true) {
   console.error("✗ şim devrede — gerçek veritabanı gerekli.");
@@ -51,20 +53,38 @@ const cagir = async (fn, u, ctx) => {
 
 console.log(`\n═══ ${KIRACI} · yönetici ${adm.name} · tolerans ${KAPSAMA_TOLERANS_DK} dk ═══`);
 
-// ══ 1 · LİSTE UCU — km alanı BİT-BİT aynı mı ═══════════════════════════════
+// ══ 1 · LİSTE UCU — km alanı çekirdekle birebir mi ════════════════════════
 console.log("\n── /shifts (limit 30) ──");
 const L = await cagir(SHIFTS, "https://x.invalid/api/mobile/shifts?limit=30");
 ok("liste 200", L.kod === 200, String(L.kod));
 const v = L.govde.vardiyalar ?? [];
 ok("30 satır döndü", v.length > 0, `${v.length} satır`);
 
-// BEKLENEN km: ucun kullandığı kaynağın AYNISI, çekirdekten BAĞIMSIZ hesaplanır.
+/**
+ * ⚠️ SÖZLEŞME 16.09.2026'DA DEĞİŞTİ (13. madde Adım 3). Bu denetim o güne
+ * kadar "km hâlâ A ekseninde, BİT-BİT aynı" diyordu — Adım 2'nin sözü buydu.
+ * Adım 3 sayıyı çekirdeğe bağladı, yani eski iddia artık YANLIŞ.
+ *
+ * Denetim SİLİNMEDİ, GÜNCELLENDİ: yeni söz "uçtaki km, çekirdeğin bu vardiya
+ * için verdiği kararın TA KENDİSİ". Ölü bir sözleşmeyi denetleyen betik,
+ * denetim olmaktan çıkar; ama denetimi tümden kaldırmak da ucu çekirdeğinden
+ * ayrılmaya açık bırakırdı.
+ */
 const { data: ham } = await supabaseAdmin
   .from("time_entries").select("*").in("id", v.map((r) => r.id));
-const beklenen = new Map((await markKmMeasured(ham ?? [])).map((e) => [e.id, kmDiff(e)]));
+const isaretliHam = await markKmMeasured(ham ?? []);
+const yedek = new Map(isaretliHam.map((e) => [e.id, kmDiff(e)]));
+const penL = kmPencere(isaretliHam);
+const cozL = penL ? await kmEkseniCoz(isaretliHam, penL) : null;
+const beklenen = new Map(
+  isaretliHam.map((e) => [
+    e.id,
+    cozL ? kmOku(cozL.karar, e.id, yedek.get(e.id) ?? null) : (yedek.get(e.id) ?? null),
+  ])
+);
 const kmFark = v.filter((r) => (r.km ?? null) !== (beklenen.get(r.id) ?? null));
 ok(
-  "🔑 km alanı BİT-BİT aynı (A ekseni, değişmedi)",
+  "🔑 km alanı çekirdeğin kararıyla BİREBİR",
   kmFark.length === 0,
   kmFark.length ? kmFark.slice(0, 3).map((r) => `${r.id}: ${r.km} vs ${beklenen.get(r.id)}`).join(" | ") : `${v.length}/${v.length} eşleşti`
 );
@@ -110,7 +130,7 @@ const hedef = v.find((r) => !r.acik) ?? v[0];
 const D = await cagir(SHIFT, `https://x.invalid/api/mobile/shifts/${hedef.id}`, { params: Promise.resolve({ id: hedef.id }) });
 ok("detay 200", D.kod === 200, String(D.kod));
 ok(
-  "🔑 detay km = liste km (değişmedi)",
+  "🔑 detay km = liste km (tek kaynak)",
   (D.govde.vardiya?.km ?? null) === (hedef.km ?? null),
   `${D.govde.vardiya?.km} vs ${hedef.km}`
 );
@@ -126,9 +146,16 @@ ok("sonVardiyalar'da kmKaynak var", (W.govde.sonVardiyalar ?? []).every((r) => t
 const { data: ayRows } = await supabaseAdmin
   .from("time_entries").select("*").eq("worker_id", hedef.soforId)
   .gte("started_at", new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString());
-const ayBeklenen = (await markKmMeasured(ayRows ?? [])).reduce((a, e) => a + (kmDiff(e) ?? 0), 0);
+// Ay toplamı da çekirdeğin kararlarının toplamı olmalı (Adım 3 sözleşmesi).
+const ayIsaretli = await markKmMeasured(ayRows ?? []);
+const penAy = kmPencere(ayIsaretli);
+const cozAy = penAy ? await kmEkseniCoz(ayIsaretli, penAy) : null;
+const ayBeklenen = ayIsaretli.reduce(
+  (a, e) => a + ((cozAy ? kmOku(cozAy.karar, e.id, kmDiff(e)) : kmDiff(e)) ?? 0),
+  0
+);
 ok(
-  "🔑 buAy.km değişmedi (A ekseni)",
+  "🔑 buAy.km = çekirdek kararlarının toplamı",
   Math.abs((W.govde.buAy?.km ?? 0) - ayBeklenen) < 0.001,
   `${W.govde.buAy?.km} vs ${ayBeklenen}`
 );

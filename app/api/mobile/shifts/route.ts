@@ -6,7 +6,7 @@ import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { parsePage, pageInfo, parseYmdRange } from "@/lib/mobile-list";
 import { workedMs, kmDiff } from "@/lib/format";
-import { kmEkseniCoz, kmPencere, KAPSAMA_TOLERANS_DK } from "@/lib/km-axis";
+import { kmEkseniCoz, kmPencere, kmOku, KAPSAMA_TOLERANS_DK } from "@/lib/km-axis";
 import { markKmMeasured } from "@/lib/km-quality";
 import type { TimeEntry } from "@/lib/types";
 
@@ -35,8 +35,10 @@ export const dynamic = "force-dynamic";
  * PostgREST'in 1000 satırlık sayfa sınırına hiç dayanmaz; `total` sunucudan
  * gelen gerçek sayıdır, kesilmiş bir dizinin uzunluğu değil.
  *
- * `sureMs` ve `km` TÜRETİLMEZ, panelin tek kaynak fonksiyonlarıyla hesaplanır:
- * workedMs() ve kmDiff() (lib/format.ts).
+ * `sureMs` TÜRETİLMEZ, panelin tek kaynak fonksiyonuyla hesaplanır: workedMs()
+ * (lib/format.ts). `km` ise 16.09.2026'dan beri lib/km-axis.ts çekirdeğinden
+ * gelir (cihaz → sayaç → null); `kmDiff` burada yalnız çekirdek karar
+ * üretemediğinde devreye giren YEDEKtir.
  */
 export async function GET(req: NextRequest) {
   const auth = await verifyMobileRequest(req);
@@ -105,12 +107,17 @@ export async function GET(req: NextRequest) {
   const rows = await markKmMeasured((data ?? []) as TimeEntry[]);
 
   /**
-   * ── KM EKSENİ ETİKETİ (13. madde Adım 2, 16.09.2026) ─────────────────────
+   * ── KM ARTIK ÇEKİRDEKTEN (13. madde Adım 3, 16.09.2026) ──────────────────
    *
-   * ⚠️ `km` ALANI DEĞİŞMEDİ ve bu turda DEĞİŞMEYECEK: hâlâ `kmDiff(e)`, yani
-   * sayaç ekseni. Eklenen tek şey `kmKaynak` ETİKETİ — kural açılınca hangi
-   * eksenin seçileceğini SÖYLER, ama sayıyı seçmez. Böylece istemci ve panel
-   * yeni alanı, sayılar oynamadan önce tanıyabiliyor.
+   * Adım 2'de yalnız `kmKaynak` ETİKETİ eklenmişti, sayı sayaç ekseninde
+   * kalmıştı. Bu turda `km` ALANI DA çekirdeğe bağlandı:
+   *     cihaz (052, kapsama yeterli) → sayaç (end−start) → null
+   * Karar tek yerde (lib/km-axis.ts); bu uç kuralın kendisini BİLMEZ, yalnız
+   * sonucunu okur.
+   *
+   * ⚠️ `baslangicKm` / `bitisKm` HAM alanları DURUYOR. Onlar `time_entries`
+   * satırının kendisi — türetilmiş `km`in ekseni değişse de kaydın ne yazdığı
+   * değişmedi ve düzeltme/denetim yüzeyleri onları okuyor.
    *
    * Maliyet: sayfa başına TEK RPC (vardiya başına değil). Pencere sayfadaki
    * en eski başlangıç ile en yeni bitiş arası. Ölçüldü (HAK61): 30 vardiyalık
@@ -147,8 +154,9 @@ export async function GET(req: NextRequest) {
       molaDk: e.break_minutes ?? 0,
       baslangicKm: e.start_km,
       bitisKm: e.end_km,
-      km: kmDiff(e),
-      // Sayı A ekseninden; etiket kuralın SEÇECEĞİ ekseni söyler (sayıyı değil).
+      // Sayı ARTIK çekirdekten. Çekirdek bir karar üretemediyse (pencere boş,
+      // RPC düştü) sayaç eksenine düşülür — sessiz null yerine elde olana.
+      km: kmOku(eksen.karar, e.id, kmDiff(e)),
       kmKaynak: eksen.karar.get(e.id)?.kaynak ?? "bilinmiyor",
       paketAlinan: e.start_package_count,
       paketTeslim: e.cargo_count,

@@ -252,6 +252,25 @@ function kapsamaYeterli(s: SpanRow): boolean {
 }
 
 /**
+ * Karar haritasından bir vardiyanın km'sini oku — ÜÇ UCUN ORTAK OKUYUCUSU.
+ *
+ * ⚠️ `?? yedek` YAZILMAZ. "Karar YOK" ile "karar NULL dedi" farklı şeylerdir:
+ * ikincisi `olculmedi` kararıdır ve yedeğe düşmemelidir (yedek de zaten null
+ * olurdu ama mantık yanlış olurdu — yarın yedek değişirse ölçülemeyen vardiya
+ * sessizce bir sayı kazanırdı). `has()` ile ayrılıyor.
+ *
+ * Yedek YALNIZ karar üretilemediğinde devreye girer: pencere boş ya da RPC
+ * düştü. O durumda elde olan sayaç ekseni gösterilir, sessiz null değil.
+ */
+export function kmOku(
+  karar: Map<string, KmKarari>,
+  id: string,
+  yedek: number | null
+): number | null {
+  return karar.has(id) ? karar.get(id)!.km : yedek;
+}
+
+/**
  * Bir küme içinde her kaynağın kaç vardiyada seçileceği.
  *
  * TOPLAM km tek bir eksenden gelmez — ay toplamı gibi bir sayının yanına tek

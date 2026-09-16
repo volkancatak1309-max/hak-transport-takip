@@ -8,7 +8,8 @@ import { listShiftEdits } from "@/lib/shift-edit-log";
 import { revalidatePath } from "next/cache";
 import { getManagedFleet, getFleetScope, UNRESTRICTED } from "@/lib/fleet-scope";
 import { supabaseAdmin } from "@/lib/supabase";
-import { workedMs, kmDiff } from "@/lib/format";
+// `kmDiff` ARTIK GEREKMİYOR (13. madde Adım 3): km çekirdekten geliyor.
+import { workedMs } from "@/lib/format";
 import { isKmMeasured } from "@/lib/km-quality";
 import { kmEkseniTek } from "@/lib/km-axis";
 import {
@@ -360,7 +361,8 @@ export async function GET(
       molaBasladi: e.break_started_at,
       baslangicKm: e.start_km,
       bitisKm: e.end_km,
-      km: kmDiff({ ...e, km_measured: kmMeasured }),
+      // Sayı ARTIK çekirdekten (13. madde Adım 3). Ham uçlar aşağıda duruyor.
+      km: kmEksen.km,
       // Sayı A ekseninden (DEĞİŞMEDİ); etiket kuralın seçeceği ekseni söyler.
       kmKaynak: kmEksen.kaynak,
       kmBSebep: kmEksen.bSebep ?? null,

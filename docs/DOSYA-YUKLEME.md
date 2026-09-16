@@ -414,6 +414,7 @@ referansını doğrulayıp galzura-demo değilse çalışmayı reddediyor).
 | 5 | **Yetim tarayıcı** | Yok. Bugünkü kapılar YENİ yetim üretilmesini engelliyor; GEÇMİŞTE birikmiş dosyalar (varsa) taranmıyor. Ayrı bir bakım işi. |
 | 6 | **Personel belgesi** | Karar 2 gereği **kapsam dışı**. Envanterdeki #31 "ekran işi" olarak yeniden sınıflandırılmalı (mobil CC'ye not). |
 | 7 | **Saklama cron'una dosya adımı** | **Yapılmadı ve yapılamadı:** saklama katmanı (090) yalnız `device_telemetry` + `driver_locations` kapsıyor (`HAM_TABLOLAR`), ikisinde de dosya yok. Dosya adımı eklemek, saklama kapsamını genişletmek demek — fotoğraflar için saklama süresi kararı gerekir. **Volkan'ın kararı bekliyor.** |
+| 8 | **064'teki RLS kuralı fiilen ölü — 16 tablo sapmada** | `064_customer_zone_visits.sql:124` "Kasadaki kural (17 Tem): yeni migration'da RLS zorunlu" diyor, ama 064'ten sonra tablo yaratan **086/088/089/090/091/098'in hiçbiri RLS açmadı (16 tablo)**; şemadaki 77 tablodan yalnız 2'sinde RLS açık (`idle_episodes`, `zone_visits`) ve ikisinin de policy'si yok. Güvenlik etkisi **yok** — erişimi RLS değil GRANT kapatıyor (`anon`/`authenticated` hiçbir tabloda hak taşımıyor, depoda `ANON_KEY` geçen satır yok, tek istemci `lib/supabase.ts` service_role). Karar 16.09.2026: **099 yapılmadı**, `upload_rate` olduğu gibi birleştirildi; tutarlılık istenirse 66 tabloyu kapsayan ayrı temizlik işi, tek atımlık yama değil. |
 
 
 ## 7. Kararlar — Volkan, 03.09.2026 ✅

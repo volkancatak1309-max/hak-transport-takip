@@ -402,7 +402,14 @@ kontrol("ozel'de tarih ZORUNLU", /missing_fields/.test(karsSrc) && /invalid_tari
 for (const [ad, desen] of [
   ["alarm → computeTopDriversByType", /computeTopDriversByType\(/],
   ["rölanti → computeIdleWaste", /computeIdleWaste\(/],
-  ["km/vardiya → getWorkerShiftDistance", /getWorkerShiftDistance\(/],
+  // ⚠️ `okuVardiyaMesafe` (16.09.2026) `getWorkerShiftDistance`in TUR İÇİ
+  // MEMOLU sarmalayıcısıdır (lib/report-reads.ts) — aynı RPC, aynı sonuç,
+  // turda bir kez. İddia hâlâ "km/vardiya 052 ekseninden gelir"dir; ikisinden
+  // biri yeterli. Bir gün yerine BAŞKA bir kaynak konursa bu denetim düşer.
+  [
+    "km/vardiya → getWorkerShiftDistance (ya da memolu ikizi)",
+    /getWorkerShiftDistance\(|okuVardiyaMesafe\(/,
+  ],
   ["yakıt → buildFuelReport", /buildFuelReport\(/],
   ["skor → buildPerformanceReport", /buildPerformanceReport\(/],
   ["araç/kişi → listFleets", /listFleets\(/],
@@ -418,6 +425,50 @@ kontrol("denklik bloğu yanıtta", /denklik:\s*sonuc\.denklik/.test(karsSrc) && 
 kontrol("denklik beş metriği de kapsıyor", ["km", "vardiya", "alarm", "yakitLitre", "rolantiSaat"].every((m) => new RegExp(`${m}:\\s*\\{`).test(karsLib)));
 // Sahipsiz kova GİZLENMEZ — gizlenseydi Σ < toplam olur, fark kaybolurdu.
 kontrol("sahipsiz kova yanıtta", /sahipsiz:\s*sonuc\.sahipsiz/.test(karsSrc));
+
+/**
+ * ═══ HIZ SÖZLERİ (16. madde, 16.09.2026) ══════════════════════════════════
+ *
+ * Bu uç ÖLÇÜLDÜ ve pahalıydı (galzura-demo "ay": 29.669 ms medyan). Süreyi
+ * düşüren üç karar aşağıda donduruluyor. Hiçbiri bir SAYIYI değiştirmiyor —
+ * hepsi "aynı sonucu daha az iş yaparak üret" sınıfında. Geri alınırlarsa uç
+ * sessizce eski süresine döner ve kimse fark etmez; bu yüzden muhafıza girdi.
+ */
+const okumaLib = kodOku("lib/report-reads.ts");
+const raporLib = kodOku("lib/reports.ts");
+
+// 1. Tur kabı: `turMemo` ancak `sayacIle` kabının içinde iş görür.
+kontrol(
+  "hız · karşılaştırma tur kabını AÇIYOR (sayacIle)",
+  /sayacIle\(/.test(karsLib)
+);
+// 2. Paylaşılan okumalar memolu ikizden gelir; ham ikinci okuma YOK.
+for (const ad of ["okuEvren", "okuOlaylar", "okuRolanti", "okuVardiyaMesafe"]) {
+  kontrol(`hız · karşılaştırma ${ad} (memolu) kullanıyor`, karsLib.includes(ad + "("));
+}
+kontrol(
+  "hız · rapor tabanı da memolu okumaları kullanıyor",
+  /okuEvren\(/.test(raporLib) &&
+    /okuOlaylar\(/.test(raporLib) &&
+    /okuRolanti\(/.test(raporLib) &&
+    /okuFiloSpan\(/.test(raporLib)
+);
+kontrol(
+  "hız · memo anahtarı ARALIĞI içeriyor (farklı pencere farklı anahtar)",
+  /olaylar:\$\{startISO\}:\$\{endISO\}/.test(okumaLib) &&
+    /filoSpan:\$\{startISO\}:\$\{endISO\}/.test(okumaLib)
+);
+// 3. İki ağır rapor ARDIŞIK değil, yan yana.
+kontrol(
+  "hız · iki ağır rapor tek Promise.all'da",
+  /Promise\.all\(\[[\s\S]{0,200}buildPerformanceReport\(range\)[\s\S]{0,200}\]\)/.test(karsLib)
+);
+// 4. Litre RPC'si yalnız yüzde okuması OLMAYAN araca sorulur.
+kontrol(
+  "hız · litre RPC yalnız gereken araca soruluyor",
+  /litreGerekenler/.test(raporLib) &&
+    /mapBounded\(litreGerekenler/.test(raporLib)
+);
 // Şef YALNIZ kendi filosunu görür; "diğerleri" toplamı bile sızmamalı.
 kontrol("şefte sahipsiz kovası açılmıyor", /if \(!scope\.restricted\) kovalar\.push\(null\)/.test(karsLib));
 kontrol("şef kapsamı fleetScope'tan", /guard\.actor\.fleetScope/.test(karsSrc));

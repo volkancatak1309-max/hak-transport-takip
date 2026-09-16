@@ -38,10 +38,19 @@ const depo = new AsyncLocalStorage<SorguSayaci>();
 /**
  * Verilen işi sayaç kabı içinde çalıştırır. `oku()` iş bittikten SONRA
  * çağrılırsa o turun toplamını verir.
+ *
+ * ⚠️ İÇ İÇE ÇAĞRIDA YENİ KAP AÇILMAZ (16.09.2026). Kap zaten varsa iş ONUN
+ * içinde koşar. Sebep ölçülebilir: `buildFleetComparison` kendi kabını
+ * açıyor; onu bir ölçüm betiği ya da başka bir tur kendi kabında çağırırsa,
+ * iç kap dıştakini kör ederdi — dıştaki sayaç 0 okur ve `turMemo` iki kaba
+ * bölünüp aynı okuma iki kez yapılırdı. Yani "ölçmek için eklediğimiz araç
+ * ölçtüğü şeyi bozar" tuzağının ta kendisi. En DIŞTAKİ tur kabın sahibidir.
  */
 export function sayacIle<T>(
   is: (oku: () => SorguSayaci) => Promise<T>
 ): Promise<T> {
+  const mevcut = depo.getStore();
+  if (mevcut) return is(() => mevcut);
   const sayac: SorguSayaci = { toplam: 0, kaynak: {}, memo: new Map() };
   return depo.run(sayac, () => is(() => sayac));
 }

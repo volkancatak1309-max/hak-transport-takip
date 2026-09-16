@@ -37,6 +37,15 @@ export const dynamic = "force-dynamic";
  * sessizce iki aracı atlamak, sayının gerçekten değiştiğini ölçme kuralının
  * ihlali olurdu.
  *
+ * ── İZ BIRAKIR ve GERİ ALINABİLİR (099) ───────────────────────────────────
+ * Her taşınan araç için `fleet_move_log` satırı yazılır ve dokunuşun tamamı
+ * TEK `batchId` altında toplanır; yanıt o kimliği döndürür. Geri alma ucu
+ * (`/fleets/atamalar/[batchId]/geri-al`) yalnız bu kimlikle çalışır.
+ *
+ * İz "en iyi çaba" DEĞİLDİR: güncelleme ile iz aynı işlemde yazılır
+ * (public.filo_tasi), iz yazılamazsa taşıma da geri sarılır. Aksi hâlde geri
+ * alma düğmesi tutamayacağı bir söz verirdi.
+ *
  * ⚠️ ŞOFÖR ATAMASINA DOKUNULMAZ: `assigned_worker_id` yazılmaz. Filo değiştiren
  * araç aynı şoförde kalır — taşımanın şoför atamasını sıfırlaması, iki ayrı
  * kararı tek düğmeye bağlamak olurdu.
@@ -71,7 +80,12 @@ export async function POST(
     });
   }
 
-  const sonuc = await moveToFleet(id, ayikla.aracIdleri, ayikla.personelIdleri);
+  const sonuc = await moveToFleet(
+    id,
+    ayikla.aracIdleri,
+    ayikla.personelIdleri,
+    guard.actor.worker.id
+  );
   if (!sonuc.ok) {
     if (sonuc.sebep === "filo_yok") return mobileError(404, "not_found");
     // Hedef filo çözüldükten SONRA veritabanı reddetti: araya giren bir
@@ -79,12 +93,17 @@ export async function POST(
     if (sonuc.sebep === "gecersiz_filo") {
       return mobileError(409, "conflict", { sebep: "gecersiz_filo" });
     }
+    // `iz_yok` → migration 099 çalıştırılmamış. Taşıma YAPILMADI: izsiz taşıma,
+    // geri alınamayan taşımadır (bkz. lib/fleets-db.ts RPC_YOK notu).
     return mobileError(503, "db_error", { sebep: sonuc.sebep });
   }
 
   return Response.json({
     ok: true,
     filo: sonuc.filo,
+    // Geri alma ucunun anahtarı. Hiçbir araç taşınmadıysa null — geri alacak
+    // bir şey yoksa istemci düğmeyi hiç göstermesin.
+    batchId: sonuc.batchId,
     arac: sonuc.arac,
     personel: sonuc.personel,
   });

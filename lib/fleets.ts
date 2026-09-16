@@ -153,6 +153,18 @@ export function filoAdiniAyikla(
  */
 const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
+/**
+ * Tek bir kimliğin uuid şeklinde olup olmadığı — geri alma ucu yol
+ * parçasındaki `batchId` için (099).
+ *
+ * Aynı gerekçe yukarıda yazılı: şekli bozuk bir batch kimliği `.rpc()` ile
+ * uuid parametresine giderse 22P02 fırlar ve uç 404 yerine 503 döndürürdü —
+ * "böyle bir taşıma yok" ile "sunucu arızası" birbirine karışırdı.
+ */
+export function uuidMu(ham: unknown): boolean {
+  return typeof ham === "string" && UUID.test(ham.trim());
+}
+
 export type AtamaAlani = "aracIdleri" | "personelIdleri";
 
 export type AtamaGirdiSonucu =

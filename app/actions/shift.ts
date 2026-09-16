@@ -20,11 +20,9 @@ import { dosyaSil } from "@/lib/upload-core";
 import { SHIFT_PHOTO_KOVA } from "@/lib/driver-panel-kova";
 import { endShiftForWorker } from "@/lib/shift-end";
 import { startShiftSelf, startShiftForWorkerCore } from "@/lib/shift-start";
-import {
-  correctShiftFields,
-  correctShiftKm,
-  closeShiftByAdmin,
-} from "@/lib/shift-correct";
+// `correctShiftKm` BİLEREK içe aktarılmıyor (16.09.2026): `adminUpdateKmAction`
+// kalktı. Çekirdek duruyor, panelden çağıran kalmadı.
+import { correctShiftFields, closeShiftByAdmin } from "@/lib/shift-correct";
 
 export type ShiftResult = {
   ok: boolean;
@@ -266,25 +264,24 @@ export async function updatePackageCountAction(
   return { ok: true };
 }
 
-/**
- * KM DÜZELTMESİ — gövde lib/shift-correct.ts'te (MOBİLLE TEK KAYNAK, 03.09.2026).
+/*
+ * adminUpdateKmAction 16.09.2026'da KALDIRILDI — km'yi elle düzeltme
+ * yüzeyleriyle aynı turda. Bir önceki adımda yüzey gitmiş, action ÇAĞIRANSIZ
+ * kalmıştı; çağıranı olmayan bir server action silinmez de çağrılamaz da
+ * denemez — yani sessizce açık kalan bir kapıydı.
  *
- * Bu action'ın SÖZLEŞMESİ DEĞİŞMEDİ: aynı hata dizgeleri (`errKmNeg`,
- * `errKmRange`, `km_low:<e>:<s>`, `km_high:<fark>:<tavan>`, ham DB mesajı).
+ * Mobil karşılığı da (`PATCH /api/mobile/shifts/[id]` gövdesindeki
+ * `islem: "km"`) aynı commit'te kalktı; o adres artık 400 `gecersiz_islem`
+ * döner ve yanıt `izinli` listesinde km'nin olmadığını SÖYLER.
+ *
+ * ⚠️ ÇEKİRDEK DURUYOR: `correctShiftKm` (lib/shift-correct.ts) ve
+ * `shift_edit_log`un `kaynak: "km"` izi yerinde. Sebebi iki tane:
+ *   · geçmişte yapılmış km düzeltmeleri düzenleme geçmişinde OKUNABİLİR kalmalı;
+ *   · cihaz ölçümü bir gün toptan bozulursa geri dönülecek yol tek satır
+ *     bağlantı uzaklığında dursun.
+ * Bugün o çekirdeği çağıran KİMSE YOK ve muhafız bunu denetliyor
+ * (scripts/check-panel-km-duzelt.mjs).
  */
-export async function adminUpdateKmAction(
-  entryId: string,
-  startKm: number,
-  endKm: number | null
-): Promise<ShiftResult> {
-  const session = await requireAdmin();
-  const r = await correctShiftKm(session.worker_id, entryId, startKm, endKm);
-  if (!r.ok) return { ok: false, error: r.error };
-
-  revalidatePath("/admin");
-  revalidatePath("/panel");
-  return { ok: true };
-}
 
 /**
  * KAPANMAMIŞ VARDİYAYI YÖNETİCİ KAPATIR — gövde lib/shift-correct.ts'te

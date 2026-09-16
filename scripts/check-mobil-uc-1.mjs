@@ -221,11 +221,17 @@ const K = Object.fromEntries(Object.entries(ham).map(([k, v]) => [k, kodu(v)]));
 // ── M6 · PANEL DE AYNI ÇEKİRDEĞİ ÇAĞIRIR ────────────────────────────────────
 {
   const eksik = [];
+  /**
+   * ⚠️ `correctShiftKm(` 16.09.2026'da BU LİSTEDEN ÇIKARILDI. Denetim o güne
+   * kadar km çağrısının VAR OLMASINI şart koşuyordu; 12. madde km'yi elle
+   * düzeltme yollarını kaldırınca şart TERSİNE döndü. Yeni kural M6b'de:
+   * çağrı OLMAMALI. Listeden sessizce çıkarmak, kalkan bir yüzeyi "hâlâ
+   * denetleniyor" sanmak olurdu.
+   */
   for (const c of [
     "startShiftSelf(",
     "startShiftForWorkerCore(",
     "correctShiftFields(",
-    "correctShiftKm(",
     "closeShiftByAdmin(",
   ]) {
     if (!K.shiftAction.includes(c)) eksik.push(c);
@@ -247,7 +253,7 @@ const K = Object.fromEntries(Object.entries(ham).map(([k, v]) => [k, kodu(v)]));
     );
   }
   if (!hatalar.some((h) => h.startsWith("M6"))) {
-    notlar.push("M6 ✓ panel action'ları da aynı beş çekirdeği çağırıyor.");
+    notlar.push("M6 ✓ panel action'ları da aynı dört çekirdeği çağırıyor (km kalktı).");
   }
 }
 
@@ -307,12 +313,30 @@ const K = Object.fromEntries(Object.entries(ham).map(([k, v]) => [k, kodu(v)]));
           "  lib/shift-correct.ts'te ve YASAL bir yüzey (AZG)."
       );
     }
-    for (const c of ["correctShiftFields(", "correctShiftKm(", "closeShiftByAdmin("]) {
+    for (const c of ["correctShiftFields(", "closeShiftByAdmin("]) {
       if (!govde.includes(c)) hatalar.push(`M8 — PATCH ${c} çağırmıyor.`);
+    }
+    /**
+     * M8b — KM İŞLEMİ ARTIK YOK (16.09.2026). Eski hâlde bu denetim km
+     * çağrısını ZORUNLU tutuyordu; şimdi YASAKLIYOR. Geri gelirse elle km
+     * yazma yolu da geri gelir ve "km yalnız cihazdan" sözü sessizce bozulur.
+     */
+    if (govde.includes("correctShiftKm(")) {
+      hatalar.push(
+        "M8b — PATCH correctShiftKm( çağırıyor; km işlemi 16.09.2026'da kaldırıldı.\n" +
+          "  Km yalnız cihazdan (odometre → GPS). Elle yazma yolu geri açılmamalı."
+      );
+    }
+    if (/ISLEMLER\s*=\s*new Set\(\[[^\]]*"km"/.test(K.patchUc)) {
+      hatalar.push(
+        'M8b — ISLEMLER kümesinde "km" var; `islem:"km"` 400 ile reddedilmeli.'
+      );
     }
   }
   if (!hatalar.some((h) => h.startsWith("M8"))) {
-    notlar.push("M8 ✓ düzeltme yazması lib/shift-correct.ts'te (üç işlem de).");
+    notlar.push(
+      "M8 ✓ düzeltme yazması lib/shift-correct.ts'te (duzelt + kapat) · km işlemi YOK."
+    );
   }
 }
 

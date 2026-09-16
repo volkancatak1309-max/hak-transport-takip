@@ -153,6 +153,48 @@ const valSrc = kodOku("lib/validation.ts");
 kontrol("editEntrySchema start_km'i hâlâ TANIYOR", /start_km/.test(valSrc));
 kontrol("editEntrySchema end_km'i hâlâ TANIYOR", /end_km/.test(valSrc));
 
+// ══ 6b · KM YAZAN ÇAĞIRAN KALMADI (2. adım, 16.09.2026) ════════════════════
+/**
+ * İlk adımda yüzeyler kalkmış ama `adminUpdateKmAction` ve mobil `islem:"km"`
+ * ÇAĞIRANSIZ durmaya devam ediyordu — tıklanamayan ama çağrılabilen bir kapı.
+ * İkinci adımda ikisi de kalktı. Bu denetimler onların geri gelmesini durdurur.
+ */
+kontrol(
+  "adminUpdateKmAction KALDIRILDI",
+  !/export async function adminUpdateKmAction/.test(shiftSrc)
+);
+kontrol(
+  "panel action'ı correctShiftKm'i ÇAĞIRMIYOR",
+  !/correctShiftKm\(/.test(shiftSrc)
+);
+
+const patchSrc = kodOku("app/api/mobile/shifts/[id]/route.ts");
+kontrol("PATCH correctShiftKm'i ÇAĞIRMIYOR", !/correctShiftKm\(/.test(patchSrc));
+/**
+ * ⚠️ ASIL KAPI: `ISLEMLER` kümesi. "km" oraya geri konursa dal olmasa bile
+ * istemci 400 yerine başka bir yola düşer ve sözleşme belirsizleşir.
+ */
+const islemler = /const ISLEMLER = new Set\(\[([^\]]*)\]\)/.exec(patchSrc)?.[1] ?? "";
+kontrol("ISLEMLER kümesi bulundu", islemler.length > 0, islemler.trim());
+kontrol('ISLEMLER kümesinde "km" YOK', !/"km"/.test(islemler), islemler.trim());
+kontrol(
+  "ISLEMLER tam olarak duzelt + kapat",
+  /"duzelt"/.test(islemler) && /"kapat"/.test(islemler) &&
+    (islemler.match(/"/g) ?? []).length === 4,
+  islemler.trim()
+);
+// Bilinmeyen işlem 400 ile reddedilmeli ve İZİNLİ listesini söylemeli.
+kontrol(
+  "bilinmeyen işlem 400 + izinli listesi",
+  /mobileError\(400,\s*"gecersiz_islem"/.test(patchSrc) && /izinli:\s*\[\.\.\.ISLEMLER\]/.test(patchSrc)
+);
+
+// ══ 6c · ÇEKİRDEK DURUYOR ama ÇAĞIRANI YOK ═════════════════════════════════
+// Geçmiş km düzeltmeleri düzenleme geçmişinde okunabilir kalsın diye
+// `correctShiftKm` ve `kaynak: "km"` izi lib/shift-correct.ts'te DURUYOR.
+kontrol("correctShiftKm çekirdeği DURUYOR", /export async function correctShiftKm/.test(correctSrc));
+kontrol('shift_edit_log iz kaynağı "km" DURUYOR', /kaynak:\s*"km"/.test(correctSrc));
+
 // ══ 7 · GEÇMİŞ ETİKETLERİ DURUYOR ══════════════════════════════════════════
 // `shift_edit_log` geçmişte yapılmış km düzeltmelerini gösteriyor; etiketler
 // silinseydi eski kayıtlar ham kolon adıyla görünürdü.
@@ -174,7 +216,9 @@ console.error(`
   Bu denetimler 12. maddenin SÖZLERİDİR:
     · km artık YALNIZ cihazdan — panelde elle düzeltme yüzeyi YOK
     · form FormData'ya km KOYMAZ; action km'yi KAYITTAN okur, istemciden değil
-    · uç/çekirdek sözleşmesi DEĞİŞMEDİ (mobil islem:"km" ve "duzelt" çalışır)
+    · km YAZAN çağıran kalmadı: adminUpdateKmAction ve islem:"km" KALKTI,
+      islem:"km" artık 400 gecersiz_islem alır
+    · correctShiftKm ÇEKİRDEĞİ ve kaynak:"km" izi DURUR (geçmiş okunabilsin)
     · AZG'yi besleyen üç alan (başlangıç · bitiş · mola) yerinde durur
     · geçmiş km düzeltmelerinin etiketleri okunabilir kalır
 `);

@@ -1,11 +1,9 @@
 import type { NextRequest } from "next/server";
 import { verifyMobileRequest, mobileError } from "@/lib/mobile-auth";
 import { requireMobileAdmin } from "@/lib/mobile-scope";
-import {
-  correctShiftFields,
-  correctShiftKm,
-  closeShiftByAdmin,
-} from "@/lib/shift-correct";
+// `correctShiftKm` BİLEREK içe aktarılmıyor (16.09.2026): `islem:"km"` dalı
+// kalktı. Çekirdek lib/shift-correct.ts'te duruyor ama bu uçtan çağrılmıyor.
+import { correctShiftFields, closeShiftByAdmin } from "@/lib/shift-correct";
 import { listShiftEdits } from "@/lib/shift-edit-log";
 import { revalidatePath } from "next/cache";
 import { getManagedFleet, getFleetScope, UNRESTRICTED } from "@/lib/fleet-scope";
@@ -457,7 +455,7 @@ export async function GET(
  *   409 no_active            — `kapat` istendi ama vardiya zaten kapalı
  *   500 write_failed         — ham DB yazma hatası (detay `detail` alanında)
  */
-const ISLEMLER = new Set(["duzelt", "km", "kapat"]);
+const ISLEMLER = new Set(["duzelt", "kapat"]);
 
 /**
  * İstemci hatası sayılan dizgeler. Listede OLMAYAN her dizge 500'dür ve
@@ -519,16 +517,15 @@ export async function PATCH(
 
   let r: { ok: true } | { ok: false; error: string };
 
-  if (islem === "km") {
-    // `bitisKm` AÇIKÇA null gönderilebilir: açık vardiyanın bitiş sayacı yok.
-    // Alan HİÇ gönderilmediyse de null sayılır — panelin boş input'u ile aynı.
-    const bas = g.baslangicKm ?? g.startKm;
-    if (bas === undefined || bas === null) {
-      return mobileError(400, "missing_fields", { alan: "baslangicKm" });
-    }
-    const bit = g.bitisKm ?? g.endKm ?? null;
-    r = await correctShiftKm(aktorId, id, Number(bas), bit === null ? null : Number(bit));
-  } else if (islem === "kapat") {
+  /*
+   * `islem: "km"` DALI KALDIRILDI (16.09.2026). Km yalnız cihazdan; panelin
+   * elle düzeltme yüzeyleri de aynı turda gitti. Dal `ISLEMLER` kümesinden
+   * düştüğü için `islem:"km"` artık yukarıdaki genel kapıya takılır:
+   *   400 `gecersiz_islem` + `izinli: ["duzelt","kapat"]`
+   * Yanıt hangi işlemlerin kaldığını SÖYLER — istemci "km nereye gitti"
+   * sorusunu kendi cevaplayabilsin.
+   */
+  if (islem === "kapat") {
     const sebep = g.sebep ?? g.reason;
     if (typeof sebep !== "string") {
       return mobileError(400, "missing_fields", { alan: "sebep" });

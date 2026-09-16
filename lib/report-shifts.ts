@@ -3,6 +3,7 @@ import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers, dropNonDrivers } from "@/lib/driver-scope";
 import { markKmMeasured, type WithKmMeasured } from "@/lib/km-quality";
+import { markKmKarar } from "@/lib/km-axis";
 import { DEFAULT_LOCALE } from "@/i18n/request";
 import {
   WORKER_PUBLIC_COLUMNS,
@@ -86,7 +87,11 @@ export async function loadRangeShifts(range: DateRange): Promise<AralikVardiyala
 
   const workersData = (workersRes.data ?? []) as WorkerPublic[];
   return {
-    entries: await markKmMeasured((entriesRes.data ?? []) as TimeEntry[]),
+    // 13. madde Adım 5: CSV ve PDF kesim sonrası satırlarda çekirdeğin
+    // kararını okuyor; karar burada iliştirilmezse kaynak "bilinmiyor" kalırdı.
+    entries: await markKmKarar(
+      await markKmMeasured((entriesRes.data ?? []) as TimeEntry[])
+    ),
     workerMap: new Map(workersData.map((w) => [w.id, w])),
     soforler: dropNonDrivers(workersData, (w) => w.id, driverScope),
     harman: DEFAULT_LOCALE === "de" ? "de" : "tr",

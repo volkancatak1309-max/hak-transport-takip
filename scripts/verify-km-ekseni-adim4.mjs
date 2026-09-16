@@ -13,7 +13,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { kmDiff } from "@/lib/format";
 import { markKmMeasured } from "@/lib/km-quality";
-import { markKmKarar, kmEkseniCoz, kmPencere } from "@/lib/km-axis";
+import { markKmKarar } from "@/lib/km-axis";
 import { buildPerformanceReport } from "@/lib/reports";
 import { computeAnalyticsRange } from "@/lib/analytics";
 import { getDashboardData } from "@/lib/admin-dashboard";

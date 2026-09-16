@@ -80,6 +80,14 @@ export type PerformanceDocProps = {
    * başlığı: sebebi yazılmayan boşluk "panel bozuk" dedirtir).
    */
   skorNotu: string | null;
+  /**
+   * KM EKSENİ DİPNOTU (13. madde Adım 5). Metin `kmDipnotMetni`den gelir —
+   * Schichtbericht ile AYNI cümle, aynı üç dil, aynı tarih kaynağı.
+   * `null`/verilmemiş → dönem tamamen kesimden ÖNCE; dipnot BASILMAZ ve
+   * belge eskisiyle bayt-bayt aynı kalır (prop İSTEĞE BAĞLI: bu bileşeni
+   * dipnot geçmeden çağıran varsa çıktısı değişmez).
+   */
+  kmNote?: string | null;
   /** Filigran için: belgeyi İSTEYEN kişi. */
   kullanici: string | null;
   /** Görünmez parmak izi (047); katman kapalıysa null. */
@@ -257,6 +265,7 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: "#78350f",
   },
+  kmNot: { marginTop: 10, fontSize: 7, color: "#94a3b8" },
   bosVeri: {
     marginTop: 6,
     padding: 12,
@@ -397,6 +406,10 @@ export function PerformanceDoc(p: PerformanceDocProps) {
             ))}
           </View>
         </View>
+
+        {/* Dipnot filo bloğunun ALTINDA, alt notun ÜSTÜNDE: km satırını
+            açıklıyor, belgenin hukuki alt notunu değil. */}
+        {p.kmNote ? <Text style={styles.kmNot}>{p.kmNote}</Text> : null}
 
         <View style={styles.footer_} fixed>
           <Text>{p.showScore ? L.footer : L.footerNoScore}</Text>

@@ -52,6 +52,11 @@ export type SchichtberichtDocProps = {
   period: string;
   generatedAt: string;
   footer: string;
+  /**
+   * KM EKSENİ DİPNOTU (13. madde Adım 5). `null` → rapor tamamen kesim
+   * tarihinden ÖNCE; dipnot BASILMAZ ve belge eskisiyle bayt-bayt aynı kalır.
+   */
+  kmNote?: string | null;
   headers: SchichtHeaders;
   rows: SchichtRow[];
   /** Filigran: belgeyi İSTEYEN kişi. */
@@ -216,6 +221,8 @@ export function SchichtberichtDoc(opts: SchichtberichtDocProps) {
         </View>
 
         <View style={styles.footer} fixed>
+          {/* Dipnot alt notun ÜSTÜNDE: hukuki dayanak (AZG) en altta kalmalı. */}
+          {opts.kmNote ? <Text>{opts.kmNote}</Text> : null}
           <Text>{opts.footer}</Text>
           <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
         </View>

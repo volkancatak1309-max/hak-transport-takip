@@ -8,6 +8,7 @@ import { SchichtberichtDoc } from "@/components/pdf/server/SchichtberichtDoc";
 import {
   shiftReportEtiketleri,
   buildShiftReportRow,
+  kmDipnotMetni,
   reportPeriod,
   REPORT_EMPTY,
   FILE_PREFIX_LOWER,
@@ -104,6 +105,9 @@ export async function GET(req: NextRequest) {
       period: `${L.period}: ${reportPeriod(DONEM_ANAHTARI[tur] ?? "custom", dil)}`,
       generatedAt: `${L.generatedAt}: ${damga}`,
       footer: L.footer,
+      // Dipnot YALNIZ kesimi kapsayan/sonrasındaki raporda; öncesinde null ve
+      // belge eskisiyle bayt-bayt aynı kalır (13. madde Adım 5).
+      kmNote: kmDipnotMetni(range.end.toISOString(), dil ?? undefined),
       headers: L.headers,
       rows: entries.map((e) =>
         buildShiftReportRow(e, workerMap.get(e.worker_id)?.name ?? REPORT_EMPTY, dil ?? undefined)

@@ -310,7 +310,7 @@ export async function listVehiclesAndWorkers(): Promise<{
  * bir teslimat aracı bunu süremez). Böyle durumlarda km UYDURULMAK yerine
  * güvenilmez sayılır, çağıran gün-bazlı normalizasyona düşer.
  */
-const MAX_PLAUSIBLE_KM_PER_DAY = 800;
+export const MAX_PLAUSIBLE_KM_PER_DAY = 800;
 
 /**
  * Bir aracın seçili aralıktaki kat ettiği mesafe (km), device_telemetry'nin

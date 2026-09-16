@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { mobileError } from "@/lib/mobile-auth";
 import { getLoginLockState } from "@/lib/login-lock";
 import { workedMs, kmDiff, startOfMonthVienna } from "@/lib/format";
+import { kmEkseniCoz, kmPencere, kaynakSay } from "@/lib/km-axis";
 import { WORKER_PUBLIC_COLUMNS } from "@/lib/types";
 import type { TimeEntry } from "@/lib/types";
 import { getOwnerScope } from "@/lib/owner-scope";
@@ -70,6 +71,17 @@ export async function GET(
 
   const month = (monthRows ?? []) as TimeEntry[];
   const recent = (recentRows ?? []) as TimeEntry[];
+
+  /**
+   * 13. madde Adım 2 — YALNIZ ETİKET. `buAy.km` ve satır km'leri A
+   * ekseninde KALDI. Ay ve son vardiyalar TEK pencerede çözülür: iki ayrı RPC
+   * yerine birleşik aralık (recent zaten ayın içinde ya da ondan eski).
+   */
+  const kmGirdi = [...month, ...recent.filter((r) => !month.some((m) => m.id === r.id))];
+  const kmPen = kmPencere(kmGirdi);
+  const kmEksen = kmPen
+    ? await kmEkseniCoz(kmGirdi, kmPen)
+    : { karar: new Map(), bDurumu: null as null };
   const sum = (xs: (number | null)[]) =>
     xs.reduce<number>((a, b) => a + (b ?? 0), 0);
 
@@ -93,6 +105,7 @@ export async function GET(
       ehliyet: { no: worker.license_no, sonTarih: worker.license_expiry },
       iletisim: { email: worker.email },
     },
+    kmEkseni: { durum: kmEksen.bDurumu ?? "hazir" },
     girisKilidi: {
       kilitli: lock.locked,
       bitis: lock.lockedUntil,
@@ -103,6 +116,8 @@ export async function GET(
       vardiya: month.length,
       calismaMs: month.reduce((a, e) => a + workedMs(e), 0),
       km: sum(month.map((e) => kmDiff(e))),
+      // Ay toplamı tek bir eksenden gelmez — kaç vardiya hangi ekseni SEÇERDİ.
+      kmKaynakDagilim: kaynakSay(month, kmEksen.karar),
       paketTeslim: sum(month.map((e) => e.cargo_count)),
     },
     sonVardiyalar: recent.map((e) => ({
@@ -113,6 +128,7 @@ export async function GET(
       plaka: e.plate,
       sureMs: workedMs(e),
       km: kmDiff(e),
+      kmKaynak: kmEksen.karar.get(e.id)?.kaynak ?? "bilinmiyor",
       molaDk: e.break_minutes ?? 0,
     })),
   });

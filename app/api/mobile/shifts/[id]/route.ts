@@ -10,6 +10,7 @@ import { getManagedFleet, getFleetScope, UNRESTRICTED } from "@/lib/fleet-scope"
 import { supabaseAdmin } from "@/lib/supabase";
 import { workedMs, kmDiff } from "@/lib/format";
 import { isKmMeasured } from "@/lib/km-quality";
+import { kmEkseniTek } from "@/lib/km-axis";
 import {
   listVehicleEventsInWindow,
   listVehicleIdleEpisodesInWindow,
@@ -114,6 +115,8 @@ export async function GET(
 
   // Km ölçüm bayrağı: cihazı sessiz vardiyada `km` null döner, 0 değil.
   const kmMeasured = await isKmMeasured(e);
+  // 13. madde Adım 2: yalnız ETİKET. Tek vardiya = tek RPC (~84 ms, ölçüldü).
+  const kmEksen = await kmEkseniTek({ ...e, km_measured: kmMeasured });
 
   const isAdmin = auth.worker.is_admin;
   const isSelf = e.worker_id === auth.worker.id;
@@ -358,6 +361,9 @@ export async function GET(
       baslangicKm: e.start_km,
       bitisKm: e.end_km,
       km: kmDiff({ ...e, km_measured: kmMeasured }),
+      // Sayı A ekseninden (DEĞİŞMEDİ); etiket kuralın seçeceği ekseni söyler.
+      kmKaynak: kmEksen.kaynak,
+      kmBSebep: kmEksen.bSebep ?? null,
       paketAlinan: e.start_package_count,
       paketTeslim: e.cargo_count,
       paketTeslimEdilemeyen: e.undelivered_count,

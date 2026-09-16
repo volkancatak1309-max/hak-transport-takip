@@ -6,6 +6,7 @@ import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { supabaseAdmin } from "@/lib/supabase";
 import { parsePage, pageInfo, parseYmdRange } from "@/lib/mobile-list";
 import { workedMs, kmDiff } from "@/lib/format";
+import { kmEkseniCoz, kmPencere, KAPSAMA_TOLERANS_DK } from "@/lib/km-axis";
 import { markKmMeasured } from "@/lib/km-quality";
 import type { TimeEntry } from "@/lib/types";
 
@@ -103,9 +104,32 @@ export async function GET(req: NextRequest) {
   // uç sözleşmesi zaten `number | null` (bkz. lib/km-quality.ts).
   const rows = await markKmMeasured((data ?? []) as TimeEntry[]);
 
+  /**
+   * ── KM EKSENİ ETİKETİ (13. madde Adım 2, 16.09.2026) ─────────────────────
+   *
+   * ⚠️ `km` ALANI DEĞİŞMEDİ ve bu turda DEĞİŞMEYECEK: hâlâ `kmDiff(e)`, yani
+   * sayaç ekseni. Eklenen tek şey `kmKaynak` ETİKETİ — kural açılınca hangi
+   * eksenin seçileceğini SÖYLER, ama sayıyı seçmez. Böylece istemci ve panel
+   * yeni alanı, sayılar oynamadan önce tanıyabiliyor.
+   *
+   * Maliyet: sayfa başına TEK RPC (vardiya başına değil). Pencere sayfadaki
+   * en eski başlangıç ile en yeni bitiş arası. Ölçüldü (HAK61): 30 vardiyalık
+   * sayfa ~84 ms.
+   */
+  const pencere = kmPencere(rows);
+  const eksen = pencere
+    ? await kmEkseniCoz(rows, pencere)
+    : { karar: new Map(), bDurumu: null as null };
+
   return Response.json({
     ok: true,
     kapsam: { rol: isAdmin ? "admin" : isChief ? "fleet_chief" : "driver", fleet },
+    /**
+     * Etiketin GÜVENİLİRLİĞİ. `zaman_yok` → migration 100 çalıştırılmamış,
+     * kapsama sorulamıyor, bu yüzden her satır "sayac" diyor. Etiketi sessizce
+     * doğruymuş gibi sunmak, ölçülmemiş bir kapıyı geçmiş göstermek olurdu.
+     */
+    kmEkseni: { durum: eksen.bDurumu ?? "hazir", toleransDk: KAPSAMA_TOLERANS_DK },
     page: pageInfo(page, count ?? rows.length),
     vardiyalar: rows.map((e) => ({
       id: e.id,
@@ -124,6 +148,8 @@ export async function GET(req: NextRequest) {
       baslangicKm: e.start_km,
       bitisKm: e.end_km,
       km: kmDiff(e),
+      // Sayı A ekseninden; etiket kuralın SEÇECEĞİ ekseni söyler (sayıyı değil).
+      kmKaynak: eksen.karar.get(e.id)?.kaynak ?? "bilinmiyor",
       paketAlinan: e.start_package_count,
       paketTeslim: e.cargo_count,
       paketTeslimEdilemeyen: e.undelivered_count,

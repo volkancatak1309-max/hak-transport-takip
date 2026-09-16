@@ -19,6 +19,11 @@ import {
 } from "@/lib/analytics-shared";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
 import { buildPerformanceReport } from "@/lib/reports";
+import { kmEkseniCoz, kmPencere, kaynakSay } from "@/lib/km-axis";
+import { supabaseAdmin } from "@/lib/supabase";
+import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
+import type { KmShiftRow } from "@/lib/km-quality";
 import {
   getLatestConfigEpoch,
   rangeStartsBeforeEpoch,
@@ -127,6 +132,38 @@ async function donemToplami(
   // Sıra önemli: rapor kendi içinde mapBounded(6) kullanıyor, olay okumaları
   // ondan SONRA (bkz. eşzamanlılık notu).
   const rapor = await buildPerformanceReport(range);
+
+  /**
+   * Etiket dağılımı: aralıktaki vardiyalar TEK RPC ile çözülür (ölçüldü: 30
+   * günlük pencere 425 vardiya / 153 ms). Sayıya DOKUNMAZ.
+   *
+   * ⚠️ EVREN `buildPerformanceReport` İLE BİREBİR OLMAK ZORUNDA. İlk yazımda
+   * eleme yoktu ve `lint:test-filters` yakaladı: dağılım, `km` toplamının
+   * saymadığı vardiyaları da sayardı — "bu toplamın kaçı cihazdan gelirdi"
+   * sorusunun cevabı, toplamın kendi evreninden BAŞKA bir kümede hesaplanmış
+   * olurdu. İki eleme de aynı sırayla uygulanıyor (lib/reports.ts:409-433).
+   */
+  const kmScope = await getTestScope();
+  const kmDriverScope = await getDriverScope();
+  // test-filtered + driver-scoped: rapor toplamıyla AYNI küme.
+  const { data: kmRows } = await onlyDrivers(
+    withoutTestRows(
+      supabaseAdmin
+        .from("time_entries")
+        .select("id, vehicle_id, started_at, ended_at, start_km, end_km")
+        .gte("started_at", startISO)
+        .lte("started_at", endISO),
+      "worker_id",
+      kmScope.workerIds
+    ),
+    "worker_id",
+    kmDriverScope
+  );
+  const kmGirdi = (kmRows ?? []) as (KmShiftRow & { id: string })[];
+  const kmPen = kmPencere(kmGirdi);
+  const kmCoz = kmPen ? await kmEkseniCoz(kmGirdi, kmPen) : null;
+  const kmDagilim = kmCoz ? kaynakSay(kmGirdi, kmCoz.karar) : null;
+  const kmEksenDurum = kmCoz?.bDurumu ?? null;
   const [events, idleEpisodes] = await Promise.all([
     listEventsInRange(startISO, endISO),
     listIdleEpisodesInRange(startISO, endISO),
@@ -194,6 +231,14 @@ async function donemToplami(
      * kapsama sayaçları YANINDA döner.
      */
     km: rapor.totalKm,
+    /**
+     * 13. madde Adım 2 — YALNIZ ETİKET. `km` hâlâ A ekseninde (rapor.totalKm,
+     * yani kmDiff toplamı). Bu blok "kural açılsa bu toplamın kaç vardiyası
+     * hangi eksenden gelirdi" sorusunu cevaplar. Toplam TEK eksenden gelmediği
+     * için yanına tek bir kmKaynak yazmak yalan olurdu.
+     */
+    kmKaynakDagilim: kmDagilim,
+    kmEkseni: { durum: kmEksenDurum ?? "hazir" },
     kmKapsama: {
       olculenVardiya: rapor.kmMeasuredShifts,
       olculemeyenVardiya: rapor.kmUnmeasuredShifts,

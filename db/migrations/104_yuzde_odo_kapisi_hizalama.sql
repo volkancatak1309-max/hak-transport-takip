@@ -1,5 +1,11 @@
--- 104 — YÜZDE HATTI ODOMETRE KAPISI HİZALAMA (28.08 kararının tamamlanması)
+-- 104 — YÜZDE HATTI ODOMETRE KAPISI HİZALAMA (28.08 kararının tamamlanması)  —  ÇALIŞTIRILDI 17.09.2026
 --
+-- ✅ ÜÇ KİRACIDA DA UYGULANDI (17.09.2026): HAK61 · Sendigo · galzura-demo.
+--    Doğrulama 5/5 `hizalandi = true`.
+--    ⚠️ `report_fuel_volume_stats_vehicle` satırında `depo_eski` de true
+--    çıktı ve bu BEKLENEN: 094'ün gövdesindeki AÇIKLAMA yorumu eski biçimi
+--    anlatıyor ve anlatmaya devam etmeli. `pg_get_functiondef` yorumları da
+--    döndürür; kuralın kendisi `hizalandi` sütunundan okunur.
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 🔴 NEDEN: 28.08'DE VERİLEN KARAR YALNIZ LİTRE HATTINA UYGULANMIŞTI
 -- ═══════════════════════════════════════════════════════════════════════════

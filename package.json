@@ -69,7 +69,8 @@
     "verify:takograf-ekran": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-takograf-ekran.mjs",
     "lint:kontrast": "node scripts/check-kontrast.mjs",
     "lint:oran-kume": "node scripts/check-oran-kume.mjs",
-    "lint:telemetri-siniri": "node scripts/check-telemetri-siniri.mjs"
+    "lint:telemetri-siniri": "node scripts/check-telemetri-siniri.mjs",
+    "verify:mobil-izin-olustur": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-mobil-izin-olustur-canli.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

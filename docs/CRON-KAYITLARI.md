@@ -27,6 +27,7 @@ Vercel projesinden alınır.
 | 8 | Dönem skoru + rozet | `/api/cron/skor-donem` | `CRON_SECRET` | **haftada 1** | Ödül/liderlik isteyen her kiracı (migration 088) |
 | 9 | **Saklama UYARISI** (silmez) | `/api/cron/saklama` | `CRON_SECRET` | **günde 1 · gece 03:00** | Saklama katmanı kuran her kiracı (migration 090) |
 | 10 | **Aylık metrik** (kapanmış ay özeti) | `/api/cron/aylik-metrik` | `CRON_SECRET` | **günde 1 · gece 03:30** | CO₂/yakıt aylık trendi isteyen her kiracı (migration 090) |
+| 11 | **Yakıt serisi etiketi** (yüzde + litre) | `/api/cron/yakit-etiket` | `CRON_SECRET` | **günde 1 · gece 03:15 Europe/Vienna** | Yakıt raporu/CO₂/filo karşılaştırması hızlansın isteyen her kiracı (migration 101+102+103) |
 | ~~9~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
 
 ### 🔴 SIR **BAŞLIKLA** GÖNDERİLİR — sorgu dizesi YASAK
@@ -570,3 +571,92 @@ telemetri beklemesi fiilen kapalıydı. İkisi de düzeltildi; ayrıntı ve canl
 ⚠️ **Bu kayıt kurulmazsa ekran bozulmaz**, yalnız yavaş kalır: aylık seri
 canlı yola düşer (bugünkü davranış) ve satırı olmayan ay "hesaplanmadı"
 gösterilir — **"0" DEĞİL.**
+
+---
+
+## 11 · Yakıt serisi etiketi — GÜNDE BİR, GECE 03:15
+
+```
+GET https://<alan-adı>/api/cron/yakit-etiket
+Authorization: Bearer <CRON_SECRET>
+```
+
+**Saat:** 03:15 `Europe/Vienna`. Komşuları ezmesin diye seçildi — 9. iş
+(saklama) 03:00, 10. iş (aylık metrik) 03:30.
+
+### Ne yapar
+
+İKİ tabloyu **tek koşuda** günceller: `fuel_seri` (yüzde, migration 101) ve
+`fuel_volume_seri` (litre, migration 103). Her yakıt okuması için
+**±30 komşusundaki en yüksek değer** (`bwd_max` / `fwd_max`). Yazma
+**upsert**, anahtar `(vehicle_id, recorded_at)`.
+
+⚠️ Ayrı kayıt açılmadı: ikisi de aynı ham tabloyu okuyor, aynı 30 satırlık
+örtüşmeyi kullanıyor ve aynı gecede tazelenmesi gerekiyor. İki kayıt olsaydı
+biri unutulup hatlar ayrışabilirdi. **103 uygulanmamışsa tur DÜŞMEZ** —
+`yazilanLitre: null` döner, yüzde hattı normal yazılır.
+
+Varsayılan aralık: **dün 00:00 (kiracı saatiyle) → şimdi.** Yani dün yeniden
+yazılır ve bugünün kapanmış kısmı eklenir. Dünü yeniden yazmanın iki sebebi
+var: flespi kesinti sonrası **geriye yazabiliyor** (28.08.2026'da 11.455 satır
+geç düştü) ve serinin en yeni 30 satırının ileri penceresi henüz dolmamıştır.
+
+### 🔴 BU UÇ HİÇBİR ŞEYİ SİLMEZ, HİÇBİR SAYIYI DEĞİŞTİRMEZ
+
+`device_telemetry`ye dokunmaz. Yazdığı şey bir ARA DEĞERDİR; raporun
+formülü değişmez. Kayıt hiç kurulmazsa **ekran bozulmaz, yalnız yavaş kalır**:
+`report_fuel_stats_vehicle_v2` etiket bulamadığı her satırı canlı hesaplar ve
+çıktı 052'nin birebir aynısı çıkar (PGlite'ta ölçüldü:
+`npm run verify:yakit-seri-etiket`).
+
+### ⚠️ Bu GÜNLÜK ÖZET DEĞİL
+
+090 (26.08.2026) günlük yakıt özetini ölçtü ve reddetti: 28 günlük gerçek
+2.602,6 L, günlük parçaların toplamı 3.009,9 L = **+%15,6**. Bu iş günlük
+özet yazmıyor; sakladığı değer satırın kendi komşuluğundan geliyor ve
+**hangi pencerede sorulduğundan bağımsız**. Etiketleme gün gün koşar ama
+okuma gün gün toplanmaz. Ölçüldü: aynı veride günlük parçalama %7,7 sapma
+üretiyor, bu yol %0,000000.
+
+### Parametreler
+
+| parametre | ne yapar |
+|---|---|
+| `?gun=YYYY-MM-DD` | yalnız o takvim gününü etiketler |
+| `?gun=A..B` | A'dan B'ye her günü ayrı ayrı (en fazla **31 gün**) |
+| `?arac=<uuid>` | yalnız o araç |
+| `?kuru=1` | hiçbir şey yazmaz, ne yapacağını söyler |
+
+### Backfill — PARÇALI koşulur
+
+Ölçüm (16.09.2026): araç-gün birimi ~156 ms; HAK61'de 78 günlük veri × 30
+araç. Tek çağrıda 78 gün `maxDuration=300`'ü aşar. **10'ar günlük dilimler**
+hâlinde koşun:
+
+```
+GET /api/cron/yakit-etiket?gun=2026-07-01..2026-07-10
+GET /api/cron/yakit-etiket?gun=2026-07-11..2026-07-20
+…
+```
+
+Tahmini toplam: HAK61 ~2 dk, galzura-demo ~1 dk (38 günlük veri).
+
+⚠️ **İDEMPOTENT.** Aynı günü ikinci kez çağırmak aynı satırları aynı
+değerlerle yeniden yazar; yarıda kalan backfill baştan da koşturulabilir.
+
+### Yanıt kodları
+
+- **200 · `ok:true`** → yazıldı; `yazilan` satır sayısı, `kapsama` hangi araç
+  nereye kadar etiketli
+- **200 · `ok:false`** → bazı günler düştü; `sonuclar[].hata` hangisi olduğunu
+  söyler (tur bitmez, düşen gün gizlenmez)
+- **400 `aralik_cok_genis`** → 31 günden uzun aralık istendi
+- **503 `migration_101_yok`** → `db/migrations/101_yakit_seri_etiket.sql`
+  çalıştırılmamış (litre için 103 ayrı: eksikse yalnız `yazilanLitre` null olur)
+- **401** → `CRON_SECRET` tanımsız ya da yanlış
+
+### Kill-switch
+
+`YAKIT_OZET_ENABLED=false` (Vercel env) → yakıt raporu 052'nin eski yolunu
+kullanır, bu tablo hiç okunmaz. Cron açık kalabilir; yalnız yazar, kimse
+okumaz. Tamamen geri almak için migration başlığındaki üç `drop` yeter.

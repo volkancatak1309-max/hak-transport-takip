@@ -82,7 +82,9 @@
     "verify:km-ekseni-adim4": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-km-ekseni-adim4.mjs",
     "verify:km-rapor-kesim": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-km-rapor-kesim.mjs",
     "measure:filo-karsilastir": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/measure-filo-karsilastir.mjs",
-    "verify:filo-karsilastir-hiz": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-filo-karsilastir-hiz.mjs"
+    "verify:filo-karsilastir-hiz": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-filo-karsilastir-hiz.mjs",
+    "verify:yakit-seri-etiket": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-yakit-seri-etiket.mjs",
+    "lint:yakit-etiket": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-yakit-etiket.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -115,6 +117,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",

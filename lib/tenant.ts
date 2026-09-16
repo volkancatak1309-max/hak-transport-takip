@@ -605,6 +605,25 @@ export const SECURITY_LAYER_PUBLIC = envBool(
 export const SINGLE_SESSION = envBool(process.env.SINGLE_SESSION, false);
 
 /**
+ * YAKIT SERİSİ ÖN-ETİKETİ KULLANILSIN MI? (migration 101, 16.09.2026)
+ *
+ * `true` → yakıt raporu `report_fuel_stats_vehicle_v2`yi çağırır; 31 satırlık
+ * iki kayan maksimum `fuel_seri`den okunur, okuma anında hesaplanmaz.
+ * `false` → 052'nin `report_fuel_stats_vehicle`i, yani BUGÜNKÜ yol, birebir.
+ *
+ * ⚠️ VARSAYILAN `true` GÜVENLİ. Üç geri düşüş katmanı var:
+ *   1. 101 uygulanmamışsa v2 yoktur → PGRST202 → rapor komple eski yola döner
+ *      (094'ün `missing_function` emsali).
+ *   2. 101 uygulanmış ama cron kurulmamışsa `fuel_seri` boştur → v2 her şeyi
+ *      CANLI hesaplar ve çıktı 052 ile birebir aynıdır (PGlite'ta ölçüldü).
+ *   3. Etiket kısmiyse (gecelik cron'dan sonra gelen telemetri) v2 kuyruğu
+ *      canlı hesaplar; bölme noktasında sapma doğmaz.
+ * Yani bayrak açık kalırken hiçbir kurulum yanlış sayı üretemez — yalnız
+ * hızlanmamış olur.
+ */
+export const YAKIT_OZET_ENABLED = envBool(process.env.YAKIT_OZET_ENABLED, true);
+
+/**
  * DIŞA AKTARMA (CSV) AÇIK MI?
  *
  * Varsayılanı `true` — bugün dört ekranda CSV indirme var ve çalışıyor.

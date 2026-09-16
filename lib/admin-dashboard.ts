@@ -3,9 +3,9 @@ import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import {
   startOfTodayVienna,
   workedMs,
-  kmDiff,
 } from "@/lib/format";
 import { markKmMeasured } from "@/lib/km-quality";
+import { markKmKarar, type WithKmKarar } from "@/lib/km-axis";
 import { listExpiringDocuments, type ExpiringDocument } from "@/lib/documents-db";
 import { bakimDurumlari, type BakimDurumu } from "@/lib/bakim-db";
 import { listIsEmirleri, type IsEmri } from "@/lib/is-emri-db";
@@ -723,8 +723,8 @@ export async function getDashboardData(
   // km_measured: cihazı sessiz vardiyanın 0 km'si ölçüm DEĞİL — Operasyon
   // Özeti'ndeki "Toplam KM" bu 0'ları sessizce topluyordu (bkz. lib/km-quality.ts).
   const [todayEntries, rangeEntries] = await Promise.all([
-    markKmMeasured((todayRes.data ?? []) as LiteEntry[]),
-    markKmMeasured((rangeRes.data ?? []) as LiteEntry[]),
+    markKmMeasured((todayRes.data ?? []) as LiteEntry[]).then(markKmKarar),
+    markKmMeasured((rangeRes.data ?? []) as LiteEntry[]).then(markKmKarar),
   ]);
   const activeShifts = (activeRes.data ?? []) as {
     id: string;
@@ -1095,7 +1095,7 @@ async function vehicleMovedSince(
   }
 }
 
-function buildTodayOps(entries: LiteEntry[]): TodayOps {
+function buildTodayOps(entries: WithKmKarar<LiteEntry>[]): TodayOps {
   let overLimit = 0;
   let needsBreak45 = 0;
   let km = 0;
@@ -1115,7 +1115,8 @@ function buildTodayOps(entries: LiteEntry[]): TodayOps {
     if (w > BREAK45_THRESHOLD_MS && (e.break_minutes ?? 0) < requiredBreakMin(w)) {
       needsBreak45++;
     }
-    const d = kmDiff(e);
+    // 13. madde Adım 4: km çekirdekten (cihaz → sayaç → null).
+    const d = e.km_karar.km;
     if (d !== null) {
       km += d;
       hasKm = true;

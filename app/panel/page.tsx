@@ -8,6 +8,7 @@ import { needsSummarySignature } from "@/lib/shift-summary";
 import { getDepotPanel } from "@/lib/depot";
 import type { TimeEntry, VehicleBaseStatus } from "@/lib/types";
 import { markKmMeasured, kmCoverage, type WithKmMeasured } from "@/lib/km-quality";
+import { markKmKarar } from "@/lib/km-axis";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +30,11 @@ export default async function PanelPage() {
 
   // km_measured: cihazı sessiz vardiyada `end_km - start_km` bir ÖLÇÜM DEĞİL
   // (bkz. lib/km-quality.ts). Yalnız farkı 0 olan satırlar için sorgu atılır.
-  const all = (await markKmMeasured(
-    (entries ?? []) as TimeEntry[]
-  )) as WithKmMeasured<TimeEntry>[];
+  // 13. madde Adım 4: km kararı da iliştirilir (cihaz → sayaç → null). Şoför
+  // paneli artık kendi km'sini panelle AYNI eksenden görür.
+  const all = await markKmKarar(
+    (await markKmMeasured((entries ?? []) as TimeEntry[])) as WithKmMeasured<TimeEntry>[]
+  );
   const active = all.find((e) => e.ended_at === null) ?? null;
   const past = all.filter((e) => e.ended_at !== null);
 

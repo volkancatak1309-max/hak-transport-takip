@@ -78,7 +78,8 @@
     "verify:mesaj-terminated": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-mesaj-terminated.mjs",
     "lint:panel-km": "node scripts/check-panel-km-duzelt.mjs",
     "verify:km-ekseni": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-km-ekseni.mjs",
-    "verify:km-ekseni-adim3": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-km-ekseni-adim3.mjs"
+    "verify:km-ekseni-adim3": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-km-ekseni-adim3.mjs",
+    "verify:km-ekseni-adim4": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-km-ekseni-adim4.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

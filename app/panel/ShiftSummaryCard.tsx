@@ -1,5 +1,7 @@
 "use client";
 
+import type { KmKararli } from "@/lib/km-ui";
+import { kmKaynakEtiketi } from "@/lib/km-ui";
 import { useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
@@ -11,7 +13,6 @@ import {
   formatDate,
   formatDurationShort,
   formatTime,
-  kmDiff,
   workedMs,
 } from "@/lib/format";
 import type { TimeEntry } from "@/lib/types";
@@ -19,7 +20,7 @@ import { HelpTip } from "@/components/help/HelpTip";
 import { PACKAGES_ENABLED } from "@/lib/tenant";
 
 type Props = {
-  entry: TimeEntry;
+  entry: TimeEntry & KmKararli;
   week: {
     ms: number;
     km: { km: number; olculen: number; sinyalsiz: number; acik: number };
@@ -46,7 +47,7 @@ export function ShiftSummaryCard({ entry, week, onLater }: Props) {
   const [pending, startTransition] = useTransition();
 
   const worked = workedMs(entry);
-  const km = kmDiff(entry);
+  const km = entry.km_karar.km;
   const packages = entry.cargo_count ?? 0;
   const numLocale = locale === "de" ? "de-AT" : "tr-TR";
 
@@ -101,7 +102,14 @@ export function ShiftSummaryCard({ entry, week, onLater }: Props) {
         {km !== null ? (
           <SummaryStat
             icon={<Route className="size-7" aria-hidden />}
-            value={`${km.toLocaleString(numLocale)} km`}
+            value={
+              // Etiket YALNIZ "sayac"ta: sayı cihazdan değil vardiya
+              // sayacından geliyorsa şoför bunu bilmeli.
+              `${km.toLocaleString(numLocale)} km` +
+              (kmKaynakEtiketi(entry.km_karar.kaynak)
+                ? ` (${kmKaynakEtiketi(entry.km_karar.kaynak)})`
+                : "")
+            }
             label={t("totalKm")}
           />
         ) : (

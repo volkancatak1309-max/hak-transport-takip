@@ -1,5 +1,7 @@
 "use client";
 
+import type { KmKararli } from "@/lib/km-ui";
+import { kmKaynakEtiketi, KM_KAYNAK_SINIF } from "@/lib/km-ui";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import {
@@ -20,13 +22,12 @@ import {
   formatTime,
   formatDurationShort,
   workedMs,
-  kmDiff,
 } from "@/lib/format";
 import type { TimeEntry } from "@/lib/types";
 
 type Props = {
   /** km_measured: cihazı sessiz vardiyada km bir ölçüm değil (lib/km-quality.ts). */
-  entries: (TimeEntry & { km_measured?: boolean })[];
+  entries: (TimeEntry & KmKararli & { km_measured?: boolean })[];
   page: number;
   totalPages: number;
   from: string;
@@ -98,7 +99,7 @@ export function HistoryClient({ entries, page, totalPages, from, to }: Props) {
                 <TableBody>
                   {entries.map((e) => {
                     const w = workedMs(e);
-                    const km = kmDiff(e);
+                    const km = e.km_karar.km;
                     return (
                       <TableRow key={e.id}>
                         <TableCell>{formatDate(e.started_at, locale)}</TableCell>
@@ -108,7 +109,14 @@ export function HistoryClient({ entries, page, totalPages, from, to }: Props) {
                         <TableCell className="nums">{e.break_minutes ?? 0}</TableCell>
                         <TableCell className="nums">
                           {km !== null ? (
-                            km.toLocaleString(locale === "de" ? "de-AT" : "tr-TR")
+                            <>
+                              {km.toLocaleString(locale === "de" ? "de-AT" : "tr-TR")}
+                              {kmKaynakEtiketi(e.km_karar.kaynak) && (
+                                <span className={KM_KAYNAK_SINIF}>
+                                  {kmKaynakEtiketi(e.km_karar.kaynak)}
+                                </span>
+                              )}
+                            </>
                           ) : (
                             /* "—" iki sebepten olur: vardiya açık ya da cihaz
                                sessizdi. İkincisinde sebep başlıkta yazar —

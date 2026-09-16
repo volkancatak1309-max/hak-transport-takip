@@ -1,5 +1,7 @@
 "use client";
 
+import type { KmKararli } from "@/lib/km-ui";
+import { kmKaynakEtiketi, KM_KAYNAK_SINIF } from "@/lib/km-ui";
 import { useLocale, useTranslations } from "next-intl";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -13,7 +15,6 @@ import {
   formatTime,
   formatDurationShort,
   workedMs,
-  kmDiff,
   formatDuration,
 } from "@/lib/format";
 import { clearLoginLockAction, toggleActiveAction } from "../../../actions/workers";
@@ -36,7 +37,7 @@ type Props = {
   worker: WorkerPublic;
   /** Giriş kilidi durumu (lib/login-lock.ts) — kilitliyse kaldırma düğmesi çıkar. */
   loginLock: LoginLockState;
-  entries: TimeEntry[];
+  entries: (TimeEntry & KmKararli)[];
   monthSummary: {
     shifts: number;
     ms: number;
@@ -276,7 +277,7 @@ export function WorkerDetailClient({
               <ul className="divide-y divide-border/60">
                 {entries.map((e) => {
                   const w = workedMs(e);
-                  const km = kmDiff(e);
+                  const km = e.km_karar.km;
                   const open = e.ended_at === null;
                   return (
                     <li
@@ -300,6 +301,11 @@ export function WorkerDetailClient({
                       </span>
                       <span className="w-[64px] shrink-0 text-right font-mono text-[12px] tabular-nums">
                         {km !== null ? km.toLocaleString(nf) : "—"}
+                        {kmKaynakEtiketi(e.km_karar.kaynak) && (
+                          <span className={KM_KAYNAK_SINIF}>
+                            {kmKaynakEtiketi(e.km_karar.kaynak)}
+                          </span>
+                        )}
                       </span>
                       <span className="w-[56px] shrink-0 text-right font-mono text-[12px] tabular-nums text-muted-foreground">
                         {open ? "—" : e.cargo_count ?? "—"}

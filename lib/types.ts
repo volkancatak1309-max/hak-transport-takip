@@ -1,3 +1,5 @@
+import type { KmKaynak } from "@/lib/km-ui";
+
 /** İstihdam türü (migration 025) — personel formundaki "Tam zamanlı / Saatlik". */
 export type EmploymentType = "full_time" | "hourly";
 
@@ -207,6 +209,17 @@ export type VehiclePenalty = {
 
 export type TimeEntryWithWorker = TimeEntry & {
   workers: Pick<Worker, "id" | "name" | "plate"> | null;
+  /**
+   * SUNUCUDA verilen km kararı (13. madde Adım 4, 16.09.2026).
+   *
+   * Panelin arşiv ekranı bir İSTEMCİ bileşeni ve `lib/km-axis.ts` `server-only`;
+   * karar bu yüzden sayfada (app/admin/page.tsx) hesaplanıp satıra yazılıyor ve
+   * istemci hazır sonucu okuyor — `km_measured` ile birebir aynı desen.
+   *
+   * ⚠️ Tip `lib/km-ui.ts`ten geliyor: o dosyanın sunucu bağı yok, yani istemci
+   * de aynı tipi içe aktarabiliyor.
+   */
+  km_karar: { km: number | null; kaynak: KmKaynak };
 };
 
 export type DriverLocation = {

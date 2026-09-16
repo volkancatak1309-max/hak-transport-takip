@@ -42,7 +42,6 @@ import {
   formatDurationShort,
   formatNumber,
   workedMs,
-  kmDiff,
 } from "@/lib/format";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AttentionList } from "@/components/admin/AttentionList";
@@ -94,6 +93,7 @@ import {
   FILE_PREFIX_LOWER,
 } from "@/lib/report-de";
 import type { TimeEntryWithWorker, WorkerPublic } from "@/lib/types";
+import { kmKaynakEtiketi, KM_KAYNAK_SINIF } from "@/lib/km-ui";
 import { PACKAGES_ENABLED, EXPORT_ENABLED } from "@/lib/tenant";
 import { noteExport } from "@/lib/audit-export-client";
 import { TENANT_TZ } from "@/lib/tz";
@@ -377,7 +377,7 @@ export function AdminClient({
     ];
     const rows = entries.map((e) => {
       const w = workedMs(e);
-      const km = kmDiff(e);
+      const km = e.km_karar.km;
       return [
         persNr.get(e.worker_id) ?? "—",
         e.workers?.name ?? "",
@@ -551,13 +551,22 @@ export function AdminClient({
       header: t("tblKm"),
       help: "col_km",
       cell: (e) => {
-        const km = kmDiff(e);
-        return km !== null ? km.toLocaleString(nf) : "—";
+        const km = e.km_karar.km;
+        if (km === null) return "—";
+        // Etiket YALNIZ "sayac"ta çıkar: cihazdan gelen sayı beklenen hâl,
+        // her satıra "cihaz" yazmak gerçekten dikkat isteyeni görünmez kılar.
+        const et = kmKaynakEtiketi(e.km_karar.kaynak);
+        return (
+          <>
+            {km.toLocaleString(nf)}
+            {et && <span className={KM_KAYNAK_SINIF}>{et}</span>}
+          </>
+        );
       },
       align: "right",
       nums: true,
       sortable: true,
-      sortValue: (e) => kmDiff(e) ?? -1,
+      sortValue: (e) => e.km_karar.km ?? -1,
     },
     ...(PACKAGES_ENABLED
       ? ([
@@ -946,7 +955,7 @@ export function AdminClient({
             <ul className="space-y-2.5 sm:hidden">
               {entries.map((e) => {
                 const { active, onBreak, over } = shiftState(e);
-                const km = kmDiff(e);
+                const km = e.km_karar.km;
                 const stripe = stripeFor(e);
                 return (
                   <li key={e.id}>
@@ -1330,7 +1339,7 @@ function ShiftDetail({
   hasPhotos: boolean;
 }) {
   const active = entry.ended_at === null;
-  const km = kmDiff(entry);
+  const km = entry.km_karar.km;
   const field = (label: string, value: React.ReactNode) => (
     <div>
       <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>

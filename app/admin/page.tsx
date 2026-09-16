@@ -1,5 +1,6 @@
 import { requireFleetView, isOwnerCached } from "@/lib/session";
 import { markKmMeasured } from "@/lib/km-quality";
+import { markKmKarar } from "@/lib/km-axis";
 import { audit } from "@/lib/security-log";
 import { getFleetScope, onlyFleet } from "@/lib/fleet-scope";
 import { supabaseAdmin, fetchAllRows, chunkIds } from "@/lib/supabase";
@@ -16,7 +17,6 @@ import { AdminClient } from "./AdminClient";
 import { SaklamaUyariSeridi } from "@/components/admin/SaklamaUyariSeridi";
 import {
   workedMs,
-  kmDiff,
   startOfTodayVienna,
   endOfTodayVienna,
   addCalendarDaysVienna,
@@ -186,7 +186,10 @@ export default async function AdminPage({
 
   // km_measured: cihazı sessiz vardiyanın 0 km'si ÖLÇÜM DEĞİL — tablo, Excel
   // ve Almanca PDF üçü de bu bayrağı okuyan kmDiff'ten geçer (lib/km-quality.ts).
-  const markedEntries = await markKmMeasured((entriesResult.data ?? []) as TimeEntry[]);
+  // 13. madde Adım 4: satırlara km KARARI da iliştiriliyor (tek RPC).
+  const markedEntries = await markKmKarar(
+    await markKmMeasured((entriesResult.data ?? []) as TimeEntry[])
+  );
   let entriesData = markedEntries.map((e) => {
     const w = workerMap.get(e.worker_id);
     return {
@@ -211,7 +214,8 @@ export default async function AdminPage({
   for (const e of entriesData) {
     if (e.ended_at !== null) {
       totalMs += workedMs(e);
-      const km = kmDiff(e);
+      // 13. madde Adım 4: pano toplamı da çekirdekten.
+      const km = e.km_karar.km;
       if (km !== null) totalKm += km;
     }
   }

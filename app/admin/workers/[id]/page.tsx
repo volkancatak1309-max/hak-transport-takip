@@ -22,6 +22,7 @@ import {
   workedMs,
 } from "@/lib/format";
 import { markKmMeasured, kmCoverage } from "@/lib/km-quality";
+import { markKmKarar } from "@/lib/km-axis";
 import { licenseState, LICENSE_BADGE } from "@/lib/worker-ui";
 import { getLoginLockState } from "@/lib/login-lock";
 import type { WorkerPublic, TimeEntry } from "@/lib/types";
@@ -99,8 +100,8 @@ export default async function WorkerDetailPage({
   // işaretlenir; aylık toplam artık kaç vardiyanın ölçülemediğini de taşır,
   // çünkü sessizce eksilen bir toplam yöneticiye "az km yapmış" diye okunuyordu.
   const [monthEntries, allEntries] = await Promise.all([
-    markKmMeasured((monthEntriesResult.data ?? []) as TimeEntry[]),
-    markKmMeasured((allEntriesResult.data ?? []) as TimeEntry[]),
+    markKmMeasured((monthEntriesResult.data ?? []) as TimeEntry[]).then(markKmKarar),
+    markKmMeasured((allEntriesResult.data ?? []) as TimeEntry[]).then(markKmKarar),
   ]);
   let monthMs = 0;
   let monthCargo = 0;

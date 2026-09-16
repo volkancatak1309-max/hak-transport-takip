@@ -1,5 +1,8 @@
--- 101 — YAKIT SERİSİ ÖN-ETİKETLEME (16b, A yolu)
+-- 101 — YAKIT SERİSİ ÖN-ETİKETLEME (16b, A yolu)  —  ÇALIŞTIRILDI 17.09.2026
 --
+-- ✅ ÜÇ KİRACIDA DA UYGULANDI (17.09.2026): HAK61 · Sendigo · galzura-demo.
+--    Doğrulama: tablo 2 · yeni fonksiyon 4 · ESKİ fonksiyonlar 2 ·
+--    eski_cerceve false (102'nin O(n²) çerçevesi yok).
 -- ═══════════════════════════════════════════════════════════════════════════
 -- NEDEN (ölçüldü, 16.09.2026)
 -- ═══════════════════════════════════════════════════════════════════════════

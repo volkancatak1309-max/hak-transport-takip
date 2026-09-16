@@ -1,5 +1,8 @@
--- 103 — LİTRE HATTI İÇİN SERİ ÖN-ETİKETLEME (101'in birebir ikizi)
+-- 103 — LİTRE HATTI İÇİN SERİ ÖN-ETİKETLEME (101'in birebir ikizi)  —  ÇALIŞTIRILDI 17.09.2026
 --
+-- ✅ ÜÇ KİRACIDA DA UYGULANDI (17.09.2026): HAK61 · Sendigo · galzura-demo.
+--    Doğrulama: tablo 2 · yeni fonksiyon 4 · ESKİ fonksiyonlar 2 ·
+--    eski_cerceve false (102'nin O(n²) çerçevesi yok).
 -- ═══════════════════════════════════════════════════════════════════════════
 -- NEDEN (galzura-demo canlı ölçümü, 17.09.2026 — 101+102 uygulandıktan SONRA)
 -- ═══════════════════════════════════════════════════════════════════════════

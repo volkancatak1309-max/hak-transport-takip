@@ -1907,7 +1907,8 @@
     "errMembersRequired": "Wähle mindestens ein Mitglied",
     "errNotMember": "Diese Person ist nicht in der Gruppe",
     "errAlreadyRemoved": "Diese Person wurde bereits entfernt",
-    "errWorkerInactive": "Ausgeschiedenes Personal kann nicht hinzugefügt werden",
+    "errWorkerInactive": "Inaktives Konto: An diese Person können keine Nachrichten gesendet werden",
+    "errWorkerLeft": "Diese Person ist ausgeschieden: Verlauf bleibt lesbar, keine neuen Nachrichten",
     "emptyGroupThread": "In dieser Gruppe gibt es noch keine Nachrichten. Schreib die erste."
   },
   "settings": {

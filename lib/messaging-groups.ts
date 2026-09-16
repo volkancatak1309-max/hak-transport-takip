@@ -47,17 +47,34 @@ async function uyeleriDogrula(
 
   const { data, error } = await supabaseAdmin
     .from("workers")
-    .select("id, is_active")
+    .select("id, is_active, terminated_at")
     .in("id", benzersiz);
   if (error) return { ok: false, status: 503, code: "db_error" };
 
-  const bulunan = (data ?? []) as { id: string; is_active: boolean }[];
+  const bulunan = (data ?? []) as {
+    id: string;
+    is_active: boolean;
+    terminated_at: string | null;
+  }[];
   if (bulunan.length !== benzersiz.length) {
     return { ok: false, status: 404, code: "worker_not_found" };
   }
   if (bulunan.some((w) => w.is_active !== true)) {
-    // Ayrılmış personeli gruba eklemek anlamsız: mesajı hiç görmeyecek.
+    // Pasif hesabı gruba eklemek anlamsız: mesajı hiç görmeyecek.
     return { ok: false, status: 409, code: "worker_inactive" };
+  }
+  /**
+   * AYRILMIŞ PERSONEL GRUBA EKLENEMEZ (16.09.2026) — birebir kapısıyla aynı
+   * kural, ayrı kod. `is_active` bundan BAĞIMSIZ süzülüyor: çıkış işlenmiş
+   * ama hesabı henüz pasifleştirilmemiş kişi (canlıda olan durum) yukarıdaki
+   * kapıdan GEÇİYORDU ve gruba eklenebiliyordu.
+   *
+   * ⚠️ MEVCUT ÜYELİK BOZULMAZ. Bu kapı yalnız EKLEMEYİ reddeder; ayrılan
+   * kişinin var olan üyeliği ve grubun geçmişi olduğu gibi durur — geçmiş
+   * silinmez kuralının grup karşılığı.
+   */
+  if (bulunan.some((w) => w.terminated_at !== null)) {
+    return { ok: false, status: 409, code: "worker_left" };
   }
   // ── TEST HESABI GRUBA EKLENEBİLİR — bilinçli ────────────────────────────
   // İlk yazımda `is_test` reddediliyordu ve YANLIŞTI: bu depodaki test-verisi

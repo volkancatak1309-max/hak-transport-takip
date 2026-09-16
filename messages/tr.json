@@ -1907,7 +1907,8 @@
     "errMembersRequired": "En az bir üye seç",
     "errNotMember": "Bu kişi grupta değil",
     "errAlreadyRemoved": "Bu kişi zaten çıkarılmış",
-    "errWorkerInactive": "Ayrılmış personel gruba eklenemez",
+    "errWorkerInactive": "Pasif hesap: bu kişiye mesaj gönderilemez",
+    "errWorkerLeft": "Bu kişi işten ayrıldı: geçmiş okunur, yeni mesaj gönderilemez",
     "emptyGroupThread": "Bu grupta henüz mesaj yok. İlk mesajı sen gönder."
   },
   "settings": {

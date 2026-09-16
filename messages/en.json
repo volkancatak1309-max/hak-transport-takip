@@ -1907,7 +1907,8 @@
     "errMembersRequired": "Select at least one member",
     "errNotMember": "This person is not in the group",
     "errAlreadyRemoved": "This person was already removed",
-    "errWorkerInactive": "Departed staff cannot be added",
+    "errWorkerInactive": "Inactive account: messages cannot be sent to this person",
+    "errWorkerLeft": "This person has left: history stays readable, no new messages",
     "emptyGroupThread": "No messages in this group yet. Send the first one."
   },
   "settings": {

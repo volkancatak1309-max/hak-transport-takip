@@ -164,7 +164,14 @@ export async function gonderAction(
   // ARŞİV KİLİDİ / çıkarılmış üye — şemada tetikleyici de var (073, HK001);
   // bu kapı onun ÖNÜNDE, kullanıcıya ham DB hatası yerine anlamlı cevap için.
   if (!e.yazabilir) {
-    return { ok: false, error: hedef.arsivlendiMi ? "conversation_archived" : "read_only" };
+    // Sebep ayrıştırılır — mobil uçla AYNI üçlü (app/api/mobile/messages/[id]):
+    // arşiv · muhatap işten ayrıldı · gruptan çıkarılmış üye. Tek koda
+    // toplamak panelde yanlış cümleyi gösterirdi.
+    if (hedef.arsivlendiMi) return { ok: false, error: "conversation_archived" };
+    if (hedef.tur === "birebir" && hedef.soforAyrildi) {
+      return { ok: false, error: "worker_left" };
+    }
+    return { ok: false, error: "read_only" };
   }
 
   const govde = govdeCoz(govdeHam);

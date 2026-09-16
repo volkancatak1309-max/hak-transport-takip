@@ -74,7 +74,8 @@
     "verify:vardiya-yakit-euro": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-vardiya-yakit-euro-canli.mjs",
     "verify:mobil-workers-terminated": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-mobil-workers-terminated.mjs",
     "verify:filo-tasima-izi": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-filo-tasima-izi.mjs",
-    "verify:filo-karsilastir": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-filo-karsilastir.mjs"
+    "verify:filo-karsilastir": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-filo-karsilastir.mjs",
+    "verify:mesaj-terminated": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-mesaj-terminated.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

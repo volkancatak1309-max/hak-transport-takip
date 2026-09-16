@@ -87,22 +87,75 @@ export async function erisimCoz(
   return { ok: false, status: 403, code: "forbidden" };
 }
 
-/** Hedefin gerçekten bir ŞOFÖR olduğunu doğrular (konuşma sahibi şoför olmalı). */
+export type SoforHedefi =
+  | {
+      ok: true;
+      ad: string;
+      /** `terminated_at` dolu — işten ayrılmış. */
+      ayrildi: boolean;
+      /** `is_active=false` — hesap pasif. */
+      pasif: boolean;
+    }
+  | { ok: false; status: number; code: string };
+
+/**
+ * Hedefin gerçekten bir ŞOFÖR olduğunu doğrular (konuşma sahibi şoför olmalı).
+ *
+ * ── AYRILMIŞ PERSONEL: YENİ SOHBET YOK, GEÇMİŞ DURUYOR (16.09.2026) ────────
+ * `terminated_at` dolu olan kişiye YENİ mesaj yazılamaz — mesajı hiç
+ * görmeyecek ve gönderen onun okunduğunu sanır. Ama VAR OLAN konuşmanın
+ * geçmişi okunmaya devam eder: yazışma bir kayıttır, kişi ayrıldı diye
+ * silinmez ya da görünmez olmaz (aynı duruş `fleet_move_log`ta ve
+ * `worker_leaves` arşivinde de var — iz, izlediği ilişkiden uzun yaşar).
+ *
+ * Bu yüzden kapı İKİ MODLU: `ayrilmisaIzinVer` geçmiş okuma yolunda true
+ * gelir ve YALNIZ ayrılmış olma durumunu esnetir.
+ *
+ * ── `worker_left` NEDEN `not_a_driver` DEĞİL ──────────────────────────────
+ * Aynı sınıf (409, hedef uygun değil) ama AYRI sebep: "bu kişi hiç şoför
+ * değil" ile "bu kişi artık burada çalışmıyor" farklı iki olgudur ve ekranda
+ * farklı cümle kurarlar ("yönetici hesabına yazılamaz" vs "Ayşe işten
+ * ayrıldı"). Tek koda toplamak, kullanıcıya yanlış sebebi gösterirdi.
+ *
+ * ⚠️ `is_active=false` KENDİ KODUNU KORUYOR (`worker_inactive`). Onu
+ * `worker_left`e katmak, bugün o kodu okuyan panel ekranını (MessagesClient
+ * hata eşlemesi) ve mobil istemciyi sessizce bozardı; üstelik iki olgu ayrı:
+ * pasifleştirilmiş hesap geri açılabilir, ayrılmış personel için çıkış
+ * TARİHİ vardır. İkisi de bloklar, ikisi de 409.
+ */
 export async function hedefSoforMu(
-  workerId: string
-): Promise<{ ok: true; ad: string } | { ok: false; status: number; code: string }> {
+  workerId: string,
+  opts?: {
+    /**
+     * true → `terminated_at` REDDETMEZ (geçmiş okuma yolu). `is_active`
+     * kapısı yine de uygulanır: bu bayrak yalnız ayrılmayı esnetir.
+     */
+    ayrilmisaIzinVer?: boolean;
+  }
+): Promise<SoforHedefi> {
   const { data, error } = await supabaseAdmin
     .from("workers")
-    .select("id, name, is_admin, is_active, counts_as_driver")
+    .select("id, name, is_admin, is_active, counts_as_driver, terminated_at")
     .eq("id", workerId)
     .maybeSingle();
   if (error) return { ok: false, status: 503, code: "db_error" };
   if (!data) return { ok: false, status: 404, code: "worker_not_found" };
   if (data.is_active !== true) return { ok: false, status: 409, code: "worker_inactive" };
+
+  const ayrildi = data.terminated_at !== null && data.terminated_at !== undefined;
+  if (ayrildi && opts?.ayrilmisaIzinVer !== true) {
+    return { ok: false, status: 409, code: "worker_left" };
+  }
+
   if (data.is_admin === true && data.counts_as_driver !== true) {
     return { ok: false, status: 409, code: "not_a_driver" };
   }
-  return { ok: true, ad: (data.name as string) ?? "—" };
+  return {
+    ok: true,
+    ad: (data.name as string) ?? "—",
+    ayrildi,
+    pasif: data.is_active !== true,
+  };
 }
 
 /**
@@ -281,6 +334,16 @@ export type HedefKonusma =
       arsivlendiMi: false;
       /** Birebir konuşmada okuma penceresi yok. */
       pencereSonu: null;
+      /**
+       * Muhatap işten AYRILMIŞ (`terminated_at` dolu). Geçmiş okunur, yeni
+       * mesaj YAZILAMAZ — `erisimCozKonusma` bunu `yazabilir:false`a çevirir
+       * ve uç 409 `worker_left` döner.
+       *
+       * ⚠️ YENİ SOHBET bu bayrağı HİÇ GÖRMEZ: konuşması olmayan ayrılmış
+       * kişiye erişim daha yukarıda, `hedefSoforMu` içinde reddedilir.
+       * Burası yalnız VAR OLAN konuşmanın hâli.
+       */
+      soforAyrildi: boolean;
     }
   | {
       tur: "grup";
@@ -358,7 +421,12 @@ export async function hedefCoz(
       };
     }
     // direct — `id` ile de `worker_id` ile de AYNI konuşmaya varılır.
-    const sofor = await hedefSoforMu(data.worker_id as string);
+    //
+    // ⚠️ `ayrilmisaIzinVer: true` — VAR OLAN konuşmanın geçmişi, muhatap işten
+    // ayrılmış olsa da okunur. Yazma kapısı aşağıda (`soforAyrildi`).
+    const sofor = await hedefSoforMu(data.worker_id as string, {
+      ayrilmisaIzinVer: true,
+    });
     if (!sofor.ok) return sofor;
     return {
       ok: true,
@@ -369,11 +437,16 @@ export async function hedefCoz(
         baslik: sofor.ad,
         arsivlendiMi: false,
         pencereSonu: null,
+        soforAyrildi: sofor.ayrildi,
       },
     };
   }
 
   // Konuşma yok → `[id]` bir şoför kimliği olmalı.
+  //
+  // ⚠️ BURADA ESNETME YOK: ayrılmış kişiyle YENİ sohbet açılamaz. Esnetseydik
+  // uç 200 + boş geçmiş döner, kullanıcı yazmaya çalışır ve ancak POST'ta
+  // reddedilirdi — kapıyı iki adım geç göstermek.
   const sofor = await hedefSoforMu(id);
   if (!sofor.ok) return sofor;
   return {
@@ -385,6 +458,7 @@ export async function hedefCoz(
       baslik: sofor.ad,
       arsivlendiMi: false,
       pencereSonu: null,
+      soforAyrildi: sofor.ayrildi,
     },
   };
 }
@@ -426,7 +500,15 @@ export async function erisimCozKonusma(
   if (hedef.tur === "birebir") {
     const r = await erisimCoz(actor, hedef.soforId);
     if (!r.ok) return r;
-    return { ok: true, role: r.role, yazabilir: true };
+    /**
+     * AYRILMIŞ MUHATAP → SALT OKUNUR. Gruptan çıkarılmış üyeyle aynı duruş:
+     * geçmiş görünür, yazma kapalı. Çağıran bunu 409 `worker_left`e çevirir.
+     *
+     * ⚠️ Kendi konuşmasına yazan AYRILMIŞ şoför de kapsanır: hesabı hâlâ
+     * aktifse token'ı geçerlidir ama artık çalışmıyor; yazdığı mesajı okuyacak
+     * bir muhatap ilişkisi kalmadı.
+     */
+    return { ok: true, role: r.role, yazabilir: !hedef.soforAyrildi };
   }
 
   // ── grup ──

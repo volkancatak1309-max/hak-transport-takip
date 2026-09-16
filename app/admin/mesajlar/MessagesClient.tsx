@@ -175,6 +175,9 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
     if (kod === "not_a_member") return t("errNotMember");
     if (kod === "already_removed") return t("errAlreadyRemoved");
     if (kod === "worker_inactive") return t("errWorkerInactive");
+    // Ayrılmış personel: pasif hesapla AYNI DEĞİL — geçmişi okunabilir, yalnız
+    // yeni mesaj kapalı. Cümlenin bunu söylemesi gerekiyor.
+    if (kod === "worker_left") return t("errWorkerLeft");
     return t("errGeneric");
   }
 

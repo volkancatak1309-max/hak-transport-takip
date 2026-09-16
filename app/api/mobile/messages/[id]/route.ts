@@ -34,6 +34,15 @@ export const dynamic = "force-dynamic";
  * ── ARŞİV VE ÇIKARILMIŞ ÜYE ────────────────────────────────────────────────
  * Arşivlenmiş grupta HİÇ KİMSE yazamaz (409 `conversation_archived`), gruptan
  * çıkarılmış üye de yazamaz (409 `read_only`) — ama ikisi de OKUYABİLİR.
+ *
+ * ── AYRILMIŞ MUHATAP (16.09.2026) ─────────────────────────────────────────
+ * `terminated_at` dolu kişiyle:
+ *   · VAR OLAN konuşma  → GET 200, geçmiş olduğu gibi okunur, `yazabilir:false`
+ *   · POST              → 409 `worker_left`
+ *   · YENİ sohbet (hiç konuşma yok) → GET 409 `worker_left`
+ * Aynı duruşun üçüncü hâli gruplarda: ayrılmış kişi gruba EKLENEMEZ ama var
+ * olan üyeliği ve grubun geçmişi bozulmaz (lib/messaging-groups.ts).
+ * Yazışma bir kayıttır; kişi ayrıldı diye silinmez ya da görünmez olmaz.
  * Çıkarılmış üyenin geçmişi `left_at` anında kesilir; süzgeç çekirdekte.
  */
 
@@ -101,7 +110,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   // Şemada da kilit var (073, SQLSTATE HK001) ama ona düşmek 500 üretirdi.
   // Kapı burada, cevap 409.
   if (!erisim.yazabilir) {
-    return mobileError(409, hedef.arsivlendiMi ? "conversation_archived" : "read_only");
+    /**
+     * SEBEP AYRIŞTIRILIR. Üçü de 409 ama ekranda üç farklı cümle kurarlar:
+     *   conversation_archived — grup arşivlendi, kimse yazamaz
+     *   worker_left           — muhatap işten ayrıldı (geçmiş okunur)
+     *   read_only             — gruptan çıkarılmış üye
+     * Tek koda toplamak kullanıcıya yanlış sebebi gösterirdi.
+     */
+    if (hedef.arsivlendiMi) return mobileError(409, "conversation_archived");
+    if (hedef.tur === "birebir" && hedef.soforAyrildi) {
+      return mobileError(409, "worker_left");
+    }
+    return mobileError(409, "read_only");
   }
 
   let body: unknown;

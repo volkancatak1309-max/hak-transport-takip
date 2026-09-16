@@ -894,3 +894,41 @@ export function assertTenantConfig(): void {
     );
   }
 }
+
+/**
+ * KM EKSENİ KESİM TARİHİ (13. madde Adım 5, 16.09.2026) — YALNIZ RAPORLAR.
+ *
+ * ═══ NE İÇİN VAR ═══════════════════════════════════════════════════════════
+ *
+ * Ekranlar 16.09.2026'da km'yi cihaz eksenine (052) geçirdi ve bu GERİYE DÖNÜK:
+ * dün 2.776 km gösteren Analiz bugün 3.664 gösteriyor. Ekranda bu kabul
+ * edilebilir — ekran zaten "şu an en doğru bildiğimiz" demektir.
+ *
+ * KÂĞIT ÖYLE DEĞİL. Schichtbericht Avusturya'ya gidiyor; basılmış bir belgeyle
+ * bugün üretilen aynı dönemin belgesi TUTMAK ZORUNDA. Bu yüzden raporlarda
+ * eksen tarihe bağlı: kesimden ÖNCE başlayan vardiya eski sayaç farkını,
+ * kesimden sonra başlayan cihaz ölçümünü taşır.
+ *
+ * ⚠️ ÖLÇÜT VARDİYANIN `started_at`'İ — raporun üretim tarihi DEĞİL. Aksi hâlde
+ * aynı Ağustos raporu bugün bir, yarın başka sayı verirdi; kesimin bütün amacı
+ * tam olarak bunu engellemek.
+ *
+ * ═══ NEDEN 01.10.2026 ══════════════════════════════════════════════════════
+ * Değişiklik 16.09'da canlıya çıktı. Kesim İLERİ bir tarih: aradaki iki hafta
+ * boyunca raporlar eski eksende kalır, yani bugüne kadar basılmış hiçbir belge
+ * geçersizleşmez ve geçiş bir ay sınırında olur (aylık rapor bölünmez).
+ *
+ * Kiracı başına `KM_EKSENI_KESIM_TARIHI` env'iyle değiştirilebilir; biçim
+ * YYYY-MM-DD. Geçersiz değer sessizce yutulmaz — varsayılana düşer ve sebebi
+ * buradaki kural yazılıdır (env'e "yarın" yazmak gibi bir kaçamak yok).
+ */
+const KM_KESIM_VARSAYILAN = "2026-10-01";
+const YMD_KALIP = /^\d{4}-\d{2}-\d{2}$/;
+const kmKesimHam = process.env.KM_EKSENI_KESIM_TARIHI?.trim();
+export const KM_EKSENI_KESIM_TARIHI =
+  kmKesimHam && YMD_KALIP.test(kmKesimHam) && !Number.isNaN(Date.parse(kmKesimHam))
+    ? kmKesimHam
+    : KM_KESIM_VARSAYILAN;
+
+/** Kesim env ile ezildi mi — muhafız ve "ayarlanabilir" etiketleri için. */
+export const KM_KESIM_OZEL = KM_EKSENI_KESIM_TARIHI !== KM_KESIM_VARSAYILAN;

@@ -16,9 +16,10 @@ import {
   formatDate,
   formatDurationShort,
   formatTime,
-  kmDiff,
   workedMs,
 } from "@/lib/format";
+import { kmRaporDegeri, kmDipnotGerekli, type KmKaynak } from "@/lib/km-ui";
+import { KM_EKSENI_KESIM_TARIHI } from "@/lib/tenant";
 
 /** Rapor içindeki tarih/saat/süre biçimi de Almancadır (de-AT, kiracı dilimi). */
 export const REPORT_LOCALE = "de";
@@ -168,6 +169,11 @@ export const SHIFT_REPORT_DE = {
     undelivered: "Nicht zugestellt",
     plate: "Kennzeichen",
   },
+  /**
+   * Bkz. SHIFT_REPORT_EN.kmNote. Almanca sürüm belgenin ASIL dili —
+   * Avusturya'daki denetmen bunu okuyor.
+   */
+  kmNote: "Gefahrene km: ab {tarih} Gerätemessung (Odometer); davor Zählerstanddifferenz.",
 } as const;
 
 /**
@@ -205,6 +211,11 @@ export type ShiftReportEntry = {
    * ekrandakinden daha kalıcıdır; uydurma 0 oraya hiç girmemeli.
    */
   km_measured?: boolean;
+  /**
+   * Çekirdeğin km kararı (13. madde Adım 4). YALNIZ kesim tarihinden sonra
+   * başlayan vardiyalarda kullanılır; öncesinde eski sayaç farkı basılır.
+   */
+  km_karar?: { km: number | null; kaynak: KmKaynak };
 };
 
 /**
@@ -222,7 +233,12 @@ export function buildShiftReportRow(
    */
   dil: string = REPORT_LOCALE
 ) {
-  const km = kmDiff(e);
+  /**
+   * KESİM KURALI (13. madde Adım 5): kesimden ÖNCE başlayan vardiya ESKİ
+   * sayaç farkını taşır, sonrası çekirdeğin kararını. Basılmış bir belgeyle
+   * bugün üretilen aynı dönemin belgesi TUTMAK ZORUNDA (AZG denetimi).
+   */
+  const { km } = kmRaporDegeri(e, KM_EKSENI_KESIM_TARIHI);
   return {
     worker: workerName,
     date: formatDate(e.started_at, dil),
@@ -281,6 +297,8 @@ export const SHIFT_REPORT_TR = {
     undelivered: "Teslim edilemeyen",
     plate: "Plaka",
   },
+  /** Bkz. SHIFT_REPORT_EN.kmNote — aynı kural, Türkçe. */
+  kmNote: "Katedilen km: {tarih} tarihinden itibaren cihaz ölçümü (odometre); öncesinde sayaç farkı.",
 } as const;
 
 /**
@@ -309,6 +327,12 @@ export const SHIFT_REPORT_EN = {
     undelivered: "Undelivered",
     plate: "Plate",
   },
+  /**
+   * KM EKSENİ DİPNOTU (13. madde Adım 5). YALNIZ kesimi kapsayan ya da
+   * sonrasındaki raporlarda basılır; tamamen kesim öncesi bir belge
+   * bayt-bayt eskisiyle aynı kalmalı.
+   */
+  kmNote: "Distance km: from {tarih} device measurement (odometer); before that, odometer-reading difference.",
 } as const;
 
 export type ShiftReportLabels =
@@ -363,4 +387,26 @@ export function reportPeriod(range: string, dil?: string | null): string {
   if (dil === "tr") return reportPeriodTr(range);
   if (dil === "en") return reportPeriodEn(range);
   return reportPeriodDe(range);
+}
+
+/**
+ * KM DİPNOTU — kesim tarihi yerine yazılmış, dile göre biçimlenmiş metin.
+ *
+ * Tarih `formatDate` ile biçimlenir: Almanca belgede "01.10.2026", İngilizcede
+ * o dilin kendi düzeni. Kesim `lib/tenant.ts`ten gelir — dipnotta yazan gün ile
+ * kodun uyguladığı gün AYNI kaynaktan, ikisi ayrışamaz.
+ *
+ * `null` döner → aralık tamamen kesim ÖNCESİNDE; dipnot BASILMAZ ve belge
+ * eskisiyle bayt-bayt aynı kalır.
+ */
+export function kmDipnotMetni(
+  aralikBitisISO: string,
+  dil: string = REPORT_LOCALE
+): string | null {
+  if (!kmDipnotGerekli(aralikBitisISO, KM_EKSENI_KESIM_TARIHI)) return null;
+  const L = shiftReportEtiketleri(dil);
+  // Kesim gününü o günün kendi diliminde biçimle: ISO'ya saat eklemeden
+  // `formatDate`e vermek, dilim kaymasıyla bir gün önceyi yazdırabilirdi.
+  const tarih = formatDate(`${KM_EKSENI_KESIM_TARIHI}T12:00:00.000Z`, dil);
+  return L.kmNote.replace("{tarih}", tarih);
 }

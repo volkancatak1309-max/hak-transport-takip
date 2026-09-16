@@ -3,7 +3,8 @@ import { getTranslations } from "next-intl/server";
 import { buildDistanceReport, buildFuelReport } from "@/lib/reports";
 import { loadRangeShifts, persNrHaritasi } from "@/lib/report-shifts";
 import { FUEL_MIN_KM, FUEL_MIN_CONSUMED_PCT } from "@/lib/metric-thresholds";
-import { PACKAGES_ENABLED } from "@/lib/tenant";
+import { PACKAGES_ENABLED, KM_EKSENI_KESIM_TARIHI } from "@/lib/tenant";
+import { kmRaporDegeri } from "@/lib/km-ui";
 import { DEFAULT_LOCALE } from "@/i18n/request";
 
 /**
@@ -18,7 +19,6 @@ function csvDili(dil?: string | null): string {
 }
 import {
   workedMs,
-  kmDiff,
   formatDate,
   formatTime,
   formatDurationShort,
@@ -128,6 +128,10 @@ export async function buildShiftsCsv(range: DateRange, dil?: string | null): Pro
   const baslik = [
     t("tblPersNr"), t("tblWorker"), t("tblDate"), t("tblStart"), t("tblEnd"),
     t("tblWorked"), t("tblBreak"), t("tblKm"),
+    // YENİ KOLON (13. madde Adım 5): km hangi eksenden geldi. Çeviri YOK —
+    // makine okunur bir alan (cihaz|sayac|olculmedi|sayac_eski); üç dilde aynı
+    // değeri taşır ki Excel süzgeci dile göre bozulmasın.
+    "km_kaynak",
     // Paket sütunları kiracı ayarına bağlı — paket sayacı kullanmayan filoda
     // üç boş sütun kalmaz (panelin kuralı).
     ...(PACKAGES_ENABLED ? [t("tblLoaded"), t("tblCargo"), t("tblUndelivered")] : []),
@@ -136,7 +140,9 @@ export async function buildShiftsCsv(range: DateRange, dil?: string | null): Pro
 
   const satirlar = entries.map((e) => {
     const w = workerMap.get(e.worker_id);
-    const km = kmDiff(e);
+    // KESİM KURALI: kesim öncesi vardiya ESKİ sayaç farkını taşır ve kaynağı
+    // "sayac_eski" der; sonrası çekirdeğin kararını.
+    const { km, kaynak } = kmRaporDegeri(e, KM_EKSENI_KESIM_TARIHI);
     return [
       persNr.get(e.worker_id) ?? "—",
       w?.name ?? "",
@@ -148,6 +154,7 @@ export async function buildShiftsCsv(range: DateRange, dil?: string | null): Pro
       formatDurationShort(workedMs(e), csvDili(dil)),
       String(e.break_minutes ?? 0),
       km !== null ? String(km) : "",
+      kaynak,
       ...(PACKAGES_ENABLED
         ? [
             e.start_package_count !== null ? String(e.start_package_count) : "",

@@ -405,6 +405,21 @@ export type ShiftWindow = {
   startMs: number;
   /** ended_at ?? aralık sonu (ms) — 052'nin coalesce(ended_at, p_to) kuralı. */
   endMs: number;
+  /**
+   * BU VARDİYADA ÖLÇÜLEN km; `null` = ölçülemedi (16.09.2026).
+   *
+   * `km` haritasıyla AYNI değerden ve AYNI üç kapıdan sonra yazılır (eksik
+   * odometre · negatif fark · günlük makul km tavanı). Ayrı bir hesap DEĞİL,
+   * aynı hesabın vardiya düzeyinde saklanmış hâli.
+   *
+   * Neden gerekti: şoför→km haritası bir vardiyanın ARACINI kaybediyor, oysa
+   * filo üyeliği araçta yaşıyor (`vehicles.fleet`). Toplamı şoförden filoya
+   * bölmek, iki filoda vardiya açmış şoförde ORANLAMA gerektirirdi — yani yeni
+   * bir kural. Vardiya düzeyi o kuralı hiç doğurmadan doğru cevabı veriyor.
+   *
+   * ⚠️ `null` ile `0` FARKLI: ilki ölçülemedi, ikincisi ölçüldü ve sıfır çıktı.
+   */
+  km: number | null;
 };
 
 export type ShiftDistanceResult = {
@@ -440,7 +455,12 @@ export async function getWorkerShiftDistance(
   );
   if (error) {
     if (isTimeoutError(error))
-      return { km: null, coverage: null, windows: null, unavailable: "timeout" };
+      return {
+        km: null,
+        coverage: null,
+        windows: null,
+        unavailable: "timeout",
+      };
     const code = (error.code ?? "").toUpperCase();
     const msg = (error.message ?? "").toLowerCase();
     const missing =
@@ -489,6 +509,8 @@ export async function getWorkerShiftDistance(
         vehicleId: r.vehicle_id,
         startMs: Date.parse(r.started_at),
         endMs: r.ended_at ? Date.parse(r.ended_at) : rangeEndMs,
+        // Kapılardan geçerse aşağıda DOLDURULUR; geçemezse null KALIR.
+        km: null,
       });
     }
     if (r.first_km == null || r.last_km == null) {
@@ -511,6 +533,17 @@ export async function getWorkerShiftDistance(
     }
     say(r.worker_id, true);
     km.set(r.worker_id, (km.get(r.worker_id) ?? 0) + diff);
+    // AYNI `diff`, vardiya düzeyinde de saklanıyor — ayrı kapı/eşik YOK.
+    // Pencere bu satır için az önce (döngünün başında) itildi; başka bir satıra
+    // yazmamak için kimlikler doğrulanıyor.
+    const pencere = windows[windows.length - 1];
+    if (
+      pencere &&
+      pencere.workerId === r.worker_id &&
+      pencere.vehicleId === r.vehicle_id
+    ) {
+      pencere.km = diff;
+    }
   }
   return { km, coverage: kapsam, windows, unavailable: null };
 }

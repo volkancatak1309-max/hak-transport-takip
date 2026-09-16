@@ -92,15 +92,28 @@ function gunFarki(isoDate: string, now: Date): number {
 export async function readLatestFuelPrice(
   countryCode: string,
   fuelType: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  asOf?: Date
 ): Promise<FuelPriceLookup> {
-  const { data, error } = await supabaseAdmin
+  let q = supabaseAdmin
     .from("fuel_price_reference")
     .select(
       "country_code, fuel_type, reference_date, price_eur, currency, statistic, source_key, source_url, license_note, expected_period_days, fetched_at"
     )
     .eq("country_code", countryCode)
-    .eq("fuel_type", fuelType)
+    .eq("fuel_type", fuelType);
+  // ⚠️ `asOf` VERİLMEZSE DAVRANIŞ DEĞİŞMEZ — en yeni satır kazanır (bugünkü
+  // panel/€-km yolu). Verilirse "O ANA KADARKİ en son bülten" seçilir.
+  //
+  // Neden ayrı bir parametre, neden `now` yetmiyor: `now` YALNIZ tazeliği
+  // sınıflandırır, satır SEÇMEZ. Geçmişteki bir vardiyayı fiyatlarken yalnız
+  // `now`u geriye almak, en yeni (gelecekteki) bülteni seçip `ageDays`i NEGATİF
+  // yapardı — satır "taze" etiketiyle dönerdi. Yani sessizce yanlış: geçmiş,
+  // bugünün fiyatıyla ve "taze" damgasıyla yeniden yazılırdı. Ölçüldü
+  // (galzura-demo, 16.09.2026): iki geçici bülten yazıldığında vardiya ucu
+  // tarihe bakmaksızın en yeni satırı alıyordu.
+  if (asOf) q = q.lte("reference_date", asOf.toISOString().slice(0, 10));
+  const { data, error } = await q
     .order("reference_date", { ascending: false })
     .order("fetched_at", { ascending: false })
     .limit(1)

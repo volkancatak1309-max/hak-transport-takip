@@ -20,6 +20,7 @@ import {
 } from "@/lib/telemetry";
 import { eventTone, alarmKademe } from "@/lib/event-ui";
 import { fuelConsumedPct, pctToLiters } from "@/lib/fuel-math";
+import { resolveCostRates } from "@/lib/cost-rates-db";
 import { classifyRpcError } from "@/lib/reports";
 import type { TimeEntry } from "@/lib/types";
 
@@ -243,6 +244,56 @@ export async function GET(
       const refillPct = Number(stat.refill_pct) || 0;
       const dropPct = Number(stat.drop_pct) || 0;
       const tuketimPct = fuelConsumedPct(first, last, refillPct);
+      const tuketimLitre = pctToLiters(tuketimPct, cap);
+      const dolumLitre = pctToLiters(refillPct, cap);
+
+      // ── PARASAL KARŞILIK (€) ──────────────────────────────────────────────
+      //
+      // ORAN ZİNCİRİ KISAYOLSUZ: `resolveCostRates` panelin ve €/km motorunun
+      // kullandığı AYNI beş kademeli zincir (panel > referans taze > referans
+      // bayat > env > kod varsayılanı). Burada `FUEL_PRICE_EUR_PER_L`i
+      // doğrudan okumak ikinci bir fiyat kaynağı doğururdu — aynı litre yakıt
+      // panelde ve telefonda farklı € basardı. Bu tam olarak 23.08.2026'da
+      // `DIESEL_EUR_PER_L` silinerek kapatılan kusurdur (lib/tenant.ts).
+      //
+      // ⚠️ TARİH BUGÜN DEĞİL, VARDİYANIN BİTİŞİ — ve bunun için İKİ argüman
+      // birden gerekiyor: `now` (tazelik sınıfı) ve `asOf` (hangi satır).
+      // `asOf` OLMADAN `readLatestFuelPrice` tarihe bakmaz, HER ZAMAN en yeni
+      // bülteni seçer; yalnız `now`u geriye almak Mart'taki bir vardiyaya
+      // Eylül'ün fiyatını verir ve `ageDays` negatif çıktığı için onu "taze"
+      // damgalardı. Ölçüldü (galzura-demo, 16.09.2026) — bkz. lib/fuel-price-db.
+      // Açık vardiyada `winEnd` zaten "şimdi"dir, yani açık vardiya bugünün
+      // bültenini alır ve bu doğrudur.
+      //
+      // `fleetLPer100KmMeasured` = null: bu blok L/100km KULLANMIYOR, yalnız
+      // €/L okuyor. Ölçümü buraya taşımak vardiya ucuna yakıt raporunun tüm
+      // maliyetini bindirirdi.
+      const bitisAni = new Date(winEnd);
+      const { rates, origin } = await resolveCostRates(null, bitisAni, bitisAni);
+      const euroLitre = rates.fuelEurPerL;
+      const fo = origin.fuel;
+      // Mobil sözleşmesi ÜÇ değer tanır; `girildi`nin panel/env ayrımı
+      // (RateOrigin.via) BİLEREK taşınmıyor: istemci için ikisi de "kiracının
+      // kendi rakamı"dır ve ekranda aynı etiketi basar.
+      const oranKaynak: "girildi" | "referans" | "varsayilan" =
+        fo.source === "kaynaktan"
+          ? "referans"
+          : fo.source === "girildi"
+            ? "girildi"
+            : "varsayilan";
+      // `bayat` yalnız referans için tanımlı bir olgudur. Panel ayarının ya da
+      // kod varsayılanının "bayatlığı" YOKTUR — false demek, "taze" iddiası
+      // değil, "bu soru bu kaynak için sorulmaz" demektir.
+      const fiyatBayat = fo.source === "kaynaktan" ? fo.bayat : false;
+      // ⚠️ `varsayilan` kaynağın da bir `tarih`i var (FUEL_PRICE_AS_OF) ama o
+      // bültenin referans tarihi DEĞİL, bizim ölçüm notumuz. Sözleşmeye
+      // koymak, istemciye "bu bir bülten tarihi" dedirtirdi.
+      const fiyatTarihi = fo.source === "kaynaktan" ? fo.tarih : null;
+
+      /** € — 2 ondalık (para). Litre yoksa para da yok: uydurma çevrim yok. */
+      const euroYuvarla = (litre: number | null): number | null =>
+        litre === null ? null : Math.round(litre * euroLitre * 100) / 100;
+
       yakit = {
         okumaSayisi: Number(stat.sample_count),
         baslangicPct: stat.first_pct != null ? Number(stat.first_pct) : null,
@@ -251,14 +302,22 @@ export async function GET(
         enYuksekPct: stat.max_pct != null ? Number(stat.max_pct) : null,
         tuketimPct,
         // Depo hacmi girilmemiş araçta litre YOK (null) — uydurma çevrim yok.
-        tuketimLitre: pctToLiters(tuketimPct, cap),
+        tuketimLitre,
         depoLitre: cap,
         dolumAdet: Number(stat.refill_count) || 0,
         dolumPct: refillPct,
-        dolumLitre: pctToLiters(refillPct, cap),
+        dolumLitre,
         supheliDususAdet: Number(stat.drop_count) || 0,
         supheliDususPct: dropPct,
         supheliDususLitre: pctToLiters(dropPct, cap),
+        // ── € (yeni) — litre null ise para da null ────────────────────────
+        euro: euroYuvarla(tuketimLitre),
+        dolumEuro: euroYuvarla(dolumLitre),
+        /** €/L — 3 ondalık; pompada da kuruşun altı gösterilir. */
+        euroLitre: Math.round(euroLitre * 1000) / 1000,
+        oranKaynak,
+        fiyatBayat,
+        fiyatTarihi,
       };
     }
 

@@ -8,6 +8,59 @@
 
 ---
 
+## 0.1 · 17.09.2026 — YÜZDE HATTI DA HİZALANDI (migration 104)
+
+> 🔴 **Bu belgenin kararı 20 gün boyunca YARIM uygulanmıştı.** 28.08'de verilen
+> karar ("canlı biçim doğru, üç kiracı ona hizalanır") 094 + 095 ile **yalnız
+> LİTRE hattına** uygulandı. **YÜZDE hattı unutuldu.**
+
+17.09.2026'da 101/102 turunun denklik ölçümü sırasında ortaya çıktı: aynı elle
+müdahale `report_fuel_stats_vehicle`ta da vardı ve depo hâlâ `< 1` diyordu.
+Geçici olarak üç kiracı yüzde hattında **birbirinden farklı** çalışıyordu:
+
+```
+HAK61        :  odo - prev_odo between -1 and 1   (elle değişmiş)
+Sendigo      :  odo - prev_odo <  1               (depoyla aynı)
+galzura-demo :  odo - prev_odo <  1               (depoyla aynı)
+```
+
+**Nasıl bulundu:** 101'in v2'si (depodan üretildiği için `< 1`) HAK61'de canlı
+v1'den ayrıştı — DO-672GY'de `drop_count` 99 vs 97. Ham veri çekilip deponun
+052'si JS'te yeniden kuruldu: **97/1217**, yani v2 doğruydu, sapan taraf canlı
+fonksiyondu. Varyant taraması kuralı kesinleştirdi (28.08'dekinin aynı yöntemi).
+
+**Ölçüm (HAK61, son 30 gün, 19 araç) — ≥10 puanlık düşüşlerin odometre kovası:**
+
+| odo farkı | düşüş | puan | `< 1` | `between -1 and 1` |
+|---|---:|---:|---|---|
+| < -1 km (geri) | 0 | 0,0 | ✓ | ✗ |
+| = -1 km | 0 | 0,0 | ✓ | ✓ |
+| = 0 km | 185 | 2321,0 | ✓ | ✓ |
+| **= +1 km** | **7** | **90,0** | ✗ | ✓ |
+| > +1 km | 10 | 125,0 | ✗ | ✗ |
+| **TOPLAM** | **185 / 192** | **2321 / 2411** | | |
+
+HAK61 bugün **192 / 2.411** görüyor → **104 sonrası AYNI KALIR** (JS
+replikasyonuyla doğrulandı). Depoya hizalansaydı 185 / 2.321'e düşerdi
+(−%3,6 / −%3,7) — tam da bu belgenin reddettiği yön.
+
+Ağustos 2026 penceresinde `+1 km` kovası **boş** → geçmiş aylık raporlar
+değişmez. Sendigo'da son 30 günde ≥10 puanlık düşüş **0** → değişiklik yok
+(ölçüm kısmi: bir aracın serisi 100.000 satır tavanına dayandı).
+
+**Uygulanan:** `db/migrations/104_yuzde_odo_kapisi_hizalama.sql` — üç yüzde
+fonksiyonu (`report_fuel_stats` 2 arg · `report_fuel_stats_vehicle` 3 arg ·
+`report_fuel_stats_vehicle_v2`) tek işlemde `between -1 and 1`e çekildi.
+Gövdeler depodan ÜRETİLDİ, elle kopyalanmadı; ters çevirme testiyle başka
+hiçbir karakterin değişmediği gösterildi. Eski migration'lara dokunulmadı
+(095 kalıbı).
+
+**Bir daha yarım kalmasın diye:** `lint:yakit-etiket` artık kuralı TEK
+KAYNAKTAN okuyor — 094'ün gövdesi ne diyorsa diğer dört fonksiyon da onu
+demek zorunda. Eşik muhafız dosyasına yazılmıyor; biri geride kalırsa düşer.
+
+---
+
 ## 0 · CEVAP
 
 **094 hatalı değil. Hata bulunmadı çünkü hata yok — HAK61'in canlıdaki ESKİ

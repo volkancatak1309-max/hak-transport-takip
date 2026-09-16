@@ -54,6 +54,14 @@ const temizle = (x) => x.replace(/notify pgrst[^;]*;/g, "");
 const M101 = temizle(readFileSync(join(KOK, "db/migrations/101_yakit_seri_etiket.sql"), "utf8"));
 const M102 = temizle(readFileSync(join(KOK, "db/migrations/102_yakit_v2_pencere_duzeltme.sql"), "utf8"));
 const M103 = temizle(readFileSync(join(KOK, "db/migrations/103_yakit_hacim_seri_etiket.sql"), "utf8"));
+/**
+ * ⚠️ 104 — YÜZDE HATTI ODOMETRE KAPISI. 28.08 kararı ("canlı biçim doğru,
+ * üç kiracı ona hizalanır") 094+095 ile yalnız LİTRE hattına uygulanmıştı;
+ * 17.09.2026'da yüzde hattında da aynı elle müdahalenin durduğu ölçüldü.
+ * 104 üç yüzde fonksiyonunu da `between -1 and 1`e çeker. Kanıt onu DA
+ * uygular: kiracıya gidecek hâl budur.
+ */
+const M104 = temizle(readFileSync(join(KOK, "db/migrations/104_yuzde_odo_kapisi_hizalama.sql"), "utf8"));
 
 /** LİTRE hattının v1'i — 094'ten, kopyalanmadan. */
 const m094 = readFileSync(join(KOK, "db/migrations/094_yakit_hacim_arac_ekseni.sql"), "utf8");
@@ -92,7 +100,8 @@ await q(V1V);
 await db.exec(M101);
 await db.exec(M102);
 await db.exec(M103);
-console.log(`\n═══ PGlite · şema + 052'nin v1'i + migration 101 + 102 + 103 ═══`);
+await db.exec(M104);
+console.log(`\n═══ PGlite · şema + 052'nin v1'i + migration 101 + 102 + 103 + 104 ═══`);
 {
   const r = await q(`select
     (select count(*) from information_schema.tables where table_schema='public' and table_name='fuel_seri')::int tablo,
@@ -129,6 +138,13 @@ const ARAC = [
 for (let i = 0; i < ARAC.length; i++) {
   await q(`insert into vehicles (id, plate) values ($1,$2)`, [ARAC[i], `TEST-${i + 1}`]);
 }
+
+/**
+ * ODOMETRE KAPISI VAKALARI (104) için AYRI araç. `ARAC` listesine
+ * girmiyor: oradaki 32 kıyasın sayıları değişmesin.
+ */
+const KAPI_ARAC = "44444444-4444-4444-4444-444444444444";
+await q(`insert into vehicles (id, plate) values ($1,$2)`, [KAPI_ARAC, "KAPI-TEST"]);
 
 const T0 = Date.parse("2026-08-01T00:00:00Z");
 const ADIM = 5 * 60 * 1000;
@@ -253,6 +269,53 @@ for (let a = 0; a < ARAC.length; a++) {
   }
   toplam += satir.length;
 }
+/**
+ * ── ODOMETRE KAPISI SERİSİ ────────────────────────────────────────────────
+ *
+ * Altı KALICI düşüş (12 puan), her biri farklı odometre farkıyla. Kalıcı
+ * olduğu için de-glitch temizlemez (ileri pencere de düşük kalır) — yani
+ * satırlar `clean`de yaşar ve `drop_*` sayacına girer.
+ *
+ *   odo farkı   `< 1` (eski depo)   `between -1 and 1` (104)
+ *      +1 km          ✗                      ✓
+ *      -1 km          ✓                      ✓
+ *       0 km          ✓                      ✓
+ *      +3 km          ✗                      ✗
+ *      -5 km          ✓                      ✗   ← 104 bunu ÇIKARIR
+ *      +1 km          ✗                      ✓
+ *   ─────────────────────────────────────────────────────────
+ *   TOPLAM           3 düşüş / 36 puan      4 düşüş / 48 puan
+ *
+ * İki kural aynı sayıyı vermesin diye asimetrik kuruldu: sadece "daha çok
+ * sayıyor" demek yetmez, 104'ün ÇIKARDIĞI vaka da (-5 km) ölçülmeli.
+ */
+{
+  const ADIMLAR = [1, -1, 0, 3, -5, 1];
+  const satir = [];
+  let fuel = 100;
+  let odo = 200000;
+  let idx = 22 * GUNLUK; // 22. gün — pencere kenarlarından uzak
+  const yaz = (n) => {
+    for (let i = 0; i < n; i++) {
+      satir.push([KAPI_ARAC, new Date(T0 + idx * ADIM).toISOString(), fuel.toFixed(2), null, odo.toFixed(1)]);
+      idx++;
+    }
+  };
+  yaz(60);
+  for (const d of ADIMLAR) {
+    fuel -= 12;
+    odo += d;
+    yaz(1);   // düşüş satırı
+    yaz(40);  // düşük seviyede kalır → de-glitch temizlemez
+  }
+  for (let i = 0; i < satir.length; i += 1000) {
+    const d = satir.slice(i, i + 1000);
+    const vals = d.map((_, j) => `($${j * 5 + 1},$${j * 5 + 2},$${j * 5 + 3},$${j * 5 + 4},$${j * 5 + 5})`).join(",");
+    await q(`insert into device_telemetry (vehicle_id, recorded_at, fuel_level_pct, fuel_volume_l, odometer_km) values ${vals}`, d.flat());
+  }
+  toplam += satir.length;
+}
+
 console.log(`\nsentetik telemetri: ${toplam} satır · ${ARAC.length} araç · ${GUN} gün · 5 dk aralık`);
 
 /** Cron'un yapacağı şeyin birebir aynısı: gün gün, tekrar çalıştırılabilir. */
@@ -414,7 +477,44 @@ await kiyasla("boş tablo");
 await kiyaslaHacim("boş tablo");
 
 // ── 5) TEKRAR ÇALIŞTIRILABİLİRLİK ─────────────────────────────────────────
-console.log(`\n────────── 5 · idempotans ──────────`);
+console.log(`\n────────── 5 · 104 · odometre kapısı ──────────`);
+{
+  const f = new Date(T0 + 21 * 86400000).toISOString();
+  const t = new Date(T0 + 30 * 86400000).toISOString();
+  const [a, b, c] = await Promise.all([
+    q(`select * from public.report_fuel_stats_vehicle($1::timestamptz,$2::timestamptz,$3::uuid)`, [f, t, KAPI_ARAC]),
+    q(`select * from public.report_fuel_stats_vehicle_v2($1::timestamptz,$2::timestamptz,$3::uuid)`, [f, t, KAPI_ARAC]),
+    q(`select * from public.report_fuel_stats($1::timestamptz,$2::timestamptz)`, [f, t]),
+  ]);
+  const ra = a.rows[0], rb = b.rows[0];
+  const rc = (c.rows ?? []).find((r) => r.vehicle_id === KAPI_ARAC);
+  console.log(
+    `     v1 drop ${ra?.drop_count}/${ra?.drop_pct} · v2 drop ${rb?.drop_count}/${rb?.drop_pct} · ` +
+      `2-arg drop ${rc?.drop_count}/${rc?.drop_pct}`
+  );
+  ok(
+    "🔑 v1 (052→104) YENİ kuralı uyguluyor: 4 düşüş / 48 puan",
+    Number(ra?.drop_count) === 4 && Number(ra?.drop_pct) === 48,
+    `${ra?.drop_count}/${ra?.drop_pct} — eski kural 3/36 verirdi`
+  );
+  ok(
+    "🔑 v2 (102→104) AYNI: 4 düşüş / 48 puan",
+    Number(rb?.drop_count) === 4 && Number(rb?.drop_pct) === 48,
+    `${rb?.drop_count}/${rb?.drop_pct}`
+  );
+  ok(
+    "🔑 2 argümanlı report_fuel_stats (027→104) da hizalı",
+    Number(rc?.drop_count) === 4 && Number(rc?.drop_pct) === 48,
+    `${rc?.drop_count}/${rc?.drop_pct}`
+  );
+  ok(
+    "v2 = v1 bu araçta da bayt-bayt",
+    kanonik(ra) === kanonik(rb),
+    kanonik(ra) === kanonik(rb) ? "11 kolon" : `\n      v1: ${kanonik(ra)}\n      v2: ${kanonik(rb)}`
+  );
+}
+
+console.log(`\n────────── 6 · idempotans ──────────`);
 await gunGunEtiketle(0, GUN);
 await gunGunEtiketleHacim(0, GUN);
 /**
@@ -436,7 +536,7 @@ ok(
 );
 
 // ── 6) GERİ ALMA ──────────────────────────────────────────────────────────
-console.log(`\n────────── 6 · geri alma ──────────`);
+console.log(`\n────────── 7 · geri alma ──────────`);
 await db.exec(`
   drop function if exists public.report_fuel_stats_vehicle_v2(timestamptz, timestamptz, uuid);
   drop function if exists public.yakit_seri_etiketle(timestamptz, timestamptz, uuid);

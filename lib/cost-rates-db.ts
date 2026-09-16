@@ -144,7 +144,14 @@ function coz(
  */
 export async function resolveCostRates(
   fleetLPer100KmMeasured: number | null,
-  now: Date = new Date()
+  now: Date = new Date(),
+  /**
+   * "Bu ana KADARKİ en son bülten" — geçmişe ait bir olguyu (biten bir vardiya)
+   * fiyatlarken verilir. Verilmezse davranış BUGÜNKÜYLE BİREBİR AYNI kalır:
+   * en yeni bülten kazanır. Panelin ve €/km motorunun çağrıları bu parametreyi
+   * GEÇMEZ ve geçmemeli — onlar "şu an ne kadar" sorusunu soruyor.
+   */
+  asOf?: Date
 ): Promise<CostRateResolution> {
   const { row, tabloYok } = await readCostRateRow();
 
@@ -163,7 +170,7 @@ export async function resolveCostRates(
   // fiyatının önüne geçirmek, ekranda düpedüz yanlış rakam göstermek olurdu.
   // Onaylanan merdiven bundan sonrası için AYNEN uygulanıyor: kiracı bir şey
   // girmediğinde taze → bayat → env → varsayılan → null.
-  const fuelRef = await readLatestFuelPrice(FUEL_PRICE_COUNTRY, "diesel", now);
+  const fuelRef = await readLatestFuelPrice(FUEL_PRICE_COUNTRY, "diesel", now, asOf);
   const panelFuel = sayi(row?.fuel_eur_per_l);
   const fuel: { value: number; origin: RateOrigin } =
     panelFuel !== null

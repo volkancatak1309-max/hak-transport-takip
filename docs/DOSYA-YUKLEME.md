@@ -407,7 +407,7 @@ referansını doğrulayıp galzura-demo değilse çalışmayı reddediyor).
 
 | # | Konu | Durum |
 |---|---|---|
-| 1 | **Migration 098** | ⏳ **HİÇBİR KİRACIDA ÇALIŞTIRILMADI** — bu ağaçta DDL kanalı yok (PostgREST yalnız veri). Üç kiracıda da hız sınırı **fail-open** çalışıyor, yani bugünkü durum. Çalıştırılması gereken: `db/migrations/098_yukleme_hiz_siniri.sql` (yeni kiracı kurulum SQL'inde zaten var). |
+| 1 | **Migration 098** | ✅ **16.09.2026 — ÜÇ KİRACIDA DA UYGULANDI** (galzura-demo, Sendigo, HAK61). Doğrulama sayıları: tablo **1** / kolon **4** / indeks **1**. Hız sınırı artık fail-open değil, gerçekten sayıyor. |
 | 2 | **Takograf yükleme** | Çekirdeğe bağlanmadı — **gerekçeli istisna**, muhafızda yazılı. Yol deseni (`yyyy/mm/uuid.ddd`, kişi klasörü YOK), MIME ve SHA256 tekilliği farklı. Bedeli açık: o yolda **yetim koruması yok**. Volkan'ın sıralamasında **üçüncü**. |
 | 3 | **Masraf / yakıt / bakım fişi** | Modüller kapalı; uç yazılmadı (Karar 4: kuyruğun sonu). Panel yolları yine de çekirdeğe bağlandı — yetim koruması ve hız sınırı **onlarda da geçerli**. |
 | 4 | **Teslimat foto ucu canlıda ölçülmedi** | Kod yazıldı, build'e girdi, ama galzura-demo'da **hiç sefer/durak/teslimat kaydı yok** (`teslimatlar` = 0 satır). Test verisi üretmek sefer + durak + kanıt zinciri kurmayı gerektiriyordu; DVIR yolu aynı çekirdeği kullandığı için ölçüm oradan alındı. |
@@ -415,6 +415,7 @@ referansını doğrulayıp galzura-demo değilse çalışmayı reddediyor).
 | 6 | **Personel belgesi** | Karar 2 gereği **kapsam dışı**. Envanterdeki #31 "ekran işi" olarak yeniden sınıflandırılmalı (mobil CC'ye not). |
 | 7 | **Saklama cron'una dosya adımı** | **Yapılmadı ve yapılamadı:** saklama katmanı (090) yalnız `device_telemetry` + `driver_locations` kapsıyor (`HAM_TABLOLAR`), ikisinde de dosya yok. Dosya adımı eklemek, saklama kapsamını genişletmek demek — fotoğraflar için saklama süresi kararı gerekir. **Volkan'ın kararı bekliyor.** |
 | 8 | **064'teki RLS kuralı fiilen ölü — 16 tablo sapmada** | `064_customer_zone_visits.sql:124` "Kasadaki kural (17 Tem): yeni migration'da RLS zorunlu" diyor, ama 064'ten sonra tablo yaratan **086/088/089/090/091/098'in hiçbiri RLS açmadı (16 tablo)**; şemadaki 77 tablodan yalnız 2'sinde RLS açık (`idle_episodes`, `zone_visits`) ve ikisinin de policy'si yok. Güvenlik etkisi **yok** — erişimi RLS değil GRANT kapatıyor (`anon`/`authenticated` hiçbir tabloda hak taşımıyor, depoda `ANON_KEY` geçen satır yok, tek istemci `lib/supabase.ts` service_role). Karar 16.09.2026: **099 yapılmadı**, `upload_rate` olduğu gibi birleştirildi; tutarlılık istenirse 66 tabloyu kapsayan ayrı temizlik işi, tek atımlık yama değil. |
+| 9 | **`wtmain` worktree'si hasarlı** | main'in checkout'lu olduğu `…\scratchpad\wtmain` dizininde 841 izlenen dosyadan **731'i diskten eksik** (temp temizliği). Değişiklik/stage/izlenmeyen dosya yok, yani **veri kaybı yok** — birleştirme commit'i commit nesnelerinden kurulduğu için sonuca da sızmadı (`git diff main feat/dosya-yukleme` boş ölçüldü). Onarım: o dizinde `git restore .` |
 
 
 ## 7. Kararlar — Volkan, 03.09.2026 ✅

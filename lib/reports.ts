@@ -42,6 +42,7 @@ import {
   FUEL_PRICE_IS_CUSTOM,
   SCORE_THRESHOLD_WORKED_DAYS,
   KM_EKSENI_KESIM_TARIHI,
+  YAKIT_OZET_ENABLED,
 } from "@/lib/tenant";
 import { resolveCostRates } from "@/lib/cost-rates-db";
 import {
@@ -1116,13 +1117,43 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   // tavan 8.000 ms — pay %4. Soğuk turda 12/30 araç 57014 aldı. mapBounded(6)
   // ile en kötü ifade 1.443 ms (pay 5,5×) VE duvar saati %33 daha kısa.
   // Gerekçenin tam ölçüm tablosu lib/db-fanout.ts'te.
-  const perVehicle = await mapBounded(vehicles, (v) =>
-    supabaseAdmin.rpc("report_fuel_stats_vehicle", {
-      p_from: startISO,
-      p_to: endISO,
-      p_vehicle_id: v.id,
-    })
-  );
+  /**
+   * ── ÖN-ETİKETLİ YOL (migration 101, 16.09.2026) ─────────────────────────
+   *
+   * `report_fuel_stats_vehicle_v2` AYNI ÇIKTIYI üretir; farkı, 31 satırlık
+   * iki kayan maksimumu okuma anında hesaplamak yerine `fuel_seri`den
+   * okumasıdır. Ölçülen maliyet (en yoğun araç, 30 gün): eski yol
+   * HAK61 969 ms · demo 1.466 ms; marjinal ~12,8 µs/satır ve bu tamamen
+   * o iki pencere fonksiyonunun CPU'su (soğuk ≈ sıcak).
+   *
+   * ⚠️ MELEZ OKUMA v2'NİN İÇİNDE. Gecelik cron'dan sonra gelen telemetri
+   * (bugünün kısmi günü) etiketsizdir; v2 o kuyruğu CANLI hesaplar. Yani
+   * "hafta"/"ay" gibi ŞİMDİ biten pencereler bayat kalmaz ve bölme
+   * noktasında 090'ın ölçtüğü parçalama sapması doğmaz (etiket satır
+   * başına komşuluk değeridir, gün özeti değil).
+   *
+   * ⚠️ GERİ DÜŞÜŞ TAM: v2 yoksa (101 uygulanmamış) rapor KOMPLE eski yola
+   * döner — yarısı yeni yarısı eski bir sonuç ÜRETİLMEZ.
+   */
+  const yuzdeRpc = YAKIT_OZET_ENABLED
+    ? "report_fuel_stats_vehicle_v2"
+    : "report_fuel_stats_vehicle";
+  const yuzdeCagir = (rpc: string) =>
+    mapBounded(vehicles, (v) =>
+      supabaseAdmin.rpc(rpc, {
+        p_from: startISO,
+        p_to: endISO,
+        p_vehicle_id: v.id,
+      })
+    );
+  let perVehicle = await yuzdeCagir(yuzdeRpc);
+  if (
+    yuzdeRpc !== "report_fuel_stats_vehicle" &&
+    perVehicle.some((r) => r.error && classifyRpcError(r.error) === "missing_function")
+  ) {
+    // 101 bu kiracıda çalışmamış. Tek tur bedel, sonra bugünkü yol.
+    perVehicle = await yuzdeCagir("report_fuel_stats_vehicle");
+  }
   const missingFn = perVehicle.find(
     (r) => r.error && classifyRpcError(r.error) === "missing_function"
   );
@@ -1158,7 +1189,9 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
       .map((r, i) => (isTimeoutError(r.error) ? i : -1))
       .filter((i) => i >= 0);
     for (const i of retryIdx) {
-      perVehicle[i] = await supabaseAdmin.rpc("report_fuel_stats_vehicle", {
+      // ⚠️ Tekrar AYNI sürümle yapılır: ilk tur v2 ile koştuysa tekrar da
+      // v2 olmalı, yoksa tek araç sessizce başka bir yoldan hesaplanırdı.
+      perVehicle[i] = await supabaseAdmin.rpc(yuzdeRpc, {
         p_from: startISO,
         p_to: endISO,
         p_vehicle_id: vehicles[i].id,

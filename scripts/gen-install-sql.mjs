@@ -100,6 +100,7 @@ const ORDER = [
   "098_yukleme_hiz_siniri.sql",
   "099_filo_tasima_izi.sql",
   "100_shift_odometer_spans_zaman.sql",
+  "101_yakit_seri_etiket.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

@@ -1,44 +1,47 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
-
-const MAX_BYTES = 5 * 1024 * 1024;
-const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/heic"];
+import { dosyaYukle, IZINLI_TIPLER_PANEL } from "@/lib/upload-core";
 
 export type UploadResult = { ok: true; path: string } | { ok: false; error: string };
 
-function ext(type: string): string {
-  if (type.includes("png")) return "png";
-  if (type.includes("webp")) return "webp";
-  if (type.includes("heic")) return "heic";
-  return "jpg";
-}
-
 /**
- * Upload a receipt photo to a private bucket via the service-role client
- * (bypasses RLS). Path: {workerId}/{yyyy}/{mm}/{uuid}.{ext}
+ * Upload a receipt photo to a private bucket via the service-role client.
+ * Path: {workerId}/{yyyy}/{mm}/{uuid}.{ext}
+ *
+ * ═══ GÖVDESİ ARTIK lib/upload-core.ts'TE (03.09.2026) ═══════════════════════
+ *
+ * Boyut/tip denetimi ve Storage yazması KOPYALANMADI, çekirdeğe TAŞINDI. Sebep:
+ * mobil yükleme uçları aynı kuralları işletmek zorunda ve ikinci bir kopya ilk
+ * değişiklikte geride kalırdı — panelden yüklenen fotoğrafla telefondan
+ * yüklenen FARKLI kurallara tabi olurdu.
+ *
+ * ── PANELİN DAVRANIŞI DEĞİŞMEDİ, İKİ NOKTA DIŞINDA ────────────────────────
+ *   • `image/heic` HÂLÂ kabul ediliyor (`IZINLI_TIPLER_PANEL`). Yeni mobil
+ *     uçlar onu almıyor; panel alıyor çünkü bugün alıyordu ve kova ayarı da
+ *     izin veriyor.
+ *   • ARTIK HIZ SINIRI VAR (098, kişi başına dakikada 10). Bu bilinçli bir
+ *     genişletme: fren ortak çekirdekte olduğu için panel de kazanıyor.
+ *     Kota `hiz_siniri` hatasıyla döner ve çağıran onu `error` alanında görür.
+ *
+ * Dönüş sözleşmesi AYNEN korundu (`{ok:true,path}` / `{ok:false,error}`), yani
+ * altı çağıranın hiçbiri değişmedi.
  */
 export async function uploadReceipt(
   bucket: string,
   workerId: string,
   file: File
 ): Promise<UploadResult> {
-  if (!file || file.size === 0) return { ok: false, error: "no_file" };
-  if (file.size > MAX_BYTES) return { ok: false, error: "too_large" };
-  const type = file.type || "image/jpeg";
-  if (!ALLOWED.includes(type)) return { ok: false, error: "bad_type" };
-
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const path = `${workerId}/${yyyy}/${mm}/${crypto.randomUUID()}.${ext(type)}`;
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const { error } = await supabaseAdmin.storage
-    .from(bucket)
-    .upload(path, buffer, { contentType: type, upsert: false });
-
-  if (error) return { ok: false, error: error.message };
-  return { ok: true, path };
+  const r = await dosyaYukle(bucket, workerId, file, {
+    izinliTipler: IZINLI_TIPLER_PANEL,
+  });
+  if (r.ok) return { ok: true, path: r.yol };
+  // Eski hata dizgeleri korunuyor: çağıranlar bunları kullanıcıya çeviriyor.
+  const eskiAd: Record<string, string> = {
+    dosya_yok: "no_file",
+    cok_buyuk: "too_large",
+    tip_yasak: "bad_type",
+  };
+  return { ok: false, error: eskiAd[r.hata] ?? r.ayrinti ?? r.hata };
 }
 
 /** Short-lived signed URL for viewing a private receipt. */

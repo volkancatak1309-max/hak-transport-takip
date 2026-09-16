@@ -313,3 +313,45 @@ export async function iptalTeslimat(
   }
   return { ok: true, id: data ? String((data as { id: string }).id) : id };
 }
+
+/**
+ * Bir SEFERİN BELİRLİ DURAĞINDAKİ geçerli kanıt.
+ *
+ * Mobil fotoğraf ucu (`/sefer/[id]/duraklar/[durakId]/foto`) durak ekseninde
+ * çalışıyor: şoför durakta duruyor, teslimat kimliğini bilmiyor. Bu fonksiyon
+ * o çeviriyi yapar.
+ *
+ * `durak_id` ARANIR, `durak_no` DEĞİL: sıra değişebilir, kalıcı bağ id'dir
+ * (dosya başındaki nota bakın). İPTAL EDİLMİŞ kanıt DÖNMEZ — iptal edilmiş bir
+ * kanıta fotoğraf eklemek, geçersiz ilan edilmiş bir delili beslemek olurdu.
+ *
+ * Aynı durakta birden fazla geçerli kanıt olursa EN YENİSİ döner; şema bunu
+ * yasaklamıyor ve "hangisi" sorusunun tek makul cevabı sonuncusudur.
+ */
+export async function getTeslimatByDurak(
+  seferId: string,
+  durakId: string
+): Promise<{ teslimat: Teslimat | null; tabloYok: boolean; kolonYok: boolean }> {
+  const { data, error } = await supabaseAdmin
+    .from("teslimatlar")
+    .select("id")
+    .eq("sefer_id", seferId)
+    .eq("durak_id", durakId)
+    .is("iptal_at", null)
+    .order("teslim_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    // 082 uygulanmamış kurulumda `durak_id` yok — durak ekseni HİÇ çalışmaz.
+    // Bunu "kanıt yok" ile karıştırmamak gerekiyor: biri veri, öteki kurulum.
+    if (kolonYokMu(error)) return { teslimat: null, tabloYok: false, kolonYok: true };
+    return { teslimat: null, tabloYok: tabloYokMu(error), kolonYok: false };
+  }
+  if (!data) return { teslimat: null, tabloYok: false, kolonYok: false };
+  return {
+    teslimat: await getTeslimat(String((data as { id: string }).id)),
+    tabloYok: false,
+    kolonYok: false,
+  };
+}

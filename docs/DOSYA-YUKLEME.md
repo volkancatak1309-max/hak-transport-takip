@@ -1,8 +1,9 @@
-# Mobil dosya yükleme — TASARIM (kod YAZILMADI)
+# Mobil dosya yükleme — tasarım + uygulama
 
-**Tarih:** 03.09.2026 · **Durum:** 🛑 **ONAY BEKLİYOR — kod yazılmadı**
+**Tarih:** 03.09.2026 · **Durum:** ✅ **UYGULANDI + CANLIDA KANITLANDI** (galzura-demo)
+**Dal:** `feat/dosya-yukleme` · **PUSH YOK**
 **Görev:** `MOBIL-YETKI-ENVANTERI.md` § "Ortak altyapı — tek seferlik iş"
-**Talimat:** *"Tasarla, uygulama — önce bana sor."*
+**Kararlar:** Volkan, 03.09.2026 (§ 5'te tek tek işaretli)
 
 ---
 
@@ -266,13 +267,166 @@ yükleme ilk kez **bant genişliği ve depolama** harcayan bir uç olacak.
 
 ---
 
-## 7. Kod yazılmadan önce beklenen cevaplar
+---
 
-1. **Karar 1** — tek aşama mı, iki aşama mı? *(öneri: tek aşama)*
-2. **Karar 2** — personel belgesi: kapsam dışı / tek dosya / çok dosya?
-3. **Karar 3** — yetim dosya temizliği bu turda mı? *(öneri: hayır)*
-4. **Karar 4** — hangi iş önce? *(öneri: teslimat + DVIR fotoğrafı)*
-5. **Karar 5** — hız sınırı? *(öneri: basit sınır)*
-6. **§ 6/1** — modül bayraklarının canlı değeri nedir?
+# BÖLÜM B — UYGULAMA (kararlar sonrası)
 
-**Bu cevaplar gelmeden kod yazılmayacak.**
+## B.0 Ne yapıldı
+
+| Dosya | İş |
+|---|---|
+| `lib/upload-core.ts` | **Yükleme çekirdeği** — tek yükleme, tek silme, hız sınırı, yetim koruması |
+| `lib/dvir-submit.ts` | DVIR form gönderimi — panel + mobil ORTAK |
+| `db/migrations/098_yukleme_hiz_siniri.sql` | `upload_rate` tablosu |
+| `POST /api/mobile/dvir` | Kontrol formu + kusur fotoğrafları (multipart) |
+| `POST /api/mobile/sefer/[id]/duraklar/[durakId]/foto` | Teslimat kanıtına fotoğraf |
+| `lib/storage.ts` | `uploadReceipt` gövdesi çekirdeğe indi (6 panel çağıranı değişmedi) |
+| `app/actions/dvir.ts` · `teslimat.ts` | Yetim korumasına bağlandı |
+| `app/actions/shift.ts` | `deleteEntryAction` artık `shift_photos` dosyalarını da siliyor |
+| `scripts/check-dosya-yukleme.mjs` | 8 denetimlik muhafız (`lint:dosya-yukleme`) |
+
+## B.1 🔴 Tasarımın bir maddesi CANLIDA ÇÜRÜDÜ
+
+İlk tasarım `POST /api/mobile/dvir/[id]/foto` idi: formu gönder, fotoğrafı
+sonradan ekle/değiştir/sil. **Yazıldı, canlıda ilk denemede reddedildi.**
+
+Sebep 081'de yazılı ve tasarım aşamasında okunmamıştı:
+
+```sql
+create trigger trg_dvir_yanit_degismez before update on public.dvir_yanitlari
+  → raise exception 'kontrol yaniti DEGISTIRILEMEZ' using errcode = 'HK081';
+```
+
+`dvir_yanitlari` **KOŞULSUZ** değişmez — `dvir_formlari`daki gibi alan alan
+değil, **her UPDATE**. Yani kusur fotoğrafı ancak form YAZILIRKEN konabilir;
+sonradan eklemek, değiştirmek ve silmek şema düzeyinde kapalı.
+
+**Bu bir eksik değil, 081'in kararı:** kontrol formu bir beyandır ve beyan
+sonradan güzelleştirilemez. Düzeltmenin yolu YENİ FORM doldurmaktır.
+
+**Ne yapıldı:** foto ucu kaldırıldı, yerine **`POST /api/mobile/dvir`** yazıldı
+— formu fotoğraflarıyla birlikte gönderen uç (INSERT, şemaya uygun). Karar
+kaydı `lib/dvir-db.ts` sonunda duruyor ki aynı duvara ikinci kez çarpılmasın.
+
+> **Ders:** değişmezlik tetikleyicisi olan bir tabloya yazacak uç tasarlarken
+> tetikleyicinin KAPSAMI okunmalı. `teslimatlar` için okumuştum (`before
+> update`, DELETE serbest), `dvir_yanitlari` için varsaymıştım.
+
+## B.2 Yetim dosya — üç kapı
+
+| Kapı | Nerede | Ne yapar |
+|---|---|---|
+| **Yazma düşerse geri al** | `yukleVeYaz` | Dosyayı yükler, kaydı yazdırır; `yaz` null dönerse/fırlatırsa dosyayı **siler** ve kotayı iade eder |
+| **Çoklu: hepsi ya da hiçbiri** | `coklaYukleVeYaz` | N dosya + TEK kayıt. Herhangi bir adım düşerse **o ana kadar yüklenenlerin tamamı** silinir |
+| **Kayıt silinince dosya da** | `deleteEntryAction` | `shift_photos` yolları **cascade'den ÖNCE** okunur, satır silinir, dosyalar en son |
+
+**Kapatılan gerçek kusur:** `app/actions/dvir.ts` kusurlu madde başına dosya
+yükleyip döngüde biriktiriyordu; `createDvirForm` düşerse **N dosyanın hepsi**
+yetim kalıyordu. Artık `coklaYukleVeYaz` sarıyor.
+
+**Kapatılan ikinci kusur:** `shift_photos.time_entry_id` FK'si `on delete
+cascade` (020). Vardiya silinince satırlar gidiyor, **dosyalar kalıyordu** —
+saklama politikası (090) onlara dokunmuyor.
+
+## B.3 Hız sınırı — 10/dakika, kişi başına
+
+`upload_rate` (098): sabit pencere, `worker_id` anahtarlı.
+
+**Neden `login_attempts` değil:** o tablo kimlik doğrulama sayacı ve başarılı
+girişte **silinir** — yükleme kotasını oraya koymak, girişin kotayı
+sıfırlaması demekti. Anahtar da farklı: kota KİŞİYE ait (aynı şoför iki
+cihazdan tek kotadan harcar), IP'ye değil (saha ekibi aynı depo Wi-Fi'sinde).
+
+**🔑 Kota İSTEK başına, dosya başına değil (çoklu yüklemede).** Kontrol
+listesi 15-20 maddelik; hepsi kusurluysa dosya başına kota formu 10. maddede
+reddederdi — bir maliyet freni, yasal bir formu tamamlanamaz hâle getirirdi.
+Tavan dosya SAYISIYLA kapalı (`COKLU_DOSYA_TAVAN = 30`).
+
+**098 yoksa fail-OPEN** ve bu bilinçli: fail-closed olsaydı migration'ı
+çalıştırmamış kurulumda yükleme TÜMDEN kapanırdı — fren, özellik kapısına
+dönerdi. Kimlik kapılarındaki fail-closed kuralıyla çelişmiyor: orada hatanın
+bedeli yetkisiz erişim, burada fazla dosya.
+
+⏳ **098 hiçbir kiracıda çalıştırılmadı** (§ B.6).
+
+## B.4 Tip listesi — panel ve mobil bilerek FARKLI
+
+| Yol | Kabul | Neden |
+|---|---|---|
+| Yeni mobil uçlar | jpeg · png · webp | Volkan kararı |
+| Panel (`uploadReceipt`) | + **heic** | Bugün kabul ediyordu, kova ayarı da izin veriyor — davranış değiştirilmedi |
+
+`image/heic` yeni uçlarda dışarıda çünkü sunucuda çözecek yol yok: panel
+istemcide JPEG'e çeviriyor (`lib/image-resize.ts`), çeviremezse ham gönderiyor
+— ve o dosya hiçbir tarayıcıda **görüntülenemiyor**. Kabul edilen ama
+açılamayan bir kanıt, reddedilenden kötüdür.
+
+## B.5 Kanıt
+
+### Standart doğrulama
+
+| Adım | Sonuç |
+|---|---|
+| `npx tsc --noEmit` | **0 hata** |
+| `npm run build` | **başarılı** — `/api/mobile/dvir`, `/api/mobile/sefer/[id]/duraklar/[durakId]/foto` çıktıda |
+| 16 muhafız | **15 yeşil**, `lint:test-filters` tek bulgu (baseline, bu turla ilgisiz) |
+| ESLint | **43 / 28 hata / 15 uyarı** — baseline'ın aynısı |
+| `lint:install-sql` | yeşil — 098 `ORDER`a eklendi, 4 kurulum/hizalama dosyası yeniden üretildi |
+
+### Muhafız — ve muhafızın kendisi
+
+`npm run lint:dosya-yukleme` · **8 denetim**, `verify` zincirine eklendi.
+
+**8/8 arıza enjeksiyonu yakalandı**, geri yazma tuttu (temiz ağaçta çıkış 0).
+
+Muhafız yazılırken **üç yanlış pozitif** çıktı ve üçü de daraltıldı:
+- `lib/takograf-db.ts` kendi `dosyaYukle`sini dışa aktarıyor → **ad çakışması**;
+  D5 artık import kaynağını denetliyor.
+- `aracGun.size > 0`, `zoneIds.size > 0` → **koleksiyon boyutu**, dosya tavanı
+  değil; D3 deseni bayt eşiğine daraltıldı.
+- `lib/takograf-db.ts` gerçekten kendi `storage.upload`ını yapıyor → **gerekçeli
+  istisna** (§ B.6).
+
+### 🔑 CANLIDA KANIT — galzura-demo, Storage sayılarak
+
+`npm run verify:dosya-yukleme-canli` · **24/24 iddia geçti**
+
+| Adım | Ölçüm |
+|---|---|
+| **Form + foto** | `200` · `dvir-fotolari` **0 → 1** · kayıt dosyayı gösteriyor · dosya gerçekten orada · kusur **1 iş emri** açtı |
+| **4 RED** | 5 MB üstü → `cok_buyuk` · `text/plain` → `tip_yasak` · `image/heic` → `tip_yasak` · fotoğrafsız kusur → `kanit_yok` |
+| **Red sonrası** | 🔴 dosya sayısı **1 → 1** — dördü de dosya bırakmadı |
+| **Yetim testi** | `yaz` bilerek null → `dosyaTemizlendi:true` · dosya sayısı **1 → 1** |
+| **Kayıt silme** | vardiya + 2 fotoğraf → sil → satırlar cascade ile gitti · 🔴 **dosyalar da gitti (2 → 0)** · ikisi de Storage'da yok |
+| **Temizlik** | test formu/maddesi/dosyaları silindi · 🔴 **Storage temiz (0 · 0)** |
+
+Hiçbir kalıcı iz bırakılmadı; HAK61 ve Sendigo'ya **dokunulmadı** (betik proje
+referansını doğrulayıp galzura-demo değilse çalışmayı reddediyor).
+
+## B.6 Açık kalanlar
+
+| # | Konu | Durum |
+|---|---|---|
+| 1 | **Migration 098** | ⏳ **HİÇBİR KİRACIDA ÇALIŞTIRILMADI** — bu ağaçta DDL kanalı yok (PostgREST yalnız veri). Üç kiracıda da hız sınırı **fail-open** çalışıyor, yani bugünkü durum. Çalıştırılması gereken: `db/migrations/098_yukleme_hiz_siniri.sql` (yeni kiracı kurulum SQL'inde zaten var). |
+| 2 | **Takograf yükleme** | Çekirdeğe bağlanmadı — **gerekçeli istisna**, muhafızda yazılı. Yol deseni (`yyyy/mm/uuid.ddd`, kişi klasörü YOK), MIME ve SHA256 tekilliği farklı. Bedeli açık: o yolda **yetim koruması yok**. Volkan'ın sıralamasında **üçüncü**. |
+| 3 | **Masraf / yakıt / bakım fişi** | Modüller kapalı; uç yazılmadı (Karar 4: kuyruğun sonu). Panel yolları yine de çekirdeğe bağlandı — yetim koruması ve hız sınırı **onlarda da geçerli**. |
+| 4 | **Teslimat foto ucu canlıda ölçülmedi** | Kod yazıldı, build'e girdi, ama galzura-demo'da **hiç sefer/durak/teslimat kaydı yok** (`teslimatlar` = 0 satır). Test verisi üretmek sefer + durak + kanıt zinciri kurmayı gerektiriyordu; DVIR yolu aynı çekirdeği kullandığı için ölçüm oradan alındı. |
+| 5 | **Yetim tarayıcı** | Yok. Bugünkü kapılar YENİ yetim üretilmesini engelliyor; GEÇMİŞTE birikmiş dosyalar (varsa) taranmıyor. Ayrı bir bakım işi. |
+| 6 | **Personel belgesi** | Karar 2 gereği **kapsam dışı**. Envanterdeki #31 "ekran işi" olarak yeniden sınıflandırılmalı (mobil CC'ye not). |
+| 7 | **Saklama cron'una dosya adımı** | **Yapılmadı ve yapılamadı:** saklama katmanı (090) yalnız `device_telemetry` + `driver_locations` kapsıyor (`HAM_TABLOLAR`), ikisinde de dosya yok. Dosya adımı eklemek, saklama kapsamını genişletmek demek — fotoğraflar için saklama süresi kararı gerekir. **Volkan'ın kararı bekliyor.** |
+| 8 | **064'teki RLS kuralı fiilen ölü — 16 tablo sapmada** | `064_customer_zone_visits.sql:124` "Kasadaki kural (17 Tem): yeni migration'da RLS zorunlu" diyor, ama 064'ten sonra tablo yaratan **086/088/089/090/091/098'in hiçbiri RLS açmadı (16 tablo)**; şemadaki 77 tablodan yalnız 2'sinde RLS açık (`idle_episodes`, `zone_visits`) ve ikisinin de policy'si yok. Güvenlik etkisi **yok** — erişimi RLS değil GRANT kapatıyor (`anon`/`authenticated` hiçbir tabloda hak taşımıyor, depoda `ANON_KEY` geçen satır yok, tek istemci `lib/supabase.ts` service_role). Karar 16.09.2026: **099 yapılmadı**, `upload_rate` olduğu gibi birleştirildi; tutarlılık istenirse 66 tabloyu kapsayan ayrı temizlik işi, tek atımlık yama değil. |
+
+
+## 7. Kararlar — Volkan, 03.09.2026 ✅
+
+| # | Karar | Uygulandı mı |
+|---|---|---|
+| 1 | **Tek aşama** — dosya + veri tek multipart istekte | ✅ iki uç da öyle |
+| 2 | Personel belgesi **KAPSAM DIŞI** (özel nitelikli veri; saklama/silme/erişim politikası gerekiyor, store öncesi ayrı tur) | ✅ yapılmadı · envanterde #31 "ekran işi" olarak yeniden sınıflandırılmalı |
+| 3 | Yetim temizliği **BU TURDA**, ortak çekirdekte, panel de kazansın | ✅ üç kapı (§ B.2) · panel yolları da bağlandı |
+| 4 | Sıra: **teslimat + DVIR fotoğrafı** · masraf/yakıt sonda · takograf üçüncü | ✅ ikisi yazıldı · takograf istisna (§ B.6/2) |
+| 5 | **Kişi başına dakikada 10** yükleme | ✅ 098 + `HIZ_TAVAN=10` · ⏳ migration çalıştırılmadı |
+| 6 | Modül bayrakları **kapalı sayılacak**, doğrulanmadı | ✅ masraf/yakıt ucu yazılmadı |
+
+⚠️ **Karar 3'ün bir parçası yapılamadı:** "saklama cron'una dosya adımı" —
+saklama katmanı dosya taşıyan hiçbir tabloya dokunmuyor (§ B.6/7).

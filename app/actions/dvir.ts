@@ -4,11 +4,11 @@ import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireWorker, requireFleetView } from "@/lib/session";
 import { getFleetScope, UNRESTRICTED } from "@/lib/fleet-scope";
-import { uploadReceipt, signedReceiptUrls } from "@/lib/storage";
+import { signedReceiptUrls } from "@/lib/storage";
+import { dvirFormuGonder } from "@/lib/dvir-submit";
 import {
   listDvirMaddeleri,
   upsertDvirMadde,
-  createDvirForm,
   listDvirByVehicle,
   listDvirByWorker,
   iptalDvirForm,
@@ -94,13 +94,6 @@ export async function getDvirBaslangic(tur: "once" | "sonra"): Promise<DvirBasla
  */
 export async function dvirFormGonder(formData: FormData): Promise<DvirSonucu> {
   const session = await requireWorker();
-  const vehicleId = String(formData.get("vehicleId") ?? "");
-  const tur = String(formData.get("tur") ?? "once") as "once" | "sonra";
-
-  const araclar = await soforunAraclari(session.worker_id!);
-  if (!araclar.some((a) => a.id === vehicleId)) {
-    return { ok: false, hata: "arac_senin_degil" };
-  }
 
   let yanitlar: YanitGirdi[];
   try {
@@ -108,28 +101,14 @@ export async function dvirFormGonder(formData: FormData): Promise<DvirSonucu> {
   } catch {
     return { ok: false, hata: "madde_yok" };
   }
-  if (yanitlar.length === 0) return { ok: false, hata: "madde_yok" };
 
   // Kusurlu maddelerin fotoğrafları — her biri ayrı dosya alanında.
+  const fotograflar = new Map<string, File>();
   for (const y of yanitlar) {
-    if (y.durum !== "kusurlu") continue;
-    const dosya = formData.get(`foto_${y.maddeId}`) as File | null;
-    if (!dosya || dosya.size === 0) return { ok: false, hata: "kanit_yok", mesaj: y.maddeId };
-    const up = await uploadReceipt(KOVA, session.worker_id!, dosya);
-    if (!up.ok) return { ok: false, hata: "hata", mesaj: up.error };
-    y.fotoYolu = up.path;
+    if (y?.durum !== "kusurlu") continue;
+    const f = formData.get(`foto_${y.maddeId}`);
+    if (f instanceof File) fotograflar.set(y.maddeId, f);
   }
-
-  // ODOMETRE: aracın son telemetri okuması (72 saatten taze).
-  const { data: odo } = await supabaseAdmin
-    .from("device_telemetry")
-    .select("odometer_km")
-    .eq("vehicle_id", vehicleId)
-    .not("odometer_km", "is", null)
-    .gte("recorded_at", new Date(Date.now() - 72 * 3600_000).toISOString())
-    .order("recorded_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
 
   const sayi = (v: FormDataEntryValue | null) => {
     if (v === null) return null;
@@ -137,22 +116,43 @@ export async function dvirFormGonder(formData: FormData): Promise<DvirSonucu> {
     return Number.isFinite(n) ? n : null;
   };
 
-  const r = await createDvirForm({
-    vehicleId,
-    workerId: session.worker_id!,
+  /**
+   * GÖVDE lib/dvir-submit.ts'TE — MOBİLLE TEK KAYNAK (03.09.2026).
+   *
+   * Buradan çıkarılmasının sebebi mobil `POST /api/mobile/dvir` ucunun aynı
+   * formu yazması. Taşınırken İKİ KUSUR da kapandı:
+   *   • yetim dosya — `createDvirForm` düştüğünde yüklenen N fotoğrafın hepsi
+   *     Storage'da kalıyordu; artık `coklaYukleVeYaz` hepsini geri alıyor.
+   *   • odometre okuması yükleme SONRASINA kalmıştı; artık kayıt yazımıyla
+   *     aynı adımda.
+   *
+   * SÖZLEŞME DEĞİŞMEDİ: aynı hata anahtarları (`arac_senin_degil`,
+   * `madde_yok`, `kanit_yok`, `tablo_yok`, `hata`) aynı sırayla dönüyor.
+   */
+  const r = await dvirFormuGonder(session.worker_id!, {
+    vehicleId: String(formData.get("vehicleId") ?? ""),
+    tur: (String(formData.get("tur") ?? "once") as "once" | "sonra"),
     seferId: (formData.get("seferId") as string) || null,
-    tur,
-    odometreKm: odo ? Number((odo as { odometer_km: number }).odometer_km) : null,
     latitude: sayi(formData.get("lat")),
     longitude: sayi(formData.get("lng")),
     dogrulukM: sayi(formData.get("accuracy")),
     yanitlar,
+    fotograflar,
   });
-  if (!r.ok) return { ok: false, hata: r.sebep === "cakisma" ? "hata" : r.sebep, mesaj: r.mesaj };
 
-  await audit(session.worker_id ?? null, "create", `dvir:${r.veri.formId}`);
+  if (!r.ok) {
+    // Yükleme kaynaklı sebepler panelin sözlüğünde yok; hepsi "hata" olur ve
+    // ayrıntı `mesaj`da taşınır (form ekranı onu gösteriyor).
+    const panelSebepleri = ["arac_senin_degil", "madde_yok", "kanit_yok", "tablo_yok", "hata"];
+    const hata = panelSebepleri.includes(r.sebep)
+      ? (r.sebep as Extract<DvirSonucu, { ok: false }>["hata"])
+      : "hata";
+    return { ok: false, hata, mesaj: r.mesaj ?? (hata === "hata" ? r.sebep : undefined) };
+  }
+
+  await audit(session.worker_id ?? null, "create", `dvir:${r.formId}`);
   revalidatePath("/panel/kontrol");
-  return { ok: true, formId: r.veri.formId, kusur: r.veri.kusur, isEmri: r.veri.isEmri };
+  return { ok: true, formId: r.formId, kusur: r.kusur, isEmri: r.isEmri };
 }
 
 // ── OKUMA ─────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 --  HAK61 — TEK PARÇA KURULUM SQL'İ
---  hak-transport-takip · şema 001 → 089 · üreten: scripts/gen-install-sql.mjs
+--  hak-transport-takip · şema 001 → 098 · üreten: scripts/gen-install-sql.mjs
 -- ═══════════════════════════════════════════════════════════════════════════
 --
 --  NE İŞE YARAR
@@ -9184,6 +9184,1958 @@ notify pgrst, 'reload schema';
 -- MEVCUT VERİYE ETKİSİ: sıfır. Araçlara varsayılanı bugünkü davranışla AYNI
 -- olan bir kolon eklendi; hiçbir sayı değişmez.
 -- =====================================================================
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  090_saklama_politikasi.sql                                         ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 / Galzura Fleet — Migration 090 (SAKLAMA: UYARI + ELLE SİLME)
+-- =====================================================================
+-- Additive + idempotent. Supabase SQL Editor'da çalıştırın.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔴 BU MIGRATION HİÇBİR OTOMATİK SİLME KURMAZ
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- Sistem **yalnız hesaplar ve UYARIR**. Silmeye bir insan karar verir,
+-- /admin/saklama ekranından, aralığı kendisi seçerek, çift onayla.
+--
+-- Neden: saklama süresi ve silme kararı **veri sorumlusunun** (müşterinin)
+-- kararıdır; Galzura veri İŞLEYENDİR. Ürünün bir kiracının verisini kendi
+-- takvimine göre silmesi, işleyenin sorumlu yerine karar vermesi olurdu.
+-- Gece koşan iş "şu kadar satırınız eşiği geçti" der ve durur.
+--
+-- Bu yüzden burada `silme_acik` diye bir anahtar YOK, gün sayısına göre
+-- silen bir fonksiyon YOK. Silme fonksiyonları ARALIK alır ve yalnız
+-- ekrandan, denetim izi yazılarak çağrılır.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔴 EŞİK DEĞERLERİ BU MIGRATION'DA UYDURULMUYOR
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- `saklama_esikleri` tablosu KURULUR ama **BOŞ BIRAKILIR**. Yasal eşikler
+-- ayrı bir araştırma turuyla, kaynak linki ve doğrulanma tarihiyle
+-- doldurulacak. Uydurma bir gün sayısı DACH müşterisine giderse sorumluluk
+-- doğar; ürün "eşik doğrulanmadı" demeyi, yanlış bir sayı demeye tercih eder.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- ÖLÇÜM 1 — BUGÜN POLİTİKA YOK (HAK61 canlı, 26.08.2026)
+-- ═══════════════════════════════════════════════════════════════════════
+--
+--   device_telemetry : 1.611.074 satır · en eski kayıt 13.07.2026 = 44 gün
+--
+-- 44 gün bir POLİTİKA değil bir TESADÜF: entegrasyon o gün başladı. Hiçbir
+-- mekanizma bu sayının 400 güne çıkmasını engellemiyor ve kimse haberdar
+-- olmuyor. Bu migration'ın asıl işi **görünürlük**.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔴 ÖLÇÜM 2 — GÜNLÜK ÖZET YANLIŞ SAYI ÜRETİYOR, AYLIK ÜRETMİYOR
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- buildFuelReport'un 28 günlük gerçek cevabı 2.602,6 L. Aynı pencere
+-- parçalara bölünüp toplandığında (HAK61 canlı):
+--
+--     parça |  toplam L | sapma
+--     ------+-----------+-------
+--        1g |    3009,9 | +15,6%   ← GÜNLÜK ÖZET
+--        7g |    2714,0 |  +4,3%
+--       28g |    2602,5 |  -0,0%   ← AYLIK ÖZET
+--
+-- (14 günlük ikinci ölçüm: gerçek 1.194,98 L, günlük toplam 1.540,1 L = +%28,9)
+--
+-- SEBEP: yakıt motoru (027 + 052) ardışık okuma DİZİSİ üzerinde çalışıyor —
+-- 30 satırlık de-glitch penceresi, 15 dakikalık seri birleştirme. Gün sınırı
+-- diziyi kesiyor; gece yarısını aşan dolum iki kez sayılıyor.
+--
+-- 🔑 KARAR: ÖZET **AYLIK**. Canlıdaki `daily_vehicle_metrics` (20 satır, TEK
+-- gün, yazan/okuyan kod yok) bu iş için YANLIŞ ŞEKİL; bu migration ona
+-- DOKUNMUYOR.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔴 ÖLÇÜM 3 — SİLME HANGİ YÜZEYİ BOZAR
+-- ═══════════════════════════════════════════════════════════════════════
+--
+--   doğru çalışır : Mevzuat motoru · Bölge ziyaretleri (zone_visits KALICI)
+--   boşalır       : Rota geçmişi (KURTARILAMAZ — özette lat/lon yok, bilinçli)
+--   sessizce yanlış: Yakıt · Maliyet · CO₂ · Kârlılık · Skor(payda) ·
+--                    Haftalık K3 sessiz_arac · Sessiz cihaz alarmı
+--
+-- Bu yüzden ELLE silme bile ön koşulsuz değildir: aylık özet yazılmadan,
+-- vardiya km yargısı dondurulmadan ve cihaz ömür izi çıkarılmadan bir aralık
+-- silinemez (bkz. lib/saklama.ts silmeKapisi).
+--
+-- ═══ RLS ═══
+-- Kapalı — şemanın geri kalanıyla tutarlı. Yalnız service-role yazar.
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ═════════════════════ 1 · KİRACI UYARI AYARI ══════════════════════════
+
+create table if not exists public.tenant_saklama (
+  -- 076/089'daki desen: tek satır, sabit anahtar.
+  id text primary key default 'singleton' check (id = 'singleton'),
+
+  /**
+   * UYARI EŞİĞİ (gün) — kiracının kendi hedefi.
+   *
+   * ⚠️ ADI BİLİNÇLİ `uyari_gun`, `saklama_gun` DEĞİL: bu sayı hiçbir şey
+   * silmez. "Bu kadar günü geçen ham satırınız var" uyarısının çıpasıdır.
+   * Silme kararı ve zamanı veri sorumlusundadır.
+   *
+   * Varsayılan 90: CNIL'in ham konum için söylediği 2 ayın bir ay üstü,
+   * cezalandırılmış 180 günün yarısı (İtalya/Garante 01/2025, 50.000 €),
+   * Almanya'nın orantısız bulduğu 150 ve 400 günün çok altı. Tam gerekçe
+   * docs/SAKLAMA-POLITIKASI.md'de.
+   *
+   * ⚠️ Bu 90, `saklama_esikleri`ndeki YASAL çıpa DEĞİLDİR. Yasal çıpa ayrı
+   * tabloda durur ve bugün BOŞTUR (bkz. §3).
+   */
+  uyari_gun integer not null default 90
+    check (uyari_gun between 1 and 3650),
+
+  /**
+   * HANGİ ÜLKENİN YASAL ÇIPASI GÖSTERİLSİN.
+   *
+   * `saklama_esikleri` içinde bu ülkeye ait satır yoksa ekran "yasal çıpa
+   * doğrulanmadı" der ve HİÇBİR SAYI göstermez. Varsayılan 'AT' bir
+   * ÖLÇÜ değil, bir ARAMA ANAHTARIDIR — dağıtım Avusturya'da.
+   */
+  ulke_kodu text not null default 'AT' check (ulke_kodu ~ '^[A-Z]{2}$'),
+
+  /** Kiracının uyarı eşiğini neden böyle seçtiği. Serbest metin. */
+  gerekce text,
+
+  updated_at timestamptz not null default now(),
+  updated_by uuid references public.workers(id) on delete set null
+);
+
+comment on table public.tenant_saklama is
+  'Saklama UYARI ayarı (090). uyari_gun hiçbir şey SİLMEZ — uyarının çıpasıdır. Silme kararı veri sorumlusunda (müşteri); Galzura veri işleyendir.';
+
+comment on column public.tenant_saklama.uyari_gun is
+  'Uyarı eşiği (gün). SİLMEZ. Yasal çıpa ayrı tabloda (saklama_esikleri) ve bugün BOŞ.';
+
+insert into public.tenant_saklama (id) values ('singleton') on conflict (id) do nothing;
+
+-- ═════════════════════ 2 · VERİ KATEGORİLERİ ═══════════════════════════
+
+/**
+ * HER TABLO/KOLON ÜÇ KATEGORİDEN BİRİNE DÜŞER.
+ *
+ *   'kisisel'       → uyarı çıkar, ELLE silinebilir
+ *   'arac'          → serbest, uyarı çıkmaz
+ *   'yasal_zorunlu' → SİLİNEMEZ; arayüz silme seçeneğini GÖSTERMEZ
+ *
+ * ═══ HUKUKİ DAYANAK — AYRIM "ARAÇ MI ŞOFÖR MÜ" DEĞİL ═══
+ *
+ * GPS izi hukuken ŞOFÖRÜN kişisel verisidir, aracın değil. Aracın firmaya
+ * ait olması bunu DEĞİŞTİRMEZ. Doğru soru "o an araçta kim vardı": bir konum
+ * dizisi, o dizideki kişinin nerede olduğunu, ne zaman durduğunu, ne kadar
+ * çalıştığını anlatır. Bu yüzden `device_telemetry` 'arac' değil 'kisisel'.
+ *
+ * ⚠️ ARAYÜZ BU TABLOYU OKUR. 'yasal_zorunlu' bir satır için silme düğmesi
+ * render EDİLMEZ — "silme denendi ve reddedildi" değil, "seçenek hiç yok".
+ * Reddetmek bir hatadır ve hata mesajı okunmayabilir; göstermemek bir
+ * tasarımdır.
+ */
+create table if not exists public.veri_kategorileri (
+  tablo_adi text not null,
+  -- NULL = tablonun TAMAMI. Dolu = yalnız o kolon.
+  kolon_adi text,
+  kategori text not null check (kategori in ('kisisel', 'arac', 'yasal_zorunlu')),
+  /** Bu sınıflandırmanın NEDEN böyle olduğu. Boş bırakılamaz. */
+  gerekce text not null,
+  guncellendi_at timestamptz not null default now()
+);
+
+comment on table public.veri_kategorileri is
+  'Veri kategorilendirmesi (090): kisisel | arac | yasal_zorunlu. Arayüz bunu okur; yasal_zorunlu satır için silme seçeneği RENDER EDİLMEZ.';
+
+-- Tablo geneli satırlarda kolon NULL olduğu için basit UNIQUE yetmez.
+create unique index if not exists uq_veri_kategorileri
+  on public.veri_kategorileri (tablo_adi, coalesce(kolon_adi, '*'));
+
+/**
+ * BAŞLANGIÇ SINIFLANDIRMASI.
+ *
+ * ⚠️ Bunlar YASAL EŞİK DEĞİL, ürünün kendi sınıflandırmasıdır ve gerekçesi
+ * her satırda yazılı. Yasal SÜRELER bu tabloda DEĞİL, `saklama_esikleri`nde
+ * ve orası bugün BOŞ.
+ */
+insert into public.veri_kategorileri (tablo_adi, kolon_adi, kategori, gerekce) values
+  ('device_telemetry', null, 'kisisel',
+   'GPS izi hukuken ŞOFÖRÜN kişisel verisi; aracın firmaya ait olması bunu değiştirmez. Belirleyici soru: o an araçta kim vardı.'),
+  ('driver_locations', null, 'kisisel',
+   'Telefon GPS kalıntısı. Artık yazılmıyor ama içindeki geçmiş konum aynı hukuki kategoride.'),
+  ('idle_episodes', null, 'kisisel',
+   'Rölanti epizodu bir konum+süre kaydı; hangi şoförün nerede ne kadar beklediğini anlatır.'),
+  ('zone_visits', null, 'kisisel',
+   'Bölge ziyareti = kimin nerede olduğu. Ham izden TÜRETİLMİŞ ama aynı bilgiyi taşır.'),
+  ('vehicles', null, 'arac',
+   'Plaka, filo, yakıt türü, sayaç — araca ait teknik künye. Kişi belirtmez.'),
+  ('vehicle_month_metrics', null, 'arac',
+   'Aylık ARAÇ toplamı (090). Kişi ekseni yok, gün/saat kırılımı yok; kimin nerede olduğunu anlatmaz.'),
+  ('vehicle_telemetry_lifetime', null, 'arac',
+   'Aracın ilk/son telemetri ANI — cihazın yaşadığına dair iki damga. Konum içermez.'),
+  ('time_entries', null, 'yasal_zorunlu',
+   'AZG/ArbZG çalışma süresi kaydı. İş müfettişliğinin okuduğu belge; saklama süresi iş hukukunun konusudur, bu ekranın değil.'),
+  ('teslimat_kanitlari', null, 'yasal_zorunlu',
+   'ePOD teslimat kanıtı — HK080 tetikleyicisiyle DEĞİŞMEZ. CMR anlaşmazlığında kanıt olan kayıt budur.'),
+  ('shift_edit_log', null, 'yasal_zorunlu',
+   'Vardiya düzeltme denetim izi (087). Denetim izinin silinebilmesi, izin kendisini anlamsız kılar.'),
+  ('security_log', null, 'yasal_zorunlu',
+   'Oturum/eylem izi (045). Aynı gerekçe: iz silinebiliyorsa iz değildir.')
+on conflict (tablo_adi, coalesce(kolon_adi, '*')) do nothing;
+
+-- ═════════════════════ 3 · ÜLKE BAZLI YASAL EŞİKLER ════════════════════
+
+/**
+ * 🔴 BU TABLO BİLEREK BOŞ KURULUR.
+ *
+ * Yasal eşikler ayrı bir araştırma turuyla, HER SATIR İÇİN kaynak linki ve
+ * doğrulanma tarihiyle doldurulacak. Uydurma bir gün sayısı DACH müşterisine
+ * giderse sorumluluk doğar.
+ *
+ * `esik_gun` NULL olabilir ve bu bir EKSİKLİK DEĞİL, bir BEYANDIR:
+ * "bu ülke/veri türü için doğrulanmış bir çıpamız yok". Arayüz bu durumda
+ * hiçbir sayı göstermez, "yasal çıpa doğrulanmadı" der.
+ *
+ * ⚠️ `dogrulanma_tarihi` olmadan bir satır anlamsızdır: mevzuat değişir ve
+ * "ne zaman bakıldı" sorusu denetimde sorulur. Bu yüzden esik_gun doluysa
+ * dayanak, kaynak ve tarih de dolu olmak ZORUNDA (CHECK ile).
+ */
+create table if not exists public.saklama_esikleri (
+  ulke_kodu text not null check (ulke_kodu ~ '^[A-Z]{2}$'),
+  /** 'ham_konum' · 'calisma_suresi' · 'teslimat_kaniti' … serbest sözlük. */
+  veri_turu text not null,
+
+  /** ⚠️ NULL = DOĞRULANMIŞ ÇIPA YOK. 0 değil, boş değil — bilinmiyor. */
+  esik_gun integer check (esik_gun is null or esik_gun >= 0),
+
+  yasal_dayanak text,
+  kaynak_url text,
+  dogrulanma_tarihi date,
+
+  primary key (ulke_kodu, veri_turu),
+
+  /**
+   * Bir sayı yazıldıysa nereden geldiği de yazılmak ZORUNDA. Kaynaksız bir
+   * eşik, uydurma bir eşiktir.
+   */
+  constraint saklama_esikleri_kaynakli check (
+    esik_gun is null
+    or (yasal_dayanak is not null and kaynak_url is not null and dogrulanma_tarihi is not null)
+  )
+);
+
+comment on table public.saklama_esikleri is
+  'Ülke bazlı yasal saklama çıpaları (090). BİLEREK BOŞ KURULUR — eşikler ayrı bir araştırma turuyla kaynaklı doldurulacak. esik_gun NULL = doğrulanmış çıpa YOK.';
+
+comment on column public.saklama_esikleri.esik_gun is
+  'NULL = doğrulanmış çıpa yok (0 DEĞİL). Doluysa yasal_dayanak + kaynak_url + dogrulanma_tarihi de zorunlu (CHECK).';
+
+-- ⚠️ SATIR EKLENMİYOR. Bu boşluk bilinçlidir.
+
+-- ═════════════════════ 4 · ELLE SİLME DENETİM İZİ ══════════════════════
+
+/**
+ * HER ELLE SİLME BURAYA YAZILIR — silmeden ÖNCE.
+ *
+ * Kim, ne zaman, hangi tablo, hangi aralık, kaç satır, hangi sebeple.
+ * Sebep zorunlu: "neden sildiniz" sorusunun cevabı ürünün içinde durmalı,
+ * birinin hafızasında değil.
+ *
+ * ⚠️ Bu tablo `veri_kategorileri`nde 'yasal_zorunlu' — kendisi silinemez.
+ */
+create table if not exists public.saklama_silme_izi (
+  id uuid primary key default gen_random_uuid(),
+  silen_worker_id uuid references public.workers(id) on delete set null,
+  silindi_at timestamptz not null default now(),
+  tablo_adi text not null,
+  kategori text not null,
+  aralik_bas timestamptz not null,
+  aralik_bit timestamptz not null,
+  satir_sayisi bigint not null,
+  sebep text not null check (length(btrim(sebep)) >= 10),
+  /** Kullanıcının elle yazdığı onay metni — çift onayın ikinci ayağı. */
+  onay_metni text not null,
+  check (aralik_bit > aralik_bas)
+);
+
+comment on table public.saklama_silme_izi is
+  'Elle silme denetim izi (090). Her silme ÖNCE buraya yazılır: kim, ne zaman, hangi aralık, kaç satır, hangi sebeple. Kendisi yasal_zorunlu — silinemez.';
+
+create index if not exists idx_saklama_silme_izi_zaman
+  on public.saklama_silme_izi (silindi_at desc);
+
+insert into public.veri_kategorileri (tablo_adi, kolon_adi, kategori, gerekce) values
+  ('saklama_silme_izi', null, 'yasal_zorunlu',
+   'Silme denetim izinin kendisi. Silinebiliyorsa iz değildir.')
+on conflict (tablo_adi, coalesce(kolon_adi, '*')) do nothing;
+
+-- ═════════════════════ 5 · CİHAZ ÖMÜR İZİ ══════════════════════════════
+
+/**
+ * ARACIN İLK/SON TELEMETRİ ANI — ham satırlar silinse de yaşar.
+ *
+ * NEDEN: haftalık aksiyon kuralı K3 "sessiz araç" ve panodaki "sessiz cihaz"
+ * alarmı, aracın SON ham satırının yaşına bakıyor. Uzun süredir susmuş bir
+ * aracın tüm satırları silinince `son_kayit` NULL döner ve araç uyarı
+ * listesinden SESSİZCE DÜŞER — en çok ilgilenilmesi gereken araç görünmez
+ * olur. Tam tersi bir sonuç.
+ */
+create table if not exists public.vehicle_telemetry_lifetime (
+  vehicle_id uuid primary key references public.vehicles(id) on delete cascade,
+  ilk_kayit timestamptz,
+  son_kayit timestamptz,
+  toplam_satir bigint,
+  guncellendi_at timestamptz not null default now()
+);
+
+comment on table public.vehicle_telemetry_lifetime is
+  'Aracın ilk/son telemetri anı (090). Ham satırlar silinince "sessiz araç" uyarısının kaybolmaması için ham akıştan bağımsız tutulur.';
+
+-- ═════════════════════ 6 · AYLIK ÖZET ══════════════════════════════════
+
+/**
+ * AYLIK ARAÇ ÖZETİ — ham iz silindikten sonra raporun tek kaynağı.
+ *
+ * ⚠️ GRANÜLERLİK NEDEN AY: yukarıdaki ÖLÇÜM 2. Günlük özet yakıtı
+ * %15,6-28,9 şişiriyor; aylık parçanın sapması %0,0.
+ *
+ * 🔑 DEĞERLER NASIL ÜRETİLİR: raporun KENDİ motoru ayın tamamı için TEK
+ * pencere olarak çağrılır ve çıktısı olduğu gibi yazılır. Özet, raporun
+ * kendi cevabının dondurulmuş hâlidir — ikinci bir hesap değil.
+ *
+ * ⚠️ NE KURTARMAZ — dürüst liste:
+ *   · ROTA GEÇMİŞİ. lat/lon burada YOK ve olamaz: bir ayın konum dizisini
+ *     saklamak "ham izi sakla" demenin başka yolu olurdu.
+ *   · GÜN/SAAT KIRILIMI. Ay içi bir pencere özetten üretilemez.
+ *   · VARDİYA EKSENİ. Şoför km'si için ayrı dondurma var (§7).
+ *
+ * 🔑 Bu tablo `veri_kategorileri`nde 'arac': kişi ekseni ve gün kırılımı
+ * olmadığı için kimin nerede olduğunu anlatmaz.
+ */
+create table if not exists public.vehicle_month_metrics (
+  vehicle_id uuid not null references public.vehicles(id) on delete cascade,
+
+  -- Ayın İLK GÜNÜ. check ile zorlanıyor: yanlış granülerlikte satır yazılırsa
+  -- tablo sessizce gün-bazlı olur ve ÖLÇÜM 2'deki hata geri gelir.
+  ay date not null check (ay = date_trunc('month', ay)::date),
+
+  -- ── km (odometre açıklığı) ────────────────────────────────────────────
+  km numeric(12,2),
+  odometre_ilk numeric(12,2),
+  odometre_son numeric(12,2),
+
+  -- ── yakıt (raporun kendi çıktısı, ayın tamamı tek pencere) ────────────
+  litre numeric(12,2),
+  yuzde_tuketim numeric(10,2),
+  dolum_sayisi integer,
+  dolum_yuzde numeric(10,2),
+  dusus_sayisi integer,
+  dusus_yuzde numeric(10,2),
+  l_100km numeric(10,2),
+
+  -- ── güvenilirlik (ölçülemedi ≠ 0 için ŞART) ───────────────────────────
+  ornek_sayisi bigint,
+  yakit_ornek_sayisi bigint,
+  yakit_sifir_okuma bigint,
+  ilk_kayit timestamptz,
+  son_kayit timestamptz,
+  /**
+   * ⚠️ ÖLÇÜLEMEDİYSE SEBEBİ. NULL = ölçüldü.
+   * 'cihaz_yok' · 'yetersiz_okuma' · 'sensor_arizali' · 'odometre_yok'
+   * Bu kolon olmadan özet "0 L" ile "ölçülemedi"yi ayıramaz.
+   */
+  olculemedi_sebep text,
+
+  hesaplandi_at timestamptz not null default now(),
+  hesap_surumu text not null default '090.1',
+  /** Bu ayın ham satırları silindi mi? Silinmişse özet YENİDEN ÜRETİLEMEZ. */
+  ham_silindi_at timestamptz,
+
+  primary key (vehicle_id, ay)
+);
+
+comment on table public.vehicle_month_metrics is
+  'Aylık araç özeti (090) — ham iz silindikten sonraki tek kaynak. Granülerlik AY: günlük parçalama yakıtı %15,6-28,9 şişiriyor (ölçüldü), aylık parçanın sapması %0,0.';
+
+comment on column public.vehicle_month_metrics.olculemedi_sebep is
+  'NULL = ölçüldü. Dolu = bu araç/ay ölçülemedi ve SEBEBİ bu. "0" ile "bilinmiyor" bu kolonla ayrılır.';
+
+comment on column public.vehicle_month_metrics.ham_silindi_at is
+  'Bu ayın ham satırlarının silindiği an. Doluysa özet YENİDEN ÜRETİLEMEZ — üzerine yazılmasın.';
+
+create index if not exists idx_vmm_ay on public.vehicle_month_metrics (ay desc);
+
+-- ═════════════════════ 7 · VARDİYA KM DONDURMA ═════════════════════════
+
+/**
+ * VARDİYANIN KM ÖLÇÜM YARGISI — ham silinmeden ÖNCE dondurulur.
+ *
+ * NEDEN: lib/km-quality.ts iki kapıyla "bu vardiyanın km'si gerçekten 0 mı,
+ * yoksa ölçülemedi mi" diye soruyor ve İKİNCİ KAPI ham telemetriye bakıyor
+ * (vardiya penceresinde speed_kmh >= 5 okuma var mı). Ham silinince kapı her
+ * sıfır-farklı vardiyayı "ölçülemedi"ye çevirir — sessizce, geriye dönük ve
+ * KULLANICI SEÇİMLİ aralıktaki Excel/PDF çıktısına kadar.
+ *
+ * ⚠️ SIRA ŞARTI: bu kolon, silmeden ÖNCE doldurulmalıdır. Sonra doldurulursa
+ * ham zaten gitmiş olur ve backfill her satıra sessizce "ölçülemedi" yazar —
+ * düzeltmek istediği hatayı kalıcılaştırır. Kod bu sırayı zorluyor: aralıkta
+ * dondurulmamış vardiya varsa silme REDDEDİLİR.
+ */
+alter table public.time_entries
+  add column if not exists km_dondu boolean;
+
+alter table public.time_entries
+  add column if not exists km_dondu_at timestamptz;
+
+comment on column public.time_entries.km_dondu is
+  'Ham silinmeden önce dondurulmuş km ölçüm yargısı (090). true = ölçüldü, false = ölçülemedi, NULL = henüz dondurulmadı.';
+
+-- ═════════════════════ 8 · ZAMAN İNDEKSİ ═══════════════════════════════
+
+/**
+ * BRIN — "kaç satırım eşiği geçti" sorusunun ucuz cevabı.
+ *
+ * ÖLÇÜLDÜ (26.08.2026): `recorded_at` üzerinde ÖNDE GELEN kolonlu indeks yok
+ * (var olanlar `(vehicle_id, recorded_at)` ya da kısmi). 1,6 milyon satırda
+ * `count(*) where recorded_at < x` ifade zaman aşımına (8 sn) takıldı.
+ *
+ * BRIN seçildi çünkü `recorded_at` append-only ve fiziksel sırayla neredeyse
+ * birebir artıyor — btree'nin onda biri yer kaplar ve aralık taraması için
+ * yeterli. Uyarı sayacı ve aralık silme ikisi de bunu kullanır.
+ */
+create index if not exists idx_device_telemetry_recorded_brin
+  on public.device_telemetry using brin (recorded_at);
+
+create index if not exists idx_driver_locations_recorded_brin
+  on public.driver_locations using brin (recorded_at);
+
+-- ═════════════════════ 9 · UYARI SAYACI ════════════════════════════════
+
+/**
+ * EŞİĞİ GEÇEN SATIR SAYISI — tablo tablo.
+ *
+ * Gece koşan iş bunu çağırır ve UYARI üretir. HİÇBİR ŞEY SİLMEZ.
+ *
+ * En eski kayıt da dönüyor: uyarı "kaç satır" demenin yanında "ne kadar
+ * eski" de demeli; 1.000 satır 91 günlük ise başka, 400 günlük ise başka bir
+ * cümledir.
+ */
+create or replace function public.saklama_eski_satirlar(p_kesim timestamptz)
+returns table (
+  tablo_adi text,
+  satir_sayisi bigint,
+  en_eski timestamptz
+)
+language sql
+stable
+as $$
+  select 'device_telemetry'::text, count(*), min(recorded_at)
+  from public.device_telemetry where recorded_at < p_kesim
+  union all
+  select 'driver_locations'::text, count(*), min(recorded_at)
+  from public.driver_locations where recorded_at < p_kesim
+$$;
+
+-- ═════════════════════ 10 · ARALIK SİLME ═══════════════════════════════
+
+/**
+ * 🔴 ARALIK ALIR, GÜN SAYISI ALMAZ — VE BU BİLİNÇLİ.
+ *
+ * "Şu kadar günden eskiyi sil" imzası, çağıranın takvimine göre çalışan bir
+ * otomatik temizliği DAVET EDER. Bu üründe silme kararı veri sorumlusunun
+ * ve her silme bir İNSAN SEÇİMİDİR: hangi hafta, hangi ay, hangi iki tarih
+ * arası. Fonksiyon o seçimi birebir uygular, kendi başına bir "eski" tanımı
+ * üretmez.
+ *
+ * ⚠️ Ön koşullar (özet yazıldı mı, km donduruldu mu, kategori silinebilir mi,
+ * çift onay verildi mi) UYGULAMA katmanında (lib/saklama-db.ts). Burada
+ * zorlanmıyor çünkü SQL katmanı "kim onayladı"yı bilemez; iki yerde iki
+ * yarım kapı olmasındansa tek yerde tam kapı olsun.
+ *
+ * ctid ile parça silme: tek `delete` 1,6 milyon satırda ifade zaman aşımı
+ * yer ve HİÇBİR ŞEY silinmez (054'ün dersi).
+ */
+create or replace function public.purge_telemetry_range(
+  p_from timestamptz,
+  p_to timestamptz,
+  p_limit int default 20000
+)
+returns bigint
+language plpgsql
+volatile
+as $$
+declare
+  v_deleted bigint;
+begin
+  if p_from is null or p_to is null or p_to <= p_from then
+    raise exception 'gecersiz_aralik: p_from=% p_to=%', p_from, p_to;
+  end if;
+
+  with victims as (
+    select ctid
+    from public.device_telemetry
+    where recorded_at >= p_from
+      and recorded_at <  p_to
+    order by recorded_at
+    limit greatest(coalesce(p_limit, 20000), 1)
+  )
+  delete from public.device_telemetry dt
+  using victims v
+  where dt.ctid = v.ctid;
+
+  get diagnostics v_deleted = row_count;
+  return v_deleted;
+end;
+$$;
+
+/**
+ * driver_locations ikizi.
+ *
+ * ⚠️ ŞEMA CANLIDA DOĞRULANDI (26.08.2026): zaman kolonu `recorded_at`
+ * (`created_at` bu tabloda YOK). Yine de AYRI fonksiyon: tek fonksiyona
+ * tablo adı parametresi geçirmek (dinamik SQL) silme yüzeyini genişletirdi
+ * ve "hangi tablo silinecek" kararını çağırana bırakırdı.
+ *
+ * Bugünkü hacim ihmal edilebilir (~81 satır) — fonksiyon miktar için değil,
+ * POLİTİKA BÜTÜNLÜĞÜ için var: konum verisi hangi tabloda durursa dursun
+ * aynı kategoridedir.
+ */
+create or replace function public.purge_driver_locations_range(
+  p_from timestamptz,
+  p_to timestamptz,
+  p_limit int default 20000
+)
+returns bigint
+language plpgsql
+volatile
+as $$
+declare
+  v_deleted bigint;
+begin
+  if p_from is null or p_to is null or p_to <= p_from then
+    raise exception 'gecersiz_aralik: p_from=% p_to=%', p_from, p_to;
+  end if;
+
+  with victims as (
+    select ctid
+    from public.driver_locations
+    where recorded_at >= p_from
+      and recorded_at <  p_to
+    order by recorded_at
+    limit greatest(coalesce(p_limit, 20000), 1)
+  )
+  delete from public.driver_locations dl
+  using victims v
+  where dl.ctid = v.ctid;
+
+  get diagnostics v_deleted = row_count;
+  return v_deleted;
+end;
+$$;
+
+-- ═════════════════════ 11 · ÖZET YARDIMCILARI ══════════════════════════
+
+/**
+ * AYLIK UÇ DEĞERLER — özet üretiminin SQL ayağı.
+ *
+ * Yakıt/tüketim raporun kendi motorundan alınıyor (uygulama katmanı); burada
+ * YALNIZ odometre açıklığı ve sayım/uç bilgileri var, çünkü bunlar saf
+ * SQL'de doğru ve ucuz. İkisini karıştırmamak bilinçli.
+ */
+create or replace function public.telemetry_month_spans(
+  p_from timestamptz,
+  p_to timestamptz
+)
+returns table (
+  vehicle_id uuid,
+  ay date,
+  ornek_sayisi bigint,
+  ilk_kayit timestamptz,
+  son_kayit timestamptz,
+  odometre_ilk numeric,
+  odometre_son numeric,
+  yakit_ornek_sayisi bigint,
+  yakit_sifir_okuma bigint
+)
+language sql
+stable
+as $$
+  select
+    dt.vehicle_id,
+    date_trunc('month', dt.recorded_at)::date as ay,
+    count(*)                                   as ornek_sayisi,
+    min(dt.recorded_at)                        as ilk_kayit,
+    max(dt.recorded_at)                        as son_kayit,
+    min(dt.odometer_km) filter (where dt.odometer_km is not null)::numeric as odometre_ilk,
+    max(dt.odometer_km) filter (where dt.odometer_km is not null)::numeric as odometre_son,
+    count(*) filter (where dt.fuel_level_pct is not null)                  as yakit_ornek_sayisi,
+    count(*) filter (where dt.fuel_level_pct = 0)                          as yakit_sifir_okuma
+  from public.device_telemetry dt
+  where dt.recorded_at >= p_from
+    and dt.recorded_at <  p_to
+  group by 1, 2
+$$;
+
+/**
+ * CİHAZ ÖMÜR İZİNİ TAZELE — silmeden ÖNCE çağrılır.
+ *
+ * `greatest`/`least` ile birleştirme: ham kısmen silinmiş olsa bile daha eski
+ * bir `ilk_kayit` KAYBEDİLMEZ, daha yeni bir `son_kayit` GERİ GİTMEZ. Yani
+ * fonksiyon defalarca çalıştırılabilir ve her koşuda doğrudur.
+ */
+create or replace function public.refresh_telemetry_lifetime()
+returns bigint
+language plpgsql
+volatile
+as $$
+declare
+  v_rows bigint;
+begin
+  insert into public.vehicle_telemetry_lifetime (vehicle_id, ilk_kayit, son_kayit, toplam_satir, guncellendi_at)
+  select dt.vehicle_id, min(dt.recorded_at), max(dt.recorded_at), count(*), now()
+  from public.device_telemetry dt
+  group by dt.vehicle_id
+  on conflict (vehicle_id) do update set
+    ilk_kayit      = least(public.vehicle_telemetry_lifetime.ilk_kayit, excluded.ilk_kayit),
+    son_kayit      = greatest(public.vehicle_telemetry_lifetime.son_kayit, excluded.son_kayit),
+    toplam_satir   = excluded.toplam_satir,
+    guncellendi_at = now();
+
+  get diagnostics v_rows = row_count;
+  return v_rows;
+end;
+$$;
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- ÇALIŞTIRDIKTAN SONRA BEKLENEN HÂL (doğrulama sorguları):
+--
+--   select * from public.tenant_saklama;
+--   → 1 satır: singleton · uyari_gun=90 · ulke_kodu='AT' · gerekce=null
+--     ⚠️ `silme_acik` diye bir kolon YOK — otomatik silme YOK.
+--
+--   select count(*) from public.saklama_esikleri;
+--   → 0        ⚠️ BİLEREK BOŞ. Yasal eşikler ayrı araştırma turuyla gelecek.
+--
+--   select kategori, count(*) from public.veri_kategorileri group by 1;
+--   → arac 3 · kisisel 4 · yasal_zorunlu 5
+--
+--   select count(*) from public.saklama_silme_izi;
+--   → 0        (elle silme yapılmadı)
+--
+--   select proname from pg_proc where proname in
+--     ('purge_telemetry_range','purge_driver_locations_range',
+--      'saklama_eski_satirlar','telemetry_month_spans',
+--      'refresh_telemetry_lifetime');
+--   → 5 satır
+--     ⚠️ `purge_old_telemetry` LİSTEDE YOK ve olmamalı — o 054'ün
+--        (galzura-demo) fonksiyonu, bu migration ona DOKUNMAZ.
+--
+-- MEVCUT VERİYE ETKİSİ: **SIFIR SATIR SİLİNİR.** Bu migration tablo, indeks
+-- ve fonksiyon kurar. Silen tek yol /admin/saklama ekranıdır ve her çağrı
+-- saklama_silme_izi'ne yazılır.
+-- =====================================================================
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  091_takograf.sql                                                   ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 / Galzura Fleet — Migration 091 (TAKOGRAF: .ddd ARŞİVİ VE HAM VERİ)
+-- =====================================================================
+-- Additive + idempotent. Supabase SQL Editor'da çalıştırın.
+-- ⚠️ 090 (saklama politikası) ÖNCE çalıştırılmış olmalı — bu migration
+--    `veri_kategorileri` tablosuna satır ekliyor.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔴 ÜRÜNÜN SATIŞ VAADİ: DOSYA ARŞİVİ
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- Müşteri bugün .ddd dosyalarını kendi bilgisayarında bir klasörde tutuyor.
+-- Bu ürün o işi devralıyor: dosya Supabase Storage'da KALICI durur, denetimde
+-- oradan indirilir, indirilen bayt bayt ORİJİNALDİR.
+--
+-- Bunun şemadaki üç karşılığı:
+--   1. Dosya satırı DEĞİŞMEZ (HK091 tetikleyicisi, 080 deseni)
+--   2. `depo_yolu` ve `sha256` UPDATE ile DEĞİŞTİRİLEMEZ
+--   3. Ayrıştırma başarısız olsa bile satır ve dosya DURUR —
+--      `ayristirma_durumu='basarisiz'` yazılır, kayıt silinmez
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- ÖLÇÜMLER (kaynak: docs/TAKOGRAF-OLCUM.md, docs/TAKOGRAF-SERVIS.md)
+-- ═══════════════════════════════════════════════════════════════════════
+--
+--   Gerçek dosya boyutları  : kart 10,4-34,9 KB · araç ünitesi 96-155 KB
+--   Ayrıştırma (saf)        : 0,5-5,5 ms
+--   Uçtan uca (HTTP, sunucu): kart 53-62 ms · VU 121-144 ms
+--   → SENKRON ayrıştırma. Kuyruk gereksiz.
+--
+--   Bir VU dosyası 3.430 faaliyet satırı üretiyor (365 günlükte ≈13.000).
+--   ⚠️ Satır yazım süresi HENÜZ ÖLÇÜLMEDİ; `ayristirma_durumu` kolonu bu
+--   yüzden şemada duruyor — ölçüm ters çıkarsa asenkrona geçiş bir kod
+--   değişikliği olur, migration değil.
+--
+--   DETAILED_SPEED bloğu ayrıştırılmıyor: dosyanın %93,5'i ama ayrıştırma
+--   SÜRESİNE katkısı yok; kazanç JSON yükünde (2,15 MB → 131 KB).
+--   ⚠️ Dosya yine de TAM saklanıyor — atlanan yalnız ayrıştırma.
+--
+-- ═══ RLS ═══
+-- Kapalı — şemanın geri kalanıyla tutarlı. Yalnız service-role yazar.
+-- =====================================================================
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ═════════════════════ 1 · DOSYA KÜNYESİ ═══════════════════════════════
+
+create table if not exists public.takograf_dosyalari (
+  id uuid primary key default gen_random_uuid(),
+
+  /**
+   * DOSYA TÜRÜ.
+   *   'kart' — sürücü kartı (son 28 gün, şoförün kendi verisi)
+   *   'vu'   — araç ünitesi (son 365 gün, o araçta kimin sürdüğü)
+   *
+   * ⚠️ İKİSİ AYNI TABLODA, bilinçli: ikisi de aynı soruyu cevaplıyor —
+   * "kim, ne zaman, ne yaptı". Ayrı tablo her ekranı ve her sorguyu ikiye
+   * katlardı. Fark bu kolonda ve dolu olan alanlarda görünür.
+   */
+  tur text not null check (tur in ('kart', 'vu')),
+
+  -- ── ARŞİV (satış vaadinin kendisi) ────────────────────────────────────
+  depo_yolu text not null,
+  dosya_adi text not null,
+  bayt integer not null check (bayt > 0),
+
+  /**
+   * 🔑 AYNI DOSYA İKİ KEZ YÜKLENEMEZ.
+   *
+   * İkinci yükleme reddedilir ve ekran "bu dosya {tarih}'te {kişi}
+   * tarafından zaten yüklendi" der. Sessizce kabul etmek faaliyet
+   * satırlarını ikiye katlar ve her raporu bozar.
+   */
+  sha256 text not null unique check (length(sha256) = 64),
+
+  nesil text check (nesil in ('GEN1', 'GEN2', 'GEN2_V2', 'KARMA', 'BILINMIYOR')),
+
+  -- ── DOĞRULAMA (mühür) ─────────────────────────────────────────────────
+  /**
+   * ⚠️ ÜÇ DEĞER, ÜÇÜ DE FARKLI ŞEY:
+   *   'dogrulandi'     — denendi, TUTTU
+   *   'dogrulanamadi'  — denendi, TUTMADI ya da sertifika bulunamadı
+   *   'denenmedi'      — hiç denenmedi (servis erişilemedi vb.)
+   *
+   * "Doğrulanamadı" ile "doğrulanmadı" AYNI ŞEY DEĞİLDİR; ekran da bu
+   * ayrımı korur. Varsayılan 'denenmedi': henüz bir şey söylemedik.
+   *
+   * ⚠️ ÖLÇÜLDÜ (26.08.2026): kütüphane doğrulamayı bir DURUM olarak
+   * döndürmüyor, HATA fırlatıyor. Servis o hatayı yakalayıp bu üç değerden
+   * birine çeviriyor ve metnini `muhur_sebep`e yazıyor.
+   */
+  muhur_durumu text not null default 'denenmedi'
+    check (muhur_durumu in ('dogrulandi', 'dogrulanamadi', 'denenmedi')),
+  muhur_sebep text,
+
+  -- ── AYRIŞTIRMA ────────────────────────────────────────────────────────
+  /**
+   * 🔴 'basarisiz' DOSYANIN SİLİNECEĞİ ANLAMINA GELMEZ.
+   *
+   * Dosya kanunen saklanması gereken belgenin kendisidir; bizim
+   * ayrıştırıcımızın onu okuyamaması, müşterinin yasal kaydını yok etmek
+   * için sebep değildir. `ayristirici_surum` saklandığı için ayrıştırıcı
+   * güncellenince YENİDEN DENENEBİLİR.
+   *
+   * 'bekliyor' — servis erişilemedi, sonra denenecek
+   */
+  ayristirma_durumu text not null default 'bekliyor'
+    check (ayristirma_durumu in ('bekliyor', 'tamam', 'basarisiz')),
+  ayristirma_hata text,
+  ayristirici_surum text,
+
+  -- ── KÜNYE (ayrıştırmadan gelir; çözülemezse NULL) ─────────────────────
+  kart_no text,
+  arac_vin text,
+  arac_plaka text,
+
+  /**
+   * TÜRETİLMİŞ BAĞ — çözülebilirse.
+   *
+   * ⚠️ NULL bir hata değil: yüklenen dosya sistemde kayıtlı olmayan bir
+   * şoföre/araca ait olabilir (yeni işe giren, satılan araç). Ekran o zaman
+   * ham kart numarasını / VIN'i gösterir, uydurma bir eşleşme yapmaz.
+   */
+  worker_id uuid references public.workers(id) on delete set null,
+  vehicle_id uuid references public.vehicles(id) on delete set null,
+
+  donem_bas timestamptz,
+  donem_bit timestamptz,
+
+  -- ── İZ ────────────────────────────────────────────────────────────────
+  yukleyen_worker_id uuid references public.workers(id) on delete set null,
+  yuklendi_at timestamptz not null default now(),
+  guncellendi_at timestamptz not null default now()
+);
+
+comment on table public.takograf_dosyalari is
+  'Takograf .ddd arşivi (091). Dosya Storage''da KALICI durur; ayrıştırılamasa bile SİLİNMEZ. Satır DEĞİŞMEZ (HK091): depo_yolu, sha256, bayt, tur, yuklendi_at güncellenemez.';
+comment on column public.takograf_dosyalari.sha256 is
+  'Dosyanın SHA-256''sı. UNIQUE: aynı dosya iki kez yüklenemez, ikincisi reddedilir.';
+comment on column public.takograf_dosyalari.muhur_durumu is
+  'dogrulandi | dogrulanamadi | denenmedi. "Doğrulanamadı" (denendi, tutmadı) ile "denenmedi" AYNI ŞEY DEĞİLDİR.';
+comment on column public.takograf_dosyalari.ayristirma_durumu is
+  'bekliyor | tamam | basarisiz. "basarisiz" dosyanın silineceği anlamına GELMEZ — dosya durur, ayrıştırıcı güncellenince yeniden denenir.';
+
+create index if not exists idx_takograf_dosya_zaman
+  on public.takograf_dosyalari (yuklendi_at desc);
+create index if not exists idx_takograf_dosya_donem
+  on public.takograf_dosyalari (donem_bas, donem_bit);
+create index if not exists idx_takograf_dosya_worker
+  on public.takograf_dosyalari (worker_id) where worker_id is not null;
+create index if not exists idx_takograf_dosya_vehicle
+  on public.takograf_dosyalari (vehicle_id) where vehicle_id is not null;
+
+-- ═════════════════════ 2 · DEĞİŞMEZLİK (HK091) ═════════════════════════
+
+/**
+ * 080'deki `teslimat_degismez` deseninin aynısı.
+ *
+ * Sonradan düzenlenebilen bir kayıt delil değildir. Arşivin değeri, içindeki
+ * dosyanın yüklendiği gibi durduğuna güvenilebilmesinden gelir.
+ *
+ * DEĞİŞTİRİLEBİLEN alanlar (ayrıştırma sonradan tamamlanabilir / yeniden
+ * denenebilir, eşleşme elle düzeltilebilir):
+ *   muhur_*, ayristirma_*, kart_no, arac_*, worker_id, vehicle_id,
+ *   donem_*, nesil, guncellendi_at
+ *
+ * DOKUNULAMAYAN alanlar: id, tur, depo_yolu, dosya_adi, bayt, sha256,
+ *   yukleyen_worker_id, yuklendi_at
+ */
+create or replace function public.takograf_dosya_degismez()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.id is distinct from old.id
+     or new.tur is distinct from old.tur
+     or new.depo_yolu is distinct from old.depo_yolu
+     or new.dosya_adi is distinct from old.dosya_adi
+     or new.bayt is distinct from old.bayt
+     or new.sha256 is distinct from old.sha256
+     or new.yukleyen_worker_id is distinct from old.yukleyen_worker_id
+     or new.yuklendi_at is distinct from old.yuklendi_at
+  then
+    raise exception
+      'takograf dosya kimligi degistirilemez (091): arsivin degeri dosyanin yuklendigi gibi durmasindan gelir'
+      using errcode = 'HK091';
+  end if;
+  new.guncellendi_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_takograf_dosya_degismez on public.takograf_dosyalari;
+create trigger trg_takograf_dosya_degismez
+  before update on public.takograf_dosyalari
+  for each row execute function public.takograf_dosya_degismez();
+
+/**
+ * SİLME ENGELİ.
+ *
+ * Arşiv sözü "dosya durur" demek. Satırı silmek dosyayı yetim bırakır ve
+ * müşterinin denetimde indireceği kaydı yok eder.
+ *
+ * ⚠️ 090'ın elle silme aracı bu tabloya HİÇ GELMEZ: `veri_kategorileri`nde
+ * 'yasal_zorunlu' olduğu için silme seçicisinde <option> olarak
+ * üretilmiyor. Bu tetikleyici SON savunma.
+ */
+create or replace function public.takograf_dosya_silinemez()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception
+    'takograf dosyasi silinemez (091): arsiv urunun satis vaadi; denetimde bu kayittan indirilecek'
+    using errcode = 'HK091';
+end;
+$$;
+
+drop trigger if exists trg_takograf_dosya_silinemez on public.takograf_dosyalari;
+create trigger trg_takograf_dosya_silinemez
+  before delete on public.takograf_dosyalari
+  for each row execute function public.takograf_dosya_silinemez();
+
+-- ═════════════════════ 3 · HAM FAALİYET SATIRLARI ══════════════════════
+
+create table if not exists public.takograf_faaliyetleri (
+  id uuid primary key default gen_random_uuid(),
+
+  /**
+   * ⚠️ CASCADE ama dosya zaten SİLİNEMİYOR (§2). Cascade yalnız
+   * "yeniden ayrıştır" akışında satırları temizlemek için: önce faaliyetler
+   * silinir, sonra yenileri yazılır. Dosya satırı yerinde kalır.
+   */
+  dosya_id uuid not null references public.takograf_dosyalari(id) on delete cascade,
+
+  kart_no text,
+  worker_id uuid references public.workers(id) on delete set null,
+  vehicle_id uuid references public.vehicles(id) on delete set null,
+
+  gun date,
+  baslangic timestamptz,
+  bitis timestamptz,
+  sure_dk integer check (sure_dk is null or sure_dk >= 0),
+
+  /**
+   * AB 561/2006'nın dört faaliyeti. Kod değeri ÇEVRİLMEZ; ekran çevirir.
+   *   surus — Lenkzeit / Driving
+   *   is    — Andere Arbeiten / Other work
+   *   hazir — Bereitschaft / Availability
+   *   mola  — Ruhezeit / Rest
+   */
+  faaliyet text check (faaliyet in ('surus', 'is', 'hazir', 'mola', 'bilinmiyor')),
+  slot text check (slot is null or slot in ('surucu', 'yardimci')),
+  kaynak_nesil text,
+
+  /** Dosya içindeki sıra — satır numarası oluğu ve kararlı sıralama için. */
+  sira integer not null default 0
+);
+
+comment on table public.takograf_faaliyetleri is
+  'Takograf ham faaliyet satırları (091). Her satır KAYNAK DOSYASINI taşır (dosya_id): çakışan dönemler BİRLEŞTİRİLMEZ, kart ve araç ünitesi aynı olayı iki yandan anlatır ve bu bir çapraz doğrulama fırsatıdır.';
+
+create index if not exists idx_takograf_faaliyet_dosya
+  on public.takograf_faaliyetleri (dosya_id, sira);
+create index if not exists idx_takograf_faaliyet_zaman
+  on public.takograf_faaliyetleri (baslangic);
+create index if not exists idx_takograf_faaliyet_worker
+  on public.takograf_faaliyetleri (worker_id, gun) where worker_id is not null;
+
+-- ═════════════════════ 4 · OLAY VE ARIZALAR ════════════════════════════
+
+/**
+ * Olayın süresi ve öznesi faaliyetten FARKLI; tek tabloya sıkıştırmak
+ * 085'te müşteriyi araç/şoför eksenine sıkıştırma hatasının aynısı olurdu.
+ */
+create table if not exists public.takograf_olaylari (
+  id uuid primary key default gen_random_uuid(),
+  dosya_id uuid not null references public.takograf_dosyalari(id) on delete cascade,
+  tur text,
+  bas timestamptz,
+  bit timestamptz,
+  ciddiyet text,
+  arac_plaka text,
+  sira integer not null default 0
+);
+
+comment on table public.takograf_olaylari is
+  'Takograf olay ve arıza kayıtları (091): kart çıkarma, güç kesintisi, hız aşımı. Manipülasyon denetiminin baktığı yer.';
+
+create index if not exists idx_takograf_olay_dosya
+  on public.takograf_olaylari (dosya_id, sira);
+
+-- ═════════════════════ 5 · VERİ KATEGORİLERİ (090) ═════════════════════
+
+/**
+ * ⚠️ ÜÇÜ DE 'yasal_zorunlu' → 090'ın elle silme ekranı bu tablolar için
+ * silme seçeneğini RENDER ETMEZ. Reddetmek bir hatadır ve hata mesajı
+ * okunmayabilir; göstermemek bir tasarımdır.
+ *
+ * ⚠️ 090'ın ZAMAN KÖRLÜĞÜ bu fazda ÇÖZÜLMÜYOR (Volkan kararı):
+ * 'yasal_zorunlu' bugün "hiç silinmez" demek; takograf ise "AT'de 24 ay,
+ * DE'de 1 yıl silinemez — SONRA silinmelidir" ve Almanya'da silme bir
+ * ZORUNLULUKTUR (izleyen yılın 31 Mart'ı). Model bunu henüz ifade edemiyor.
+ * Not düşülmüştür; çözüm ayrı bir turun işi.
+ */
+insert into public.veri_kategorileri (tablo_adi, kolon_adi, kategori, gerekce) values
+  ('takograf_dosyalari', null, 'yasal_zorunlu',
+   'Takograf indirmesi kanunla emredilen kayittir (AT § 17b AZG 24 ay, DE 1 yil, AB tabani 165/2014 Md. 33(2)). Mufettisin okudugu birincil belge ve urunun arsiv vaadi: dosya silinmez, denetimde buradan indirilir.'),
+  ('takograf_faaliyetleri', null, 'yasal_zorunlu',
+   'Dosyadan turetilmis ama ayni hukuki kaydin icerigi: kim, ne zaman, ne kadar surdu. Surucunun kisisel verisi olmakla birlikte saklanmasi emredilmistir.'),
+  ('takograf_olaylari', null, 'yasal_zorunlu',
+   'Kart cikarma, guc kesintisi ve hiz asimi kayitlari manipulasyon denetiminin konusudur; silinebilir olmasi denetimi anlamsiz kilar.')
+on conflict (tablo_adi, coalesce(kolon_adi, '*')) do nothing;
+
+-- ═════════════════════ 6 · STORAGE KOVASI ══════════════════════════════
+
+/**
+ * Diğer altı kovayla AYNI desen: özel, 5 MB.
+ *
+ * ⚠️ 5 MB cömert: ÖLÇÜLEN en büyük gerçek dosya 155 KB (araç ünitesi,
+ * Gen2v2, 100 blok). 33 kat pay bırakıyor.
+ *
+ * ⚠️ `.ddd`'nin tescilli bir MIME türü YOK; `application/octet-stream`
+ * kullanılıyor. Tarayıcı bazı sistemlerde boş tür gönderebildiği için
+ * boş dize de kabul ediliyor — gerçek denetim uzantı + boyut + servisin
+ * "okuyamadım" cevabı.
+ *
+ * ⚠️ Bu satır Supabase'e özgüdür (storage şeması). Düz PostgreSQL'de
+ * `storage.buckets` yoktur; kurulum dosyası bunu zaten böyle taşıyor.
+ */
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'takograf', 'takograf', false, 5242880,
+  array['application/octet-stream', 'application/x-tachograph', '']
+)
+on conflict (id) do nothing;
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- ÇALIŞTIRDIKTAN SONRA BEKLENEN HÂL (ayrı çalıştırın):
+--
+--   select count(*) from public.takograf_dosyalari;      → 0
+--   select count(*) from public.takograf_faaliyetleri;   → 0
+--   select count(*) from public.takograf_olaylari;       → 0
+--
+--   select kategori, count(*) from public.veri_kategorileri group by kategori;
+--   → arac 3 · kisisel 4 · yasal_zorunlu 8   (090'daki 5 + bu migration'daki 3)
+--
+--   select id, public, file_size_limit from storage.buckets where id='takograf';
+--   → takograf | false | 5242880
+--
+--   select tgname from pg_trigger where tgrelid='public.takograf_dosyalari'::regclass;
+--   → trg_takograf_dosya_degismez · trg_takograf_dosya_silinemez
+--
+-- MEVCUT VERİYE ETKİSİ: SIFIR. Yalnız yeni tablo/indeks/tetikleyici/kova
+-- kurulur; hiçbir mevcut satır okunmaz ya da değiştirilmez.
+-- =====================================================================
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  094_yakit_hacim_arac_ekseni.sql                                    ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 / Galzura Fleet — Migration 094 (LİTRE HATTI ARAÇ EKSENİNE)
+-- =====================================================================
+-- Additive + idempotent. Supabase SQL Editor'da çalıştırın.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔴 HİÇBİR ŞEY DEĞİŞTİRMEZ, HİÇBİR ŞEY SİLMEZ
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- Tek işi YENİ bir fonksiyon eklemek: `report_fuel_volume_stats_vehicle`.
+-- 039'un `report_fuel_volume_stats`i **AYNEN DURUYOR** — hem geri düşüş yolu
+-- olarak (uygulama katmanı önce yeniyi dener, yoksa eskiye düşer) hem de
+-- migration'ı henüz koşmamış kiracılar için. Tablo/kolon/indeks/veri
+-- DEĞİŞMEZ.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- NEDEN — ÖLÇÜLDÜ (HAK61 canlı, 28.08.2026)
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- 052 yüzde hattını (`report_fuel_stats` → `report_fuel_stats_vehicle`)
+-- araç eksenine çevirdi. **Litre hattı o dönüşümü almadı** ve kapsamsız tek
+-- gövde olarak kaldı (`lib/reports.ts:1086`), üstelik her yakıt raporu
+-- render'ında KOŞULSUZ çağrılıyor:
+--
+--     report_fuel_volume_stats (28 gün, kapsamsız)  : 5.086 / 4.582 ms
+--     report_fuel_stats_vehicle ×30 + mapBounded(6) : duvar 4.525 ms,
+--                                                     en kötü ifade 2.182 ms
+--
+-- Ve bu maliyet YEDİ YERDEN birden ödeniyor. `co2Panosu()` tek başına
+-- 7 tam `buildFuelReport` koşturuyor (1 seçili aralık + 6 aylık seri,
+-- `lib/co2-db.ts:415`), yani bu fonksiyon tek bir CO₂ panosu açılışında
+-- 7 kez çağrılıyor: ölçüldü, co2Panosu = 1.115 çağrı / 36,7 sn.
+--
+-- Ayrıca ZAMAN AŞIMI KAPISI: yüzde ikizi 46 günlük pencerede zaten
+-- `57014` alıyor (ölçüldü). Kapsamsız litre gövdesi aynı duvara koşuyor;
+-- araç ekseni her aracı KENDİ ifade bütçesine alarak bunu kapatıyor —
+-- statement timeout ÇAĞRIYA değil İFADEYE uygulanır (052'nin dersi).
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔑 GÖVDE BİREBİR AYNI — TEK FARK BİR `where` SATIRI
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- Aşağıdaki fonksiyon 039'un gövdesinin KOPYASIDIR. İKİ fark var:
+--
+--     +  where dt.vehicle_id = p_vehicle_id          ← kapsama (bu migration'ın işi)
+--     ~  odo - prev_odo < 1  →  between -1 and 1     ← HİZALAMA (095 ile birlikte)
+--
+-- İkincisi 28.08.2026 akşamı eklendi: eşdeğerlik kapısı HAK61'de düştü ve
+-- sebebin CANLIDAKİ fonksiyonun depodan farklı olduğu ölçümle bulundu.
+-- Ayrıntı aşağıda, düşüş filtresinin başında. **095 bu migration'la BİRLİKTE
+-- çalıştırılmalıdır** — yalnız 094 koşulursa kapsamsız (geri düşüş) sürüm
+-- farklı sayı verir ve eşdeğerlik kapısı bu kez Sendigo/demo'da düşer.
+--
+-- `partition by b.vehicle_id` / `partition by c.vehicle_id` ve
+-- `group by vehicle_id` BİLEREK KORUNDU. Tek araçlık girdide bunlar
+-- işlevsizdir (tek bölüm) ama silmek gövdeyi 039'dan ayırırdı ve iki
+-- fonksiyonun zamanla ayrışmasına kapı açardı. Aynı kalsınlar ki fark
+-- `diff` ile bir satır olarak görülebilsin.
+--
+-- ⚠️ 052'nin YÜZDE tarafındaki "UÇ SATIR KURALI" (027, `rn = 1` / `rn = cnt`)
+-- buraya EKLENMEDİ. 039'un litre gövdesinde o kural HİÇ YOKTU; eklemek
+-- sonucu değiştirirdi. Bu migration davranış değiştirmez, yalnız kapsar.
+--
+-- EŞDEĞERLİK KANITI: yerel PostgreSQL 15 konteynerinde, HAK61'den salt
+-- okumayla çekilmiş GERÇEK telemetri üzerinde eski ve yeni fonksiyon
+-- araç araç koşturulup 12 çıktı kolonunun tamamı karşılaştırıldı.
+-- Sonuç ve yöntem: `docs/YAKIT-ARAC-EKSENI.md` § 3.
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+create or replace function public.report_fuel_volume_stats_vehicle(
+  p_from       timestamptz,
+  p_to         timestamptz,
+  p_vehicle_id uuid
+)
+returns table (
+  vehicle_id   uuid,
+  sample_count bigint,
+  avg_l        double precision,
+  min_l        double precision,
+  max_l        double precision,
+  first_l      double precision,
+  last_l       double precision,
+  refill_count bigint,
+  refill_l     double precision,
+  drop_count   bigint,
+  drop_l       double precision,
+  max_step_l   double precision
+)
+language sql
+stable
+as $$
+  with base as (
+    select
+      dt.vehicle_id,
+      dt.recorded_at,
+      dt.fuel_volume_l::double precision as fuel,
+      dt.odometer_km::double precision   as odo
+    from public.device_telemetry dt
+    where dt.vehicle_id = p_vehicle_id
+      and dt.recorded_at >= p_from
+      and dt.recorded_at <= p_to
+      and dt.fuel_volume_l is not null
+  ),
+  bounded as (
+    select
+      b.*,
+      max(b.fuel) over (
+        partition by b.vehicle_id order by b.recorded_at
+        rows between 30 preceding and current row
+      ) as bwd_max,
+      max(b.fuel) over (
+        partition by b.vehicle_id order by b.recorded_at
+        rows between current row and 30 following
+      ) as fwd_max
+    from base b
+  ),
+  clean as (
+    select vehicle_id, recorded_at, fuel, odo
+    from bounded
+    where not (bwd_max - fuel >= 5 and fwd_max - fuel >= 5)
+  ),
+  stepped as (
+    select
+      c.*,
+      lag(c.fuel) over w as prev_fuel,
+      lag(c.odo)  over w as prev_odo
+    from clean c
+    window w as (partition by c.vehicle_id order by c.recorded_at)
+  )
+  select
+    vehicle_id,
+    count(*)::bigint                                as sample_count,
+    avg(fuel)                                       as avg_l,
+    min(fuel)                                       as min_l,
+    max(fuel)                                       as max_l,
+    (array_agg(fuel order by recorded_at asc))[1]   as first_l,
+    (array_agg(fuel order by recorded_at desc))[1]  as last_l,
+    count(*) filter (
+      where prev_fuel is not null and fuel - prev_fuel >= 5
+    )::bigint                                       as refill_count,
+    coalesce(sum(fuel - prev_fuel) filter (
+      where prev_fuel is not null and fuel - prev_fuel >= 5
+    ), 0)                                           as refill_l,
+    /**
+     * ŞÜPHELİ DÜŞÜŞ — odometre penceresi `between -1 and 1`.
+     *
+     * 🔴 BU 039'DAN FARKLI VE BİLEREK. 039 `odo - prev_odo < 1` yazıyor;
+     * burası HAK61'in CANLI davranışına hizalanmıştır. Gerekçe ve ölçüm:
+     * `docs/YAKIT-DUSUS-FARKI.md`. Özet: 28.08.2026'da eşdeğerlik kapısı
+     * HAK61'de düştü ve sebep 094 değil, CANLIDAKİ fonksiyonun depodan
+     * farklı olmasıydı (elle yapılmış, repoda kaydı olmayan bir müdahale).
+     * Depo `< 1` diyor, canlı `between -1 and 1` diyordu.
+     *
+     * Karar (Volkan, 28.08.2026): canlı biçim DOĞRU kabul edilir. Yakıt
+     * hırsızlığı uyarısı kaçırılmamalı — fazla uyarı incelenip elenir,
+     * eksik olan hiç görülmez. `< 1` seçilseydi HAK61'in müşteriye giden
+     * "şüpheli kayıp" rakamı bir gecede %8,1 düşerdi (43 olay · 373,2 L,
+     * 20–27 Ağu penceresinde ölçüldü).
+     *
+     * ⚠️ SINIRIN NE YAPTIĞI — ÖLÇÜLDÜ, FOLKLOR DEĞİL:
+     *   · `+1` sınırı ÇALIŞIYOR: 43 olay / 373,2 L (7 gün) · 67 / 542,7 (9 gün)
+     *   · `-1` sınırı BUGÜN ÖLÜ: tam −1 km fark HAM VERİDE HİÇ YOK (0 satır)
+     *   · Odometre gerçekten 25 kez geri gitti (147.097 satırda) ama hepsi
+     *     **1 km'den fazla** geri — yani `between` onları KAPSAMIYOR.
+     * Yani "negatif taraf bozuk odometreyi yakalıyor" cümlesi ölçümle
+     * DESTEKLENMİYOR. Sınır yine de korundu: canlı davranışı birebir
+     * korumak, gerekçesi zayıf bir sınırı budamaktan önceliklidir.
+     *
+     * Odometre yoksa bayrak YOK (temkinli: az sayar, uydurmaz).
+     */
+    count(*) filter (
+      where prev_fuel is not null and prev_fuel - fuel >= 5
+        and prev_odo is not null and odo is not null and odo - prev_odo between -1 and 1
+    )::bigint                                       as drop_count,
+    coalesce(sum(prev_fuel - fuel) filter (
+      where prev_fuel is not null and prev_fuel - fuel >= 5
+        and prev_odo is not null and odo is not null and odo - prev_odo between -1 and 1
+    ), 0)                                           as drop_l,
+    coalesce(max(abs(fuel - prev_fuel)) filter (where prev_fuel is not null), 0)
+                                                    as max_step_l
+  from stepped
+  group by vehicle_id;
+$$;
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- İNDEKS: YENİSİ GEREKMİYOR — VAR OLAN BİRİ NİHAYET KULLANILACAK
+-- =====================================================================
+--
+-- 039 şunu kurmuştu:
+--   idx_device_telemetry_fuel_volume
+--     on device_telemetry (vehicle_id, recorded_at)
+--     where fuel_volume_l is not null
+--
+-- 049 kendi başlığında bu indeksin BOŞTA kaldığını yazıyor: "039'un indeksi
+-- vehicle_id ile başlıyor, fonksiyon ise yalnız recorded_at süzüyor". Yeni
+-- fonksiyon tam olarak `(vehicle_id, recorded_at)` ile seek ediyor, yani
+-- 039'un indeksi ilk kez amacına hizmet edecek. Yeni indeks EKLENMEDİ.
+--
+-- 049'un `idx_device_telemetry_fuel_volume_time` indeksi de DURUYOR:
+-- kapsamsız 039 fonksiyonu (geri düşüş yolu) hâlâ ona dayanıyor.
+
+-- =====================================================================
+-- 🔴 GERİ ALMA
+-- =====================================================================
+--
+-- Tek cümle. Uygulama katmanı `missing_function` sınıflandırmasıyla
+-- otomatik olarak kapsamsız 039 yoluna düşer — yani fonksiyonu düşürmek
+-- yakıt raporunu BOZMAZ, yalnız eski (yavaş) yola döndürür.
+--
+--   drop function if exists public.report_fuel_volume_stats_vehicle(
+--     timestamptz, timestamptz, uuid
+--   );
+--   notify pgrst, 'reload schema';
+--
+-- Kod tarafını geri almak GEREKMEZ; ama istenirse `lib/reports.ts` içindeki
+-- litre bloğu tek `supabaseAdmin.rpc("report_fuel_volume_stats", …)`
+-- çağrısına döndürülür (git: bu migration'la aynı commit).
+
+-- =====================================================================
+-- ÇALIŞTIRDIKTAN SONRA BEKLENEN HÂL
+-- =====================================================================
+--
+--   select proname, pronargs from pg_proc
+--    where proname like 'report_fuel_volume_stats%';
+--   → 2 satır:  report_fuel_volume_stats          (2 argüman, 039 — DURUYOR)
+--               report_fuel_volume_stats_vehicle  (3 argüman, YENİ)
+--
+--   -- Eşdeğerlik: iki fonksiyon aynı aralıkta aynı sayıyı vermeli.
+--   with eski as (
+--     select * from public.report_fuel_volume_stats(
+--       now() - interval '28 days', now())
+--   ),
+--   yeni as (
+--     select (public.report_fuel_volume_stats_vehicle(
+--              now() - interval '28 days', now(), v.id)).*
+--     from public.vehicles v where v.flespi_device_id is not null
+--   )
+--   select
+--     count(*) filter (where y.vehicle_id is null) as yenide_eksik,
+--     count(*) filter (where e.vehicle_id is null) as eskide_eksik,
+--     count(*) filter (where e.refill_l  is distinct from y.refill_l)  as refill_farkli,
+--     count(*) filter (where e.drop_l    is distinct from y.drop_l)    as drop_farkli,
+--     count(*) filter (where e.sample_count is distinct from y.sample_count) as sayim_farkli
+--   from eski e full outer join yeni y using (vehicle_id);
+--   → BEŞ SÜTUN DA 0 OLMALI. Değilse kodu deploy ETMEYİN.
+--
+-- MEVCUT VERİYE ETKİSİ: **SIFIR SATIR** değişir. Bu migration yalnız bir
+-- fonksiyon ekler.
+-- =====================================================================
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  095_yakit_dusus_kapisi_hizalama.sql                                ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- HAK61 / Galzura Fleet — Migration 095 (YAKIT DÜŞÜŞ KAPISI HİZALAMA)
+-- =====================================================================
+-- Additive + idempotent (`create or replace`). Supabase SQL Editor'da çalıştırın.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔴 BU BİR ŞEMA HİZALAMASIDIR — KÖKENİ ELLE MÜDAHALE
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- 28.08.2026'da 094'ün eşdeğerlik kapısı HAK61'de DÜŞTÜ. Sebep 094 değildi:
+-- **HAK61'in canlı `report_fuel_volume_stats` fonksiyonu depodaki 039
+-- dosyasından FARKLIYDI.**
+--
+--     depo 039        :  odo - prev_odo <  1
+--     HAK61 canlı     :  odo - prev_odo between -1 and 1     ← elle değişmiş
+--     Sendigo canlı   :  odo - prev_odo <  1                 (depoyla aynı)
+--     galzura canlı   :  odo - prev_odo <  1                 (depoyla aynı)
+--
+-- Depoda kaydı olmayan üçüncü canlı nesne (öncekiler:
+-- `idx_device_telemetry_fuel` indeksi ve `vehicles.tank_capacity_l` kolonu).
+-- Ne zaman ve kim tarafından değiştirildiği BİLİNMİYOR.
+--
+-- KARAR (Volkan, 28.08.2026): **canlı biçim DOĞRU kabul edilir, üç kiracı da
+-- ona hizalanır.** Yakıt hırsızlığı uyarısı kaçırılmamalı; fazla uyarı
+-- incelenip elenir, eksik olan hiç görülmez.
+--
+-- Bu dosya kapsamsız (2 argümanlı) sürümü hizalar. Araç eksenli (3 argümanlı)
+-- ikizi 094'tedir ve **ikisi BİRLİKTE çalıştırılmalıdır** — biri eksik
+-- kalırsa iki yol farklı sayı verir ve eşdeğerlik kapısı düşer.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- ÖLÇÜLDÜ — SINIRIN GERÇEKTE NE YAPTIĞI (HAK61, 147.097 gerçek satır)
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- ≥5 L düşüşlerin odometre farkı dağılımı (19–28 Ağu, 13 araç):
+--
+--     odo farkı        düşüş    litre     `<1`   `between -1 and 1`
+--     ─────────────    ─────   ───────    ────   ──────────────────
+--     < -1 km (geri)       0       0,0     ✓            ✗
+--     = -1 km              0       0,0     ✓            ✓
+--     =  0 km            743    5741,6     ✓            ✓
+--     = +1 km             67     542,7     ✗            ✓
+--     > +1 km              4      28,1     ✗            ✗
+--
+-- ⚠️ İKİ DÜRÜST NOT — bir sonraki kişi yanlış gerekçe devralmasın:
+--
+--  1) `+1` SINIRI İŞ YAPIYOR. Kazanılan 67 olay / 542,7 L uydurma değil:
+--     örnek satırlar 8,3 L / 9 saniye, 6,1 L / 16 saniye, 7,7 L / 147 saniye
+--     — hepsinde odometre 1 km ilerlemiş. Bir çekici ~0,3 L/km yakar; 1 km
+--     8,3 litreyi AÇIKLAYAMAZ (27 katı). Bunlar ya sensör çalkalanması ya
+--     gerçek çekimdir, ama "araç hareket etti, normaldir" değildir.
+--
+--  2) `-1` SINIRI BUGÜN ÖLÜ. Ham veride tam −1 km fark **HİÇ YOK** (0 satır).
+--     Odometre gerçekten 25 kez geri gitti ama hepsi **1 km'den fazla** geri
+--     — yani `between -1 and 1` onları KAPSAMIYOR, dışarıda bırakıyor.
+--     "Negatif taraf bozuk odometreyi yakalıyor" cümlesi ölçümle
+--     DESTEKLENMİYOR. Sınır yine de korunuyor: amaç canlı davranışı BİREBİR
+--     korumak; gerekçesi zayıf bir sınırı budamak ayrı bir karardır ve bu
+--     migration'ın işi değildir.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- KİRACI ETKİSİ — ÖLÇÜLDÜ
+-- ═══════════════════════════════════════════════════════════════════════
+--
+--   HAK61        : DEĞİŞİKLİK YOK — canlı zaten bu biçimde.
+--                  (Kapsamsız sürüm depo metnine dönmüyor; olduğu gibi kalıyor.)
+--   Sendigo      : 20–27 Ağu penceresinde DEĞİŞİKLİK YOK (13 düşüş / 75,8 L
+--                  → 13 / 75,8). 19–28 Ağu'da +1 düşüş / +7,1 L.
+--                  Yani beklenenin çok altında.
+--   galzura-demo : ÖLÇÜLEMEDİ (service key yok). Demo telemetrisi 14 günde
+--                  temizleniyor, etki küçük beklenir.
+--
+-- ═══════════════════════════════════════════════════════════════════════
+-- 🔴 MÜŞTERİYE GİDEN RAKAM
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- Bu sayı panelde "şüpheli yakıt kaybı" olarak gösteriliyor. HAK61'de
+-- değişmiyor. Sendigo'da ölçülen etki bir olay / 7,1 litre — ama ARTIŞ
+-- yönünde ve sessiz olmamalı: Sendigo'ya bu migration koşulduğunda
+-- rakamın yukarı oynayabileceği söylenmelidir.
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+set local lock_timeout = '3s';
+
+create or replace function public.report_fuel_volume_stats(
+  p_from timestamptz,
+  p_to   timestamptz
+)
+returns table (
+  vehicle_id   uuid,
+  sample_count bigint,
+  avg_l        double precision,
+  min_l        double precision,
+  max_l        double precision,
+  first_l      double precision,
+  last_l       double precision,
+  refill_count bigint,
+  refill_l     double precision,
+  drop_count   bigint,
+  drop_l       double precision,
+  max_step_l   double precision
+)
+language sql
+stable
+as $$
+  with base as (
+    select
+      dt.vehicle_id,
+      dt.recorded_at,
+      dt.fuel_volume_l::double precision as fuel,
+      dt.odometer_km::double precision   as odo
+    from public.device_telemetry dt
+    where dt.recorded_at >= p_from
+      and dt.recorded_at <= p_to
+      and dt.fuel_volume_l is not null
+  ),
+  bounded as (
+    select
+      b.*,
+      max(b.fuel) over (
+        partition by b.vehicle_id order by b.recorded_at
+        rows between 30 preceding and current row
+      ) as bwd_max,
+      max(b.fuel) over (
+        partition by b.vehicle_id order by b.recorded_at
+        rows between current row and 30 following
+      ) as fwd_max
+    from base b
+  ),
+  clean as (
+    select vehicle_id, recorded_at, fuel, odo
+    from bounded
+    where not (bwd_max - fuel >= 5 and fwd_max - fuel >= 5)
+  ),
+  stepped as (
+    select
+      c.*,
+      lag(c.fuel) over w as prev_fuel,
+      lag(c.odo)  over w as prev_odo
+    from clean c
+    window w as (partition by c.vehicle_id order by c.recorded_at)
+  )
+  select
+    vehicle_id,
+    count(*)::bigint                                as sample_count,
+    avg(fuel)                                       as avg_l,
+    min(fuel)                                       as min_l,
+    max(fuel)                                       as max_l,
+    (array_agg(fuel order by recorded_at asc))[1]   as first_l,
+    (array_agg(fuel order by recorded_at desc))[1]  as last_l,
+    count(*) filter (
+      where prev_fuel is not null and fuel - prev_fuel >= 5
+    )::bigint                                       as refill_count,
+    coalesce(sum(fuel - prev_fuel) filter (
+      where prev_fuel is not null and fuel - prev_fuel >= 5
+    ), 0)                                           as refill_l,
+    -- 🔴 HİZALANAN SATIR — gerekçe ve ölçüm başlıkta. 039: `< 1`.
+    count(*) filter (
+      where prev_fuel is not null and prev_fuel - fuel >= 5
+        and prev_odo is not null and odo is not null
+        and odo - prev_odo between -1 and 1
+    )::bigint                                       as drop_count,
+    coalesce(sum(prev_fuel - fuel) filter (
+      where prev_fuel is not null and prev_fuel - fuel >= 5
+        and prev_odo is not null and odo is not null
+        and odo - prev_odo between -1 and 1
+    ), 0)                                           as drop_l,
+    coalesce(max(abs(fuel - prev_fuel)) filter (where prev_fuel is not null), 0)
+                                                    as max_step_l
+  from stepped
+  group by vehicle_id;
+$$;
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- 🔴 GERİ ALMA
+-- =====================================================================
+--
+-- Depo 039 biçimine (`< 1`) döndürmek için: 039'un gövdesini yeniden
+-- çalıştırın (`db/migrations/039_fuel_volume.sql` içindeki
+-- `create or replace function public.report_fuel_volume_stats`).
+--
+-- ⚠️ AMA TEK BAŞINA GERİ ALMAYIN. 094 araç eksenli sürümü de
+-- `between -1 and 1` taşıyor; yalnız bunu geri almak iki yolu ayrıştırır ve
+-- eşdeğerlik kapısı düşer. İkisi BİRLİKTE geri alınmalıdır.
+--
+-- Geri alma HAK61'de müşteriye giden rakamı %8,1 DÜŞÜRÜR (43 olay · 373,2 L,
+-- 20–27 Ağu ölçümü) — sessiz yapılmamalıdır.
+
+-- =====================================================================
+-- ÇALIŞTIRDIKTAN SONRA BEKLENEN HÂL
+-- =====================================================================
+--
+--   select pg_get_functiondef(oid) from pg_proc
+--    where proname = 'report_fuel_volume_stats' and pronargs = 2;
+--   → gövdede `odo - prev_odo between -1 and 1` geçmeli (üç kiracıda da)
+--
+--   select proname, pronargs from pg_proc
+--    where proname like 'report_fuel_volume_stats%' order by proname;
+--   → 2 satır: report_fuel_volume_stats (2) · report_fuel_volume_stats_vehicle (3)
+--
+-- Eşdeğerlik sorgusu 094'ün başlığında; 094 + 095 birlikte koşulduktan sonra
+-- dört sütun da 0 vermelidir.
+--
+-- MEVCUT VERİYE ETKİSİ: **SIFIR SATIR** değişir. Bu migration yalnız bir
+-- fonksiyon gövdesini değiştirir.
+-- =====================================================================
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  096_odometre_bozuk_okuma.sql                                       ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 096 · ODOMETRE BOZUK OKUMA FİLTRESİ
+--
+-- ═══ NEDEN ═══════════════════════════════════════════════════════════════
+--
+-- `telemetry_month_spans` (090) ayın odometre uçlarını ham `min`/`max` ile
+-- alıyor. Cihaz zaman zaman TEKİL bozuk okuma bildiriyor ve tek bir bozuk
+-- satır ayın minimumunu götürüp açıklığı şişiriyor.
+--
+-- HAK61 canlı ölçümü (31.08.2026, salt okuma):
+--   1.803.566 satır · odometre dolu 1.518.613
+--   odometer_km = 0          114 satır (%0,0075) · 4/30 araç
+--   monotonluk ihlali        123 olay · 13/30 araç · en büyüğü 113.009 km
+--   negatif odometre           0
+--   diğer 18 alanda sınır ihlali  0   (hız, yakıt, devir, sıcaklık, voltaj…)
+--
+-- Bozukluk TEKİL ve geçici — seri hemen normale dönüyor:
+--   10:01:20  123836 · 10:01:21  24063 · 10:01:23  123836
+-- Yani sayaç sıfırlanması / cihaz değişimi DEĞİL.
+--
+-- ═══ ZARAR — ölçüldü ═════════════════════════════════════════════════════
+--
+-- 2026-07, HAK61:
+--   ölçülebilen araç   min/max ile 23  →  temizlenmiş seriyle 26   (+3)
+--   kazanılan          DO-512GT 757 km · DO-775GS 977 km · DO-776GS 485 km
+--   DO-777GS km        36.187 → 1.141  (%3.070 hata; bu değer makullük
+--                                       kapısından GEÇİYORDU — sessiz yanlış)
+--   ayrıca 8 araçta km küçük düzeltmeler aldı
+--
+-- Kapsama kaybı CO₂ oranına da vuruyor: km'si ölçülemeyen araç
+-- `olculemedi_sebep = 'odometre_yok'` alıp oran kümesinin dışında kalıyor.
+--
+-- ═══ KURAL — ikisi de fizikten, hiçbiri filoya bağlı değil ═══════════════
+--
+--  ① Monotonluk: odometre azalmaz. Koşan maksimumdan geri giden okuma bozuk.
+--     (Sıfır ayrı kural değil — o da bir azalmadır.)
+--  ② Fiziksel atlama: iki okuma arasındaki artış, geçen sürede mümkün
+--     olandan büyük olamaz. Üst hız VERİDEN: 1,8M satırda speed_kmh > 200
+--     olan hiç satır yok.
+--
+-- ① tek başına YETMEZ — bozuk okuma serinin başındaysa azalma değil artıştır
+-- (0 → 98.783). Ölçüldü: yalnız ① ile kazanç +0, ② eklenince +3 araç.
+--
+-- 🔴 ÖLÇEKTEN BAĞIMSIZ: plaka yok, araç sayısı yok, filoya özel eşik yok.
+-- Tek sabit 200 km/s ve o bir fiziksel sınır. Uygulama katmanındaki eşi:
+-- `lib/odometre.ts` (aynı kural, aynı sabit).
+--
+-- ⚠️ HAM VERİYE DOKUNULMAZ. Hiçbir satır silinmez, güncellenmez. Filtre
+-- yalnız OKUMA anında uygulanır — `docs/BOZUK-TELEMETRI.md`.
+--
+-- İMZA DEĞİŞMEDİ: dönen kolonlar 090'daki ile birebir aynı, çağıranlar
+-- (lib/saklama-db.ts → ayOzetiYaz) değişmeden çalışır.
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+set local lock_timeout = '3s';
+
+create or replace function public.telemetry_month_spans(
+  p_from timestamptz,
+  p_to timestamptz
+)
+returns table (
+  vehicle_id uuid,
+  ay date,
+  ornek_sayisi bigint,
+  ilk_kayit timestamptz,
+  son_kayit timestamptz,
+  odometre_ilk numeric,
+  odometre_son numeric,
+  yakit_ornek_sayisi bigint,
+  yakit_sifir_okuma bigint
+)
+language sql
+stable
+as $$
+  with ham as (
+    select
+      dt.vehicle_id,
+      date_trunc('month', dt.recorded_at)::date as ay,
+      dt.recorded_at,
+      dt.odometer_km,
+      dt.fuel_level_pct
+    from public.device_telemetry dt
+    where dt.recorded_at >= p_from
+      and dt.recorded_at <  p_to
+  ),
+  -- Sayımlar HAM satırlar üzerinden: "kaç okuma geldi" sorusu filtreden
+  -- etkilenmemeli, yoksa kapsama sayacı kendi kendini küçültür.
+  sayimlar as (
+    select
+      vehicle_id, ay,
+      count(*)                                              as ornek_sayisi,
+      min(recorded_at)                                      as ilk_kayit,
+      max(recorded_at)                                      as son_kayit,
+      count(*) filter (where fuel_level_pct is not null)     as yakit_ornek_sayisi,
+      count(*) filter (where fuel_level_pct = 0)             as yakit_sifir_okuma
+    from ham
+    group by 1, 2
+  ),
+  odo as (
+    select
+      vehicle_id, ay, recorded_at, odometer_km,
+      -- ① koşan maksimum (kendisi HARİÇ) — monotonluk kapısı
+      -- telemetri-sinir: bu max FILTRENIN KENDISI, filtresiz uc deger degil
+      max(odometer_km) over (
+        partition by vehicle_id, ay order by recorded_at
+        rows between unbounded preceding and 1 preceding
+      ) as kosan_max,
+      -- ② sonraki okuma — fiziksel atlama kapısı
+      lead(odometer_km)  over (partition by vehicle_id, ay order by recorded_at) as sonraki_km,
+      lead(recorded_at)  over (partition by vehicle_id, ay order by recorded_at) as sonraki_an
+    from ham
+    where odometer_km is not null
+  ),
+  temiz as (
+    select vehicle_id, ay, odometer_km
+    from odo
+    where (kosan_max is null or odometer_km >= kosan_max)
+      and (
+        sonraki_km is null
+        or sonraki_km - odometer_km <= greatest(
+             1,
+             extract(epoch from (sonraki_an - recorded_at)) / 3600.0 * 200
+           )
+      )
+  )
+  select
+    s.vehicle_id,
+    s.ay,
+    s.ornek_sayisi,
+    s.ilk_kayit,
+    s.son_kayit,
+    -- telemetri-sinir: uc deger TEMIZ CTE'den geliyor (monotonluk + fiziksel
+    -- atlama kapilarindan gecmis satirlar), ham device_telemetry'den DEGIL.
+    min(t.odometer_km)::numeric as odometre_ilk,
+    max(t.odometer_km)::numeric as odometre_son,
+    s.yakit_ornek_sayisi,
+    s.yakit_sifir_okuma
+  from sayimlar s
+  left join temiz t on t.vehicle_id = s.vehicle_id and t.ay = s.ay
+  group by s.vehicle_id, s.ay, s.ornek_sayisi, s.ilk_kayit, s.son_kayit,
+           s.yakit_ornek_sayisi, s.yakit_sifir_okuma
+$$;
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- ═══ ÇALIŞTIRMADAN SONRA — EŞDEĞERLİK DENETİMİ ═══════════════════════════
+--
+-- Beklenen: bozuk okuması OLMAYAN araçlarda sayı DEĞİŞMEZ, olanlarda
+-- `odometre_ilk` yükselir. Aşağıdaki sorgu 2026-07 için farkı listeler;
+-- HAK61'de üç satır beklenir (DO-512GT, DO-775GS, DO-776GS) artı sekiz
+-- küçük düzeltme.
+--
+--   select v.plate,
+--          s.odometre_ilk as yeni_ilk,
+--          s.odometre_son as yeni_son,
+--          (s.odometre_son - s.odometre_ilk) as yeni_km
+--   from public.telemetry_month_spans('2026-07-01'::timestamptz,
+--                                     '2026-08-01'::timestamptz) s
+--   join public.vehicles v on v.id = s.vehicle_id
+--   order by yeni_km desc;
+--
+-- ⚠️ Bu migration ÇALIŞTIRILMADI (31.08.2026). Kod tarafı ona bağlı değil:
+-- `ayOzetiYaz` imza değişmediği için eski gövdeyle de çalışır, yalnız
+-- kazanç gerçekleşmez.
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  097_odometre_blok_ve_filo_span.sql                                 ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 097 · ODOMETRE: ARDIŞIK EŞİT BLOK + FİLO SPAN RPC
+--
+-- ═══ 096 EKSİK ÇIKTI — ölçümle bulundu (31.08.2026) ══════════════════════
+--
+-- 096 komşu ÇİFTE bakıyor: `sonraki_km - odometer_km > izin` ise satırı atar.
+-- Bozuk okuma TEK ise çalışıyor (DO-512GT: 0 → 98.783, tek sıfır, atıldı).
+-- Ama bozuk okuma ARDIŞIK TEKRARLIYORSA çalışmıyor:
+--
+--   DO-505GS, 2026-07 başı:  0 · 0 · 0 … (13 ardışık sıfır) … → 120.849
+--
+-- `0 → 0` geçişi fiziksel olarak kusursuz (artış 0), kapı onları geçiriyor;
+-- yalnız SON sıfır `0 → 120.849` çiftinde takılıyor. Geriye 12 sıfır kalıyor
+-- ve `min(odometer_km)` hâlâ 0.
+--
+-- 096 sonrası canlı ölçüm (telemetry_month_spans, 2026-07):
+--   DO-505GS  120.899 km   🔴 hâlâ imkansız
+--   DO-571GR   95.765 km   🔴
+--   DO-753GS  124.801 km   🔴
+--   DO-512GT      757 km   ✅ (tek sıfır olduğu için 096 çözmüştü)
+--
+-- ═══ ÇÖZÜM: BLOĞU TEK BİRİM SAY ══════════════════════════════════════════
+--
+-- Bir okumayı SONRAKİ FARKLI DEĞERE bağla. Ardışık eşitler tek blok sayılır
+-- ve bütün olarak soyulur. **Ek sabit gerekmez** — kuralın kendi uzantısı.
+-- `lib/odometre.ts` ile aynı mantık (orada `sonrakiFarkli`/`oncekiFarkli`).
+--
+-- Düzeltilmiş kuralla ölçüm (uygulama katmanında, canlı veriye karşı):
+--   ölçülebilen araç  bugünkü 25 · 096 RPC 26 · **YENİ 29**
+--   DO-505GS  →     50 km      DO-571GR  →   248 km
+--   DO-753GS  →    981 km      DO-512GT  →   757 km
+--   filo km   16.596 → 18.577  (+%11,9)
+--
+-- ═══ İKİNCİ İŞ: fleet_odometer_spans ═════════════════════════════════════
+--
+-- `lib/reports.ts` bugün araç araç `getVehicleDistanceSpan` çağırıyor
+-- (iki fan-out noktası: loadBase ve yakıt raporu). Sorgu maliyeti ölçüldü:
+--
+--   bugünkü (araç başına 2 sorgu)      2,85 sn ·  60 sorgu ·       2 satır
+--   tüm seriyi çekip uygulamada temizle 57,87 sn · 605 sorgu · 590.084 satır
+--   SQL RPC (tüm filo tek sorgu)       2,99 sn ·   1 sorgu ·      29 satır
+--
+-- Uygulamada temizleme **20,3× yavaş** ve 590 bin satır taşıyor — kabul
+-- edilemez. Bu yüzden temizleme SQL'de kalıyor ve rapor katmanı tek çağrıya
+-- iniyor. Ayrıntı: `docs/ODOMETRE-KAYNAK-BAGLAMA.md`.
+--
+-- ⚠️ HAM VERİYE DOKUNULMAZ. Filtre yalnız OKUMA anında.
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+set local lock_timeout = '3s';
+
+-- ── Ortak temizleme: monotonluk → blok indirgeme → fiziksel atlama ────────
+-- Not: fonksiyon gövdesinde tekrar ediyor çünkü PostgreSQL'de CTE paylaşımı
+-- fonksiyonlar arası yapılamıyor. İki fonksiyon da AYNI üç adımı uygular;
+-- ayrışmasınlar diye adımlar birebir aynı sırayla ve aynı sabitle yazıldı.
+
+create or replace function public.telemetry_month_spans(
+  p_from timestamptz,
+  p_to timestamptz
+)
+returns table (
+  vehicle_id uuid,
+  ay date,
+  ornek_sayisi bigint,
+  ilk_kayit timestamptz,
+  son_kayit timestamptz,
+  odometre_ilk numeric,
+  odometre_son numeric,
+  yakit_ornek_sayisi bigint,
+  yakit_sifir_okuma bigint
+)
+language sql
+stable
+as $$
+  with ham as (
+    select dt.vehicle_id,
+           date_trunc('month', dt.recorded_at)::date as ay,
+           dt.recorded_at, dt.odometer_km, dt.fuel_level_pct
+    from public.device_telemetry dt
+    where dt.recorded_at >= p_from and dt.recorded_at < p_to
+  ),
+  -- Sayımlar HAM satırlardan: "kaç okuma geldi" filtreden etkilenmemeli.
+  sayimlar as (
+    select vehicle_id, ay,
+           count(*)                                          as ornek_sayisi,
+           min(recorded_at)                                  as ilk_kayit,
+           max(recorded_at)                                  as son_kayit,
+           count(*) filter (where fuel_level_pct is not null) as yakit_ornek_sayisi,
+           count(*) filter (where fuel_level_pct = 0)         as yakit_sifir_okuma
+    from ham group by 1, 2
+  ),
+  -- ① monotonluk
+  monoton as (
+    select vehicle_id, ay, recorded_at, odometer_km,
+           -- telemetri-sinir: bu max FILTRENIN KENDISI, filtresiz uc deger degil
+           max(odometer_km) over (
+             partition by vehicle_id, ay order by recorded_at
+             rows between unbounded preceding and 1 preceding
+           ) as kosan_max
+    from ham where odometer_km is not null
+  ),
+  gecerli as (
+    select vehicle_id, ay, recorded_at, odometer_km
+    from monoton where kosan_max is null or odometer_km >= kosan_max
+  ),
+  -- ② ardışık eşit bloğu tek birime indir: her bloğun İLK satırı
+  bloklu as (
+    select *, lag(odometer_km) over (partition by vehicle_id, ay order by recorded_at) as onc_km
+    from gecerli
+  ),
+  blok_basi as (
+    select vehicle_id, ay, recorded_at, odometer_km
+    from bloklu where onc_km is null or odometer_km <> onc_km
+  ),
+  -- ③ fiziksel atlama — artık "sonraki" gerçekten FARKLI bir değer
+  kapili as (
+    select *,
+           lead(odometer_km) over (partition by vehicle_id, ay order by recorded_at) as sonraki_km,
+           lead(recorded_at) over (partition by vehicle_id, ay order by recorded_at) as sonraki_an
+    from blok_basi
+  ),
+  temiz as (
+    select vehicle_id, ay, odometer_km
+    from kapili
+    where sonraki_km is null
+       or sonraki_km - odometer_km
+          <= greatest(1, extract(epoch from (sonraki_an - recorded_at)) / 3600.0 * 200)
+  )
+  select s.vehicle_id, s.ay, s.ornek_sayisi, s.ilk_kayit, s.son_kayit,
+         -- telemetri-sinir: uc deger TEMIZ CTE'den geliyor, ham tablodan DEGIL
+         min(t.odometer_km)::numeric, max(t.odometer_km)::numeric,
+         s.yakit_ornek_sayisi, s.yakit_sifir_okuma
+  from sayimlar s
+  left join temiz t on t.vehicle_id = s.vehicle_id and t.ay = s.ay
+  group by s.vehicle_id, s.ay, s.ornek_sayisi, s.ilk_kayit, s.son_kayit,
+           s.yakit_ornek_sayisi, s.yakit_sifir_okuma
+$$;
+
+-- ── YENİ: filo geneli, RASTGELE aralık (ay gruplaması YOK) ────────────────
+-- `lib/reports.ts` araç araç 2 sorgu atıyordu; bu tek sorguya indiriyor.
+create or replace function public.fleet_odometer_spans(
+  p_from timestamptz,
+  p_to timestamptz
+)
+returns table (
+  vehicle_id uuid,
+  odometre_ilk numeric,
+  odometre_son numeric,
+  ilk_an timestamptz,
+  son_an timestamptz,
+  okuma_sayisi bigint,
+  temiz_sayisi bigint
+)
+language sql
+stable
+as $$
+  with ham as (
+    select dt.vehicle_id, dt.recorded_at, dt.odometer_km
+    from public.device_telemetry dt
+    where dt.recorded_at >= p_from and dt.recorded_at < p_to
+      and dt.odometer_km is not null
+  ),
+  monoton as (
+    select vehicle_id, recorded_at, odometer_km,
+           -- telemetri-sinir: filtrenin kendisi
+           max(odometer_km) over (
+             partition by vehicle_id order by recorded_at
+             rows between unbounded preceding and 1 preceding
+           ) as kosan_max
+    from ham
+  ),
+  gecerli as (
+    select vehicle_id, recorded_at, odometer_km
+    from monoton where kosan_max is null or odometer_km >= kosan_max
+  ),
+  bloklu as (
+    select *, lag(odometer_km) over (partition by vehicle_id order by recorded_at) as onc_km
+    from gecerli
+  ),
+  blok_basi as (
+    select vehicle_id, recorded_at, odometer_km
+    from bloklu where onc_km is null or odometer_km <> onc_km
+  ),
+  kapili as (
+    select *,
+           lead(odometer_km) over (partition by vehicle_id order by recorded_at) as sonraki_km,
+           lead(recorded_at) over (partition by vehicle_id order by recorded_at) as sonraki_an
+    from blok_basi
+  ),
+  temiz as (
+    select vehicle_id, recorded_at, odometer_km
+    from kapili
+    where sonraki_km is null
+       or sonraki_km - odometer_km
+          <= greatest(1, extract(epoch from (sonraki_an - recorded_at)) / 3600.0 * 200)
+  ),
+  sayim as (select vehicle_id, count(*) as okuma_sayisi from ham group by 1)
+  select
+    t.vehicle_id,
+    -- telemetri-sinir: TEMIZ seriden; ayrica ilk/son ZAMANLI okuma aliniyor
+    (array_agg(t.odometer_km order by t.recorded_at asc))[1]::numeric  as odometre_ilk,
+    (array_agg(t.odometer_km order by t.recorded_at desc))[1]::numeric as odometre_son,
+    min(t.recorded_at) as ilk_an,
+    max(t.recorded_at) as son_an,
+    max(s.okuma_sayisi) as okuma_sayisi,
+    count(*) as temiz_sayisi
+  from temiz t
+  join sayim s on s.vehicle_id = t.vehicle_id
+  group by t.vehicle_id
+$$;
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+-- ═══ ÇALIŞTIRDIKTAN SONRA — EŞDEĞERLİK DENETİMİ ══════════════════════════
+--
+-- Beklenen (HAK61, 2026-07) — uygulama katmanında ölçülen değerler:
+--   DO-505GS   50   DO-512GT  757   DO-571GR  248   DO-753GS  981
+--   DO-671GY  599   DO-672GY  465   DO-719GV  263
+-- ve HİÇBİR araçta bir ayda 46.500 km'yi (31 × 1.500) aşan değer OLMAMALI.
+--
+--   select v.plate,
+--          s.odometre_ilk, s.odometre_son,
+--          (s.odometre_son - s.odometre_ilk) as km,
+--          s.okuma_sayisi, s.temiz_sayisi
+--   from public.fleet_odometer_spans('2026-07-01'::timestamptz,
+--                                    '2026-08-01'::timestamptz) s
+--   join public.vehicles v on v.id = s.vehicle_id
+--   order by km desc;
+--
+-- 🔴 46.500'ü aşan satır çıkarsa kod deploy EDİLMEMELİ — kural o araçta hâlâ
+-- yetmiyor demektir (096'da tam bu oldu).
+--
+-- ⚠️ Bu migration ÇALIŞTIRILMADI (31.08.2026). Kod tarafı fail-safe:
+-- `fleet_odometer_spans` yoksa rapor katmanı bugünkü araç-araç yoluna düşer
+-- ve davranış değişmez.
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  098_yukleme_hiz_siniri.sql                                         ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 098 — YÜKLEME HIZ SINIRI (kişi başına dakikada N dosya).
+--
+-- ═══ NEDEN GEREKLİ ═══
+--
+-- Dosya yükleme, mobil API'nin bant genişliği ve DEPOLAMA harcayan ilk
+-- ucudur. Kardeş yazma uçlarında hız sınırı yok ve orada bedeli sınırlı: bir
+-- satır fazla yazılır. Burada bedeli birikimli — 5 MB'lık dosyalar Storage'a
+-- yığılır, saklama politikası onları temizlemez (090 yalnız device_telemetry
+-- ve driver_locations kapsıyor) ve fatura sessizce büyür.
+--
+-- ═══ NEDEN AYRI TABLO, login_attempts DEĞİL ═══
+--
+-- `login_attempts` KİMLİK DOĞRULAMA sayacıdır: anahtarı `ip|telefon`, amacı
+-- çevrimiçi PIN tahminini durdurmak ve satırları kimlik doğrulandığında
+-- SİLİNİR (lib/auth-core.ts clearFailures). Yükleme sayacını oraya koymak,
+-- başarılı bir girişin yükleme kotasını sıfırlaması demekti — iki farklı
+-- olguyu tek satırda toplamak.
+--
+-- Burada anahtar KİŞİ (`worker_id`), çünkü kota kişiye ait: aynı şoför iki
+-- cihazdan yüklese de tek kotadan harcar. IP anahtarı yanlış olurdu — saha
+-- ekibi aynı depo Wi-Fi'sinden çıkıyor.
+--
+-- ═══ SABİT PENCERE (fixed window), KAYAN DEĞİL ═══
+--
+-- `pencere_basi` + 60 sn içindeki her yükleme sayacı artırır; pencere
+-- dolduğunda sayaç sıfırlanır. Kayan pencere daha adil olurdu ama her
+-- yüklemenin zaman damgasını saklamayı gerektirir (satır başına N kayıt).
+-- Sabit pencerenin bilinen kusuru sınır etkisidir: pencere sonunda 10 +
+-- pencere başında 10 = 2 saniyede 20 yükleme. Kabul edildi — bu bir GÜVENLİK
+-- sınırı değil, bir MALİYET frenidir; 20 dosya da 200 dosya değildir.
+--
+-- ⚠️ YARIŞ DURUMU BİLİNÇLİ AÇIK: iki eşzamanlı yükleme aynı sayacı okuyup
+-- yazabilir ve biri kaybolur. Atomik `sayac = sayac + 1` için RPC gerekirdi;
+-- yaklaşık bir fren için bu karmaşıklık haklı değil. Kaybolan artış tavanı
+-- 10'dan 11'e çıkarır, 100'e değil.
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+create table if not exists public.upload_rate (
+  -- Kişi silinirse kotası da gider; kotanın kişisiz anlamı yok.
+  worker_id uuid primary key references public.workers(id) on delete cascade,
+
+  -- Bu pencerenin başlangıcı. now() - pencere_basi > 60 sn ise sayaç sıfırlanır.
+  pencere_basi timestamptz not null default now(),
+
+  -- Pencere içinde yapılan yükleme sayısı.
+  sayac integer not null default 0 check (sayac >= 0),
+
+  updated_at timestamptz not null default now()
+);
+
+comment on table public.upload_rate is
+  'Dosya yükleme hız sınırı (098): kişi başına sabit pencerede yükleme sayacı. Tek yazan lib/upload-core.ts.';
+comment on column public.upload_rate.pencere_basi is
+  'Sabit pencerenin başlangıcı; pencere dolunca sayaç sıfırlanır.';
+
+-- Bakım taraması: eski pencereleri toplu silmek için (satır başına anahtarlı
+-- okuma zaten primary key'den geliyor, bu indeks TEMİZLİK içindir).
+create index if not exists upload_rate_pencere_idx
+  on public.upload_rate (pencere_basi);
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
 
 
 -- ═══════════════════════════════════════════════════════════════════════════

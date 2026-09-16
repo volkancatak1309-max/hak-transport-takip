@@ -16,6 +16,8 @@ import {
 } from "@/lib/fleet-scope";
 import { MAX_COUNT } from "@/lib/validation";
 import { listShiftEdits } from "@/lib/shift-edit-log";
+import { dosyaSil } from "@/lib/upload-core";
+import { SHIFT_PHOTO_KOVA } from "@/lib/driver-panel-kova";
 import { endShiftForWorker } from "@/lib/shift-end";
 import { startShiftSelf, startShiftForWorkerCore } from "@/lib/shift-start";
 import {
@@ -329,11 +331,48 @@ export async function getShiftEditsAction(entryId: string) {
   return listShiftEdits(entryId);
 }
 
-export async function deleteEntryAction(id: string): Promise<ShiftResult> {
+/**
+ * VARDİYAYI SİLER — ve ona bağlı FOTOĞRAF DOSYALARINI da (03.09.2026).
+ *
+ * 🔴 ÖNCEDEN YETİM BIRAKIYORDU. `shift_photos.time_entry_id` FK'si
+ * `on delete cascade` (020): vardiya silinince fotoğraf SATIRLARI gidiyordu
+ * ama Storage'daki DOSYALAR kalıyordu — kaydı olmayan, hiçbir ekranın
+ * göstermediği, saklama politikasının (090 yalnız device_telemetry ve
+ * driver_locations kapsıyor) hiç dokunmadığı dosyalar.
+ *
+ * Sıra önemli: yollar ÖNCE okunur (cascade onları yok edecek), satır SONRA
+ * silinir, dosyalar EN SON. Tersi olsaydı — önce dosyalar — silme yarıda
+ * kalınca kayıt VAR ama görüntüsü YOK olurdu.
+ *
+ * Dosya silme sonucu YUTULMAZ: `dosyaTemizlendi` dönüyor. Silinemeyen bir
+ * dosya vardiyayı geri getirmez ama sessiz kalmak, tutulmamış bir sözü
+ * tutulmuş göstermek olurdu.
+ */
+export async function deleteEntryAction(
+  id: string
+): Promise<ShiftResult & { silinenDosya?: number; dosyaTemizlendi?: boolean }> {
   await requireAdmin();
+
+  // Cascade yollarını YOK ETMEDEN önce oku.
+  const { data: fotolar } = await supabaseAdmin
+    .from("shift_photos")
+    .select("storage_path")
+    .eq("time_entry_id", id);
+  const yollar = ((fotolar ?? []) as { storage_path: string | null }[])
+    .map((f) => f.storage_path)
+    .filter((y): y is string => !!y);
+
   const { error } = await supabaseAdmin.from("time_entries").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
 
+  let silinenDosya = 0;
+  let dosyaTemizlendi = true;
+  if (yollar.length > 0) {
+    const sil = await dosyaSil(SHIFT_PHOTO_KOVA, yollar);
+    silinenDosya = sil.silinen;
+    dosyaTemizlendi = sil.ok && sil.silinen === yollar.length;
+  }
+
   revalidatePath("/admin");
-  return { ok: true };
+  return { ok: true, silinenDosya, dosyaTemizlendi };
 }

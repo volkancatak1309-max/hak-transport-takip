@@ -5,7 +5,8 @@ import { requireWorker, requireFleetView } from "@/lib/session";
 import { getFleetScope, UNRESTRICTED } from "@/lib/fleet-scope";
 import { getSeferById, ACIK_DURUMLAR } from "@/lib/sefer-db";
 import { getDurak, listDuraklar } from "@/lib/sefer-duraklari";
-import { uploadReceipt, signedReceiptUrls } from "@/lib/storage";
+import { signedReceiptUrls } from "@/lib/storage";
+import { yukleVeYaz } from "@/lib/upload-core";
 import {
   createTeslimat,
   addTeslimatFoto,
@@ -140,15 +141,31 @@ export async function teslimatFotoEkle(formData: FormData): Promise<KanitSonuc> 
   const file = formData.get("foto") as File | null;
   if (!file || file.size === 0) return { ok: false, hata: "kanit_yok", mesaj: "no_file" };
 
-  const up = await uploadReceipt(TESLIMAT_KOVASI, session.worker_id!, file);
-  if (!up.ok) return { ok: false, hata: "hata", mesaj: up.error };
-
-  const r = await addTeslimatFoto(teslimatId, up.path, {
-    latitude: sayi(formData.get("lat")),
-    longitude: sayi(formData.get("lng")),
-    dogrulukM: sayi(formData.get("accuracy")),
+  /**
+   * YÜKLE + YAZ, YETİM BIRAKMADAN (03.09.2026). Eskiden `uploadReceipt`
+   * başarılı olup `addTeslimatFoto` düştüğünde dosya Storage'da kalıyordu —
+   * hiçbir kayda bağlı olmayan, kimsenin göremediği bir dosya. Çekirdek artık
+   * yazma düşerse yüklenen dosyayı SİLİYOR ve kotayı iade ediyor.
+   */
+  type KanitHata = Extract<KanitSonuc, { ok: false }>;
+  let yazmaHatasi: KanitHata | null = null;
+  const c = await yukleVeYaz(TESLIMAT_KOVASI, session.worker_id!, file, async (yol) => {
+    const r = await addTeslimatFoto(teslimatId, yol, {
+      latitude: sayi(formData.get("lat")),
+      longitude: sayi(formData.get("lng")),
+      dogrulukM: sayi(formData.get("accuracy")),
+    });
+    if (!r.ok) {
+      yazmaHatasi = { ok: false, hata: r.sebep as KanitHata["hata"], mesaj: r.mesaj };
+      return null;
+    }
+    return r;
   });
-  if (!r.ok) return { ok: false, hata: r.sebep, mesaj: r.mesaj };
+  if (!c.ok) {
+    if (yazmaHatasi) return yazmaHatasi;
+    return { ok: false, hata: "hata", mesaj: c.hata };
+  }
+  const r = c.kayit;
 
   revalidatePath("/panel/seferler");
   return { ok: true, id: r.id };

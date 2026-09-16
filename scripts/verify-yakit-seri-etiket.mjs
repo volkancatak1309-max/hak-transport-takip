@@ -41,11 +41,18 @@ const v1Bas = m052.indexOf("create or replace function public.report_fuel_stats_
 if (v1Bas < 0) throw new Error("052'de report_fuel_stats_vehicle bulunamadı");
 const V1 = m052.slice(v1Bas, m052.indexOf("$$;", v1Bas) + 3);
 
-// PGlite'ta PostgREST yok; NOTIFY dışında migration OLDUĞU GİBİ uygulanır.
-const M101 = readFileSync(join(KOK, "db/migrations/101_yakit_seri_etiket.sql"), "utf8").replace(
-  /notify pgrst[^;]*;/g,
-  ""
-);
+// PGlite'ta PostgREST yok; NOTIFY dışında migration'lar OLDUĞU GİBİ uygulanır.
+/**
+ * ⚠️ 102 DE UYGULANIYOR. 101'in v2'si doğru sayıyı üretiyordu ama ileri kenar
+ * düzeltmesinde `rows between current row and unbounded following` kullanıyordu;
+ * `max()` için ters geçiş fonksiyonu olmadığından bu O(n²). galzura-demo canlı:
+ * 30 günlük pencere 8 sn ifade tavanına çarptı (v1 1.541 ms). 102 aynı kümeyi
+ * `order by ... desc` + `unbounded preceding` ile artımlı hesaplatıyor.
+ * Kanıt İKİSİNİ de uygular: kiracıya gidecek hâl budur.
+ */
+const temizle = (x) => x.replace(/notify pgrst[^;]*;/g, "");
+const M101 = temizle(readFileSync(join(KOK, "db/migrations/101_yakit_seri_etiket.sql"), "utf8"));
+const M102 = temizle(readFileSync(join(KOK, "db/migrations/102_yakit_v2_pencere_duzeltme.sql"), "utf8"));
 
 let gecen = 0;
 const dusen = [];
@@ -74,7 +81,8 @@ await q(`create table device_telemetry (
 )`);
 await q(V1);
 await db.exec(M101);
-console.log(`\n═══ PGlite · şema + 052'nin v1'i + migration 101 ═══`);
+await db.exec(M102);
+console.log(`\n═══ PGlite · şema + 052'nin v1'i + migration 101 + 102 ═══`);
 {
   const r = await q(`select
     (select count(*) from information_schema.tables where table_schema='public' and table_name='fuel_seri')::int tablo,
@@ -83,7 +91,7 @@ console.log(`\n═══ PGlite · şema + 052'nin v1'i + migration 101 ══�
     (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.proname='report_fuel_stats_vehicle')::int eski`);
   const x = r.rows[0];
-  ok("101 uygulandı: tablo 1 · yeni fonksiyon 2 · ESKİSİ duruyor", x.tablo === 1 && x.fn === 2 && x.eski === 1, `${x.tablo}/${x.fn}/${x.eski}`);
+  ok("101+102 uygulandı: tablo 1 · yeni fonksiyon 2 · ESKİSİ duruyor", x.tablo === 1 && x.fn === 2 && x.eski === 1, `${x.tablo}/${x.fn}/${x.eski}`);
 }
 
 // ── SENTETİK SERİ ─────────────────────────────────────────────────────────

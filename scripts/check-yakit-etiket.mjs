@@ -32,10 +32,20 @@ const kontrol = (ad, kosul, kanit = "") => {
 
 const m052 = oku("db/migrations/052_shift_distance_and_refill_merge.sql");
 const m101 = oku("db/migrations/101_yakit_seri_etiket.sql");
+const m102 = oku("db/migrations/102_yakit_v2_pencere_duzeltme.sql");
 const raporLib = oku("lib/reports.ts");
 const tenantLib = oku("lib/tenant.ts");
 const cron = oku("app/api/cron/yakit-etiket/route.ts");
 const cronDoc = oku("docs/CRON-KAYITLARI.md");
+
+/**
+ * ⚠️ YORUMLARI SÖKER. Bu dosyadaki bazı denetimler bir kalıbın gövdede
+ * BULUNMADIĞINI iddia ediyor; SQL yorumları da gövdenin içinde olduğu için
+ * kalıbı ANLATAN bir yorum denetimi yanlış yere düşürüyordu (birebir bu
+ * yaşandı: 102'nin "eskiden ... idi" açıklaması O(n²) denetimini tetikledi).
+ */
+const kodu = (x) =>
+  x.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--.*/g, " ");
 
 /** Bir dosyadan adı verilen fonksiyonun gövdesini çıkarır. */
 function govde(kaynak, ad) {
@@ -46,9 +56,33 @@ function govde(kaynak, ad) {
 }
 
 const v1 = govde(m052, "report_fuel_stats_vehicle");
-const v2 = govde(m101, "report_fuel_stats_vehicle_v2");
+/**
+ * ⚠️ YÜRÜRLÜKTEKİ v2 102'DEDİR. 101 onu yarattı, 102 `create or replace` ile
+ * üzerine yazdı (O(n²) pencere çerçevesi düzeltmesi). Denetimler EN SON
+ * tanımı okumalı, yoksa kiracıda koşan gövdeyi değil tarihi doğrularız.
+ */
+const v2 = govde(m102, "report_fuel_stats_vehicle_v2");
 kontrol("052'de report_fuel_stats_vehicle duruyor", v1 !== null);
-kontrol("101'de report_fuel_stats_vehicle_v2 var", v2 !== null);
+kontrol("102'de yürürlükteki report_fuel_stats_vehicle_v2 var", v2 !== null);
+kontrol(
+  "101 de v2'yi tanımlıyor (102 tek başına uygulanamaz)",
+  govde(m101, "report_fuel_stats_vehicle_v2") !== null
+);
+/**
+ * 🔑 O(n²) ÇERÇEVE GERİ GELMESİN. `max()` için ters geçiş fonksiyonu yok;
+ * çerçevenin başı ilerlerse Postgres her satırda baştan tarar. PGlite ölçümü
+ * (aynı veri, aynı makine): 10k satır 4.800 ms · 20k 19.619 ms · 40k 69.537 ms
+ * — ikiye katlamada DÖRDE katlanıyor. desc-artımlı hâli: 21 · 35 · 68 ms.
+ */
+kontrol(
+  "🔑 v2'de O(n²) çerçeve YOK (current row and unbounded following)",
+  v2 !== null && !/rows between current row and unbounded following/.test(kodu(v2)),
+  v2 && /rows between current row and unbounded following/.test(kodu(v2)) ? "O(n²) çerçeve GERİ GELMİŞ" : ""
+);
+kontrol(
+  "🔑 ileri kenar düzeltmesi desc-artımlı çerçeveyle",
+  v2 !== null && /order by n\.recorded_at desc rows between unbounded preceding and current row/.test(kodu(v2))
+);
 
 // ── 1 · MIGRATION ŞEKLİ ────────────────────────────────────────────────────
 kontrol("101 tek transaction (begin/commit)", /^begin;/m.test(m101) && /^commit;/m.test(m101));

@@ -1,20 +1,15 @@
 import "server-only";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
-import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
 import { fuelConsumedPct, pctToLiters } from "@/lib/fuel-math";
 import {
   computeSafetyScores,
   drivenVehiclesFromEntries,
   workedDaysFromEntries,
-  getWorkerShiftDistance,
   shiftKmForScoring,
   shiftWindowsForScoring,
   workerDrivingAt,
   scoreMinKmForWorkedDays,
-  getFleetDistanceSpans,
-  getVehicleDistanceSpan,
   getVehicleFuelSpan,
-  listVehiclesAndWorkers,
   scoreMinKmForSpan,
   type DistanceUnavailableReason,
 } from "@/lib/analytics";
@@ -30,6 +25,14 @@ import { getTestScope, dropTestRows, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { markKmMeasured } from "@/lib/km-quality";
 import { markKmKarar } from "@/lib/km-axis";
+import {
+  okuEvren,
+  okuOlaylar,
+  okuRolanti,
+  okuFiloSpan,
+  okuVardiyaMesafe,
+  okuAracSpan,
+} from "@/lib/report-reads";
 import { kmRaporDegeri } from "@/lib/km-ui";
 import { AZG_DAILY_MAX_MS } from "@/lib/azg-rules";
 import {
@@ -259,10 +262,13 @@ function rangeDays(range: DateRange): number {
 async function loadBase(range: DateRange) {
   const startISO = range.start.toISOString();
   const endISO = range.end.toISOString();
-  const { vehicles, workers, workerNames } = await listVehiclesAndWorkers();
+  // TUR İÇİ PAYLAŞIM (16. madde): kap açıksa bu dört okuma turda BİR KEZ
+  // yapılır. Kap yoksa (panel, cron) davranış birebir eskisi — bkz.
+  // lib/report-reads.ts başlığı.
+  const { vehicles, workers, workerNames } = await okuEvren();
   const [events, idleEpisodes, spanEntries] = await Promise.all([
-    listEventsInRange(startISO, endISO),
-    listIdleEpisodesInRange(startISO, endISO),
+    okuOlaylar(startISO, endISO),
+    okuRolanti(startISO, endISO),
     /**
      * ODOMETRE AÇIKLIĞI — önce filo geneli RPC (097), yoksa araç-araç.
      * RPC bozuk okumaları SQL'de eliyor; araç-araç yolu ham uç okumayı alır
@@ -270,12 +276,12 @@ async function loadBase(range: DateRange) {
      * gerekçe: `lib/analytics.ts` → `getFleetDistanceSpans`.
      */
     (async () => {
-      const filo = await getFleetDistanceSpans(startISO, endISO);
+      const filo = await okuFiloSpan(startISO, endISO);
       if (filo) return vehicles.map((v) => [v.id, filo.get(v.id) ?? BOS_SPAN] as const);
       // Eşzamanlılık tavanı: araç başına İKİ sorgu (bkz. lib/db-fanout.ts).
       return mapBounded(
         vehicles,
-        async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
+        async (v) => [v.id, await okuAracSpan(v.id, startISO, endISO)] as const
       );
     })(),
   ]);
@@ -469,10 +475,7 @@ export async function buildPerformanceReport(
   const workedDaysByWorker = workedDaysFromEntries(entries);
   // VARDİYA PENCERELİ km (052) — Analiz sayfasıyla AYNI üç-durum ayrımı:
   // hesaplanamadıysa şişik eski km'ye DÜŞÜLMEZ (bkz. shiftKmForScoring).
-  const shiftKmRes = await getWorkerShiftDistance(
-    range.start.toISOString(),
-    range.end.toISOString()
-  );
+  const shiftKmRes = await okuVardiyaMesafe(base.startISO, base.endISO);
   // EKSEN BİRLİĞİ (15.08.2026): olay atfı da km'nin geldiği SATIRLARDAN türer.
   // Analiz sayfasıyla AYNI çağrı, aynı üç-durum ayrımı — iki ekran aynı şoför
   // için farklı olay sayısı gösteremez.
@@ -1205,7 +1208,31 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
      * diye bilerek eklenmedi). Zaman aşımı bir kez, SIRAYLA tekrarlanır:
      * tekrar turunda rakip ifade yoktur.
      */
-    const volPer = await mapBounded(vehicles, (v) =>
+    /**
+     * ── YALNIZ GEREKEN ARACA SORULUR (16. madde, 16.09.2026) ──────────
+     *
+     * Litre yolu aşağıda `(!s || sample_count === 0)` koşuluyla, yani
+     * YÜZDE OKUMASI OLMAYAN araçta devreye giriyor. Buna rağmen RPC
+     * 28.08–16.09 arası TÜM araçlar için çağrılıyordu ve yüzde okuması
+     * olan araçların sonucu hiç okunmadan atılıyordu.
+     *
+     * ÖLÇÜLDÜ ("ay" penceresi, 29 araç): yüzde okuması olan 19, litre
+     * yolunun gerçekten gerektiği 10 araç.
+     *     galzura-demo  29 çağrı 10.672 ms → 10 çağrı 5.602 ms
+     *     HAK61         29 çağrı  4.331 ms → 10 çağrı 1.583 ms
+     * Çıktı BİREBİR aynı: atılan sonuçlar zaten hiçbir satıra girmiyordu.
+     *
+     * Liste BOŞSA hiç çağrı yapılmaz; `volStats` boş kalır ve o da eski
+     * davranışın aynısıdır (her araçta yüzde varsa litre yolu zaten hiç
+     * okunmuyordu). 039/094 geri düşüşü yalnız gerçekten litreye ihtiyaç
+     * duyulduğunda aranır — olmayan bir ihtiyaç için geri düşüş aramak
+     * turun en pahalı sorgusunu bedavaya koşturmaktı.
+     */
+    const litreGerekenler = vehicles.filter((v) => {
+      const s = stats.get(v.id);
+      return !s || Number(s.sample_count) === 0;
+    });
+    const volPer = await mapBounded(litreGerekenler, (v) =>
       supabaseAdmin.rpc("report_fuel_volume_stats_vehicle", {
         p_from: startISO,
         p_to: endISO,
@@ -1230,7 +1257,8 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
         volPer[i] = await supabaseAdmin.rpc("report_fuel_volume_stats_vehicle", {
           p_from: startISO,
           p_to: endISO,
-          p_vehicle_id: vehicles[i].id,
+          // ⚠️ İNDİS `litreGerekenler`e ait, `vehicles`e DEĞİL.
+          p_vehicle_id: litreGerekenler[i].id,
         });
       }
       volRows = volPer.flatMap((r) => (r.data ?? []) as FuelVolumeStatRow[]);
@@ -1248,12 +1276,12 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   // 22.07.2026: artık ölçüm PENCERESİ de geliyor (aşağıdaki 3. kapı için).
   // Eşzamanlılık tavanı: bu fan-out araç başına İKİ sorgu açıyor, yani sınırsız
   // hâlinde 60 ifade. Yakıt RPC'siyle aynı gerekçe (bkz. lib/db-fanout.ts).
-  const filoSpan = await getFleetDistanceSpans(startISO, endISO);
+  const filoSpan = await okuFiloSpan(startISO, endISO);
   const distEntries = filoSpan
     ? vehicles.map((v) => [v.id, filoSpan.get(v.id) ?? BOS_SPAN] as const)
     : await mapBounded(
         vehicles,
-        async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
+        async (v) => [v.id, await okuAracSpan(v.id, startISO, endISO)] as const
       );
   const distByVehicle = new Map(distEntries);
 

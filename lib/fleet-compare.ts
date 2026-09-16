@@ -1,13 +1,15 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
-import {
-  computeTopDriversByType,
-  computeIdleWaste,
-  getWorkerShiftDistance,
-  listVehiclesAndWorkers,
-} from "@/lib/analytics";
+import { computeTopDriversByType, computeIdleWaste } from "@/lib/analytics";
 import { TOP10_EVENT_TYPES, type DateRange } from "@/lib/analytics-shared";
-import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
+import {
+  okuEvren,
+  okuOlaylar,
+  okuRolanti,
+  okuVardiyaMesafe,
+  okuFiloSpan,
+} from "@/lib/report-reads";
+import { sayacIle } from "@/lib/query-counter";
 import { buildPerformanceReport, buildFuelReport } from "@/lib/reports";
 import { resolveCostRates } from "@/lib/cost-rates-db";
 import { alarmKademe } from "@/lib/event-ui";
@@ -175,39 +177,91 @@ function ortalama(degerler: number[]): number | null {
   return degerler.reduce((a, b) => a + b, 0) / degerler.length;
 }
 
+/**
+ * ═══ TUR KABI + TEK DALGA (16. madde, 16.09.2026) ══════════════════════════
+ *
+ * ÖNCE: iki ardışık `Promise.all` bloğu vardı ve ikisi de kendi paylaşılan
+ * okumalarını KENDİ başına yapıyordu. Yani `buildPerformanceReport` bitmeden
+ * olay/epizod/052 okumaları başlamıyor, üstelik o rapor zaten aynı üç şeyi
+ * kendi içinde okumuş oluyordu. Sorgu sayacıyla ölçüldü (demo, "ay"):
+ *     fleet_odometer_spans 2× · shift_odometer_spans 3× · vehicle_events 6×
+ *     idle_episodes 2× · vehicles 21× · workers 19×   → toplam 206 çağrı
+ *
+ * ŞİMDİ: `sayacIle` turu bir kap açıyor, paylaşılan okumalar `turMemo` ile
+ * turda BİR KEZ yapılıyor (lib/report-reads.ts) ve bağımsız olan her şey TEK
+ * dalgada başlıyor. Eşzamanlılık artmıyor: tekrarlar kalktığı için turun
+ * toplam sorgu sayısı DÜŞÜYOR.
+ *
+ * ⚠️ HİÇBİR FORMÜL DEĞİŞMEDİ. Aynı toplayıcılar, aynı girdiler, aynı sıra-
+ * bağımsız hesaplar. `denklik` bloğu bunun ölçülen kanıtı olarak duruyor.
+ */
 export async function buildFleetComparison(
+  range: DateRange,
+  scope: FleetScope
+): Promise<FiloKarsilastirmasi> {
+  return sayacIle(() => karsilastirmayiKur(range, scope));
+}
+
+async function karsilastirmayiKur(
   range: DateRange,
   scope: FleetScope
 ): Promise<FiloKarsilastirmasi> {
   const startISO = range.start.toISOString();
   const endISO = range.end.toISOString();
 
-  // ── Girdiler: hepsi MEVCUT toplayıcılardan ────────────────────────────────
-  // Sıra Analiz'deki ile aynı: rapor kendi içinde mapBounded(6) kullanıyor,
-  // olay okumaları ondan SONRA (lib/db-fanout.ts eşzamanlılık notu).
-  const [filoListesi, evren, rapor] = await Promise.all([
-    listFleets(),
-    listVehiclesAndWorkers(),
+  /**
+   * ── 1. DALGA: PAYLAŞILAN GİRDİLER ──────────────────────────────────────
+   *
+   * `vehicles/fleet` okuması da buraya alındı: eskiden iki raporun ARDINDAN
+   * tek başına bekliyordu ve hiçbir şeye bağımlı değildi.
+   *
+   * ⚠️ `okuFiloSpan` BİLEREK BURADA, iki ağır raporla AYNI ANDA DEĞİL.
+   * Ölçüldü (demo, "ay"): tek gövdeli 097 çağrısı rakipsizken 4.183 ms,
+   * yani 8 sn'lik ifade tavanının yarısı. İki raporla birlikte koşturunca
+   * tavanı aştı ve `null` döndü; her iki rapor da araç-araç yedek yola
+   * düştü (device_telemetry çağrısı 91 → 207). Sonuç yine doğruydu ama
+   * turda İKİ KAT iş yapılıyordu. Önce tek başına koşup memoya girmesi
+   * hem hızlı hem de yedek yolu hiç tetiklemiyor.
+   */
+  // En uzun çağrı ÖNCE başlatılır; sonucu burada kullanılmıyor, amacı turun
+  // memosuna girmesi. `await` aşağıda — bu satır yalnız işi kuyruğa koyar.
+  const filoSpanIsi = okuFiloSpan(startISO, endISO);
+  // Yakıt raporu da HEMEN başlar: 097'ye ancak en sonda ihtiyacı var, ilk
+  // işi araç-eksenli yakıt RPC'leri. Böylece 097 beklerken boş geçen ~4 sn
+  // yakıt RPC'leriyle doluyor.
+  const yakitIsi = buildFuelReport(range);
+  const [filoListesi, evren, events, idleEpisodes, shiftDist, aracSorgusu] =
+    await Promise.all([
+      listFleets(),
+      okuEvren(),
+      okuOlaylar(startISO, endISO),
+      okuRolanti(startISO, endISO),
+      okuVardiyaMesafe(startISO, endISO),
+      // test-visible: metrikler Analiz'in evrenini kullanır ve Analiz test
+      // aracının olaylarını toplamdan düşmez. Elersek Σ(filolar) Analiz'in
+      // toplamına EŞİT ÇIKMAZ ve bu ucun tek sözü o eşitliktir. Sayımlar
+      // (araç/personel) listFleets'ten gelir ve test kaydını eler — fark
+      // yanıtta `sayimTestHaric` ile söyleniyor.
+      supabaseAdmin.from("vehicles").select("id, fleet, assigned_worker_id"),
+    ]);
+  await filoSpanIsi;
+
+  /**
+   * ── 2. DALGA: İKİ AĞIR RAPOR, ARTIK YAN YANA ───────────────────────────
+   * Eskiden ardışıktı (`buildPerformanceReport` bitmeden yakıt başlamıyordu).
+   * Paylaştıkları her şey 1. dalgada okundu; burada yalnız KENDİ özel
+   * sorguları kaldı, yani yan yana koşmaları eşzamanlılığı patlatmıyor.
+   */
+  const [rapor, yakit] = await Promise.all([
     buildPerformanceReport(range),
-  ]);
-  const [events, idleEpisodes, shiftDist, yakit] = await Promise.all([
-    listEventsInRange(startISO, endISO),
-    listIdleEpisodesInRange(startISO, endISO),
-    getWorkerShiftDistance(startISO, endISO),
-    buildFuelReport(range),
+    yakitIsi,
   ]);
 
   const vehiclesById = new Map(evren.vehicles.map((v) => [v.id, v]));
   const workersById = new Map(evren.workers.map((w) => [w.id, w]));
 
-  // ── Araç → filo. Metrik evreni: test elemesi YOK (yukarıdaki not) ─────────
-  // test-visible: metrikler Analiz'in evrenini kullanır ve Analiz test aracının
-  // olaylarını toplamdan düşmez. Elersek Σ(filolar) Analiz'in toplamına EŞİT
-  // ÇIKMAZ ve bu ucun tek sözü o eşitliktir. Sayımlar (araç/personel) ise
-  // listFleets'ten gelir ve test kaydını eler — fark yanıtta söyleniyor.
-  const { data: vehRows, error: vehErr } = await supabaseAdmin
-    .from("vehicles")
-    .select("id, fleet, assigned_worker_id");
+  // ── Araç → filo. Metrik evreni: test elemesi YOK (sorgunun başındaki not).
+  const { data: vehRows, error: vehErr } = aracSorgusu;
   if (vehErr) throw new Error("vehicles/fleet okunamadi");
   const aracSatirlari = (vehRows ?? []) as {
     id: string;

@@ -63,18 +63,12 @@ const M103 = temizle(readFileSync(join(KOK, "db/migrations/103_yakit_hacim_seri_
  */
 const M104 = temizle(readFileSync(join(KOK, "db/migrations/104_yuzde_odo_kapisi_hizalama.sql"), "utf8"));
 /**
- * ⚠️ 106 — SON TOPLAMA TEK GEÇİŞ. `report_fuel_stats_vehicle` ve `_v2`nin
- * onbir skaler alt sorgusu 094'ün `group by` kalıbına çevrildi. Kanıt onu DA
- * uygular: kiracıya gidecek hâl budur. 106'nın ESKİ hâlle bayt-bayt denkliği
- * ayrıca `verify:yakit-son-toplama` betiginde ölçülüyor.
+ * ⚠️ 106 ve 107 BURADA UYGULANMIYOR — BEKLEMEDE (17.09.2026 kararı).
+ * Ölçülen kazanç ~1–2 sn'de kaldı ve hiçbir kiracıya gitmedi; dosyalar
+ * `db/migrations/_beklemede/` altında duruyor. Bu kanıt KIRACIYA GİDEN
+ * hâli ölçtüğü için onları uygulamamalı: yürürlükteki yüzde gövdesi 104'ün.
+ * 106/107'nin kendi denklik kanıtı ayrı betikte: `verify:yakit-son-toplama`.
  */
-const M106 = temizle(readFileSync(join(KOK, "db/migrations/106_yakit_son_toplama.sql"), "utf8"));
-/**
- * ⚠️ 107 — 106'YI KAPSAR: aynı gövdeler + `zero_count` kolonu (dönüş tipi
- * değiştiği için drop+create). İkisi de uygulanıyor çünkü yeni bir kiracıda
- * kurulum sırası tam olarak budur.
- */
-const M107 = temizle(readFileSync(join(KOK, "db/migrations/107_yakit_sifir_sayimi.sql"), "utf8"));
 
 /** LİTRE hattının v1'i — 094'ten, kopyalanmadan. */
 const m094 = readFileSync(join(KOK, "db/migrations/094_yakit_hacim_arac_ekseni.sql"), "utf8");
@@ -114,9 +108,7 @@ await db.exec(M101);
 await db.exec(M102);
 await db.exec(M103);
 await db.exec(M104);
-await db.exec(M106);
-await db.exec(M107);
-console.log(`\n═══ PGlite · şema + 052'nin v1'i + migration 101 + 102 + 103 + 104 + 106 + 107 ═══`);
+console.log(`\n═══ PGlite · şema + 052'nin v1'i + migration 101 + 102 + 103 + 104 ═══`);
 {
   const r = await q(`select
     (select count(*) from information_schema.tables where table_schema='public' and table_name='fuel_seri')::int tablo,

@@ -19,8 +19,8 @@
  *
  * ⚠️ GÖVDELERİN İKİSİ DE DOSYADAN OKUNUYOR, buraya KOPYALANMIYOR:
  *   104 → db/migrations/104_yuzde_odo_kapisi_hizalama.sql   (eski hâl)
- *   106 → db/migrations/106_yakit_son_toplama.sql           (tek geçiş)
- *   107 → db/migrations/107_yakit_sifir_sayimi.sql          (+ zero_count)
+ *   106 → db/migrations/_beklemede/106_yakit_son_toplama.sql  (tek geçiş)
+ *   107 → db/migrations/_beklemede/107_yakit_sifir_sayimi.sql (+ zero_count)
  *
  * Kullanım:  npm run verify:yakit-son-toplama
  */
@@ -37,8 +37,15 @@ const m052 = oku("052_shift_distance_and_refill_merge.sql");
 const M101 = temizle(oku("101_yakit_seri_etiket.sql"));
 const M102 = temizle(oku("102_yakit_v2_pencere_duzeltme.sql"));
 const M104 = temizle(oku("104_yuzde_odo_kapisi_hizalama.sql"));
-const M106 = temizle(oku("106_yakit_son_toplama.sql"));
-const M107 = temizle(oku("107_yakit_sifir_sayimi.sql"));
+/**
+ * ⚠️ 106 ve 107 BEKLEMEDE (17.09.2026 kararı): ölçülen kazanç ~1–2 sn'de
+ * kaldığı için hiçbir kiracıda uygulanmadılar ve `db/migrations/_beklemede/`
+ * altına alındılar (kurulum sırasında DA yoklar). Bu kanıt yine de koşuyor:
+ * dosyalar bir gün uygulanırsa denkliğin kanıtı hazır olsun — ve bozulursa
+ * bunu şimdi bilelim, uygulandığı gün değil.
+ */
+const M106 = temizle(oku("_beklemede/106_yakit_son_toplama.sql"));
+const M107 = temizle(oku("_beklemede/107_yakit_sifir_sayimi.sql"));
 
 function govde(kaynak, ad) {
   const b = kaynak.indexOf(`create or replace function public.${ad}(`);

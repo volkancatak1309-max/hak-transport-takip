@@ -27,7 +27,7 @@ Vercel projesinden alınır.
 | 8 | Dönem skoru + rozet | `/api/cron/skor-donem` | `CRON_SECRET` | **haftada 1** | Ödül/liderlik isteyen her kiracı (migration 088) |
 | 9 | **Saklama UYARISI** (silmez) | `/api/cron/saklama` | `CRON_SECRET` | **günde 1 · gece 03:00** | Saklama katmanı kuran her kiracı (migration 090) |
 | 10 | **Aylık metrik** (kapanmış ay özeti) | `/api/cron/aylik-metrik` | `CRON_SECRET` | **günde 1 · gece 03:30** | CO₂/yakıt aylık trendi isteyen her kiracı (migration 090) |
-| 11 | **Yakıt serisi etiketi** (yüzde + litre) | `/api/cron/yakit-etiket` | `CRON_SECRET` | **günde 1 · gece 03:15 Europe/Vienna** | Yakıt raporu/CO₂/filo karşılaştırması hızlansın isteyen her kiracı (migration 101+102+103) |
+| 11 | **Yakıt serisi etiketi** (yüzde + litre) ✅ **KURULDU** | `/api/cron/yakit-etiket` | `CRON_SECRET` | **günde 1 · gece 03:15 Europe/Vienna** | **ÜÇ KİRACIDA DA KURULU** (17.09.2026) — migration 101+102+103+104 |
 | ~~9~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
 
 ### 🔴 SIR **BAŞLIKLA** GÖNDERİLİR — sorgu dizesi YASAK
@@ -574,7 +574,23 @@ gösterilir — **"0" DEĞİL.**
 
 ---
 
-## 11 · Yakıt serisi etiketi — GÜNDE BİR, GECE 03:15
+## 11 · Yakıt serisi etiketi — GÜNDE BİR, GECE 03:15  ✅ KURULDU
+
+> **Kayıt kuruldu: 17.09.2026, üç kiracıda da.** cron-job.org'da test çağrısı
+> üçünde de **HTTP 200**:
+>
+> | kiracı | yazılan (yüzde / litre) |
+> |---|---|
+> | HAK61 | 38.348 / 30.815 |
+> | Sendigo | 11.506 / 0 |
+> | galzura-demo | 38.511 / 30.930 |
+>
+> Sendigo'nun litre tarafı 0: o kiracıda `fuel_volume_l` yalnız tek araçta
+> dolu ve o aracın son okuması 15.09'da bitmiş — yani varsayılan pencereye
+> (dün → şimdi) düşen yeni litre satırı yok. Bu bir kusur değil, veri.
+>
+> ⚠️ Sırsız çağrı ölçüldü: üç kiracıda da `GET`, `POST`, `?kuru=1`,
+> `?secret=<yanlış>` ve yanlış `Bearer` → **401** (15/15).
 
 ```
 GET https://<alan-adı>/api/cron/yakit-etiket

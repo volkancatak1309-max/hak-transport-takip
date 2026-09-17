@@ -454,6 +454,67 @@ kontrol(
   !/drop\s+function/i.test(oku("db/migrations/104_yuzde_odo_kapisi_hizalama.sql"))
 );
 
+// ── 5b · 106 · SON TOPLAMA TEK GEÇİŞ ───────────────────────────
+/**
+ * 106 `report_fuel_stats_vehicle` ve `_v2`nin ONBİR skaler alt sorgusunu
+ * 094'ün `group by` kalıbına çevirdi. Bu blok İKİ ŞEYİ donduruyor:
+ *   1. Yürürlükteki gövdelerde eski kalıp KALMADI (tek geçiş gerçekten var).
+ *   2. EŞİKLER değişmedi — 106 bir HIZ turuydu, kural turu değil.
+ * Kaynak dosya ADİ yazılmıyor: `yururlukte()` en yüksek numarayı bulur, 107
+ * gelirse denetim kendiliğinden ona taşınır.
+ */
+for (const ad of ["report_fuel_stats_vehicle", "report_fuel_stats_vehicle_v2"]) {
+  const y = yururlukte(ad);
+  const g = y ? kodu(y.govde) : "";
+  kontrol(`106 · ${ad} tek geçişe geçti`, /cross join dolum/.test(g), y?.dosya ?? "YOK");
+  kontrol(
+    `106 · ${ad} onbir skaler alt sorgu KALMADI`,
+    !/\(select count\(\*\) from clean\)/.test(g) &&
+      !/\(select avg\(fuel\) from clean\)/.test(g) &&
+      !/from clean order by recorded_at/.test(g),
+    y?.dosya ?? "YOK"
+  );
+  kontrol(
+    `106 · ${ad} boş seri kapısı duruyor (0 satır dönmeli)`,
+    /where t\.sample_count > 0/.test(g),
+    y?.dosya ?? "YOK"
+  );
+  kontrol(
+    `106 · ${ad} uç değerler TEMİZ seriden (array_agg)`,
+    /array_agg\(fuel order by recorded_at asc\)/.test(g) &&
+      /array_agg\(fuel order by recorded_at desc\)/.test(g),
+    y?.dosya ?? "YOK"
+  );
+  kontrol(
+    `106 · ${ad} dolum eşiği 5 puan (değişmedi)`,
+    /total_rise >= 5/.test(g),
+    y?.dosya ?? "YOK"
+  );
+  kontrol(
+    `106 · ${ad} düşüş eşiği 10 puan (değişmedi)`,
+    /prev_fuel - fuel >= 10/.test(g),
+    y?.dosya ?? "YOK"
+  );
+  kontrol(
+    `106 · ${ad} runs/rises mantığı duruyor`,
+    /sum\(m\.new_run\) over \(order by m\.recorded_at\)/.test(g) &&
+      /interval '15 minutes'/.test(g),
+    y?.dosya ?? "YOK"
+  );
+}
+kontrol(
+  "106 eski migration'lara DOKUNMUYOR (095/104 kalıbı)",
+  !/drop\s+function/i.test(oku("db/migrations/106_yakit_son_toplama.sql"))
+);
+/**
+ * 🔑 LİTRE hattı 106'ya GİRMEDİ — 094 zaten tek geçişti. Bu denetim,
+ * "hepsini dönüştürelim" diye litre gövdesinin bozulmasını engelliyor.
+ */
+kontrol(
+  "litre gövdesi (094) hep tek geçişti, 106 ona dokunmadı",
+  !kodu(oku("db/migrations/106_yakit_son_toplama.sql")).includes("report_fuel_volume_stats_vehicle")
+);
+
 // ── 6 · BELGE ──────────────────────────────────────────────────────────────
 kontrol("CRON-KAYITLARI'na 11 numaralı iş girdi", /\| 11 \|[^|]*yakit-etiket|\/api\/cron\/yakit-etiket/.test(cronDoc));
 kontrol("belgede 03:15 Europe/Vienna yazıyor", /03:15/.test(cronDoc) && /Europe\/Vienna/.test(cronDoc));

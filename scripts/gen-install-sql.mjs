@@ -105,6 +105,7 @@ const ORDER = [
   "103_yakit_hacim_seri_etiket.sql",
   "104_yuzde_odo_kapisi_hizalama.sql",
   "105_filo_span_tek_cekirdek.sql",
+  "106_yakit_son_toplama.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

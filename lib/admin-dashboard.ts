@@ -76,7 +76,135 @@ export type FleetStatus = {
   counts: Record<VehicleLiveStatus, number>;
 };
 
-export type AttentionItem =
+/**
+ * DİKKAT KALEMİNİN HEDEFİ — "bu satıra dokununca nereye gidilir".
+ *
+ * ── NEDEN YENİ BİR ALAN (17.09.2026) ──────────────────────────────────────
+ * Mobil, hedefi kalem KİMLİĞİNİN ÖNEKİNDEN tahmin ediyordu
+ * (galzura-fleet-app `lib/dashboard-api.ts` → `UUID_PREFIX` + `VEHICLE_KINDS`).
+ * O yöntem 19 türün yalnız 8'inde çalışıyordu: kalan türlerde önek araç/kişi
+ * değil VARDİYA, BELGE ya da PLAN kimliğidir ve tahmin YANLIŞ ekrana
+ * götürürdü — bu yüzden o satırlar hiç dokunulamaz bırakılmıştı.
+ *
+ * `maintenanceDue` bunun en net örneği: kimliği `${planId}-${vehicleId}-…`
+ * ile başlıyor, yani önek arabanın değil PLANIN kimliği. Önek tahmini bir gün
+ * o türü de kapsasaydı sessizce yanlış araca giderdi.
+ *
+ * Artık hedefi SUNUCU söylüyor ve kaynağın kimliği kalem ÜRETİLİRKEN elde
+ * olduğu için tahmin yok. Kimlik biçimi değişirse hedef bozulmaz.
+ */
+export type AttentionTarget = {
+  /**
+   *   arac    → vehicles.id                 (araç detayı)
+   *   sofor   → workers.id                  (personel detayı)
+   *   vardiya → time_entries.id             (vardiya detayı)
+   *   belge   → worker_documents.id         (belge kaydı, 078)
+   *   bakim   → bakım PLANI kimliği (081)
+   *   isemri  → vehicle_fault_reports.id    (iş emri, 081)
+   */
+  tur: "arac" | "sofor" | "vardiya" | "belge" | "bakim" | "isemri";
+  id: string;
+};
+
+/**
+ * ⚠️ `target` HER KALEMDE ZORUNLU. Kesişim olarak yazılması bilinçli: yeni bir
+ * Dikkat türü eklendiğinde derleyici `target`i de istemek zorunda kalsın,
+ * yoksa o tür sessizce hedefsiz (= dokunulamaz) doğar.
+ */
+/**
+ * DİKKAT KALEMİNİN SEBEP CÜMLESİ — ANAHTAR + PARAMETRE, hazır METİN DEĞİL.
+ *
+ * ── NEDEN SUNUCU CÜMLE KURMUYOR ───────────────────────────────────────────
+ * Mobil üç dilde çalışıyor ve dili İSTEMCİ seçiyor. Sunucu "Muayene 5 gün
+ * sonra doluyor" gönderseydi:
+ *   • kiracının kurulum dili ile kullanıcının telefon dili ayrışırdı,
+ *   • aynı cümle iki yerde (panel sözlüğü + uç) yaşardı ve kayardı,
+ *   • yeni bir dil eklemek SUNUCU dağıtımı gerektirirdi.
+ * Bu yüzden uç yalnız `sebep` anahtarını ve sayıları taşır; cümleyi mobil
+ * kendi sözlüğünden kurar. Aynı kural `belgeTuru`/`aciklama` alanlarında
+ * TERSİNE işliyor: onlar KİRACININ verisi, çevrilmez ve olduğu gibi taşınır.
+ *
+ * ⚠️ PARAMETRELER TÜRETİLMİŞ DEĞİL, KALEMİN KENDİ ALANLARI. Burada ikinci bir
+ * hesap yok — `switch` yalnız isimlendiriyor. Yeni bir tür eklenip buraya
+ * yazılmazsa `never` kapısı DERLEMEYİ kırar.
+ */
+export type AttentionReason = {
+  /** Çeviri anahtarı — ör. `inspection_due`. */
+  sebep: string;
+  /** Anahtarın beklediği sayı/etiketler — ör. `{ gun: 5 }`. */
+  param: Record<string, string | number | boolean>;
+};
+
+export function attentionReason(a: AttentionItem): AttentionReason {
+  const dk = (ms: number) => Math.round(ms / 60_000);
+  switch (a.kind) {
+    case "overLimit":
+      return {
+        sebep: "over_limit",
+        param: { dk: dk(a.ms), tavanDk: dk(a.capMs), gece: a.night },
+      };
+    case "break45":
+      return {
+        sebep: "break45",
+        param: { dk: dk(a.ms), molaDk: a.breakMin, gerekenDk: a.requiredMin },
+      };
+    case "secondShift":
+      return { sebep: "second_shift", param: { adet: a.count, toplamDk: dk(a.totalMs) } };
+    case "inspection":
+      return { sebep: "inspection_due", param: { gun: a.days } };
+    case "insurance":
+      return { sebep: "insurance_due", param: { gun: a.days } };
+    case "license":
+      return { sebep: "license_due", param: { gun: a.days } };
+    case "document":
+      // `belgeTuru` KİRACININ etiketi: parametre olarak taşınır, çevrilmez.
+      return { sebep: "document_due", param: { gun: a.days, belgeTuru: a.type_label } };
+    case "undelivered":
+      return { sebep: "undelivered", param: { adet: a.count } };
+    case "penalty":
+      return {
+        sebep: "penalty_unpaid",
+        // Hiçbiri fiyatlanmamışsa `tutar` HİÇ gönderilmez — 0 ile karıştırılmasın.
+        param: { adet: a.count, ...(a.amount !== null ? { tutar: a.amount } : {}) },
+      };
+    case "silent":
+      return { sebep: "silent", param: { saat: a.hours } };
+    case "kmUnmeasured":
+      // Cihaz HİÇ konuşmamışsa saat yok: alan gönderilmez, 0 uydurulmaz.
+      return { sebep: "km_unmeasured", param: a.hours !== null ? { saat: a.hours } : {} };
+    case "movingNoShift":
+      return { sebep: "moving_no_shift", param: {} };
+    case "unassignedMoving":
+      return { sebep: "unassigned_moving", param: {} };
+    case "driverless":
+      return { sebep: "driverless", param: {} };
+    case "locationUnverified":
+      return { sebep: "location_unverified", param: {} };
+    case "startEstimated":
+      return { sebep: "start_estimated", param: {} };
+    case "vehicleIdle":
+      return { sebep: "vehicle_idle", param: {} };
+    case "manualStart":
+      return { sebep: "manual_start", param: {} };
+    case "workOrder":
+      // `days` negatif üretiliyor (kaç gündür açık); işaret uçta çevriliyor.
+      return { sebep: "work_order", param: { gun: a.days, oncelik: a.oncelik } };
+    case "maintenanceDue":
+      return {
+        sebep: "maintenance_due",
+        param: {
+          eksen: a.eksen,
+          gecti: a.gecti,
+          ...(a.kalanKm !== null ? { kalanKm: a.kalanKm } : {}),
+          ...(a.kalanGun !== null ? { kalanGun: a.kalanGun } : {}),
+        },
+      };
+  }
+  const eksik: never = a;
+  return { sebep: (eksik as AttentionItem).kind, param: {} };
+}
+
+export type AttentionItem = { target: AttentionTarget } & (
   /** § 9 Abs. 1 / § 14 Abs. 2 — günlük tavan aşıldı. Gerçek ihlal. */
   | {
       kind: "overLimit";
@@ -310,7 +438,8 @@ export type AttentionItem =
       kalanGun: number | null;
       /** Eşik geçildi mi (gecikmiş bakım). */
       gecti: boolean;
-    };
+    }
+);
 
 /** Filo geneli arıza (DTC) özeti — plaka + aktif kod sayısı + en uzun süredir
  *  açık kod. Şiddet alanı YOK: ne `vehicle_dtc`'de ne de kod sözlüğünde
@@ -1443,6 +1572,7 @@ function buildAttention(
       items.push({
         kind: "overLimit",
         id: last.id,
+        target: { tur: "vardiya", id: last.id },
         worker_name: workerName,
         ms: acc.ms,
         capMs: cap,
@@ -1465,6 +1595,7 @@ function buildAttention(
       items.push({
         kind: "break45",
         id: last.id,
+        target: { tur: "vardiya", id: last.id },
         worker_name: workerName,
         ms: acc.ms,
         breakMin,
@@ -1490,6 +1621,7 @@ function buildAttention(
     items.push({
       kind: "secondShift",
       id: last.id,
+      target: { tur: "vardiya", id: last.id },
       worker_name: last.worker_id ? names.get(last.worker_id) ?? "—" : "—",
       count: acc.ids.length,
       totalMs: acc.ms,
@@ -1509,7 +1641,14 @@ function buildAttention(
       if (!due) continue;
       const days = Math.round((new Date(due).getTime() - today) / dayMs);
       if (days >= -DOC_DUE_WINDOW_DAYS && days <= DOC_DUE_WINDOW_DAYS) {
-        items.push({ kind, id: `${v.id}-${kind}`, plate: v.plate, due, days });
+        items.push({
+        kind,
+        id: `${v.id}-${kind}`,
+        target: { tur: "arac", id: v.id },
+        plate: v.plate,
+        due,
+        days,
+      });
       }
     }
   }
@@ -1520,6 +1659,8 @@ function buildAttention(
       items.push({
         kind: "undelivered",
         id: `${e.id}-undelivered`,
+        // Hedef VARDİYA: düzeltilecek olan paket sayısı, o kayıtta.
+        target: { tur: "vardiya", id: e.id },
         entry_id: e.id,
         worker_name: e.worker_id ? names.get(e.worker_id) ?? "—" : "—",
         count: e.undelivered_count ?? 0,
@@ -1554,6 +1695,7 @@ function buildAttention(
     items.push({
       kind: "penalty",
       id: `${vehicleId}-penalty`,
+      target: { tur: "arac", id: vehicleId },
       plate: plateById.get(vehicleId) ?? "—",
       count: acc.count,
       amount: acc.hasAmount ? acc.amount : null,
@@ -1574,6 +1716,7 @@ function buildAttention(
     items.push({
       kind: "license",
       id: `${w.id}-license`,
+      target: { tur: "sofor", id: w.id },
       worker_name: w.name,
       due: w.license_expiry,
       days,
@@ -1596,6 +1739,8 @@ function buildAttention(
       // Kimlik BELGE satırının id'si: erteleme (058) bu kimliğe yazılıyor ve
       // aynı şoförün iki farklı belgesi ayrı ayrı ertelenebilmeli.
       id: `${d.id}-document`,
+      // Hedef BELGE kaydı (078), kişi değil: yenilenecek olan belgedir.
+      target: { tur: "belge", id: d.id },
       worker_name: d.workerName,
       type_label: d.typeLabel,
       due: d.expiresAt,
@@ -1619,6 +1764,7 @@ function buildAttention(
       kind: "workOrder",
       // Kimlik emrin KENDİ id'si: erteleme (058) tek tek emre yazılabilmeli.
       id: `${e.id}-workorder`,
+      target: { tur: "isemri", id: e.id },
       plate: e.plaka,
       aciklama: e.aciklama,
       oncelik: e.oncelik,
@@ -1637,6 +1783,12 @@ function buildAttention(
     items.push({
       kind: "maintenanceDue",
       id: `${d.planId}-${d.vehicleId}-maintenance`,
+      /**
+       * Hedef BAKIM PLANI. ⚠️ Kimliğin öneki de plan kimliğidir — önek
+       * tahmini bu türü araç sanıp YANLIŞ araca götürürdü; hedefin ayrı
+       * bir alan olmasının en açık gerekçesi bu satır.
+       */
+      target: { tur: "bakim", id: d.planId },
       plate: d.plaka,
       tip: d.tip,
       eksen: d.eksen,
@@ -1667,6 +1819,7 @@ function buildAttention(
     items.push({
       kind: "silent",
       id: `${p.vehicle_id}-silent`,
+      target: { tur: "arac", id: p.vehicle_id },
       plate,
       hours,
       at: p.recorded_at,
@@ -1697,12 +1850,14 @@ function buildAttention(
         ? {
             kind: "unassignedMoving",
             id: `${p.vehicle_id}-unassigned`,
+            target: { tur: "arac", id: p.vehicle_id },
             plate: v.plate,
             at: p.recorded_at,
           }
         : {
             kind: "movingNoShift",
             id: `${p.vehicle_id}-moving`,
+            target: { tur: "arac", id: p.vehicle_id },
             plate: v.plate,
             at: p.recorded_at,
           }
@@ -1719,6 +1874,8 @@ function buildAttention(
     items.push({
       kind: "driverless",
       id: `${v.id}-driverless`,
+      // Hedef ARAÇ: yapılacak iş "yeni şoför ata", ayrılan kişiyi açmak değil.
+      target: { tur: "arac", id: v.id },
       plate: v.plate,
       worker_name: names.get(wid) ?? "—",
       terminated_at: terminatedAtByWorker.get(wid) ?? null,
@@ -1731,6 +1888,7 @@ function buildAttention(
     items.push({
       kind: "locationUnverified",
       id: `${u.id}-unverloc`,
+      target: { tur: "vardiya", id: u.id },
       worker_name: u.worker_name,
       started_at: u.started_at,
     });
@@ -1742,6 +1900,7 @@ function buildAttention(
     items.push({
       kind: "startEstimated",
       id: `${s.id}-eststart`,
+      target: { tur: "vardiya", id: s.id },
       worker_name: s.worker_name,
       started_at: s.started_at,
     });
@@ -1771,6 +1930,7 @@ function buildAttention(
       items.push({
         kind: "kmUnmeasured",
         id: `${e.id}-kmunmeasured`,
+        target: { tur: "vardiya", id: e.id },
         worker_name: e.worker_id ? names.get(e.worker_id) ?? "—" : "—",
         plate: e.plate ?? plateById.get(e.vehicle_id) ?? "—",
         last_seen: seen,
@@ -1787,6 +1947,7 @@ function buildAttention(
     items.push({
       kind: "vehicleIdle",
       id: `${c.id}-idle`,
+      target: { tur: "vardiya", id: c.id },
       worker_name: c.worker_name,
       started_at: c.started_at,
     });
@@ -1798,6 +1959,7 @@ function buildAttention(
     items.push({
       kind: "manualStart",
       id: `${m.id}-manualstart`,
+      target: { tur: "vardiya", id: m.id },
       worker_name: m.worker_name,
       by_name: m.by_name,
       started_at: m.started_at,

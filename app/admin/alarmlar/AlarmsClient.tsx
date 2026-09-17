@@ -54,8 +54,9 @@ import type { AlarmRange, AlarmTrend } from "./page";
  *   • rölanti EPİZOD modeli + süre rozeti (dec71d2 / migration 024)
  *   • ŞOFÖR ADI — eski yapıda HİÇ yoktu, buraya EKLENDİ: plaka tek başına
  *     kimlik değil. Tabloda plakanın altında, fırtına grubunda ve çekmecede.
- *     Kaynak raporlarla aynı (vehicles.driver_name); araç el değiştirdiyse
- *     geçmiş olay bugünkü şoförle etiketlenir — ipucu metni bunu söyler.
+ *     17.09.2026'dan beri kaynak OLAY ANINDAKİ vardiya (`lib/event-driver.ts`),
+ *     `vehicles.driver_name` DEĞİL — araç el değiştirdiğinde geçmiş olay artık
+ *     yanlış kişiye yazılmıyor. Eşleşen vardiya yoksa ad HİÇ yazılmaz.
  */
 
 /**
@@ -65,6 +66,14 @@ import type { AlarmRange, AlarmTrend } from "./page";
 export type AlarmRow = VehicleEventWithPlate & {
   duration_ms?: number | null;
   ongoing?: boolean;
+  /**
+   * OLAY ANINDAKİ şoför (17.09.2026) — sunucuda `lib/event-driver.ts` ile
+   * çözülüyor. `null` = o anda o araçta açık vardiya YOK; bugünkü atanmış
+   * şoföre DÜŞÜLMÜYOR.
+   */
+  driver_name?: string | null;
+  /** Şoförün geldiği vardiya kaydı. */
+  shift_id?: string | null;
 };
 
 const EventMiniMap = dynamic(() => import("@/components/admin/EventMiniMap"), {
@@ -147,7 +156,6 @@ function PillSelect({
 
 export function AlarmsClient({
   events,
-  vehicles,
   range,
   trend,
   epochISO,
@@ -155,7 +163,12 @@ export function AlarmsClient({
 }: {
   events: AlarmRow[];
   /** Şoför adı için araç künyesi (raporlarla aynı kaynak). */
-  vehicles: { id: string; plate: string; driverName: string | null }[];
+  /**
+   * ⚠️ `vehicles` PROPU KALDIRILDI (17.09.2026). Tek kullanıcısı araç →
+   * BUGÜNKÜ şoför haritasıydı; şoför artık satırın kendisinde ve OLAY
+   * ANINDAN geliyor (`lib/event-driver.ts`). Araç süzgeci zaten olay
+   * satırlarının PLAKASINDAN besleniyordu, bu proptan değil.
+   */
   range: AlarmRange;
   /** Gün gün alarm trendi + önceki dönem karşılaştırması. */
   trend: AlarmTrend;
@@ -177,11 +190,12 @@ export function AlarmsClient({
   const [fSev, setFSev] = useState("");
   const [selected, setSelected] = useState<AlarmRow | null>(null);
 
-  const driverByVehicleId = useMemo(
-    () => new Map(vehicles.map((v) => [v.id, v.driverName])),
-    [vehicles]
-  );
-  const driverOf = (e: AlarmRow) => driverByVehicleId.get(e.vehicle_id) ?? null;
+  /**
+   * Şoför SATIRDAN okunuyor: sunucu olay anındaki vardiyadan çözdü
+   * (`lib/event-driver.ts`). Araç → bugünkü şoför haritası KALDIRILDI;
+   * duruyor olsaydı bir sonraki düzenleme kazara ona geri dönebilirdi.
+   */
+  const driverOf = (e: AlarmRow) => e.driver_name ?? null;
   /** DriverName'in metin proplarını tek yerden ver — üç kullanım yeri var. */
   const driverText = { hint: t("driver_source_hint"), fallback: t("no_driver") };
 

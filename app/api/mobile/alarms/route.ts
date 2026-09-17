@@ -5,7 +5,7 @@ import {
   listIdleEpisodesInRange,
   IDLE_TRIGGER_S,
 } from "@/lib/telemetry";
-import { listVehiclesWithStatus } from "@/lib/vehicles";
+import { olaySoforuCozucu } from "@/lib/event-driver";
 import { parsePage, pageInfo, parseRange } from "@/lib/mobile-list";
 import { eventTone, alarmKademe, type AlarmKademe } from "@/lib/event-ui";
 import { listActiveSnoozes, ERTELEME_LISTE_TAVANI } from "@/lib/action-snoozes-db";
@@ -66,16 +66,28 @@ export async function GET(req: NextRequest) {
       ? kademeParam
       : null;
 
-  const [events, episodes, vehicles, ertelemeler] = await Promise.all([
+  /**
+   * ══ ŞOFÖR ARTIK OLAY ANINDAN (17.09.2026) ══════════════════════
+   *
+   * ÖNCEDEN: `vehicles.driver_name` — aracın BUGÜNKÜ atanmış şoförü. Araç el
+   * değiştirdiğinde geçen ayın ihlali bu ay o aracı devralan kişiye yazılıyordu.
+   * Şimdi olay anında O ARAÇTA açık olan vardiyanın şoförü yazılıyor; eşleşen
+   * vardiya yoksa **null** — bugünkü atanana DÜŞÜLMÜYOR.
+   *
+   * Kural ve çözücü TEK YERDE: `lib/event-driver.ts`. Panel
+   * (`app/admin/alarmlar/page.tsx`) aynı çekirdeği çağırıyor — iki yüzey aynı
+   * alarma farklı isim yazamaz.
+   *
+   * ⚠️ `listVehiclesWithStatus()` DA KALKTI: tek işi şoför adını aracın
+   * bugünkü atamasından vermekti. Plaka zaten olay satırlarında ve rölanti
+   * epizodlarında geliyor — bir sorgu eksildi, davranış aynı.
+   */
+  const [events, episodes, ertelemeler, sofor] = await Promise.all([
     listEventsInRange(range.start.toISOString(), range.end.toISOString()),
     listIdleEpisodesInRange(range.start.toISOString(), range.end.toISOString()),
-    listVehiclesWithStatus(),
     listActiveSnoozes(),
+    olaySoforuCozucu(range.start.toISOString(), range.end.toISOString()),
   ]);
-
-  // Şoför adı araç künyesinden türetilir — panelin yaptığının aynısı
-  // (geçmişe dönük kusuru da aynı: olay anındaki şoför değil, BUGÜNKÜ araç şoförü).
-  const driverByVehicle = new Map(vehicles.map((v) => [v.id, v.driver_name]));
 
   type Row = {
     id: string;
@@ -142,13 +154,19 @@ export async function GET(req: NextRequest) {
     ertelemeToplam: ertelemeler.toplam,
     ertelemeTavani: ERTELEME_LISTE_TAVANI,
     ertelemeKirpildi: ertelemeler.kirpildi,
-    alarmlar: slice.map((r) => ({
+    alarmlar: slice.map((r) => {
+      const s = sofor.bul(r.vehicle_id, r.occurred_at);
+      return {
       id: r.id,
       tur: r.event_type,
       siddet: eventTone(r.event_type),
       aracId: r.vehicle_id,
       plaka: r.plate,
-      sofor: driverByVehicle.get(r.vehicle_id) ?? null,
+      /** OLAY ANINDAKİ şoför; eşleşen vardiya yoksa null (uydurulmaz). */
+      sofor: s.name,
+      /** Şoförün geldiği vardiya kaydı — "hangi vardiya" sorusunun cevabı. */
+      vardiyaId: s.shiftId,
+      soforId: s.workerId,
       an: r.occurred_at,
       deger: r.event_value,
       hizKmh: r.speed_kmh,
@@ -158,6 +176,7 @@ export async function GET(req: NextRequest) {
           : null,
       sureMs: r.duration_ms ?? null,
       devamEdiyor: r.ongoing ?? false,
-    })),
+      };
+    }),
   });
 }

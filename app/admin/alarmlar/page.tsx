@@ -5,7 +5,7 @@ import {
   listIdleEpisodesInRange,
   IDLE_TRIGGER_S,
 } from "@/lib/telemetry";
-import { listVehiclesWithStatus } from "@/lib/vehicles";
+import { olaySoforuCozucu } from "@/lib/event-driver";
 import {
   startOfTodayVienna,
   endOfTodayVienna,
@@ -136,10 +136,22 @@ export default async function AlarmsPage({
   // 90 günlük yoğunluk şeridi (Zendesk deseni) 27.07.2026'da İPTAL edildi —
   // listEventDensity çağrısı ve stripStart penceresi buradan kalktı.
   // Araç künyesi KALIYOR: alarm satırlarında şoför adı ondan geliyor.
-  const [events, episodes, vehicles] = await Promise.all([
+  /**
+   * ⚠️ `listVehiclesWithStatus()` KALKTI (17.09.2026). Tek işi şoför adını
+   * aracın BUGÜNKÜ atamasından vermekti; plaka zaten olay satırlarının ve
+   * rölanti epizodlarının kendisinde geliyor. Sorgu kaldı olsaydı bir sonraki
+   * düzenleme kazara eski kaynağa dönebilirdi.
+   */
+  const [events, episodes, sofor] = await Promise.all([
     listEventsInRange(start.toISOString(), end.toISOString()),
     listIdleEpisodesInRange(start.toISOString(), end.toISOString()),
-    listVehiclesWithStatus(),
+    /**
+     * ŞOFÖR ARTIK OLAY ANINDAN (17.09.2026) — `lib/event-driver.ts`.
+     * Mobil uç (`/api/mobile/alarms`) AYNI çekirdeği çağırıyor; iki yüzey aynı
+     * alarma farklı isim yazamaz. `vehicles` artık şoför için DEĞİL, yalnız
+     * araç süzgeci ve plaka yedeği için okunuyor.
+     */
+    olaySoforuCozucu(start.toISOString(), end.toISOString()),
   ]);
 
   // Epizod → alarm satırı. Süre = ham span (ended veya son görülme − başlangıç)
@@ -164,9 +176,14 @@ export default async function AlarmsPage({
     };
   });
 
-  const rows: AlarmRow[] = [...events, ...idleRows].sort((a, b) =>
-    b.occurred_at.localeCompare(a.occurred_at)
-  );
+  const rows: AlarmRow[] = [...events, ...idleRows]
+    .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))
+    .map((r) => {
+      const s = sofor.bul(r.vehicle_id, r.occurred_at);
+      // OLAY ANINDAKİ şoför. Eşleşen vardiya yoksa null — bugünkü atanana
+      // DÜŞÜLMÜYOR: yanlış isim yazmaktansa isim yazmamak.
+      return { ...r, driver_name: s.name, shift_id: s.shiftId };
+    });
 
   // ── DÖNEM TRENDİ (27.07.2026, Volkan kararı) ────────────────────────────
   // Analiz'deki tip-dağılımı grafiği KALDIRILMADI (Volkan: "Analiz'e dokunma").
@@ -204,18 +221,10 @@ export default async function AlarmsPage({
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6">
         <AlarmsClient
           events={rows}
-          /* ŞOFÖR ADI (27.07.2026): `driver_name` açık vardiyadaki şoför, yoksa
-             araca ATANMIŞ şoför — raporların kullandığı kaynağın AYNISI
-             (lib/reports.ts assigned_worker_id). Alarmlar ile raporlar aynı
-             kişiyi söylemek zorunda. Geçmişe dönük kusuru bilinçli kabul
-             edildi: araç el değiştirdiyse eski olay bugünkü şoförle
-             etiketlenir; tarihsel atama kaydı veritabanında YOK. Ekranda
-             adın yanındaki ipucu bunu yazıyor. */
-          vehicles={vehicles.map((v) => ({
-            id: v.id,
-            plate: v.plate,
-            driverName: v.driver_name,
-          }))}
+          /* ŞOFÖR ADI ARTIK SATIRIN KENDİSİNDE (`driver_name`) ve OLAY
+             ANINDAN geliyor — yukarıdaki `olaySoforuCozucu`. Bu prop
+             yalnız ARAÇ SÜZGECİ için duruyor; `driverName` ARTIK
+             GÖNDERİLMİYOR ki istemci kazara eski kaynağa dönemesin. */
           range={range}
           trend={trend}
           /* Uyarı KOŞULU tek yerde: görüntülenen aralık sınırdan önce

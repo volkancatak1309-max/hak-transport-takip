@@ -13368,7 +13368,12 @@ notify pgrst, 'reload schema';
 -- ║  105_filo_span_tek_cekirdek.sql                                     ║
 -- ╚═══════════════════════════════════════════════════════════════════════╝
 
--- 105 — ODOMETRE AÇIKLIĞI: TEK ÇEKİRDEK + ARAÇ EKSENLİ PLAN (16c, Adım 1)
+-- 105 — ODOMETRE AÇIKLIĞI: TEK ÇEKİRDEK + ARAÇ EKSENLİ PLAN (16c, Adım 1)  —  ÇALIŞTIRILDI 17.09.2026
+--
+-- ✅ ÜÇ KİRACIDA DA UYGULANDI (17.09.2026): HAK61 · Sendigo · galzura-demo.
+--    Doğrulama: yeni_fn 1 · filo_fn 1 · vardiya_fn_durur 1 · lateral_var 1 (üçünde de).
+--    Mantık kapısı (bir ayda 46.500 km'yi aşan satır yok) üç kiracıda da geçti:
+--    en yüksek aylık km — demo 1.390 · Sendigo 10.510 · HAK61 2.101.
 --
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 🔴 SORUN İKİ KATLI: AYNI ARACA İKİ FARKLI KM, VE YÜKE GÖRE HANGİSİ

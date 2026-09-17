@@ -72,7 +72,7 @@ Aşama ölçümü (demo, "ay", 29 araç) kalan yükün nerede olduğunu söylüy
 |---|---:|---|
 | yüzde RPC ×29 | 7.151 → **4.296 ms** | ✅ 101+102 |
 | litre RPC ×10 | 5.388 → **1.129 ms** | ✅ 103 |
-| **097 `getFleetDistanceSpans`** | **4.351 ms** | ✅ 16c adım 1 — 105 (bkz. ODOMETRE-KAYNAK-BAGLAMA § 9) |
+| **097 `getFleetDistanceSpans`** | 4.351 → **2.041 ms** | ✅ 105 — ama KRİTİK YOLDA DEĞİL (§ 9.9) |
 | **052'nin son toplaması** | ~780 ms/araç | ⏳ 16c |
 | kenar sorgular | ~1.400 ms | — |
 

@@ -445,8 +445,7 @@ düşer (latch'li, `missing_function` ile) — davranış birebir değişmez.
 - `npm run lint:filo-span` — **26 denetim**; arıza enjeksiyonu **6/6**
   (sessiz geri düşüş, kural kopyası, eşik sapması, kapı taşınması, RPC
   kopması, eksik dil anahtarı).
-- Canlı önce/sonra ölçümü **105 uygulandıktan sonra** yapılabilir; bu belgeye
-  o zaman eklenecek.
+- Canlı önce/sonra ölçümü: § 9.9.
 
 ## 9.8 · Ölçülemeyen bir değişiklik — kayda geçirildi
 
@@ -456,3 +455,81 @@ zaten atıyor. PGlite'ta dört pencerede ölçüldü, sapma yok. Bunu arıza
 enjeksiyonu listesine koymak testi *sahte bir boşluk* raporlamaya iterdi;
 koymayıp susmak da kimseye sebebini söylemezdi. Ölçüp yazdık
 (`verify-filo-span-tek-cekirdek.mjs` § 5).
+
+## 9.9 · ÖNCE / SONRA — 105 üç kiracıda uygulandıktan sonra (17.09.2026)
+
+105 üç kiracıda da çalıştırıldı (doğrulama 1/1/1/1; mantık kapısı geçti —
+en yüksek aylık km demo 1.390 · Sendigo 10.510 · HAK61 2.101).
+
+### Süre — `fleet_odometer_spans` (5 koşum medyan, kapalı pencere)
+
+| kiracı · pencere | ÖNCE | SONRA | kazanç |
+|---|---:|---:|---:|
+| HAK61 · 7 gün | 721 ms | **450 ms** (2. tur 482) | −%38 |
+| HAK61 · 30 gün | 2.417 ms | **1.366 ms** (2. tur 1.348) | −%44 |
+| demo · 7 gün | 1.048 ms | **571 ms** | −%46 |
+| demo · 30 gün | 6.949 ms (max 8.242) | **2.041 ms** (max 3.250) | **−%71** |
+
+⚠️ **Hedef kısmen tuttu.** 7 günde `< 1 sn` sağlandı (450–571 ms). 30 günde
+sağlanmadı: HAK61 1.366 ms · demo 2.041 ms. Ama 8 sn'lik ifade tavanıyla
+arasındaki pay demo'da 8.242 → 3.250 ms'e indi — yani "tavana çarpıp yedeğe
+düşme" riski fiilen bitti.
+
+### Doğruluk — iki yolun km'si (ASIL KAZANÇ)
+
+Ayrışma taraması, altı pencere × üç kiracı:
+
+| | ÖNCE | SONRA |
+|---|---|---|
+| HAK61 | 14 gün kayan **1/30** · 30 gün kayan **1/30** | **0/30** (altı pencerede de) |
+| galzura-demo | 14 gün kayan **1/30** · 30 gün kayan **1/30** | **0/30** (altı pencerede de) |
+| Sendigo | 0/5 | 0/5 |
+
+Adı geçen araçlar, kayan pencere:
+
+| araç | pencere | ÖNCE (filo · yedek) | SONRA (filo · yedek) |
+|---|---|---|---|
+| HAK61 `DO-512GT` | 14 gün | 692 · **751** | **692 · 692** |
+| HAK61 `DO-571GR` | 30 gün | 592 · **null** | **592 · 592** |
+| demo `W-GF-106` | 14 gün | 692 · **751** | **692 · 692** |
+| demo `W-GF-107` | 30 gün | 592 · **null** | **592 · 592** |
+
+### Sayı değişmedi
+
+`fleetLPer100Km`, 30 gün, 3 koşum — ÖNCE ve SONRA **birebir aynı**:
+HAK61 **71,628142** · demo **79,742597** (üç koşumda da tek değer).
+
+### Değişmeyen süreler — ve nedeni
+
+| | ÖNCE | SONRA |
+|---|---:|---:|
+| `buildFuelReport` 30 gün · HAK61 | 8.075 ms | 9.505 / 9.080 ms |
+| `buildFuelReport` 30 gün · demo | 18.470 ms | 17.781 ms |
+| `buildFleetComparison` hafta · demo | 3.387 ms | 3.400 / 3.568 / 3.589 ms |
+| `buildFleetComparison` ay · demo | 14.690 ms | 14.972 / 15.052 / 17.124 ms |
+
+🔴 **097 KRİTİK YOLDA DEĞİL.** Demo'da span 4,9 sn kısaldı ama uçtan uca süre
+oynamadı. Sebep ölçümde görünüyor: `buildFuelReport` tek başına ~17,8 sn ve
+`buildFleetComparison` onu span'le **paralel** başlatıyor (bkz.
+`lib/fleet-compare.ts`). Span 7 sn iken de 2 sn iken de bitişi yakıt motoru
+belirliyor. 16c'nin ikinci maddesi (052'nin son toplaması) bu yüzden ayrı
+duruyor.
+
+Denklik bloğu turun tamamında korundu: `verify:filo-karsilastir-hiz`
+**20/20** (dört senaryo × 5 denklik).
+
+### Canlı uç
+
+- Jetonsuz **401**, üç kiracıda ikişer uçta — gerçek HTTP ile: 6/6
+  (`hak-transport-takip.vercel.app` · `sendigo-delta.vercel.app` ·
+  `demo.galzura.com`, `/api/mobile/analytics?range=ay` ve `/analytics/co2?range=ay`).
+- Demo · gerçek girişle (`issueAccessToken` zinciri, yönetici): `/analytics?range=ay`
+  **200** · `/analytics/co2?range=ay` **200**; aynı handler jetonsuz **401**.
+
+⚠️ **Ölçüm yerinin sınırı:** girişli çağrı, deponun yerleşik QA yolundan
+(gerçek route handler + gerçek jeton) koşuyor; jeton `SESSION_PASSWORD` ile
+mühürlendiği ve Vercel'deki kopyası **Sensitive** olduğu için CANLI SUNUCUYA
+girişli istek atılamıyor (`invalid_token` ölçüldü). Bu yüzden girişli süreler
+Vercel'de değil, buradan Supabase'e giden turlarla ölçülüyor —
+`/analytics?range=ay` **13.969 ms** (16b turundaki ~13 sn ile aynı yöntemle
+ölçülmüştü, karşılaştırılabilir), `/analytics/co2?range=ay` **28.667 ms**.

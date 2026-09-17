@@ -69,6 +69,12 @@ const M104 = temizle(readFileSync(join(KOK, "db/migrations/104_yuzde_odo_kapisi_
  * ayrıca `verify:yakit-son-toplama` betiginde ölçülüyor.
  */
 const M106 = temizle(readFileSync(join(KOK, "db/migrations/106_yakit_son_toplama.sql"), "utf8"));
+/**
+ * ⚠️ 107 — 106'YI KAPSAR: aynı gövdeler + `zero_count` kolonu (dönüş tipi
+ * değiştiği için drop+create). İkisi de uygulanıyor çünkü yeni bir kiracıda
+ * kurulum sırası tam olarak budur.
+ */
+const M107 = temizle(readFileSync(join(KOK, "db/migrations/107_yakit_sifir_sayimi.sql"), "utf8"));
 
 /** LİTRE hattının v1'i — 094'ten, kopyalanmadan. */
 const m094 = readFileSync(join(KOK, "db/migrations/094_yakit_hacim_arac_ekseni.sql"), "utf8");
@@ -109,7 +115,8 @@ await db.exec(M102);
 await db.exec(M103);
 await db.exec(M104);
 await db.exec(M106);
-console.log(`\n═══ PGlite · şema + 052'nin v1'i + migration 101 + 102 + 103 + 104 + 106 ═══`);
+await db.exec(M107);
+console.log(`\n═══ PGlite · şema + 052'nin v1'i + migration 101 + 102 + 103 + 104 + 106 + 107 ═══`);
 {
   const r = await q(`select
     (select count(*) from information_schema.tables where table_schema='public' and table_name='fuel_seri')::int tablo,

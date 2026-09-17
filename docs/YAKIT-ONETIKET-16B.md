@@ -211,9 +211,12 @@ ay < 5 sn · hafta < 2 sn" hedefinin yalnız biri yakınına gelindi (HAK61 haft
 | litre RPC ×10 | ~1,2 sn | 103 aldı |
 
 🔑 **Sıradaki en büyük tek kalem `fuel_level_pct = 0` sayımı.** 19 sorgu,
-tek başına 179 ms, rekabet altında 1,4 sn/sorgu. O kolonda **kısmi indeks
-YOK** — 093 bir zamanlar `idx_device_telemetry_fuel`i düşürdü ve hiçbir
-migration yeniden yaratmıyor. 16c adım 3 burası.
+tek başına 179 ms, rekabet altında 1,4 sn/sorgu. 16c adım 3 burası.
+
+> ⚠️ **DÜZELTME (adım 3):** burada "093 o kolonun indeksini düşürdü"
+> yazıyordu — yanlıştı. 093'ün düşürdüğü `idx_device_telemetry_fuel`,
+> 053'ün indeksinin BİREBİR KOPYASIYDI ve yüklemi `fuel_level_pct IS NOT
+> NULL`dı, `= 0` değil. Kalan indeks yerinde duruyor.
 
 ## 5 · Sayılar değişmedi
 
@@ -228,3 +231,96 @@ kıyaslandı: **iki kiracıda da BİREBİR AYNI**.
 - `lint:yakit-etiket` **106 → 122 denetim**; yeni 106 denetimlerinde arıza
   enjeksiyonu **6/6**. Denetimler kaynak dosya adını yazmıyor — `yururlukte()`
   en yüksek numaralı migration'ı bulur, 107 gelirse kendiliğinden taşınır.
+
+---
+
+# 16c adım 3 — sıfır sayımı aynı taramadan (migration 107)
+
+## 1 · Ne yapıldı
+
+`buildFuelReport` arızalı sensör tespiti için araç başına ayrı bir
+`count(exact, head)` sorgusu atıyordu. 107 o sayıyı yüzde RPC'sinin yanıtına
+`zero_count` olarak ekledi — sayı zaten o RPC'nin taradığı satırlardan geliyor.
+
+- **107 = 106'nın gövdeleri + 12. kolon.** 106 hiçbir kiracıda çalıştırılmadı;
+  107 onu kapsıyor. (Kurulum dosyalarında ikisi de sırayla var: yeni bir
+  kiracıda 106 `create or replace`, 107 `drop`+`create`.)
+- Dönüş tipi değiştiği için **drop + create, tek işlemde** (100 kalıbı) +
+  `lock_timeout 3s`.
+- Uygulama kararı **yanıta** bakıyor, bayrağa değil:
+  `statRows.some((r) => r.zero_count !== undefined)`. Kolon yoksa eski 19
+  sorgulu yol aynen koşuyor.
+
+## 2 · Kısmi indeks gerekiyor mu — HAYIR, ve 093 yanlış hatırlanmıştı
+
+🔴 **Adım 2'de "093 `fuel_level_pct = 0` indeksini düşürdü" yazılmıştı. Yanlıştı.**
+093'ün düşürdüğü `idx_device_telemetry_fuel`, 053'ün
+`idx_device_telemetry_vehicle_fuel_pct` indeksinin **birebir kopyasıydı** ve
+yüklemi `fuel_level_pct IS NOT NULL`dı, `= 0` değil. Kalan indeks yerinde
+duruyor ve tam o yüklemi taşıyor. 093'ün kendi başlığı bunu satır satır
+anlatıyor — okunmadan aktarılmış.
+
+`= 0` için ayrı bir kısmi indeks de **gerekmiyor**, ve bunun kanıtı saat değil
+**plan**:
+
+| | 106 | 107 |
+|---|---:|---:|
+| `device_telemetry` tarama düğümü | 2 | **2** |
+| `CTE Scan on base` | 0 | **2** |
+
+107'de `base` iki tüketicili olduğu için Postgres onu **maddeleştiriyor**:
+tablo bir kez taranıyor, `sifir` CTE'si maddeleşmiş sonucu okuyor. Yani
+`zero_count` ikinci bir erişim yolu açmıyor.
+
+⚠️ **PGlite'ın saati bu soruyu çözemez** ve öyle davranılmadı: aynı gövde
+ardışık turlarda 335–450 ms arası oynuyor (WASM), ve oradaki "ayrı sayım
+sorgusu" 8 ms çıkıyor çünkü veritabanı bellekte — canlıda aynı sorgu 179 ms.
+
+## 3 · Beklenen kazanç — ölçülen aritmetikle, ve hedefin ALTINDA
+
+107 hiçbir kiracıda uygulanmadı; canlı SONRA ölçümü uygulandıktan sonra
+yapılabilir. Beklenti tahmin değil, **ölçülmüş aşama pencerelerinden** türedi
+(fetch izi, 30 gün, 29 araç):
+
+| | demo | HAK61 |
+|---|---:|---:|
+| yüzde RPC biter | 6.315 ms | 3.828 ms |
+| litre RPC biter | 13.834 ms | 9.897 ms |
+| **sıfır sayımı biter** | **15.778 ms** | **10.899 ms** |
+| → 107 ile dalganın bitişi | 13.834 ms | 9.897 ms |
+| **doğrudan kazanç** | **~1,9 sn** | **~1,0 sn** |
+
+🔴 **Hedef (demo 14,6 → ~10 sn · HAK61 9,3 → ~5 sn) BU ARİTMETİKLE TUTMUYOR.**
+Doğrudan kazanç ~1–2 sn. Sebep: sıfır sayımı **litre RPC'siyle paralel**
+koşuyordu (adım 2'nin düzeni), yani 4,8 sn'lik duvar saatinin yalnız litreyi
+aşan kısmı kritik yolda.
+
+İkinci bir kazanç **mümkün ama ölçülmedi**: 19 eşzamanlı sayım sorgusu
+kalkınca tepe eşzamanlılık **25 → ~13**'e iniyor. Filo span'i (tek ifade)
+şu anda tam da bu rekabet yüzünden 8 sn'lik tavanı aşıp `null` dönüyor ve
+araç-araç yedeğe düşülüyor (demo'da +2,8 sn, HAK61'de +1,6 sn). Rekabet
+azalınca span tavanın altında kalabilir — **kalırsa** demo ~11 sn, HAK61
+~8 sn olur. Bu bir hipotez; 107 uygulanınca ölçülecek.
+
+## 4 · Kanıt
+
+- `verify:yakit-son-toplama` (PGlite) **35/35**:
+  - 104 ↔ 107 **11 kolon bayt-bayt**, 4 pencere × 3 etiket durumu × 7 araç
+  - `zero_count` = uygulamanın ESKİ sayımı, **8/8** (v1 ve v2, dört pencere)
+  - **yanıt sözleşmesi**: 104'ün yanıtında kolon YOK (11), 107'de VAR (12),
+    ve 11 kolonun adları/sırası değişmedi — `zero_count` **sona** eklendi
+  - **7 arıza enjeksiyonunun 7'si** yakalandı (ikisi yalnız `zero_count`u
+    bozuyor; 11 kolonluk kıyas onları göremediği için **ayrı bir dedektör**
+    eklendi — eski sayım sorgusuyla karşılaştırma)
+  - plan denetimi: ek `device_telemetry` erişimi yok
+- `verify:yakit-seri-etiket` **36/36** (106 + 107 uygulanmış hâlde)
+- `lint:yakit-etiket` **122 → 138 denetim**; 107 denetimlerinde arıza **8/8**
+
+### 🔴 Muhafızda yakalanan gerçek kusur
+
+`check-yakit-etiket.mjs`in `govde()` okuyucusu yalnız
+`create or replace function` arıyordu. 107 `drop` + **düz** `create function`
+kullandığı için okuyucu onu **görmüyor** ve "yürürlükteki gövde" olarak 106'yı
+döndürüyordu — yani bütün eşik/kapı denetimleri sessizce **geçmişi** denetler
+hâle gelmişti. Ölçümle yakalandı (denetim 106'yı gösterdi), okuyucu iki biçimi
+de tanıyacak şekilde düzeltildi.

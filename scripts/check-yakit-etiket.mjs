@@ -51,10 +51,23 @@ const kodu = (x) =>
 
 /** Bir dosyadan adı verilen fonksiyonun gövdesini çıkarır. */
 function govde(kaynak, ad) {
-  const b = kaynak.indexOf(`create or replace function public.${ad}(`);
-  if (b < 0) return null;
-  const s = kaynak.indexOf("$$;", b);
-  return s < 0 ? null : kaynak.slice(b, s);
+  /**
+   * ⚠️ İKİ BİÇİMİ DE TANIR. 107'ye kadar bütün gövdeler
+   * `create or replace function` idi; 107 dönüş tipini değiştirdiği için
+   * `drop` + DÜZ `create function` kullanıyor (100 kalıbı). Yalnız ilk biçimi
+   * arayan bir okuyucu 107'yi GÖRMEZ ve "yürürlükteki" gövde olarak 106'yı
+   * döndürür — denetimler o zaman geçmişi denetler. Bu yaşandı, ölçüldü.
+   */
+  for (const bas of [
+    `create or replace function public.${ad}(`,
+    `create function public.${ad}(`,
+  ]) {
+    const b = kaynak.indexOf(bas);
+    if (b < 0) continue;
+    const s = kaynak.indexOf("$$;", b);
+    if (s >= 0) return kaynak.slice(b, s);
+  }
+  return null;
 }
 
 const v1 = govde(m052, "report_fuel_stats_vehicle");
@@ -513,6 +526,73 @@ kontrol(
 kontrol(
   "litre gövdesi (094) hep tek geçişti, 106 ona dokunmadı",
   !kodu(oku("db/migrations/106_yakit_son_toplama.sql")).includes("report_fuel_volume_stats_vehicle")
+);
+
+// ── 5c · 107 · ARIZALI SENSÖR SAYIMI AYNI TARAMADAN ───────────────────
+/**
+ * 107, yüzde RPC'lerine 12. kolon `zero_count`u ekledi ve uygulamadaki 19
+ * ayrı sayım sorgusunu kaldırdı. Donan sözler:
+ *   1. Sayım HAM seriden (`base`), TEMİZ seriden (`clean`/`stepped`) DEĞİL.
+ *   2. Kolon SONA eklendi — 11 kolonun sırası değişmedi.
+ *   3. Dönüş tipi değiştiği için drop+create, ve İKİSİ TEK İŞLEMDE.
+ *   4. Uygulama kolon yoksa ESKİ yola düşüyor (sessizce 0 yazmıyor).
+ */
+const M107 = oku("db/migrations/107_yakit_sifir_sayimi.sql");
+const K107 = kodu(M107);
+for (const ad of ["report_fuel_stats_vehicle", "report_fuel_stats_vehicle_v2"]) {
+  const y = yururlukte(ad);
+  const g = y ? kodu(y.govde) : "";
+  kontrol(`107 · ${ad} yürürlükteki hâli 107'den geliyor`, y?.dosya === "107_yakit_sifir_sayimi.sql", y?.dosya ?? "YOK");
+  kontrol(
+    `107 · ${ad} zero_count HAM seriden (base)`,
+    /select count\(\*\)::bigint as zero_count from base where fuel = 0/.test(g),
+    y?.dosya ?? "YOK"
+  );
+  kontrol(
+    `107 · ${ad} zero_count SONA eklendi (11 kolonun sırası durdu)`,
+    /drop_pct     double precision,\s*\n\s*zero_count   bigint/.test(g),
+    y?.dosya ?? "YOK"
+  );
+  kontrol(
+    `107 · ${ad} sifir CTE'si cross join ile bağlanıyor`,
+    /cross join dolum d cross join sifir z/.test(g),
+    y?.dosya ?? "YOK"
+  );
+}
+kontrol(
+  "107 drop + create, İKİSİ TEK İŞLEMDE (100 kalıbı)",
+  /begin;/.test(K107) &&
+    (K107.match(/drop function if exists/g) ?? []).length === 2 &&
+    (K107.match(/^create function public\./gm) ?? []).length === 2 &&
+    /commit;/.test(K107)
+);
+kontrol("107 kilit zaman aşımı koyuyor", /set local lock_timeout/.test(K107));
+kontrol("107 şema yenileme bildirimi içeriyor", /notify\s+pgrst/i.test(M107));
+kontrol(
+  "107 eski 2 argümanlı report_fuel_stats'e DOKUNMUYOR",
+  !/function public\.report_fuel_stats\(/.test(K107)
+);
+kontrol(
+  "107 litre hattına DOKUNMUYOR",
+  !K107.includes("report_fuel_volume_stats_vehicle")
+);
+/**
+ * 🔴 GERİ DÜŞÜŞ: 107 uygulanmamış kiracıda uygulama ESKİ 19 sorguya düşmeli.
+ * Bu iki denetim o yolun silinmesini engelliyor — silinirse o kiracı sessizce
+ * "arızalı sensör yok" der ve rozet kaybolur.
+ */
+const RAPORLAR = oku("lib/reports.ts");
+kontrol(
+  "uygulama kararı YANITA bakıyor (bayrağa değil)",
+  /const sifirKolonuVar = statRows\.some\(\(r\) => r\.zero_count !== undefined\)/.test(RAPORLAR)
+);
+kontrol(
+  "kolon yokken ESKİ 19 sorgulu yol duruyor",
+  /\.eq\("fuel_level_pct", 0\)/.test(RAPORLAR) && /count: "exact", head: true/.test(RAPORLAR)
+);
+kontrol(
+  "`zero_count` türü OPSİYONEL (107 öncesi kiracı derlemeyi bozmasın)",
+  /zero_count\?: number \| null;/.test(RAPORLAR)
 );
 
 // ── 6 · BELGE ──────────────────────────────────────────────────────────────

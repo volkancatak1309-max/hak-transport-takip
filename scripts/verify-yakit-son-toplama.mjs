@@ -1,20 +1,26 @@
 #!/usr/bin/env node
 /**
- * MIGRATION 106 — YAKIT YÜZDE SON TOPLAMA TEK GEÇİŞ. DENKLİK KANITI.
+ * MIGRATION 106 + 107 — SON TOPLAMA TEK GEÇİŞ + `zero_count`. DENKLİK KANITI.
  *
  * ═══ NE KANITLANIYOR ══════════════════════════════════════════════════════
- *   1. 106'nın `report_fuel_stats_vehicle` ve `_v2`si, 104'teki hâlleriyle
+ *   1. 107'nin `report_fuel_stats_vehicle` ve `_v2`si, 104'teki hâlleriyle
  *      BAYT-BAYT aynı: 4 pencere × 3 etiket durumu × her araç × 11 kolon.
+ *      (107 = 106'nın gövdeleri + 12. kolon `zero_count`.)
  *   2. Etiket durumları: TAM etiket · MELEZ (ilk yarı etiketli) · BOŞ tablo.
  *      v2'nin melez okuması 106'dan etkilenmiyor.
  *   3. ARIZA ENJEKSİYONU: yeni kuyruğun her bir toplayıcısını boz —
  *      denklik KIRILMALI. Kırılmıyorsa test boştur.
- *   4. SÜRE: canlı ölçekte (68.000 yakıt okuması = demo/HAK61'in en yoğun
- *      aracının 30 günü) 106 ne kadar kazandırıyor — ÖLÇÜLÜR, iddia edilmez.
+ *   4. `zero_count` = UYGULAMANIN ESKİ SAYIMI. Aynı aralık, aynı araç için
+ *      `count(*) where fuel_level_pct = 0` ile birebir eşit mi.
+ *   5. SÜRE: canlı ölçekte (68.000 yakıt okuması = demo/HAK61'in en yoğun
+ *      aracının 30 günü) 106/107 ne kadar kazandırıyor — ÖLÇÜLÜR, iddia edilmez.
+ *      `zero_count` eklemenin maliyeti de ayrıca ölçülüyor (kısmi indeks
+ *      gerekip gerekmediği sorusunun cevabı).
  *
  * ⚠️ GÖVDELERİN İKİSİ DE DOSYADAN OKUNUYOR, buraya KOPYALANMIYOR:
  *   104 → db/migrations/104_yuzde_odo_kapisi_hizalama.sql   (eski hâl)
- *   106 → db/migrations/106_yakit_son_toplama.sql           (yeni hâl)
+ *   106 → db/migrations/106_yakit_son_toplama.sql           (tek geçiş)
+ *   107 → db/migrations/107_yakit_sifir_sayimi.sql          (+ zero_count)
  *
  * Kullanım:  npm run verify:yakit-son-toplama
  */
@@ -32,6 +38,7 @@ const M101 = temizle(oku("101_yakit_seri_etiket.sql"));
 const M102 = temizle(oku("102_yakit_v2_pencere_duzeltme.sql"));
 const M104 = temizle(oku("104_yuzde_odo_kapisi_hizalama.sql"));
 const M106 = temizle(oku("106_yakit_son_toplama.sql"));
+const M107 = temizle(oku("107_yakit_sifir_sayimi.sql"));
 
 function govde(kaynak, ad) {
   const b = kaynak.indexOf(`create or replace function public.${ad}(`);
@@ -147,7 +154,20 @@ for (const [ad, yeni] of [
 }
 
 // ═══ ŞEMA: 106 (YENİ HÂL) ════════════════════════════════════════════════
+// 107 = 106 + zero_count. Ikisi de uygulaniyor: yeni bir kiracida kurulum
+// sirasi tam olarak budur (106 create or replace, 107 drop + create).
 await db.exec(M106);
+// 106'nın hâli de ayrı adla saklanır: "tek geçiş" ile "tek geçiş + zero_count"
+// arasındaki farkı ölçebilmek için (kısmi indeks gerekiyor mu sorusu).
+for (const [ad, yeni] of [
+  ["report_fuel_stats_vehicle", "fsv_106"],
+  ["report_fuel_stats_vehicle_v2", "fsv2_106"],
+]) {
+  await db.exec(
+    govde(M106, ad).replace(`function public.${ad}(`, `function public.${yeni}(`)
+  );
+}
+await db.exec(M107);
 
 // ═══ DENETİM ALTYAPISI ═══════════════════════════════════════════════════
 let gecti = 0;
@@ -183,6 +203,31 @@ const cek = async (fn, f, t) => {
   }
   return out;
 };
+
+/**
+ * `zero_count` 11 kolonluk kanona GİRMİYOR (104'te o kolon yok). Bu yüzden
+ * onu bozan bir arıza, 104 ↔ 107 kıyasıyla YAKALANAMAZ. Ayrı dedektör:
+ * RPC'nin sayımı, uygulamanın ESKİ sorgusuyla birebir eşit mi.
+ */
+async function sifirSapmasiVarMi(f, t) {
+  for (const fn of ["report_fuel_stats_vehicle", "report_fuel_stats_vehicle_v2"]) {
+    for (const [id] of ARACLAR) {
+      const r = await q(
+        `select * from public.${fn}($1::timestamptz,$2::timestamptz,$3::uuid)`,
+        [f, t, id]
+      );
+      if (!r.rows[0]) continue;
+      const eski = await q(
+        `select count(*)::bigint as n from public.device_telemetry
+          where vehicle_id = $3::uuid and fuel_level_pct = 0
+            and recorded_at >= $1::timestamptz and recorded_at <= $2::timestamptz`,
+        [f, t, id]
+      );
+      if (Number(r.rows[0].zero_count) !== Number(eski.rows[0].n)) return true;
+    }
+  }
+  return false;
+}
 
 const an = (i) => new Date(T0 + i * ADIM).toISOString();
 const PENCERELER = [
@@ -226,6 +271,83 @@ for (const durum of ["tam", "melez", "bos"]) {
   }
 }
 
+console.log(`\n═══ 1b · zero_count = UYGULAMANIN ESKİ SAYIMI ══════════════`);
+/**
+ * Eski yol: `.eq(vehicle_id).eq(fuel_level_pct, 0).gte(from).lte(to)` — HAM
+ * satırlar, de-glitch ÖNCESİ. Burada birebir o sorgu çalıştırılıp RPC'nin
+ * `zero_count`u ile karşılaştırılıyor.
+ */
+await etiketDurumu("tam");
+for (const [pad, f, t] of PENCERELER) {
+  for (const fn of ["report_fuel_stats_vehicle", "report_fuel_stats_vehicle_v2"]) {
+    let uyan = 0;
+    let bakilan = 0;
+    let toplamRpc = 0;
+    let toplamEski = 0;
+    for (const [id, plate] of ARACLAR) {
+      const r = await q(
+        `select * from public.${fn}($1::timestamptz,$2::timestamptz,$3::uuid)`,
+        [f, t, id]
+      );
+      if (!r.rows[0]) continue;
+      bakilan++;
+      const eski = await q(
+        `select count(*)::bigint as n from public.device_telemetry
+          where vehicle_id = $3::uuid and fuel_level_pct = 0
+            and recorded_at >= $1::timestamptz and recorded_at <= $2::timestamptz`,
+        [f, t, id]
+      );
+      const a = Number(r.rows[0].zero_count);
+      const b = Number(eski.rows[0].n);
+      toplamRpc += a;
+      toplamEski += b;
+      if (a === b) uyan++;
+      else console.log(`      ${plate}: rpc ${a} · eski ${b}`);
+    }
+    ok(
+      `zero_count · ${fn === "report_fuel_stats_vehicle" ? "v1" : "v2"} · ${pad}`,
+      uyan === bakilan && bakilan > 0,
+      `${uyan}/${bakilan} araç · Σ rpc ${toplamRpc} = eski ${toplamEski}`
+    );
+  }
+}
+
+console.log(`\n═══ 1c · YANIT SÖZLEŞMESİ (uygulama neye bakarak karar veriyor) ══`);
+/**
+ * `lib/reports.ts` şu tek satırla karar veriyor:
+ *     const sifirKolonuVar = statRows.some((r) => r.zero_count !== undefined);
+ * Yani bayrağa değil YANITIN KENDİSİNE bakıyor. Bu bölüm o sözleşmeyi
+ * veritabanı tarafında donduruyor: 104'ün hâli kolonu TAŞIMAMALI, 107'ninki
+ * TAŞIMALI. Biri bozulursa uygulama sessizce yanlış yola girer.
+ */
+{
+  const [, f, t] = PENCERELER[0];
+  const eski = await q(
+    `select * from public.fsv2_104($1::timestamptz,$2::timestamptz,$3::uuid)`,
+    [f, t, ARACLAR[0][0]]
+  );
+  const yeni = await q(
+    `select * from public.report_fuel_stats_vehicle_v2($1::timestamptz,$2::timestamptz,$3::uuid)`,
+    [f, t, ARACLAR[0][0]]
+  );
+  ok(
+    "104'ün yanıtında `zero_count` YOK → uygulama ESKİ 19 sorguya düşer",
+    eski.rows[0] !== undefined && eski.rows[0].zero_count === undefined,
+    `kolonlar: ${Object.keys(eski.rows[0] ?? {}).length}`
+  );
+  ok(
+    "107'nin yanıtında `zero_count` VAR → uygulama yanıttan okur",
+    yeni.rows[0] !== undefined && yeni.rows[0].zero_count !== undefined,
+    `kolonlar: ${Object.keys(yeni.rows[0] ?? {}).length}`
+  );
+  ok(
+    "11 kolonun ADLARI ve SIRASI değişmedi, `zero_count` SONA eklendi",
+    JSON.stringify(Object.keys(yeni.rows[0] ?? {})) ===
+      JSON.stringify([...Object.keys(eski.rows[0] ?? {}), "zero_count"]),
+    Object.keys(yeni.rows[0] ?? {}).join(",")
+  );
+}
+
 console.log(`\n═══ 2 · ARIZA ENJEKSİYONU ═══════════════════════════════════════`);
 await etiketDurumu("tam");
 const ARIZALAR = [
@@ -234,10 +356,18 @@ const ARIZALAR = [
   ["odometre kapısı kalktı", (s) => s.replace(/\s+and prev_odo is not null and odo is not null and odo - prev_odo between -1 and 1/g, "")],
   ["first/last ters çevrildi", (s) => s.replace("(array_agg(fuel order by recorded_at asc))[1]   as first_pct", "(array_agg(fuel order by recorded_at desc))[1]  as first_pct")],
   ["boş seri kapısı kalktı (sample_count > 0)", (s) => s.replace(/where t\.sample_count > 0;/g, ";")],
+  [
+    "zero_count TEMİZ seriden sayarsın (ham yerine)",
+    (s) => s.replace(/from base where fuel = 0/g, "from stepped where fuel = 0"),
+  ],
+  [
+    "zero_count yanlış değer sayarsın (0 yerine 5)",
+    (s) => s.replace(/from base where fuel = 0/g, "from base where fuel = 5"),
+  ],
 ];
 for (const [ad, boz] of ARIZALAR) {
-  const bozuk = boz(M106);
-  if (bozuk === M106) {
+  const bozuk = boz(M107);
+  if (bozuk === M107) {
     ok(`arıza: ${ad}`, false, "🔴 ENJEKSİYON TUTMADI — eşleşen metin yok");
     continue;
   }
@@ -248,18 +378,19 @@ for (const [ad, boz] of ARIZALAR) {
     const b = kanon(await cek("report_fuel_stats_vehicle_v2", f, t));
     const a1 = kanon(await cek("fsv_104", f, t));
     const b1 = kanon(await cek("report_fuel_stats_vehicle", f, t));
-    if (a !== b || a1 !== b1) {
+    // 11 kolon kıyası + zero_count dedektörü: ikisinden biri bile kırılsa yeter.
+    if (a !== b || a1 !== b1 || (await sifirSapmasiVarMi(f, t))) {
       yakalandi = true;
       break;
     }
   }
   ok(`arıza: ${ad}`, yakalandi, yakalandi ? "denklik kırıldı (doğru)" : "🔴 fark edilmedi");
-  await db.exec(M106);
+  await db.exec(M107);
 }
 {
   const a = kanon(await cek("fsv2_104", PENCERELER[0][1], PENCERELER[0][2]));
   const b = kanon(await cek("report_fuel_stats_vehicle_v2", PENCERELER[0][1], PENCERELER[0][2]));
-  ok("arızalardan sonra 106 temiz hâline döndü", a === b);
+  ok("arızalardan sonra 107 temiz hâline döndü", a === b && !(await sifirSapmasiVarMi(PENCERELER[0][1], PENCERELER[0][2])));
 }
 
 console.log(`\n═══ 3 · SÜRE — CANLI ÖLÇEK (68.000 okuma, tek araç) ═════════════`);
@@ -290,26 +421,93 @@ console.log(`\n═══ 3 · SÜRE — CANLI ÖLÇEK (68.000 okuma, tek araç) 
   const T = new Date(T0 + BUYUK * 40000).toISOString();
   await q(`select public.yakit_seri_etiketle($1::timestamptz,$2::timestamptz,$3::uuid)`, [F, T, V]);
 
-  const olc = async (fn) => {
+  /**
+   * ⚠️ DÖNÜŞÜMLÜ ÖLÇÜM. PGlite (WASM) türbülanslı: peş peşe 7 koşum alsak
+   * sıranın kendisi sonucu kaydırıyor (ölçüldü: aynı gövde 335–450 ms arası
+   * oynadı). Bu yüzden altı gövde TUR TUR, dönüşümlü koşuluyor ve her biri
+   * için medyan alınıyor — sürüklenme hepsine eşit dağılır.
+   */
+  const ADAYLAR = [
+    ["v2 · 104 (onbir alt sorgu)", "fsv2_104"],
+    ["v2 · 106 (tek geçiş)", "fsv2_106"],
+    ["v2 · 107 (+ zero_count)", "report_fuel_stats_vehicle_v2"],
+    ["v1 · 104 (onbir alt sorgu)", "fsv_104"],
+    ["v1 · 106 (tek geçiş)", "fsv_106"],
+    ["v1 · 107 (+ zero_count)", "report_fuel_stats_vehicle"],
+  ];
+  const olcum = {};
+  const satirlar = {};
+  for (const [, fn] of ADAYLAR) {
+    olcum[fn] = [];
     await q(`select * from public.${fn}($1::timestamptz,$2::timestamptz,$3::uuid)`, [F, T, V]);
-    const s = [];
-    let row = null;
-    for (let i = 0; i < 5; i++) {
+  }
+  for (let tur = 0; tur < 9; tur++) {
+    for (const [, fn] of ADAYLAR) {
       const t0 = performance.now();
-      const r = await q(`select * from public.${fn}($1::timestamptz,$2::timestamptz,$3::uuid)`, [F, T, V]);
-      s.push(performance.now() - t0);
-      row = r.rows[0];
+      const r = await q(
+        `select * from public.${fn}($1::timestamptz,$2::timestamptz,$3::uuid)`,
+        [F, T, V]
+      );
+      olcum[fn].push(performance.now() - t0);
+      satirlar[fn] = r.rows[0];
     }
-    return { m: [...s].sort((a, b) => a - b)[2], row };
+  }
+  const med9 = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+  const sonuc = {};
+  for (const [etiket, fn] of ADAYLAR) {
+    sonuc[fn] = { m: med9(olcum[fn]), row: satirlar[fn] };
+    console.log(`  ${etiket.padEnd(30)} ${String(Math.round(sonuc[fn].m)).padStart(4)} ms`);
+  }
+  console.log(
+    `  ${"— 104 → 106 (tek geçiş)".padEnd(30)} v2 %${Math.round(((sonuc.fsv2_104.m - sonuc.fsv2_106.m) / sonuc.fsv2_104.m) * 100)}` +
+      ` · v1 %${Math.round(((sonuc.fsv_104.m - sonuc.fsv_106.m) / sonuc.fsv_104.m) * 100)}`
+  );
+  const zEk2 = sonuc["report_fuel_stats_vehicle_v2"].m - sonuc.fsv2_106.m;
+  const zEk1 = sonuc["report_fuel_stats_vehicle"].m - sonuc.fsv_106.m;
+  console.log(
+    `  ${"— zero_count'un EK maliyeti".padEnd(30)} v2 ${zEk2 >= 0 ? "+" : ""}${Math.round(zEk2)} ms` +
+      ` · v1 ${zEk1 >= 0 ? "+" : ""}${Math.round(zEk1)} ms`
+  );
+
+  /**
+   * ══ KISMİ İNDEKS GEREKİR Mİ? — SAATİN DEĞİL PLANIN CEVABI ══════════
+   *
+   * 🔴 PGlite'ın saati bu soruyu ÇÖZEMİYOR: aynı gövde ardışık turlarda
+   * 335–450 ms arası oynuyor (WASM), ve buradaki "ayrı sayım sorgusu" 8 ms
+   * çıkıyor çünkü veritabanı bellekte ve küçük — canlıda aynı sorgu 179 ms.
+   * Yani süre karşılaştırması buradan YAPILAMAZ.
+   *
+   * Cevaplanabilen şey YAPISAL: `zero_count` `base` CTE'sinden geliyor, yani
+   * `device_telemetry`ye İKİNCİ BİR ERİŞİM AÇMIYOR. Bunu plan söyler.
+   * Denetim: 106 ile 107'nin planlarında `device_telemetry` tarama düğümü
+   * SAYISI eşit olmalı, ve 107'de `sifir` CTE'si `base`i taramalı.
+   */
+  const planSatirlari = async (fn) => {
+    const r = await q(
+      `explain select * from public.${fn}($1::timestamptz,$2::timestamptz,$3::uuid)`,
+      [F, T, V]
+    );
+    return r.rows.map((x) => x["QUERY PLAN"]);
   };
-  const r104 = await olc("fsv2_104");
-  const r106 = await olc("report_fuel_stats_vehicle_v2");
-  const w104 = await olc("fsv_104");
-  const w106 = await olc("report_fuel_stats_vehicle");
-  console.log(`  v2  104 ${String(Math.round(r104.m)).padStart(4)} ms → 106 ${String(Math.round(r106.m)).padStart(4)} ms   (%${Math.round(((r104.m - r106.m) / r104.m) * 100)})`);
-  console.log(`  v1  104 ${String(Math.round(w104.m)).padStart(4)} ms → 106 ${String(Math.round(w106.m)).padStart(4)} ms   (%${Math.round(((w104.m - w106.m) / w104.m) * 100)})`);
-  ok("yoğun araçta da v2 çıktısı birebir", kanon([r104.row]) === kanon([r106.row]));
-  ok("yoğun araçta da v1 çıktısı birebir", kanon([w104.row]) === kanon([w106.row]));
+  const taramaSayisi = (satirlar) =>
+    satirlar.filter((x) => /Scan\b.*\bdevice_telemetry\b/.test(x)).length;
+
+  const plan106 = await planSatirlari("fsv2_106");
+  const plan107 = await planSatirlari("report_fuel_stats_vehicle_v2");
+  ok(
+    "107, device_telemetry'ye ek erişim AÇMIYOR (106 ile aynı tarama sayısı)",
+    taramaSayisi(plan106) === taramaSayisi(plan107),
+    `106 ${taramaSayisi(plan106)} tarama · 107 ${taramaSayisi(plan107)} tarama`
+  );
+  ok(
+    "107'de `base` MADDELEŞTİ — iki tüketici, tek tablo taraması",
+    plan107.filter((x) => /CTE Scan on base/.test(x)).length >= 1 &&
+      taramaSayisi(plan106) === taramaSayisi(plan107),
+    `106 ${plan106.filter((x) => /CTE Scan on base/.test(x)).length} · 107 ${plan107.filter((x) => /CTE Scan on base/.test(x)).length} CTE taraması (106'da base tek tüketicili, satır içi açılıyor)`
+  );
+
+  ok("yoğun araçta v2 çıktısı (11 kolon) birebir", kanon([sonuc.fsv2_104.row]) === kanon([sonuc["report_fuel_stats_vehicle_v2"].row]));
+  ok("yoğun araçta v1 çıktısı (11 kolon) birebir", kanon([sonuc.fsv_104.row]) === kanon([sonuc["report_fuel_stats_vehicle"].row]));
 }
 
 console.log(`\n═══ SONUÇ ═══════════════════════════════════════════════════════`);

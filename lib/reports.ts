@@ -930,6 +930,14 @@ type FuelStatRow = {
   refill_pct: number;
   drop_count: number;
   drop_pct: number;
+  /**
+   * ARIZALI SENSÖR SAYIMI — aralıktaki HAM `fuel_level_pct = 0` okuma sayısı.
+   *
+   * ⚠️ OPSİYONEL: yalnız migration 107 uygulanmış kiracıda gelir. Yoksa
+   * uygulama eski 19 sorgulu yola düşer (aşağıda `sifirKolonuVar`).
+   * 2 argümanlı `report_fuel_stats` (geri düşüş yolu) bu kolonu HİÇ döndürmez.
+   */
+  zero_count?: number | null;
 };
 
 /**
@@ -1387,18 +1395,41 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
    * litre yolu da öyle — ama BİRBİRİNE bağlı değiller. İkisi birlikte, erken
    * başlatılan span ve yakıt penceresiyle AYNI DALGADA beklenir.
    */
-  const zeroP = mapBounded(vehicles, async (v) => {
-    const s = stats.get(v.id);
-    if (!s || Number(s.sample_count) === 0) return [v.id, 0] as const;
-    const { count } = await supabaseAdmin
-      .from("device_telemetry")
-      .select("id", { count: "exact", head: true })
-      .eq("vehicle_id", v.id)
-      .eq("fuel_level_pct", 0)
-      .gte("recorded_at", startISO)
-      .lte("recorded_at", endISO);
-    return [v.id, count ?? 0] as const;
-  });
+  /**
+   * ══ ARIZALI SENSÖR SAYIMI: ÖNCE YANITTAN (107), YOKSA 19 SORGU ════════
+   *
+   * Ölçüldü (galzura-demo, 30 gün, 29 araç, gerçek çağrının fetch izi):
+   *     19 istek · Σ 27.974 ms · duvar saati 4.839 ms
+   * Tek başına 179 ms olan sorgu, rekabet altında ~1,4 sn'ye çıkıyordu —
+   * yüzde RPC'leri kadar pahalıydi. Sayı zaten o RPC'nin taradığı satırlardan
+   * geliyor; 107 onu yanıta `zero_count` olarak ekliyor.
+   *
+   * ⚠️ KOLON YOKSA DAVRANIS BİREBİR ESKİSİ. 107 uygulanmamış kiracıda (ya da
+   * 2 argümanlı `report_fuel_stats` geri düşüşünde) hiçbir satır bu kolonu
+   * taşımaz ve eski fan-out aynen koşar. Karar SATIRLARA bakılarak veriliyor,
+   * bayrağa değil: kiracı migration'ı ne zaman uygularsa o zaman geçer.
+   */
+  const sifirKolonuVar = statRows.some((r) => r.zero_count !== undefined);
+  const zeroP: Promise<(readonly [string, number])[]> = sifirKolonuVar
+    ? Promise.resolve(
+        vehicles.map((v) => {
+          const s = stats.get(v.id);
+          // Satır yoksa (temiz seri boş) eski yol da 0 veriyordu — aynı sonuç.
+          return [v.id, s ? Number(s.zero_count ?? 0) : 0] as const;
+        })
+      )
+    : mapBounded(vehicles, async (v) => {
+        const s = stats.get(v.id);
+        if (!s || Number(s.sample_count) === 0) return [v.id, 0] as const;
+        const { count } = await supabaseAdmin
+          .from("device_telemetry")
+          .select("id", { count: "exact", head: true })
+          .eq("vehicle_id", v.id)
+          .eq("fuel_level_pct", 0)
+          .gte("recorded_at", startISO)
+          .lte("recorded_at", endISO);
+        return [v.id, count ?? 0] as const;
+      });
 
   /**
    * ⚠️ YAKIT PENCERESİ BURADA BAŞLAR, DAHA ERKEN DEĞİL — ölçümle seçildi.
@@ -1441,11 +1472,21 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
    * sağlıklı mı" — "temizlikten sonra ne kaldı" değil. Yalnız başlık sayısı
    * çekilir (head:true), satır taşınmaz.
    *
-   * 🔴 ÖLÇÜLDÜ (17.09.2026): bu 19 sayım sorgusu tek başına 4.839 ms duvar saati
-   * (Σ 27.974 ms) tutuyor — yüzde RPC'leri kadar pahalı. Tek başına çalışınca
-   * 179 ms; fark tamamen eşzamanlılık rekabeti. `fuel_level_pct = 0` üzerinde
-   * kısmi indeks YOK (093 bir zamanlar vardı ve düşürüldü, hiçbir migration
-   * yeniden yaratmıyor). 16c'nin bir sonraki adımı burası.
+   * 🔴 ÖLÇÜLDÜ (17.09.2026): bu 19 sayım sorgusu tek başına 4.839 ms duvar
+   * saati (Σ 27.974 ms) tutuyordu — yüzde RPC'leri kadar pahalı. Tek başına
+   * çalışınca 179 ms; fark tamamen eşzamanlılık rekabeti.
+   *
+   * ✅ 107 bunu ÇÖZDÜ: sayı artık yüzde RPC'sinin yanıtından geliyor
+   * (`zero_count`), ayrı sorgu yok. Yukarıdaki fan-out YALNIZ 107
+   * uygulanmamış kiracıda koşuyor.
+   *
+   * ⚠️ DÜZELTME: "093 `fuel_level_pct = 0` indeksini düşürdü" diye bir not
+   * düşülmüştü — YANLIŞTI. 093'ün düşürdüğü `idx_device_telemetry_fuel`,
+   * 053'ün `idx_device_telemetry_vehicle_fuel_pct` indeksinin BİREBİR
+   * KOPYASIYDI ve yüklemi `fuel_level_pct IS NOT NULL`dı, `= 0` değil.
+   * Kalan indeks yerinde. `= 0` için ayrı bir kısmi indekse de gerek yok:
+   * 107'nin planında `device_telemetry`ye İKİNCİ BİR ERİŞİM YOK (ölçüldü,
+   * `verify:yakit-son-toplama` § 3).
    */
 
   /**

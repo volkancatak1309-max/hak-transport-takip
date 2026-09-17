@@ -86,7 +86,8 @@
     "verify:yakit-seri-etiket": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-yakit-seri-etiket.mjs",
     "lint:yakit-etiket": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-yakit-etiket.mjs",
     "lint:filo-span": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-filo-span.mjs",
-    "verify:filo-span": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-filo-span-tek-cekirdek.mjs"
+    "verify:filo-span": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-filo-span-tek-cekirdek.mjs",
+    "verify:yakit-son-toplama": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-yakit-son-toplama.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

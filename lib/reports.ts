@@ -930,6 +930,14 @@ type FuelStatRow = {
   refill_pct: number;
   drop_count: number;
   drop_pct: number;
+  /**
+   * ARIZALI SENSÖR SAYIMI — aralıktaki HAM `fuel_level_pct = 0` okuma sayısı.
+   *
+   * ⚠️ OPSİYONEL: yalnız migration 107 uygulanmış kiracıda gelir. Yoksa
+   * uygulama eski 19 sorgulu yola düşer (aşağıda `sifirKolonuVar`).
+   * 2 argümanlı `report_fuel_stats` (geri düşüş yolu) bu kolonu HİÇ döndürmez.
+   */
+  zero_count?: number | null;
 };
 
 /**
@@ -1080,6 +1088,36 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     partialReason: null,
   });
 
+  /**
+   * ══ BAĞIMSIZ AŞAMALAR ERKEN BAŞLAR (16c adım 2, 17.09.2026) ═════════
+   *
+   * `buildFuelReport` beş aşama koşuyordu ve BEŞİ DE ARDIŞIKTI. Gerçek çağrının
+   * fetch izi ölçüldü (galzura-demo, 30 gün, 29 araç, 121 istek, toplam 16.518 ms):
+   *
+   *     0 araç/personel     242 ms
+   *     1 yüzde RPC ×29   4.783 ms   ← stats üretir
+   *     2 litre RPC ×10   1.242 ms   ← stats'e BAĞLI (yalnız yüzdesi olmayan araç)
+   *     3 filo span       4.955 ms   ← BAĞIMSIZ (yalnız vehicles)
+   *     4 yakıt penceresi   446 ms   ← BAĞIMSIZ (yalnız vehicles)
+   *     5 sıfır sayımı     4.839 ms   ← stats'e BAĞLI (yalnız yüzdesi olan araç)
+   *
+   * 3 ve 4 hiçbir aramasını beklemiyordu; 2 ve 5 birbirini beklemiyordu.
+   * Sıralama ölçüldü (demo, 30 gün, 3 tur medyan):
+   *     A · bugünkü (tamamen ardışık)   16.635 ms
+   *     C · bağımsızlar örtüşür        10.783 ms   → −%35
+   *
+   * ⚠️ FORMÜL DEĞİŞMİYOR. Sadece bekleme sırası değişti; her aşamanın kendi
+   * `mapBounded` tavanı (6) ve kendi geri düşüşü aynen duruyor.
+   *
+   * ⚠️ ÖRTÜŞME TAVANI KIŞKIRTIR — ve bu ÖLÇÜLDÜ, varsayılmadı.
+   * `lib/db-fanout.ts` şunu söylüyor: statement timeout İFADEYE uygulanır, yani
+   * eşzamanlılık her ifadenin KENDİ süresini uzatır. Filo span'i tek başına
+   * ~5 sn olan bir ifade; 12 sorgu daha eşlik ederse 8 sn'yi aşıyor ve `null`
+   * dönüyor. Bu yüzden YAKIT PENCERESİ ERKEN BAŞLATILMIYOR (aşağıda) — tepe
+   * eşzamanlılık 7'de kalıyor: 6 yüzde RPC + 1 span.
+   */
+  const filoSpanP = okuFiloSpan(startISO, endISO).catch(() => null);
+
   // 280 bin satır Postgres'te toplulaştırılır. Hata hâlinde rapor çökmez ama
   // SEBEBİ ayırt edilir — "fonksiyon yok" ile "zaman aşımı" farklı sorunlardır
   // ve yöneticiye farklı şey yaptırırlar (migration çalıştır / aralığı daralt).
@@ -1228,7 +1266,11 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
   // 039 başlığı). RPC yoksa (039 uygulanmamış) sessizce boş: yüzde yolu
   // etkilenmez, litre araçları eskisi gibi "Veri yok" kalır.
   const volStats = new Map<string, FuelVolumeStatRow>();
-  {
+  /**
+   * ⚠️ Bu blok artık HEMEN BEKLENMİYOR: sıfır sayımıyla birlikte tek dalgada
+   * beklenecek (aşağıdaki `Promise.all`). İçerik birebir aynı.
+   */
+  const volStatsP = (async () => {
     /**
      * ── ARAÇ EKSENİ (094) — 052'nin YÜZDE için yaptığının LİTRE ikizi ──────
      *
@@ -1341,52 +1383,111 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
       if (Number(s.sample_count) === 0) continue;
       volStats.set(s.vehicle_id, s);
     }
-  }
+  })();
 
   // L/100km için mesafe — mesafe raporuyla AYNI kaynak (odometre uç-noktaları +
   // km-guard). Araç başına iki indeksli sorgu, telemetri satırı taşımaz.
   // 22.07.2026: artık ölçüm PENCERESİ de geliyor (aşağıdaki 3. kapı için).
   // Eşzamanlılık tavanı: bu fan-out araç başına İKİ sorgu açıyor, yani sınırsız
   // hâlinde 60 ifade. Yakıt RPC'siyle aynı gerekçe (bkz. lib/db-fanout.ts).
-  const filoSpan = await okuFiloSpan(startISO, endISO);
+  /**
+   * ⚠️ Sıfır sayımı `stats`e bağlı (yalnız yüzde okuması OLAN araçta sorulur),
+   * litre yolu da öyle — ama BİRBİRİNE bağlı değiller. İkisi birlikte, erken
+   * başlatılan span ve yakıt penceresiyle AYNI DALGADA beklenir.
+   */
+  /**
+   * ══ ARIZALI SENSÖR SAYIMI: ÖNCE YANITTAN (107), YOKSA 19 SORGU ════════
+   *
+   * Ölçüldü (galzura-demo, 30 gün, 29 araç, gerçek çağrının fetch izi):
+   *     19 istek · Σ 27.974 ms · duvar saati 4.839 ms
+   * Tek başına 179 ms olan sorgu, rekabet altında ~1,4 sn'ye çıkıyordu —
+   * yüzde RPC'leri kadar pahalıydi. Sayı zaten o RPC'nin taradığı satırlardan
+   * geliyor; 107 onu yanıta `zero_count` olarak ekliyor.
+   *
+   * ⚠️ KOLON YOKSA DAVRANIS BİREBİR ESKİSİ. 107 uygulanmamış kiracıda (ya da
+   * 2 argümanlı `report_fuel_stats` geri düşüşünde) hiçbir satır bu kolonu
+   * taşımaz ve eski fan-out aynen koşar. Karar SATIRLARA bakılarak veriliyor,
+   * bayrağa değil: kiracı migration'ı ne zaman uygularsa o zaman geçer.
+   */
+  const sifirKolonuVar = statRows.some((r) => r.zero_count !== undefined);
+  const zeroP: Promise<(readonly [string, number])[]> = sifirKolonuVar
+    ? Promise.resolve(
+        vehicles.map((v) => {
+          const s = stats.get(v.id);
+          // Satır yoksa (temiz seri boş) eski yol da 0 veriyordu — aynı sonuç.
+          return [v.id, s ? Number(s.zero_count ?? 0) : 0] as const;
+        })
+      )
+    : mapBounded(vehicles, async (v) => {
+        const s = stats.get(v.id);
+        if (!s || Number(s.sample_count) === 0) return [v.id, 0] as const;
+        const { count } = await supabaseAdmin
+          .from("device_telemetry")
+          .select("id", { count: "exact", head: true })
+          .eq("vehicle_id", v.id)
+          .eq("fuel_level_pct", 0)
+          .gte("recorded_at", startISO)
+          .lte("recorded_at", endISO);
+        return [v.id, count ?? 0] as const;
+      });
+
+  /**
+   * ⚠️ YAKIT PENCERESİ BURADA BAŞLAR, DAHA ERKEN DEĞİL — ölçümle seçildi.
+   * Erken başlatan varyant tepe eşzamanlılığı 19'a çıkarıyor ve galzura-demo'da
+   * filo span'ini 8 sn'lik ifade tavanının üstüne itiyordu: span `null` dönüyor,
+   * araç-araç yedek yol devreye giriyor (105 sayesinde AYNI SAYI, ama +2,5 sn).
+   * Ölçüldü: `karsilastir?donem=ay` demo'da 14,3 → 16,8 sn ile GERİLEMİŞTİ.
+   */
+  const fuelSpanP = mapBounded(vehicles, async (v) => {
+    return [v.id, await getVehicleFuelSpan(v.id, startISO, endISO)] as const;
+  });
+
+  const [filoSpan, fuelSpanEntries, zeroEntries] = await Promise.all([
+    filoSpanP,
+    fuelSpanP,
+    zeroP,
+    volStatsP,
+  ]);
+
   const distEntries = filoSpan
     ? vehicles.map((v) => [v.id, filoSpan.get(v.id) ?? BOS_SPAN] as const)
-    : await mapBounded(
+    : // 105 uygulanmamış kiracı: araç-araç yol. AYNI ÇEKİRDEK, yalnız yavaş.
+      await mapBounded(
         vehicles,
         async (v) => [v.id, await okuAracSpan(v.id, startISO, endISO)] as const
       );
   const distByVehicle = new Map(distEntries);
-
-  // Yakıt okumalarının ölçüm penceresi — odometre penceresiyle kıyaslanacak.
-  // Aynı desen: araç başına iki indeksli limit-1 sorgusu, satır taşımaz.
-  const fuelSpanEntries = await mapBounded(
-    vehicles,
-    async (v) => [v.id, await getVehicleFuelSpan(v.id, startISO, endISO)] as const
-  );
   const fuelSpanByVehicle = new Map(fuelSpanEntries);
-
-  // ARIZALI SENSÖR TESPİTİ (22.07.2026). Canlı örnek DO-687GX: 18.07'de 7.801
-  // okumanın 1.729'u (%22) %0. Bu bir CAN dropout çukuru DEĞİL — yarı ölü
-  // sensörün sürekli sıfırı; de-glitch onu elemez ve ELEMEMELİ (sürekli sıfır
-  // gerçek bir sinyal olabilir). Ama böyle bir seriden hesaplanan tüketim ve
-  // dolum sayıları anlamsızdır: sıfır serisinin bitişi "dolum" gibi görünür.
-  //
-  // Ölçüm HAM veri üzerinden yapılır (de-glitch öncesi), çünkü soru "sensör
-  // sağlıklı mı" — "temizlikten sonra ne kaldı" değil. Yalnız başlık sayısı
-  // çekilir (head:true), satır taşınmaz.
-  const zeroEntries = await mapBounded(vehicles, async (v) => {
-    const s = stats.get(v.id);
-    if (!s || Number(s.sample_count) === 0) return [v.id, 0] as const;
-    const { count } = await supabaseAdmin
-      .from("device_telemetry")
-      .select("id", { count: "exact", head: true })
-      .eq("vehicle_id", v.id)
-      .eq("fuel_level_pct", 0)
-      .gte("recorded_at", startISO)
-      .lte("recorded_at", endISO);
-    return [v.id, count ?? 0] as const;
-  });
   const zeroByVehicle = new Map(zeroEntries);
+
+  /**
+   * ARIZALI SENSÖR TESPİTİ (22.07.2026) — `zeroP` yukarıda, tek dalgada.
+   * Canlı örnek DO-687GX: 18.07'de 7.801 okumanın 1.729'u (%22) %0. Bu bir CAN
+   * dropout çukuru DEĞİL — yarı ölü sensörün sürekli sıfırı; de-glitch onu elemez
+   * ve ELEMEMELİ (sürekli sıfır gerçek bir sinyal olabilir). Ama böyle bir seriden
+   * hesaplanan tüketim ve dolum sayıları anlamsızdır: sıfır serisinin bitişi
+   * "dolum" gibi görünür.
+   *
+   * Ölçüm HAM veri üzerinden yapılır (de-glitch öncesi), çünkü soru "sensör
+   * sağlıklı mı" — "temizlikten sonra ne kaldı" değil. Yalnız başlık sayısı
+   * çekilir (head:true), satır taşınmaz.
+   *
+   * 🔴 ÖLÇÜLDÜ (17.09.2026): bu 19 sayım sorgusu tek başına 4.839 ms duvar
+   * saati (Σ 27.974 ms) tutuyordu — yüzde RPC'leri kadar pahalı. Tek başına
+   * çalışınca 179 ms; fark tamamen eşzamanlılık rekabeti.
+   *
+   * ✅ 107 bunu ÇÖZDÜ: sayı artık yüzde RPC'sinin yanıtından geliyor
+   * (`zero_count`), ayrı sorgu yok. Yukarıdaki fan-out YALNIZ 107
+   * uygulanmamış kiracıda koşuyor.
+   *
+   * ⚠️ DÜZELTME: "093 `fuel_level_pct = 0` indeksini düşürdü" diye bir not
+   * düşülmüştü — YANLIŞTI. 093'ün düşürdüğü `idx_device_telemetry_fuel`,
+   * 053'ün `idx_device_telemetry_vehicle_fuel_pct` indeksinin BİREBİR
+   * KOPYASIYDI ve yüklemi `fuel_level_pct IS NOT NULL`dı, `= 0` değil.
+   * Kalan indeks yerinde. `= 0` için ayrı bir kısmi indekse de gerek yok:
+   * 107'nin planında `device_telemetry`ye İKİNCİ BİR ERİŞİM YOK (ölçüldü,
+   * `verify:yakit-son-toplama` § 3).
+   */
 
   /**
    * ÜÇ KAPI (22.07.2026 veri bütünlüğü denetimi).

@@ -16,12 +16,13 @@
  *
  * Kullanım: npm run lint:yakit-etiket
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const KOK = join(dirname(fileURLToPath(import.meta.url)), "..");
 const oku = (p) => readFileSync(join(KOK, p), "utf8");
+const varMi = (p) => existsSync(join(KOK, p));
 
 let gecen = 0;
 const dusen = [];
@@ -51,10 +52,23 @@ const kodu = (x) =>
 
 /** Bir dosyadan adı verilen fonksiyonun gövdesini çıkarır. */
 function govde(kaynak, ad) {
-  const b = kaynak.indexOf(`create or replace function public.${ad}(`);
-  if (b < 0) return null;
-  const s = kaynak.indexOf("$$;", b);
-  return s < 0 ? null : kaynak.slice(b, s);
+  /**
+   * ⚠️ İKİ BİÇİMİ DE TANIR. 107'ye kadar bütün gövdeler
+   * `create or replace function` idi; 107 dönüş tipini değiştirdiği için
+   * `drop` + DÜZ `create function` kullanıyor (100 kalıbı). Yalnız ilk biçimi
+   * arayan bir okuyucu 107'yi GÖRMEZ ve "yürürlükteki" gövde olarak 106'yı
+   * döndürür — denetimler o zaman geçmişi denetler. Bu yaşandı, ölçüldü.
+   */
+  for (const bas of [
+    `create or replace function public.${ad}(`,
+    `create function public.${ad}(`,
+  ]) {
+    const b = kaynak.indexOf(bas);
+    if (b < 0) continue;
+    const s = kaynak.indexOf("$$;", b);
+    if (s >= 0) return kaynak.slice(b, s);
+  }
+  return null;
 }
 
 const v1 = govde(m052, "report_fuel_stats_vehicle");
@@ -452,6 +466,80 @@ kontrol(
 kontrol(
   "104 eski migration'lara DOKUNMUYOR (095 kalıbı)",
   !/drop\s+function/i.test(oku("db/migrations/104_yuzde_odo_kapisi_hizalama.sql"))
+);
+
+// ── 5b · 106 + 107 · BEKLEMEDE ──────────────────────────────────
+/**
+ * ⚖️ KARAR (17.09.2026, Volkan): 106 (son toplama tek geçiş) ve 107
+ * (`zero_count` aynı taramadan) UYGULANMIYOR. Ölçülen kazanç ~1–2 sn'de
+ * kaldı ve "30 gün 13 sn de olsa açılacak" kararı verildi. Dosyalar
+ * `db/migrations/_beklemede/` altında duruyor — silinmediler çünkü kanıtları
+ * (`verify:yakit-son-toplama`, 35 denetim) geçerli ve bir gün gerekebilirler.
+ *
+ * Bu blok İKİ ŞEYİ donduruyor:
+ *   1. Beklemede OLDUKLARINI: kök dizinde ve kurulum sırasında YOKLAR.
+ *      (Kazara geri taşınırlarsa kurulum dosyaları sessizce bayatlardı.)
+ *   2. İÇERİKLERİNİ: bir gün uygulanırlarsa bugün ölçülen sözleşmeyi taşısınlar.
+ */
+const BEKLEYEN = {
+  "106": "db/migrations/_beklemede/106_yakit_son_toplama.sql",
+  "107": "db/migrations/_beklemede/107_yakit_sifir_sayimi.sql",
+};
+const KURULUM = oku("scripts/gen-install-sql.mjs");
+for (const [no, yol] of Object.entries(BEKLEYEN)) {
+  kontrol(`${no} · dosya _beklemede altında`, varMi(yol), yol);
+  kontrol(
+    `${no} · migration kökünde YOK (uygulanmıyor)`,
+    !varMi(`db/migrations/${yol.split("/").pop()}`)
+  );
+  kontrol(
+    `${no} · kurulum sırasında (ORDER) YOK`,
+    !KURULUM.includes(yol.split("/").pop())
+  );
+}
+const K106 = kodu(oku(BEKLEYEN["106"]));
+const K107 = kodu(oku(BEKLEYEN["107"]));
+kontrol("106 · tek geçiş kuyruğu duruyor", /cross join dolum d/.test(K106));
+kontrol("107 · zero_count HAM seriden (base)", /as zero_count from base where fuel = 0/.test(K107));
+kontrol("107 · zero_count SONA eklendi", /drop_pct     double precision,\s+zero_count   bigint/.test(K107));
+kontrol("107 · drop + create tek işlemde (100 kalıbı)",
+  /begin;/.test(K107) && (K107.match(/drop function if exists/g) ?? []).length === 2 &&
+  (K107.match(/^create function public\./gm) ?? []).length === 2 && /commit;/.test(K107));
+kontrol("107 · kilit zaman aşımı koyuyor", /set local lock_timeout/.test(K107));
+kontrol("107 · eski 2 argümanlı report_fuel_stats'e dokunmuyor",
+  !/function public\.report_fuel_stats\(/.test(K107));
+kontrol("107 · litre hattına dokunmuyor", !K107.includes("report_fuel_volume_stats_vehicle"));
+
+/**
+ * 🔴 UYGULAMA TARAFI KALDI ve KALMALI. `zero_count` gelirse okunuyor,
+ * gelmezse eski 19 sorgulu yol koşuyor. 106/107 beklemede olduğu için BUGÜN
+ * koşan yol eskisidir — yani sayılar değişmiyor. Bu üç denetim o dengeyi
+ * koruyor: biri silinirse ya kolon sessizce yok sayılır ya da olmayan kolon
+ * okunmaya çalışılır.
+ */
+const RAPORLAR = oku("lib/reports.ts");
+kontrol(
+  "uygulama kararı YANITA bakıyor (bayrağa değil)",
+  /const sifirKolonuVar = statRows\.some\(\(r\) => r\.zero_count !== undefined\)/.test(RAPORLAR)
+);
+kontrol(
+  "kolon yokken ESKİ 19 sorgulu yol duruyor (BUGÜN koşan yol budur)",
+  /\.eq\("fuel_level_pct", 0\)/.test(RAPORLAR) && /count: "exact", head: true/.test(RAPORLAR)
+);
+kontrol(
+  "`zero_count` türü OPSİYONEL",
+  /zero_count\?: number \| null;/.test(RAPORLAR)
+);
+/**
+ * AŞAMA ÖRTÜŞMESİ (16c adım 2) — canlıda, 106/107'den bağımsız.
+ */
+kontrol(
+  "bağımsız aşamalar erken başlıyor (filo span)",
+  /const filoSpanP = okuFiloSpan\(startISO, endISO\)\.catch/.test(RAPORLAR)
+);
+kontrol(
+  "litre ‖ sıfır ‖ span ‖ pencere TEK DALGADA bekleniyor",
+  /await Promise\.all\(\[\s*filoSpanP,\s*fuelSpanP,\s*zeroP,\s*volStatsP,\s*\]\)/.test(RAPORLAR)
 );
 
 // ── 6 · BELGE ──────────────────────────────────────────────────────────────

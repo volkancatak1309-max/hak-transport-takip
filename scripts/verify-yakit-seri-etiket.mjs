@@ -62,6 +62,13 @@ const M103 = temizle(readFileSync(join(KOK, "db/migrations/103_yakit_hacim_seri_
  * uygular: kiracıya gidecek hâl budur.
  */
 const M104 = temizle(readFileSync(join(KOK, "db/migrations/104_yuzde_odo_kapisi_hizalama.sql"), "utf8"));
+/**
+ * ⚠️ 106 ve 107 BURADA UYGULANMIYOR — BEKLEMEDE (17.09.2026 kararı).
+ * Ölçülen kazanç ~1–2 sn'de kaldı ve hiçbir kiracıya gitmedi; dosyalar
+ * `db/migrations/_beklemede/` altında duruyor. Bu kanıt KIRACIYA GİDEN
+ * hâli ölçtüğü için onları uygulamamalı: yürürlükteki yüzde gövdesi 104'ün.
+ * 106/107'nin kendi denklik kanıtı ayrı betikte: `verify:yakit-son-toplama`.
+ */
 
 /** LİTRE hattının v1'i — 094'ten, kopyalanmadan. */
 const m094 = readFileSync(join(KOK, "db/migrations/094_yakit_hacim_arac_ekseni.sql"), "utf8");

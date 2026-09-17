@@ -29,7 +29,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const KOK = join(dirname(fileURLToPath(import.meta.url)), "..");
-const oku = (f) => readFileSync(join(KOK, "db/migrations", f), "utf8");
+const oku = (f) =>
+  // Satir sonu farki denetimi sessizce bosa dusurmesin (CRLF tuzagi, olculdu).
+  readFileSync(join(KOK, "db/migrations", f), "utf8").replace(/\r/g, "");
 const temizle = (x) => x.replace(/notify pgrst[^;]*;/g, "");
 
 // ── 097'nin filo gövdesi: ADI DEĞİŞTİRİLİR, gövde birebir kalır ───────────

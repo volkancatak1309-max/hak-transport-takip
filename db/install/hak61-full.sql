@@ -1,6 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 --  HAK61 — TEK PARÇA KURULUM SQL'İ
---  hak-transport-takip · şema 001 → 098 · üreten: scripts/gen-install-sql.mjs
+--  hak-transport-takip · şema 001 → 105 · üreten: scripts/gen-install-sql.mjs
 -- ═══════════════════════════════════════════════════════════════════════════
 --
 --  NE İŞE YARAR
@@ -11136,6 +11136,2468 @@ comment on column public.upload_rate.pencere_basi is
 create index if not exists upload_rate_pencere_idx
   on public.upload_rate (pencere_basi);
 -- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  099_filo_tasima_izi.sql                                            ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 099_filo_tasima_izi.sql — FİLO TAŞIMA İZİ + GERİ ALMA
+--
+-- ⚠️ BU DDL VOLKAN TARAFINDAN 16.09.2026'DA SUPABASE'DE ÇALIŞTIRILDI ve ÜÇ
+-- KİRACIDA DA (HAK61 · Sendigo · galzura-demo) UYGULANMIŞ durumdadır. Bu dosya
+-- deponun ŞEMA KAYDIDIR — yeni bir kurulum migration listesini buradan
+-- yürütecek. Claude tarafından çalıştırılmadı.
+--
+-- ── UYGULANDIKTAN SONRA CANLIDA ÖLÇÜLDÜ (16.09.2026) ──────────────────────
+-- PostgREST pg_catalog'a erişemediği için varlık ADIYLA değil DAVRANIŞLA
+-- ölçüldü: tablo okuması HTTP kodu, kolon yanıt alanında, fonksiyonlar
+-- PostgREST OpenAPI'sindeki /rpc/ yollarında arandı.
+--
+--   kiracı         tablo  updated_at  /rpc/filo_*  iz satırı  araç dağılımı
+--   HAK61           200      VAR          2            0      bordo 9 · mavi 21
+--   Sendigo         200      VAR          2            0      mavi 5
+--   galzura-demo    200      VAR          2            0      mavi 30
+--
+-- `updated_at` damgalı araç: HAK61 0 · Sendigo 0 · galzura-demo 2 (aşağıdaki
+-- uçtan uca koşumun iki deneği). Geriye dönük doldurma YOK — damga yalnız
+-- gerçekten güncellenen satırda var, kalan 28+30+5 araçta NULL.
+--
+-- ── UÇTAN UCA KANIT (galzura-demo, 16.09.2026, 41/41 iddia) ───────────────
+-- `npm run verify:filo-tasima-izi` — uçları çağırır, sonunda TEMİZLER:
+--   · taşıma       2 araç tek batch · iz 2 satır · mavi 30 → mavi 28 + bordo 2
+--   · geçmiş       hedef filoda yön "geldi", kaynak filoda "gitti"; limit 9999
+--                  sessizce 200'e indirildi ve uygulanan limit söylendi
+--   · geri alma    araçlar eski filoda (mavi 30) · iz SİLİNMEDİ · undone_at doldu
+--   · ikinci kez   409 zaten_geri_alindi · bilinmeyen batch 404 · şekli bozuk
+--                  kimlik de 404 (22P02 ile 503'e DÜŞMEDİ)
+--   · atlandı dalı araya uç DIŞINDAN elle taşıma sokuldu → 1 geri alındı,
+--                  1 ATLANDI, araya giren karar EZİLMEDİ, iz satırı açık kaldı
+--   · temizlik     iz satırları silindi (kalan 0), araçlar başlangıç filosunda
+--
+-- ── UYGULAMADAN ÖNCE GERÇEK POSTGRES'TE DOĞRULANDI (52 iddia) ─────────────
+-- PGlite 0.5.8 / PostgreSQL 18.3 üzerinde: 099 iki kez koştu (idempotent),
+-- kısıtlar tuttu, araç/kişi silinince iz yaşadı. En önemlisi ARIZA
+-- ENJEKSİYONU: iz yazması tetikleyiciyle zorla düşürüldü ve araç TAŞINMADI —
+-- `updated_at` damgası da geri sarıldı, iz tablosu boş kaldı. Aşağıdaki "iz,
+-- güncellemenin şartıdır" iddiası VARSAYILMADI, ÖLÇÜLDÜ.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  ÖNCE ÖLÇÜLDÜ (canlı, 16.09.2026)
+-- ═══════════════════════════════════════════════════════════════════════════
+--  · Taşımanın izi HİÇBİR YERDE yok. `moveToFleet` doğrudan
+--    `update vehicles set fleet = …` atıyor; ne önceki filo, ne taşıyan kişi,
+--    ne de an kaydediliyor.
+--  · `vehicles` tablosunda `updated_at` KOLONU YOK (ölçüldü — kolonlar:
+--    id plate make model year status assigned_worker_id inspection_due
+--    insurance_due notes created_at flespi_device_id imei vin fleet
+--    tank_capacity_l is_test auto_start_enabled device_model fuel_type).
+--    Yani "en azından ne zaman değişti" bile sorulamıyor.
+--  · Panelin araç formu `auditChange` ile `audit_log`a yazıyor AMA o tablo
+--    HAK61'de YOK (HTTP 404 ölçüldü; demo ve Sendigo'da var) ve `audit()`
+--    hatayı yutuyor. Dolayısıyla asıl canlı müşteride filo değişikliğinin izi
+--    İKİ yolda da tutulmuyor.
+--  · Dağılım: 30 araç — bordo 9 / mavi 21 (HAK61, 16.09.2026).
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NEDEN AYRI TABLO, audit_log DEĞİL
+-- ═══════════════════════════════════════════════════════════════════════════
+--  `audit_log` (045) üç kiracının yalnız ikisinde var ve `SECURITY_LAYER_ENABLED`
+--  kapalıyken hiç yazmıyor; üstelik `audit()` hatayı BİLEREK yutuyor ("iz
+--  yazılamadı — eylem yine de tamamlanır"). Geri alma o izin üstüne kurulamaz:
+--  geri alınacak kaydın VAR OLDUĞUNDAN emin olmayan bir geri alma düğmesi,
+--  olmayan bir söz verir. Bu tablo koşulsuz yazılır ve yazılamazsa TAŞIMA DA
+--  OLMAZ (aşağıdaki fonksiyon tek ifadede ikisini birden yapar).
+--
+--  İkinci sebep: `audit_log.meta` serbest jsonb. Geri alma "hangi araç hangi
+--  filodan geldi" sorusunu ŞEMADAN sormak zorunda — jsonb içinde arama yapan
+--  bir geri alma, alan adı değiştiği gün sessizce boş döner.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  KİRACI KOLONU YOK ve OLMAMALI
+-- ═══════════════════════════════════════════════════════════════════════════
+--  Her müşteri AYRI bir Supabase veritabanı; kiracı kimliği env'de
+--  (NEXT_PUBLIC_TENANT), satırda değil. 059/074/076 ile aynı karar — bir
+--  `tenant_id` kolonu, izolasyonu veritabanı düzeyinden satır düzeyine
+--  indirmek olurdu.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NEDEN RPC (fonksiyon), İKİ AYRI PostgREST ÇAĞRISI DEĞİL
+-- ═══════════════════════════════════════════════════════════════════════════
+--  PostgREST'te her istek kendi işlemidir. "Önce güncelle, sonra iz yaz"
+--  deseydik ve ikincisi düşseydi, araç TAŞINMIŞ ama izi OLMAYAN bir durumda
+--  kalırdı — ve geri alma tam da o araçta çalışmazdı. En çok ihtiyaç duyulan
+--  anda sessizce eksik olan bir güvenlik ağı, ağ değildir.
+--
+--  Fonksiyon gövdesi TEK işlemdir: iz yazılamazsa güncelleme de geri sarılır.
+--  Bu, "best-effort iz" ile "güvenilir geri alma" arasındaki farkın ta kendisi.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  RLS YOK — GRANT MODELİ
+-- ═══════════════════════════════════════════════════════════════════════════
+--  Projedeki diğer tablolarla aynı: erişim service-role anahtarıyla, satır
+--  düzeyi politika ile değil. Yeni bir politika eklemek, bu tabloyu
+--  kardeşlerinden farklı bir güvenlik modeline sokardı.
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 1 · İZ TABLOSU
+-- ─────────────────────────────────────────────────────────────────────────────
+create table if not exists public.fleet_move_log (
+  id uuid primary key default gen_random_uuid(),
+
+  -- TEK DOKUNUŞ = TEK batch_id. Geri alma "o aracı" değil "o kararı" geri alır;
+  -- 5 aracı birlikte taşıyıp tek tek geri almak zorunda kalmak, taşımayı bir
+  -- karar sayan uç sözleşmesiyle çelişirdi.
+  batch_id uuid not null,
+
+  -- ⚠️ FK YOK — BİLEREK. Araç silinirse izi HAYATTA KALMALI: "o araç hangi
+  -- filodaydı" sorusunun cevabı, aracın kendisinden uzun yaşar. Aynı karar
+  -- leave_edit_log.leave_id'de yazılı (031).
+  vehicle_id uuid not null,
+
+  -- Taşımadan ÖNCEKİ ve SONRAKİ filo kodu. FK yok: `fleets` satırı ileride
+  -- silinse bile iz okunabilir kalmalı (kod metni zaten 30 araç satırında
+  -- yaşıyor, 059'un kod köprüsü kararı).
+  from_fleet text not null,
+  to_fleet   text not null,
+  -- Aynı filoya taşıma iz üretmez; üretseydi "değişmeyen şey" iz kalabalığı
+  -- yapar ve geri alma listesi anlamsız satırlarla dolardı.
+  constraint fleet_move_log_farkli_filo check (from_fleet is distinct from to_fleet),
+
+  -- Kişi silinirse iz DURUR, yalnız atfı düşer (leave_edit_log.changed_by ile
+  -- aynı kalıp). İzin kendisini silmek, silinen kişinin yaptıklarını da
+  -- silmek olurdu.
+  moved_by uuid references public.workers(id) on delete set null,
+  moved_at timestamptz not null default now(),
+
+  -- Geri alındıysa DAMGA. Satır SİLİNMEZ: geri almanın kendisi de bir olaydır
+  -- ve "hiç olmamış" gibi göstermek izin amacına aykırı.
+  undone_at timestamptz,
+  undone_by uuid references public.workers(id) on delete set null,
+
+  -- Damganın yarısı olamaz: geri alan kişi yazılıysa an da yazılı olmalı.
+  constraint fleet_move_log_geri_alma_butun
+    check (undone_by is null or undone_at is not null)
+);
+
+comment on table public.fleet_move_log is
+  'Filo tasima izi (099): her tasinan arac icin bir satir, tek dokunus tek batch_id. Tek yazan public.filo_tasi / public.filo_tasima_geri_al.';
+comment on column public.fleet_move_log.batch_id is
+  'Tek tasima dokunusunun kimligi. Geri alma bu kimlikle calisir - arac tek tek degil, karar butun olarak geri alinir.';
+comment on column public.fleet_move_log.vehicle_id is
+  'FK YOK (bilerek): arac silinse de izi kalir.';
+comment on column public.fleet_move_log.undone_at is
+  'Geri alma damgasi. null = hala yururlukte. Satir asla silinmez.';
+
+-- Geri alma erişimi: batch_id ile tek okuma.
+create index if not exists fleet_move_log_batch_idx
+  on public.fleet_move_log (batch_id);
+
+-- Araç ekseninde geçmiş: "bu araç hangi filolarda dolaştı", en yeniden eskiye.
+create index if not exists fleet_move_log_vehicle_idx
+  on public.fleet_move_log (vehicle_id, moved_at desc);
+
+-- ⚠️ FİLO EKSENİNDE İNDEKS YOK — bilinçli. Geçmiş ucu
+-- `from_fleet = X or to_fleet = X` süzüyor ve bu bir OR; tek kolonlu indeks
+-- onu kurtarmaz, iki kısmi indeks ise bu boyuttaki tabloda kazançtan çok
+-- bakım yükü olur. 30 araçlık bir filoda yıllık iz birkaç yüz satır: sıralı
+-- tarama ölçülebilir bir maliyet üretmez. Tablo on bin satırı geçerse
+-- (moved_at desc) indeksi ilk bakılacak yerdir.
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 2 · vehicles.updated_at
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ⚠️ DEFAULT YOK ve NULL SERBEST — bilerek. `not null default now()` deseydik
+-- 30 mevcut araç satırı "az önce güncellendi" damgası alırdı; oysa hiçbiri
+-- güncellenmedi. Uydurulmuş bir zaman damgası, boş bir kolondan kötüdür:
+-- ilkine güvenilir, ikincisi "bilinmiyor" der. NULL = bu satır 099'dan beri
+-- hiç güncellenmedi.
+alter table public.vehicles
+  add column if not exists updated_at timestamptz;
+
+comment on column public.vehicles.updated_at is
+  'Son guncelleme ani (099). NULL = 099dan bu yana guncellenmedi - geriye donuk doldurulmadi, uydurma damga yazilmadi.';
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 3 · TAŞIMA — güncelleme + iz TEK İŞLEMDE
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Dönüş: gerçekten TAŞINAN araçlar. Hiçbir araç taşınmadıysa SIFIR satır döner
+-- ve çağıran `batchId`yi null yapar — boş bir taşımaya kimlik vermek, geri
+-- alınacak hiçbir şeyi olmayan bir "geri al" düğmesi üretirdi.
+create or replace function public.filo_tasi(
+  p_kod text,
+  p_arac_ids uuid[],
+  p_by uuid
+)
+returns table (batch_id uuid, vehicle_id uuid, plate text, from_fleet text)
+language plpgsql
+as $fn$
+declare
+  v_batch uuid := gen_random_uuid();
+begin
+  return query
+  -- Taşınmaya ADAY olanlar: istenen kimlikler içinde ve HEDEFTE OLMAYANLAR.
+  -- Zaten hedefte olan araç güncellemenin dışında kalır; "değişen" gerçekten
+  -- değişen olsun (uçtaki `zatenOrada` sözleşmesi buradan geliyor).
+  with hedef as (
+    select v.id, v.plate, v.fleet as eski
+      from public.vehicles v
+     where v.id = any(p_arac_ids)
+       and v.fleet is distinct from p_kod
+  ),
+  tasinan as (
+    update public.vehicles v
+       set fleet = p_kod,
+           updated_at = now()
+      from hedef h
+     where v.id = h.id
+       -- Yarış koruması: araya giren işlem aracı başka filoya almışsa atla.
+       and v.fleet = h.eski
+    returning v.id
+  ),
+  -- ⚠️ İZ, GÜNCELLEMENİN YAN ETKİSİ DEĞİL ŞARTIDIR. Bu ifade düşerse (kısıt
+  -- ihlali, disk, tablo kilidi) TÜM ifade geri sarılır ve araç taşınmamış olur.
+  -- Aşağıdaki son select `iz`i okuduğu için bu CTE'nin çalışması garanti.
+  iz as (
+    insert into public.fleet_move_log
+           (batch_id, vehicle_id, from_fleet, to_fleet, moved_by)
+    select v_batch, h.id, h.eski, p_kod, p_by
+      from hedef h
+      join tasinan t on t.id = h.id
+    returning fleet_move_log.vehicle_id as iz_vehicle_id
+  )
+  select v_batch, h.id, h.plate, h.eski
+    from hedef h
+    join iz i on i.iz_vehicle_id = h.id;
+end
+$fn$;
+
+comment on function public.filo_tasi(text, uuid[], uuid) is
+  'Araclari hedef filoya tasir ve HER tasinan arac icin fleet_move_log satiri yazar - tek islem. Iz yazilamazsa tasima da geri sarilir. YALNIZ vehicles.fleet ve vehicles.updated_at yazilir; sofor atamasi kolonuna DOKUNULMAZ.';
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 4 · GERİ ALMA
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Dönüş sözleşmesi iki türlüdür ve `durum` hangisi olduğunu söyler:
+--   · 'yok'                → bu batch hiç yok            (uç: 404)
+--   · 'zaten_geri_alindi'  → batch var, açık satır yok   (uç: 409)
+--   · 'geri_alindi' / 'atlandi' satırları → iş yapıldı   (uç: 200)
+-- İlk ikisi TEK satır döner, araç alanları null'dır.
+--
+-- ⚠️ NEDEN "HEPSİ ATLANDI" 409 DEĞİL: batch'te açık satır varsa geri alma
+-- DENENDİ ve sonucu satır satır söyleniyor. 409 "bu istek anlamsız" demektir;
+-- oysa burada istek anlamlıydı, dünya değişmişti. İkisini aynı koda toplamak
+-- istemciye "tekrar deneme" ile "araç elden gitti"yi ayırt ettirmezdi.
+create or replace function public.filo_tasima_geri_al(
+  p_batch uuid,
+  p_by uuid
+)
+returns table (
+  durum text,
+  vehicle_id uuid,
+  plate text,
+  -- Geri alındıysa: aracın DÖNDÜĞÜ filo. Atlandıysa: dönmesi gereken filo.
+  hedef_filo text,
+  -- Geri alındıysa: terk edilen filo. Atlandıysa: aracın ŞU ANDA bulunduğu filo.
+  mevcut_filo text
+)
+language plpgsql
+as $fn$
+declare
+  v_toplam integer;
+  v_acik integer;
+begin
+  select count(*), count(*) filter (where l.undone_at is null)
+    into v_toplam, v_acik
+    from public.fleet_move_log l
+   where l.batch_id = p_batch;
+
+  if v_toplam = 0 then
+    return query select 'yok'::text, null::uuid, null::text, null::text, null::text;
+    return;
+  end if;
+
+  if v_acik = 0 then
+    return query select 'zaten_geri_alindi'::text, null::uuid, null::text, null::text, null::text;
+    return;
+  end if;
+
+  return query
+  with acik as (
+    -- LEFT JOIN: araç silinmiş olabilir. O satır geri alınamaz ama GÖRÜNMELİ —
+    -- sessizce düşseydi yanıt "hepsi geri alındı" derdi.
+    select l.id as log_id, l.vehicle_id as arac_id, l.from_fleet, l.to_fleet,
+           v.plate, v.fleet as mevcut
+      from public.fleet_move_log l
+      left join public.vehicles v on v.id = l.vehicle_id
+     where l.batch_id = p_batch
+       and l.undone_at is null
+  ),
+  -- Yalnız HÂLÂ taşındığı yerde duran araç geri alınır. Araya manuel bir
+  -- taşıma girdiyse o araç ATLANIR: geri alma, sonraki kararı ezmemeli.
+  uygun as (
+    select * from acik where mevcut is not distinct from to_fleet
+  ),
+  geri as (
+    update public.vehicles v
+       set fleet = u.from_fleet,
+           updated_at = now()
+      from uygun u
+     where v.id = u.arac_id
+       and v.fleet = u.to_fleet
+    returning v.id as geri_id
+  ),
+  damga as (
+    update public.fleet_move_log l
+       set undone_at = now(),
+           undone_by = p_by
+      from geri g
+     where l.batch_id = p_batch
+       and l.vehicle_id = g.geri_id
+       and l.undone_at is null
+    returning l.vehicle_id as damga_id
+  )
+  select 'geri_alindi'::text, u.arac_id, u.plate, u.from_fleet, u.to_fleet
+    from uygun u
+    join damga d on d.damga_id = u.arac_id
+  union all
+  select 'atlandi'::text, a.arac_id, a.plate, a.from_fleet, a.mevcut
+    from acik a
+   where a.mevcut is distinct from a.to_fleet;
+end
+$fn$;
+
+comment on function public.filo_tasima_geri_al(uuid, uuid) is
+  'Bir tasima dokunusunu geri alir: araclari from_fleet e dondurur, iz satirina undone damgasi basar. Arac bu arada baska filoya tasinmissa ATLANIR ve yanitta soylenir. Satir SILINMEZ.';
+
+-- Yeni tablo ve iki fonksiyon PostgREST'te hemen görünsün (yoksa ilk çağrı
+-- PGRST202 alır ve uç "099 çalışmamış" der).
+notify pgrst, 'reload schema';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  100_shift_odometer_spans_zaman.sql                                 ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 100_shift_odometer_spans_zaman.sql — 052'ye OKUMA ZAMANLARI EKLENİYOR
+--
+-- ⚠️ BU DDL VOLKAN TARAFINDAN 16.09.2026'DA SUPABASE'DE ÇALIŞTIRILDI ve ÜÇ
+-- KİRACIDA DA (HAK61 · Sendigo · galzura-demo) UYGULANMIŞ durumdadır. Bu dosya
+-- deponun ŞEMA KAYDIDIR. Claude tarafından çalıştırılmadı.
+--
+-- ── UYGULANDIKTAN SONRA CANLIDA ÖLÇÜLDÜ (16.09.2026) ──────────────────────
+-- SQL Editor'da (pg_get_function_result): ilk_an ✓ · son_an ✓ · aynı adlı
+-- fonksiyon sayısı 1 (mükerrer aşırı yükleme YOK) — üç kiracıda da.
+-- PostgREST üzerinden davranışla doğrulandı: RPC dönüşü artık 9 kolon ve
+-- `ilk_an`/`son_an` satırlarda VAR (HAK61 31 satır · Sendigo 4 · demo 31).
+--
+-- ── KAPSAMA KAPISI ARTIK GERÇEKTEN ÇALIŞIYOR (son 30 gün) ─────────────────
+--   HAK61  cihaz 195 · sayac 146 · olculmedi 78
+--          B elenme sebepleri: kapsama_yetersiz 142 · okuma_yok 81 · negatif 1
+--   demo   cihaz 402 · sayac  41 · olculmedi  8
+--          kapsama_yetersiz 33 · okuma_yok 9 · sahte_sifir 3 · makul_disi 3 ·
+--          negatif 1
+-- ⚠️ Bu sayılar, 100 uygulanmadan ÖNCE zaman damgaları device_telemetry'den
+-- elle toplanarak yapılan ölçümle BİREBİR AYNI çıktı — yani tahmin doğrulandı,
+-- kural canlıda beklendiği gibi davranıyor.
+--
+-- ⚠️ KM DEĞERLERİ DEĞİŞMEDİ: bu tur yalnız ETİKET ekliyor; uçların `km` alanı
+-- hâlâ sayaç ekseninde (13. madde Adım 3'e kadar).
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NEDEN GEREKLİ — 15 DAKİKALIK KAPSAMA KURALI BESLENEMİYOR
+-- ═══════════════════════════════════════════════════════════════════════════
+--  13. madde km'yi 052 eksenine taşıyor ve kuralın bir kapısı var: cihaz
+--  vardiyanın BAŞINDAN SONUNA kadar konuşmuş olmalı. Ölçütü Volkan koydu:
+--  ilk okuma vardiya başlangıcından en çok 15 dk sonra, son okuma bitişten en
+--  çok 15 dk önce. Bu ölçüt OKUMA ANLARINI gerektirir.
+--
+--  052 bugün yalnız `first_km` / `last_km` döndürüyor — hangi ANDA okunduğunu
+--  söylemiyor. Yani kapsama sorusu MEVCUT sözleşmeyle cevaplanamaz.
+--
+--  ═══ NEDEN ÖNEMLİ: ÖLÇÜLDÜ (HAK61, son 30 gün) ═══
+--  052 ile sayaç ekseni 324 vardiyada birlikte ölçülebiliyor ve YALNIZ %27,2'si
+--  birebir aynı. En büyük ayrışma A=348 km → B=37 km (−311). Bu fark 052'nin
+--  "yanlış" olmasından değil, cihazın vardiyanın YALNIZ BİR BÖLÜMÜNDE
+--  konuşmasından geliyor: pencere içindeki ilk ve son odometre okuması
+--  birbirine yakınsa 052 gerçek yolun küçük bir dilimini ölçer. Zaman damgası
+--  olmadan bu durumu "az yol gidildi"den ayırt etmek İMKÂNSIZ.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+--  NEDEN DROP + CREATE (create or replace DEĞİL)
+-- ═══════════════════════════════════════════════════════════════════════════
+--  PostgreSQL `create or replace function`ta DÖNÜŞ TİPİNİ değiştirmeye izin
+--  vermez; `returns table`a kolon eklemek dönüş tipini değiştirmektir. Bu
+--  yüzden önce düşürülüp yeniden kuruluyor ve İKİSİ TEK İŞLEMDE: begin/commit
+--  arasında başka bir oturum ya eski ya yeni hâli görür, "fonksiyon yok" ara
+--  durumunu GÖRMEZ.
+--
+--  ⚠️ GERİYE DÖNÜK UYUMLU. Eklenen iki kolon SONA geliyor; mevcut çağıran
+--  (lib/analytics.ts getWorkerShiftDistance) satırları ADIYLA okuyor, sırayla
+--  değil. Yani 100 uygulanmadan önce yazılmış kod aynen çalışmaya devam eder.
+--
+--  ⚠️ GÖVDE MANTIĞI DEĞİŞMEDİ. İki LATERAL aynı, filtreler aynı, km-guard yine
+--  lib/analytics.ts'te. Bu migration YALNIZ iki kolon ekler — hiçbir satırın
+--  km'si değişmez.
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+drop function if exists public.shift_odometer_spans(timestamptz, timestamptz);
+
+create function public.shift_odometer_spans(
+  p_from timestamptz,
+  p_to   timestamptz
+)
+returns table (
+  time_entry_id uuid,
+  worker_id     uuid,
+  vehicle_id    uuid,
+  started_at    timestamptz,
+  ended_at      timestamptz,
+  first_km      double precision,
+  last_km       double precision,
+  -- YENİ (100): odometre okumalarının ANLARI. Kapsama kapısı bunları okur.
+  -- Adlandırma 097'nin (fleet_odometer_spans) `ilk_an`/`son_an` deseniyle aynı.
+  ilk_an        timestamptz,
+  son_an        timestamptz
+)
+language sql
+stable
+as $$
+  select
+    te.id,
+    te.worker_id,
+    te.vehicle_id,
+    te.started_at,
+    te.ended_at,
+    f.km,
+    l.km,
+    f.an,
+    l.an
+  from public.time_entries te
+  left join lateral (
+    select dt.odometer_km::double precision as km, dt.recorded_at as an
+    from public.device_telemetry dt
+    where dt.vehicle_id = te.vehicle_id
+      and dt.odometer_km is not null
+      and dt.recorded_at >= te.started_at
+      and dt.recorded_at <= coalesce(te.ended_at, p_to)
+    order by dt.recorded_at asc
+    limit 1
+  ) f on true
+  left join lateral (
+    select dt.odometer_km::double precision as km, dt.recorded_at as an
+    from public.device_telemetry dt
+    where dt.vehicle_id = te.vehicle_id
+      and dt.odometer_km is not null
+      and dt.recorded_at >= te.started_at
+      and dt.recorded_at <= coalesce(te.ended_at, p_to)
+    order by dt.recorded_at desc
+    limit 1
+  ) l on true
+  where te.vehicle_id is not null
+    and te.worker_id is not null
+    and te.started_at <= p_to
+    and (te.ended_at is null or te.ended_at >= p_from);
+$$;
+
+comment on function public.shift_odometer_spans(timestamptz, timestamptz) is
+  'Vardiya pencereli odometre uclari + OKUMA ANLARI (052 + 100). ilk_an/son_an kapsama kapisi icindir: cihaz vardiyanin basindan sonuna konusmus mu. km-guard burada DEGIL, lib/analytics.ts te.';
+
+-- Yeni kolonlar PostgREST'te hemen görünsün.
+notify pgrst, 'reload schema';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  101_yakit_seri_etiket.sql                                          ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 101 — YAKIT SERİSİ ÖN-ETİKETLEME (16b, A yolu)  —  ÇALIŞTIRILDI 17.09.2026
+--
+-- ✅ ÜÇ KİRACIDA DA UYGULANDI (17.09.2026): HAK61 · Sendigo · galzura-demo.
+--    Doğrulama: tablo 2 · yeni fonksiyon 4 · ESKİ fonksiyonlar 2 ·
+--    eski_cerceve false (102'nin O(n²) çerçevesi yok).
+-- ═══════════════════════════════════════════════════════════════════════════
+-- NEDEN (ölçüldü, 16.09.2026)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- `/api/mobile/fleets/karsilastir` turunun %80'i tek bir yerde yanıyor:
+-- `report_fuel_stats_vehicle` araç başına çağrılıyor ve her çağrı o aracın
+-- aralıktaki BÜTÜN yakıt okumalarını dört pencere fonksiyonundan geçiriyor.
+--
+--     en yoğun araç, 30 günde 68.572 yüzde satırı
+--       30 gün   HAK61   969 ms · demo 1.466 ms
+--        7 gün   HAK61   284 ms · demo   368 ms
+--        1 gün   HAK61   156 ms · demo   175 ms
+--     → marjinal maliyet ~12,8 µs/satır; sabit yük ~100 ms
+--
+--     29 araç × 30 gün, mapBounded(6):  HAK61 4,3 sn · demo 7,7 sn
+--     SOĞUK ≈ SICAK (7.725 vs 7.567 ms) → disk değil CPU; indeks çözmez
+--     (053'ün kapsayan indeksleri üç kiracıda da ZATEN kurulu).
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 🔴 NEDEN "GÜNLÜK ÖZET" DEĞİL — 090 BUNU ÖLÇTÜ VE REDDETTİ
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- 090'ın başlığındaki ÖLÇÜM 2 (HAK61 canlı, 26.08.2026): 28 günlük gerçek
+-- cevap 2.602,6 L; aynı pencere GÜNLÜK parçalara bölünüp toplandığında
+-- 3.009,9 L = **+%15,6** (ikinci ölçüm 14 günde +%28,9). Sebep: yakıt motoru
+-- ardışık okuma DİZİSİ üzerinde çalışıyor (30 satırlık de-glitch penceresi,
+-- 15 dakikalık seri birleştirme) ve gün sınırı diziyi kesiyor.
+--
+-- Bu migration günlük ÖZET yazmıyor. Yazdığı şey SATIR BAŞINA, ZAMANDAN
+-- BAĞIMSIZ bir ara değer: her okumanın ±30 komşusundaki en yüksek yakıt
+-- seviyesi. Bu iki sayı yalnız satırın KENDİ komşuluğuna bağlıdır; hangi
+-- pencerede sorulduğuna bağlı DEĞİLDİR. Dolayısıyla gün gün üretilip
+-- aylık okunabilir — parçalama sapması matematiksel olarak doğmaz.
+--
+-- ⚠️ Ölçüldü (16.09.2026): gün sınırını (Viyana 23:45–00:15) kesen yükseliş
+-- adımı 30 günde HAK61'de 0, demo'da 0. Yani 090'ın +%15,6'sı gece yarısı
+-- dolumundan DEĞİL, gün kenarında KIRPILAN de-glitch penceresinden geliyordu.
+-- Bu migration tam olarak o pencereyi kırpılmaz hâle getiriyor.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- NEDEN AYRI İNCE TABLO, device_telemetry'ye KOLON DEĞİL
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Üç ölçülebilir sebep:
+--
+--   1. device_telemetry'nin BUGÜN 9 indeksi var (014×2, 039, 049×2, 053×2,
+--      090 BRIN, 093). Postgres'te UPDATE = yeni satır sürümü; 1,54 milyon
+--      yüzde satırını etiketlemek 1,54 milyon ölü tuple ve DOKUZ indekste
+--      bakım demek. INSERT-only ince tabloda tek indeks var.
+--   2. device_telemetry SICAK tablo: flespi senkronu 30-60 saniyede bir
+--      upsert ediyor. Etiketleme UPDATE'i onunla aynı satırlara yazardı.
+--   3. GERİ ALINABİLİRLİK. `drop table public.fuel_seri` — device_telemetry'ye
+--      hiç dokunulmamış olur. Kolon eklenseydi geri alma, canlı yazma altındaki
+--      2,36 milyon satırlık tabloda ALTER olurdu.
+--
+-- Bedeli: HAK61'de ~1,54 M satır × ~64 bayt ≈ 100 MB + PK. Kabul edilebilir
+-- (device_telemetry'nin kendisi 2,36 M satır).
+--
+-- KISMİ İNDEKSE GEREK YOK: tablo zaten `fuel_level_pct is not null`
+-- projeksiyonunun ta kendisi. Kaynak tarafta 053'ün
+-- `idx_device_telemetry_vehicle_fuel_pct` indeksi etiketleme sorgusunu
+-- besliyor; yeni indeks EKLENMEDİ (093 mükerrer indeks dersi).
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- GERİ ALINABİLİRLİK
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Additive + idempotent. Hiçbir veri değişmez, HİÇBİR mevcut fonksiyon
+-- düşmez. `report_fuel_stats_vehicle` (052) OLDUĞU GİBİ DURUYOR ve uygulama
+-- `YAKIT_OZET_ENABLED=false` ile ya da v2 bulunamadığında ona geri düşüyor.
+--
+-- Geri alma (veri kaybı YOK):
+--     drop function if exists public.report_fuel_stats_vehicle_v2(timestamptz, timestamptz, uuid);
+--     drop function if exists public.yakit_seri_etiketle(timestamptz, timestamptz, uuid);
+--     drop table if exists public.fuel_seri;
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ════════════════════ 1 · ETİKET TABLOSU ══════════════════════════════════
+
+create table if not exists public.fuel_seri (
+  vehicle_id  uuid not null references public.vehicles(id) on delete cascade,
+  recorded_at timestamptz not null,
+
+  /** Ham okuma — device_telemetry.fuel_level_pct'in kopyası. */
+  fuel double precision not null,
+  /**
+   * Ham odometre. `drop_count`/`drop_pct` "depo düştü ama araç yol almadı"
+   * testini yapıyor; o test olmadan sifon şüphesi ile normal tüketim ayrılamaz.
+   * NULL olabilir (odometresiz cihaz).
+   */
+  odo double precision,
+
+  /**
+   * ⚠️ TURUN TAMAMI BU İKİ KOLON İÇİN.
+   *
+   * `bwd_max` = max(fuel) · 30 önceki satır + bu satır
+   * `fwd_max` = max(fuel) · bu satır + 30 sonraki satır
+   *
+   * 027'nin de-glitch kuralı ("iki yandan da 10 puan aşağıdaysa bu satır
+   * sensör çukurudur") YALNIZ bu ikisine bakar. İkisi de satırın KENDİ
+   * komşuluğundan gelir — sorulan rapor penceresinden bağımsızdır. Pahalı
+   * olan (31 satırlık kayan maksimum, iki kez) burada BİR KEZ hesaplanır,
+   * okuma anında hiç hesaplanmaz.
+   *
+   * Komşuluk SATIR sayısıyla tanımlı, ZAMANLA değil — etiketleme işi bu
+   * yüzden sabit bir saat örtüşmesi değil, tam 30 SATIRLIK örtüşme kullanır
+   * (seyrek okuyan park hâlindeki araçta saat örtüşmesi 30 satırı tutmazdı).
+   */
+  bwd_max double precision not null,
+  fwd_max double precision not null,
+
+  etiketlendi_at timestamptz not null default now(),
+  /** Etiket mantığı değişirse tablo topluca yeniden üretilebilsin. */
+  etiket_surumu text not null default '101.1',
+
+  primary key (vehicle_id, recorded_at)
+);
+
+comment on table public.fuel_seri is
+  'Yakıt serisinin satır-başına ön-etiketi (101). Günlük ÖZET DEĞİL: kolonlar satırın ±30 komşusundan gelir, rapor penceresinden bağımsızdır — 090''ın ölçtüğü günlük parçalama sapması (+%15,6) bu yüzden doğmaz.';
+
+comment on column public.fuel_seri.bwd_max is
+  'max(fuel) · 30 önceki satır + bu satır. 027 de-glitch kuralının geri yarısı.';
+comment on column public.fuel_seri.fwd_max is
+  'max(fuel) · bu satır + 30 sonraki satır. 027 de-glitch kuralının ileri yarısı.';
+comment on column public.fuel_seri.etiket_surumu is
+  'Etiket mantığının sürümü. Mantık değişirse bu değerle eski satırlar bulunup yeniden üretilir.';
+
+-- ════════════════════ 2 · ETİKETLEME FONKSİYONU ═══════════════════════════
+--
+-- [p_from, p_to] aralığındaki satırları etiketler. `p_vehicle_id` verilmezse
+-- TÜM araçlar.
+--
+-- ⚠️ 30 SATIRLIK ÖRTÜŞME: bir satırın `bwd_max`/`fwd_max` değeri aralığın
+-- DIŞINDAKİ komşularına da bakmak zorunda. Bu yüzden ham küme, aralığın iki
+-- yanından araç başına tam 30 satır LATERAL ile genişletilir; yazma yine
+-- yalnız [p_from, p_to] içindir. Örtüşme olmasaydı gün gün etiketleme, tam
+-- da 090'ın reddettiği kenar kırpmasını üretirdi.
+--
+-- ⚠️ SON SATIRLAR GEÇİCİDİR: serinin en yeni 30 satırının ileri penceresi
+-- henüz dolmamıştır. Onlar sonraki koşuda upsert ile düzelir; ayrıca okuma
+-- yolu (v2) güvenlik payı olarak son 30 etiketli satırı zaten CANLI yeniden
+-- hesaplar. Yani geçici değer hiçbir rapora sızmaz.
+
+create or replace function public.yakit_seri_etiketle(
+  p_from       timestamptz,
+  p_to         timestamptz,
+  p_vehicle_id uuid default null
+)
+returns bigint
+language plpgsql
+as $$
+declare
+  v_yazilan bigint := 0;
+begin
+  with hedef as (
+    select v.id
+    from public.vehicles v
+    where p_vehicle_id is null or v.id = p_vehicle_id
+  ),
+  ham as (
+    -- Aralığın kendisi
+    select dt.vehicle_id,
+           dt.recorded_at,
+           dt.fuel_level_pct::double precision as fuel,
+           dt.odometer_km::double precision    as odo
+    from public.device_telemetry dt
+    join hedef h on h.id = dt.vehicle_id
+    where dt.recorded_at >= p_from
+      and dt.recorded_at <= p_to
+      and dt.fuel_level_pct is not null
+
+    union all
+
+    -- Araç başına TAM 30 önceki satır
+    select o.vehicle_id, o.recorded_at, o.fuel, o.odo
+    from hedef h
+    cross join lateral (
+      select dt.vehicle_id,
+             dt.recorded_at,
+             dt.fuel_level_pct::double precision as fuel,
+             dt.odometer_km::double precision    as odo
+      from public.device_telemetry dt
+      where dt.vehicle_id = h.id
+        and dt.recorded_at < p_from
+        and dt.fuel_level_pct is not null
+      order by dt.recorded_at desc
+      limit 30
+    ) o
+
+    union all
+
+    -- Araç başına TAM 30 sonraki satır
+    select o.vehicle_id, o.recorded_at, o.fuel, o.odo
+    from hedef h
+    cross join lateral (
+      select dt.vehicle_id,
+             dt.recorded_at,
+             dt.fuel_level_pct::double precision as fuel,
+             dt.odometer_km::double precision    as odo
+      from public.device_telemetry dt
+      where dt.vehicle_id = h.id
+        and dt.recorded_at > p_to
+        and dt.fuel_level_pct is not null
+      order by dt.recorded_at asc
+      limit 30
+    ) o
+  ),
+  pencereli as (
+    select
+      m.vehicle_id,
+      m.recorded_at,
+      m.fuel,
+      m.odo,
+      max(m.fuel) over (
+        partition by m.vehicle_id order by m.recorded_at
+        rows between 30 preceding and current row
+      ) as bwd_max,
+      max(m.fuel) over (
+        partition by m.vehicle_id order by m.recorded_at
+        rows between current row and 30 following
+      ) as fwd_max
+    from ham m
+  )
+  insert into public.fuel_seri as f
+    (vehicle_id, recorded_at, fuel, odo, bwd_max, fwd_max, etiketlendi_at, etiket_surumu)
+  select p.vehicle_id, p.recorded_at, p.fuel, p.odo, p.bwd_max, p.fwd_max, now(), '101.1'
+  from pencereli p
+  where p.recorded_at >= p_from
+    and p.recorded_at <= p_to
+  on conflict (vehicle_id, recorded_at) do update
+    set fuel           = excluded.fuel,
+        odo            = excluded.odo,
+        bwd_max        = excluded.bwd_max,
+        fwd_max        = excluded.fwd_max,
+        etiketlendi_at = excluded.etiketlendi_at,
+        etiket_surumu  = excluded.etiket_surumu;
+
+  get diagnostics v_yazilan = row_count;
+  return v_yazilan;
+end;
+$$;
+
+comment on function public.yakit_seri_etiketle(timestamptz, timestamptz, uuid) is
+  'fuel_seri''yi [p_from,p_to] için üretir (upsert). Araç başına 30 SATIRLIK örtüşme kullanır: kenar kırpması olmadan gün gün çağrılabilir.';
+
+-- ════════════════════ 3 · report_fuel_stats_vehicle_v2 ════════════════════
+--
+-- 052'deki `report_fuel_stats_vehicle` ile AYNI ÇIKTIYI üretir. Fark tek:
+-- 31 satırlık iki kayan maksimum artık okuma anında hesaplanmıyor,
+-- `fuel_seri`den okunuyor. De-glitch kuralı, 15 dakikalık seri birleştirme,
+-- ≥5 puanlık dolum eşiği, ≥10 puanlık düşüş + "odometre 1 km'den az" testi
+-- BİREBİR aynı satırlardan kopyalandı.
+--
+-- ⚠️ ÜÇ NOKTADA PENCEREYE GÖRE DÜZELTME ŞART (yoksa çıktı BİREBİR olmaz):
+--
+--   1. İlk 31 satır — 052'de geri pencere PENCERENİN İÇİNDE kırpılır
+--      (rn ≤ 31 iken "30 önceki" = 1..rn). Etiketteki değer ise pencere
+--      dışındaki komşulara da bakar. Bu yüzden baştaki 31 satırın `bwd_max`ı
+--      pencere içinde YENİDEN hesaplanır (kümülatif maksimum — ucuz).
+--   2. Son 31 satır — aynısının ileri yarısı.
+--   3. rn = 1 ve rn = cnt satırlarında 052'nin UÇ SATIR KURALI geçerli:
+--      tek taraflı test. Aynen taşındı.
+--
+--   Eşik neden 31 ve neden > cnt - 31: rn = 31'in 30 öncekisi tam olarak
+--   1..31'dir (hepsi pencerede), rn = 32'ninki 2..32'dir (yine hepsi
+--   pencerede) → 32'den itibaren etiket değeri zaten pencereyle aynı.
+--   Simetrik olarak rn = cnt - 30'un 30 sonrakisi tam cnt'te biter.
+--
+-- ⚠️ KUYRUK CANLI HESAPLANIR (melez okuma). Etiketli serinin son 30 satırı
+-- ve ondan sonraki HAM satırlar okuma anında hesaplanır: gecelik cron'dan
+-- bu yana gelen telemetri (bugünün kısmi günü) böylece rapora TAM girer ve
+-- "hafta"/"ay" gibi ŞİMDİ biten pencereler bayat kalmaz. Bölme noktasında
+-- sapma DOĞMAZ: birleştirilen şey satır-başına komşuluk değerleridir, gün
+-- özeti değil (090 farkının tam olarak doğmadığı yer burası).
+--
+-- ⚠️ TABLO BOŞSA v2 = v1. `fuel_seri`de o araç için satır yoksa eşik
+-- '-infinity' olur, her şey canlı hesaplanır ve sonuç 052'nin birebir aynısı
+-- çıkar. Yani migration uygulanıp cron kurulmadan önce de DOĞRU çalışır,
+-- yalnız hızlı çalışmaz.
+
+create or replace function public.report_fuel_stats_vehicle_v2(
+  p_from       timestamptz,
+  p_to         timestamptz,
+  p_vehicle_id uuid
+)
+returns table (
+  vehicle_id   uuid,
+  sample_count bigint,
+  avg_pct      double precision,
+  min_pct      double precision,
+  max_pct      double precision,
+  first_pct    double precision,
+  last_pct     double precision,
+  refill_count bigint,
+  refill_pct   double precision,
+  drop_count   bigint,
+  drop_pct     double precision
+)
+language sql
+stable
+as $$
+  with esik as (
+    -- Etiketli serinin GÜVENLİ ucu: sondaki 30 satırın ileri penceresi
+    -- eksik olabilir, onlar canlı hesaplanır.
+    select coalesce(
+      (select fs.recorded_at
+         from public.fuel_seri fs
+        where fs.vehicle_id = p_vehicle_id
+        order by fs.recorded_at desc
+        offset 30 limit 1),
+      '-infinity'::timestamptz
+    ) as t
+  ),
+  etiketli as (
+    select fs.recorded_at, fs.fuel, fs.odo, fs.bwd_max, fs.fwd_max
+    from public.fuel_seri fs, esik e
+    where fs.vehicle_id = p_vehicle_id
+      and fs.recorded_at >= p_from
+      and fs.recorded_at <= p_to
+      and fs.recorded_at < e.t
+  ),
+  kuyruk_ham as (
+    -- Eşikten sonraki ham satırlar
+    select dt.recorded_at,
+           dt.fuel_level_pct::double precision as fuel,
+           dt.odometer_km::double precision    as odo
+    from public.device_telemetry dt, esik e
+    where dt.vehicle_id = p_vehicle_id
+      and dt.fuel_level_pct is not null
+      and dt.recorded_at >= e.t
+      and dt.recorded_at <= p_to
+    union all
+    -- + tam 30 satırlık geri örtüşme (kuyruğun bwd_max'ı doğru çıksın)
+    select o.recorded_at, o.fuel, o.odo
+    from esik e
+    cross join lateral (
+      select dt.recorded_at,
+             dt.fuel_level_pct::double precision as fuel,
+             dt.odometer_km::double precision    as odo
+      from public.device_telemetry dt
+      where dt.vehicle_id = p_vehicle_id
+        and dt.fuel_level_pct is not null
+        and dt.recorded_at < e.t
+      order by dt.recorded_at desc
+      limit 30
+    ) o
+  ),
+  kuyruk as (
+    select k.recorded_at, k.fuel, k.odo,
+           max(k.fuel) over (order by k.recorded_at rows between 30 preceding and current row) as bwd_max,
+           max(k.fuel) over (order by k.recorded_at rows between current row and 30 following) as fwd_max
+    from kuyruk_ham k
+  ),
+  base as (
+    select recorded_at, fuel, odo, bwd_max, fwd_max from etiketli
+    union all
+    /**
+     * ⚠️ `recorded_at >= e.t` ŞART. `kuyruk` içindeki 30 satırlık geri
+     * örtüşme YALNIZ pencere fonksiyonunu doğru beslemek için var; o
+     * satırlar `etiketli`de ZATEN bulunuyor. Bu koşul olmadan aynı 30
+     * satır iki kez sayılır (PGlite denemesinde birebir bu görüldü:
+     * sample_count 8.627 yerine 8.657).
+     */
+    select k.recorded_at, k.fuel, k.odo, k.bwd_max, k.fwd_max
+      from kuyruk k, esik e
+     where k.recorded_at >= e.t
+       and k.recorded_at >= p_from
+       and k.recorded_at <= p_to
+  ),
+  numbered as (
+    select b.*,
+           row_number() over (order by b.recorded_at) as rn,
+           count(*)     over ()                       as cnt
+    from base b
+  ),
+  bounded as (
+    -- PENCEREYE GÖRE DÜZELTME (yukarıdaki 1 ve 2 numaralı notlar)
+    select n.*,
+           case when n.rn <= 31
+                then max(n.fuel) over (order by n.recorded_at rows between unbounded preceding and current row)
+                else n.bwd_max end as bwd_w,
+           case when n.rn > n.cnt - 31
+                then max(n.fuel) over (order by n.recorded_at rows between current row and unbounded following)
+                else n.fwd_max end as fwd_w
+    from numbered n
+  ),
+  clean as (
+    -- UÇ SATIR KURALI (027) — 052'den birebir.
+    select recorded_at, fuel, odo
+    from bounded
+    where not (
+      case
+        when rn = 1   then fwd_w - fuel >= 10
+        when rn = cnt then bwd_w - fuel >= 10
+        else bwd_w - fuel >= 10 and fwd_w - fuel >= 10
+      end
+    )
+  ),
+  stepped as (
+    select c.*,
+           lag(c.fuel)        over w as prev_fuel,
+           lag(c.odo)         over w as prev_odo,
+           lag(c.recorded_at) over w as prev_at
+    from clean c
+    window w as (order by c.recorded_at)
+  ),
+  marked as (
+    select s.*,
+           case
+             when s.prev_fuel is null then 1
+             when s.fuel - s.prev_fuel <= 0 then 1
+             when s.recorded_at - s.prev_at > interval '15 minutes' then 1
+             else 0
+           end as new_run
+    from stepped s
+  ),
+  runs as (
+    select m.*, sum(m.new_run) over (order by m.recorded_at) as run_id
+    from marked m
+  ),
+  rises as (
+    select run_id,
+           sum(greatest(fuel - coalesce(prev_fuel, fuel), 0)) as total_rise
+    from runs
+    group by run_id
+  )
+  select
+    p_vehicle_id                                    as vehicle_id,
+    (select count(*) from clean)::bigint            as sample_count,
+    (select avg(fuel) from clean)                   as avg_pct,
+    (select min(fuel) from clean)                   as min_pct,
+    (select max(fuel) from clean)                   as max_pct,
+    (select fuel from clean order by recorded_at asc  limit 1) as first_pct,
+    (select fuel from clean order by recorded_at desc limit 1) as last_pct,
+    (select count(*) from rises where total_rise >= 5)::bigint as refill_count,
+    (select coalesce(sum(total_rise), 0) from rises where total_rise >= 5) as refill_pct,
+    (select count(*) from stepped
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo < 1
+    )::bigint                                       as drop_count,
+    (select coalesce(sum(prev_fuel - fuel), 0) from stepped
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo < 1
+    )                                               as drop_pct
+  where exists (select 1 from clean);
+$$;
+
+comment on function public.report_fuel_stats_vehicle_v2(timestamptz, timestamptz, uuid) is
+  'report_fuel_stats_vehicle (052) ile BİREBİR aynı çıktı; 31 satırlık iki kayan maksimum fuel_seri''den okunur. Etiketin ucundan sonrası CANLI hesaplanır (melez), tablo boşsa tamamen canlı.';
+
+-- ════════════════════ 4 · KAPSAMA GÖRÜNÜMÜ ════════════════════════════════
+-- Cron ve teşhis için: hangi araç nereye kadar etiketli.
+
+create or replace view public.fuel_seri_kapsama as
+  select
+    fs.vehicle_id,
+    min(fs.recorded_at) as ilk_an,
+    max(fs.recorded_at) as son_an,
+    count(*)            as satir,
+    max(fs.etiketlendi_at) as son_etiket
+  from public.fuel_seri fs
+  group by fs.vehicle_id;
+
+comment on view public.fuel_seri_kapsama is
+  'Etiket kapsaması (101) — hangi araç hangi ana kadar etiketli. Cron teşhisi ve backfill takibi için.';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- DOĞRULAMA (uygulandıktan sonra bu bloğu ayrıca çalıştırın)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- select
+--   (select count(*) from information_schema.tables
+--     where table_schema='public' and table_name='fuel_seri')            as tablo,
+--   (select count(*) from information_schema.columns
+--     where table_schema='public' and table_name='fuel_seri'
+--       and column_name in ('bwd_max','fwd_max','odo','fuel'))           as kolon,
+--   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--     where n.nspname='public'
+--       and p.proname in ('yakit_seri_etiketle','report_fuel_stats_vehicle_v2')) as fonksiyon,
+--   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--     where n.nspname='public' and p.proname='report_fuel_stats_vehicle')  as eski_duruyor,
+--   (select count(*) from public.fuel_seri)                              as etiketli_satir;
+-- -- beklenen: tablo 1 · kolon 4 · fonksiyon 2 · eski_duruyor 1 · etiketli_satir 0
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  102_yakit_v2_pencere_duzeltme.sql                                  ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 102 — 101'İN v2'SİNDEKİ O(n²) PENCERE ÇERÇEVESİ DÜZELTMESİ  —  ÇALIŞTIRILDI 17.09.2026
+--
+-- ✅ ÜÇ KİRACIDA DA UYGULANDI (17.09.2026): HAK61 · Sendigo · galzura-demo.
+--    Doğrulama: tablo 2 · yeni fonksiyon 4 · ESKİ fonksiyonlar 2 ·
+--    eski_cerceve false (102'nin O(n²) çerçevesi yok).
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 🔴 NE OLDU — 101 DOĞRU SAYIYI ÜRETİYOR AMA YAVAŞ
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- 101 galzura-demo'da uygulandı, backfill koştu (710.912 satır) ve SAYILAR
+-- DOĞRU ÇIKTI. Ama süre ölçülünce v2, v1'den KAT KAT yavaş çıktı
+-- (galzura-demo canlı, 17.09.2026, en yoğun araç W-GF-123 · 83.301 satır):
+--
+--     pencere              v1 (052)     v2 (101)
+--     30 gün                1.541 ms     8.072 ms  ← 57014 tavanı
+--      7 gün                  413 ms     8.066 ms  ← 57014 tavanı
+--     filo · 30 gün         7.383 ms    24.699 ms
+--
+-- 01–07.09 penceresinde 30 aracın 8'i zaman aşımına uğradı ve KIYASLANAMADI.
+-- (Kıyaslanabilen 74 araç×pencere ölçümünde sayısal fark 0 idi — kusur
+-- doğrulukta değil, YALNIZCA sürede.)
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SEBEP: `rows between current row and unbounded following` + max()
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- 101'in v2'si pencere kenarını düzeltmek için şunu kullanıyordu:
+--
+--     max(fuel) over (order by recorded_at rows between current row and unbounded following)
+--
+-- `max()` için TERS geçiş fonksiyonu yoktur. Çerçevenin BAŞI ilerlediğinde
+-- Postgres toplamı artımlı güncelleyemez ve her satır için çerçeveyi BAŞTAN
+-- tarar → O(n²). Çerçeve `unbounded preceding`den geldiğinde ise çerçeve
+-- yalnız BÜYÜR, artımlı güncellenir → O(n).
+--
+-- ÖLÇÜLDÜ (PGlite, PostgreSQL 18.3 — aynı makine, aynı veri):
+--
+--     satır     ileri-sınırsız    desc-artımlı    31 satırlık kayan (v1)
+--     10.000        4.800 ms          21 ms             52 ms
+--     20.000       19.619 ms          35 ms             89 ms
+--     40.000       69.537 ms          68 ms            179 ms
+--
+-- İleri-sınırsız her ikiye katlamada DÖRDE katlanıyor (O(n²) imzası);
+-- desc-artımlı ikiye katlanıyor (O(n)). 40 bin satırda fark **1.022×**.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- DÜZELTME: AYNI DEĞER, ARTIMLI ÇERÇEVE
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+--     ÖNCE : max(fuel) over (order by recorded_at      rows between current row and unbounded following)
+--     SONRA: max(fuel) over (order by recorded_at desc rows between unbounded preceding and current row)
+--
+-- `desc` sıralamada "unbounded preceding" SON satırdan bu satıra kadar olan
+-- küme demektir — yani artan sırada `rn..cnt`. İleri-sınırsız çerçevenin
+-- TAM OLARAK AYNI kümesi; yalnız Postgres onu artımlı hesaplayabiliyor.
+-- Döndürülen sayı değişmez (PGlite'ta 19/19 denklik denetimi yeniden koştu).
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- KAPSAM
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- YALNIZ `report_fuel_stats_vehicle_v2` yeniden yazılır. `fuel_seri` tablosuna,
+-- `yakit_seri_etiketle`ye, 052'nin eski fonksiyonuna DOKUNULMAZ; etiketlenmiş
+-- satırlar OLDUĞU GİBİ geçerli kalır (backfill tekrarlanmaz).
+--
+-- Geri alma: 101'deki v2 gövdesini yeniden çalıştırmak yeter (ya da
+-- `drop function if exists public.report_fuel_stats_vehicle_v2(timestamptz, timestamptz, uuid);`
+-- → uygulama otomatik olarak 052'nin yoluna düşer).
+--
+-- ⚠️ 101 UYGULANMAMIŞ KİRACIDA: önce 101, sonra 102. Tek başına çalıştırılırsa
+-- `fuel_seri` tablosu olmadığı için fonksiyon oluşur ama ilk çağrıda hata verir.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+create or replace function public.report_fuel_stats_vehicle_v2(
+  p_from       timestamptz,
+  p_to         timestamptz,
+  p_vehicle_id uuid
+)
+returns table (
+  vehicle_id   uuid,
+  sample_count bigint,
+  avg_pct      double precision,
+  min_pct      double precision,
+  max_pct      double precision,
+  first_pct    double precision,
+  last_pct     double precision,
+  refill_count bigint,
+  refill_pct   double precision,
+  drop_count   bigint,
+  drop_pct     double precision
+)
+language sql
+stable
+as $$
+  with esik as (
+    -- Etiketli serinin GÜVENLİ ucu: sondaki 30 satırın ileri penceresi
+    -- eksik olabilir, onlar canlı hesaplanır.
+    select coalesce(
+      (select fs.recorded_at
+         from public.fuel_seri fs
+        where fs.vehicle_id = p_vehicle_id
+        order by fs.recorded_at desc
+        offset 30 limit 1),
+      '-infinity'::timestamptz
+    ) as t
+  ),
+  etiketli as (
+    select fs.recorded_at, fs.fuel, fs.odo, fs.bwd_max, fs.fwd_max
+    from public.fuel_seri fs, esik e
+    where fs.vehicle_id = p_vehicle_id
+      and fs.recorded_at >= p_from
+      and fs.recorded_at <= p_to
+      and fs.recorded_at < e.t
+  ),
+  kuyruk_ham as (
+    -- Eşikten sonraki ham satırlar
+    select dt.recorded_at,
+           dt.fuel_level_pct::double precision as fuel,
+           dt.odometer_km::double precision    as odo
+    from public.device_telemetry dt, esik e
+    where dt.vehicle_id = p_vehicle_id
+      and dt.fuel_level_pct is not null
+      and dt.recorded_at >= e.t
+      and dt.recorded_at <= p_to
+    union all
+    -- + tam 30 satırlık geri örtüşme (kuyruğun bwd_max'ı doğru çıksın)
+    select o.recorded_at, o.fuel, o.odo
+    from esik e
+    cross join lateral (
+      select dt.recorded_at,
+             dt.fuel_level_pct::double precision as fuel,
+             dt.odometer_km::double precision    as odo
+      from public.device_telemetry dt
+      where dt.vehicle_id = p_vehicle_id
+        and dt.fuel_level_pct is not null
+        and dt.recorded_at < e.t
+      order by dt.recorded_at desc
+      limit 30
+    ) o
+  ),
+  kuyruk as (
+    select k.recorded_at, k.fuel, k.odo,
+           max(k.fuel) over (order by k.recorded_at rows between 30 preceding and current row) as bwd_max,
+           /**
+            * ⚠️ SINIRLI çerçeve (30 following) — burada O(n²) SORUNU YOK:
+            * çerçeve genişliği sabit olduğu için Postgres satır başına en çok
+            * 31 değer tarar. Sorun yalnız `unbounded following`de doğuyordu.
+            */
+           max(k.fuel) over (order by k.recorded_at rows between current row and 30 following) as fwd_max
+    from kuyruk_ham k
+  ),
+  base as (
+    select recorded_at, fuel, odo, bwd_max, fwd_max from etiketli
+    union all
+    /**
+     * ⚠️ `recorded_at >= e.t` ŞART. `kuyruk` içindeki 30 satırlık geri
+     * örtüşme YALNIZ pencere fonksiyonunu doğru beslemek için var; o
+     * satırlar `etiketli`de ZATEN bulunuyor. Bu koşul olmadan aynı 30
+     * satır iki kez sayılır (PGlite denemesinde birebir bu görüldü:
+     * sample_count 8.627 yerine 8.657).
+     */
+    select k.recorded_at, k.fuel, k.odo, k.bwd_max, k.fwd_max
+      from kuyruk k, esik e
+     where k.recorded_at >= e.t
+       and k.recorded_at >= p_from
+       and k.recorded_at <= p_to
+  ),
+  numbered as (
+    select b.*,
+           row_number() over (order by b.recorded_at) as rn,
+           count(*)     over ()                       as cnt
+    from base b
+  ),
+  bounded as (
+    /**
+     * PENCEREYE GÖRE DÜZELTME — 052'de ilk/son 31 satırın kayan penceresi
+     * PENCERENİN İÇİNDE kırpılır; etiketteki değer ise pencere dışına da bakar.
+     *
+     * ⚠️ 102'NİN TEK DEĞİŞİKLİĞİ AŞAĞIDAKİ `desc`. 101'de ileri düzeltme
+     * `rows between current row and unbounded following` idi; `max()` için
+     * ters geçiş fonksiyonu olmadığından Postgres her satırda çerçeveyi
+     * baştan tarıyor → O(n²) (40 bin satırda 69,5 sn). `order by ... desc`
+     * + `unbounded preceding` AYNI KÜMEDİR ama çerçeve yalnız büyüdüğü için
+     * artımlı hesaplanır → O(n) (aynı veride 68 ms).
+     */
+    select n.*,
+           case when n.rn <= 31
+                then max(n.fuel) over (order by n.recorded_at rows between unbounded preceding and current row)
+                else n.bwd_max end as bwd_w,
+           case when n.rn > n.cnt - 31
+                then max(n.fuel) over (order by n.recorded_at desc rows between unbounded preceding and current row)
+                else n.fwd_max end as fwd_w
+    from numbered n
+  ),
+  clean as (
+    -- UÇ SATIR KURALI (027) — 052'den birebir.
+    select recorded_at, fuel, odo
+    from bounded
+    where not (
+      case
+        when rn = 1   then fwd_w - fuel >= 10
+        when rn = cnt then bwd_w - fuel >= 10
+        else bwd_w - fuel >= 10 and fwd_w - fuel >= 10
+      end
+    )
+  ),
+  stepped as (
+    select c.*,
+           lag(c.fuel)        over w as prev_fuel,
+           lag(c.odo)         over w as prev_odo,
+           lag(c.recorded_at) over w as prev_at
+    from clean c
+    window w as (order by c.recorded_at)
+  ),
+  marked as (
+    select s.*,
+           case
+             when s.prev_fuel is null then 1
+             when s.fuel - s.prev_fuel <= 0 then 1
+             when s.recorded_at - s.prev_at > interval '15 minutes' then 1
+             else 0
+           end as new_run
+    from stepped s
+  ),
+  runs as (
+    select m.*, sum(m.new_run) over (order by m.recorded_at) as run_id
+    from marked m
+  ),
+  rises as (
+    select run_id,
+           sum(greatest(fuel - coalesce(prev_fuel, fuel), 0)) as total_rise
+    from runs
+    group by run_id
+  )
+  select
+    p_vehicle_id                                    as vehicle_id,
+    (select count(*) from clean)::bigint            as sample_count,
+    (select avg(fuel) from clean)                   as avg_pct,
+    (select min(fuel) from clean)                   as min_pct,
+    (select max(fuel) from clean)                   as max_pct,
+    (select fuel from clean order by recorded_at asc  limit 1) as first_pct,
+    (select fuel from clean order by recorded_at desc limit 1) as last_pct,
+    (select count(*) from rises where total_rise >= 5)::bigint as refill_count,
+    (select coalesce(sum(total_rise), 0) from rises where total_rise >= 5) as refill_pct,
+    (select count(*) from stepped
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo < 1
+    )::bigint                                       as drop_count,
+    (select coalesce(sum(prev_fuel - fuel), 0) from stepped
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo < 1
+    )                                               as drop_pct
+  where exists (select 1 from clean);
+$$;
+
+comment on function public.report_fuel_stats_vehicle_v2(timestamptz, timestamptz, uuid) is
+  'report_fuel_stats_vehicle (052) ile BİREBİR aynı çıktı; 31 satırlık iki kayan maksimum fuel_seri''den okunur. 102: ileri kenar düzeltmesi O(n²) çerçeveden desc-artımlı çerçeveye alındı (40 bin satırda 69,5 sn → 68 ms).';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- DOĞRULAMA (uygulandıktan sonra)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- select
+--   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--     where n.nspname='public' and p.proname='report_fuel_stats_vehicle_v2')  as v2_fn,
+--   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--     where n.nspname='public' and p.proname='report_fuel_stats_vehicle')     as eski_duruyor,
+--   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--     where n.nspname='public' and p.proname='yakit_seri_etiketle')           as etiketleme_fn,
+--   (select count(*) from public.fuel_seri)                                   as etiketli_satir,
+--   (select count(*) from pg_get_functiondef(
+--      (select p.oid from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--        where n.nspname='public' and p.proname='report_fuel_stats_vehicle_v2')
+--    ) t where t like '%desc rows between unbounded preceding%')              as duzeltme_var;
+-- -- beklenen: v2_fn 1 · eski_duruyor 1 · etiketleme_fn 1 ·
+-- --           etiketli_satir DEĞİŞMEZ (demo'da 710.912) · duzeltme_var 1
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  103_yakit_hacim_seri_etiket.sql                                    ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 103 — LİTRE HATTI İÇİN SERİ ÖN-ETİKETLEME (101'in birebir ikizi)  —  ÇALIŞTIRILDI 17.09.2026
+--
+-- ✅ ÜÇ KİRACIDA DA UYGULANDI (17.09.2026): HAK61 · Sendigo · galzura-demo.
+--    Doğrulama: tablo 2 · yeni fonksiyon 4 · ESKİ fonksiyonlar 2 ·
+--    eski_cerceve false (102'nin O(n²) çerçevesi yok).
+-- ═══════════════════════════════════════════════════════════════════════════
+-- NEDEN (galzura-demo canlı ölçümü, 17.09.2026 — 101+102 uygulandıktan SONRA)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- 101+102 yüzde hattını %40 hızlandırdı ama `buildFuelReport` hedefi tutmadı.
+-- Aşama aşama ölçüldü ("ay" penceresi, 29 araç, mapBounded 6):
+--
+--     1. yüzde  report_fuel_stats_vehicle    ×29   7.151 ms
+--        yüzde  report_fuel_stats_vehicle_v2 ×29   4.296 ms   ← 101+102
+--     2. LİTRE  report_fuel_volume_stats_vehicle ×10  5.171 ms  ← DOKUNULMAMIŞTI
+--     3. 097    getFleetDistanceSpans (tek RPC)       4.351 ms
+--     4.        getVehicleFuelSpan ×29                  406 ms
+--     5.        device_telemetry sıfır sayımı           938 ms
+--
+-- Yani 102'den sonra **en pahalı kalem artık yüzde değil, LİTRE hattı**.
+-- Üstelik yalnız 10 araç için çağrılıyor (16. maddede süzülmüştü) ve yine de
+-- 5,2 saniye yakıyor. Şekli yüzde ikizinin aynısı: araç başına 31 satırlık
+-- iki kayan maksimum.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 101 İLE AYNI FİKİR, ÜÇ YERDE FARKLI KURAL
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Saklanan şey yine satır başına, ZAMANDAN BAĞIMSIZ iki sayı: ±30 komşudaki
+-- en yüksek hacim. 090'ın günlük-özet yasağı burada da delinmiyor.
+--
+-- ⚠️ AMA LİTRE MOTORU YÜZDE MOTORUNUN KOPYASI DEĞİL. 094'ten birebir taşınan
+-- ve 101'dekinden AYRIŞAN üç kural:
+--
+--   1. DE-GLITCH EŞİĞİ 5 (yüzdede 10). Litre ölçeği başka; 094'ün kendi
+--      eşiği neyse o.
+--   2. UÇ SATIR KURALI YOK. 052 ilk/son satırda tek taraflı test yapar;
+--      094 yapmaz — koşul bütün satırlarda simetriktir. Pencerenin ilk
+--      satırında `bwd_max = fuel` olduğu için fark sıfır çıkar ve satır
+--      zaten elenmez. Bu davranış AYNEN korundu.
+--   3. SERİ BİRLEŞTİRME YOK. 052 yükselişleri 15 dakikalık serilere toplayıp
+--      seri başına eşiğe bakar; 094 her ADIMA tek tek bakar
+--      (`fuel - prev_fuel >= 5`). Yani burada `run_id` diye bir şey YOK ve
+--      olmamalı.
+--
+--   Ayrıca sifon kapısı `odo - prev_odo between -1 and 1` (yüzdede `< 1`).
+--   Gerekçesi ve ölçümü docs/YAKIT-DUSUS-FARKI.md'de; aynen taşındı.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 🔴 102'NİN DERSİ BAŞTAN UYGULANDI
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- 101 ilk hâlinde ileri kenar düzeltmesini
+-- `rows between current row and unbounded following` ile yazmıştı. `max()`
+-- için ters geçiş fonksiyonu olmadığından çerçevenin BAŞI ilerledikçe
+-- Postgres her satırda baştan tarar → O(n²). Ölçüldü (PGlite, aynı veri):
+--
+--     satır   ileri-sınırsız   desc-artımlı
+--     10.000      4.800 ms         21 ms
+--     20.000     19.619 ms         35 ms
+--     40.000     69.537 ms         68 ms
+--
+-- Bu dosyada ileri düzeltme DOĞRUDAN `order by ... desc` + `unbounded
+-- preceding` ile yazıldı. Aynı küme, artımlı hesap.
+--
+-- ⚠️ `kuyruk` CTE'sindeki `current row and 30 following` SORUN DEĞİL: çerçeve
+-- genişliği sabit olduğu için satır başına en çok 31 değer taranır.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- GERİ ALINABİLİRLİK
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Additive + idempotent. `report_fuel_volume_stats_vehicle` (094) ve
+-- `report_fuel_volume_stats` (039) OLDUĞU GİBİ DURUR. Uygulama
+-- `YAKIT_OZET_ENABLED=false` ile ya da v2 bulunamadığında onlara geri düşer.
+--
+-- Geri alma (veri kaybı YOK):
+--     drop function if exists public.report_fuel_volume_stats_vehicle_v2(timestamptz, timestamptz, uuid);
+--     drop function if exists public.yakit_hacim_seri_etiketle(timestamptz, timestamptz, uuid);
+--     drop view if exists public.fuel_volume_seri_kapsama;
+--     drop table if exists public.fuel_volume_seri;
+--
+-- ⚠️ 101 GEREKMİYOR ama birlikte kurulmalı: ikisi ayrı tablo, ayrı fonksiyon.
+-- Uygulama ikisini de aynı bayrakla açar; biri yoksa O HAT eski yola düşer.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ════════════════════ 1 · ETİKET TABLOSU ══════════════════════════════════
+
+create table if not exists public.fuel_volume_seri (
+  vehicle_id  uuid not null references public.vehicles(id) on delete cascade,
+  recorded_at timestamptz not null,
+
+  /** Ham okuma — device_telemetry.fuel_volume_l'in kopyası. */
+  fuel double precision not null,
+  /** Ham odometre; sifon kapısı için. NULL olabilir. */
+  odo double precision,
+
+  /**
+   * ±30 komşudaki en yüksek hacim. 094'ün de-glitch kuralı YALNIZ bu ikisine
+   * bakar ve ikisi de satırın KENDİ komşuluğundan gelir — sorulan rapor
+   * penceresinden bağımsızdır.
+   *
+   * ⚠️ EŞİK BURADA SAKLANMIYOR. Saklanan şey ham maksimumlar; 5 puanlık eşik
+   * okuma anında uygulanır. Böylece eşik bir gün değişirse tablo yeniden
+   * üretilmek zorunda kalmaz.
+   */
+  bwd_max double precision not null,
+  fwd_max double precision not null,
+
+  etiketlendi_at timestamptz not null default now(),
+  etiket_surumu text not null default '103.1',
+
+  primary key (vehicle_id, recorded_at)
+);
+
+comment on table public.fuel_volume_seri is
+  'Litre serisinin satır-başına ön-etiketi (103) — 101''in fuel_seri ikizi. Günlük ÖZET DEĞİL: kolonlar satırın ±30 komşusundan gelir, rapor penceresinden bağımsızdır.';
+
+comment on column public.fuel_volume_seri.bwd_max is
+  'max(fuel) · 30 önceki satır + bu satır. 094 de-glitch kuralının geri yarısı.';
+comment on column public.fuel_volume_seri.fwd_max is
+  'max(fuel) · bu satır + 30 sonraki satır. 094 de-glitch kuralının ileri yarısı.';
+
+-- ════════════════════ 2 · ETİKETLEME FONKSİYONU ═══════════════════════════
+--
+-- 101'in `yakit_seri_etiketle`siyle aynı şekil; tek fark okunan kolon
+-- (`fuel_volume_l`) ve yazılan tablo.
+--
+-- ⚠️ 30 SATIRLIK ÖRTÜŞME: aralığın iki yanından araç başına TAM 30 satır
+-- LATERAL ile genişletilir, yazma yalnız [p_from, p_to] içinedir. Örtüşme
+-- olmasaydı gün gün etiketleme kenar kırpması üretirdi (090'ın +%15,6'sı).
+
+create or replace function public.yakit_hacim_seri_etiketle(
+  p_from       timestamptz,
+  p_to         timestamptz,
+  p_vehicle_id uuid default null
+)
+returns bigint
+language plpgsql
+as $$
+declare
+  v_yazilan bigint := 0;
+begin
+  with hedef as (
+    select v.id
+    from public.vehicles v
+    where p_vehicle_id is null or v.id = p_vehicle_id
+  ),
+  ham as (
+    select dt.vehicle_id,
+           dt.recorded_at,
+           dt.fuel_volume_l::double precision as fuel,
+           dt.odometer_km::double precision   as odo
+    from public.device_telemetry dt
+    join hedef h on h.id = dt.vehicle_id
+    where dt.recorded_at >= p_from
+      and dt.recorded_at <= p_to
+      and dt.fuel_volume_l is not null
+
+    union all
+
+    select o.vehicle_id, o.recorded_at, o.fuel, o.odo
+    from hedef h
+    cross join lateral (
+      select dt.vehicle_id,
+             dt.recorded_at,
+             dt.fuel_volume_l::double precision as fuel,
+             dt.odometer_km::double precision   as odo
+      from public.device_telemetry dt
+      where dt.vehicle_id = h.id
+        and dt.recorded_at < p_from
+        and dt.fuel_volume_l is not null
+      order by dt.recorded_at desc
+      limit 30
+    ) o
+
+    union all
+
+    select o.vehicle_id, o.recorded_at, o.fuel, o.odo
+    from hedef h
+    cross join lateral (
+      select dt.vehicle_id,
+             dt.recorded_at,
+             dt.fuel_volume_l::double precision as fuel,
+             dt.odometer_km::double precision   as odo
+      from public.device_telemetry dt
+      where dt.vehicle_id = h.id
+        and dt.recorded_at > p_to
+        and dt.fuel_volume_l is not null
+      order by dt.recorded_at asc
+      limit 30
+    ) o
+  ),
+  pencereli as (
+    select
+      m.vehicle_id,
+      m.recorded_at,
+      m.fuel,
+      m.odo,
+      max(m.fuel) over (
+        partition by m.vehicle_id order by m.recorded_at
+        rows between 30 preceding and current row
+      ) as bwd_max,
+      max(m.fuel) over (
+        partition by m.vehicle_id order by m.recorded_at
+        rows between current row and 30 following
+      ) as fwd_max
+    from ham m
+  )
+  insert into public.fuel_volume_seri as f
+    (vehicle_id, recorded_at, fuel, odo, bwd_max, fwd_max, etiketlendi_at, etiket_surumu)
+  select p.vehicle_id, p.recorded_at, p.fuel, p.odo, p.bwd_max, p.fwd_max, now(), '103.1'
+  from pencereli p
+  where p.recorded_at >= p_from
+    and p.recorded_at <= p_to
+  on conflict (vehicle_id, recorded_at) do update
+    set fuel           = excluded.fuel,
+        odo            = excluded.odo,
+        bwd_max        = excluded.bwd_max,
+        fwd_max        = excluded.fwd_max,
+        etiketlendi_at = excluded.etiketlendi_at,
+        etiket_surumu  = excluded.etiket_surumu;
+
+  get diagnostics v_yazilan = row_count;
+  return v_yazilan;
+end;
+$$;
+
+comment on function public.yakit_hacim_seri_etiketle(timestamptz, timestamptz, uuid) is
+  'fuel_volume_seri''yi [p_from,p_to] için üretir (upsert). Araç başına 30 SATIRLIK örtüşme: kenar kırpması olmadan gün gün çağrılabilir.';
+
+-- ════════════════════ 3 · report_fuel_volume_stats_vehicle_v2 ═════════════
+--
+-- 094'teki `report_fuel_volume_stats_vehicle` ile AYNI ÇIKTI. Fark tek: 31
+-- satırlık iki kayan maksimum okuma anında hesaplanmıyor, tablodan okunuyor.
+--
+-- ⚠️ PENCEREYE GÖRE DÜZELTME BURADA DA ŞART. 094 kayan pencereyi PENCERENİN
+-- İÇİNDE kırpar; etiketteki değer pencere dışındaki komşulara da bakar.
+-- İlk 31 ve son 31 satır bu yüzden pencere içinde yeniden hesaplanır.
+--   · rn = 31'in 30 öncekisi tam 1..31'dir (hepsi pencerede) → 32'den itibaren
+--     etiket değeri zaten pencereyle aynı.
+--   · simetrik olarak rn = cnt - 30'un 30 sonrakisi tam cnt'te biter.
+--
+-- ⚠️ 094'TE UÇ SATIR KURALI YOK — koşul bütün satırlarda simetrik. 052'nin
+-- `rn = 1` / `rn = cnt` istisnası buraya KOPYALANMADI ve kopyalanmamalı.
+--
+-- ⚠️ KUYRUK CANLI HESAPLANIR (melez okuma): gecelik cron'dan bu yana gelen
+-- telemetri rapora TAM girer. Bölme noktasında sapma doğmaz — birleştirilen
+-- şey satır-başına komşuluk değeridir, gün özeti değil.
+--
+-- ⚠️ TABLO BOŞSA v2 = v1: eşik '-infinity' olur, her şey canlı hesaplanır.
+
+create or replace function public.report_fuel_volume_stats_vehicle_v2(
+  p_from       timestamptz,
+  p_to         timestamptz,
+  p_vehicle_id uuid
+)
+returns table (
+  vehicle_id   uuid,
+  sample_count bigint,
+  avg_l        double precision,
+  min_l        double precision,
+  max_l        double precision,
+  first_l      double precision,
+  last_l       double precision,
+  refill_count bigint,
+  refill_l     double precision,
+  drop_count   bigint,
+  drop_l       double precision,
+  max_step_l   double precision
+)
+language sql
+stable
+as $$
+  with esik as (
+    -- Etiketli serinin GÜVENLİ ucu: sondaki 30 satırın ileri penceresi
+    -- eksik olabilir, onlar canlı hesaplanır.
+    select coalesce(
+      (select fs.recorded_at
+         from public.fuel_volume_seri fs
+        where fs.vehicle_id = p_vehicle_id
+        order by fs.recorded_at desc
+        offset 30 limit 1),
+      '-infinity'::timestamptz
+    ) as t
+  ),
+  etiketli as (
+    select fs.recorded_at, fs.fuel, fs.odo, fs.bwd_max, fs.fwd_max
+    from public.fuel_volume_seri fs, esik e
+    where fs.vehicle_id = p_vehicle_id
+      and fs.recorded_at >= p_from
+      and fs.recorded_at <= p_to
+      and fs.recorded_at < e.t
+  ),
+  kuyruk_ham as (
+    select dt.recorded_at,
+           dt.fuel_volume_l::double precision as fuel,
+           dt.odometer_km::double precision   as odo
+    from public.device_telemetry dt, esik e
+    where dt.vehicle_id = p_vehicle_id
+      and dt.fuel_volume_l is not null
+      and dt.recorded_at >= e.t
+      and dt.recorded_at <= p_to
+    union all
+    -- + tam 30 satırlık geri örtüşme (kuyruğun bwd_max'ı doğru çıksın)
+    select o.recorded_at, o.fuel, o.odo
+    from esik e
+    cross join lateral (
+      select dt.recorded_at,
+             dt.fuel_volume_l::double precision as fuel,
+             dt.odometer_km::double precision   as odo
+      from public.device_telemetry dt
+      where dt.vehicle_id = p_vehicle_id
+        and dt.fuel_volume_l is not null
+        and dt.recorded_at < e.t
+      order by dt.recorded_at desc
+      limit 30
+    ) o
+  ),
+  kuyruk as (
+    select k.recorded_at, k.fuel, k.odo,
+           max(k.fuel) over (order by k.recorded_at rows between 30 preceding and current row) as bwd_max,
+           max(k.fuel) over (order by k.recorded_at rows between current row and 30 following) as fwd_max
+    from kuyruk_ham k
+  ),
+  base as (
+    select recorded_at, fuel, odo, bwd_max, fwd_max from etiketli
+    union all
+    /**
+     * ⚠️ `recorded_at >= e.t` ŞART: `kuyruk` içindeki 30 satırlık geri
+     * örtüşme yalnız pencere fonksiyonunu beslemek için var, o satırlar
+     * `etiketli`de zaten bulunuyor. Koşul olmasa aynı satırlar iki kez sayılır.
+     */
+    select k.recorded_at, k.fuel, k.odo, k.bwd_max, k.fwd_max
+      from kuyruk k, esik e
+     where k.recorded_at >= e.t
+       and k.recorded_at >= p_from
+       and k.recorded_at <= p_to
+  ),
+  numbered as (
+    select b.*,
+           row_number() over (order by b.recorded_at) as rn,
+           count(*)     over ()                       as cnt
+    from base b
+  ),
+  bounded as (
+    /**
+     * ⚠️ İLERİ DÜZELTME `desc` + `unbounded preceding` İLE (102'nin dersi).
+     * `rows between current row and unbounded following` aynı kümeyi verir
+     * ama `max()` artımlı güncellenemediği için O(n²) olur.
+     */
+    select n.*,
+           case when n.rn <= 31
+                then max(n.fuel) over (order by n.recorded_at rows between unbounded preceding and current row)
+                else n.bwd_max end as bwd_w,
+           case when n.rn > n.cnt - 31
+                then max(n.fuel) over (order by n.recorded_at desc rows between unbounded preceding and current row)
+                else n.fwd_max end as fwd_w
+    from numbered n
+  ),
+  clean as (
+    -- 094'ten birebir: eşik 5, UÇ SATIR İSTİSNASI YOK.
+    select p_vehicle_id as vehicle_id, recorded_at, fuel, odo
+    from bounded
+    where not (bwd_w - fuel >= 5 and fwd_w - fuel >= 5)
+  ),
+  stepped as (
+    select c.*,
+           lag(c.fuel) over w as prev_fuel,
+           lag(c.odo)  over w as prev_odo
+    from clean c
+    window w as (partition by c.vehicle_id order by c.recorded_at)
+  )
+  select
+    vehicle_id,
+    count(*)::bigint                                as sample_count,
+    avg(fuel)                                       as avg_l,
+    min(fuel)                                       as min_l,
+    max(fuel)                                       as max_l,
+    (array_agg(fuel order by recorded_at asc))[1]   as first_l,
+    (array_agg(fuel order by recorded_at desc))[1]  as last_l,
+    count(*) filter (
+      where prev_fuel is not null and fuel - prev_fuel >= 5
+    )::bigint                                       as refill_count,
+    coalesce(sum(fuel - prev_fuel) filter (
+      where prev_fuel is not null and fuel - prev_fuel >= 5
+    ), 0)                                           as refill_l,
+    -- Sifon kapısı `between -1 and 1` — 094'ten birebir (docs/YAKIT-DUSUS-FARKI.md).
+    count(*) filter (
+      where prev_fuel is not null and prev_fuel - fuel >= 5
+        and prev_odo is not null and odo is not null and odo - prev_odo between -1 and 1
+    )::bigint                                       as drop_count,
+    coalesce(sum(prev_fuel - fuel) filter (
+      where prev_fuel is not null and prev_fuel - fuel >= 5
+        and prev_odo is not null and odo is not null and odo - prev_odo between -1 and 1
+    ), 0)                                           as drop_l,
+    coalesce(max(abs(fuel - prev_fuel)) filter (where prev_fuel is not null), 0)
+                                                    as max_step_l
+  from stepped
+  group by vehicle_id;
+$$;
+
+comment on function public.report_fuel_volume_stats_vehicle_v2(timestamptz, timestamptz, uuid) is
+  'report_fuel_volume_stats_vehicle (094) ile BİREBİR aynı çıktı; 31 satırlık iki kayan maksimum fuel_volume_seri''den okunur. Etiketin ucundan sonrası CANLI (melez), tablo boşsa tamamen canlı.';
+
+-- ════════════════════ 4 · KAPSAMA GÖRÜNÜMÜ ════════════════════════════════
+
+create or replace view public.fuel_volume_seri_kapsama as
+  select
+    fs.vehicle_id,
+    min(fs.recorded_at) as ilk_an,
+    max(fs.recorded_at) as son_an,
+    count(*)            as satir,
+    max(fs.etiketlendi_at) as son_etiket
+  from public.fuel_volume_seri fs
+  group by fs.vehicle_id;
+
+comment on view public.fuel_volume_seri_kapsama is
+  'Litre etiket kapsaması (103) — hangi araç hangi ana kadar etiketli.';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- DOĞRULAMA (uygulandıktan sonra)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- select
+--   (select count(*) from information_schema.tables
+--     where table_schema='public' and table_name='fuel_volume_seri')          as tablo,
+--   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--     where n.nspname='public' and p.proname='yakit_hacim_seri_etiketle')     as etiketleme_fn,
+--   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--     where n.nspname='public' and p.proname='report_fuel_volume_stats_vehicle_v2') as v2_fn,
+--   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--     where n.nspname='public' and p.proname='report_fuel_volume_stats_vehicle')    as eski_duruyor;
+-- -- beklenen: tablo 1 · etiketleme_fn 1 · v2_fn 1 · eski_duruyor 1
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  104_yuzde_odo_kapisi_hizalama.sql                                  ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 104 — YÜZDE HATTI ODOMETRE KAPISI HİZALAMA (28.08 kararının tamamlanması)  —  ÇALIŞTIRILDI 17.09.2026
+--
+-- ✅ ÜÇ KİRACIDA DA UYGULANDI (17.09.2026): HAK61 · Sendigo · galzura-demo.
+--    Doğrulama 5/5 `hizalandi = true`.
+--    ⚠️ `report_fuel_volume_stats_vehicle` satırında `depo_eski` de true
+--    çıktı ve bu BEKLENEN: 094'ün gövdesindeki AÇIKLAMA yorumu eski biçimi
+--    anlatıyor ve anlatmaya devam etmeli. `pg_get_functiondef` yorumları da
+--    döndürür; kuralın kendisi `hizalandi` sütunundan okunur.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 🔴 NEDEN: 28.08'DE VERİLEN KARAR YALNIZ LİTRE HATTINA UYGULANMIŞTI
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- 28.08.2026'da 094'ün eşdeğerlik kapısı HAK61'de düştü ve sebep bulundu:
+-- HAK61'in CANLI fonksiyonu depodan farklıydı (elle müdahale; ne zaman ve kim
+-- tarafından BİLİNMİYOR). Ayrıntı: `docs/YAKIT-DUSUS-FARKI.md`.
+--
+--     depo        :  odo - prev_odo <  1
+--     HAK61 canlı :  odo - prev_odo between -1 and 1
+--
+-- KARAR (Volkan, 28.08.2026): canlı biçim DOĞRU kabul edilir, üç kiracı da
+-- ona hizalanır. Gerekçe fizik: bir çekici ~0,3 L/km yakar; ayrışan düşüşler
+-- 6,1–8,3 L ve 9–147 saniyede olmuş — "araç 1 km hareket etti, normaldir"
+-- açıklaması 27 kat yetersiz. Eksik raporlanan hırsızlık hiç görülmez.
+--
+-- O karar 094 (litre, 3 arg) ve 095 (litre, 2 arg) ile uygulandı.
+-- 🔴 YÜZDE HATTI UNUTULDU. 17.09.2026'da ölçüldü: aynı elle müdahale
+-- `report_fuel_stats_vehicle`ta da var ve depo hâlâ `< 1` diyor. Bugün üç
+-- kiracı yüzde hattında BİRBİRİNDEN FARKLI çalışıyor:
+--
+--     HAK61        :  between -1 and 1   (elle değişmiş)
+--     Sendigo      :  < 1                (depoyla aynı)
+--     galzura-demo :  < 1                (depoyla aynı)
+--
+-- Bu dosya 28.08 kararını yüzde hattında da uygular.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ÖLÇÜLDÜ — 104 KİMİN SAYISINI DEĞİŞTİRİR (17.09.2026, canlı, salt okuma)
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- ≥10 puanlık düşüşlerin odometre kovası (HAK61, son 30 gün, 19 araç):
+--
+--     odo farkı        düşüş    puan     `< 1`   `between -1 and 1`
+--     ─────────────    ─────   ──────    ─────   ──────────────────
+--     < -1 km (geri)       0      0,0      ✓            ✗
+--     = -1 km              0      0,0      ✓            ✓
+--     =  0 km            185   2321,0      ✓            ✓
+--     = +1 km              7     90,0      ✗            ✓
+--     > +1 km             10    125,0      ✗            ✗
+--     ─────────────    ─────   ──────
+--     TOPLAM `< 1`       185   2321,0
+--     TOPLAM `between`   192   2411,0
+--
+-- HAK61 CANLIDA BUGÜN 192 / 2.411 GÖRÜYOR → **104 sonrası AYNI KALIR.**
+-- Depoya hizalansaydı (`< 1`) 185 / 2.321'e düşerdi (−%3,6 / −%3,7) — yani
+-- tam da 28.08'de reddedilen yön.
+--
+--   Ağustos 2026 penceresinde `+1 km` kovası BOŞ → o ayın raporu iki kuralda
+--   da 14 düşüş / 189 puan. Yani geçmiş aylık raporlar DEĞİŞMEZ.
+--
+--   Sendigo: son 30 günde ≥10 puanlık düşüş 0, `+1 km` kovası 0 → değişiklik
+--   yok. ⚠️ Ölçüm KISMİ: bir aracın serisi 100.000 satır tavanına dayandı.
+--   galzura-demo ölçülmedi (gerçek müşteri değil).
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- KAPSAM — ÜÇ FONKSİYON, TEK DEĞİŞİKLİK
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+--   report_fuel_stats            (2 arg)  ← 027'nin gövdesi
+--   report_fuel_stats_vehicle    (3 arg)  ← 052'nin gövdesi
+--   report_fuel_stats_vehicle_v2 (3 arg)  ← 102'nin gövdesi
+--
+-- Üçü BİRLİKTE değişmek zorunda: 2 argümanlı sürüm 050/052'nin geri düşüş
+-- yolu, v2 ise ön-etiketli okuma yolu. Biri eksik kalırsa aynı pencere üç
+-- farklı sayı verir (095'in kendi uyarısının aynısı).
+--
+-- ⚠️ GÖVDELER DEPODAN ÜRETİLDİ, ELLE KOPYALANMADI. Tek fark
+-- `odo - prev_odo < 1` → `odo - prev_odo between -1 and 1` (her gövdede 2 yer,
+-- toplam 6). Ters çevirme testi yapıldı: değişiklik geri alındığında gövdeler
+-- kaynak dosyalarla BAYT-BAYT aynı çıkıyor.
+--
+-- ⚠️ 027'NİN 2 ARGÜMANLI SÜRÜMÜ BAŞKA EŞİKLER TAŞIR ve bu BİLEREK korundu:
+-- düşüş eşiği 8 (3 argümanlıda 10), ek olarak 3600 sn'lik adım kapısı, dolum
+-- adım başına (seri birleştirme yok). Onlar bu turun konusu değil; yalnız
+-- odometre kapısı hizalandı.
+--
+-- ⚠️ 026/027/050/052/102 DOSYALARINA DOKUNULMADI (095 kalıbı: uygulanmış
+-- migration geriye dönük düzenlenmez). Değişiklik bu dosyada yaşar.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- GERİ ALMA
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- 027 / 052 / 102'deki gövdeleri yeniden çalıştırmak yeter (hepsi
+-- `create or replace`). ⚠️ AMA ÜÇÜ BİRLİKTE — biri geri alınırsa yollar
+-- ayrışır. Geri alma HAK61'in müşteriye giden "şüpheli kayıp" rakamını
+-- %3,7 DÜŞÜRÜR; sessiz yapılmamalıdır.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ════════════ 1 · report_fuel_stats (2 arg) — 027'nin gövdesi ══════════════
+--    Kaynak: db/migrations/027_fuel_stats_edge_fix.sql
+
+create or replace function public.report_fuel_stats(
+  p_from timestamptz,
+  p_to   timestamptz
+)
+returns table (
+  vehicle_id   uuid,
+  sample_count bigint,
+  avg_pct      double precision,
+  min_pct      double precision,
+  max_pct      double precision,
+  first_pct    double precision,
+  last_pct     double precision,
+  refill_count bigint,
+  refill_pct   double precision,
+  drop_count   bigint,
+  drop_pct     double precision
+)
+language sql
+stable
+as $$
+  with base as (
+    select
+      dt.vehicle_id,
+      dt.recorded_at,
+      dt.fuel_level_pct::double precision as fuel,
+      dt.odometer_km::double precision    as odo
+    from public.device_telemetry dt
+    where dt.recorded_at >= p_from
+      and dt.recorded_at <= p_to
+      and dt.fuel_level_pct is not null
+  ),
+  -- DE-GLITCH: cihazın CAN dropout'ları yakıtı anlık 0'a düşürüp saniyeler
+  -- içinde geri döndürüyor (canlı: DO-805HK 65→0→65 2 sn'de, DO-806HK
+  -- 36→0→0→36). Böyle V-şekilli geçici çukurlar hem sahte DOLUM (0→65) hem
+  -- sahte KAÇAK (65→0) üretir ve tüketimi şişirir. Gerçek SÜREKLİ düşüş
+  -- (çukurdan sonra da düşük kalır → fwd_max düşük) elenmez.
+  --
+  -- Pencere SATIR (rows) tabanlı — zaman (range) değil: 30 satır art arda birden
+  -- çok sıfır çukurunu kapsar ve interval-RANGE'in ortam bağımlılığından kaçınır.
+  --
+  -- rn/cnt: partition'ın UÇ satırlarını tanımak için (bkz. başlık).
+  bounded as (
+    select
+      b.*,
+      max(b.fuel) over (
+        partition by b.vehicle_id order by b.recorded_at
+        rows between 30 preceding and current row
+      ) as bwd_max,
+      max(b.fuel) over (
+        partition by b.vehicle_id order by b.recorded_at
+        rows between current row and 30 following
+      ) as fwd_max,
+      row_number() over (
+        partition by b.vehicle_id order by b.recorded_at
+      ) as rn,
+      count(*) over (partition by b.vehicle_id) as cnt
+    from base b
+  ),
+  clean as (
+    select vehicle_id, recorded_at, fuel, odo
+    from bounded
+    where not (
+      case
+        -- İLK satır: geriye bakacak veri yok → yalnız ileriye bak.
+        when rn = 1   then fwd_max - fuel >= 10
+        -- SON satır: ileriye bakacak veri yok → yalnız geriye bak.
+        when rn = cnt then bwd_max - fuel >= 10
+        -- Ortada: kural değişmedi.
+        else bwd_max - fuel >= 10 and fwd_max - fuel >= 10
+      end
+    )
+  ),
+  stepped as (
+    select
+      c.*,
+      lag(c.fuel)        over w as prev_fuel,
+      lag(c.odo)         over w as prev_odo,
+      lag(c.recorded_at) over w as prev_at
+    from clean c
+    window w as (partition by c.vehicle_id order by c.recorded_at)
+  )
+  select
+    vehicle_id,
+    count(*)::bigint                                          as sample_count,
+    avg(fuel)                                                 as avg_pct,
+    min(fuel)                                                 as min_pct,
+    max(fuel)                                                 as max_pct,
+    (array_agg(fuel order by recorded_at asc))[1]            as first_pct,
+    (array_agg(fuel order by recorded_at desc))[1]           as last_pct,
+    count(*) filter (
+      where prev_fuel is not null and fuel - prev_fuel >= 10
+    )::bigint                                                 as refill_count,
+    coalesce(sum(fuel - prev_fuel) filter (
+      where prev_fuel is not null and fuel - prev_fuel >= 10
+    ), 0)                                                     as refill_pct,
+    count(*) filter (
+      where prev_fuel is not null
+        and prev_fuel - fuel >= 8
+        and prev_odo is not null and odo is not null
+        and odo - prev_odo between -1 and 1
+        and extract(epoch from (recorded_at - prev_at)) <= 3600
+    )::bigint                                                 as drop_count,
+    coalesce(sum(prev_fuel - fuel) filter (
+      where prev_fuel is not null
+        and prev_fuel - fuel >= 8
+        and prev_odo is not null and odo is not null
+        and odo - prev_odo between -1 and 1
+        and extract(epoch from (recorded_at - prev_at)) <= 3600
+    ), 0)                                                     as drop_pct
+  from stepped
+  group by vehicle_id;
+$$;
+
+-- ════════════ 2 · report_fuel_stats_vehicle (3 arg) — 052'nin gövdesi ══════
+--    Kaynak: db/migrations/052_shift_distance_and_refill_merge.sql
+
+create or replace function public.report_fuel_stats_vehicle(
+  p_from       timestamptz,
+  p_to         timestamptz,
+  p_vehicle_id uuid
+)
+returns table (
+  vehicle_id   uuid,
+  sample_count bigint,
+  avg_pct      double precision,
+  min_pct      double precision,
+  max_pct      double precision,
+  first_pct    double precision,
+  last_pct     double precision,
+  refill_count bigint,
+  refill_pct   double precision,
+  drop_count   bigint,
+  drop_pct     double precision
+)
+language sql
+stable
+as $$
+  with base as (
+    select
+      dt.recorded_at,
+      dt.fuel_level_pct::double precision as fuel,
+      dt.odometer_km::double precision    as odo
+    from public.device_telemetry dt
+    where dt.vehicle_id = p_vehicle_id
+      and dt.recorded_at >= p_from
+      and dt.recorded_at <= p_to
+      and dt.fuel_level_pct is not null
+  ),
+  numbered as (
+    select b.*,
+           row_number() over (order by b.recorded_at) as rn,
+           count(*) over ()                           as cnt
+    from base b
+  ),
+  bounded as (
+    select
+      n.*,
+      max(n.fuel) over (order by n.recorded_at rows between 30 preceding and current row) as bwd_max,
+      max(n.fuel) over (order by n.recorded_at rows between current row and 30 following) as fwd_max
+    from numbered n
+  ),
+  clean as (
+    -- UÇ SATIR KURALI (027): ilk satırda geriye, son satırda ileriye pencere yok.
+    select recorded_at, fuel, odo
+    from bounded
+    where not (
+      case
+        when rn = 1   then fwd_max - fuel >= 10
+        when rn = cnt then bwd_max - fuel >= 10
+        else bwd_max - fuel >= 10 and fwd_max - fuel >= 10
+      end
+    )
+  ),
+  stepped as (
+    select c.*,
+           lag(c.fuel)        over w as prev_fuel,
+           lag(c.odo)         over w as prev_odo,
+           lag(c.recorded_at) over w as prev_at
+    from clean c
+    window w as (order by c.recorded_at)
+  ),
+  marked as (
+    -- YENİ SERİ BAŞLANGICI: yükseliş değilse, ya da önceki okumadan 15 dk'dan
+    -- uzun süre geçmişse. Bu bayrağın kümülatif toplamı seri kimliğidir.
+    select s.*,
+           case
+             when s.prev_fuel is null then 1
+             when s.fuel - s.prev_fuel <= 0 then 1
+             when s.recorded_at - s.prev_at > interval '15 minutes' then 1
+             else 0
+           end as new_run
+    from stepped s
+  ),
+  runs as (
+    select m.*, sum(m.new_run) over (order by m.recorded_at) as run_id
+    from marked m
+  ),
+  rises as (
+    -- Seri başına toplam yükseliş. Yalnız POZİTİF adımlar toplanır: seriyi
+    -- açan satırın kendisi yükseliş olmayabilir (new_run=1 iken).
+    select run_id,
+           sum(greatest(fuel - coalesce(prev_fuel, fuel), 0)) as total_rise
+    from runs
+    group by run_id
+  )
+  select
+    p_vehicle_id                                    as vehicle_id,
+    (select count(*) from clean)::bigint            as sample_count,
+    (select avg(fuel) from clean)                   as avg_pct,
+    (select min(fuel) from clean)                   as min_pct,
+    (select max(fuel) from clean)                   as max_pct,
+    (select fuel from clean order by recorded_at asc  limit 1) as first_pct,
+    (select fuel from clean order by recorded_at desc limit 1) as last_pct,
+    (select count(*) from rises where total_rise >= 5)::bigint as refill_count,
+    (select coalesce(sum(total_rise), 0) from rises where total_rise >= 5) as refill_pct,
+    (select count(*) from stepped
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo between -1 and 1
+    )::bigint                                       as drop_count,
+    (select coalesce(sum(prev_fuel - fuel), 0) from stepped
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo between -1 and 1
+    )                                               as drop_pct
+  where exists (select 1 from clean);
+$$;
+
+-- ════════════ 3 · report_fuel_stats_vehicle_v2 — 102'nin gövdesi ══════════
+--    Kaynak: db/migrations/102_yakit_v2_pencere_duzeltme.sql
+
+create or replace function public.report_fuel_stats_vehicle_v2(
+  p_from       timestamptz,
+  p_to         timestamptz,
+  p_vehicle_id uuid
+)
+returns table (
+  vehicle_id   uuid,
+  sample_count bigint,
+  avg_pct      double precision,
+  min_pct      double precision,
+  max_pct      double precision,
+  first_pct    double precision,
+  last_pct     double precision,
+  refill_count bigint,
+  refill_pct   double precision,
+  drop_count   bigint,
+  drop_pct     double precision
+)
+language sql
+stable
+as $$
+  with esik as (
+    -- Etiketli serinin GÜVENLİ ucu: sondaki 30 satırın ileri penceresi
+    -- eksik olabilir, onlar canlı hesaplanır.
+    select coalesce(
+      (select fs.recorded_at
+         from public.fuel_seri fs
+        where fs.vehicle_id = p_vehicle_id
+        order by fs.recorded_at desc
+        offset 30 limit 1),
+      '-infinity'::timestamptz
+    ) as t
+  ),
+  etiketli as (
+    select fs.recorded_at, fs.fuel, fs.odo, fs.bwd_max, fs.fwd_max
+    from public.fuel_seri fs, esik e
+    where fs.vehicle_id = p_vehicle_id
+      and fs.recorded_at >= p_from
+      and fs.recorded_at <= p_to
+      and fs.recorded_at < e.t
+  ),
+  kuyruk_ham as (
+    -- Eşikten sonraki ham satırlar
+    select dt.recorded_at,
+           dt.fuel_level_pct::double precision as fuel,
+           dt.odometer_km::double precision    as odo
+    from public.device_telemetry dt, esik e
+    where dt.vehicle_id = p_vehicle_id
+      and dt.fuel_level_pct is not null
+      and dt.recorded_at >= e.t
+      and dt.recorded_at <= p_to
+    union all
+    -- + tam 30 satırlık geri örtüşme (kuyruğun bwd_max'ı doğru çıksın)
+    select o.recorded_at, o.fuel, o.odo
+    from esik e
+    cross join lateral (
+      select dt.recorded_at,
+             dt.fuel_level_pct::double precision as fuel,
+             dt.odometer_km::double precision    as odo
+      from public.device_telemetry dt
+      where dt.vehicle_id = p_vehicle_id
+        and dt.fuel_level_pct is not null
+        and dt.recorded_at < e.t
+      order by dt.recorded_at desc
+      limit 30
+    ) o
+  ),
+  kuyruk as (
+    select k.recorded_at, k.fuel, k.odo,
+           max(k.fuel) over (order by k.recorded_at rows between 30 preceding and current row) as bwd_max,
+           /**
+            * ⚠️ SINIRLI çerçeve (30 following) — burada O(n²) SORUNU YOK:
+            * çerçeve genişliği sabit olduğu için Postgres satır başına en çok
+            * 31 değer tarar. Sorun yalnız `unbounded following`de doğuyordu.
+            */
+           max(k.fuel) over (order by k.recorded_at rows between current row and 30 following) as fwd_max
+    from kuyruk_ham k
+  ),
+  base as (
+    select recorded_at, fuel, odo, bwd_max, fwd_max from etiketli
+    union all
+    /**
+     * ⚠️ `recorded_at >= e.t` ŞART. `kuyruk` içindeki 30 satırlık geri
+     * örtüşme YALNIZ pencere fonksiyonunu doğru beslemek için var; o
+     * satırlar `etiketli`de ZATEN bulunuyor. Bu koşul olmadan aynı 30
+     * satır iki kez sayılır (PGlite denemesinde birebir bu görüldü:
+     * sample_count 8.627 yerine 8.657).
+     */
+    select k.recorded_at, k.fuel, k.odo, k.bwd_max, k.fwd_max
+      from kuyruk k, esik e
+     where k.recorded_at >= e.t
+       and k.recorded_at >= p_from
+       and k.recorded_at <= p_to
+  ),
+  numbered as (
+    select b.*,
+           row_number() over (order by b.recorded_at) as rn,
+           count(*)     over ()                       as cnt
+    from base b
+  ),
+  bounded as (
+    /**
+     * PENCEREYE GÖRE DÜZELTME — 052'de ilk/son 31 satırın kayan penceresi
+     * PENCERENİN İÇİNDE kırpılır; etiketteki değer ise pencere dışına da bakar.
+     *
+     * ⚠️ 102'NİN TEK DEĞİŞİKLİĞİ AŞAĞIDAKİ `desc`. 101'de ileri düzeltme
+     * `rows between current row and unbounded following` idi; `max()` için
+     * ters geçiş fonksiyonu olmadığından Postgres her satırda çerçeveyi
+     * baştan tarıyor → O(n²) (40 bin satırda 69,5 sn). `order by ... desc`
+     * + `unbounded preceding` AYNI KÜMEDİR ama çerçeve yalnız büyüdüğü için
+     * artımlı hesaplanır → O(n) (aynı veride 68 ms).
+     */
+    select n.*,
+           case when n.rn <= 31
+                then max(n.fuel) over (order by n.recorded_at rows between unbounded preceding and current row)
+                else n.bwd_max end as bwd_w,
+           case when n.rn > n.cnt - 31
+                then max(n.fuel) over (order by n.recorded_at desc rows between unbounded preceding and current row)
+                else n.fwd_max end as fwd_w
+    from numbered n
+  ),
+  clean as (
+    -- UÇ SATIR KURALI (027) — 052'den birebir.
+    select recorded_at, fuel, odo
+    from bounded
+    where not (
+      case
+        when rn = 1   then fwd_w - fuel >= 10
+        when rn = cnt then bwd_w - fuel >= 10
+        else bwd_w - fuel >= 10 and fwd_w - fuel >= 10
+      end
+    )
+  ),
+  stepped as (
+    select c.*,
+           lag(c.fuel)        over w as prev_fuel,
+           lag(c.odo)         over w as prev_odo,
+           lag(c.recorded_at) over w as prev_at
+    from clean c
+    window w as (order by c.recorded_at)
+  ),
+  marked as (
+    select s.*,
+           case
+             when s.prev_fuel is null then 1
+             when s.fuel - s.prev_fuel <= 0 then 1
+             when s.recorded_at - s.prev_at > interval '15 minutes' then 1
+             else 0
+           end as new_run
+    from stepped s
+  ),
+  runs as (
+    select m.*, sum(m.new_run) over (order by m.recorded_at) as run_id
+    from marked m
+  ),
+  rises as (
+    select run_id,
+           sum(greatest(fuel - coalesce(prev_fuel, fuel), 0)) as total_rise
+    from runs
+    group by run_id
+  )
+  select
+    p_vehicle_id                                    as vehicle_id,
+    (select count(*) from clean)::bigint            as sample_count,
+    (select avg(fuel) from clean)                   as avg_pct,
+    (select min(fuel) from clean)                   as min_pct,
+    (select max(fuel) from clean)                   as max_pct,
+    (select fuel from clean order by recorded_at asc  limit 1) as first_pct,
+    (select fuel from clean order by recorded_at desc limit 1) as last_pct,
+    (select count(*) from rises where total_rise >= 5)::bigint as refill_count,
+    (select coalesce(sum(total_rise), 0) from rises where total_rise >= 5) as refill_pct,
+    (select count(*) from stepped
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo between -1 and 1
+    )::bigint                                       as drop_count,
+    (select coalesce(sum(prev_fuel - fuel), 0) from stepped
+      where prev_fuel is not null and prev_fuel - fuel >= 10
+        and prev_odo is not null and odo is not null and odo - prev_odo between -1 and 1
+    )                                               as drop_pct
+  where exists (select 1 from clean);
+$$;
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- DOĞRULAMA (uygulandıktan sonra, üç kiracıda da)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- select proname, pronargs,
+--        pg_get_functiondef(oid) like '%odo - prev_odo < 1%'              as depo_eski,
+--        pg_get_functiondef(oid) like '%odo - prev_odo between -1 and 1%' as hizalandi
+-- from pg_proc
+-- where proname in ('report_fuel_stats','report_fuel_stats_vehicle',
+--                   'report_fuel_volume_stats','report_fuel_volume_stats_vehicle',
+--                   'report_fuel_stats_vehicle_v2')
+-- order by proname, pronargs;
+-- -- beklenen: HER SATIRDA depo_eski false · hizalandi true
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  105_filo_span_tek_cekirdek.sql                                     ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- 105 — ODOMETRE AÇIKLIĞI: TEK ÇEKİRDEK + ARAÇ EKSENLİ PLAN (16c, Adım 1)  —  ÇALIŞTIRILDI 17.09.2026
+--
+-- ✅ ÜÇ KİRACIDA DA UYGULANDI (17.09.2026): HAK61 · Sendigo · galzura-demo.
+--    Doğrulama: yeni_fn 1 · filo_fn 1 · vardiya_fn_durur 1 · lateral_var 1 (üçünde de).
+--    Mantık kapısı (bir ayda 46.500 km'yi aşan satır yok) üç kiracıda da geçti:
+--    en yüksek aylık km — demo 1.390 · Sendigo 10.510 · HAK61 2.101.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 🔴 SORUN İKİ KATLI: AYNI ARACA İKİ FARKLI KM, VE YÜKE GÖRE HANGİSİ
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- `loadBase` ve `buildFuelReport` önce filo geneli `fleet_odometer_spans`i
+-- (097) çağırıyor; o `null` dönerse araç-araç yedek yola düşüyor
+-- (`getVehicleDistanceSpan`). İKİ YOL AYNI KURALI UYGULAMIYOR:
+--
+--     097          : monoton filtre + blok başı + kapı → TEMİZLENMİŞ uçlar
+--     araç-araç    : HAM ilk ve son okuma, temizlik YOK
+--
+-- Ölçüldü (17.09.2026, canlı, salt okuma) — iki kiracıda iki AYRI yönde:
+--
+--   galzura-demo · W-GF-107 · 30 gün
+--     ham uçlar    0 → 97.296        → yedek: 97.296 km makul değil → null
+--     097 temiz    96.704 → 97.296   → 592 km
+--     (ilk okuma odometre 0; yedek yol onu eleyemiyor)
+--
+--   HAK61 · DO-512GT · 14 gün
+--     ham uçlar    101.900 → 102.651 → yedek: 751 km
+--     097 temiz                      → 692 km
+--     (yedek yol %8,5 FAZLA sayıyor)
+--
+-- Yani yedek yol bir yönde eksik, öbür yönde fazla veriyor. Hangisinin
+-- koştuğu 097'nin 8 sn'lik ifade tavanını aşıp aşmamasına bağlı → AYNI
+-- PENCERE İKİ FARKLI SAYI veriyor. `buildFuelReport.fleetLPer100Km` demo'da
+-- 72,475250 ya da 75,250365 (%3,8) çıkıyordu; bkz. docs/YAKIT-ONETIKET-16B.md.
+--
+-- ⚠️ MAKULLÜK KAPISI (`< 0` ve `> gün × 800 km`) UYGULAMADA ve İKİ YOLDA DA
+-- AYNI. Bu migration ona dokunmuyor; ayrışan şey yalnız SQL TEMİZLİĞİYDİ.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ÇÖZÜM: KURAL TEK YERDE, FİLO ONU ÇAĞIRIR
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+--   vehicle_odometer_span(p_from, p_to, p_vehicle_id)   ← YENİ · KURALIN EVİ
+--   fleet_odometer_spans(p_from, p_to)                  ← artık onu LATERAL
+--                                                          ile araç araç çağırır
+--
+-- Gövde 097'den BİREBİR taşındı; tek fark `partition by vehicle_id`
+-- kalktı (tek araç zaten tek bölüm). Filo sürümü artık kendi kopyasını
+-- taşımıyor — iki yol AYNI SATIRLARDAN besleniyor ve ayrışamaz.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- NEDEN AYNI ZAMANDA DAHA HIZLI
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- 097'nin `where`i yalnız `recorded_at` aralığıydı; araç yüklemi olmadığı için
+-- 053'ün `(vehicle_id, recorded_at) include (odometer_km)` indeksi
+-- KULLANILAMIYORDU. Plan ölçüldü (PGlite, 216.000 satır, 30 araç):
+--
+--     Seq Scan on device_telemetry  ... rows=216.000
+--     GroupAggregate ... temp read=2165 written=2168     ← DİSKE TAŞIYOR
+--
+-- LATERAL sürümde her araç kendi indeks aralığından, ZATEN SIRALI gelir;
+-- küresel sıralama ve disk taşması ortadan kalkar. Aynı veride ölçüldü:
+--
+--     A · bugünkü (kapsamsız + sort)   480 ms
+--     B · LATERAL (araç başına indeks) 302 ms      → %37
+--     ve iki sürümün çıktısı 30/30 araçta BİREBİR AYNI.
+--
+-- ⚠️ DÜRÜST SINIR: %37 tek başına "< 1 sn" hedefini tutturmaz. Canlı ölçüm
+-- (rakipsiz): HAK61 30 gün 2.403 ms · demo 30 gün 3.922 ms. LATERAL sonrası
+-- beklenen ~1,5–2,5 sn. Asıl kazanılan şey DOĞRULUK: artık tavan aşılsa bile
+-- yedek yol AYNI sayıyı verir, yani "yüke göre değişen km" biter.
+-- Ek hızlanma (pencere kırpma / float8 iç hesap) ayrı bir tur; ikisi de
+-- kuralı değiştirme riski taşıyor ve bu turda ALINMADI.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- DAVRANIŞ FARKLARI — İKİSİ DE BİLEREK
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+--  1. Filo sürümü artık `public.vehicles`ten geçiyor. `device_telemetry`de
+--     olup `vehicles`te olmayan bir araç varsa çıktıya girmez. Eski sürüm
+--     girerdi. Tüketicilerin hepsi zaten `vehicles` ile eşliyor (loadBase,
+--     buildFuelReport), yani görünür bir fark yok.
+--  2. Araç-araç yolun zaman yüklemi artık `>= p_from and < p_to` — 097'nin
+--     kuralı. Eski uygulama yolu `<= endISO` (kapsayıcı) kullanıyordu. İki
+--     yolun AYNI olması için 097'nin biçimi seçildi.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- GERİ ALMA
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- 097'deki `fleet_odometer_spans` gövdesini yeniden çalıştırmak yeter
+-- (`create or replace`). `vehicle_odometer_span` ortada kalır ve zararsızdır;
+-- istenirse `drop function if exists public.vehicle_odometer_span(timestamptz, timestamptz, uuid);`
+-- ⚠️ Geri alma "aynı araca iki farklı km" kusurunu GERİ GETİRİR.
+--
+-- ⚠️ HİÇBİR FONKSİYON DÜŞÜRÜLMEZ, hiçbir tablo/veri değişmez.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- [birleştirici] kaldırıldı: begin;  (dosyanın tamamı tek transaction içinde)
+-- ════════════ 1 · KURALIN EVİ — tek araç ═══════════════════════════════════
+-- Gövde 097'den birebir; `partition by vehicle_id` kalktı (tek bölüm).
+
+create or replace function public.vehicle_odometer_span(
+  p_from timestamptz,
+  p_to timestamptz,
+  p_vehicle_id uuid
+)
+returns table (
+  vehicle_id uuid,
+  odometre_ilk numeric,
+  odometre_son numeric,
+  ilk_an timestamptz,
+  son_an timestamptz,
+  okuma_sayisi bigint,
+  temiz_sayisi bigint
+)
+language sql
+stable
+as $$
+  with ham as (
+    select dt.recorded_at, dt.odometer_km
+    from public.device_telemetry dt
+    where dt.vehicle_id = p_vehicle_id
+      and dt.recorded_at >= p_from and dt.recorded_at < p_to
+      and dt.odometer_km is not null
+  ),
+  monoton as (
+    select recorded_at, odometer_km,
+           -- telemetri-sinir: filtrenin kendisi
+           max(odometer_km) over (
+             order by recorded_at
+             rows between unbounded preceding and 1 preceding
+           ) as kosan_max
+    from ham
+  ),
+  gecerli as (
+    select recorded_at, odometer_km
+    from monoton where kosan_max is null or odometer_km >= kosan_max
+  ),
+  bloklu as (
+    select *, lag(odometer_km) over (order by recorded_at) as onc_km
+    from gecerli
+  ),
+  blok_basi as (
+    select recorded_at, odometer_km
+    from bloklu where onc_km is null or odometer_km <> onc_km
+  ),
+  kapili as (
+    select *,
+           lead(odometer_km) over (order by recorded_at) as sonraki_km,
+           lead(recorded_at) over (order by recorded_at) as sonraki_an
+    from blok_basi
+  ),
+  temiz as (
+    select recorded_at, odometer_km
+    from kapili
+    where sonraki_km is null
+       or sonraki_km - odometer_km
+          <= greatest(1, extract(epoch from (sonraki_an - recorded_at)) / 3600.0 * 200)
+  ),
+  sayim as (select count(*) as okuma_sayisi from ham)
+  select
+    p_vehicle_id,
+    -- telemetri-sinir: TEMIZ seriden; ayrica ilk/son ZAMANLI okuma aliniyor
+    (array_agg(t.odometer_km order by t.recorded_at asc))[1]::numeric  as odometre_ilk,
+    (array_agg(t.odometer_km order by t.recorded_at desc))[1]::numeric as odometre_son,
+    min(t.recorded_at) as ilk_an,
+    max(t.recorded_at) as son_an,
+    (select okuma_sayisi from sayim) as okuma_sayisi,
+    count(*) as temiz_sayisi
+  from temiz t
+  having count(*) > 0
+$$;
+
+comment on function public.vehicle_odometer_span(timestamptz, timestamptz, uuid) is
+  'Odometre açıklığı kuralının TEK EVİ (105). fleet_odometer_spans bunu LATERAL ile çağırır; uygulamadaki araç-araç yol da bunu çağırır — iki yol ayrışamaz.';
+
+-- ════════════ 2 · FİLO SÜRÜMÜ — artık kuralı ÇAĞIRIYOR ════════════════════
+
+create or replace function public.fleet_odometer_spans(
+  p_from timestamptz,
+  p_to timestamptz
+)
+returns table (
+  vehicle_id uuid,
+  odometre_ilk numeric,
+  odometre_son numeric,
+  ilk_an timestamptz,
+  son_an timestamptz,
+  okuma_sayisi bigint,
+  temiz_sayisi bigint
+)
+language sql
+stable
+as $$
+  select s.*
+  from public.vehicles v
+  cross join lateral public.vehicle_odometer_span(p_from, p_to, v.id) s
+$$;
+
+comment on function public.fleet_odometer_spans(timestamptz, timestamptz) is
+  'Filo geneli odometre açıklığı (097 → 105). Kural artık vehicle_odometer_span''da; burada yalnız araç araç LATERAL ile çağrılıyor — 053''ün (vehicle_id, recorded_at) indeksi kullanılabilir hâle gelir, küresel sıralama ve disk taşması kalkar.';
+-- [birleştirici] kaldırıldı: commit;  (dosyanın tamamı tek transaction içinde)
+notify pgrst, 'reload schema';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- DOĞRULAMA (uygulandıktan sonra)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- select
+--   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--     where n.nspname='public' and p.proname='vehicle_odometer_span')          as yeni_fn,
+--   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--     where n.nspname='public' and p.proname='fleet_odometer_spans')           as filo_fn,
+--   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--     where n.nspname='public' and p.proname='shift_odometer_spans')           as vardiya_fn_durur,
+--   (select count(*) from pg_get_functiondef(
+--      (select p.oid from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--        where n.nspname='public' and p.proname='fleet_odometer_spans')
+--    ) t where t like '%cross join lateral%')                                  as lateral_var;
+-- -- beklenen: yeni_fn 1 · filo_fn 1 · vardiya_fn_durur 1 · lateral_var 1
+--
+-- EŞDEĞERLİK (097'nin kendi denetimi — aynen geçerli):
+--   select v.plate, s.odometre_ilk, s.odometre_son,
+--          (s.odometre_son - s.odometre_ilk) as km, s.okuma_sayisi, s.temiz_sayisi
+--   from public.fleet_odometer_spans('2026-07-01'::timestamptz,
+--                                    '2026-08-01'::timestamptz) s
+--   join public.vehicles v on v.id = s.vehicle_id
+--   order by km desc;
+-- 🔴 Bir ayda 46.500 km'yi (31 × 1.500) aşan satır çıkarsa DEPLOY EDİLMEZ.
 
 
 -- ═══════════════════════════════════════════════════════════════════════════

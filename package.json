@@ -19,7 +19,7 @@
     "verify:tz-parity": "node scripts/verify-tz-parity.mjs",
     "brand:assets": "node scripts/gen-brand-assets.mjs",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
-    "verify": "npm run lint && npm run lint:test-filters && npm run lint:owner-scope && npm run lint:arac-uclari && npm run lint:ariza-bildir && npm run lint:aksiyon-erteleme && npm run lint:filo-yonetimi && npm run lint:i18n && npm run lint:oran-kume && npm run lint:telemetri-siniri && npm run lint:kontrast && npm run lint:crud && npm run lint:install-sql && npm run lint:takip && npm run lint:kiraci-sorgu && npm run lint:mobil-uc-1 && npm run lint:dosya-yukleme && npm run lint:panel-km && npm run build && npm run lint:tenant-defaults",
+    "verify": "npm run lint && npm run lint:test-filters && npm run lint:owner-scope && npm run lint:arac-uclari && npm run lint:ariza-bildir && npm run lint:aksiyon-erteleme && npm run lint:filo-yonetimi && npm run lint:i18n && npm run lint:oran-kume && npm run lint:telemetri-siniri && npm run lint:kontrast && npm run lint:crud && npm run lint:install-sql && npm run lint:takip && npm run lint:kiraci-sorgu && npm run lint:mobil-uc-1 && npm run lint:dosya-yukleme && npm run lint:panel-km && npm run lint:filo-span && npm run build && npm run lint:tenant-defaults",
     "lint:ariza-bildir": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-alias.mjs scripts/check-ariza-bildir.mjs",
     "verify:ariza-bildir": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-ariza-bildir.mjs",
     "lint:aksiyon-erteleme": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-alias.mjs scripts/check-aksiyon-erteleme.mjs",
@@ -84,7 +84,9 @@
     "measure:filo-karsilastir": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/measure-filo-karsilastir.mjs",
     "verify:filo-karsilastir-hiz": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-filo-karsilastir-hiz.mjs",
     "verify:yakit-seri-etiket": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-yakit-seri-etiket.mjs",
-    "lint:yakit-etiket": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-yakit-etiket.mjs"
+    "lint:yakit-etiket": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-yakit-etiket.mjs",
+    "lint:filo-span": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-filo-span.mjs",
+    "verify:filo-span": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-filo-span-tek-cekirdek.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

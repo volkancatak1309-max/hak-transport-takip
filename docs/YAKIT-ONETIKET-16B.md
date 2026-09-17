@@ -72,7 +72,7 @@ Aşama ölçümü (demo, "ay", 29 araç) kalan yükün nerede olduğunu söylüy
 |---|---:|---|
 | yüzde RPC ×29 | 7.151 → **4.296 ms** | ✅ 101+102 |
 | litre RPC ×10 | 5.388 → **1.129 ms** | ✅ 103 |
-| **097 `getFleetDistanceSpans`** | **4.351 ms** | ⏳ 16c |
+| **097 `getFleetDistanceSpans`** | **4.351 ms** | ✅ 16c adım 1 — 105 (bkz. ODOMETRE-KAYNAK-BAGLAMA § 9) |
 | **052'nin son toplaması** | ~780 ms/araç | ⏳ 16c |
 | kenar sorgular | ~1.400 ms | — |
 
@@ -96,6 +96,12 @@ toplam   :  097 → 30.497 km     ·  araç-araç → 29.572 km   (1/30 araçta 
 girer → o aracın km'si değişir → L/100 paydası değişir → **aynı pencere iki
 farklı sayı verir.**
 
+✅ **17.09.2026 — kapatıldı (105).** Ayrışmanın sebebi ölçüldü: 097 temizlenmiş
+uçları, yedek yol HAM uçları kullanıyordu — bir araçta eksik, öbüründe %8,5 fazla.
+105 kuralı `vehicle_odometer_span`a taşıdı, iki yol artık aynı çekirdeği çağırıyor;
+tavan aşılırsa sessiz yedek yerine `olculmedi` dönüyor. Ayrıntı:
+[ODOMETRE-KAYNAK-BAGLAMA.md](ODOMETRE-KAYNAK-BAGLAMA.md) § 9.
+
 Bu **101 öncesinde de vardı**; 16b yalnız zamanlamayı değiştirdiği için
 görünür hâle getirdi. 16c'de 097 ele alınırken bu ayrışma da kapatılmalı:
 iki yolun aynı km'yi vermesi gerekir, yoksa hangisinin koştuğu sonucu

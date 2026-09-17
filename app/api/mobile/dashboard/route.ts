@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { requireMobileFleetView } from "@/lib/mobile-scope";
-import { getDashboardData, type AttentionItem } from "@/lib/admin-dashboard";
+import { getDashboardData, type AttentionItem,
+  type AttentionTarget, attentionReason } from "@/lib/admin-dashboard";
 import { buildPerformanceReport } from "@/lib/reports";
 import {
   computeAnalyticsRange,
@@ -103,7 +104,7 @@ export async function GET(req: NextRequest) {
     const n = alinan[a.kind] ?? 0;
     if (n >= UYARI_KALEM_TAVANI) continue;
     alinan[a.kind] = n + 1;
-    kalemler.push(uyariKalemi(a));
+    kalemler.push(hedefli(a));
   }
 
   /**
@@ -398,9 +399,28 @@ function leaveDaysInclusive(startYmd: string, endYmd: string): number | null {
  * Alanlar türe göre dolar (bkz. AttentionItem); bir türde anlamı olmayan alan
  * yanıtta hiç görünmez.
  */
+type UyariKalemiGovde = Omit<UyariKalemi, "hedef" | "sebep" | "param">;
+
 type UyariKalemi = {
   tur: AttentionItem["kind"];
   id: string;
+  /**
+   * SATIRA DOKUNUNCA GİDİLECEK KAYIT (17.09.2026).
+   *
+   * ÖNCEDEN YOKTU: mobil hedefi kalem KİMLİĞİNİN ÖNEKİNDEN tahmin ediyordu
+   * ve 19 türün yalnız 8'inde çalışıyordu (galzura-fleet-app
+   * `lib/dashboard-api.ts` → VEHICLE_KINDS). Kalan türlerde önek araç/kişi
+   * değil VARDIYA/BELGE/PLAN kimliğidir; tahmin YANLIŞ ekrana götürürdü,
+   * o yüzden o satırlar hiç dokunulamaz bırakılmıştı. Artık sunucu söylüyor.
+   */
+  hedef: AttentionTarget;
+  /**
+   * KISA SEBEP CÜMLESİNİN ANAHTARI — sunucu Türkçe cümle GÖNDERMEZ.
+   * Mobil kendi sözlüğünden kurar (üç dil). Gerekçe: `attentionReason`.
+   */
+  sebep: string;
+  /** `sebep` anahtarının beklediği sayı/etiketler — ör. `{ gun: 5 }`. */
+  param: Record<string, string | number | boolean>;
   /** Araç kalemleri. */
   plaka?: string;
   /** Şoför kalemleri (worker_name). */
@@ -471,7 +491,30 @@ type UyariKalemi = {
   gecti?: boolean;
 };
 
-function uyariKalemi(a: AttentionItem): UyariKalemi {
+/**
+ * ═══ HEDEF + SEBEP HER KALEME (17.09.2026) ═══════════════════════════════
+ *
+ * `uyariKalemi` türe göre değişen alanları yazar; bu sarmalayıcı TÜM türlerde
+ * aynı olan üçünü ekler:
+ *
+ *   hedef  { tur, id }  — satıra dokununca gidilecek kayıt
+ *   sebep  string       — çeviri ANAHTARI (sunucu cümle kurmaz)
+ *   param  {…}          — anahtarın beklediği sayı/etiketler
+ *
+ * ⚠️ TEK YERDE: türe göre `hedef` yazan bir `switch` DAHA açmak, kaynağın
+ * kimliğini ikinci kez tahmin etmek olurdu. Hedef kalem üretilirken
+ * (`lib/admin-dashboard.ts`) konuyor ve buradan olduğu gibi geçiyor.
+ *
+ * ⚠️ GERİYE UYUMLU: mevcut alanların hiçbirinin adı/tipi değişmedi, YALNIZ
+ * üç alan eklendi. 17.09 öncesi yazılmış istemci aynen çalışır.
+ */
+function hedefli(a: AttentionItem): UyariKalemi {
+  const { sebep, param } = attentionReason(a);
+  return { ...uyariKalemi(a), hedef: a.target, sebep, param };
+}
+
+/** TÜRE GÖRE değişen alanlar. Ortak üçlüyü (hedef, sebep, param) hedefli() ekler. */
+function uyariKalemi(a: AttentionItem): UyariKalemiGovde {
   switch (a.kind) {
     case "overLimit":
       return {

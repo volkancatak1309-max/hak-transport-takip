@@ -293,7 +293,7 @@
     "trend_vs_prev": "{now} alarms · previous period {prev} ({delta})",
     "trend_blocked": "No comparison with the previous period because the thresholds changed",
     "no_driver": "no driver assigned",
-    "driver_source_hint": "The driver on the vehicle's open shift, otherwise the assigned driver. If the vehicle changed hands, older events are labelled with today's driver."
+    "driver_source_hint": "Driver of the shift that was open for this vehicle at the time of the event. If no shift matches, no name is shown — it does not fall back to the vehicle's currently assigned driver."
   },
   "approval": {
     "pending": "Pending",

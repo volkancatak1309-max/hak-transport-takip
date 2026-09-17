@@ -293,7 +293,7 @@
     "trend_vs_prev": "{now} Alarme · Vorzeitraum {prev} ({delta})",
     "trend_blocked": "Wegen geänderter Schwellen kein Vergleich mit dem Vorzeitraum",
     "no_driver": "kein Fahrer zugewiesen",
-    "driver_source_hint": "Fahrer der offenen Schicht, sonst der zugewiesene Fahrer. Bei Fahrzeugwechsel werden ältere Ereignisse dem heutigen Fahrer zugeordnet."
+    "driver_source_hint": "Fahrer der Schicht, die zum Ereigniszeitpunkt für dieses Fahrzeug offen war. Ohne passende Schicht wird kein Name angezeigt — es wird nicht auf den heute zugewiesenen Fahrer zurückgegriffen."
   },
   "approval": {
     "pending": "Ausstehend",

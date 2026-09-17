@@ -293,7 +293,7 @@
     "trend_vs_prev": "{now} alarm · önceki dönem {prev} ({delta})",
     "trend_blocked": "Eşikler değiştiği için önceki dönemle kıyaslanmıyor",
     "no_driver": "şoför atanmamış",
-    "driver_source_hint": "Aracın açık vardiyadaki şoförü, yoksa atanmış şoförü. Araç el değiştirdiyse eski olaylar bugünkü şoförle etiketlenir."
+    "driver_source_hint": "Olay anında o araçta açık olan vardiyanın şoförü. Eşleşen vardiya yoksa ad yazılmaz — aracın bugünkü atanmış şoförüne düşülmez."
   },
   "approval": {
     "pending": "Onay Bekliyor",

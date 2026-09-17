@@ -329,3 +329,130 @@ bağlama işi o kaynağı da düzelttiği için tazeleme **gerçekten değiştir
 - **2026-08 ve öncesi aylar** — yalnız 2026-07 ölçüldü.
 - **`DO-753GS`'in 12.543–124.801 aralığı** — 097 kuralı 981 km veriyor ve makul,
   ama serideki 24 dağınık düşük okumanın kaynağı hâlâ `ÖLÇÜLMEDİ`.
+
+---
+
+# 9 · 17.09.2026 — 105: TEK ÇEKİRDEK (16c, adım 1)
+
+> 097 bir ölçüm kuralını SQL'e taşıdı. Ama uygulamadaki **yedek yol**
+> (`getVehicleDistanceSpan`) o kurala hiç geçmedi: aralığın **ham** ilk ve son
+> odometre okumasını alıyordu. İki yol aynı araca farklı km veriyordu ve
+> hangisinin koştuğu **yüke** bağlıydı.
+
+## 9.1 · Ayrışma ölçüldü — kural farkı, veri değil
+
+İki kiracıda, **iki ayrı yönde** (17.09.2026, salt okuma):
+
+| kiracı · araç | pencere | 097 (temiz) | yedek yol (ham uçlar) | fark |
+|---|---|---:|---:|---|
+| galzura-demo · `W-GF-107` | 30 gün | **592 km** | `null` — ham `0 → 97.296` makul değil | eksik |
+| HAK61 · `DO-512GT` | 14 gün | **692 km** | **751 km** — ham `101.900 → 102.651` | **+%8,5** |
+
+Yani yedek yol bir araçta **eksik**, öbüründe **fazla** sayıyor. Sebep veri
+değil **kural**: 097 monoton filtre + blok başı + fiziksel atlama kapısından
+geçirilmiş uçları kullanıyor, yedek yol hiçbirini uygulamıyordu.
+
+Bunun görünür sonucu `buildFuelReport.fleetLPer100Km`ti: demo'da aynı kapalı
+pencerede **72,475250** ya da **75,250365** (%3,8) çıkıyordu. 101–104
+şüphelenilmişti; RPC seviyesinde o pencerede **sapan 0** ölçüldü — sebep
+paydaydı.
+
+## 9.2 · 097'nin maliyet profili (önce)
+
+3 koşum medyan, canlı, rakipsiz:
+
+| pencere | demo satır / süre | HAK61 satır / süre |
+|---|---:|---:|
+| 3 gün | 87.726 / **562 ms** | 87.864 / **424 ms** |
+| 7 gün | 185.334 / **993 ms** | 185.335 / **718 ms** |
+| 14 gün | 377.537 / **1.800 ms** | 380.537 / **1.205 ms** |
+| 30 gün | 821.026 / **3.922 ms** | 873.446 / **2.403 ms** |
+| 60 gün | 994.026 / **4.701 ms** | — |
+
+Satır başına maliyet **düz** (demo ~4,7 µs · HAK61 ~2,75 µs) — yani darboğaz
+tek bir patlayan adım değil, **taranan satır sayısı**. 8 sn'lik ifade tavanına
+demo'da 60 günde yaklaşılıyor; tavanı aşınca RPC `null` dönüyor ve yedek yol
+devreye giriyordu.
+
+## 9.3 · Plan: neden indeks kullanılamıyordu
+
+097'nin `where`i yalnız `recorded_at` aralığı. Araç yüklemi olmadığı için
+053'ün `(vehicle_id, recorded_at) include (odometer_km)` indeksi devre dışı.
+PGlite'ta ölçüldü (216.000 satır · 30 araç · aynı indeksler):
+
+```
+Seq Scan on device_telemetry ... rows=216.000
+GroupAggregate ... temp read=2165 written=2168      ← DİSKE TAŞIYOR
+```
+
+LATERAL sürümde her araç kendi indeks aralığından **zaten sıralı** gelir;
+küresel sıralama ve disk taşması kalkar:
+
+| | süre |
+|---|---:|
+| A · bugünkü (kapsamsız + sort) | 480 ms |
+| B · LATERAL (araç başına indeks) | **302 ms** (−%37) |
+
+ve iki sürümün çıktısı **30/30 araçta birebir aynı**.
+
+## 9.4 · 105 ne yapıyor
+
+```
+vehicle_odometer_span(p_from, p_to, p_vehicle_id)   ← KURALIN TEK EVİ
+fleet_odometer_spans(p_from, p_to)                  ← onu LATERAL ile çağırır
+```
+
+Gövde 097'den birebir taşındı; tek fark `partition by vehicle_id` kalktı
+(tek araç zaten tek bölüm). Uygulamadaki araç-araç yol da artık aynı
+fonksiyonu çağırıyor — **ayrışma kaynağında bitti**.
+
+⚠️ **Dürüst sınır:** %37 tek başına "< 1 sn" hedefini tutturmaz. HAK61 30 gün
+2.403 ms → beklenen ~1,5–2,5 sn. Bu turda kazanılan asıl şey **doğruluk**.
+Ek hızlanma (pencere kırpma, float8 iç hesap) ayrı bir tur; ikisi de kuralı
+değiştirme riski taşıdığı için ALINMADI.
+
+## 9.5 · "Ölçülemedi" — yanlış sayının yerine
+
+Geçici hatada (ifade tavanı dâhil) artık **ham uçlara düşülmüyor**. Ham uçlar
+başka bir kural; oraya düşmek *yanlış bir sayı* üretir. Yeni sebep:
+
+| sebep | anlamı | yöneticiye söylediği |
+|---|---|---|
+| `no_odometer` | aralıkta hiç odometre okuması yok | cihazı kontrol ettir |
+| `inconsistent` | sayaç geri saymış / makul sınırı aşmış | cihaz değişimi mi? |
+| **`olculmedi`** | **ölçüm yapılamadı** | veri sağlam, **biz okuyamadık** |
+
+`olculmedi` cihaz kusuru **değildir** ve ekranda öyle görünmemelidir; üç dilde
+ayrı karşılığı var (`ratio_reason_olculmedi`, `fuel_reason_olculmedi`,
+`fuel_reason_short_olculmedi`).
+
+⚠️ 105 uygulanmamış kiracıda araç-araç yol **bugünkü ham-uç davranışına**
+düşer (latch'li, `missing_function` ile) — davranış birebir değişmez.
+
+## 9.6 · Bilerek yapılan iki davranış değişikliği
+
+1. Filo sürümü artık `public.vehicles` üzerinden geçiyor. `device_telemetry`de
+   olup `vehicles`te olmayan araç çıktıya **girmez** (097'de girerdi).
+   Tüketicilerin hepsi zaten `vehicles` ile eşliyor.
+2. Araç-araç yolun zaman yüklemi `>= p_from and < p_to` oldu (097'nin biçimi);
+   eski uygulama yolu `<= endISO` kullanıyordu. İki yol aynı olsun diye.
+
+## 9.7 · Kanıt
+
+- `npm run verify:filo-span` — PGlite, **21/21**: dört pencerede 097 = 105
+  bayt-bayt · tek çekirdek 8/8 araç · bilinen tek fark ölçüldü · **yedi arıza
+  enjeksiyonunun yedisi de yakalandı**.
+- `npm run lint:filo-span` — **26 denetim**; arıza enjeksiyonu **6/6**
+  (sessiz geri düşüş, kural kopyası, eşik sapması, kapı taşınması, RPC
+  kopması, eksik dil anahtarı).
+- Canlı önce/sonra ölçümü **105 uygulandıktan sonra** yapılabilir; bu belgeye
+  o zaman eklenecek.
+
+## 9.8 · Ölçülemeyen bir değişiklik — kayda geçirildi
+
+`odometer_km >= kosan_max` yerine `> kosan_max` yazmak **çıktıyı
+değiştirmiyor**: blok başı indirgemesi (`odometer_km <> onc_km`) eşit satırı
+zaten atıyor. PGlite'ta dört pencerede ölçüldü, sapma yok. Bunu arıza
+enjeksiyonu listesine koymak testi *sahte bir boşluk* raporlamaya iterdi;
+koymayıp susmak da kimseye sebebini söylemezdi. Ölçüp yazdık
+(`verify-filo-span-tek-cekirdek.mjs` § 5).

@@ -89,8 +89,18 @@ import type { TimeEntry } from "@/lib/types";
  *  • no_odometer  → cihaz odometre göndermiyor      → cihazı kontrol ettir
  *  • inconsistent → sayaç geri saymış / bozuk okuma  → cihaz değişimi mi?
  *  • too_short    → mesafe eşiğin altında            → yapacak bir şey yok, bekle
+ *  • olculmedi    → mesafe ÖLÇÜLEMEDİ (RPC hatası)   → veri sağlam, biz okuyamadık
+ *
+ * ⚠️ `olculmedi` cihaz kusuru DEĞİLDİR (105, 17.09.2026). Önceden bu durumda
+ * sessizce başka kurallı bir yedek yola düşülüyor ve YANLIŞ bir km gösteriliyordu;
+ * artık "ölçemedim" yazıyoruz. Yöneticiyi cihaza koşturmasın diye ayrı sebep.
  */
-export type RatioUnavailableReason = "no_odometer" | "inconsistent" | "too_short" | null;
+export type RatioUnavailableReason =
+  | "no_odometer"
+  | "inconsistent"
+  | "too_short"
+  | "olculmedi"
+  | null;
 
 export type SpeedRow = {
   vehicleId: string;
@@ -271,10 +281,14 @@ async function loadBase(range: DateRange) {
     okuOlaylar(startISO, endISO),
     okuRolanti(startISO, endISO),
     /**
-     * ODOMETRE AÇIKLIĞI — önce filo geneli RPC (097), yoksa araç-araç.
-     * RPC bozuk okumaları SQL'de eliyor; araç-araç yolu ham uç okumayı alır
-     * ve tek bozuk satırda aracı `inconsistent` yapar. Maliyet ölçümü ve
-     * gerekçe: `lib/analytics.ts` → `getFleetDistanceSpans`.
+     * ODOMETRE AÇIKLIĞI — önce filo geneli RPC (097/105), yoksa araç-araç.
+     *
+     * ⚠️ 105'TEN SONRA İKİ YOL AYNI ÇEKİRDEĞİ ÇAĞIRIYOR (17.09.2026).
+     * Öncesinde araç-araç yol HAM uç okumayı alıyordu ve tek bozuk satırda
+     * aracı `inconsistent` yapıyordu — yani filo RPC'si tavanı aşıp geri
+     * düşüldüğünde AYNI ARACA BAŞKA BİR KM çıkıyordu. Şimdi geri düşüş
+     * yalnız YAVAŞLATIR, sayıyı değiştirmez. Maliyet ölçümü ve gerekçe:
+     * `lib/analytics.ts` → `getFleetDistanceSpans` / `getVehicleDistanceSpan`.
      */
     (async () => {
       const filo = await okuFiloSpan(startISO, endISO);

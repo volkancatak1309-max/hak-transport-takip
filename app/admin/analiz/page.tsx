@@ -27,6 +27,14 @@ import {
 } from "@/lib/analytics";
 import { endOfTodayVienna } from "@/lib/format";
 import { mapBounded } from "@/lib/db-fanout";
+import { okuFiloSpan } from "@/lib/report-reads";
+/** RPC hiç satır döndürmeyen araç: o pencerede odometre okuması YOK — "0 km" DEĞİL. */
+const BOS_ARAC_SPAN = {
+  km: null,
+  reason: "no_odometer",
+  firstAt: null,
+  lastAt: null,
+} as const;
 import {
   getLatestConfigEpoch,
   rangeStartsBeforeEpoch,
@@ -100,10 +108,23 @@ export default async function AnalizPage({
     // Eşzamanlılık tavanı (09.08.2026): araç başına İKİ sorgu, sınırsız hâlinde
     // 60 ifade. Ölçüm ve gerekçe lib/db-fanout.ts'te — sınırlamak duvar saatini
     // uzatmıyor, kısaltıyor; asıl kazanç ifade başına zaman aşımı payı.
-    const spanEntries = await mapBounded(
-      vehicles,
-      async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
-    );
+    /**
+     * ⚠️ ÖNCE FİLO RPC'Sİ (097/105), yoksa araç-araç — `loadBase` ile AYNI
+     * kalıp (17.09.2026, 16c). Öncesinde bu sayfa doğrudan araç-araç yolu
+     * çağırıyordu; o yol 105'ten ÖNCE ham uç okumaları alıyordu, yani raporlar
+     * temizlenmiş km'yi gösterirken bu sayfa temizlenmemişini gösteriyordu
+     * (HAK61 DO-512GT, 14 gün: 692 ↔ 751 km). 105 iki yolu tek çekirdeğe
+     * bağladı; filo yolunu öne almak da araç başına bir RPC yerine TEK RPC
+     * bırakıyor.
+     */
+    const filoSpan = await okuFiloSpan(startISO, endISO);
+    const spanEntries = filoSpan
+      ? vehicles.map((v) => [v.id, filoSpan.get(v.id) ?? BOS_ARAC_SPAN] as const)
+      : // Eşzamanlılık tavanı (bkz. lib/db-fanout.ts).
+        await mapBounded(
+          vehicles,
+          async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
+        );
     const spanByVehicle = new Map(spanEntries);
     const distanceByVehicle = new Map(
       [...spanByVehicle].map(([id, s]) => [id, s.km] as const)

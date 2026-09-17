@@ -335,8 +335,23 @@ export async function getVehicleDistanceKm(
  *  • no_odometer  → aralıkta hiç odometre okuması yok (cihaz göndermiyor)
  *  • inconsistent → sayaç geri saymış (cihaz değişimi/reset) ya da günlük makul
  *                   sınırı aşmış (bozuk tekil okuma)
+ *  • olculmedi    → ölçüm YAPILAMADI (RPC geçici hata / ifade tavanı). Veri
+ *                   bozuk değil; biz okuyamadık. (105, aşağıda)
+ *
+ * ⚠️ `olculmedi` 105'te eklendi (16c). ÖNCESİNDE: filo RPC'si ifade tavanını
+ * aşınca sessizce araç-araç yedek yola düşülüyordu ve o yol BAŞKA BİR KURAL
+ * uyguluyordu (temizlik yok) — aynı araç için farklı km, hatta farklı yön:
+ *   demo W-GF-107 : 097 592 km · yedek null   (ham ilk okuma odometre 0)
+ *   HAK61 DO-512GT: 097 692 km · yedek 751 km (+%8,5)
+ * 105 iki yolu tek çekirdeğe bağladı; ama ÇEKİRDEK DE düşerse artık uydurma
+ * bir sayı değil `olculmedi` döner. "Yanlış sayı" ile "ölçemedim" aynı şey
+ * değildir ve ekran ikincisini söyleyebilmelidir.
  */
-export type DistanceUnavailableReason = "no_odometer" | "inconsistent" | null;
+export type DistanceUnavailableReason =
+  | "no_odometer"
+  | "inconsistent"
+  | "olculmedi"
+  | null;
 
 export type VehicleDistanceSpan = {
   /** Kat edilen mesafe (km) — güvenilmezse null. */
@@ -781,7 +796,9 @@ let filoSpanRpcVar: boolean | null = null;
  * (migration 097), burası yalnız çağırıyor.
  *
  * ⚠️ FAIL-SAFE: RPC yoksa (097 çalıştırılmamış) `null` döner ve çağıran
- * bugünkü araç-araç yoluna düşer. Davranış değişmez, yalnız kazanç gerçekleşmez.
+ * araç-araç yoluna düşer. 105'ten SONRA o yol aynı çekirdeği çağırdığı için
+ * düşüş artık sayıyı DEĞİŞTİRMİYOR — yalnız yavaşlatıyor. 105 öncesinde iki
+ * yol farklı km veriyordu; bkz. getVehicleDistanceSpan başlığı.
  */
 export async function getFleetDistanceSpans(
   startISO: string,
@@ -802,36 +819,53 @@ export async function getFleetDistanceSpans(
   }
   filoSpanRpcVar = true;
   const out = new Map<string, VehicleDistanceSpan>();
-  const spanDays = Math.max(
-    1,
-    (new Date(endISO).getTime() - new Date(startISO).getTime()) / 86_400_000
-  );
   for (const r of (data ?? []) as Record<string, unknown>[]) {
-    const vid = String(r.vehicle_id);
-    const a = r.odometre_ilk === null ? null : Number(r.odometre_ilk);
-    const b = r.odometre_son === null ? null : Number(r.odometre_son);
-    const firstAt = (r.ilk_an as string | null) ?? null;
-    const lastAt = (r.son_an as string | null) ?? null;
-    if (a === null || b === null) {
-      out.set(vid, { km: null, reason: "no_odometer", firstAt, lastAt });
-      continue;
-    }
-    const diff = b - a;
     /**
      * Makullük kapısı UYGULAMADA kalıyor: SQL fiziksel imkansızlığı eliyor,
      * bu kapı "bu pencerede bu kadar yol mümkün mü" diye soruyor. İkisi ayrı
      * soru; SQL'e taşımak `MAX_PLAUSIBLE_KM_PER_DAY`i iki yerde yaşatırdı.
+     * ⚠️ Kapı tek yerde: `uctanSpan`. Araç-araç yol da onu çağırır — 105'ten
+     * sonra iki yol hem SQL kuralını hem bu kapıyı paylaşır.
      */
-    if (diff < 0 || diff > spanDays * MAX_PLAUSIBLE_KM_PER_DAY) {
-      out.set(vid, { km: null, reason: "inconsistent", firstAt, lastAt });
-      continue;
-    }
-    out.set(vid, { km: diff, reason: null, firstAt, lastAt });
+    out.set(
+      String(r.vehicle_id),
+      uctanSpan(
+        r.odometre_ilk === null ? null : Number(r.odometre_ilk),
+        r.odometre_son === null ? null : Number(r.odometre_son),
+        (r.ilk_an as string | null) ?? null,
+        (r.son_an as string | null) ?? null,
+        startISO,
+        endISO
+      )
+    );
   }
   return out;
 }
 
-export async function getVehicleDistanceSpan(
+/**
+ * Filo RPC'sinin araç-araç ikizi — 105'ten sonra AYNI ÇEKİRDEK.
+ *
+ * ── NEDEN DEĞİŞTİ (16c, 17.09.2026) ───────────────────────────────────────
+ * Bu fonksiyon eskiden aralığın HAM ilk ve son odometre okumasını alıyordu;
+ * `fleet_odometer_spans` ise monoton filtre + blok başı + kapıdan geçmiş
+ * TEMİZ uçları. İki yol aynı araca farklı km veriyordu ve hangisinin koştuğu
+ * filo RPC'sinin ifade tavanını aşıp aşmamasına — yani YÜKE — bağlıydı:
+ *     demo W-GF-107 : 097 592 km · ham uçlar 0 → 97.296 → makul değil → null
+ *     HAK61 DO-512GT: 097 692 km · ham uçlar 101.900 → 102.651 = 751 (+%8,5)
+ * 105 kuralı `vehicle_odometer_span`a taşıdı; filo sürümü onu LATERAL ile
+ * çağırıyor, bu fonksiyon da doğrudan. Ayrışma kaynağında bitti.
+ *
+ * ⚠️ MAKULLÜK KAPISI HÂLÂ BURADA (`< 0`, `> gün × MAX_PLAUSIBLE_KM_PER_DAY`)
+ * ve filo yolunda da aynısı uygulanıyor — SQL fiziksel imkânsızı eler, bu kapı
+ * "bu pencerede bu kadar yol mümkün mü" diye sorar. İkisi ayrı soru.
+ *
+ * ⚠️ 105 UYGULANMAMIŞ KİRACIDA eski yola düşer (aşağıdaki `hamUclar`) —
+ * davranış birebir bugünküdür. Latch: fonksiyon bir kez bulunamazsa bir daha
+ * denenmez (filoSpanRpcVar ile aynı kalıp).
+ */
+let aracSpanRpcVar: boolean | null = null;
+
+async function hamUclar(
   vehicleId: string,
   startISO: string,
   endISO: string
@@ -858,21 +892,78 @@ export async function getVehicleDistanceSpan(
       .limit(1)
       .maybeSingle(),
   ]);
-  const a = first?.odometer_km as number | null | undefined;
-  const b = last?.odometer_km as number | null | undefined;
-  const firstAt = (first?.recorded_at as string | undefined) ?? null;
-  const lastAt = (last?.recorded_at as string | undefined) ?? null;
+  return uctanSpan(
+    (first?.odometer_km as number | null | undefined) ?? null,
+    (last?.odometer_km as number | null | undefined) ?? null,
+    (first?.recorded_at as string | undefined) ?? null,
+    (last?.recorded_at as string | undefined) ?? null,
+    startISO,
+    endISO
+  );
+}
 
+/** İki uçtan km — makullük kapısı TEK YERDE, iki yol da buradan geçer. */
+function uctanSpan(
+  a: number | null,
+  b: number | null,
+  firstAt: string | null,
+  lastAt: string | null,
+  startISO: string,
+  endISO: string
+): VehicleDistanceSpan {
   if (a == null || b == null) {
     return { km: null, reason: "no_odometer", firstAt, lastAt };
   }
   const diff = b - a;
   if (diff < 0) return { km: null, reason: "inconsistent", firstAt, lastAt };
-  const spanDays = Math.max(1, (new Date(endISO).getTime() - new Date(startISO).getTime()) / 86_400_000);
+  const spanDays = Math.max(
+    1,
+    (new Date(endISO).getTime() - new Date(startISO).getTime()) / 86_400_000
+  );
   if (diff > spanDays * MAX_PLAUSIBLE_KM_PER_DAY) {
     return { km: null, reason: "inconsistent", firstAt, lastAt };
   }
   return { km: diff, reason: null, firstAt, lastAt };
+}
+
+export async function getVehicleDistanceSpan(
+  vehicleId: string,
+  startISO: string,
+  endISO: string
+): Promise<VehicleDistanceSpan> {
+  if (aracSpanRpcVar !== false) {
+    const { data, error } = await supabaseAdmin.rpc("vehicle_odometer_span", {
+      p_from: startISO,
+      p_to: endISO,
+      p_vehicle_id: vehicleId,
+    });
+    if (!error) {
+      aracSpanRpcVar = true;
+      const r = ((data ?? []) as Record<string, unknown>[])[0];
+      if (!r) return { km: null, reason: "no_odometer", firstAt: null, lastAt: null };
+      return uctanSpan(
+        r.odometre_ilk === null ? null : Number(r.odometre_ilk),
+        r.odometre_son === null ? null : Number(r.odometre_son),
+        (r.ilk_an as string | null) ?? null,
+        (r.son_an as string | null) ?? null,
+        startISO,
+        endISO
+      );
+    }
+    if (RPC_YOK.has(error.code ?? "") || /could not find the function/i.test(error.message ?? "")) {
+      // 105 bu kiracıda yok → eski yol, davranış birebir bugünkü.
+      aracSpanRpcVar = false;
+      return hamUclar(vehicleId, startISO, endISO);
+    }
+    /**
+     * 🔴 GEÇİCİ HATA (ifade tavanı dâhil) → HAM UÇLARA DÜŞMEYİZ.
+     * Ham uçlar BAŞKA BİR KURAL; oraya düşmek "yanlış sayı" üretir. Ölçemediysek
+     * onu söyleriz: `olculmedi`. Ekran boşluğu sebebiyle gösterir, uydurma bir
+     * km göstermez (16c'nin asıl kazanımı budur).
+     */
+    return { km: null, reason: "olculmedi", firstAt: null, lastAt: null };
+  }
+  return hamUclar(vehicleId, startISO, endISO);
 }
 
 /**

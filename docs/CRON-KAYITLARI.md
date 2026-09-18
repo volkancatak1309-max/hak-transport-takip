@@ -24,7 +24,7 @@ Vercel projesinden alınır.
 | 5 | Periyodik bakım uyarısı | `/api/cron/bakim-alerts` | `CRON_SECRET` | **günde TAM 1 · 06:15** | Bakım planı kuran her kiracı (migration 081) |
 | 6 | Haftalık aksiyon | `/api/cron/haftalik-aksiyon` | `CRON_SECRET` | **haftada TAM 1 · Pazartesi 06:30** | Haftalık panel isteyen her kiracı (migration 084) |
 | 7 | Mevzuat erken uyarı | `/api/cron/mevzuat-tarama` | `CRON_SECRET` | **15 dakika** | Canlı mevzuat katmanı isteyen her kiracı (migration 086) |
-| 8 | Dönem skoru + rozet | `/api/cron/skor-donem` | `CRON_SECRET` | **haftada 1** | Ödül/liderlik isteyen her kiracı (migration 088) |
+| 8 | **Dönem skoru + rozet** ✅ **KURULDU** | `/api/cron/skor-donem` | `CRON_SECRET` | **haftada TAM 1 · Pazartesi 06:45 Europe/Vienna** | **ÜÇ KİRACIDA DA KURULU** (19.09.2026) — migration 088 |
 | 9 | **Saklama UYARISI** (silmez) | `/api/cron/saklama` | `CRON_SECRET` | **günde 1 · gece 03:00** | Saklama katmanı kuran her kiracı (migration 090) |
 | 10 | **Aylık metrik** (kapanmış ay özeti) | `/api/cron/aylik-metrik` | `CRON_SECRET` | **günde 1 · gece 03:30** | CO₂/yakıt aylık trendi isteyen her kiracı (migration 090) |
 | 11 | **Yakıt serisi etiketi** (yüzde + litre) ✅ **KURULDU** | `/api/cron/yakit-etiket` | `CRON_SECRET` | **günde 1 · gece 03:15 Europe/Vienna** | **ÜÇ KİRACIDA DA KURULU** (17.09.2026) — migration 101+102+103+104 |
@@ -328,11 +328,55 @@ vardiyanın 7'si böyleydi (ölçüldü 25.08.2026). Ayrıntı
 
 ---
 
-## 8 · Dönem skoru + rozet — HAFTADA BİR
+## 8 · Dönem skoru + rozet — HAFTADA BİR, PAZARTESİ 06:45  ✅ KURULDU
+
+> **Kayıt kuruldu: 19.09.2026, üç kiracıda da.** Yöntem `GET`, sır
+> **`Authorization: Bearer`** başlığıyla. Test çağrısı üçünde de **HTTP 200**.
+>
+> İlk koşum `?geri=3` ile yapıldı (geçmişi bir kerede doldurmak için) ve
+> yazılan satırlar:
+>
+> | kiracı | 2026-07-20 | 2026-08-19 | rozet |
+> |---|---|---|---|
+> | HAK61 | 29 satır (26 skorlanan) | 28 satır (23 skorlanan) | 11 |
+> | Sendigo | 3 (2) | 3 (3) | 9 |
+> | galzura-demo | 27 (23) | 27 (23) | 16 |
+>
+> Daha eski iki dönem (2026-05-21, 2026-06-20) üç kiracıda da **0 satır**:
+> o pencerelerde hiç vardiya yok. HAK61'de üç dönem `epok_oncesi=true` —
+> cihaz alarm eşikleri 23.07.2026'da değişti, o sınırdan öncesi seri
+> rozetine sayılmaz (`rozet.seriKazanilabilir` bunu söyler).
+>
+> ⚠️ **Sırsız çağrı ölçüldü (19.09.2026):** üç kiracının da kayıt alan
+> adında `GET` → **401** `{"ok":false,"sebep":"yetkisiz"}` (3/3). Uygulamanın
+> kendi cevabı; Vercel koruma katmanının yönlendirmesi DEĞİL.
 
 ```
-POST https://<alan-adi>/api/cron/skor-donem?secret=<CRON_SECRET>
+GET https://<alan-adı>/api/cron/skor-donem
+Authorization: Bearer <CRON_SECRET>
 ```
+
+### 🔴 KAYIT ALAN ADI — takım URL'si ÇALIŞMAZ
+
+Kayıt **bu belgedeki alan adlarına** kurulur:
+
+| kiracı | kayıt alan adı |
+|---|---|
+| HAK61 | `hak-transport-takip.vercel.app` |
+| Sendigo | `sendigo-delta.vercel.app` |
+| galzura-demo | `demo.galzura.com` |
+
+`*-volkancatak1309-maxs-projects.vercel.app` biçimindeki **takım kapsamlı**
+URL'ler Vercel Deployment Protection arkasındadır: sırsız çağrı **302** ile
+`vercel.com/sso-api`ye döner, yani zamanlayıcı ucu HİÇ göremez ve kayıt
+sessizce çalışmaz. Ölçüldü (19.09.2026): takım URL'si 302 · kayıt alan adı
+401. Bu ayrım 10. işin tablosunda da yazılı; kayıt kurarken **yalnız**
+yukarıdaki sütun kullanılır.
+
+**Saat:** Pazartesi 06:45 `Europe/Vienna`. Komşuları ezmesin diye seçildi —
+3. iş (belge) 06:00, 5. iş (bakım) 06:15, 6. iş (haftalık aksiyon) 06:30.
+Bu uç `buildPerformanceReport`i dönem sayısı kadar koşturuyor
+(`maxDuration = 300`), yani sabah kuyruğunun EN SONUNDA durmalı.
 
 **Sıklık: haftada 1.** Dönem 30 günlük **kayan** pencere; haftada bir yazmak
 sıralamayı makul tazelikte tutar. Aylık koşsaydı şoför üç hafta boyunca eski
@@ -351,7 +395,8 @@ sayacına düşer.
 **Geriye dönük doldurma** — yeni kurulumda geçmişi bir kerede üretir:
 
 ```
-POST /api/cron/skor-donem?secret=<CRON_SECRET>&geri=5
+GET /api/cron/skor-donem?geri=5
+Authorization: Bearer <CRON_SECRET>
 ```
 
 Her dönem kendi kalibrasyon damgasını alır; cihaz eşiği değişiminden önce

@@ -1387,6 +1387,46 @@ export function computeMonthlyPivot(
 
 // ── Bölüm 3: rölanti israf panosu ────────────────────────────────────────────
 
+/**
+ * RÖLANTİ SATIR TAVANI — bir yanıtta taşınan en fazla şoför satırı.
+ *
+ * TEK KAYNAK: `/api/mobile/dashboard` ve `/api/mobile/analytics` aynı sayıyı
+ * kullanır. İki ayrı sabit, iki farklı "kırpıldı" eşiği demekti ve aynı filo
+ * iki ekranda farklı uzunlukta liste gösterirdi.
+ *
+ * Kırpılan satırların süresi/tutarı TOPLAMLARDA KALIR — liste kısalır, ölçüm
+ * kısalmaz.
+ */
+export const ROLANTI_SATIR_TAVANI = 20;
+
+/**
+ * Rölanti satırına PLAKA iliştirici.
+ *
+ * `IdleWasteRow` plaka taşımaz (panel tablosunda da yok): plaka SUNUM bilgisi,
+ * metriğin parçası değil. Anahtar iki biçimde gelir ve ikisi de burada çözülür:
+ *   workerId                   → o kişiye ATANMIŞ aracın plakası
+ *   "unassigned:<vehicleId>"   → o aracın kendi plakası
+ *
+ * ⚠️ TEK KAYNAK (18.09.2026): kural `/api/mobile/dashboard` içinde yaşıyordu;
+ * ikinci bir yüzey aynı satırları göstermeye başlayınca kopyalanacaktı. Aynı
+ * anahtar iki ekranda farklı plakaya çözülürse bunu kimse fark etmez.
+ */
+export function idlePlateResolver(
+  vehicles: VehicleLite[],
+  vehiclesById: Map<string, VehicleLite>
+): (key: string) => string | null {
+  const plateByWorker = new Map<string, string>();
+  for (const v of vehicles) {
+    if (v.assigned_worker_id && !plateByWorker.has(v.assigned_worker_id)) {
+      plateByWorker.set(v.assigned_worker_id, v.plate);
+    }
+  }
+  return (key: string): string | null =>
+    key.startsWith("unassigned:")
+      ? (vehiclesById.get(key.slice("unassigned:".length))?.plate ?? null)
+      : (plateByWorker.get(key) ?? null);
+}
+
 export function computeIdleWaste(
   idleEpisodes: IdleEpisodeWithPlate[],
   vehiclesById: Map<string, VehicleLite>,

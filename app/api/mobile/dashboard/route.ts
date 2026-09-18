@@ -6,6 +6,8 @@ import { buildPerformanceReport } from "@/lib/reports";
 import {
   computeAnalyticsRange,
   computeIdleWaste,
+  idlePlateResolver,
+  ROLANTI_SATIR_TAVANI,
   listVehiclesAndWorkers,
 } from "@/lib/analytics";
 import {
@@ -306,7 +308,6 @@ const UYARI_KALEM_TAVANI = 20;
 /** Günün Panosu satır tavanı — aktif şoför sayısının ~2 katı (bugün en büyük filo 30). */
 const ROSTER_TAVANI = 60;
 /** Rölanti dökümünde taşınacak en fazla satır (en uzun süre önce). */
-const ROLANTI_SATIR_TAVANI = 20;
 /** Bildirim çanında taşınacak en fazla izin talebi (adet her zaman gerçek toplam). */
 const IZIN_TAVANI = 20;
 /** Araç başına taşınacak en fazla DTC kodu (aktifKod gerçek toplam kalır). */
@@ -349,19 +350,10 @@ async function loadPatronBlocks(
   const idleGun = computeIdleWaste(epGun, vehiclesById, workersById);
   const idle7 = computeIdleWaste(ep7, vehiclesById, workersById);
 
-  // IdleWasteRow plaka taşımaz (panel tablosunda da yok); satıra iliştirme
-  // SUNUM işidir, metrik hesabı değil. key = workerId → atanmış aracın plakası;
-  // key = "unassigned:<vehicleId>" → o aracın plakası.
-  const plateByWorker = new Map<string, string>();
-  for (const v of vw.vehicles) {
-    if (v.assigned_worker_id && !plateByWorker.has(v.assigned_worker_id)) {
-      plateByWorker.set(v.assigned_worker_id, v.plate);
-    }
-  }
-  const plateForIdleKey = (key: string): string | null =>
-    key.startsWith("unassigned:")
-      ? vehiclesById.get(key.slice("unassigned:".length))?.plate ?? null
-      : plateByWorker.get(key) ?? null;
+  // Plaka iliştirme kuralı ORTAK: `lib/analytics.ts` → `idlePlateResolver`.
+  // `/api/mobile/analytics` aynı satırları döndürüyor; kuralın kopyalanması
+  // aynı anahtarı iki ekranda farklı plakaya çözebilirdi.
+  const plateForIdleKey = idlePlateResolver(vw.vehicles, vehiclesById);
 
   // Kademe tek kaynağı lib/event-ui.ts ALARM_KADEME. Rölanti epizodları
   // "idling" = rutin — kritik sayacına katkısı yok, açık toplama girer.

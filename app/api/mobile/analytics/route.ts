@@ -4,6 +4,8 @@ import { mobileError } from "@/lib/mobile-auth";
 import {
   computeTopDriversByType,
   computeIdleWaste,
+  idlePlateResolver,
+  ROLANTI_SATIR_TAVANI,
   computeOwnerlessEvents,
   getWorkerShiftDistance,
   shiftWindowsForScoring,
@@ -173,6 +175,7 @@ async function donemToplami(
   const workersById = new Map(workers.map((w) => [w.id, w]));
   const topByType = computeTopDriversByType(events, idleEpisodes, vehiclesById, workersById);
   const idle = computeIdleWaste(idleEpisodes, vehiclesById, workersById);
+  const idlePlaka = idlePlateResolver(vehicles, vehiclesById);
 
   /**
    * SAHİPSİZ OLAY (20.08.2026) — panelin /admin/analiz kartıyla AYNI fonksiyon.
@@ -292,6 +295,40 @@ async function donemToplami(
       litre: (idle.totalMs / 3_600_000) * IDLE_FUEL_L_PER_HOUR,
       /** TAHMİN — katsayılar yanıtın `rolantiKatsayi` bloğunda. */
       euro: idle.totalEuro,
+      /**
+       * ══ ŞOFÖR SATIRLARI (18.09.2026) ══════════════════════════
+       *
+       * ÖNCEDEN YALNIZ TOPLAMLAR VARDI ve şoför kırılımı tek bir yerde yaşıyordu:
+       * `/api/mobile/dashboard` → `rolanti.gun7.satirlar`. O uç SORGU PARAMETRESİ
+       * ALMIYOR (pencereler sabit: bugün ve 7 gün), yani mobilde "30 günde kim ne
+       * kadar rölanti yaptı" sorusunun cevabı HİÇ YOKTU — bugün için bile yoktu
+       * (`bugun` bloğunda satır yok, yalnız toplam).
+       *
+       * 🔑 SATIRLAR ZATEN HESAPLANIYORDU. `computeIdleWaste` bu uçta da çağrılıyor
+       * ve `rows` üretiyor; yalnız yanıta yazılmıyordu. Yeni sorgu YOK, yeni
+       * formül YOK, yeni uç YOK — bu uç zaten `?range=gun|hafta|ay|tumzaman`
+       * alıyor ve ölçüm o pencereden çıkıyor (ölçüldü: gün/hafta/ay üçünde de
+       * toplamlar ve epizod sayıları pencereyle birlikte değişiyor).
+       *
+       * ⚠️ DASHBOARD'UN SÖZLEŞMESİYLE BİREBİR: alan adları (`ad`, `plaka`, `ms`,
+       * `euro`, `olayAdedi`), sıralama (en uzun önce, `computeIdleWaste`in kendi
+       * sırası), tavan ve kırpılma bayrağı aynı. Mobil İKİNCİ BİR AYRIŞTIRICI
+       * yazmak zorunda kalmasın; tek fark hangi pencereden geldiği.
+       *
+       * ⚠️ LİTRE SATIRDA YOK: dashboard sözleşmesinde de yok. `ms`ten
+       * `rolantiKatsayi.litreSaat` ile türetilir — aynı sayıyı iki kez
+       * göndermek, iki farklı yuvarlamayla iki farklı litre demekti.
+       */
+      satirlar: idle.rows.slice(0, ROLANTI_SATIR_TAVANI).map((row) => ({
+        ad: row.name,
+        plaka: idlePlaka(row.key),
+        ms: row.totalMs,
+        euro: row.euro,
+        olayAdedi: row.episodeCount,
+      })),
+      satirTavani: ROLANTI_SATIR_TAVANI,
+      /** Tavan yüzünden listeye girmeyen şoför var mı (toplamlar TAM kalır). */
+      kirpildi: idle.rows.length > ROLANTI_SATIR_TAVANI,
     },
   };
 }

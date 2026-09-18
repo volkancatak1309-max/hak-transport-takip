@@ -46,14 +46,17 @@ export async function getOdulPanosu(): Promise<OdulGorunum> {
    * kılardı. § 87 BetrVG'nin konusu da çalışanlar arası kıyaslamadır.
    */
   const [pano, ozet] = await Promise.all([
-    liderlikPanosu(session.worker_id ?? null, (n) => `#${n}`),
+    // İsim bayrağı MASKELEMENİN YAPILDIĞI yere iniyor; sonradan ezmek geç
+    // kalıyordu (bkz. liderlikPanosu üçüncü parametre notu).
+    liderlikPanosu(session.worker_id ?? null, (n) => `#${n}`, true),
     donemOzeti(),
   ]);
 
   return {
     ...pano,
-    ayar: { ...pano.ayar, isimGorunur: true },
-    ayarKayitli: { isimGorunur: pano.ayar.isimGorunur, rozetAcik: pano.ayar.rozetAcik },
+    // `pano.ayar.isimGorunur` zaten true (zorlandı); SAKLANAN değer forma
+    // gitsin diye ayrı taşınıyor.
+    ayarKayitli: pano.ayarKayitli,
     ozet,
   };
 }

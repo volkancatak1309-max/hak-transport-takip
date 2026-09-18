@@ -10,23 +10,13 @@ import {
   computeOwnerlessEvents,
   computeIdleWaste,
   computeMonthlyPivot,
-  getVehicleDistanceSpan,
   listVehiclesAndWorkers,
   FLEET_EPOCH,
   type AnalyticsRangeKey,
   type SafetyScoreRow,
 } from "@/lib/analytics";
 import { endOfTodayVienna } from "@/lib/format";
-import { mapBounded } from "@/lib/db-fanout";
-import { okuFiloSpan } from "@/lib/report-reads";
 import { loadScoreInput } from "@/lib/score-core";
-/** RPC hiç satır döndürmeyen araç: o pencerede odometre okuması YOK — "0 km" DEĞİL. */
-const BOS_ARAC_SPAN = {
-  km: null,
-  reason: "no_odometer",
-  firstAt: null,
-  lastAt: null,
-} as const;
 import {
   getLatestConfigEpoch,
   rangeStartsBeforeEpoch,
@@ -84,31 +74,18 @@ export default async function AnalizPage({
       loadScoreInput(r),
     ]);
     /**
-     * ODOMETRE AÇIKLIĞI — SKOR İÇİN DEĞİL, MESAFE KARTLARI İÇİN.
-     * Skorun km'si artık `skor.input.kmByWorker`den geliyor; bu okuma sayfanın
-     * araç eksenli mesafe gösterimleri için duruyor.
+     * ⚠️ ODOMETRE AÇIKLIĞI OKUMASI KALDIRILDI (19.09.2026).
      *
-     * ⚠️ ÖNCE FİLO RPC'Sİ (097/105), yoksa araç-araç — `loadBase` ile AYNI
-     * kalıp (17.09.2026, 16c). 105 iki yolu tek çekirdeğe bağladı; filo yolunu
-     * öne almak araç başına bir RPC yerine TEK RPC bırakıyor.
+     * Burada `okuFiloSpan` (097 RPC, demo'da "ay" penceresinde 4.183 ms) ve
+     * geri düşüşünde araç başına iki sorgu koşuyordu. Sonucu (`distanceByVehicle`)
+     * `computeSafetyScores`a gidiyordu; skor 18.09'da çekirdek km'ye geçince
+     * TÜKETİCİSİ KALMADI ama okuma yerinde kaldı — her Analiz açılışında
+     * ödenen, hiçbir sayıyı etkilemeyen bir bedeldi.
+     *
+     * Sayfanın mesafe gösterimi yok; olsaydı `buildDistanceReport` çağırırdı
+     * ve o da artık aynı çekirdeği kullanıyor.
      */
-    const filoSpan = await okuFiloSpan(startISO, endISO);
-    const spanEntries = filoSpan
-      ? vehicles.map((v) => [v.id, filoSpan.get(v.id) ?? BOS_ARAC_SPAN] as const)
-      : // Eşzamanlılık tavanı (bkz. lib/db-fanout.ts).
-        await mapBounded(
-          vehicles,
-          async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
-        );
-    const distanceByVehicle = new Map(
-      spanEntries.map(([id, sp]) => [id, sp.km] as const)
-    );
-    return {
-      events,
-      idleEpisodes,
-      distanceByVehicle,
-      scoreInput: skor.input,
-    };
+    return { events, idleEpisodes, scoreInput: skor.input };
   }
 
   const current = await loadPeriod(range);

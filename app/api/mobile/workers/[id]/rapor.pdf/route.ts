@@ -7,7 +7,6 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getOwnerScope } from "@/lib/owner-scope";
 import { getDriverScope } from "@/lib/driver-scope";
 import { buildPerformanceReport, type PerformanceRow } from "@/lib/reports";
-import { SCORE_MIN_KM_COVERAGE } from "@/lib/analytics";
 import { SAFETY_SCORE_CALIBRATED } from "@/lib/tenant";
 import { registerServerPdfFont, renderPdfToBuffer } from "@/lib/pdf-server";
 import { PerformanceDoc } from "@/components/pdf/server/PerformanceDoc";
@@ -158,14 +157,13 @@ export async function GET(
   if (row && row.safetyScore === null) {
     const esik = Math.round(row.scoreMinKm);
     const olculen = row.scoreKm === null ? null : Math.round(row.scoreKm);
-    const kapsama =
-      row.scoreCoverage === null ? null : Math.round(row.scoreCoverage * 100);
-    const gerekli = Math.round(SCORE_MIN_KM_COVERAGE * 100);
     skorNotu =
       row.scoreGate === "km_yetersiz"
         ? `Sicherheitsscore nicht berechenbar: gemessene Strecke ${olculen ?? REPORT_EMPTY} km liegt unter der Schwelle von ${esik} km.`
-        : row.scoreGate === "kapsama_dusuk"
-          ? `Sicherheitsscore nicht berechenbar: Messabdeckung ${kapsama ?? REPORT_EMPTY} % der Schichten (mindestens ${gerekli} % erforderlich).`
+        : // 18.09.2026: kapı artık bir ORAN değil — "hiçbir vardiyada ölçüm
+          // yok" demek. Metin de oranı değil, sayıyı söylüyor.
+          row.scoreGate === "kapsama_dusuk"
+          ? `Sicherheitsscore nicht berechenbar: für keine der ${row.shifts} Schichten liegen Kilometerdaten vor (Gerätedaten fehlen).`
           : row.scoreGate === "vardiya_yok"
             ? "Sicherheitsscore nicht berechenbar: keine Schichten im Zeitraum."
             : null;
@@ -216,7 +214,9 @@ export async function GET(
               ihlal: String(row.events),
               sertFren: String(row.harshBraking),
               aniHizlanma: String(row.harshAcceleration),
+              sertViraj: String(row.harshCornering),
               asiriHiz: String(row.overspeeding),
+              rolanti: String(row.idling),
             },
       filo: {
         soforSayisi: String(rapor.rows.length),

@@ -130,6 +130,11 @@ const FLEET_FILTERED = ["onlyFleet(", "dropOtherFleets(", "// fleet-scoped:"];
 const DRIVER_SURFACES = [
   "lib/analytics.ts",
   "lib/reports.ts",
+  // 18.09.2026'da EKLENDİ. Şoför puanının TEK vardiya sorgusu buraya taşındı
+  // (lib/reports.ts ve app/admin/analiz/page.tsx kendi sorgularını bıraktı).
+  // Kapsam kaybolmasın diye dosya aynı gün bu listeye girdi — dosyanın
+  // taşınması, kuralın taşınması demek değildir.
+  "lib/score-core.ts",
   "lib/admin-dashboard.ts",
   "app/admin/page.tsx",
   "app/admin/harita/page.tsx",

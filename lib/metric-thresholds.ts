@@ -64,73 +64,35 @@ export { SAFETY_SCORE_CALIBRATED } from "@/lib/tenant";
 export const SAFETY_SCORE_K = 500;
 
 /**
- * Güvenlik skoru için "yeterli sürüş" eşiği — GÜN BAŞINA minimum güvenilir km.
- * Toplam eşik aralığa göre ölçeklenir (scoreMinKmForRange): günlük ~40 km,
- * haftalık ~280 km, aylık ~1200 km. Sabit 150 km günlük görünümde neredeyse
- * herkesi "veri yok" yapardı.
+ * SKOR İÇİN ASGARİ ÖLÇÜLMÜŞ MESAFE — DÜZ 100 km (18.09.2026, Volkan kararı).
  *
- * (22.07.2026'da lib/analytics.ts'ten BURAYA taşındı — davranış aynı.)
+ * ═══ NE KALDIRILDI ════════════════════════════════════════════════════════
+ * Buradan üç kural birden kalktı ve üçü de aynı yanlışı yapıyordu — çıtayı
+ * şoförün SÜRÜŞÜNE değil, ÖLÇÜMÜN tesadüflerine bağlamak:
+ *
+ *   • `SCORE_MIN_KM_PER_DAY = 20` — çalışılan gün çarpanı. 26 gün çalışan
+ *     şoförden 520 km isteniyordu, 8 gün çalışandan 300. Yani çok çalışan
+ *     daha zor sıralanıyordu.
+ *   • `SCORE_MIN_KM_FLOOR = 300` — mutlak taban.
+ *   • `scoreMinKmForSpan` — hiç vardiyası görünmeyen şoförde devreye giren
+ *     pencere kuralı. HAK61'de 18.09'da ölçüldü: hafta penceresinde eşiği
+ *     140 km'ye düşürüyor ve TABANI ATLIYORDU (bkz. 3. madde).
+ *
+ * ═══ NEDEN 100 ════════════════════════════════════════════════════════════
+ * Patronun kuralı: "100 km'yi geçen herkes sıralansın." Bu bir kalibrasyon
+ * sayısı değil, bir İŞ KURALIDIR ve bu yüzden türetilmiyor — yazılıyor.
+ *
+ * Ölçülen bedeli biliyoruz (HAK61, 30 gün, 18.09.2026): eşik 300→100 dört
+ * şoförü daha listeye alıyor (193 · 247 · 262 · 129 km). Bu paydalarda tek
+ * bir aşırı hız olayı 1000 km başına 250 ceza demek, yani skor gürültülü.
+ * KABUL EDİLDİ: eksik bir sıralama, yanlış bir sıralamadan daha az bilgi
+ * taşıyor ve kimin az sürdüğü zaten satırın km kolonunda yazılı.
+ *
+ * ⚠️ PAYDA HÂLÂ GERÇEK OLMAK ZORUNDA. Kaldırılan şey mesafe çıtasıydı,
+ * ÖLÇÜM şartı değil: km `lib/km-axis.ts` çekirdeğinden gelir ve çekirdek
+ * ölçemediyse skor yine üretilmez (bkz. lib/score-core.ts).
  */
-/**
- * ═══ 40 → 20 (12.08.2026, Volkan kararı — ÖLÇÜMLE) ═══
- *
- * SORUN: 40 km/gün, filonun ölçülen MEDYANININ TA KENDİSİYDİ. Canlı ölçüm
- * (30 gün, HAK61): medyan 40,1 km/çalışılan gün, eşik 40 → oran 1,00×.
- * Yani kapı bir "yeterli veri" eşiği değil, fiilen bir MEDYAN AYIRICIYDI ve
- * tasarımı gereği filonun yarısını eliyordu — 28 şoförün 14'ü altında kalıyor,
- * 29 şoförün 18'i "yetersiz veri" düşüyordu. Elenenlerin medyan doluluğu %71,
- * en yükseği %98: bir şoför 9 km eksikle eleniyordu. Bu bir ölçüm yetersizliği
- * değil, kalibrasyon hatasıydı.
- *
- * 20 km/gün ≈ medyanın yarısı: "yarım günlük normal sürüş" çıtası. Ölçülen
- * sonuç 11/29 → 19/29 skorlanan; ortalama 23'te KALIYOR (yeni girenler
- * ortalamayı aşağı çekmiyor).
- *
- * TAVAN AYNI: eşik hâlâ aralığın geçen gün sayısıyla sınırlı, yani veri
- * biriktikçe çıta kendiliğinden sıkılaşır.
- */
-export const SCORE_MIN_KM_PER_DAY = 20;
-
-/**
- * SKOR İÇİN MUTLAK KM TABANI (09.08.2026, Volkan kararı).
- *
- * Çalışılan-gün ölçeklemesi (scoreMinKmForWorkedDays) tek başına PAYDAYI
- * küçültebiliyordu: 3 gün çalışan şoför 120 km'lik çıtayla listeye giriyor ve
- * skoru 159 km'ye bölünüyordu. O paydada TEK sert fren 75 ceza/1000km demek —
- * skor sürüşü değil, ölçümün kısalığını yansıtıyordu.
- *
- * ÖLÇÜLDÜ (HAK61, 30 gün, bayrak açıkken, taban YOKKEN): listeye 4 yerine 10
- * şoför giriyordu ama ORTALAMA SKOR 20'den 15'e düşüyordu — yeni girenlerin
- * çoğu 3-6 puanla dibe yapışıyordu. Ekrem Gyuler 159 km / 3 gün → 5 puan.
- * Yani kapı gevşedikçe skorlar iyileşmiyor, GÜRÜLTÜLENİYORDU.
- *
- * 300 km neden: 1000 km başına ceza hesabında payda 300'ün altına inince tek
- * bir olayın katkısı 1/3'ten büyük oluyor. 300 km, ölçülen filoda ~4-5 günlük
- * normal sürüşe denk ve K=500 kalibrasyonunun anlamlı kaldığı en düşük payda.
- *
- * Eşik = max(SCORE_MIN_KM_FLOOR, SCORE_MIN_KM_PER_DAY × çalışılan gün).
- * Yani gün ölçeklemesi yalnız YUKARI çeker, aşağı çekemez.
- *
- * ═══ 300'DE KALDI (12.08.2026, PER_DAY 40→20 kararıyla birlikte) ═══
- *
- * Çarpan yarıya inerken taban ORANTILI DÜŞÜRÜLMEDİ — bilerek. İkisi AYRI
- * soruya cevap veriyor:
- *   • PER_DAY → "çalıştığı süreye göre yeterince sürdü mü" (yoğunluk/adalet)
- *   • FLOOR   → "payda, oranı anlamlı kılacak kadar büyük mü" (geçerlilik)
- * Yoğunluk çıtasını gevşetmek, paydanın istatistiksel geçerliliği hakkında
- * hiçbir şey söylemez.
- *
- * ÖLÇÜLDÜ (30 gün, PER_DAY=20 ile): taban 300 → 19/29 skorlanan, aralık 3–63.
- * Taban 150 → 22/29, ama kazanılan üç şoför 145–159 km'lik paydalarla geliyor.
- * Taban 0 → biri 100 alıyor: küçük paydalı, olayı olmayan şoför "kusursuz"
- * ilan ediliyor — tabanın kurulma sebebinin ta kendisi (yukarıdaki not).
- * 300 km'de tek bir aşırı hız olayı 83 ceza/1000km, 150 km'de 167 eder.
- *
- * ⚠️ YAN ETKİ: PER_DAY=20 ile taban artık 15 GÜNE kadar bağlayıcı (300/20);
- * eskiden 8 gündü. Az çalışan şoförde çıtayı çarpan değil TABAN belirliyor —
- * bilinçli, çünkü paydayı koruyan kısıt odur.
- */
-export const SCORE_MIN_KM_FLOOR = 300;
+export const SCORE_MIN_KM = 100;
 
 /**
  * "En iyi şoför" kartının çıkması için gereken EN AZ skorlanmış şoför sayısı.

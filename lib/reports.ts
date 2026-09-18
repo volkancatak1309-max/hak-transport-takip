@@ -3,17 +3,16 @@ import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { fuelConsumedPct, pctToLiters } from "@/lib/fuel-math";
 import {
   computeSafetyScores,
-  drivenVehiclesFromEntries,
-  workedDaysFromEntries,
-  shiftKmForScoring,
-  shiftWindowsForScoring,
   workerDrivingAt,
-  scoreMinKmForWorkedDays,
   getVehicleFuelSpan,
-  scoreMinKmForSpan,
   type DistanceUnavailableReason,
 } from "@/lib/analytics";
-import type { DateRange, SafetyScoreRow } from "@/lib/analytics-shared";
+import { loadScoreInput } from "@/lib/score-core";
+import {
+  SAFETY_SCORE_WEIGHTS,
+  type DateRange,
+  type SafetyScoreRow,
+} from "@/lib/analytics-shared";
 import {
   FUEL_L100_MIN_DAYS,
   FUEL_MIN_CONSUMED_PCT,
@@ -24,13 +23,11 @@ import {
 import { getTestScope, dropTestRows, withoutTestRows } from "@/lib/test-data";
 import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
 import { markKmMeasured } from "@/lib/km-quality";
-import { markKmKarar } from "@/lib/km-axis";
 import {
   okuEvren,
   okuOlaylar,
   okuRolanti,
   okuFiloSpan,
-  okuVardiyaMesafe,
   okuAracSpan,
 } from "@/lib/report-reads";
 import { kmRaporDegeri } from "@/lib/km-ui";
@@ -40,7 +37,6 @@ import {
   FUEL_PRICE_SOURCE,
   FUEL_PRICE_AS_OF,
   FUEL_PRICE_IS_CUSTOM,
-  SCORE_THRESHOLD_WORKED_DAYS,
   KM_EKSENI_KESIM_TARIHI,
   YAKIT_OZET_ENABLED,
 } from "@/lib/tenant";
@@ -169,10 +165,26 @@ export type PerformanceRow = {
   undelivered: number;
   /** Analiz'deki güvenlik skorunun AYNISI (null = yeterli km yok). */
   safetyScore: number | null;
+  /**
+   * CEZAYA GİREN OLAYLARIN TAMAMI — skorun paydası değil PAYI (18.09.2026).
+   *
+   * `events === harshBraking + harshAcceleration + harshCornering +
+   * overspeeding + jamming + idling`. Bu eşitlik bir süs değil, kolonun
+   * varlık sebebi: sayı skorun GEREKÇESİ olduğunu iddia ediyor ve iddiayı
+   * ancak cezayı üreten kümenin tamamını göstererek taşıyabilir.
+   *
+   * 18.09'a kadar `events` yalnız `vehicle_events` satırlarını sayıyor,
+   * kırılım da onların üçünü gösteriyordu; rölanti epizodları, sert viraj ve
+   * sinyal karıştırma cezaya girip ekranda görünmüyordu.
+   */
   events: number;
   harshBraking: number;
   harshAcceleration: number;
+  harshCornering: number;
   overspeeding: number;
+  jamming: number;
+  /** Rölanti EPİZODU sayısı — `idle_episodes`ten, `vehicle_events`ten değil. */
+  idling: number;
   /**
    * ═══ SKOR KAPISININ GEREKÇESİ (18.08.2026) — SALT RAPORLAMA ═══
    *
@@ -190,20 +202,29 @@ export type PerformanceRow = {
    *   scoreGate    ← yukarıdaki üçünden türeyen, kapının hangi kolunda
    *                  elendiğini söyleyen kod
    */
-  /** Bu şoför için hesaplanan km eşiği — sabit değil, kişiye göre ölçeklenir. */
+  /**
+   * Km eşiği — 18.09.2026'dan beri HERKES İÇİN AYNI (SCORE_MIN_KM = 100).
+   * Alan satırda kaldı: ekran çıtayı bir sabitten değil KARARDAN okusun.
+   */
   scoreMinKm: number;
   /** Skorun paydası olan ölçülen km; null = ölçülemedi (0 km sürdü DEĞİL). */
   scoreKm: number | null;
   /**
-   * Km'si ölçülebilen vardiya oranı (0–1). Vardiya penceresi hiç yoksa null —
-   * migration 052 uygulanmamış kurulumda da null (kapsama ölçülemez).
+   * Km'si ölçülebilen vardiya oranı (0–1); hiç vardiya yoksa null.
+   *
+   * ⚠️ SALT RAPORLAMA. 18.09.2026'ya kadar bu oran bir KAPIYDI (%80 altı →
+   * skor yok) ve ölçümde yanlış tarafa düşüyordu: cihazı her vardiyada
+   * konuşan ama hiç ilerlemeyen bir odometre %81 alıp kapıyı geçiyordu.
+   * Artık hiçbir kararı etkilemez, yalnız "26 vardiyanın 21'i ölçüldü"
+   * cümlesini kurar.
    */
   scoreCoverage: number | null;
   /**
    * Skor NEDEN yok? `safetyScore` doluysa null.
    *   km_yetersiz    → km ölçüldü ama eşiğin altında (scoreKm < scoreMinKm)
-   *   kapsama_dusuk  → payda eksik: vardiyaların ölçülebilen oranı
-   *                    SCORE_MIN_KM_COVERAGE altında (ya da hiç ölçülemedi)
+   *   kapsama_dusuk  → vardiya VAR ama çekirdek HİÇBİRİNDE km ölçemedi
+   *                    (mobil etiketi: "Cihaz verisi eksik"). Ad tarihsel;
+   *                    gerekçesi buildPerformanceReport'taki kapı notunda.
    *   vardiya_yok    → aralıkta hiç vardiya yok; km atfedilecek sürüş yok
    */
   scoreGate: "km_yetersiz" | "kapsama_dusuk" | "vardiya_yok" | null;
@@ -441,113 +462,89 @@ export async function buildPerformanceReport(
 ): Promise<PerformanceReport> {
   const base = await loadBase(range);
 
-  // Aralıktaki vardiyalar — admin panosuyla aynı alanlar, aynı türetmeler.
-  const scope = await getTestScope();
-  // SAYFALI (25.07.2026): PostgREST 1000 satırda kesiyor ve `.limit()` bunu
-  // aşamıyor. ~29 şoför × 1 vardiya/gün ile tavan ~34 günde doluyordu; "son 3 ay"
-  // ya da yıllık performans raporu sessizce eksik satırla hesaplanırdı.
-  const driverScope = await getDriverScope();
-  const { data: entryData } = await fetchAllRows<TimeEntry>(
-    (from, to) =>
-      // driver-scoped: yönetici hesabından açılmış vardiyalar bu rapora
-      // GERÇEK vardiya gibi giriyordu. Canlıda iki demo satır vardı ve
-      // toplam 20.100 km taşıyorlardı (biri 2 dakikada 20.000 km) — filo
-      // km'sini, çalışma süresini ve teslimat sayısını doğrudan şişiriyordu.
-      // Ayrılan şoförlerin vardiyaları KALIR: onlar şoför, arşiv 7 yıl.
-      onlyDrivers(
-        withoutTestRows(
-          supabaseAdmin
-            .from("time_entries")
-            .select(
-              "id, worker_id, vehicle_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count"
-            )
-            .gte("started_at", base.startISO)
-            .lte("started_at", base.endISO)
-            .order("started_at", { ascending: true })
-            .order("id")
-            .range(from, to),
-          "worker_id",
-          scope.workerIds
-        ),
-        "worker_id",
-        driverScope
-      ),
-    "buildPerformanceReport/time_entries"
-  );
-  // km_measured: cihazı sessiz vardiyanın 0 km'si ölçüm değildir → kmDiff null
-  // döner → satır "—" olur ve toplama girmez (bkz. lib/km-quality.ts).
   /**
-   * KM EKSENİ (13. madde Adım 4, 16.09.2026): satırlara km KARARI da
-   * iliştiriliyor. `row.km` ve `totalKm` artık `kmDiff` değil
-   * çekirdeğin kararı — cihaz (052, kapsama yeterli) → sayaç → null.
-   * TEK RPC; satır başına çağrı yok.
+   * VARDİYALAR + KM KARARI + PUAN GİRDİSİ — TEK ÇAĞRI (bkz. lib/score-core.ts).
+   *
+   * Öncesinde bu blok kendi `time_entries` sorgusunu yazıyor, ardından İKİNCİ
+   * bir kaynaktan (052 ham şoför toplamı) puan paydası okuyordu. İki kaynak
+   * canlıda ayrıştı: aynı şoför ekranda 1.133 km, puanda 11 km.
+   * Artık ekranın km'si (`e.km_karar.km`) ile puanın paydası
+   * (`input.kmByWorker`) AYNI satırlardan, AYNI kararla üretiliyor.
    */
-  const entries = await markKmKarar(
-    await markKmMeasured((entryData ?? []) as TimeEntry[])
-  );
-
-  // ÇALIŞILAN GÜN eşiği — Analiz sayfasıyla AYNI kapı, aynı kaynak (`entries`).
-  const workedDaysByWorker = workedDaysFromEntries(entries);
-  // VARDİYA PENCERELİ km (052) — Analiz sayfasıyla AYNI üç-durum ayrımı:
-  // hesaplanamadıysa şişik eski km'ye DÜŞÜLMEZ (bkz. shiftKmForScoring).
-  const shiftKmRes = await okuVardiyaMesafe(base.startISO, base.endISO);
-  // EKSEN BİRLİĞİ (15.08.2026): olay atfı da km'nin geldiği SATIRLARDAN türer.
-  // Analiz sayfasıyla AYNI çağrı, aynı üç-durum ayrımı — iki ekran aynı şoför
-  // için farklı olay sayısı gösteremez.
-  const shiftWindows = shiftWindowsForScoring(shiftKmRes);
+  const { shifts: entries, input: scoreInput } = await loadScoreInput(range);
 
   const safety = new Map<string, SafetyScoreRow>(
     computeSafetyScores(
       base.events,
       base.idleEpisodes,
-      new Map(base.vehicles.map((v) => [v.id, v])),
       new Map(base.workers.map((w) => [w.id, w])),
-      base.distanceByVehicle,
-      // ANALİZ SAYFASIYLA AYNI KAPI (B, 27.07.2026): eşik aralık uzunluğuna
-      // değil, şoförün araçlarının odometre penceresine göre ölçeklenir. İki
-      // ekran aynı şoför için farklı karar veremez.
-      (vehicleIds: string[], workerId: string) =>
-        SCORE_THRESHOLD_WORKED_DAYS &&
-        (workedDaysByWorker.get(workerId) ?? 0) > 0
-          ? scoreMinKmForWorkedDays(range, workedDaysByWorker.get(workerId)!)
-          : scoreMinKmForSpan(
-          range,
-          vehicleIds.map(
-            (id) => base.spanByVehicle.get(id) ?? { firstAt: null, lastAt: null }
-          )
-        ),
-      // FİİLEN SÜRÜLEN ARAÇ (09.08.2026): `entries` zaten bu aralığın
-      // vardiyaları — ikinci bir sorgu gerekmiyor.
-      drivenVehiclesFromEntries(entries),
-      shiftKmForScoring(shiftKmRes),
-      shiftWindows
+      scoreInput
     ).map((r) => [r.workerId, r])
   );
 
-  // Olay sayıları şoföre GÜVENLİK SKORUYLA AYNI EKSENDEN bağlanır: olay, o
-  // araçta o saatte VARDİYADA olan şoförün. 052 yoksa (shiftWindows undefined)
-  // eski ATAMA eşlemesine düşer — skorun düştüğü yerin aynısı.
-  //
-  // Bu kolon skorun GEREKÇESİDİR: "1050 olay ama skor 772 olaydan hesaplandı"
-  // aynı ekranda iki gerçek anlamına gelirdi. 15.08.2026'ya kadar öyleydi.
-  const vehicleWorker = new Map(
-    base.vehicles.map((v) => [v.id, v.assigned_worker_id ?? null])
-  );
+  /**
+   * OLAY SAYILARI — SKORLA BİREBİR AYNI EKSEN, AYNI KÜME.
+   *
+   * Atıf: olay, o araçta o saatte VARDİYADA olan şoförün (`workerDrivingAt`,
+   * skorun kullandığı fonksiyonun ta kendisi).
+   *
+   * ⚠️ KÜME DE AYNI OLMAK ZORUNDA (18.09.2026). Bu kolon 18.09'a kadar YALNIZ
+   * `vehicle_events` satırlarını sayıyordu; rölanti EPİZODLARI cezaya giriyor
+   * ama kolona girmiyordu. Canlı sonuç: Şafak Gök ekranda "1 olay" ile 72 puan
+   * alıyordu — cezasının 160'ı 32 rölanti epizodundan geliyordu ve ekranda
+   * hiçbir izi yoktu. Kolon skorun GEREKÇESİ olduğunu iddia ediyorsa cezayı
+   * üreten kümeyi göstermek zorunda.
+   *
+   * Kırılım da tamamlandı: `harsh_cornering` ve `jamming` de cezaya giriyordu
+   * ama hiçbir kolonda yoktu; Ali Özdemir'in 88 olayının 38'i görünmüyordu.
+   * Artık `events === Σ (kırılım)` — beş tip + rölanti.
+   */
   const olayinSofuru = (vehicleId: string, atISO: string): string | null =>
-    shiftWindows
-      ? workerDrivingAt(shiftWindows, vehicleId, atISO)
-      : vehicleWorker.get(vehicleId) ?? null;
-  type EvAcc = { total: number; braking: number; accel: number; speeding: number };
+    workerDrivingAt(scoreInput.windowsByVehicle, vehicleId, atISO);
+  type EvAcc = {
+    total: number;
+    braking: number;
+    accel: number;
+    cornering: number;
+    speeding: number;
+    jamming: number;
+    idling: number;
+  };
+  const bosEv = (): EvAcc => ({
+    total: 0,
+    braking: 0,
+    accel: 0,
+    cornering: 0,
+    speeding: 0,
+    jamming: 0,
+    idling: 0,
+  });
   const evByWorker = new Map<string, EvAcc>();
   for (const e of base.events) {
+    // AĞIRLIK SÜZGECİ: cezaya girmeyen bir tip kolona da girmez. Süzgeç
+    // computeSafetyScores'un kullandığının ta kendisi — ikinci bir liste
+    // tutulsaydı yeni bir olay tipi eklendiğinde biri güncellenir öteki
+    // unutulurdu (canlıda tam olarak bu oldu: harsh_cornering + jamming).
+    if (SAFETY_SCORE_WEIGHTS[e.event_type] === undefined) continue;
     const wid = olayinSofuru(e.vehicle_id, e.occurred_at);
     if (!wid) continue;
-    const a =
-      evByWorker.get(wid) ?? { total: 0, braking: 0, accel: 0, speeding: 0 };
+    const a = evByWorker.get(wid) ?? bosEv();
     a.total += 1;
     if (e.event_type === "harsh_braking") a.braking += 1;
     else if (e.event_type === "harsh_acceleration") a.accel += 1;
+    else if (e.event_type === "harsh_cornering") a.cornering += 1;
     else if (e.event_type === "overspeeding") a.speeding += 1;
+    else if (e.event_type === "jamming") a.jamming += 1;
+    evByWorker.set(wid, a);
+  }
+  // RÖLANTİ EPİZODLARI — `vehicle_events`te DEĞİL, `idle_episodes` tablosunda.
+  // Cezaya giriyorlar (ağırlık 5), dolayısıyla kolona da girerler.
+  for (const ep of base.idleEpisodes) {
+    const wid = olayinSofuru(ep.vehicle_id, ep.started_at);
+    if (!wid) continue;
+    const a = evByWorker.get(wid) ?? bosEv();
+    a.total += 1;
+    a.idling += 1;
     evByWorker.set(wid, a);
   }
 
@@ -648,26 +645,31 @@ export async function buildPerformanceReport(
   /**
    * SKOR KAPISININ HANGİ KOLUNDA ELENDİ? — karar noktalarının SIRASI önemli.
    *
-   * computeSafetyScores'ta tek bir satır var:
-   *     qualifies = reliableKm != null && reliableKm >= effectiveMinKm
-   * ve `null` iki AYRI sebepten gelebiliyor. Ayrımı orada yapamıyoruz çünkü
-   * kapsama süzgeci (shiftKmForScoring) haritadan DÜŞMÜŞ şoförü, hiç vardiyası
-   * olmayan şoförden ayırt edilemez hâle getiriyor — ikisi de "kayıt yok".
-   * Ayrımı yapabilen tek yer, kapsama sayacını da elinde tutan BURASI.
+   * computeSafetyScores'ta tek satır: `reliableKm !== null && reliableKm >= minKm`.
+   * `null` iki AYRI sebepten gelir ve ayrımı yapabilen tek yer burası, çünkü
+   * vardiya sayısı yalnız burada var.
    *
    * SIRA:
    *  1. skor varsa sebep yoktur (null);
-   *  2. km ÖLÇÜLDÜYSE (scoreKm != null) tek olası sebep eşiğin altında kalmak —
-   *     en güçlü delil sayının kendisidir;
-   *  3. hiç vardiya yoksa km atfedilecek sürüş de yoktur;
-   *  4. kalan her durumda payda eksiktir → kapsama.
+   *  2. km ÖLÇÜLDÜYSE (scoreKm != null) tek olası sebep 100 km'nin altında
+   *     kalmak — en güçlü delil sayının kendisidir;
+   *  3. hiç vardiya yoksa km atfedilecek sürüş de yoktur → `vardiya_yok`;
+   *  4. vardiya var ama çekirdek HİÇBİRİNİ ölçemedi → `kapsama_dusuk`.
    *
-   * ⚠️ 4. KOL 052'SİZ KURULUMDA DA BURAYA DÜŞER. O kurulumda kapsama sayacı hiç
-   * üretilmez (coverage null) ve km araç toplamından gelir; "ölçülemedi" ile
-   * "kapsama düşük" aynı cümleyi kurar: PAYDA EKSİK. Ayrı bir kod uydurmak,
-   * ölçülmemiş bir ayrımı ölçülmüş gibi göstermek olurdu.
+   * ⚠️ 4. KOLUN ANLAMI DEĞİŞTİ (18.09.2026) — ADI DEĞİŞMEDİ.
+   * Eskiden "ölçülen vardiya oranı %80'in altında" demekti; artık "çekirdek
+   * HİÇBİR vardiyada km üretemedi" demek. Kısmi ölçüm artık elemiyor: 10
+   * vardiyanın 3'ü ölçüldüyse skor o 3 vardiyanın km'siyle hesaplanır ve
+   * oran `scoreCoverage` alanında ekrana taşınır — yöneticinin göreceği
+   * cümle "şu kadarı ölçülemedi" olur, boşluk değil.
+   *
+   * KOD ADI NEDEN KORUNDU: bu değer üç yere gidiyor — mobil istemcinin
+   * etiket sözlüğü ("Cihaz verisi eksik"), `sofor_skor_donem.kapi` kolonu ve
+   * migration 088'deki CHECK kısıtı (`kapi in ('km_yetersiz','kapsama_dusuk',
+   * 'vardiya_yok')`). Yeniden adlandırmak bir migration + yayınlanmış mobil
+   * sürüm gerektirirdi; kullanıcının GÖRDÜĞÜ etiket zaten yeni anlamla
+   * birebir doğru. Ad borcu bilinçli ve burada yazılı.
    */
-  const kapsamaByWorker = shiftKmRes.coverage;
   const rows: PerformanceRow[] = [];
   for (const w of base.workers) {
     const s = shiftByWorker.get(w.id);
@@ -676,7 +678,9 @@ export async function buildPerformanceReport(
     // Aralıkta ne vardiyası ne olayı olan şoför rapora girmez — 0'larla dolu
     // satır, "çalışmadı" ile "veri yok"u karıştırır.
     if (!s && !ev) continue;
-    const kap = kapsamaByWorker?.get(w.id) ?? null;
+    // Kapsama artık ÇEKİRDEĞİN kararından: "ölçüldü" = km_karar bir sayı
+    // üretti. 052'nin boş okuması ölçüm sayılmıyor (bkz. lib/score-core.ts).
+    const kap = scoreInput.coverageByWorker.get(w.id) ?? null;
     const scoreCoverage = kap && kap.toplam > 0 ? kap.olculen / kap.toplam : null;
     const scoreKm = sc?.distanceKm ?? null;
     const scoreGate: PerformanceRow["scoreGate"] =
@@ -701,8 +705,11 @@ export async function buildPerformanceReport(
       events: ev?.total ?? 0,
       harshBraking: ev?.braking ?? 0,
       harshAcceleration: ev?.accel ?? 0,
+      harshCornering: ev?.cornering ?? 0,
       overspeeding: ev?.speeding ?? 0,
-      // Kapı DEĞERİ computeSafetyScores'un o şoför için çağırdığı sayının ta
+      jamming: ev?.jamming ?? 0,
+      idling: ev?.idling ?? 0,
+      // Kapı DEĞERİ computeSafetyScores'un o şoför için kullandığı sayının ta
       // kendisi (SafetyScoreRow.minKm) — burada yeniden hesaplanmaz.
       // `sc` HER ZAMAN doludur: computeSafetyScores `base.workers`ın TAMAMI için
       // satır üretir (skoru null olsa bile). `?? 0` yalnız tür kapısıdır.

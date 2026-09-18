@@ -14,9 +14,6 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { kmDiff } from "@/lib/format";
 import { markKmMeasured, kmCoverage } from "@/lib/km-quality";
 import {
-  getWorkerShiftDistance,
-  shiftKmForScoring,
-  SCORE_MIN_KM_COVERAGE,
 } from "@/lib/analytics";
 
 const GUN = Number(process.env.GUN ?? 60);
@@ -114,24 +111,17 @@ for (const r of satirlar.slice(0, 12)) {
   );
 }
 
-// ── ④ SKOR KAPSAMASI ─────────────────────────────────────────────────────
-console.log(`\n── ④ SKOR KAPSAMASI (eşik %${Math.round(SCORE_MIN_KM_COVERAGE * 100)}) ──`);
-const res = await getWorkerShiftDistance(FROM, new Date().toISOString());
-if (res.unavailable) {
-  console.log(`   RPC kullanılamadı: ${res.unavailable}`);
-} else {
-  const oncekiSayi = res.km.size;
-  const sonraki = shiftKmForScoring(res);
-  console.log(`   km haritasında şoför · ÖNCE ${oncekiSayi} → SONRA ${sonraki.size} (fark ${sonraki.size - oncekiSayi})`);
-  const dusenler = [...res.km.keys()].filter((k) => !sonraki.has(k));
-  console.log(`   eşiğin altında kalıp skoru "Yetersiz veri"ye dönen şoför: ${dusenler.length}`);
-  for (const wid of dusenler) {
-    const c = res.coverage.get(wid);
-    console.log(`     ${String(wAd.get(wid) ?? wid.slice(0, 8)).padEnd(22)} ${c.olculen}/${c.toplam} vardiya ölçüldü (%${Math.round((c.olculen / c.toplam) * 100)})`);
-  }
-  const kismi = [...res.coverage.entries()].filter(([, c]) => c.olculen < c.toplam);
-  console.log(`   kısmen ölçülen şoför (eşiği geçse de): ${kismi.length}`);
-}
+/**
+ * ── ④ SKOR KAPSAMASI — KALDIRILDI (18.09.2026) ───────────────────────────
+ *
+ * Burada `shiftKmForScoring`in %80 kapsama kapısından kaç şoförün düştüğü
+ * ölçülüyordu. O kapı kaldırıldı: kısmi ölçüm artık skoru engellemiyor,
+ * eksiklik `kapsama` alanıyla ekrana taşınıyor (lib/score-core.ts).
+ * Kapının kendisi olmadığı için "kaç kişi düştü" sorusu da yok.
+ *
+ * Bu betiğin ASIL konusu (`km_measured` — sahte 0 km) yerinde duruyor:
+ * ①②③ ve ⑤ bölümleri değişmedi.
+ */
 
 // ── ⑤ DİKKAT/AKSİYON KALEMİ ──────────────────────────────────────────────
 console.log(`\n── ⑤ DİKKAT/AKSİYON — bugün kaç "km ölçülemedi" kalemi ──`);

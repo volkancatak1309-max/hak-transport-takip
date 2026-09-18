@@ -7,8 +7,6 @@ import {
   idlePlateResolver,
   ROLANTI_SATIR_TAVANI,
   computeOwnerlessEvents,
-  getWorkerShiftDistance,
-  shiftWindowsForScoring,
   listVehiclesAndWorkers,
   rangeElapsedDays,
 } from "@/lib/analytics";
@@ -21,6 +19,7 @@ import {
 } from "@/lib/analytics-shared";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
 import { buildPerformanceReport } from "@/lib/reports";
+import { loadScoreInput } from "@/lib/score-core";
 import { kmEkseniCoz, kmPencere, kaynakSay } from "@/lib/km-axis";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
@@ -180,18 +179,20 @@ async function donemToplami(
   /**
    * SAHİPSİZ OLAY (20.08.2026) — panelin /admin/analiz kartıyla AYNI fonksiyon.
    *
-   * ⚠️ EK MALİYET: bir `getWorkerShiftDistance` çağrısı (052 RPC'si). Rapor
-   * kendi içinde de çağırıyor ama sonucu dışarı vermiyor; ikinci bir çağrı,
-   * `buildPerformanceReport`ın imzasını değiştirmekten ucuz ve risksiz.
-   * 052'siz kiracıda (Sendigo/Galzura) `shiftWindowsForScoring` undefined döner
-   * ve sayaç ESKİ ATAMA eksenine düşer — yani sahipsiz ≈ 0, panelle aynı.
+   * ⚠️ PENCERELER ARTIK ÇEKİRDEKTEN (18.09.2026). Önceden burada ikinci bir
+   * 052 çağrısı vardı ve 052'siz kiracıda `undefined` dönüp sayaç ESKİ ATAMA
+   * eksenine düşüyordu — yani sahipsiz ≈ 0 çıkıyor, panel ile mobil aynı
+   * pencerede farklı sayı gösterebiliyordu. `loadScoreInput` vardiya
+   * satırlarından pencere ürettiği için 052'nin varlığından BAĞIMSIZ: üç
+   * kiracıda da aynı tanım.
    */
+  const { input: skorGirdisi } = await loadScoreInput(range);
   const sahipsiz = computeOwnerlessEvents(
     events,
     idleEpisodes,
     vehiclesById,
     workersById,
-    shiftWindowsForScoring(await getWorkerShiftDistance(startISO, endISO))
+    skorGirdisi.windowsByVehicle
   );
 
   /**

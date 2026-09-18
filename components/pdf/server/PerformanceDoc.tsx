@@ -50,10 +50,13 @@ export type PerformanceDocSatir = {
   km: string;
   teslim: string;
   teslimEdilemeyen: string;
+  /** Cezaya giren olayların TAMAMI (rölanti epizodları dahil, 18.09.2026). */
   ihlal: string;
   sertFren: string;
   aniHizlanma: string;
+  sertViraj: string;
   asiriHiz: string;
+  rolanti: string;
 };
 
 export type PerformanceDocProps = {
@@ -121,7 +124,9 @@ const DE = {
     events: "Ereignisse gesamt",
     braking: "Bremsen",
     accel: "Beschl.",
+    cornering: "Kurven",
     speeding: "Tempo",
+    idling: "Leerlauf",
   },
 } as const;
 
@@ -160,7 +165,9 @@ const TR = {
     events: "Toplam olay",
     braking: "Sert fren",
     accel: "Ani hız.",
+    cornering: "Sert viraj",
     speeding: "Aşırı hız",
+    idling: "Rölanti",
   },
 } as const;
 
@@ -196,7 +203,9 @@ const EN = {
     events: "Events in total",
     braking: "Braking",
     accel: "Accel.",
+    cornering: "Cornering",
     speeding: "Speed",
+    idling: "Idling",
   },
 } as const;
 
@@ -323,9 +332,14 @@ export function PerformanceDoc(p: PerformanceDocProps) {
       { etiket: L.rows.delivered, deger: p.satir.teslim },
       { etiket: L.rows.undelivered, deger: p.satir.teslimEdilemeyen },
       { etiket: L.rows.events, deger: p.satir.ihlal },
+      // SIRA AĞIRLIĞA GÖRE: hız 25 · viraj 12 · fren 12 · rölanti 5 · hızlanma 3.
+      // `ihlal` bu beşin (+ seyrek `jamming`) TOPLAMIDIR — kâğıtta da eşitlik
+      // okunabilsin diye hepsi basılıyor.
+      { etiket: L.rows.speeding, deger: p.satir.asiriHiz },
+      { etiket: L.rows.cornering, deger: p.satir.sertViraj },
       { etiket: L.rows.braking, deger: p.satir.sertFren },
-      { etiket: L.rows.accel, deger: p.satir.aniHizlanma },
-      { etiket: L.rows.speeding, deger: p.satir.asiriHiz }
+      { etiket: L.rows.idling, deger: p.satir.rolanti },
+      { etiket: L.rows.accel, deger: p.satir.aniHizlanma }
     );
   }
 

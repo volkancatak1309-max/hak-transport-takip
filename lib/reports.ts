@@ -843,6 +843,12 @@ export type FuelRow = {
   /** Dönemde yakılan yakıt = dolumlar + (ilk − son), 0'a kırpılı (yüzde). */
   consumedPct: number;
   consumedLiters: number | null;
+  /**
+   * ⚠️ ÇEKİRDEK km (19.09.2026) — `lib/km-axis.ts`, odometre ekseni DEĞİL.
+   * Araç detayı özetinin ve sürücü puanının kullandığı AYNI sayı; kapı
+   * böylece her yüzeyde aynı kararı veriyor. `buildDistanceReport` hâlâ
+   * odometre ekseninde (bkz. buildFuelReport içindeki karar notu).
+   */
   km: number | null;
   lPer100Km: number | null;
   /**
@@ -1521,10 +1527,59 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
    * ölçüyor. Kapının başka bir sayıya bakıp gizlemesi, ekranda görünmeyen bir
    * gerekçeyle sayı saklamak olurdu.
    */
+  /**
+   * ═══ PAYDA ÇEKİRDEKTEN (19.09.2026, Volkan kararı) ═════════════════════
+   *
+   * `buildFuelReport` km'yi 22.07.2026'dan beri ODOMETRE uç-noktalarından
+   * alıyordu ("mesafe raporuyla AYNI kaynak"). Artık `lib/km-axis.ts`
+   * çekirdeğinden alıyor — uygulamanın her yerinde AYNI km.
+   *
+   * NEDEN DEĞİŞTİ: güvenilirlik kapısı (18.09.2026) her yüzeyde o yüzeyin
+   * KENDİ paydasını denetliyordu ve iki payda farklı olduğu için AYNI ARAÇ
+   * iki ekranda farklı karar alıyordu. Canlı kanıt DO-671GY: odometre
+   * ekseninde 76,8 L / 701 km = 11,0 L/100 (kapı geçiyor), çekirdek ekseninde
+   * 76,8 L / 64 km = 120 L/100 (kapı gizliyor). Yönetici aynı araç için
+   * yakıt raporunda sayı, araç detayında "—" görüyordu.
+   *
+   * ⚠️ MESAFE RAPORU / CSV / PDF km kolonu DEĞİŞMEDİ: onlar 13. maddedeki
+   * kesim kuralına (`kmRaporDegeri`) bağlı ve kâğıdın geçmişe sadık kalması
+   * ayrı bir karar. Burada yalnız YAKIT RAPORUNUN paydası taşındı.
+   *
+   * ⚠️ KALAN AYRIŞMA: `buildDistanceReport` hâlâ odometre ekseninde, yani
+   * Yakıt raporundaki km kolonu ile Mesafe raporundaki km kolonu aynı araçta
+   * farklı olabilir (DO-671GY: 64 ↔ 701). Bu tur kapsam dışı ve bilerek
+   * yazılı; kapatmak ayrı bir karar.
+   */
+  const vardiyalar = await loadScoreShifts(range);
+  const pencereByVehicle = new Map<string, { baslangic: string; bitis: string }[]>();
+  const cekirdekKm = new Map<string, number>();
+  const cekirdekOlculen = new Map<string, number>();
+  for (const t of vardiyalar) {
+    if (!t.vehicle_id) continue;
+    const arr = pencereByVehicle.get(t.vehicle_id) ?? [];
+    arr.push({ baslangic: t.started_at, bitis: t.ended_at ?? endISO });
+    pencereByVehicle.set(t.vehicle_id, arr);
+    const d = t.km_karar.km;
+    if (d !== null) {
+      cekirdekKm.set(t.vehicle_id, (cekirdekKm.get(t.vehicle_id) ?? 0) + d);
+      cekirdekOlculen.set(t.vehicle_id, (cekirdekOlculen.get(t.vehicle_id) ?? 0) + 1);
+    }
+  }
+  /** Çekirdek hiçbir vardiyada ölçemediyse null — 0 DEĞİL. */
+  const cekKmOf = (id: string): number | null =>
+    (cekirdekOlculen.get(id) ?? 0) > 0 ? (cekirdekKm.get(id) as number) : null;
+
   const hamRows: FuelRow[] = vehicles.map((v) => {
     const cap = v.tank_capacity_l != null ? Number(v.tank_capacity_l) : null;
     const span = distByVehicle.get(v.id) ?? { km: null, reason: null, firstAt: null, lastAt: null };
-    const km = span.km;
+    /**
+     * PAYDA ÇEKİRDEKTEN. `span` DURUYOR ama yalnız iki iş için: ölçüm
+     * penceresi (3. kapı, yakıt/odometre pencereleri aynı zamanı ölçüyor mu)
+     * ve odometre sebebi. Km'nin kendisi artık oradan gelmiyor.
+     */
+    const km = cekKmOf(v.id);
+    /** Çekirdek ölçemediyse sebep ODOMETRENİNKİ değil, çekirdeğinki. */
+    const kmSebebi: DistanceUnavailableReason = km === null ? "olculmedi" : span.reason;
     const driverName = v.assigned_worker_id
       ? workerName.get(v.assigned_worker_id) ?? null
       : null;
@@ -1543,7 +1598,7 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
       const dropL = Number(vol.drop_l) || 0;
       const gate = l100Gate(
         km,
-        span.reason,
+        kmSebebi,
         // Yüzde kapısı yerine litre kapısı: eşiği geçmişse "yeterli tüketim"
         // say (kapı yüzde üzerinden bakıyor, litreyi oraya çeviremeyiz).
         consumedLiters >= FUEL_MIN_CONSUMED_L ? FUEL_MIN_CONSUMED_PCT : 0,
@@ -1633,7 +1688,7 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     // olarak zaten gösteriliyor (fuel_capacity_note).
     const gateReason = l100Gate(
       km,
-      span.reason,
+      kmSebebi,
       consumedPct,
       unreliable,
       cap != null,
@@ -1673,19 +1728,6 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     };
   });
 
-  /**
-   * VARDİYA İÇİ KAPSAMA — araç başına tek sorgu çifti (bkz. fuel-vehicle.ts).
-   * Vardiyalar `loadScoreShifts` ile geliyor: puanın ve araç özetinin
-   * kullandığı AYNI satırlar, yani "vardiya" tanımı üç yüzeyde de tek.
-   */
-  const vardiyalar = await loadScoreShifts(range);
-  const pencereByVehicle = new Map<string, { baslangic: string; bitis: string }[]>();
-  for (const t of vardiyalar) {
-    if (!t.vehicle_id) continue;
-    const arr = pencereByVehicle.get(t.vehicle_id) ?? [];
-    arr.push({ baslangic: t.started_at, bitis: t.ended_at ?? endISO });
-    pencereByVehicle.set(t.vehicle_id, arr);
-  }
   const kapsamaCiftleri = await mapBounded(hamRows, async (r) => {
     const pencereler = pencereByVehicle.get(r.vehicleId) ?? [];
     // Yakıt okuması hiç yoksa kapsama sormanın anlamı yok — sorgu atmıyoruz.

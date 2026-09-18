@@ -153,7 +153,8 @@ export type MobilPerformansSatiri = ReturnType<typeof performansSatiri>;
  * PerformanceRow → mobil JSON.
  *
  * ── İHLAL KIRILIMI BURADAN GELİR, ALARM UCUNDAN DEĞİL ─────────────────────
- * `sertFren/aniHizlanma/asiriHiz` doğrudan PerformanceRow'un alanlarıdır.
+ * `sertFren/aniHizlanma/sertViraj/asiriHiz/sinyalKaristirma/rolanti` doğrudan
+ * PerformanceRow'un alanlarıdır.
  * `/api/mobile/alarms` ucundan TÜRETİLMEZ ve türetilmemelidir: oradaki şoför
  * alanı olayın yaşandığı andaki şoför değil, ARACIN BUGÜNKÜ atanmış şoförüdür
  * (türetilmiş ayna). Geçen ayın ihlalini bu ay o aracı devralan kişiye yazmak
@@ -185,11 +186,29 @@ export function performansSatiri(
     km: r.km,
     teslim: r.delivered,
     teslimEdilemeyen: r.undelivered,
+    /**
+     * ── `toplam` ARTIK CEZAYA GİREN HER ŞEYİ SAYAR (18.09.2026) ──────────
+     *
+     * Önceden `toplam` yalnız `vehicle_events` satırlarıydı ve kırılım onun
+     * üçünü gösteriyordu; rölanti epizodları, sert viraj ve sinyal karıştırma
+     * cezaya girip hiçbir alanda görünmüyordu. Canlı sonuç: bir şoför "1
+     * ihlal" ile 72 puan alıyordu (cezasının 160'ı 32 rölantiden).
+     *
+     * ARTIK: `toplam === sertFren + aniHizlanma + sertViraj + asiriHiz +
+     * sinyalKaristirma + rolanti`. İstemci bu eşitliğe güvenebilir.
+     *
+     * ⚠️ `rolanti` bir OLAY DEĞİL EPİZOT sayısıdır (`idle_episodes`), yani
+     * "kaç kez rölantide kaldı". Süresi bu alanda YOK — Analiz ekranının
+     * rölanti panosu onu ayrıca veriyor.
+     */
     ihlal: {
       toplam: r.events,
       sertFren: r.harshBraking,
       aniHizlanma: r.harshAcceleration,
+      sertViraj: r.harshCornering,
       asiriHiz: r.overspeeding,
+      sinyalKaristirma: r.jamming,
+      rolanti: r.idling,
     },
     /**
      * ── SKOR KAPISININ GEREKÇESİ (18.08.2026) ─────────────────────────────

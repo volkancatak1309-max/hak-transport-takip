@@ -21,7 +21,6 @@
 import zlib from "node:zlib";
 import { supabaseAdmin } from "@/lib/supabase";
 import { issueTokens } from "@/lib/mobile-auth";
-import { SCORE_MIN_KM_COVERAGE } from "@/lib/analytics";
 import { SAFETY_SCORE_CALIBRATED, PDF_WATERMARK, SECURITY_LAYER_ENABLED } from "@/lib/tenant";
 
 const BASE = process.env.PDF_QA_BASE ?? "http://127.0.0.1:3101";
@@ -257,13 +256,15 @@ try {
     iddia(`sıra (${hedef.sira}) PDF'te`, c.metin.includes(`Rang ${hedef.sira}`), `Rang ${hedef.sira}`);
     // Skor yoksa GEREKÇE basılmalı — "—" tek başına yetmez.
     if (s.guvenlikSkoru === null && s.sebep) {
+      // 18.09.2026: `kapsama_dusuk` artık bir ORAN değil — notta yüzde yerine
+      // VARDİYA SAYISI ve "Gerätedaten fehlen" geçiyor (bkz. rapor.pdf/route).
       const bekIz =
-        s.sebep === "kapsama_dusuk" ? `${Math.round(s.kapsama * 100)} %`
+        s.sebep === "kapsama_dusuk" ? `${s.vardiya} Schichten`
         : s.sebep === "km_yetersiz" ? `${Math.round(s.olculenKm)} km`
         : "keine Schichten";
       iddia(`skor notu basılı (${s.sebep})`, c.metin.includes("nicht berechenbar") && c.metin.includes(bekIz), bekIz);
       if (s.sebep === "kapsama_dusuk") {
-        iddia(`eşik %${Math.round(SCORE_MIN_KM_COVERAGE * 100)} notta`, c.metin.includes(`${Math.round(SCORE_MIN_KM_COVERAGE * 100)} %`));
+        iddia("cihaz verisi gerekçesi notta", c.metin.includes("Gerätedaten fehlen"));
       }
     } else if (s.guvenlikSkoru !== null) {
       iddia("skor var → gerekçe notu YOK", !c.metin.includes("nicht berechenbar"));

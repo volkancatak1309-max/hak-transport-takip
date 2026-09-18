@@ -1,13 +1,8 @@
 import type { NextRequest } from "next/server";
 import { requireMobileAdmin } from "@/lib/mobile-scope";
 import { SAFETY_SCORE_WEIGHTS } from "@/lib/analytics-shared";
-import { SCORE_MIN_KM_COVERAGE } from "@/lib/analytics";
-import {
-  SAFETY_SCORE_K,
-  SCORE_MIN_KM_PER_DAY,
-  SCORE_MIN_KM_FLOOR,
-} from "@/lib/metric-thresholds";
-import { SAFETY_SCORE_CALIBRATED, SCORE_THRESHOLD_WORKED_DAYS } from "@/lib/tenant";
+import { SAFETY_SCORE_K, SCORE_MIN_KM } from "@/lib/metric-thresholds";
+import { SAFETY_SCORE_CALIBRATED } from "@/lib/tenant";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,30 +21,30 @@ export const dynamic = "force-dynamic";
  *
  * ── DEĞERLER KOPYALANMAZ, İÇE AKTARILIR ───────────────────────────────────
  * Aşağıdaki her sayı tanımlandığı dosyadan İTHAL EDİLİR:
- *   SAFETY_SCORE_WEIGHTS  → lib/analytics-shared.ts
- *   SAFETY_SCORE_K        → lib/metric-thresholds.ts
- *   SCORE_MIN_KM_PER_DAY  → lib/metric-thresholds.ts
- *   SCORE_MIN_KM_FLOOR    → lib/metric-thresholds.ts
- *   SCORE_MIN_KM_COVERAGE → lib/analytics.ts
- *   SAFETY_SCORE_CALIBRATED / SCORE_THRESHOLD_WORKED_DAYS → lib/tenant.ts (env)
+ *   SAFETY_SCORE_WEIGHTS    → lib/analytics-shared.ts
+ *   SAFETY_SCORE_K          → lib/metric-thresholds.ts
+ *   SCORE_MIN_KM            → lib/metric-thresholds.ts
+ *   SAFETY_SCORE_CALIBRATED → lib/tenant.ts (env)
  * Burada tek bir sayı YAZILI DEĞİL. Panel bir değeri değiştirdiği gün bu uç
  * kendiliğinden doğru kalır; birinin "mobili de güncellemeyi hatırlaması"
  * gerekmez. Bu dosyaya bir sayı sabiti eklemek, kuralın ihlalidir.
  *
- * ⚠️ `kapsamaOrani` sabitinin adı kodda `SCORE_MIN_KM_COVERAGE` ve yeri
- * lib/analytics.ts — diğer üç eşikten farklı olarak metric-thresholds.ts'te
- * DEĞİL, çünkü değeri `getWorkerShiftDistance`in kapsama sayacına bağlı ve
- * onunla aynı dosyada tutuluyor. Ad/yer birliği ayrı bir tur; buraya
- * kopyalanmadı, oradan ithal edildi.
+ * ⚠️ ÜÇ ALAN `null` DÖNÜYOR (18.09.2026). `minKmGun`, `minKmTaban` ve
+ * `kapsamaOrani` sözleşmeden ÇIKARILMADI, NULL'a çevrildi: temsil ettikleri
+ * kurallar kaldırıldı (kişiye göre ölçeklenen eşik + ayrı %80 kapsama kapısı).
+ * Anahtarı silmek yayınlanmış mobil sürümde `undefined` üretirdi ve istemci
+ * onu "0" diye okuyabilirdi; `null` açık bir cevaptır: BU KURAL YOK. Yeni tek
+ * eşik `minKm`. İstemcinin açıklama metni buna göre güncellenmeli.
  *
  * ── FORMÜL (istemci metni için) ───────────────────────────────────────────
  *   ceza          = Σ (olay × ağırlık)                    // idling dahil
  *   ceza/1000km   = ceza / (ölçülen km / 1000)
  *   skor          = 100 × K / (K + ceza/1000km)           // 0–100'e yuvarlanır
- *   kapı          = ölçülen km ≥ esikKm  VE  kapsama ≥ kapsamaOrani
- *   esikKm        = max(minKmTaban, minKmGun × çalışılan gün)   // bayrak AÇIKKEN
- * Şoför bazlı `esikKm` sabitlerden türetilmez; kişiye göre ölçeklendiği için
- * `/api/mobile/driver-scores` satırında AYRI taşınır.
+ *   kapı          = ölçülen km ≥ minKm                     // düz 100 km
+ * Ölçülen km `lib/km-axis.ts` çekirdeğinden gelir — satırda gösterilen km'nin
+ * TA KENDİSİ. Çekirdek hiçbir vardiyada ölçemediyse kapı `kapsama_dusuk` der.
+ * `/driver-scores` satırındaki `esikKm` artık her şoförde `minKm`e eşittir;
+ * alan orada kaldı ki istemci çıtayı sabitten değil karardan okusun.
  *
  * ── KAPI: requireMobileAdmin ──────────────────────────────────────────────
  * Skorun kuralı, skorun kendisiyle aynı yüzeyin parçası. `/driver-scores` ve
@@ -86,19 +81,16 @@ export async function GET(req: NextRequest) {
      */
     agirliklar: SAFETY_SCORE_WEIGHTS,
     esikler: {
-      /** Çalışılan gün başına istenen km (kişiye göre ölçekleyen çarpan). */
-      minKmGun: SCORE_MIN_KM_PER_DAY,
-      /** Mutlak km tabanı — gün ölçeklemesi eşiği bunun ALTINA çekemez. */
-      minKmTaban: SCORE_MIN_KM_FLOOR,
-      /** Km'si ölçülebilmesi gereken vardiya oranı (0–1). */
-      kapsamaOrani: SCORE_MIN_KM_COVERAGE,
-      /**
-       * Eşik ÇALIŞILAN GÜNE göre mi ölçekleniyor? Kapalıysa eşik aracın
-       * odometre ölçüm penceresinden türer (scoreMinKmForSpan) ve yukarıdaki
-       * `max(taban, gün×çarpan)` formülü GEÇERLİ DEĞİLDİR. Bayrak olmadan
-       * istemci esikKm'i açıklayamaz, yanlış açıklardı.
-       */
-      calisilanGuneGore: SCORE_THRESHOLD_WORKED_DAYS,
+      /** TEK EŞİK: skor için gereken en az ölçülmüş km. Herkes için aynı. */
+      minKm: SCORE_MIN_KM,
+      /** KALDIRILDI — gün çarpanı yok. null = "bu kural artık yok". */
+      minKmGun: null,
+      /** KALDIRILDI — mutlak taban yok; `minKm` tek çıta. */
+      minKmTaban: null,
+      /** KALDIRILDI — ayrı kapsama kapısı yok (bkz. lib/score-core.ts). */
+      kapsamaOrani: null,
+      /** KALDIRILDI — eşik hiçbir koşulda çalışılan güne göre ölçeklenmez. */
+      calisilanGuneGore: false,
     },
   });
 }

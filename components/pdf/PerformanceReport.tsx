@@ -32,10 +32,13 @@ export type PerformancePdfRow = {
   worked: string;
   km: string;
   delivered: string;
+  /** Cezaya giren olayların TAMAMI (rölanti epizodları dahil, 18.09.2026). */
   events: string;
   braking: string;
   accel: string;
   speeding: string;
+  cornering: string;
+  idling: string;
 };
 
 const DE = {
@@ -53,9 +56,11 @@ const DE = {
     km: "km",
     delivered: "Zugestellt",
     events: "Ereignisse",
-    braking: "Bremsen",
-    accel: "Beschl.",
     speeding: "Tempo",
+    cornering: "Kurven",
+    braking: "Bremsen",
+    idling: "Leerlauf",
+    accel: "Beschl.",
   },
 } as const;
 
@@ -120,8 +125,14 @@ function Doc({
     "worked",
     "km",
     "delivered",
+    // KIRILIM TAM (18.09.2026): `events` cezaya giren altı tipin toplamı; kâğıt
+    // da o toplamın nereden geldiğini göstermek zorunda. `speeding` eskiden
+    // satır tipinde VARDI ama bu listeye hiç konmamıştı — sessiz eksikti.
     "events",
+    "speeding",
+    "cornering",
     "braking",
+    "idling",
     "accel",
   ];
   // Sütun sayısı değiştiği için genişlik sabit kalamaz: ad %22, kalanı eşit böl.

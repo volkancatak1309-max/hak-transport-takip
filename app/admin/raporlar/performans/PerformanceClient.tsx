@@ -57,6 +57,8 @@ export function PerformanceClient({
           braking: String(r.harshBraking),
           accel: String(r.harshAcceleration),
           speeding: String(r.overspeeding),
+          cornering: String(r.harshCornering),
+          idling: String(r.idling),
         })),
       });
     } catch {
@@ -151,12 +153,22 @@ export function PerformanceClient({
       help: "rep_perf_events",
       align: "right",
       nums: true,
+      /**
+       * KIRILIM CEZANIN TAMAMINI GÖSTERİR (18.09.2026). Eskiden yalnız üç tip
+       * yazılıyordu (fren/hızlanma/hız) ama ceza altı tipten geliyordu; canlıda
+       * 88 olayın 38'i hiçbir kolonda görünmüyordu ve "1 olay → 72 puan" gibi
+       * açıklanamayan satırlar çıkıyordu. Sıra ağırlığa göre azalan:
+       * hız 25 · viraj 12 · fren 12 · rölanti 5 · hızlanma 3.
+       * (`jamming` de 25 ama canlıda çok seyrek — toplamda sayılır, kırılımda
+       * yer kaplamasın diye yazılmaz; ayrımı Analiz'in Top-10'u veriyor.)
+       */
       cell: (r) => (
         <span className="whitespace-nowrap">
           {r.events}
           {r.events > 0 && (
             <span className="ml-1.5 text-[11px] text-muted-foreground">
-              {r.harshBraking}/{r.harshAcceleration}/{r.overspeeding}
+              {r.overspeeding}/{r.harshCornering}/{r.harshBraking}/{r.idling}/
+              {r.harshAcceleration}
             </span>
           )}
         </span>

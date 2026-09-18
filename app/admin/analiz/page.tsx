@@ -1,7 +1,5 @@
 import { requireAdmin } from "@/lib/session";
-import { supabaseAdmin } from "@/lib/supabase";
-import { SCORE_THRESHOLD_WORKED_DAYS, FUEL_PRICE_EUR_PER_L } from "@/lib/tenant";
-import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { FUEL_PRICE_EUR_PER_L } from "@/lib/tenant";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
 import {
@@ -10,17 +8,10 @@ import {
   computeTopDriversByType,
   computeSafetyScores,
   computeOwnerlessEvents,
-  drivenVehiclesFromEntries,
-  workedDaysFromEntries,
-  getWorkerShiftDistance,
-  shiftKmForScoring,
-  shiftWindowsForScoring,
-  scoreMinKmForWorkedDays,
   computeIdleWaste,
   computeMonthlyPivot,
   getVehicleDistanceSpan,
   listVehiclesAndWorkers,
-  scoreMinKmForSpan,
   FLEET_EPOCH,
   type AnalyticsRangeKey,
   type SafetyScoreRow,
@@ -28,6 +19,7 @@ import {
 import { endOfTodayVienna } from "@/lib/format";
 import { mapBounded } from "@/lib/db-fanout";
 import { okuFiloSpan } from "@/lib/report-reads";
+import { loadScoreInput } from "@/lib/score-core";
 /** RPC hiç satır döndürmeyen araç: o pencerede odometre okuması YOK — "0 km" DEĞİL. */
 const BOS_ARAC_SPAN = {
   km: null,
@@ -67,55 +59,38 @@ export default async function AnalizPage({
   // null döner ve her şey eskisi gibi çalışır.
   const configEpoch = await getLatestConfigEpoch();
 
-  // test-filtered: aşağıdaki time_entries sorgusu bunu kullanır. workersById
-  // zaten test hesaplarını taşımıyor ama filtre sorguda da olmalı — kalıcı test
-  // şoförünün vardiyası km atfına girip gerçek bir aracı ona bağlayabilirdi.
-  const testScope = await getTestScope();
   const { vehicles, workers } = await listVehiclesAndWorkers();
   const vehiclesById = new Map(vehicles.map((v) => [v.id, v]));
   const workersById = new Map(workers.map((w) => [w.id, w]));
 
+  /**
+   * ⚠️ KENDİ `time_entries` SORGUSU KALDIRILDI (18.09.2026).
+   *
+   * Bu sayfa kendi vardiya sorgusunu yazıyordu ve iki noktada Performans
+   * raporundan AYRILIYORDU:
+   *   · kapsam — yalnız `withoutTestRows`; ŞOFÖR kapsamı (lib/driver-scope.ts)
+   *     yoktu, yani yönetici hesabından açılmış vardiya buranın km atfına
+   *     giriyor, raporunkine girmiyordu;
+   *   · vardiya tanımı — kesişim (`ended_at >= start`), rapor ise başlangıç.
+   * İki ekran aynı şoför için farklı karar veremez; artık ikisi de
+   * `loadScoreInput` çağırıyor (lib/score-core.ts).
+   */
   async function loadPeriod(r: { start: Date; end: Date }) {
     const startISO = r.start.toISOString();
     const endISO = r.end.toISOString();
-    const [events, idleEpisodes, entryRes] = await Promise.all([
+    const [events, idleEpisodes, skor] = await Promise.all([
       listEventsInRange(startISO, endISO),
       listIdleEpisodesInRange(startISO, endISO),
-      // FİİLEN SÜRÜLEN ARAÇ (09.08.2026): km artık atamadan değil vardiyadan
-      // türüyor. Aralıkla KESİŞEN her vardiya sayılır (ended_at null = açık).
-      withoutTestRows(
-        supabaseAdmin
-          .from("time_entries")
-          .select("worker_id, vehicle_id, started_at")
-          .lte("started_at", endISO)
-          .or(`ended_at.is.null,ended_at.gte.${startISO}`),
-        "worker_id",
-        testScope.workerIds
-      ),
+      loadScoreInput(r),
     ]);
-    const rangeEntryRows = (entryRes.data ?? []) as {
-      worker_id: string | null;
-      vehicle_id: string | null;
-      started_at: string;
-    }[];
-    const drivenVehiclesByWorker = drivenVehiclesFromEntries(rangeEntryRows);
-    const workedDaysByWorker = workedDaysFromEntries(rangeEntryRows);
-    // VARDİYA PENCERELİ km (052). Üç durum ayrışır: başarılı / migration yok /
-    // hesaplanamadı. Sonuncusunda eski yola DÜŞÜLMEZ — bkz. shiftKmForScoring.
-    const shiftKmRes = await getWorkerShiftDistance(startISO, endISO);
-    // Span (km + ÖLÇÜM PENCERESİ). Pencere, skor kapısının şoför başına
-    // ölçeklenmesi için gerekli (B kararı, 27.07.2026 — scoreMinKmForSpan).
-    // Eşzamanlılık tavanı (09.08.2026): araç başına İKİ sorgu, sınırsız hâlinde
-    // 60 ifade. Ölçüm ve gerekçe lib/db-fanout.ts'te — sınırlamak duvar saatini
-    // uzatmıyor, kısaltıyor; asıl kazanç ifade başına zaman aşımı payı.
     /**
+     * ODOMETRE AÇIKLIĞI — SKOR İÇİN DEĞİL, MESAFE KARTLARI İÇİN.
+     * Skorun km'si artık `skor.input.kmByWorker`den geliyor; bu okuma sayfanın
+     * araç eksenli mesafe gösterimleri için duruyor.
+     *
      * ⚠️ ÖNCE FİLO RPC'Sİ (097/105), yoksa araç-araç — `loadBase` ile AYNI
-     * kalıp (17.09.2026, 16c). Öncesinde bu sayfa doğrudan araç-araç yolu
-     * çağırıyordu; o yol 105'ten ÖNCE ham uç okumaları alıyordu, yani raporlar
-     * temizlenmiş km'yi gösterirken bu sayfa temizlenmemişini gösteriyordu
-     * (HAK61 DO-512GT, 14 gün: 692 ↔ 751 km). 105 iki yolu tek çekirdeğe
-     * bağladı; filo yolunu öne almak da araç başına bir RPC yerine TEK RPC
-     * bırakıyor.
+     * kalıp (17.09.2026, 16c). 105 iki yolu tek çekirdeğe bağladı; filo yolunu
+     * öne almak araç başına bir RPC yerine TEK RPC bırakıyor.
      */
     const filoSpan = await okuFiloSpan(startISO, endISO);
     const spanEntries = filoSpan
@@ -125,48 +100,16 @@ export default async function AnalizPage({
           vehicles,
           async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)] as const
         );
-    const spanByVehicle = new Map(spanEntries);
     const distanceByVehicle = new Map(
-      [...spanByVehicle].map(([id, s]) => [id, s.km] as const)
+      spanEntries.map(([id, sp]) => [id, sp.km] as const)
     );
     return {
       events,
       idleEpisodes,
       distanceByVehicle,
-      spanByVehicle,
-      drivenVehiclesByWorker,
-      workedDaysByWorker,
-      shiftKmByWorker: shiftKmForScoring(shiftKmRes),
-      // EKSEN BİRLİĞİ (15.08.2026): olay atfı da km'nin geldiği SATIRLARDAN.
-      // İkisi tek `shiftKmRes`ten türüyor — ayrı sorgu olsaydı yine ayrışırdı.
-      shiftWindowsByVehicle: shiftWindowsForScoring(shiftKmRes),
-      shiftKmUnavailable: shiftKmRes.unavailable,
+      scoreInput: skor.input,
     };
   }
-
-  /** Şoförün araçlarının ölçüm pencerelerinden km eşiğini türeten kapı. */
-  // ÇALIŞILAN GÜN eşiği (09.08.2026). Odometre penceresi (scoreMinKmForSpan)
-  // yerine şoförün gerçekten çalıştığı gün sayısı: ikisi de "takvim günü haksız"
-  // sorununu çözüyordu ama pencere ARACIN ölçüm süresini, bu KİŞİNİN mesaisini
-  // ölçüyor — doğru payda bu. Çalışılan gün bilinmiyorsa (0) eski pencere
-  // yoluna düşülür, yani davranış hiçbir koşulda tanımsız kalmaz.
-  const gateFor =
-    (
-      r: { start: Date; end: Date },
-      spanByVehicle: Map<string, { firstAt: string | null; lastAt: string | null }>,
-      workedDaysByWorker: Map<string, number>
-    ) =>
-    (vehicleIds: string[], workerId: string) => {
-      const worked = workedDaysByWorker.get(workerId) ?? 0;
-      // BAYRAK: çalışılan-gün eşiği varsayılan KAPALI (bkz. lib/tenant.ts).
-      if (SCORE_THRESHOLD_WORKED_DAYS && worked > 0) {
-        return scoreMinKmForWorkedDays(r, worked);
-      }
-      return scoreMinKmForSpan(
-        r,
-        vehicleIds.map((id) => spanByVehicle.get(id) ?? { firstAt: null, lastAt: null })
-      );
-    };
 
   const current = await loadPeriod(range);
   const topByType = computeTopDriversByType(
@@ -178,13 +121,8 @@ export default async function AnalizPage({
   const safetyRows = computeSafetyScores(
     current.events,
     current.idleEpisodes,
-    vehiclesById,
     workersById,
-    current.distanceByVehicle,
-    gateFor(range, current.spanByVehicle, current.workedDaysByWorker),
-    current.drivenVehiclesByWorker,
-    current.shiftKmByWorker,
-    current.shiftWindowsByVehicle
+    current.scoreInput
   );
   /**
    * SAHİPSİZ OLAY KÖPRÜSÜ (20.08.2026) — KPI ile skor tablosu arasındaki fark.
@@ -199,7 +137,7 @@ export default async function AnalizPage({
     current.idleEpisodes,
     vehiclesById,
     workersById,
-    current.shiftWindowsByVehicle
+    current.scoreInput.windowsByVehicle
   );
   const idleWaste = computeIdleWaste(current.idleEpisodes, vehiclesById, workersById);
 
@@ -246,13 +184,8 @@ export default async function AnalizPage({
     const prevSafety = computeSafetyScores(
       prev.events,
       prev.idleEpisodes,
-      vehiclesById,
       workersById,
-      prev.distanceByVehicle,
-      gateFor(prevRange, prev.spanByVehicle, prev.workedDaysByWorker),
-      prev.drivenVehiclesByWorker,
-      prev.shiftKmByWorker,
-      prev.shiftWindowsByVehicle
+      prev.scoreInput
     );
     const prevScoreByWorker = new Map(prevSafety.map((r) => [r.workerId, r.score]));
     safetyRowsWithTrend = safetyRows.map((r) => {
@@ -290,10 +223,6 @@ export default async function AnalizPage({
           topByType={topByType}
           safetyRows={safetyRowsWithTrend}
           ownerless={ownerless}
-          shiftKmFailed={
-            current.shiftKmUnavailable === "timeout" ||
-            current.shiftKmUnavailable === "error"
-          }
           idleWaste={idleWaste}
           prevIdleWaste={prevIdleWaste}
           monthlyPivot={monthlyPivot}

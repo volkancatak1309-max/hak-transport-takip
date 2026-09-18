@@ -17,42 +17,28 @@
  */
 import { supabaseAdmin } from "@/lib/supabase";
 import { issueTokens } from "@/lib/mobile-auth";
+import { loadScoreInput } from "@/lib/score-core";
 import {
   computeAnalyticsRange,
   previousPeriod,
   computeTopDriversByType,
   computeSafetyScores,
   computeIdleWaste,
-  drivenVehiclesFromEntries,
-  workedDaysFromEntries,
-  getWorkerShiftDistance,
-  shiftKmForScoring,
-  shiftWindowsForScoring,
-  scoreMinKmForWorkedDays,
-  scoreMinKmForSpan,
-  getVehicleDistanceSpan,
   listVehiclesAndWorkers,
-  SCORE_MIN_KM_COVERAGE,
 } from "@/lib/analytics";
 import {
   SAFETY_SCORE_WEIGHTS,
   TOP10_EVENT_TYPES,
   IDLE_FUEL_L_PER_HOUR,
 } from "@/lib/analytics-shared";
-import {
-  SAFETY_SCORE_K,
-  SCORE_MIN_KM_PER_DAY,
-  SCORE_MIN_KM_FLOOR,
-} from "@/lib/metric-thresholds";
+import { SAFETY_SCORE_K, SCORE_MIN_KM } from "@/lib/metric-thresholds";
 import {
   FUEL_PRICE_EUR_PER_L,
   SAFETY_SCORE_CALIBRATED,
-  SCORE_THRESHOLD_WORKED_DAYS,
 } from "@/lib/tenant";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
 import { getLatestConfigEpoch, comparisonCrossesEpoch } from "@/lib/config-epoch";
-import { mapBounded } from "@/lib/db-fanout";
 import { GET as ANALYTICS_GET } from "@/app/api/mobile/analytics/route";
 import { GET as SCORECFG_GET } from "@/app/api/mobile/score-config/route";
 import { GET as SCORES_GET } from "@/app/api/mobile/driver-scores/route";
@@ -99,52 +85,14 @@ async function panelDonemi(range, vehicles, workers) {
   const endISO = range.end.toISOString();
   const vehiclesById = new Map(vehicles.map((v) => [v.id, v]));
   const workersById = new Map(workers.map((w) => [w.id, w]));
-  const testScope = await getTestScope();
-
-  const [events, idleEpisodes, entryRes] = await Promise.all([
+  const [events, idleEpisodes] = await Promise.all([
     listEventsInRange(startISO, endISO),
     listIdleEpisodesInRange(startISO, endISO),
-    withoutTestRows(
-      supabaseAdmin
-        .from("time_entries")
-        .select("worker_id, vehicle_id, started_at")
-        .lte("started_at", endISO)
-        .or(`ended_at.is.null,ended_at.gte.${startISO}`),
-      "worker_id",
-      testScope.workerIds
-    ),
   ]);
-  const rows = entryRes.data ?? [];
-  const drivenVehiclesByWorker = drivenVehiclesFromEntries(rows);
-  const workedDaysByWorker = workedDaysFromEntries(rows);
-  const shiftKmRes = await getWorkerShiftDistance(startISO, endISO);
-  const spanEntries = await mapBounded(
-    vehicles,
-    async (v) => [v.id, await getVehicleDistanceSpan(v.id, startISO, endISO)]
-  );
-  const spanByVehicle = new Map(spanEntries);
-  const distanceByVehicle = new Map([...spanByVehicle].map(([id, s]) => [id, s.km]));
-
-  const gate = (vehicleIds, workerId) => {
-    const worked = workedDaysByWorker.get(workerId) ?? 0;
-    if (SCORE_THRESHOLD_WORKED_DAYS && worked > 0) return scoreMinKmForWorkedDays(range, worked);
-    return scoreMinKmForSpan(
-      range,
-      vehicleIds.map((id) => spanByVehicle.get(id) ?? { firstAt: null, lastAt: null })
-    );
-  };
-
-  const safety = computeSafetyScores(
-    events,
-    idleEpisodes,
-    vehiclesById,
-    workersById,
-    distanceByVehicle,
-    gate,
-    drivenVehiclesByWorker,
-    shiftKmForScoring(shiftKmRes),
-    shiftWindowsForScoring(shiftKmRes)
-  );
+  // 18.09.2026: payda ve olay atfı artık TEK çekirdekten (lib/score-core.ts).
+  // Yerel bir eşik/km kurgusu tutmuyoruz — tutsaydık ölçüm üretimden sapardı.
+  const { input: skorGirdisi } = await loadScoreInput(range);
+  const safety = computeSafetyScores(events, idleEpisodes, workersById, skorGirdisi);
   const topByType = computeTopDriversByType(events, idleEpisodes, vehiclesById, workersById);
   const idle = computeIdleWaste(idleEpisodes, vehiclesById, workersById);
   const skorlu = safety.filter((r) => r.score !== null);
@@ -293,24 +241,26 @@ try {
       JSON.stringify(j?.agirliklar)
     );
     iddia(
-      "esikler.minKmGun === SCORE_MIN_KM_PER_DAY",
-      j?.esikler?.minKmGun === SCORE_MIN_KM_PER_DAY,
-      `uç=${j?.esikler?.minKmGun} kod=${SCORE_MIN_KM_PER_DAY}`
+      "esikler.minKm === SCORE_MIN_KM (tek eşik)",
+      j?.esikler?.minKm === SCORE_MIN_KM,
+      `uç=${j?.esikler?.minKm} kod=${SCORE_MIN_KM}`
     );
+    /**
+     * 18.09.2026: üç kural kalktı ve uç bunu `null` ile SÖYLÜYOR. Anahtarın
+     * varlığını da sınıyoruz — silinseydi yayınlanmış istemci `undefined`
+     * okuyup "0" sanabilirdi (bkz. route başlığı).
+     */
+    for (const alan of ["minKmGun", "minKmTaban", "kapsamaOrani"]) {
+      iddia(
+        `esikler.${alan} === null (kural kaldırıldı, anahtar duruyor)`,
+        alan in (j?.esikler ?? {}) && j.esikler[alan] === null,
+        `uç=${JSON.stringify(j?.esikler?.[alan])}`
+      );
+    }
     iddia(
-      "esikler.minKmTaban === SCORE_MIN_KM_FLOOR",
-      j?.esikler?.minKmTaban === SCORE_MIN_KM_FLOOR,
-      `uç=${j?.esikler?.minKmTaban} kod=${SCORE_MIN_KM_FLOOR}`
-    );
-    iddia(
-      "esikler.kapsamaOrani === SCORE_MIN_KM_COVERAGE",
-      j?.esikler?.kapsamaOrani === SCORE_MIN_KM_COVERAGE,
-      `uç=${j?.esikler?.kapsamaOrani} kod=${SCORE_MIN_KM_COVERAGE}`
-    );
-    iddia(
-      "esikler.calisilanGuneGore === SCORE_THRESHOLD_WORKED_DAYS",
-      j?.esikler?.calisilanGuneGore === SCORE_THRESHOLD_WORKED_DAYS,
-      `uç=${j?.esikler?.calisilanGuneGore} kod=${SCORE_THRESHOLD_WORKED_DAYS}`
+      "esikler.calisilanGuneGore === false",
+      j?.esikler?.calisilanGuneGore === false,
+      `uç=${j?.esikler?.calisilanGuneGore}`
     );
   }
 
@@ -547,21 +497,34 @@ try {
       kmYetersizYanlis.length === 0,
       kmYetersizYanlis.map((s) => `${s.adSoyad}:${s.olculenKm}/${s.esikKm}`).join(" ") || "hepsi doğru"
     );
+    /**
+     * 18.09.2026: `kapsama_dusuk` artık bir ORAN kapısı değil. Anlamı
+     * "çekirdek HİÇBİR vardiyada km ölçemedi" — yani ölçülen km null ve
+     * vardiya sayısı > 0. Eski iddia (`kapsama < 0,8`) kaldırıldı çünkü
+     * ölçtüğü kural artık yok.
+     */
     const kapsamaYanlis = satirlar.filter(
-      (s) => s.sebep === "kapsama_dusuk" && s.kapsama !== null && s.kapsama >= SCORE_MIN_KM_COVERAGE
+      (s) => s.sebep === "kapsama_dusuk" && (s.olculenKm !== null || s.vardiya === 0)
     );
     iddia(
-      `kapsama_dusuk ⇒ kapsama < ${SCORE_MIN_KM_COVERAGE}`,
+      "kapsama_dusuk ⇒ ölçülen km YOK ve vardiya var",
       kapsamaYanlis.length === 0,
-      kapsamaYanlis.map((s) => `${s.adSoyad}:${n(s.kapsama, 2)}`).join(" ") || "hepsi doğru"
+      kapsamaYanlis.map((s) => `${s.adSoyad}:${s.olculenKm}/${s.vardiya}`).join(" ") || "hepsi doğru"
     );
-    const skorluAmaKapsama = satirlar.filter(
-      (s) => s.guvenlikSkoru !== null && s.kapsama !== null && s.kapsama < SCORE_MIN_KM_COVERAGE
+    const kismiSkorlu = satirlar.filter(
+      (s) => s.guvenlikSkoru !== null && s.kapsama !== null && s.kapsama < 1
     );
-    iddia(
-      `skoru olan hiçbir şoförde kapsama < ${SCORE_MIN_KM_COVERAGE} yok`,
-      skorluAmaKapsama.length === 0,
-      skorluAmaKapsama.map((s) => s.adSoyad).join(" ") || "yok"
+    /**
+     * KISMİ ÖLÇÜM ARTIK ELEMİYOR — bilerek. Eskiden %80 altı skoru
+     * engelliyordu; şimdi skor üretiliyor ve eksiklik `kapsama` alanında
+     * ekrana taşınıyor. Bu satır bir KUSUR değil, kararın kendisi; yine de
+     * kaç kişiyi etkilediği ölçülüp yazılıyor.
+     */
+    bilgi(
+      `kısmi ölçümle skorlanan: ${kismiSkorlu.length} şoför` +
+        (kismiSkorlu.length
+          ? " → " + kismiSkorlu.map((s) => `${s.adSoyad} ${(s.kapsama * 100).toFixed(0)}%`).join(", ")
+          : "")
     );
 
     const dagilim = new Map();
@@ -588,30 +551,33 @@ try {
       olculmedi("Cumhur Karataş satırı", "aralıkta satırı yok");
     } else {
       const range = computeAnalyticsRange("ay");
-      const res = await getWorkerShiftDistance(
-        range.start.toISOString(),
-        range.end.toISOString()
-      );
-      const cov = res.coverage?.get(hedef.workerId) ?? null;
-      const hamKm = res.km?.get(hedef.workerId) ?? null;
-      const suzulmus = shiftKmForScoring(res)?.get(hedef.workerId) ?? null;
-      console.log(`\n     ── ${hedef.adSoyad} · ham RPC çapraz doğrulama ──`);
-      bilgi(`uç:      sebep=${hedef.sebep} ölçülenKm=${n(hedef.olculenKm, 0)} eşik=${n(hedef.esikKm, 0)} kapsama=${hedef.kapsama === null ? "—" : (hedef.kapsama * 100).toFixed(1) + "%"}`);
-      bilgi(`ham RPC: vardiya=${cov ? `${cov.olculen}/${cov.toplam}` : "—"} kapsama=${cov && cov.toplam ? ((cov.olculen / cov.toplam) * 100).toFixed(1) + "%" : "—"} ham km=${n(hamKm, 0)} süzülmüş km=${n(suzulmus, 0)}`);
+      const { shifts, input } = await loadScoreInput(range);
+      const kendi = shifts.filter((x) => x.worker_id === hedef.workerId);
+      const cov = input.coverageByWorker.get(hedef.workerId) ?? null;
+      const cekirdekKm = input.kmByWorker.has(hedef.workerId)
+        ? input.kmByWorker.get(hedef.workerId)
+        : null;
+      const kaynaklar = kendi.reduce((m, x) => ((m[x.km_karar.kaynak] = (m[x.km_karar.kaynak] ?? 0) + 1), m), {});
+      console.log(`
+     ── ${hedef.adSoyad} · ÇEKİRDEK çapraz doğrulama ──`);
+      bilgi(`uç:       sebep=${hedef.sebep} ölçülenKm=${n(hedef.olculenKm, 0)} eşik=${n(hedef.esikKm, 0)} kapsama=${hedef.kapsama === null ? "—" : (hedef.kapsama * 100).toFixed(1) + "%"}`);
+      bilgi(`çekirdek: vardiya=${cov ? `${cov.olculen}/${cov.toplam}` : "—"} km=${n(cekirdekKm, 0)} km kaynağı=${JSON.stringify(kaynaklar)}`);
       iddia(
-        "kapsama oranı ham RPC sayacıyla birebir",
+        "ölçülen km çekirdeğin toplamıyla birebir",
+        cekirdekKm === null ? hedef.olculenKm === null : Math.abs(hedef.olculenKm - cekirdekKm) < 1e-9,
+        `uç=${hedef.olculenKm} çekirdek=${cekirdekKm}`
+      );
+      iddia(
+        "EKRAN km'si ile SKOR km'si AYNI (tek eksen)",
+        hedef.km === null ? hedef.olculenKm === null : Math.abs(hedef.km - hedef.olculenKm) < 1e-9,
+        `ekran=${n(hedef.km, 0)} skor=${n(hedef.olculenKm, 0)}`
+      );
+      iddia(
+        "kapsama oranı çekirdeğin sayacıyla birebir",
         cov && cov.toplam > 0
           ? Math.abs(hedef.kapsama - cov.olculen / cov.toplam) < 1e-9
           : hedef.kapsama === null,
-        `uç=${hedef.kapsama} rpc=${cov ? cov.olculen / cov.toplam : null}`
-      );
-      iddia(
-        "sebep, kapsamanın eşiğe göre konumuyla tutarlı",
-        hedef.sebep === null ||
-          (hedef.sebep === "kapsama_dusuk"
-            ? hedef.kapsama !== null && hedef.kapsama < SCORE_MIN_KM_COVERAGE
-            : true),
-        `sebep=${hedef.sebep}`
+        `uç=${hedef.kapsama} çekirdek=${cov ? cov.olculen / cov.toplam : null}`
       );
     }
   }

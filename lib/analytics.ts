@@ -12,11 +12,7 @@ import {
   viennaDayKey,
 } from "@/lib/format";
 import { IDLE_TRIGGER_S } from "@/lib/telemetry";
-import {
-  SCORE_MIN_KM_PER_DAY,
-  SCORE_MIN_KM_FLOOR,
-  SAFETY_SCORE_K,
-} from "@/lib/metric-thresholds";
+import { SCORE_MIN_KM, SAFETY_SCORE_K } from "@/lib/metric-thresholds";
 import { retryOnTimeout, isTimeoutError } from "@/lib/db-fanout";
 import type { VehicleEventWithPlate, IdleEpisodeWithPlate } from "@/lib/telemetry";
 import {
@@ -76,97 +72,34 @@ export {
 export const FLEET_EPOCH = new Date(FLEET_EPOCH_ISO);
 
 /**
- * Güvenlik skoru için "yeterli sürüş" eşiği — GÜN BAŞINA minimum güvenilir km.
+ * KM EŞİĞİ ARTIK KİŞİYE GÖRE ÖLÇEKLENMİYOR (18.09.2026).
  *
- * 22.07.2026: sabitin TANIMI lib/metric-thresholds.ts'e taşındı (tüm türev
- * metrik eşikleri artık tek dosyada). Buradan yeniden dışa veriliyor ki mevcut
- * çağıranlar (analiz/page.tsx, reports.ts) kırılmasın — davranış aynı.
+ * Bu noktada üç fonksiyon duruyordu: `scoreMinKmForRange`,
+ * `scoreMinKmForSpan`, `scoreMinKmForWorkedDays`. Üçü de aynı soruyu farklı
+ * paydayla cevaplıyordu ve hangisinin geçerli olduğu ÇAĞRI SIRASINA bağlıydı —
+ * canlıda ölçülen sonuç: çalışılan gün 0 olan bir şoförde `forWorkedDays`
+ * atlanıp `forSpan` devreye giriyor ve 300 km'lik MUTLAK TABAN sessizce
+ * uygulanmıyordu (HAK61, hafta penceresi: eşik 140 km, Mustafa Demirsöz 156
+ * km ile 51 puan aldı — hem de o pencerede hiç vardiyası görünmezken).
+ *
+ * Tek eşik: `SCORE_MIN_KM` (lib/metric-thresholds.ts). Kişiye göre değişen bir
+ * çıta yok, dolayısıyla "hangi kol çalıştı" sorusu da yok.
+ *
+ * `rangeElapsedDays` KALDI — eşikle ilgisi yok, aralık uzunluğu soran başka
+ * yüzeyler kullanıyor.
  */
-export { SCORE_MIN_KM_PER_DAY };
 
 /**
- * Aralık için toplam km eşiği = SCORE_MIN_KM_PER_DAY × aralığın GEÇEN gün sayısı.
- * "Geçen": dönem sonu gelecekteyse (bu hafta/bu ay) şimdiye kadar kırpılır —
- * telemetri km'si de yalnız şimdiye kadar biriktiği için eşik de öyle olmalı ki
- * hafta/ay ortasında herkes haksızca "veri yok" düşmesin. En az 1 gün.
+ * Aralığın ŞİMDİYE KADAR geçen gün sayısı (en az 1).
+ *
+ * Dönem sonu gelecekteyse (bu hafta/bu ay) şimdiye kadar kırpılır. Mobil Analiz
+ * ucu bunu "pencerenin kaç günü doldu" bilgisi olarak döndürüyor; skor eşiğiyle
+ * ARTIK İLGİSİ YOK (bkz. yukarıdaki not).
  */
-export function scoreMinKmForRange(range: DateRange): number {
-  return SCORE_MIN_KM_PER_DAY * rangeElapsedDays(range);
-}
-
-/** Aralığın ŞİMDİYE KADAR geçen gün sayısı (en az 1). */
 export function rangeElapsedDays(range: DateRange): number {
   const effectiveEnd = Math.min(Date.now(), range.end.getTime());
   const spanMs = Math.max(0, effectiveEnd - range.start.getTime());
   return Math.max(1, Math.round(spanMs / 86_400_000));
-}
-
-/**
- * ŞOFÖRÜN KENDİ VERİ PENCERESİNE göre km eşiği (27.07.2026, Volkan onayı — B).
- *
- * SORUN: eşik aralık uzunluğuyla DOĞRUSAL büyüyordu (40 km/gün × 30 = 1.200 km)
- * ama ölçülen km büyümüyordu — odometre telemetrisi 30 gün geriye ulaşmıyor.
- * Canlı ölçüm: 30 günlük pencerede EN YÜKSEK şoför km'si 1.509, sonuç 33
- * şoförün yalnız 1'i skor alıyordu (%3). 7 günde 12/33, 1 günde 16/33 —
- * yani kapı, veri yokluğunu şoförün suçu gibi gösteriyordu.
- *
- * ÇÖZÜM: eşik, aracın odometre ölçümünün GERÇEKTEN kapsadığı gün sayısıyla
- * ölçeklenir. Odometresi 5 günü kapsayan şoför 5 × 40 = 200 km'ye göre
- * değerlendirilir, 1.200'e göre değil. Veri biriktikçe kapı kendiliğinden
- * sıkılaşır; 30 günlük tam veri olunca eski davranışa döner.
- *
- * SCORE_MIN_KM_PER_DAY'e DOKUNULMADI — sabit aynı, ölçekleyen çarpan değişti.
- */
-export function scoreMinKmForSpan(
-  range: DateRange,
-  spans: { firstAt: string | null; lastAt: string | null }[]
-): number {
-  const rangeDays = rangeElapsedDays(range);
-  let coveredMs = 0;
-  for (const s of spans) {
-    if (!s.firstAt || !s.lastAt) continue;
-    const a = Date.parse(s.firstAt);
-    const b = Date.parse(s.lastAt);
-    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
-    // Şoförün birden çok aracı varsa EN GENİŞ pencere geçerli (union değil:
-    // araçlar aynı günlerde çalışıyor, toplamak günü ikiye katlardı).
-    coveredMs = Math.max(coveredMs, b - a);
-  }
-  // Hiç ölçüm penceresi yoksa aralığın kendisine düş (eski davranış).
-  const coveredDays = coveredMs > 0 ? Math.max(1, Math.round(coveredMs / 86_400_000)) : rangeDays;
-  return SCORE_MIN_KM_PER_DAY * Math.min(rangeDays, coveredDays);
-}
-
-/**
- * ÇALIŞILAN GÜNE GÖRE EŞİK (09.08.2026, Volkan onayı).
- *
- * Eskiden eşik TAKVİM gününe göreydi: 30 günlük aralıkta herkesten 1.200 km
- * isteniyordu. Ama şoför o 30 günün 19'unda çalışmışsa (izin, hafta tatili,
- * vardiya dağılımı) 1.200 km haksız bir çıtaydı — ölçüldü: takvim eşiğiyle
- * 31 şoförün yalnız 9'u listeye giriyordu.
- *
- * Artık çıta kişinin GERÇEKTEN çalıştığı gün sayısıyla ölçeklenir:
- * 19 gün × 40 = 760 km. Aynı sürüş yoğunluğu isteniyor, yalnız payda dürüst.
- *
- * ÖNCE 0-KM ARIZASI KAPANDI (389b22e) ve bu sıra ÖNEMLİYDİ: eşiği önce
- * gevşetseydik, vardiya açmadığı hâlde aracının km'si üstüne yazılan şoförler
- * (işten çıkmış Ekrem Gyuler dâhil) listeye 120 km'lik çıtayla girerdi.
- * Km artık yalnız fiilen sürülen vardiyalardan geldiği için güvenli.
- *
- * Tavan: aralığın geçen gün sayısı. Çalışılan gün ondan büyük olamaz (aynı
- * günde iki vardiya tek gün sayılır), ama savunmacı kalıyoruz.
- * Taban: 1 gün — hiç çalışmamış şoförün km'si zaten null, buraya düşmez.
- */
-export function scoreMinKmForWorkedDays(
-  range: DateRange,
-  workedDays: number
-): number {
-  const scaled =
-    SCORE_MIN_KM_PER_DAY * Math.min(rangeElapsedDays(range), Math.max(1, workedDays));
-  // MUTLAK TABAN (09.08.2026): gün ölçeklemesi çıtayı yalnız YUKARI çeker.
-  // Aşağı çekmesine izin verilince payda küçülüyor ve skor sürüşü değil
-  // ölçümün kısalığını yansıtıyordu (bkz. SCORE_MIN_KM_FLOOR).
-  return Math.max(SCORE_MIN_KM_FLOOR, scaled);
 }
 
 /** Kayan pencere uzunlukları (gün). Etiketler i18n'de bu sayılarla yazılı. */
@@ -564,90 +497,25 @@ export async function getWorkerShiftDistance(
 }
 
 /**
- * `getWorkerShiftDistance` sonucunu computeSafetyScores'un beklediği argümana
- * çevirir — üç durumu TEK yerde kararlaştırır ki iki çağıran (Analiz sayfası ve
- * Performans raporu) aynı şoför için farklı davranmasın.
+ * ═══ KAPSAMA KAPISI KALDIRILDI (18.09.2026) ═══════════════════════════════
  *
- *   başarılı           → harita
- *   missing_function   → undefined  (052 yok; eski araç-toplamı yolu DOĞRU)
- *   timeout / error    → BOŞ harita (052 var ama hesaplanamadı; şişik km yerine
- *                        "Veri yok". Yanlış rakam, hatadan kötüdür.)
+ * Burada üç şey duruyordu: `SCORE_MIN_KM_COVERAGE = 0.8`, `shiftKmForScoring`
+ * ve `shiftWindowsForScoring`. Üçü birlikte 052'nin HAM çıktısını puan
+ * paydasına çeviriyordu. Artık payda `lib/km-axis.ts` çekirdeğinden geliyor ve
+ * pencereler vardiya satırlarının kendisinden türüyor — bkz. lib/score-core.ts.
+ *
+ * NEDEN AYRI KAPI YANLIŞTI (ölçüldü, HAK61 30 gün): kapsama "052 bir okuma
+ * döndürdü mü" diye soruyordu, "ölçüm ilerledi mi" diye değil. Cumhur Karataş
+ * 21/26 vardiyayla %81 alıp kapıyı GEÇİYOR, ama o 21 vardiyanın toplamı 11 km
+ * (aracı odometreyi yalnız kontak sonrası 5 dk gönderiyor). Kapı ısırması
+ * gereken yerde ısırmıyor, gerektiğinden fazla ısırdığı yerde ise zaten km'si
+ * olmayan şoförü eliyordu — yani hiçbir kişiyi doğru sebeple elemiyordu.
+ *
+ * ⚠️ `getWorkerShiftDistance` DURUYOR ve KALMALI: filo karşılaştırma ucu
+ * (lib/fleet-compare.ts) vardiyaları FİLO ekseninde topluyor ve bunun için
+ * pencere başına araç kimliğine ihtiyacı var. O ayrı bir soru; puan yolu artık
+ * oradan geçmiyor.
  */
-/**
- * KISMİ ÖLÇÜM EŞİĞİ (15.08.2026). Şoförün vardiyalarının en az bu oranı
- * ölçülebilmiş olmalı; altında km paydası eksiktir ve skor üretmek YANLIŞTIR:
- * ceza TÜM olaylardan, km ise yalnız ölçülebilen vardiyalardan gelir, yani
- * ceza/1000km yapay olarak şişer ve şoför hak etmediği düşük skoru alır.
- * ═══ DEĞER NEDEN 0,8 ═══
- *
- * Eşik duyarlılığı canlıda ölçüldü (60 gün, HAK61 — scripts/verify-km-null-2.mjs).
- * Eşiksiz 28 şoför skorlanabiliyor; eşik yükseldikçe düşen şoför sayısı:
- *     %30 → 0    %40 → 1    %50 → 2    %60 → 3
- *     %70 → 5    %80 → 7    %90 → 11
- * En düşük kapsamalar: Bayram Çöymen 1/3 (%33), Sinan Bayrak 10/24 (%42),
- * Muhammed Copur 13/22 (%59), Cumhur Karataş 14/23 (%61), Ümit Alıcı 15/22
- * (%68), Ali Özdemir 7/10 (%70), Sercan Kalkanli 10/14 (%71).
- *
- * 0,8 SEÇİLDİ (Volkan, 15.08.2026): kısmi ölçümde skor HAKSIZ çıkıyor ve
- * "yanlış skor göstermektense hiç göstermemek doğru". Skorlanan kadro 28 → 21;
- * bu bilinçli bir bedel, kusur değil. Beş vardiyanın en fazla biri ölçülemez.
- *
- * Kadronun küçülmesi kalıcı DEĞİL: 15.08 düzeltmesi bayat odometrenin uçlara
- * yazılmasını kestiği için kapsama ilerleyen günlerde kendiliğinden artar —
- * eşiği düşürerek değil, cihazları onararak.
- */
-export const SCORE_MIN_KM_COVERAGE = 0.8;
-
-export function shiftKmForScoring(
-  res: ShiftDistanceResult
-): Map<string, number> | undefined {
-  if (res.unavailable === "missing_function") return undefined;
-  if (res.unavailable !== null) return new Map<string, number>();
-  const km = new Map(res.km!);
-  // Kapsaması eşiğin altında kalan şoför haritadan DÜŞER → reliableKm null →
-  // skor null ("Yetersiz veri"). Eksik paydayla hesaplanmış bir skor,
-  // hesaplanmamış skordan kötüdür.
-  if (res.coverage) {
-    for (const [wid, c] of res.coverage) {
-      if (c.toplam === 0) continue;
-      if (c.olculen / c.toplam < SCORE_MIN_KM_COVERAGE) km.delete(wid);
-    }
-  }
-  return km;
-}
-
-/**
- * ARAÇ → o aralıktaki vardiya pencereleri, başlangıca göre sıralı.
- *
- * `shiftKmForScoring` ile AYNI ÜÇ DURUM (kasıtlı ayna — pay ve payda aynı
- * kaynaktan gelmezse skor yine ayrışır):
- *   başarılı           → harita
- *   missing_function   → undefined  (052 yok; olay atfı eski ATAMA yoluna döner,
- *                                    km de aynı satırda araç toplamına dönüyor)
- *   timeout / error    → BOŞ harita (052 var ama hesaplanamadı; km de boş harita
- *                                    olduğu için zaten hiçbir skor üretilmez)
- */
-export function shiftWindowsForScoring(
-  res: ShiftDistanceResult
-): Map<string, ShiftWindow[]> | undefined {
-  if (res.unavailable === "missing_function") return undefined;
-  const byVehicle = new Map<string, ShiftWindow[]>();
-  if (res.unavailable !== null || !res.windows) return byVehicle;
-  for (const w of res.windows) {
-    const arr = byVehicle.get(w.vehicleId);
-    if (arr) arr.push(w);
-    else byVehicle.set(w.vehicleId, [w]);
-  }
-  // Deterministik sıra: başlangıç, sonra bitiş, sonra şoför kimliği. Aşağıdaki
-  // "en geç başlayan kazanır" kuralı ancak sıra sabitse tekrarlanabilir olur.
-  for (const arr of byVehicle.values()) {
-    arr.sort(
-      (a, b) =>
-        a.startMs - b.startMs || a.endMs - b.endMs || a.workerId.localeCompare(b.workerId)
-    );
-  }
-  return byVehicle;
-}
 
 /**
  * "Bu araçta, bu anda direksiyonda kimdi" — pencere yoksa null.
@@ -1094,77 +962,63 @@ export function computeTopDriversByType(
 // ── Bölüm 2: şoför güvenlik skoru ────────────────────────────────────────────
 
 /**
- * `time_entries` satırlarından "şoför → o aralıkta sürdüğü araçlar" haritası.
- * İki çağıran da (Analiz sayfası, Performans raporu) bunu kullanır ki iki ekran
- * aynı şoför için farklı km göstermesin.
+ * ═══ `drivenVehiclesFromEntries` ve `workedDaysFromEntries` KALDIRILDI ═════
+ * (18.09.2026)
+ *
+ * İkisi de yalnız emekli olan modelin parçalarıydı: birincisi "şoförün km'si
+ * hangi ARAÇLARDAN toplansın" sorusunu cevaplıyordu (km artık araçtan değil
+ * VARDİYADAN geliyor), ikincisi "eşik kaç gün × kaç km olsun" sorusunu (eşik
+ * artık düz 100 km). Cevapladıkları soru kalmadığı için kendileri de kalmadı —
+ * dead export bırakmak, bir sonraki turda "bu hâlâ kullanılıyor mu" diye
+ * sordurur ve ilk yanlış cevapta iki kaynak geri doğar.
+ *
+ * Yerlerini alan tek şey: `lib/score-core.ts` → `scoreInputFromShifts`.
  */
-export function drivenVehiclesFromEntries(
-  entries: { worker_id: string | null; vehicle_id: string | null }[]
-): Map<string, Set<string>> {
-  const m = new Map<string, Set<string>>();
-  for (const e of entries) {
-    if (!e.worker_id || !e.vehicle_id) continue;
-    const set = m.get(e.worker_id) ?? new Set<string>();
-    set.add(e.vehicle_id);
-    m.set(e.worker_id, set);
-  }
-  return m;
-}
 
 /**
- * `time_entries` satırlarından "şoför → o aralıkta ÇALIŞTIĞI ayrı gün sayısı".
- * Gün anahtarı Viyana takvim günü (viennaDayKey) — vardiya gece yarısını
- * aşarsa BAŞLADIĞI güne sayılır, panonun geri kalanıyla aynı tanım.
+ * GÜVENLİK SKORU — TEK KM, TEK VARDİYA TANIMI (18.09.2026'da sadeleşti).
+ *
+ * ═══ İMZA NEDEN DARALDI ════════════════════════════════════════════════════
+ *
+ * Önceki hâli dokuz argüman alıyordu ve bunların üçü AYNI SORUNUN farklı
+ * cevaplarıydı: `distanceByVehicle` (araç toplamı), `drivenVehiclesByWorker`
+ * (hangi araçlar) ve `shiftKmByWorker` (052 toplamı). Hangisinin kazandığı
+ * çağrı yerine göre değişiyordu; üstüne `minKm` bir FONKSİYON olabiliyordu ve
+ * o fonksiyonun içinde de iki ayrı kol vardı. Yani "bu şoförün puanı hangi
+ * km'den ve hangi çıtadan çıktı" sorusunun cevabı beş dallı bir ağaçtı — ve
+ * canlıda ölçüldüğünde iki ekran aynı şoför için farklı cevap veriyordu.
+ *
+ * Artık tek girdi var: `lib/score-core.ts`in ürettiği `ScoreInput`. Payda
+ * ekranın gösterdiği km ile AYNI çekirdekten (lib/km-axis.ts), olay atfı da
+ * aynı vardiya satırlarından gelir. İkisinin ayrışması artık YAPISAL OLARAK
+ * imkânsız — ayrı bir kaynak kalmadığı için.
+ *
+ * `vehiclesById` de düştü: yalnızca "pencere yoksa ATANMIŞ şoföre yaz" yedek
+ * yolu için gerekiyordu. Pencereler artık her zaman var (vardiya satırları
+ * her kurulumda var, 052'den bağımsız), dolayısıyla o yedek yol da yok.
+ * Kazanç ölçülebilir: bir olay ya gerçekten direksiyonda olan kişiye yazılır
+ * ya hiç kimseye — "araç bu kişinin üstüne kayıtlı, öyleyse o sürmüştür"
+ * varsayımı hiçbir kiracıda kalmadı.
+ *
+ * ═══ HİÇBİR VARDİYAYA DÜŞMEYEN OLAY HİÇ KİMSEYE YAZILMAZ ═══════════════════
+ * Canlıda %22–39 arası bir pay (pencereye göre). Bu olaylar kaybolmaz: Top-10,
+ * Rölanti Panosu ve Aylık Pivot onları ATAMA ekseninde saymaya devam eder,
+ * "Sahipsiz olay" kartı da sayısını ekranda gösterir — yalnız KİŞİSEL SKOR'a
+ * girmezler, çünkü hangi kişinin olduğu bilinmiyor.
+ *
+ * ═══ SKOR ══════════════════════════════════════════════════════════════════
+ * `100 × K / (K + ceza/1000km)` — hiperbolik, tabana çakılmaz. Ceza ağırlıkları
+ * lib/analytics-shared.ts'te, K ve km eşiği lib/metric-thresholds.ts'te.
  */
-export function workedDaysFromEntries(
-  entries: { worker_id: string | null; started_at: string }[]
-): Map<string, number> {
-  const days = new Map<string, Set<string>>();
-  for (const e of entries) {
-    if (!e.worker_id) continue;
-    const set = days.get(e.worker_id) ?? new Set<string>();
-    set.add(viennaDayKey(e.started_at));
-    days.set(e.worker_id, set);
-  }
-  return new Map([...days].map(([id, set]) => [id, set.size]));
-}
-
 export function computeSafetyScores(
   events: VehicleEventWithPlate[],
   idleEpisodes: IdleEpisodeWithPlate[],
-  vehiclesById: Map<string, VehicleLite>,
   workersById: Map<string, WorkerLite>,
-  distanceByVehicle: Map<string, number | null>,
-  /**
-   * Şoför başına km eşiği. Sabit sayı yerine FONKSİYON (27.07.2026, B kararı):
-   * eşik artık aralık uzunluğuna değil, o şoförün araçlarının odometre
-   * ölçümünün gerçekten kapsadığı gün sayısına göre ölçekleniyor
-   * (bkz. scoreMinKmForSpan). Sayı verilirse eski davranış aynen korunur.
-   */
-  minKm: number | ((vehicleIds: string[], workerId: string) => number),
-  /**
-   * ŞOFÖRÜN O ARALIKTA FİİLEN SÜRDÜĞÜ ARAÇLAR (09.08.2026 — 0 km'ye puan arızası).
-   *
-   * Kaynak: `time_entries` × araç × aralık kesişimi. Verilmezse km atfı eski
-   * (hatalı) yola düşmez — `undefined` "veri sağlanamadı" demektir ve o zaman
-   * ATAMA yoluna geri dönülür; iki çağıranın ikisi de bunu geçiyor.
-   */
-  drivenVehiclesByWorker?: Map<string, Set<string>>,
-  /**
-   * VARDİYA PENCERELİ km (migration 052). Verilirse `distanceByVehicle`
-   * toplaması BYPASS edilir — km doğrudan buradan okunur. Bu, "aracı 3 gün
-   * sürdü ama 30 günlük km'si yazıldı" kusurunun kapandığı yer.
-   */
-  shiftKmByWorker?: Map<string, number>,
-  /**
-   * ARAÇ → VARDİYA PENCERELERİ (15.08.2026 — EKSEN UYUŞMAZLIĞI).
-   *
-   * Verilirse OLAY ATFI da vardiya penceresinden yapılır; verilmezse eski
-   * ATAMA yolu (`vehicles.assigned_worker_id`) korunur. `shiftKmForScoring` ile
-   * AYNI kaynaktan (`getWorkerShiftDistance`) üretilmelidir — bkz.
-   * `shiftWindowsForScoring`.
-   */
-  shiftWindowsByVehicle?: Map<string, ShiftWindow[]>
+  input: {
+    kmByWorker: Map<string, number>;
+    windowsByVehicle: Map<string, ShiftWindow[]>;
+  },
+  minKm: number = SCORE_MIN_KM
 ): SafetyScoreRow[] {
   type Acc = { penalty: number; totalEvents: number; days: Set<string> };
   const acc = new Map<string, Acc>();
@@ -1177,33 +1031,8 @@ export function computeSafetyScores(
     acc.set(workerId, cur);
   }
 
-  /**
-   * ── EKSEN UYUŞMAZLIĞI (15.08.2026, Volkan) ────────────────────────────────
-   *
-   * 09.08'de km ATAMA ekseninden VARDİYA eksenine taşındı (052) ama OLAY atfı
-   * atamada kaldı. Sonuç: pay ile payda farklı gerçekleri anlatıyordu.
-   *   · km      = şoförün gerçekten sürdüğü vardiyalar
-   *   · ceza    = aracın kağıt üzerindeki sahibinin üstüne yazılan HER olay
-   * Şoför atandığı araçtan başkasını sürdüğünde cezası kayboluyor, km'si
-   * kalıyordu → sahte yüksek puan. Canlı vaka (HAK61, 30 gün): Hamdi Kurubaş
-   * DO-746GU'ya atanmışken DO-992GO'yu sürdü; DO-992GO'nun olayları o sırada
-   * ARACIN sahibi görünen Bayram Çöymen'e yazıldı (12 olay).
-   *
-   * ARTIK: olay, O ARAÇTA O SAATTE VARDİYADA OLAN şoföre yazılır — km ile
-   * BİREBİR aynı satırlardan (shift_odometer_spans), ki ikisi bir daha
-   * ayrışamasın.
-   *
-   * HİÇBİR VARDİYAYA DÜŞMEYEN OLAY HİÇ KİMSEYE YAZILMAZ. Uydurma atıf yok:
-   * "araç bu kişinin üstüne kayıtlı, öyleyse o sürmüştür" bir varsayımdı ve
-   * ölçümde yanlış çıktı. Canlıda 4.892 olayın 1.897'si (%38,8) hiçbir vardiya
-   * penceresine düşmüyor — bunların %72'si o araçta O GÜN HİÇ vardiya
-   * açılmamışken oluşmuş (bkz. scripts/measure-skor-eksen-2.mjs). Bu olaylar
-   * kaybolmaz: Top-10, Rölanti Panosu ve Aylık Pivot onları ATAMA ekseninde
-   * saymaya devam eder — yalnız KİŞİSEL SKOR'a girmezler, çünkü hangi kişinin
-   * olduğu bilinmiyor.
-   */
   const sahibi = (vehicleId: string, atISO: string): string | null =>
-    eventOwnerAt(vehiclesById, shiftWindowsByVehicle, vehicleId, atISO);
+    workerDrivingAt(input.windowsByVehicle, vehicleId, atISO);
 
   for (const e of events) {
     const weight = SAFETY_SCORE_WEIGHTS[e.event_type];
@@ -1218,41 +1047,6 @@ export function computeSafetyScores(
     bump(wid, SAFETY_SCORE_WEIGHTS.idling ?? 0, viennaDayKey(ep.started_at));
   }
 
-  // Şoför → km'si ona yazılacak araç(lar).
-  //
-  // ── 0 KM'YE PUAN ARIZASI (09.08.2026, Volkan onayı) ────────────────────────
-  // ESKİDEN: yalnız `vehicles.assigned_worker_id`. Yani araç kimin ÜSTÜNE
-  // KAYITLIYSA o aracın aralıktaki tüm km'si ona yazılıyordu — şoför o dönemde
-  // hiç vardiya açmamış olsa bile. Canlı ölçüm (7 gün, 09.08): 0 vardiyalı 5
-  // şoföre km atfedilmişti; ikisi İŞTEN ÇIKMIŞTI (Ekrem Gyuler 640 km,
-  // Bayram Çöymen 284 km) ve biri 70 puanla listede duruyordu.
-  //
-  // ŞİMDİ: km yalnız o aralıkta o aracı FİİLEN SÜREN vardiyalardan türer
-  // (time_entries × araç × zaman kesişimi, çağıran tarafından hesaplanır).
-  // Vardiyası olmayan şoförün aracı yok → reliableKm null → skor null →
-  // "Yetersiz veri". Atama artık km'yi TEK BAŞINA taşımıyor.
-  //
-  // ⚠️ KALAN YAKLAŞIKLIK: aracın km'si aralığın TAMAMI için ölçülüyor
-  // (getVehicleDistanceSpan uç-nokta farkı), vardiya pencereleri için değil.
-  // Aynı aracı iki şoför paylaşırsa ikisi de aracın tam km'sini alır. Bunu
-  // kapatmak vardiya başına odometre farkı gerektirir (araç başına 2 değil,
-  // vardiya başına 2 sorgu) — ayrı iş, ölçülmeden yapılmamalı.
-  const vehiclesByWorker = new Map<string, string[]>();
-  if (drivenVehiclesByWorker) {
-    for (const [workerId, vids] of drivenVehiclesByWorker) {
-      const arr = [...vids].filter((id) => vehiclesById.has(id));
-      if (arr.length > 0) vehiclesByWorker.set(workerId, arr);
-    }
-  } else {
-    // Geriye dönük yol: sürüş verisi verilmediyse eski atama davranışı.
-    for (const v of vehiclesById.values()) {
-      if (!v.assigned_worker_id) continue;
-      const arr = vehiclesByWorker.get(v.assigned_worker_id) ?? [];
-      arr.push(v.id);
-      vehiclesByWorker.set(v.assigned_worker_id, arr);
-    }
-  }
-
   const rows: SafetyScoreRow[] = [];
   for (const w of workersById.values()) {
     const a = acc.get(w.id);
@@ -1260,34 +1054,20 @@ export function computeSafetyScores(
     const totalEvents = a?.totalEvents ?? 0;
     const activeDays = a?.days.size ?? 0;
 
-    // Güvenilir km: şoförün atanmış araçlarının toplam mesafesi (null okumalar
-    // hariç). Hiç güvenilir okuma yoksa null (yetersiz veri).
-    let km = 0;
-    let anyKm = false;
-    for (const vid of vehiclesByWorker.get(w.id) ?? []) {
-      const d = distanceByVehicle.get(vid);
-      if (d != null) {
-        km += d;
-        anyKm = true;
-      }
-    }
-    // 052 varsa vardiya pencereli km kazanır; yoksa araç toplamına düşülür.
-    const shiftKm = shiftKmByWorker?.get(w.id);
-    const reliableKm =
-      shiftKmByWorker !== undefined ? (shiftKm ?? null) : anyKm ? km : null;
+    /**
+     * PAYDA: çekirdeğin ölçebildiği vardiyaların km toplamı.
+     *
+     * `has()` ile okunuyor, `?? null` ile DEĞİL — çünkü "haritada yok"
+     * (hiçbir vardiyası ölçülemedi) ile "haritada 0" (ölçüldü, araç hiç
+     * kıpırdamadı) farklı gerçekler. İkincisi 100 km eşiğini geçemez ve
+     * `km_yetersiz` der; birincisi ölçüm yokluğudur ve `kapsama_dusuk` der
+     * (bkz. lib/reports.ts kapı sırası).
+     */
+    const reliableKm = input.kmByWorker.has(w.id)
+      ? input.kmByWorker.get(w.id)!
+      : null;
 
-    // YETERLİ VERİ KAPISI: güvenilir km eşiğin altındaysa (ya da hiç yoksa) SKOR
-    // YOK → null ("Veri yok"). Ne yeşil 100 ne kırmızı 0. Skor SADECE eşiği geçen
-    // şoför için, ihlal/1000km oranıyla hesaplanır — düşük skor artık yalnız
-    // "yeterince sürüp çok ihlal yapan"a düşer, seyrek-veri gürültüsüne değil.
-    // FORMÜL (27.07.2026): 100 × K / (K + ceza) — ceza 1000 km başına düşen
-    // ağırlıklı puan. Eski doğrusal `100 − ceza` tabana çakılıyordu (canlı
-    // ölçümde en iyi şoför bile 194 ceza/1000km ⇒ herkes 0). Hiperbolik eğri
-    // sıfıra yaklaşır ama çarpmaz; sıralama en kötü uçta bile korunur.
-    const workerVehicleIds = vehiclesByWorker.get(w.id) ?? [];
-    const effectiveMinKm =
-      typeof minKm === "function" ? minKm(workerVehicleIds, w.id) : minKm;
-    const qualifies = reliableKm != null && reliableKm >= effectiveMinKm;
+    const qualifies = reliableKm !== null && reliableKm >= minKm;
     const penaltyPer1000 = qualifies ? penalty / (reliableKm! / 1000) : 0;
     const score = qualifies
       ? Math.max(
@@ -1304,8 +1084,10 @@ export function computeSafetyScores(
       penalty,
       basis: "km",
       distanceKm: reliableKm,
-      // Kapının kendisi — kararı veren sayı, türetilmiş bir tahmin değil.
-      minKm: effectiveMinKm,
+      // Kapının kendisi — artık herkes için aynı sayı, ama satırda taşınmaya
+      // devam ediyor: ekran "eşik 100 km" cümlesini sabitten değil KARARDAN
+      // okusun (bir gün kiracıya göre değişirse tek dokunulacak yer kalsın).
+      minKm,
       activeDays,
       trend: null,
       prevScore: null,
@@ -1323,6 +1105,8 @@ export function computeSafetyScores(
   });
   return rows;
 }
+
+
 
 // ── Bölüm 4: aylık pivot arşivi ──────────────────────────────────────────────
 

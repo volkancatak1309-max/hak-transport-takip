@@ -234,33 +234,19 @@ export const VEHICLE_DAY_SOURCE = "piyasa derlemesi";
 export const VEHICLE_DAY_AS_OF = "2026-08";
 
 /**
- * PUAN EŞİĞİ: ÇALIŞILAN GÜNE GÖRE Mİ? (09.08.2026) — VARSAYILAN KAPALI.
+ * ═══ `SCORE_THRESHOLD_WORKED_DAYS` KALDIRILDI (18.09.2026) ═════════════════
  *
- * Açıkken eşik = 40 km × şoförün o aralıkta çalıştığı gün; kapalıyken eski
- * davranış (odometre penceresi / takvim günü).
+ * Bayrak "km eşiği çalışılan güne göre mi ölçeklensin" sorusunu açıp
+ * kapatıyordu. Eşik artık hiçbir koşulda ölçeklenmiyor (düz 100 km,
+ * lib/metric-thresholds.ts), yani bayrağın açık ya da kapalı olması hiçbir
+ * sayıyı değiştirmiyordu. Env'de bırakmak daha kötü olurdu: bir kiracı onu
+ * ayarlar, hiçbir şey olmaz ve kimse sebebini bulamaz.
  *
- * NEDEN KAPALI DOĞDU: ölçüm, eşiği tek başına gevşetmenin skorları ŞİŞİRDİĞİNİ
- * gösterdi — km hâlâ aralığın uçlarından geliyordu, yani 1 gün çalışan şoför
- * aracın 30 günlük km'siyle 40 km'lik çıtaya karşı değerlendiriliyordu
- * (Mustafa Karakoç 809 km / 1 gün). Kök sorun migration 052 +
- * shift_odometer_spans ile kapandıktan ve yeniden ölçüldükten SONRA açılacak.
- *
- * ═══ AÇILDI — 09.08.2026, İKİ ÖN KOŞUL DA SAĞLANDIKTAN SONRA ═══
- *
- * 1) KM DÜZELDİ (052): km artık yalnız fiilen sürülen vardiyadan geliyor.
- *    Ölçüldü: 25/28 şoförün km'si küçüldü (ort. −%53); Mustafa Karakoç
- *    809→32, Bayram Çöymen 917→50. Şişirme kaynağı kesildi.
- * 2) MUTLAK TABAN EKLENDİ (SCORE_MIN_KM_FLOOR = 300 km): ilk ölçümde bayrak
- *    tek başına açılınca liste 4→10 büyüyor ama ORTALAMA SKOR 20→15 düşüyordu
- *    — yeni girenlerin paydası küçük olduğu için tek bir sert fren skoru
- *    uçuruyordu (Ekrem Gyuler 159 km / 3 gün → 5 puan). Taban o kapıyı kapattı.
- *
- * Eşik artık: max(300 km, 40 km × çalışılan gün). Env ile hâlâ kapatılabilir.
+ * Üç kiracının hiçbirinde env olarak TANIMLI DEĞİLDİ (ölçüldü) — kaldırılması
+ * canlı davranışı değiştirmiyor. `scripts/check-tenant-defaults.mjs` kaydında
+ * da yer almıyordu (31.07.2026 anlık görüntüsünden sonra eklenmişti).
  */
-export const SCORE_THRESHOLD_WORKED_DAYS = envBool(
-  process.env.SCORE_THRESHOLD_WORKED_DAYS,
-  true
-);
+
 
 function envEnum<T extends string>(
   value: string | undefined,

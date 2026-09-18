@@ -22,27 +22,18 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { issueTokens } from "@/lib/mobile-auth";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
+import { loadScoreInput } from "@/lib/score-core";
+import { buildPerformanceReport } from "@/lib/reports";
 import {
   computeAnalyticsRange,
   computeSafetyScores,
   computeTopDriversByType,
   computeOwnerlessEvents,
   eventOwnerAt,
-  drivenVehiclesFromEntries,
-  workedDaysFromEntries,
-  scoreMinKmForWorkedDays,
-  getWorkerShiftDistance,
-  shiftKmForScoring,
-  shiftWindowsForScoring,
   workerDrivingAt,
-  scoreMinKmForSpan,
-  getVehicleDistanceSpan,
   listVehiclesAndWorkers,
 } from "@/lib/analytics";
 import { SAFETY_SCORE_WEIGHTS, TOP10_EVENT_TYPES } from "@/lib/analytics-shared";
-import { SCORE_THRESHOLD_WORKED_DAYS } from "@/lib/tenant";
-import { getTestScope, withoutTestRows } from "@/lib/test-data";
-import { mapBounded } from "@/lib/db-fanout";
 import { addCalendarDaysVienna, startOfDayVienna, viennaDayKey } from "@/lib/format";
 import { GET as ANALYTICS } from "@/app/api/mobile/analytics/route";
 
@@ -73,29 +64,16 @@ console.log(`║ pencere  ${GUN} gün · ${viennaDayKey(range.start)} → ${vien
 const { vehicles, workers } = await listVehiclesAndWorkers();
 const vehiclesById = new Map(vehicles.map((v) => [v.id, v]));
 const workersById = new Map(workers.map((w) => [w.id, w]));
-const testScope = await getTestScope();
 
-const [events, idleEpisodes, entryRes] = await Promise.all([
+const [events, idleEpisodes] = await Promise.all([
   listEventsInRange(startISO, endISO),
   listIdleEpisodesInRange(startISO, endISO),
-  withoutTestRows(
-    supabaseAdmin
-      .from("time_entries")
-      .select("worker_id, vehicle_id, started_at")
-      .lte("started_at", endISO)
-      .or(`ended_at.is.null,ended_at.gte.${startISO}`),
-    "worker_id",
-    testScope.workerIds
-  ),
 ]);
-const shiftKmRes = await getWorkerShiftDistance(startISO, endISO);
-const windows = shiftWindowsForScoring(shiftKmRes);
-const spanEntries = await mapBounded(vehicles, async (v) => [
-  v.id,
-  await getVehicleDistanceSpan(v.id, startISO, endISO),
-]);
-const spanByVehicle = new Map(spanEntries);
-const distanceByVehicle = new Map([...spanByVehicle].map(([id, s]) => [id, s.km]));
+// 18.09.2026: pencereler artık 052'den değil VARDİYA SATIRLARINDAN (score-core).
+// Kendi `time_entries` sorgumuz ve araç-span okumamız KALKTI — skor yolu
+// ikisine de bakmıyor, tutsaydık ölçüm üretim kodundan sapardı.
+const { input: skorGirdisi } = await loadScoreInput(range);
+const windows = skorGirdisi.windowsByVehicle;
 
 console.log(`║ evren    ${vehicles.length} araç · ${workers.length} şoför · ${events.length} alarm · ${idleEpisodes.length} rölanti\n`);
 
@@ -121,7 +99,11 @@ console.log("── 1. eventOwnerAt · ESKİ CLOSURE İLE BİREBİR Mİ ──")
   iddia("canlıdaki HER olayda eski kuralla aynı cevap", sapan === 0, `${sinanan} sınama · ${sapan} sapma`);
   iddia("bozuk zaman damgasında null (çökme yok)",
     eventOwnerAt(vehiclesById, windows, vehicles[0].id, "olmayan-tarih") === null, null);
-  iddia("pencere YOKSA eski ATAMA yoluna düşüyor (052'siz kiracı)",
+  // `eventOwnerAt`in ATAMA kolu DURUYOR (imza değişmedi) ama skor yolu artık
+  // ona hiç düşmüyor: pencereler vardiya satırlarından üretiliyor ve her
+  // kurulumda var. Kolun kendisi yine de sınanıyor — yarın bir çağıran
+  // pencereyi vermezse davranışın tanımlı olduğu görülsün.
+  iddia("pencere verilmezse ATAMA koluna düşüyor (kol hâlâ tanımlı)",
     eventOwnerAt(vehiclesById, undefined, vehicles[0].id, startISO) ===
       (vehicles[0].assigned_worker_id ?? null),
     `${vehicles[0].plate} → ${eventOwnerAt(vehiclesById, undefined, vehicles[0].id, startISO) ? "atanmış" : "null"}`);
@@ -134,30 +116,11 @@ const topByType = computeTopDriversByType(events, idleEpisodes, vehiclesById, wo
 const kpiToplam = TOP10_EVENT_TYPES.reduce((a, ty) => a + (topByType[ty]?.total ?? 0), 0);
 
 /**
- * PANELİN KAPISI BİREBİR (/admin/analiz gateFor). Kendi eşiğimi uydursaydım
- * skor sayıları başka çıkardı ve "skor değişmedi" iddiası ölçmediğim bir şeyi
- * iddia ederdi.
+ * PANELİN YOLU BİREBİR (18.09.2026): Analiz sayfası da, Performans raporu da
+ * `loadScoreInput` + `computeSafetyScores` çağırıyor. Kendi eşiğimi ya da kendi
+ * km'mi uydursaydım "skor değişmedi" iddiası ölçmediğim bir şeyi iddia ederdi.
  */
-const entries = entryRes.data ?? [];
-const workedDaysByWorker = workedDaysFromEntries(entries);
-const esikFn = (vehicleIds, workerId) =>
-  SCORE_THRESHOLD_WORKED_DAYS && (workedDaysByWorker.get(workerId) ?? 0) > 0
-    ? scoreMinKmForWorkedDays(range, workedDaysByWorker.get(workerId))
-    : scoreMinKmForSpan(
-        range,
-        vehicleIds.map((id) => spanByVehicle.get(id) ?? { firstAt: null, lastAt: null })
-      );
-const rows = computeSafetyScores(
-  events,
-  idleEpisodes,
-  vehiclesById,
-  workersById,
-  distanceByVehicle,
-  esikFn,
-  drivenVehiclesFromEntries(entries),
-  shiftKmForScoring(shiftKmRes),
-  windows
-);
+const rows = computeSafetyScores(events, idleEpisodes, workersById, skorGirdisi);
 const rowToplam = rows.reduce((a, r) => a + r.totalEvents, 0);
 
 console.log(`     skorlanabilir ${ozet.scorable} · yazılan ${ozet.attributed} · sahipsiz ${ozet.ownerless} · kadroDışı ${ozet.outOfRoster}`);
@@ -184,12 +147,26 @@ iddia("skorlanan satırların HEPSİ km eşiğini geçiyor",
 iddia("skorsuz satırda skor UYDURULMAMIŞ (0'a çakılan yok)",
   rows.every((r) => r.score === null || r.score > 0), null);
 {
+  /**
+   * ⚠️ 18.09.2026'da DEĞİŞTİ. Burada "zirve şoför Resul Demir 91" yazılıydı —
+   * 20.08.2026'da canlıdan alınmış bir ANLIK GÖRÜNTÜ. Bir isim ve bir sayıyı
+   * çiviye asmak, veri her gün değiştiği için ergeç kırılır ve kırıldığında
+   * neyin bozulduğunu söylemez. Skor kuralı 18.09'da bilerek değiştiği için
+   * bu iddia zaten kırıldı (zirve: Baris Kaplan 100).
+   *
+   * Yerine geçen iddia ölçtüğünü söylüyor: BU BETİĞİN kurduğu yol ile
+   * `buildPerformanceReport`in yolu AYNI zirveyi ve AYNI skoru vermeli.
+   * Bir isme değil, İKİ YOLUN EŞİTLİĞİNE çivili — kural değişse de geçerli.
+   */
   const enIyi = [...skorlu].sort((a, b) => b.score - a.score)[0];
-  iddia("zirve şoför Resul Demir 91 (canlı uçla aynı)",
-    enIyi.name.startsWith("Resul") && enIyi.score === 91, `${enIyi.name} ${enIyi.score}`);
+  const rapor = await buildPerformanceReport(range);
+  const raporEnIyi = rapor.rows.find((r) => r.safetyScore !== null);
+  iddia("zirve şoför ve skoru Performans raporuyla AYNI",
+    !!raporEnIyi && raporEnIyi.workerId === enIyi.workerId && raporEnIyi.safetyScore === enIyi.score,
+    `betik ${enIyi.name} ${enIyi.score} · rapor ${raporEnIyi?.name} ${raporEnIyi?.safetyScore}`);
+  iddia("skorlanan sayısı Performans raporuyla AYNI",
+    rapor.scoredCount === skorlu.length, `${rapor.scoredCount} = ${skorlu.length}`);
 }
-console.log("     NOT: skorun DEĞİŞMEDİĞİ ayrıca git-stash ÖNCE/SONRA kıyasıyla");
-console.log("          bayt bayt kanıtlandı (rapordaki KANIT bloğu).");
 
 // ══ 4. ARAÇ KIRILIMI ═════════════════════════════════════════════════════
 console.log("\n── 4. ARAÇ KIRILIMI ──");

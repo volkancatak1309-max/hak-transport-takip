@@ -29,9 +29,11 @@
  *   M6  — Panel action'ları da AYNI çekirdeği çağırır (ikinci kopya yok).
  *   M7  — Manuel başlatma kapısı TEK KAYNAK (resolveManualStartAuth); hedef
  *         şoförün kapsamı (isFleetWorker) başka yerde tekrar çözülmez.
- *   M8  — Düzeltme uçları time_entries'i KENDİ güncellemez: çekirdeği çağırır.
+ *   M8  — Düzeltme uçları time_entries'i KENDİ YAZMAZ: çekirdeği çağırır.
  *   M9  — SEBEP ZORUNLU (087): `duzelt` ve `kapat` sebepsiz geçemez.
- *   M10 — PATCH kapısı requireMobileAdmin — filo şefi giremez (panel paritesi).
+ *   M10 — `duzelt`/`kapat` YALNIZ PATRON; filo şefi giremez (panel paritesi).
+ *   M12 — `islem:"mola"` başkasının vardiyasına yazamaz ve kapalı vardiyayı
+ *         geriye dönük değiştiremez (AZG yüzeyi).
  *   M11 — `/start` gövdesi workerId KABUL ETMEZ (başkası adına açma yolu ayrı
  *         uçta ve ayrı kapıda).
  *
@@ -52,6 +54,8 @@ const DOSYA = {
   hesapCore: "lib/worker-account-db.ts",
   startCore: "lib/shift-start.ts",
   correctCore: "lib/shift-correct.ts",
+  breakCore: "lib/shift-break.ts",
+  shiftActions: "app/actions/shift.ts",
   manualScope: "lib/manual-start-scope.ts",
   mobileScope: "lib/mobile-scope.ts",
   session: "lib/session.ts",
@@ -305,15 +309,30 @@ const K = Object.fromEntries(Object.entries(ham).map(([k, v]) => [k, kodu(v)]));
   if (!govde) {
     hatalar.push("M8 — PATCH işleyicisi bulunamadı.");
   } else {
-    if (/\.from\(\s*["']time_entries["']\s*\)/.test(govde)) {
+    /**
+     * KURAL YAZMAYA BAKAR, OKUMAYA DEĞİL (19.09.2026'da daraltıldı).
+     *
+     * Eskiden `.from("time_entries")` GEÇMESİ bile hataydı. `islem:"mola"`
+     * dalı sahipliği doğrulamak için o satırı ANAHTARLI OKUMAK zorunda
+     * (başkasının vardiyasına mola eklenmesin) ve okuma hiçbir kuralı
+     * atlamıyor. Korunan asıl şey YAZMANIN çekirdekte olması: sebep
+     * zorunluluğu, logShiftEdit izi, paket matematiği, plaka→vehicle_id
+     * senkronu, sefer köprüsü ve mola bayrağı hep orada.
+     *
+     * Bu yüzden denetim artık UÇTA HİÇ YAZMA OLMAMASINI istiyor — okuma
+     * serbest, `.update(`/`.insert(`/`.upsert(`/`.delete(` YASAK.
+     */
+    const yazma = govde.match(/\.(update|insert|upsert|delete)\(/g) ?? [];
+    if (yazma.length > 0) {
       hatalar.push(
-        "M8 — PATCH gövdesi time_entries'e DOĞRUDAN dokunuyor.\n" +
+        `M8 — PATCH gövdesi KENDİ yazıyor (${[...new Set(yazma)].join(" ")}).\n` +
           "  Düzeltme kuralları (sebep zorunluluğu, logShiftEdit izi, paket\n" +
           "  matematiği, plaka→vehicle_id senkronu, sefer köprüsü)\n" +
-          "  lib/shift-correct.ts'te ve YASAL bir yüzey (AZG)."
+          "  lib/shift-correct.ts'te, mola yazması lib/shift-break.ts'te —\n" +
+          "  ikisi de YASAL bir yüzey (AZG). Uç yalnız ÇAĞIRIR."
       );
     }
-    for (const c of ["correctShiftFields(", "closeShiftByAdmin("]) {
+    for (const c of ["correctShiftFields(", "closeShiftByAdmin(", "molaDakikaEkle(", "molaBaslat("]) {
       if (!govde.includes(c)) hatalar.push(`M8 — PATCH ${c} çağırmıyor.`);
     }
     /**
@@ -335,7 +354,7 @@ const K = Object.fromEntries(Object.entries(ham).map(([k, v]) => [k, kodu(v)]));
   }
   if (!hatalar.some((h) => h.startsWith("M8"))) {
     notlar.push(
-      "M8 ✓ düzeltme yazması lib/shift-correct.ts'te (duzelt + kapat) · km işlemi YOK."
+      "M8 ✓ yazma çekirdeklerde: shift-correct (duzelt + kapat) · shift-break (mola) · km işlemi YOK."
     );
   }
 }
@@ -370,22 +389,97 @@ const K = Object.fromEntries(Object.entries(ham).map(([k, v]) => [k, kodu(v)]));
   }
 }
 
-// ── M10 · PATCH KAPISI: YALNIZ PATRON ───────────────────────────────────────
+// ── M10 · `duzelt`/`kapat` YALNIZ PATRON ────────────────────────────────────
+/**
+ * KAPI 19.09.2026'da İŞLEME GÖRE AYRILDI — YETKİ GEVŞEMEDİ.
+ *
+ * Eskiden kapı `requireMobileAdmin`di ve bu denetim onu arıyordu. `islem:
+ * "mola"` şoförün KENDİ açık vardiyasına yazdığı için kapıda patron aranırsa
+ * şoför `islem`i söyleyemeden 403 alırdı. Çözüm: kapı oturuma indi, YETKİ
+ * KARARI işlem çözüldükten SONRA veriliyor.
+ *
+ * Bu denetim artık o kararı arıyor. Aranan şey bir isim değil, bir ZİNCİR:
+ *   · kapı `requireMobileWorker` (oturum) — şefe açık kapılar hâlâ YASAK,
+ *   · `YONETICI_ISLEMLERI` kümesi duzelt + kapat içerir, `mola` İÇERMEZ,
+ *   · o kümedeki işlem admin olmayana 403 `admin_required` döndürür.
+ * Üçünden biri düşerse şef ya da şoför AZG kaydını düzeltebilir hâle gelir.
+ */
 {
   const i = K.patchUc.indexOf("export async function PATCH");
   const govde = i >= 0 ? K.patchUc.slice(i) : "";
-  if (!/requireMobileAdmin\(/.test(govde)) {
-    hatalar.push(
-      "M10 — PATCH requireMobileAdmin kullanmıyor.\n" +
-        "  Panelde üç düzeltme eylemi de requireAdmin ile korunuyor; filo şefine\n" +
-        "  açmak PARİTEYİ BOZAR ve kapsam denetimi olmayan bir yazma yolu verir."
-    );
+  if (!/requireMobileWorker\(/.test(govde)) {
+    hatalar.push("M10 — PATCH bir oturum kapısı (requireMobileWorker) kullanmıyor.");
   }
   if (/requireMobileFleetView\(|requireMobileWorkerScoped\(/.test(govde)) {
     hatalar.push("M10 — PATCH şefe açık bir kapı kullanıyor; panel paritesi bozuluyor.");
   }
+  const yon = /const YONETICI_ISLEMLERI = new Set\(\[([^\]]*)\]\)/.exec(K.patchUc)?.[1] ?? "";
+  if (!/"duzelt"/.test(yon) || !/"kapat"/.test(yon)) {
+    hatalar.push(
+      "M10 — YONETICI_ISLEMLERI kümesi duzelt + kapat içermiyor.\n" +
+        "  Panelde iki düzeltme eylemi de requireAdmin ile korunuyor; filo şefine\n" +
+        "  açmak PARİTEYİ BOZAR ve kapsam denetimi olmayan bir yazma yolu verir."
+    );
+  }
+  if (/"mola"/.test(yon)) {
+    hatalar.push(
+      "M10 — `mola` YONETICI_ISLEMLERI'nde; şoför kendi molasını yazamaz hâle gelir."
+    );
+  }
+  if (!/YONETICI_ISLEMLERI\.has\(islem\)[^\n]*\n?[^\n]*mobileError\(403,\s*"admin_required"\)/.test(govde)) {
+    hatalar.push(
+      "M10 — YONETICI_ISLEMLERI için 403 admin_required kapısı bulunamadı.\n" +
+        "  Küme tek başına bir kapı değildir; kararın KODDA uygulanması gerekir."
+    );
+  }
   if (!hatalar.some((h) => h.startsWith("M10"))) {
-    notlar.push("M10 ✓ PATCH yalnız patron (panelle birebir).");
+    notlar.push("M10 ✓ duzelt + kapat yalnız patron (panelle birebir); mola şoföre açık.");
+  }
+}
+
+// ── M12 · MOLA: KENDİ AÇIK VARDİYASI ────────────────────────────────────────
+/**
+ * `islem:"mola"` AZG'nin `break_minutes` alanına yazıyor — yasal kayıt. İki
+ * sınır bu yüzden kodda olmak zorunda ve ikisi de SESSİZCE kaybolabilir:
+ *
+ *   · SAHİPLİK — yol kimliği istemciden geliyor. Sahiplik ayrı okunmazsa bir
+ *     şoför başkasının vardiyasına mola yazar. (Çekirdeğe kendi kimliğini
+ *     verip "nasılsa eşleşmez" demek YETMEZ: 0 satır güncellenir ve uç
+ *     sessizce ok:true der — hata değil, SESSİZ BAŞARISIZLIK.)
+ *   · AÇIKLIK — kapanmış vardiyaya mola eklemek geriye dönük bir AZG
+ *     değişikliğidir; o iş sebep zorunlu, iz bırakan `duzelt` eylemidir.
+ */
+{
+  const i = K.patchUc.indexOf('if (islem === "mola")');
+  const dal = i >= 0 ? K.patchUc.slice(i, i + 4000) : "";
+  if (!dal) {
+    hatalar.push("M12 — `islem:\"mola\"` dalı bulunamadı.");
+  } else {
+    if (!/worker_id !== aktorId|aktorId !== [a-zA-Z.]*worker_id/.test(dal)) {
+      hatalar.push(
+        "M12 — mola dalı SAHİPLİK denetlemiyor (kendi vardiyası mı?).\n" +
+          "  Yol kimliği istemciden gelir; başkasının vardiyasına mola yazılabilirdi."
+      );
+    }
+    if (!/ended_at !== null/.test(dal)) {
+      hatalar.push(
+        "M12 — mola dalı vardiyanın AÇIK olduğunu denetlemiyor.\n" +
+          "  Kapanmış vardiyaya mola eklemek geriye dönük AZG değişikliğidir."
+      );
+    }
+    if (!/break_minutes/.test(K.breakCore)) {
+      hatalar.push("M12 — lib/shift-break.ts `break_minutes` yazmıyor; AZG alanı tek olmalı.");
+    }
+    // Panel de AYNI çekirdeği çağırmalı — ikinci bir mola kuralı doğmasın.
+    if (!/molaDakikaEkle\(|molaBaslat\(/.test(K.shiftActions)) {
+      hatalar.push(
+        "M12 — panel action'ları mola çekirdeğini çağırmıyor (ikinci kopya riski).\n" +
+          "  22.07.2026: bayrağı temizlemeyi unutan kopya 'sürekli molada' şoför doğurmuştu."
+      );
+    }
+  }
+  if (!hatalar.some((h) => h.startsWith("M12"))) {
+    notlar.push("M12 ✓ mola: kendi AÇIK vardiyası · tek AZG alanı · panel aynı çekirdek.");
   }
 }
 
@@ -410,5 +504,5 @@ if (hatalar.length > 0) {
   for (const h of hatalar) console.error("  " + h + "\n");
   process.exit(1);
 }
-console.log("✓ mobil uç tur 1 muhafızı: 11 denetim geçti.");
+console.log("✓ mobil uç tur 1 muhafızı: 12 denetim geçti.");
 for (const n of notlar) console.log("  " + n);

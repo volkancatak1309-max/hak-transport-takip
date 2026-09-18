@@ -177,12 +177,31 @@ kontrol("PATCH correctShiftKm'i ÇAĞIRMIYOR", !/correctShiftKm\(/.test(patchSrc
 const islemler = /const ISLEMLER = new Set\(\[([^\]]*)\]\)/.exec(patchSrc)?.[1] ?? "";
 kontrol("ISLEMLER kümesi bulundu", islemler.length > 0, islemler.trim());
 kontrol('ISLEMLER kümesinde "km" YOK', !/"km"/.test(islemler), islemler.trim());
+/**
+ * ⚠️ KÜME SAYIYLA KİLİTLİ, İSİMLE DEĞİL. "duzelt + kapat" var mı diye bakmak
+ * yetmez: kümeye sessizce dördüncü bir işlem eklenirse bu denetim geçerdi.
+ * Tırnak sayısı, EKLEYEN KİŞİYİ bu satırı da güncellemeye zorlar.
+ *
+ * 19.09.2026: üçüncü üye "mola" eklendi (feat/profil-ve-mola-uclari). Km
+ * kuralına dokunmaz — mola AZG'nin `break_minutes` alanına yazar, km'ye
+ * DEĞİL; sahibi lib/shift-break.ts, kapısı şoförün kendi açık vardiyası.
+ */
 kontrol(
-  "ISLEMLER tam olarak duzelt + kapat",
-  /"duzelt"/.test(islemler) && /"kapat"/.test(islemler) &&
-    (islemler.match(/"/g) ?? []).length === 4,
+  "ISLEMLER tam olarak duzelt + kapat + mola",
+  /"duzelt"/.test(islemler) && /"kapat"/.test(islemler) && /"mola"/.test(islemler) &&
+    (islemler.match(/"/g) ?? []).length === 6,
   islemler.trim()
 );
+/**
+ * Mola dalı km'ye DOKUNMAZ: 12. maddenin sözü mola eklenirken de geçerli.
+ * Dal, `let r:` bildirimine kadar kesiliyor — 3.000 karakterlik kör bir dilim
+ * `duzelt` dalına taşar ve oradaki meşru `start_km`i bulgu sanardı.
+ */
+const molaBas = patchSrc.indexOf('if (islem === "mola")');
+const molaSon = patchSrc.indexOf("let r:", molaBas);
+const molaDal = molaBas >= 0 && molaSon > molaBas ? patchSrc.slice(molaBas, molaSon) : "";
+kontrol("mola dalı bulundu", molaDal.length > 0);
+kontrol("mola dalı start_km/end_km yazmıyor", !/start_km|end_km/.test(molaDal));
 // Bilinmeyen işlem 400 ile reddedilmeli ve İZİNLİ listesini söylemeli.
 kontrol(
   "bilinmeyen işlem 400 + izinli listesi",

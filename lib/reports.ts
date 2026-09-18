@@ -14,7 +14,7 @@ import {
   type FuelVolumeStatRow,
   type YakitSebep,
 } from "@/lib/fuel-vehicle";
-import { loadScoreShifts } from "@/lib/score-core";
+import { loadScoreShifts, aracCekirdekKm } from "@/lib/score-core";
 import {
   computeSafetyScores,
   workerDrivingAt,
@@ -335,10 +335,17 @@ async function loadBase(range: DateRange) {
       );
     })(),
   ]);
+  /**
+   * ÇEKİRDEK km, ARAÇ EKSENİNDE (19.09.2026) — mesafe ve hız raporlarının
+   * paydası. `loadScoreShifts` turMemo'lu, yani aynı turda ikinci okuma yok.
+   */
+  const cekirdekKmByVehicle = aracCekirdekKm(await loadScoreShifts(range));
+
   return {
     startISO,
     endISO,
     vehicles,
+    cekirdekKmByVehicle,
     /** ŞOFÖR EVRENİ — satır/sayı üreten her yer bunu kullanır. */
     workers,
     /** İSİM SÖZLÜĞÜ — araç satırına sürücü etiketi basan yerler bunu kullanır. */
@@ -393,13 +400,18 @@ export async function buildSpeedReport(range: DateRange): Promise<SpeedReport> {
 
   const rows: SpeedRow[] = base.vehicles.map((v) => {
     const agg = byVehicle.get(v.id);
-    const km = base.distanceByVehicle.get(v.id) ?? null;
+    /**
+     * PAYDA ÇEKİRDEKTEN (19.09.2026) — odometre ekseni değil. Aynı araç için
+     * Hız · Mesafe · Yakıt raporları ve araç detayı artık AYNI km'yi gösterir.
+     */
+    const km = base.cekirdekKmByVehicle.get(v.id) ?? null;
     // PAYDA KAPISI (22.07.2026): eskiden yalnız `km > 0` bakılıyordu — 2 km
     // giden araçtaki 1 ihlal ekranda "50 ihlal/100 km" oluyordu. Artık payda
     // SPEED_MIN_KM'in altındaysa oran hesaplanmaz ve sebebi yazılır.
     const reason = checkKmDenominator(
       km,
-      base.distanceReasonByVehicle.get(v.id) ?? null,
+      // Çekirdek ölçemediyse sebep ODOMETRENİNKİ değil, çekirdeğinki.
+      km === null ? "olculmedi" : base.distanceReasonByVehicle.get(v.id) ?? null,
       SPEED_MIN_KM
     );
     return {
@@ -436,7 +448,29 @@ export async function buildSpeedReport(range: DateRange): Promise<SpeedReport> {
  */
 const BOS_SPAN = { km: null, reason: "no_odometer", firstAt: null, lastAt: null } as const;
 
-/** FİLO MESAFE — odometre uç-noktaları (getVehicleDistanceKm, km-guard dahil). */
+/**
+ * FİLO MESAFE — `lib/km-axis.ts` çekirdeği, ARAÇ ekseninde toplanmış.
+ *
+ * ═══ ODOMETRE EKSENİ KALKTI (19.09.2026, Volkan kararı) ════════════════════
+ *
+ * Bu rapor 22.07.2026'dan beri odometre uç-noktalarını gösteriyordu
+ * (`getVehicleDistanceKm` + km-guard). Artık vardiya vardiya verilen çekirdek
+ * kararının araç toplamı — yani Yakıt raporunun, Hız raporunun, araç detayı
+ * özetinin ve sürücü puanının kullandığı AYNI sayı.
+ *
+ * NEDEN: iki eksen aynı araç için farklı sayı veriyordu ve fark küçük değildi
+ * (DO-671GY: odometre 701 km, çekirdek 64 km — 30 günde yalnız 1 vardiya
+ * açılmış). Yönetici aynı aracı iki raporda iki farklı km ile görüyordu.
+ *
+ * ⚠️ NE ÖLÇÜYOR, NE ÖLÇMÜYOR: çekirdek yalnız VARDİYA İÇİ sürüşü sayar.
+ * Vardiya açılmadan sürülen km bu rapora GİRMEZ — ve bu bilinçli: aracın
+ * kim tarafından, hangi işte sürüldüğü bilinmiyorsa filo mesafesi diye
+ * raporlamak, ölçmediğimiz bir şeyi raporlamaktır. Vardiya disiplini
+ * eksikse doğru yer Dikkat panosudur, mesafe raporu değil.
+ *
+ * ⚠️ CSV/PDF km kolonu 13. maddedeki kesim kuralına (`kmRaporDegeri`) bağlı
+ * ve BURADAN etkilenmez.
+ */
 export async function buildDistanceReport(range: DateRange): Promise<DistanceReport> {
   const base = await loadBase(range);
   // İSİM SÖZLÜĞÜ (geniş) — mesafe raporu ARAÇ eksenli; bkz. hız raporu.
@@ -444,7 +478,7 @@ export async function buildDistanceReport(range: DateRange): Promise<DistanceRep
   const days = rangeDays(range);
 
   const rows: DistanceRow[] = base.vehicles.map((v) => {
-    const km = base.distanceByVehicle.get(v.id) ?? null;
+    const km = base.cekirdekKmByVehicle.get(v.id) ?? null;
     return {
       vehicleId: v.id,
       plate: v.plate,
@@ -1552,22 +1586,16 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
    */
   const vardiyalar = await loadScoreShifts(range);
   const pencereByVehicle = new Map<string, { baslangic: string; bitis: string }[]>();
-  const cekirdekKm = new Map<string, number>();
-  const cekirdekOlculen = new Map<string, number>();
   for (const t of vardiyalar) {
     if (!t.vehicle_id) continue;
     const arr = pencereByVehicle.get(t.vehicle_id) ?? [];
     arr.push({ baslangic: t.started_at, bitis: t.ended_at ?? endISO });
     pencereByVehicle.set(t.vehicle_id, arr);
-    const d = t.km_karar.km;
-    if (d !== null) {
-      cekirdekKm.set(t.vehicle_id, (cekirdekKm.get(t.vehicle_id) ?? 0) + d);
-      cekirdekOlculen.set(t.vehicle_id, (cekirdekOlculen.get(t.vehicle_id) ?? 0) + 1);
-    }
   }
-  /** Çekirdek hiçbir vardiyada ölçemediyse null — 0 DEĞİL. */
-  const cekKmOf = (id: string): number | null =>
-    (cekirdekOlculen.get(id) ?? 0) > 0 ? (cekirdekKm.get(id) as number) : null;
+  // Km toplaması PAYLAŞILIR fonksiyondan (lib/score-core.ts) — mesafe ve hız
+  // raporları da aynı fonksiyonu çağırıyor, ikinci bir toplama kuralı yok.
+  const cekirdekKmMap = aracCekirdekKm(vardiyalar);
+  const cekKmOf = (id: string): number | null => cekirdekKmMap.get(id) ?? null;
 
   const hamRows: FuelRow[] = vehicles.map((v) => {
     const cap = v.tank_capacity_l != null ? Number(v.tank_capacity_l) : null;

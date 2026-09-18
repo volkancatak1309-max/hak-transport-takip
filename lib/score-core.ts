@@ -278,3 +278,35 @@ export async function loadScoreInput(
   const shifts = await loadScoreShifts(range);
   return { shifts, input: scoreInputFromShifts(shifts, range) };
 }
+
+/**
+ * ARAÇ EKSENİNDE ÇEKİRDEK km — SAF, TEK TANIM (19.09.2026).
+ *
+ * `lib/km-axis.ts` kararı (cihaz → sayaç → null) vardiya vardiya verilir;
+ * bu fonksiyon onu ARAÇ ekseninde toplar. Üç rapor (mesafe · hız · yakıt) ve
+ * araç detayı özeti aynı fonksiyondan okur — uygulamada ikinci bir km ekseni
+ * kalmasın diye.
+ *
+ * ⚠️ DÖNÜŞ `null` İKİ DURUMU DA KAPSAR: aracın hiç vardiyası yok, ya da
+ * vardiyası var ama çekirdek hiçbirinde ölçemedi. İkisi de "km yok" demek ve
+ * ikisinde de 0 YAZILMAZ — 0 bir ölçümdür (araç kıpırdamadı), yokluk değil.
+ * Ayrımı gereken tek yer araç detayı özeti ve orada vardiya sayısı zaten var.
+ */
+export function aracCekirdekKm(shifts: ScoreShift[]): Map<string, number | null> {
+  const toplam = new Map<string, number>();
+  const olculen = new Map<string, number>();
+  const gorulen = new Set<string>();
+  for (const e of shifts) {
+    if (!e.vehicle_id) continue;
+    gorulen.add(e.vehicle_id);
+    const d = e.km_karar.km;
+    if (d === null) continue;
+    toplam.set(e.vehicle_id, (toplam.get(e.vehicle_id) ?? 0) + d);
+    olculen.set(e.vehicle_id, (olculen.get(e.vehicle_id) ?? 0) + 1);
+  }
+  const out = new Map<string, number | null>();
+  for (const id of gorulen) {
+    out.set(id, (olculen.get(id) ?? 0) > 0 ? (toplam.get(id) as number) : null);
+  }
+  return out;
+}

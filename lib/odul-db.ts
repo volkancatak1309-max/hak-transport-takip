@@ -326,6 +326,12 @@ export async function rozetleriOku(
 // ═══════════════════════════ LİDERLİK ════════════════════════════════════
 
 export type LiderlikPanosu = {
+  /**
+   * SAKLANAN ayar — `ayar` yönetici yüzeyinde ZORLANMIŞ olabilir (isimZorla).
+   * Ayar formu bunu okur, yoksa yönetici her açılışta "isimler açık" görür ve
+   * kaydettiğinde şoför tarafını sessizce açardı.
+   */
+  ayarKayitli: OdulAyari;
   tabloYok: boolean;
   ayar: OdulAyari;
   donemBas: string | null;
@@ -349,14 +355,30 @@ export type LiderlikPanosu = {
  */
 export async function liderlikPanosu(
   benWorkerId: string | null,
-  takmaEtiket: (n: number) => string
+  takmaEtiket: (n: number) => string,
+  /**
+   * YÖNETİCİ YÜZEYİ — isim ayarı ne olursa olsun adlar AÇIK (19.09.2026).
+   *
+   * `isim_gorunur` ayarı ŞOFÖRLERİN BİRBİRİNİ görmesini düzenler (§ 87 Abs. 1
+   * Nr. 6 BetrVG: çalışanlar arası kıyaslamaya elverişli düzenek). Yönetici
+   * zaten her şoförün performans raporunu isimle görüyor; orada isim varken
+   * burada gizlemek bilgiyi korumaz, yalnız ekranı işe yaramaz kılar.
+   *
+   * ⚠️ ESKİDEN PANEL BUNU SONRADAN EZİYORDU (`ayar: { ...pano.ayar,
+   * isimGorunur: true }`) ama `siralamaKur` maskelemeyi ÇOKTAN uygulamış
+   * oluyordu — yani ayar kapalıyken yönetici panelinde de "#3" yazıyordu.
+   * Bayrak artık maskelemenin YAPILDIĞI yere iniyor.
+   */
+  isimZorla = false
 ): Promise<LiderlikPanosu> {
-  const ayar = await odulAyari();
+  const ayarKayitli = await odulAyari();
+  const ayar = isimZorla ? { ...ayarKayitli, isimGorunur: true } : ayarKayitli;
   const { donemler, tabloYok } = await donemleriOku();
 
   const bos: LiderlikPanosu = {
     tabloYok: tabloYok || ayar.tabloYok,
     ayar,
+    ayarKayitli,
     donemBas: null,
     donemBit: null,
     siralı: [],
@@ -398,6 +420,7 @@ export async function liderlikPanosu(
   return {
     tabloYok: false,
     ayar,
+    ayarKayitli,
     donemBas: sonDonem,
     donemBit: buDonem[0]?.donemBit ?? null,
     siralı,

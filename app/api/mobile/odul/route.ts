@@ -23,6 +23,17 @@ export const dynamic = "force-dynamic";
  * ELVERİŞLİ teknik düzenek işletme kurulunun ortak kararına tabidir; ölçüt
  * işverenin niyeti değil düzeneğin nesnel elverişliliğidir. İsimli bir
  * liderlik tablosu tam olarak odur. (AT tarafında DSG aynı yöne bakar.)
+ *
+ * ═══ YÖNETİCİDE İSİMLER AÇIK — PANELLE AYNI (19.09.2026) ═══
+ *
+ * Kural ŞOFÖRLERİN BİRBİRİNİ görmesini düzenliyor; yöneticiyi değil. Yönetici
+ * `/admin/raporlar/performans`ta zaten her şoförü isimle görüyor ve panelin
+ * ödül ekranı da isimleri açık gösteriyor. Mobilde gizlemek bilgiyi korumaz,
+ * yalnız aynı kişiye iki farklı ekran gösterirdi.
+ *
+ * ⚠️ ŞOFÖRDE HİÇBİR ŞEY DEĞİŞMEDİ: `is_admin=false` olan için ayar neyse o.
+ * Bayrak `liderlikPanosu`nun ÜÇÜNCÜ parametresi ve maskelemenin yapıldığı
+ * yere iniyor — gövdeden `workerId` sızıntısı da aynı bayrağa bağlı.
  */
 export async function GET(req: NextRequest) {
   const kapi = await requireMobileWorker(req);
@@ -31,7 +42,8 @@ export async function GET(req: NextRequest) {
   const benId = kapi.actor.worker.id;
 
   try {
-    const pano = await liderlikPanosu(benId, (n) => `#${n}`);
+    const yonetici = kapi.actor.worker.is_admin === true;
+    const pano = await liderlikPanosu(benId, (n) => `#${n}`, yonetici);
 
     if (pano.tabloYok) {
       return Response.json(
@@ -90,7 +102,14 @@ export async function GET(req: NextRequest) {
         eksikDonem: pano.seri.eksikDonem,
       },
       esik: { rozet: ROZET_SKOR_ESIK },
+      /**
+       * BU İSTEK İÇİN geçerli olan değer: yöneticide her zaman true, şoförde
+       * saklanan ayar. İstemci ekranı buna göre kurar.
+       */
       isimGorunur: pano.ayar.isimGorunur,
+      /** SAKLANAN ayar — şoför tarafının gerçeği. Yönetici "şoförler ne
+       *  görüyor" sorusunu bununla cevaplar; ikisi karışmasın diye ayrı. */
+      isimGorunurKayitli: pano.ayarKayitli.isimGorunur,
       rozetAcik: pano.ayar.rozetAcik,
       /** Bu dönem kalibrasyon sınırından önce mi başlıyor (karışık cetvel). */
       epokOncesi: pano.epokOncesi,

@@ -88,6 +88,7 @@
     "lint:filo-span": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-filo-span.mjs",
     "verify:dikkat-hedef": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-dikkat-hedef.mjs",
     "verify:filo-span": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-filo-span-tek-cekirdek.mjs",
+    "verify:arac-ozet": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-arac-ozet.mjs",
     "verify:yakit-son-toplama": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-yakit-son-toplama.mjs"
   },
   "dependencies": {

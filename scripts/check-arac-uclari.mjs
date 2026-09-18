@@ -245,18 +245,22 @@ kontrol("2 dakikalık duruş durak DEĞİL", gunDuraklari(isikli).duraklar.lengt
 
 // ══ 8 · U5 · METRİKLER — "hesaplanamayan sıfır değildir" ═══════════════════
 const met = gunMetrikleri(IZ);
-kontrol("ölçülen dilimde gpsKm", met.gpsKm === 3.33, String(met.gpsKm));
+// ⚠️ `gpsKm` DENETİMLERİ KALDIRILDI (18.09.2026, "tek km" kararı). Alan artık
+// üretilmiyor; araç km'si TEK kaynaktan geliyor (/ozet → km + kmKaynak).
+// Yerine konan denetim alanın GERİ GELMEDİĞİNİ sınıyor — sessizce dönerse
+// ekranda yine iki km olur.
+kontrol("gpsKm ARTIK ÜRETİLMİYOR", !("gpsKm" in met), JSON.stringify(met.gpsKm));
+kontrol("sebep bloğunda gps YOK", !("gps" in met.sebep), JSON.stringify(met.sebep));
 kontrol("ölçülen dilimde motorDk", met.motorDk === 2, String(met.motorDk));
-kontrol("üç sebep de 'var'", esit(met.sebep, { motor: "var", gps: "var", rolanti: "var" }));
+kontrol("iki sebep de 'var'", esit(met.sebep, { motor: "var", rolanti: "var" }));
 kontrol("nokta sayısı taşınıyor", met.noktaSayisi === 30);
 
 const bos = gunMetrikleri([]);
 kontrol("VERİ YOK → motorDk null", bos.motorDk === null);
-kontrol("VERİ YOK → gpsKm null (0 DEĞİL)", bos.gpsKm === null);
 kontrol("VERİ YOK → rolantiDk null", bos.rolantiDk === null);
-kontrol("VERİ YOK → sebep veri_yok", esit(bos.sebep, { motor: "veri_yok", gps: "veri_yok", rolanti: "veri_yok" }));
+kontrol("VERİ YOK → sebep veri_yok", esit(bos.sebep, { motor: "veri_yok", rolanti: "veri_yok" }));
 const tek = gunMetrikleri([IZ[0]]);
-kontrol("TEK NOKTA → hepsi null", tek.motorDk === null && tek.gpsKm === null && tek.rolantiDk === null);
+kontrol("TEK NOKTA → hepsi null", tek.motorDk === null && tek.rolantiDk === null);
 
 // SENTETİK: kontak/hız kolonu null. CANLIDA ÖLÇÜLEMEZ — 10.08.2026 sayımı:
 // son 7 günün 287.789 satırında `ignition_on` null 0, `speed_kmh` null 0.
@@ -265,7 +269,6 @@ const kontaksiz = IZ.map((r) => ({ ...r, ignition_on: null }));
 const mk = gunMetrikleri(kontaksiz);
 kontrol("KONTAK YOK → motorDk null", mk.motorDk === null);
 kontrol("KONTAK YOK → rolantiDk null", mk.rolantiDk === null);
-kontrol("KONTAK YOK → gpsKm YİNE ölçülür", mk.gpsKm === 3.33, String(mk.gpsKm));
 kontrol("KONTAK YOK → sebep kontak_yok", mk.sebep.motor === "kontak_yok" && mk.sebep.rolanti === "kontak_yok");
 const hizsiz = IZ.map((r) => ({ ...r, speed_kmh: null }));
 const mh = gunMetrikleri(hizsiz);
@@ -281,9 +284,8 @@ const park = Array.from({ length: 10 }, (_, i) => ({
 }));
 const mp = gunMetrikleri(park);
 kontrol("PARK → motorDk GERÇEK 0 (null değil)", mp.motorDk === 0, String(mp.motorDk));
-kontrol("PARK → gpsKm GERÇEK 0", mp.gpsKm === 0, String(mp.gpsKm));
 kontrol("PARK → rolantiDk GERÇEK 0", mp.rolantiDk === 0, String(mp.rolantiDk));
-kontrol("PARK → sebep hepsi 'var'", esit(mp.sebep, { motor: "var", gps: "var", rolanti: "var" }));
+kontrol("PARK → sebep hepsi 'var'", esit(mp.sebep, { motor: "var", rolanti: "var" }));
 
 // ══ 9 · KAYNAK DENETİMİ — sözler dosyalarda duruyor mu ═════════════════════
 const oku = (p) => readFileSync(path.join(ROOT, p), "utf8");

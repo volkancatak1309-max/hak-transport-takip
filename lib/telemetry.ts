@@ -783,23 +783,37 @@ export type IdleEpisodeWithPlate = {
  * 1000 satır tavanına karşı sayfalanır. Tablo yoksa (migration 024 uygulanmadıysa)
  * boş listeye düşer — alarmlar sayfasını asla bozmaz.
  */
+/**
+ * Aralıktaki rölanti epizodları. `vehicleId` verilirse okuma SQL'de daraltılır.
+ *
+ * ⚠️ DARALTMA BİR FORK DEĞİL (18.09.2026): aynı tablo, aynı kolonlar, aynı
+ * sıra, aynı test elemesi — yalnız `where`e bir eşitlik eklenir. Araç detayının
+ * dönem özeti tek araç istiyor ve filo genelini okumak ölçüldü: 856 ms → 143 ms.
+ * Süre tanımı (`idleEpisodeDurationMs`) ve katsayı yine tek yerde, yani
+ * "Rölanti İsrafı panosuyla aynı sayı" iddiası korunur.
+ */
 export async function listIdleEpisodesInRange(
   startISO: string,
-  endISO: string
+  endISO: string,
+  vehicleId?: string
 ): Promise<IdleEpisodeWithPlate[]> {
   type Row = Omit<IdleEpisodeWithPlate, "plate">;
-  const { data } = await fetchAllRows<Row>((from, to) =>
-    supabaseAdmin
+  const { data } = await fetchAllRows<Row>((from, to) => {
+    // test-filtered: eleme SATIR BAZLI ve aşağıda — `dropTestRows(data, …)`.
+    // Sorgu iki dalı (araç kapsamlı / kapsamsız) tek zincirde kurduğu için
+    // sarmalayıcı buraya yazılamıyor; eleme yine de HER İKİ dalda çalışır.
+    const q = supabaseAdmin
       .from("idle_episodes")
       .select(
         "id, vehicle_id, started_at, ended_at, last_seen_at, end_reason, latitude, longitude"
       )
       .gte("started_at", startISO)
-      .lte("started_at", endISO)
+      .lte("started_at", endISO);
+    return (vehicleId ? q.eq("vehicle_id", vehicleId) : q)
       .order("started_at", { ascending: false })
       .order("id")
-      .range(from, to)
-  );
+      .range(from, to);
+  });
   const scope = await getTestScope();
   const rows = dropTestRows(data, (r) => ({ vehicle: r.vehicle_id }), scope);
   if (rows.length === 0) return [];

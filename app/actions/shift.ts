@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { molaBaslat, molaDakikaEkle } from "@/lib/shift-break";
 import { supabaseAdmin } from "@/lib/supabase";
 import {
   requireWorker,
@@ -157,13 +158,10 @@ export async function endShiftAction(formData: FormData): Promise<ShiftResult> {
  */
 export async function startBreakAction(): Promise<ShiftResult> {
   const session = await requireWorker();
-  const { error } = await supabaseAdmin
-    .from("time_entries")
-    .update({ break_started_at: new Date().toISOString() })
-    .eq("worker_id", session.worker_id!)
-    .is("ended_at", null)
-    .is("break_started_at", null);
-  if (error) return { ok: false, error: error.message };
+  // Yazma kuralı lib/shift-break.ts'te — mobil uç da AYNI fonksiyonu çağırıyor
+  // (19.09.2026). Buradaki iş yalnız KİMLİK: oturumdaki şoförün kendi vardiyası.
+  const r = await molaBaslat(session.worker_id!);
+  if (!r.ok) return { ok: false, error: r.error };
   revalidatePath("/panel");
   return { ok: true };
 }
@@ -175,38 +173,9 @@ export async function startBreakAction(): Promise<ShiftResult> {
  */
 export async function addBreakMinutesAction(minutes: number): Promise<ShiftResult> {
   const session = await requireWorker();
-  const add = Math.max(0, Math.floor(minutes));
-
-  const { data: active } = await supabaseAdmin
-    .from("time_entries")
-    .select("id, break_minutes")
-    .eq("worker_id", session.worker_id!)
-    .is("ended_at", null)
-    .maybeSingle();
-
-  if (!active) return { ok: false, error: "no_active" };
-
-  const newBreak = (active.break_minutes ?? 0) + add;
-  // Keep break-minute logging independent of the new column so this never
-  // regresses if migration 009 hasn't been applied yet.
-  const { error } = await supabaseAdmin
-    .from("time_entries")
-    .update({ break_minutes: newBreak })
-    .eq("id", active.id)
-    .eq("worker_id", session.worker_id!);
-
-  if (error) return { ok: false, error: error.message };
-
-  // Best-effort: clear the server-side break flag (no-op pre-migration).
-  await supabaseAdmin
-    .from("time_entries")
-    .update({ break_started_at: null })
-    .eq("id", active.id)
-    .then(
-      () => {},
-      () => {}
-    );
-
+  // Yazma kuralı (toplama · bayrak temizliği · tavan) lib/shift-break.ts'te.
+  const r = await molaDakikaEkle(session.worker_id!, minutes);
+  if (!r.ok) return { ok: false, error: r.error };
   revalidatePath("/panel");
   return { ok: true };
 }

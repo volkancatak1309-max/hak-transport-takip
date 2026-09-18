@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import { verifyMobileRequest, mobileError } from "@/lib/mobile-auth";
-import { requireMobileAdmin } from "@/lib/mobile-scope";
+import { requireMobileWorker } from "@/lib/mobile-scope";
 // `correctShiftKm` BİLEREK içe aktarılmıyor (16.09.2026): `islem:"km"` dalı
 // kalktı. Çekirdek lib/shift-correct.ts'te duruyor ama bu uçtan çağrılmıyor.
 import { correctShiftFields, closeShiftByAdmin } from "@/lib/shift-correct";
+import { molaBaslat, molaDakikaEkle, MOLA_TEK_SEFER_MAX_DK } from "@/lib/shift-break";
 import { listShiftEdits } from "@/lib/shift-edit-log";
 import { revalidatePath } from "next/cache";
 import { getManagedFleet, getFleetScope, UNRESTRICTED } from "@/lib/fleet-scope";
@@ -421,9 +422,10 @@ export async function GET(
  * çalışacağını söyler ve her biri kendi doğrulamasını, kendi iz kaynağını
  * (`shift_edit_log.kaynak`) korur.
  *
- *   islem: "duzelt" → editEntryAction        · kaynak "duzeltme"
- *   islem: "km"     → adminUpdateKmAction    · kaynak "km"
- *   islem: "kapat"  → adminCloseShiftAction  · kaynak "kapatma"
+ *   islem: "duzelt" → editEntryAction        · kaynak "duzeltme" · YÖNETİCİ
+ *   islem: "km"     → adminUpdateKmAction    · KALDIRILDI (16.09.2026)
+ *   islem: "kapat"  → adminCloseShiftAction  · kaynak "kapatma"  · YÖNETİCİ
+ *   islem: "mola"   → lib/shift-break.ts     · iz YOK            · ŞOFÖR/YÖN.
  *
  * ── NEDEN TEK UÇ, NEDEN AYRI `islem` ───────────────────────────────────────
  * Üçü de "bu vardiyayı değiştir" demek ve REST'te bu PATCH'tir; ayrı adresler
@@ -441,11 +443,14 @@ export async function GET(
  * zorunda. `km` işleminde sebep sabit ("Km düzeltmesi") — panelin bugünkü
  * davranışı bu ve DEĞİŞTİRİLMEDİ.
  *
- * ── KAPI: YALNIZ PATRON ─────────────────────────────────────────────────────
- * `requireMobileAdmin` — panelde üç eylem de `requireAdmin()` ile korunuyor.
+ * ── KAPI İŞLEME GÖRE ───────────────────────────────────────────────────────
+ * `duzelt` ve `kapat`: YALNIZ PATRON — panelde de `requireAdmin()` korumada.
  * FİLO ŞEFİ 403 alır ve bu bir eksik değil, PARİTE: şef panelde de bu
  * eylemlere erişemiyor. Kapsamlı bir şef düzeltme yolu ayrı bir karardır
  * (yazma yetkisi + kapsam denetimi birlikte tasarlanmalı) ve BU TURDA YOK.
+ *
+ * `mola`: ŞOFÖRÜN KENDİ AÇIK VARDİYASI ya da yönetici. Panelde mola düğmesi
+ * şoförün kendi panelinde ve `requireWorker()` ile korunuyor — parite bu.
  *
  * ── GET'TEN FARKLI KAPI, BİLEREK ───────────────────────────────────────────
  * Aynı dosyadaki GET şoföre KENDİ vardiyasını, şefe kapsamındakini gösteriyor.
@@ -455,7 +460,10 @@ export async function GET(
  *
  * ── HATA KODLARI ────────────────────────────────────────────────────────────
  *   401 missing_token / invalid_token / revoked / inactive   (ortak kapı)
- *   403 admin_required
+ *   403 admin_required      — `duzelt`/`kapat` şoför jetonuyla istendi
+ *   404 not_found           — vardiya yok ya da şoförün KENDİ vardiyası değil
+ *   409 shift_closed        — `mola` istendi ama vardiya kapalı
+ *   400 errBreakInvalid / errBreakNeg / errBreakRange   (mola dakikası)
  *   400 invalid_json · missing_fields · gecersiz_islem
  *       errReasonShort · errKmNeg · errKmRange · errDate
  *       km_low:<bitis>:<baslangic> · km_high:<fark>:<tavan>
@@ -463,7 +471,15 @@ export async function GET(
  *   409 no_active            — `kapat` istendi ama vardiya zaten kapalı
  *   500 write_failed         — ham DB yazma hatası (detay `detail` alanında)
  */
-const ISLEMLER = new Set(["duzelt", "kapat"]);
+const ISLEMLER = new Set(["duzelt", "kapat", "mola"]);
+
+/**
+ * YÖNETİCİ İSTEYEN İŞLEMLER. `mola` listede YOK ve olmamalı — gerekçe aşağıda,
+ * `islem:"mola"` dalının başlığında. Kapı işleme göre ayrıldığı için kümenin
+ * kendisi tek karar noktası: yeni bir işlem eklendiğinde yazan kişi onu buraya
+ * koyup koymamaya BİLEREK karar vermek zorunda.
+ */
+const YONETICI_ISLEMLERI = new Set(["duzelt", "kapat"]);
 
 /**
  * İstemci hatası sayılan dizgeler. Listede OLMAYAN her dizge 500'dür ve
@@ -498,9 +514,26 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireMobileAdmin(req);
+  /**
+   * ═══ KAPI İŞLEME GÖRE — ÖNCE OTURUM, SONRA YETKİ ════════════════════════
+   *
+   * Kapı `requireMobileAdmin`den `requireMobileWorker`a indi ama YETKİ
+   * GEVŞEMEDİ: `duzelt` ve `kapat` hâlâ yalnız patronda ve aynı 403
+   * `admin_required` gövdesini döndürüyor (aşağıda, `islem` çözüldükten hemen
+   * sonra). Değişen tek şey KARARIN SIRASI.
+   *
+   * Sıra neden değişti: `mola` şoförün KENDİ vardiyasına yazdığı bir işlem ve
+   * kapıda patron aranırsa şoför `islem`i hiç söyleyemeden 403 alırdı. Yetkiyi
+   * işlemden ÖNCE sormak, üç farklı yetki gerektiren işlemleri tek adreste
+   * toplamakla bağdaşmıyor.
+   *
+   * ⚠️ GEVŞEME YOK, ÖLÇÜLDÜ: jetonsuz istek hâlâ 401, şoför jetonuyla
+   * `islem:"duzelt"` hâlâ 403 `admin_required` (kanıt: 19.09.2026 canlı tur).
+   */
+  const guard = await requireMobileWorker(req);
   if (!guard.ok) return guard.response;
   const aktorId = guard.actor.worker.id;
+  const aktorAdmin = guard.actor.worker.is_admin === true;
 
   const { id } = await params;
 
@@ -520,6 +553,108 @@ export async function PATCH(
     return mobileError(400, "gecersiz_islem", {
       alan: "islem",
       izinli: [...ISLEMLER],
+    });
+  }
+
+  // Yetki kararı BURADA — `islem` çözüldükten sonra, iş yapılmadan önce.
+  if (YONETICI_ISLEMLERI.has(islem) && !aktorAdmin) {
+    return mobileError(403, "admin_required");
+  }
+
+  /**
+   * ═══ islem: "mola" — AKTİF VARDİYAYA MOLA (19.09.2026) ═══════════════════
+   *
+   * Panelde mola İKİ ayrı yazmadır ve İKİSİ DE taşındı (lib/shift-break.ts):
+   *   { baslat: true }  → `break_started_at = now`  "şu an molada" bayrağı
+   *   { dakika: N }     → `break_minutes += N` ve bayrağı temizle
+   * İkisi aynı gövdede gelirse önce bayrak kurulur, sonra dakika yazılır ve
+   * bayrak yine temizlenir — net etki "molayı kapat"tır. Bu sıra panelin düğme
+   * akışının aynısı; tersi, açık kalan bir bayrak bırakırdı.
+   *
+   * ── KAPI: KENDİ AÇIK VARDİYASI (ŞOFÖR) YA DA YÖNETİCİ ───────────────────
+   * `duzelt`/`kapat`tan farklı olarak burada ŞOFÖR de yazabiliyor ve bu
+   * tutarsızlık değil: mola şoförün KENDİ o anki çalışmasına ait canlı bir
+   * kayıt, kapanmış bir vardiyanın geriye dönük düzeltmesi değil. Sınır
+   * `ended_at is null` şartıyla çiziliyor: kapanmış vardiyaya mola eklemek AZG
+   * kaydını geriye dönük değiştirmektir ve o iş sebep zorunlu, iz bırakan
+   * `duzelt` eylemidir.
+   *
+   * 🔴 BAŞKASININ VARDİYASI ŞOFÖRE KAPALI. Yol kimliği (`id`) istemciden
+   * geliyor; sahiplik AYRI okunup doğrulanıyor. Çekirdeğe şoförün kendi
+   * kimliğini verip "nasılsa eşleşmez" demek YETMEZDİ — o durumda 0 satır
+   * güncellenir ve uç sessizce `ok:true` derdi. 404 dönüyoruz, 403 değil: 403
+   * kaydın VAR OLDUĞUNU doğrular (bu dosyadaki GET ile aynı gerekçe).
+   *
+   * ⚠️ AZG ALANI TEK: `break_minutes`. § 26 AZG raporu, vardiya özeti ve
+   * yöneticinin `duzelt` formu hep bu kolonu okuyor — ikinci bir mola sayacı
+   * yok ve olmamalı.
+   */
+  if (islem === "mola") {
+    const dakikaHam = g.dakika ?? g.minutes;
+    const baslat = g.baslat === true || g.start === true;
+    if (dakikaHam === undefined && !baslat) {
+      return mobileError(400, "missing_fields", {
+        alan: "dakika",
+        ipucu: "{ dakika: N } ya da { baslat: true }",
+        tavanDk: MOLA_TEK_SEFER_MAX_DK,
+      });
+    }
+    if (dakikaHam !== undefined && typeof dakikaHam !== "number") {
+      return mobileError(400, "errBreakInvalid", { alan: "dakika" });
+    }
+
+    // test-visible: yol kimliğine ANAHTARLI tek satır — sahiplik denetimi.
+    // Liste okuması değil; test kaydı elenirse test hesabının kendi vardiyası
+    // 404 olurdu ve mola ucu test hesabıyla hiç doğrulanamazdı.
+    const { data: vRow } = await supabaseAdmin
+      .from("time_entries")
+      .select("id, worker_id, ended_at, break_minutes")
+      .eq("id", id)
+      .maybeSingle();
+    if (!vRow) return mobileError(404, "not_found");
+    const v = vRow as {
+      id: string;
+      worker_id: string;
+      ended_at: string | null;
+      break_minutes: number | null;
+    };
+    if (!aktorAdmin && v.worker_id !== aktorId) return mobileError(404, "not_found");
+    // Kapalı vardiya: çekirdek de reddederdi ama sebebi "aktif vardiya yok"
+    // olurdu; burada ayrı söylüyoruz ki istemci `duzelt`e yönlensin.
+    if (v.ended_at !== null) return mobileError(409, "shift_closed");
+
+    let molaDk = v.break_minutes ?? 0;
+    if (baslat) {
+      const rb = await molaBaslat(v.worker_id, id);
+      if (!rb.ok) return mobileError(500, "write_failed", { detail: rb.error });
+    }
+    if (dakikaHam !== undefined) {
+      const re = await molaDakikaEkle(v.worker_id, dakikaHam, id);
+      if (!re.ok) {
+        if (re.error === "no_active") return mobileError(409, "no_active");
+        if (re.error.startsWith("errBreak")) return mobileError(400, re.error);
+        return mobileError(500, "write_failed", { detail: re.error });
+      }
+      molaDk = re.molaDk;
+    }
+
+    let molaPanel = true;
+    try {
+      revalidatePath("/admin");
+      revalidatePath("/panel");
+    } catch {
+      molaPanel = false;
+    }
+
+    return Response.json({
+      ok: true,
+      islem,
+      vardiyaId: id,
+      /** AZG'ye giren alanın YENİ değeri — istemci tekrar GET atmasın. */
+      molaDk,
+      /** Bayrak bu istekte kuruldu mu (süre SAYMAZ, yalnız "şu an molada"). */
+      molaBasladi: baslat && dakikaHam === undefined,
+      panelTazelendi: molaPanel,
     });
   }
 

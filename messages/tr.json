@@ -1797,7 +1797,7 @@
     "fuel_reason_short_unreliable_sensor": "Sensör arızalı",
     "distance_table_title": "Araç listesi",
     "fuel_reason_no_capacity": "Depo hacmi girilmemiş",
-    "fuel_reason_short_no_capacity": "Depo hacmi yok",
+    "fuel_reason_short_no_capacity": "Depo yok",
     "fuel_reason_olculmedi": "Mesafe ölçülemedi",
     "fuel_reason_short_olculmedi": "Ölçülemedi",
     "unit_vehicles": "cihazlı araç",
@@ -1841,7 +1841,13 @@
     "fuel_ref_stale_note": "Yakıt fiyatı referansı {gun} gündür tazelenmedi (kaynak {tarih}). Sayı hâlâ gerçek ama yaşlanıyor — kaynak ya da zamanlayıcı durmuş olabilir.",
     "fuel_not_measured": "ölçülemedi — bu dönemde ölçülen araç yok",
     "retention_out_of_scope": "Seçilen dönem ham veri saklama süresinin tamamen dışında ({days} gün). Ham iz silindiği için bu dönem ölçülemez — gösterilen boşluk bir sıfır değildir.",
-    "retention_partial_scope": "Seçilen dönemin ilk {days} günü ham veri saklama süresinin dışında. Bu günler toplamlara GİRMEZ; sayılar yalnız saklanan kısmı kapsar."
+    "retention_partial_scope": "Seçilen dönemin ilk {days} günü ham veri saklama süresinin dışında. Bu günler toplamlara GİRMEZ; sayılar yalnız saklanan kısmı kapsar.",
+    "fuel_reason_kapsama_dusuk": "Cihaz yakıt seviyesini vardiyanın yalnız %{yuzde}'inde gönderiyor",
+    "fuel_reason_l100_aralik_disi": "Hesaplanan tüketim makul değil ({deger} L/100 km)",
+    "fuel_reason_km_yok": "Mesafe ölçülemedi — oran denetlenemiyor",
+    "fuel_reason_short_kapsama_dusuk": "Kapsama %{yuzde}",
+    "fuel_reason_short_l100_aralik_disi": "Makul değil",
+    "fuel_reason_short_km_yok": "Km yok"
   },
   "messages": {
     "title": "Mesajlar",

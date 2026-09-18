@@ -9,9 +9,12 @@ import {
   LITRE_RPC_V1,
   FUEL_VOLUME_MAX_STEP_L,
   UNRELIABLE_ZERO_RATIO,
+  yakitKapisi,
   type FuelStatRow,
   type FuelVolumeStatRow,
+  type YakitSebep,
 } from "@/lib/fuel-vehicle";
+import { loadScoreShifts } from "@/lib/score-core";
 import {
   computeSafetyScores,
   workerDrivingAt,
@@ -40,6 +43,7 @@ import {
   okuRolanti,
   okuFiloSpan,
   okuAracSpan,
+  okuYakitKapsama,
 } from "@/lib/report-reads";
 import { kmRaporDegeri } from "@/lib/km-ui";
 import { AZG_DAILY_MAX_MS } from "@/lib/azg-rules";
@@ -811,7 +815,14 @@ export type FuelRatioReason =
   | "too_little_fuel"
   | "window_mismatch"
   | "unreliable_sensor"
-  | "no_capacity";
+  | "no_capacity"
+  /**
+   * GÜVENİLİRLİK KAPISI (18.09.2026, lib/fuel-vehicle.ts). Üçü de YENİ ve
+   * üçü de litreyi DE gizler — eski kapılar yalnız oranı gizliyordu.
+   */
+  | "kapsama_dusuk"
+  | "l100_aralik_disi"
+  | "km_yok";
 
 export type FuelRow = {
   vehicleId: string;
@@ -852,10 +863,20 @@ export type FuelRow = {
   /** Sıfır okumaların payı (0–1). */
   zeroRatio: number;
   /**
-   * true → sensör güvenilmez; tüketim/dolum sayıları GÖSTERİLMEZ ve filo
-   * toplamlarına girmez. Yarım doğru sayı, yokluktan daha zararlıdır.
+   * true → SAYI GÖSTERİLMEZ ve filo toplamlarına girmez.
+   *
+   * ⚠️ ANLAMI GENİŞLEDİ (18.09.2026). Eskiden yalnız "sensör yarı ölü" (ham
+   * %0 oranı) demekti; artık `lib/fuel-vehicle.ts`teki ÜÇ ŞARTIN herhangi
+   * birinin düşmesi demek: kapsama < %80 · L/100 ∉ [4,60] · depo hacmi yok.
+   * Alan adı korundu çünkü tüketicilerin (FuelClient, CSV, PDF, CO₂ panosu,
+   * filo karşılaştırma) hepsi zaten bu bayrağa bakıp gizliyor ve toplamdan
+   * düşüyordu — kapının genişlemesi kendiliğinden her yüzeye yayılıyor.
    */
   dataUnreliable: boolean;
+  /** Vardiya içi yakıt okuma oranı (0–1); vardiyası yoksa null. */
+  kapsama: number | null;
+  /** Neden gizlendiği, PARAMETRESİYLE (ekran metni bunu kullanır). */
+  guvenilirlikSebep: YakitSebep;
 };
 
 /**
@@ -1482,7 +1503,25 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     return null;
   };
 
-  const rows: FuelRow[] = vehicles.map((v) => {
+  /**
+   * ═══ GÜVENİLİRLİK KAPISI (18.09.2026) — İKİ AŞAMA, TEK KURAL ═════════════
+   *
+   * 1. aşama: satırlar HAM hâlleriyle kurulur (aşağıdaki `hamRows`) — üç kol
+   *    (litre hattı · veri yok · yüzde hattı) hiç değişmedi.
+   * 2. aşama: her satır `lib/fuel-vehicle.ts`teki `yakitKapisi`nden geçer.
+   *
+   * NEDEN İKİ AŞAMA: kapı SAF bir fonksiyon (ağ yok) ve muhafız/ölçüm betiği
+   * onu doğrudan çağırabilsin diye öyle kalmalı; kapsama ise SORGU ister.
+   * Ham değer hiçbir yere sızmaz — `rows` yalnız kapıdan geçmiş hâli taşır.
+   *
+   * ⚠️ PAYDA BU RAPORUN KENDİ km'Sİ (odometre ekseni, `distByVehicle`) —
+   * kolonunda yazan sayının ta kendisi. Araç detayı özeti aynı kapıyı ÇEKİRDEK
+   * km ile çağırıyor, çünkü orada ekranda o yazıyor. Aynı araç iki yüzeyde
+   * farklı kapı sonucu alabilir ve bu BİLİNÇLİ: iki yüzey farklı mesafe
+   * ölçüyor. Kapının başka bir sayıya bakıp gizlemesi, ekranda görünmeyen bir
+   * gerekçeyle sayı saklamak olurdu.
+   */
+  const hamRows: FuelRow[] = vehicles.map((v) => {
     const cap = v.tank_capacity_l != null ? Number(v.tank_capacity_l) : null;
     const span = distByVehicle.get(v.id) ?? { km: null, reason: null, firstAt: null, lastAt: null };
     const km = span.km;
@@ -1539,6 +1578,9 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
         zeroCount: 0,
         zeroRatio: 0,
         dataUnreliable: false,
+        // Kapı 2. aşamada dolduruyor (aşağıdaki `rows`).
+        kapsama: null,
+        guvenilirlikSebep: null,
       };
     }
 
@@ -1568,6 +1610,8 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
         zeroCount: 0,
         zeroRatio: 0,
         dataUnreliable: false,
+        kapsama: null,
+        guvenilirlikSebep: null,
       };
     }
     const zeroCount = zeroByVehicle.get(v.id) ?? 0;
@@ -1624,6 +1668,84 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
       zeroCount,
       zeroRatio,
       dataUnreliable: unreliable,
+      kapsama: null,
+      guvenilirlikSebep: null,
+    };
+  });
+
+  /**
+   * VARDİYA İÇİ KAPSAMA — araç başına tek sorgu çifti (bkz. fuel-vehicle.ts).
+   * Vardiyalar `loadScoreShifts` ile geliyor: puanın ve araç özetinin
+   * kullandığı AYNI satırlar, yani "vardiya" tanımı üç yüzeyde de tek.
+   */
+  const vardiyalar = await loadScoreShifts(range);
+  const pencereByVehicle = new Map<string, { baslangic: string; bitis: string }[]>();
+  for (const t of vardiyalar) {
+    if (!t.vehicle_id) continue;
+    const arr = pencereByVehicle.get(t.vehicle_id) ?? [];
+    arr.push({ baslangic: t.started_at, bitis: t.ended_at ?? endISO });
+    pencereByVehicle.set(t.vehicle_id, arr);
+  }
+  const kapsamaCiftleri = await mapBounded(hamRows, async (r) => {
+    const pencereler = pencereByVehicle.get(r.vehicleId) ?? [];
+    // Yakıt okuması hiç yoksa kapsama sormanın anlamı yok — sorgu atmıyoruz.
+    if (!r.hasData || pencereler.length === 0) return [r.vehicleId, null] as const;
+    return [
+      r.vehicleId,
+      await okuYakitKapsama(r.vehicleId, startISO, endISO, pencereler),
+    ] as const;
+  });
+  const kapsamaByVehicle = new Map(kapsamaCiftleri);
+
+  const rows: FuelRow[] = hamRows.map((r) => {
+    /**
+     * HAM SEBEP satırın kendisinden türer — üç kol da onu zaten söylüyor:
+     *   veri yok           → olculmedi
+     *   sensör yarı ölü    → arizali_sensor (ham %0 oranı)
+     *   yüzde var, depo yok→ depo_yok (litre hesaplanamadı)
+     */
+    const hamSebep: YakitSebep = !r.hasData
+      ? { kod: "olculmedi" }
+      : r.dataUnreliable
+        ? { kod: "arizali_sensor", yuzde: Math.round(r.zeroRatio * 100) }
+        : r.consumedLiters === null
+          ? { kod: "depo_yok" }
+          : null;
+    const kapi = yakitKapisi({
+      hamLitre: r.consumedLiters,
+      hamSebep,
+      km: r.km,
+      kapsama: kapsamaByVehicle.get(r.vehicleId) ?? null,
+      eurPerL: FUEL_PRICE_EUR_PER_L,
+    });
+    /**
+     * ESKİ KAPILAR KORUNUYOR. `lPer100Reason` zaten üç eski sebebi taşıyordu
+     * (mesafe kısa · tüketim düşük · pencere uyuşmuyor) ve onlar YALNIZ oranı
+     * gizliyordu. Yeni kapı litreyi DE gizliyor; ikisi çakışırsa YENİ sebep
+     * kazanır, çünkü daha geniş bir gizlemeyi açıklıyor.
+     */
+    const sebepKodu: FuelRatioReason =
+      kapi.sebep === null
+        ? r.lPer100Reason
+        : kapi.sebep.kod === "kapsama_dusuk"
+          ? "kapsama_dusuk"
+          : kapi.sebep.kod === "l100_aralik_disi"
+            ? "l100_aralik_disi"
+            : kapi.sebep.kod === "km_yok"
+              ? "km_yok"
+              : kapi.sebep.kod === "depo_yok"
+                ? "no_capacity"
+                : kapi.sebep.kod === "arizali_sensor"
+                  ? "unreliable_sensor"
+                  : r.lPer100Reason;
+    return {
+      ...r,
+      consumedLiters: kapi.litre,
+      lPer100Km: kapi.l100 ?? (kapi.guvenilir ? r.lPer100Km : null),
+      lPer100Reason: sebepKodu,
+      dataUnreliable: !kapi.guvenilir,
+      kapsama: kapi.kapsama,
+      guvenilirlikSebep: kapi.sebep,
     };
   });
 

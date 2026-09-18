@@ -1796,8 +1796,8 @@
     "fuel_reason_short_window_mismatch": "Zeitraum abweichend",
     "fuel_reason_short_unreliable_sensor": "Sensor defekt",
     "distance_table_title": "Fahrzeugliste",
-    "fuel_reason_no_capacity": "Tankvolumen nicht erfasst",
-    "fuel_reason_short_no_capacity": "kein Tankvolumen",
+    "fuel_reason_no_capacity": "Tankvolumen nicht hinterlegt",
+    "fuel_reason_short_no_capacity": "Kein Tank",
     "fuel_reason_olculmedi": "Strecke nicht messbar",
     "fuel_reason_short_olculmedi": "nicht messbar",
     "unit_vehicles": "Fahrzeuge mit Gerät",
@@ -1841,7 +1841,13 @@
     "fuel_ref_stale_note": "Die Kraftstoffpreis-Referenz wurde seit {gun} Tagen nicht aktualisiert (Quelle {tarih}). Der Wert ist weiterhin echt, altert aber — Quelle oder Zeitplaner könnten ausgefallen sein.",
     "fuel_not_measured": "nicht messbar — in diesem Zeitraum kein gemessenes Fahrzeug",
     "retention_out_of_scope": "Der gewählte Zeitraum liegt vollständig außerhalb der Aufbewahrungsfrist für Rohdaten ({days} Tage). Da die Rohspur gelöscht wurde, ist dieser Zeitraum nicht messbar — die Lücke ist keine Null.",
-    "retention_partial_scope": "Die ersten {days} Tage des gewählten Zeitraums liegen außerhalb der Aufbewahrungsfrist für Rohdaten. Diese Tage fließen NICHT in die Summen ein; die Zahlen umfassen nur den aufbewahrten Teil."
+    "retention_partial_scope": "Die ersten {days} Tage des gewählten Zeitraums liegen außerhalb der Aufbewahrungsfrist für Rohdaten. Diese Tage fließen NICHT in die Summen ein; die Zahlen umfassen nur den aufbewahrten Teil.",
+    "fuel_reason_kapsama_dusuk": "Das Gerät meldet den Füllstand nur in {yuzde} % der Schicht",
+    "fuel_reason_l100_aralik_disi": "Berechneter Verbrauch unplausibel ({deger} L/100 km)",
+    "fuel_reason_km_yok": "Strecke nicht messbar — Verhältnis nicht prüfbar",
+    "fuel_reason_short_kapsama_dusuk": "Abdeckung {yuzde} %",
+    "fuel_reason_short_l100_aralik_disi": "Unplausibel",
+    "fuel_reason_short_km_yok": "Keine km"
   },
   "messages": {
     "title": "Nachrichten",

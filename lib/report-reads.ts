@@ -7,6 +7,7 @@ import {
   getVehicleDistanceSpan,
 } from "@/lib/analytics";
 import { listEventsInRange, listIdleEpisodesInRange } from "@/lib/telemetry";
+import { aracYakitKapsamasi } from "@/lib/fuel-vehicle";
 
 /**
  * TUR İÇİ PAYLAŞILAN OKUMALAR (16. madde, 16.09.2026).
@@ -117,5 +118,24 @@ export function okuAracSpan(
 ): ReturnType<typeof getVehicleDistanceSpan> {
   return turMemo(`aracSpan:${vehicleId}:${startISO}:${endISO}`, () =>
     getVehicleDistanceSpan(vehicleId, startISO, endISO)
+  );
+}
+
+/**
+ * ARAÇ BAŞINA VARDİYA İÇİ YAKIT KAPSAMASI (18.09.2026).
+ *
+ * ⚠️ NEDEN MEMOLU: CO₂ panosu `buildFuelReport`i TEK açılışta 7 kez çağırıyor
+ * (1 aralık + 6 aylık seri) ve kapsama araç başına iki sayım sorgusu demek.
+ * Memosuz hâlde 29 araç × 2 × 7 = 406 sorgu ederdi; aralık anahtarı sayesinde
+ * aynı pencere bir kez okunuyor. Kap yoksa davranış birebir eskisi.
+ */
+export function okuYakitKapsama(
+  vehicleId: string,
+  startISO: string,
+  endISO: string,
+  pencereler: { baslangic: string; bitis: string }[]
+): Promise<number | null> {
+  return turMemo(`yakitKapsama:${vehicleId}:${startISO}:${endISO}`, () =>
+    aracYakitKapsamasi(vehicleId, pencereler)
   );
 }

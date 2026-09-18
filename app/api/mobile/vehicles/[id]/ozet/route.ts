@@ -35,9 +35,18 @@ export const dynamic = "force-dynamic";
  * sebebi yazılan boşluk verir. Her metrik ya SAYI ya null + SEBEP:
  *   km    → `vardiya_yok` (dönemde hiç vardiya yok) · `olculmedi` (vardiya var,
  *           çekirdek hiçbirinde km ölçemedi)
- *   yakıt → `olculmedi` · `depo_bilinmiyor` (kapasite girilmemiş, yüzde litreye
- *           çevrilemiyor) · `arizali_sensor` · `rpc_yok` · `hesaplanamadi`
- *   l100  → `km_yok` · `yakit_olculmedi`
+ *   yakıt → PARAMETRELİ NESNE (lib/fuel-vehicle.ts `YakitSebep`):
+ *           {kod:"kapsama_dusuk", yuzde} · {kod:"l100_aralik_disi", deger} ·
+ *           {kod:"arizali_sensor", yuzde} · {kod:"depo_yok"} · {kod:"km_yok"} ·
+ *           {kod:"olculmedi"} · {kod:"rpc_yok"} · {kod:"hesaplanamadi"}
+ *
+ * ⚠️ YAKIT ÜÇLÜSÜ BİRLİKTE GİZLENİR: litre · € · L/100 üçü de null olur ve TEK
+ * sebep taşır. Oranı denetleyemediğimiz litreyi göstermek, denetlenmemiş bir
+ * sayıyı toplama sokmak olurdu (gerekçe: lib/fuel-vehicle.ts `yakitKapisi`).
+ *
+ * ⚠️ SEBEP PARAMETRELİ ki istemci kendi eşiğini uydurmasın: `{kod:
+ * "kapsama_dusuk", yuzde: 1}` → "cihaz yakıt seviyesini vardiyanın %1'inde
+ * gönderiyor". Kod tek başına yöneticiye iş vermiyordu.
  *
  * ── RÖLANTİ NEDEN null DEĞİL ──────────────────────────────────────────────
  * Rölanti epizot SAYMADIR: epizot yoksa gerçekten 0 rölanti vardır. Ölçüm

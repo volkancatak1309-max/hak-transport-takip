@@ -79,6 +79,17 @@ export type FiloKarsilastirmaSatiri = {
   /** Yakıt raporu ölçemediyse null — 0 DEĞİL ("ölçülemedi" ≠ "hiç yakmadı"). */
   yakitLitre: number | null;
   yakitEuro: number | null;
+  /**
+   * Filonun L/100 km'si — YALNIZ güvenilirlik kapısını geçen araçlardan
+   * (Σ litre / Σ km × 100). Kapıyı geçen araç yoksa null.
+   *
+   * ⚠️ PAYDA VE PAY AYNI KÜMEDEN. Bir aracın litresi gizlenmişse km'si de
+   * paydaya girmez; yoksa "gizlediğimiz araç oranı aşağı çekiyor" olurdu.
+   * Kapı tek yerde: lib/fuel-vehicle.ts `yakitKapisi`.
+   */
+  yakitL100: number | null;
+  /** L/100'ün kaç araçtan geldiği — `aracSayisi` ile birlikte okunur. */
+  yakitGuvenilirArac: number;
   alarm: {
     toplam: number;
     kritik: number;
@@ -99,6 +110,41 @@ export type FiloKarsilastirmaSatiri = {
   kmBasinaAlarm: number | null;
 };
 
+/**
+ * NORMALİZE KIYAS — "hangi filo daha iyi" sorusunun dürüst hâli.
+ *
+ * Ham toplamlar filo büyüklüğünü ölçer, performansı değil: 19 araçlı filo
+ * elbette daha çok km yapar. Bu blok her metriği KENDİ paydasına bölüp filo
+ * ortalamasına göre yüzde farkını verir.
+ *
+ * ⚠️ EN İYİ / EN KÖTÜ YALNIZ YÖNLÜ METRİKTE. `kmPerArac` yönsüzdür: çok km
+ * yapmak ne iyi ne kötüdür, işin hacmidir. Ona ok koymak, yoğun çalışan
+ * filoyu "kazanan" ilan etmek olurdu — ölçmediğimiz bir şeyi iddia etmek.
+ */
+export type NormalizeYon = "dusukIyi" | "yuksekIyi" | "yonsuz";
+
+export type NormalizeFiloDegeri = {
+  kod: string | null;
+  ad: string;
+  /** null = o filoda bu metrik ölçülemedi (0 DEĞİL). */
+  deger: number | null;
+  /** Filo ortalamasına göre yüzde fark; ortalama 0/null ise null. */
+  yuzdeFark: number | null;
+  /** Yalnız yönlü metrikte dolu. */
+  enIyi: boolean;
+  enKotu: boolean;
+};
+
+export type NormalizeMetrik = {
+  anahtar: "kmPerArac" | "alarmPer100km" | "l100" | "rolantiSaatPerVardiya" | "skor";
+  yon: NormalizeYon;
+  /** Payda: metriğin neye bölündüğü (ekranda birim yazısı için). */
+  birim: string;
+  /** Tüm kapsamın tek sayısı — filoların ortalaması DEĞİL, bütünün oranı. */
+  ortalama: number | null;
+  filolar: NormalizeFiloDegeri[];
+};
+
 export type Denklik = {
   /** Σ filolar (+ sahipsiz). */
   filolarToplami: number;
@@ -111,6 +157,8 @@ export type Denklik = {
 
 export type FiloKarsilastirmasi = {
   filolar: FiloKarsilastirmaSatiri[];
+  /** Büyüklükten arındırılmış kıyas — bkz. NormalizeMetrik. */
+  normalize: NormalizeMetrik[];
   /**
    * Filosu tanımlı filolardan HİÇBİRİ olmayan araçların kovası. Şefte null.
    * Gizlenmez: gizlenseydi Σ filolar < toplam olur ve fark sessizce kaybolurdu.
@@ -157,6 +205,8 @@ function bosSatir(kod: string | null, ad: string): FiloKarsilastirmaSatiri {
     vardiyaSayisi: 0,
     yakitLitre: null,
     yakitEuro: null,
+    yakitL100: null,
+    yakitGuvenilirArac: 0,
     alarm: { ...BOS_ALARM },
     rolantiSaat: 0,
     skorOrtalama: null,
@@ -331,6 +381,8 @@ async function karsilastirmayiKur(
   // görmesi gereken bir şey değil (kapsam daraltması, gizleme değil).
   if (!scope.restricted) kovalar.push(null);
 
+  /** TOPLAM L/100'ün pay ve paydası — kova döngüsünde biriktirilir. */
+  const guvenilirToplam = { litre: 0, km: 0 };
   for (const kod of kovalar) {
     const tanim = kod !== null ? filoTanimById.get(kod) : undefined;
     const satir = bosSatir(
@@ -381,6 +433,25 @@ async function karsilastirmayiKur(
         olculen.length > 0
           ? olculen.reduce((a, r) => a + (r.consumedLiters ?? 0), 0)
           : null;
+      /**
+       * L/100 — GÜVENİLİRLİK KAPISINI GEÇEN araçlardan, pay ve payda AYNI
+       * kümeden. `consumedLiters` kapıdan geçmişse dolu, geçememişse null
+       * (lib/reports.ts 2. aşama); yani süzgeç burada yeniden yazılmıyor,
+       * kapının kararı okunuyor.
+       */
+      const guvenilir = kovaYakit.filter(
+        (r) => r.consumedLiters != null && r.km != null && r.km > 0
+      );
+      // oran-kume: `guvenilir` kümesi bir satır yukarıda HEM litre HEM km için
+      // null'dan süzüldü; `?? 0` burada yalnız tür kapısı. Pay ve payda aynı
+      // satırlardan geliyor — bir aracın litresi gizlenmişse km'si de yok.
+      const gLitre = guvenilir.reduce((a, r) => a + (r.consumedLiters ?? 0), 0);
+      const gKm = guvenilir.reduce((a, r) => a + (r.km ?? 0), 0);
+      satir.yakitGuvenilirArac = guvenilir.length;
+      satir.yakitL100 = gKm > 0 ? (gLitre / gKm) * 100 : null;
+      // TOPLAM için pay/payda biriktirilir — oranların ortalaması DEĞİL.
+      guvenilirToplam.litre += gLitre;
+      guvenilirToplam.km += gKm;
     }
 
     // SKOR — Performans raporunun satırları, şoförün filosuna göre.
@@ -428,13 +499,101 @@ async function karsilastirmayiKur(
     toplam.skorlananSayisi += s.skorlananSayisi;
     if (s.yakitLitre != null) toplam.yakitLitre = (toplam.yakitLitre ?? 0) + s.yakitLitre;
     if (s.yakitEuro != null) toplam.yakitEuro = (toplam.yakitEuro ?? 0) + s.yakitEuro;
+    toplam.yakitGuvenilirArac += s.yakitGuvenilirArac;
   }
+  /**
+   * TOPLAM L/100 da AYNI kümeden: güvenilir araçların Σlitre/Σkm.
+   * Filoların oranlarının ORTALAMASI DEĞİL — küçük filoyu büyükle eşit
+   * ağırlıkta sayar ve yüzde farklarını anlamsızlaştırırdı. Pay ve payda
+   * kova döngüsünde SATIR SATIR biriktirildi, yani kümeler ayrışamaz.
+   */
+  toplam.yakitL100 =
+    guvenilirToplam.km > 0
+      ? (guvenilirToplam.litre / guvenilirToplam.km) * 100
+      : null;
   const tumSkorlar = rapor.rows
     .filter((r) => kapsamdaMi(filoBySofor.get(r.workerId) ?? null))
     .map((r) => r.safetyScore)
     .filter((s): s is number => s !== null);
   toplam.skorOrtalama = ortalama(tumSkorlar);
   toplam.kmBasinaAlarm = kmBasina(toplam.alarm.toplam, toplam.km);
+
+  // ── NORMALİZE KIYAS: büyüklükten arındırılmış beş metrik ─────────────────
+  /**
+   * PAYDA HER METRİKTE FARKLI ve bilerek: kilometreyi araç sayısına, alarmı
+   * kilometreye, rölantiyi vardiyaya bölüyoruz. Aynı paydaya zorlamak (ör.
+   * hepsini araca bölmek) az vardiya açan filoyu haksız yere iyi gösterirdi.
+   *
+   * `ortalama` FİLOLARIN ORTALAMASI DEĞİL, bütünün oranıdır (Σpay/Σpayda).
+   * Ortalamanın ortalaması küçük filoyu büyük filoyla eşit ağırlıkta sayar ve
+   * yüzde farkları anlamsızlaşır.
+   */
+  const oran2 = (pay: number | null, payda: number | null): number | null =>
+    pay === null || payda === null || payda === 0 ? null : pay / payda;
+  const metrikTanim: {
+    anahtar: NormalizeMetrik["anahtar"];
+    yon: NormalizeYon;
+    birim: string;
+    deger: (x: FiloKarsilastirmaSatiri) => number | null;
+  }[] = [
+    {
+      anahtar: "kmPerArac",
+      yon: "yonsuz",
+      birim: "km / araç",
+      deger: (x) => oran2(x.km, x.aracSayisi),
+    },
+    {
+      anahtar: "alarmPer100km",
+      yon: "dusukIyi",
+      birim: "alarm / 100 km",
+      deger: (x) => (x.km > 0 ? (x.alarm.toplam / x.km) * 100 : null),
+    },
+    {
+      anahtar: "l100",
+      yon: "dusukIyi",
+      birim: "L / 100 km",
+      deger: (x) => x.yakitL100,
+    },
+    {
+      anahtar: "rolantiSaatPerVardiya",
+      yon: "dusukIyi",
+      birim: "rölanti saat / vardiya",
+      deger: (x) => oran2(x.rolantiSaat, x.vardiyaSayisi),
+    },
+    { anahtar: "skor", yon: "yuksekIyi", birim: "puan", deger: (x) => x.skorOrtalama },
+  ];
+  const normalize: NormalizeMetrik[] = metrikTanim.map((m) => {
+    const ortalama = m.deger(toplam);
+    const degerler = filolar.map((x) => ({
+      kod: x.kod,
+      ad: x.ad,
+      deger: m.deger(x),
+      yuzdeFark: null as number | null,
+      enIyi: false,
+      enKotu: false,
+    }));
+    for (const d of degerler) {
+      d.yuzdeFark =
+        d.deger === null || ortalama === null || ortalama === 0
+          ? null
+          : ((d.deger - ortalama) / ortalama) * 100;
+    }
+    // İşaret YALNIZ yönlü metrikte ve YALNIZ ölçülmüş değerler arasında.
+    if (m.yon !== "yonsuz") {
+      const olculen = degerler.filter((d) => d.deger !== null);
+      if (olculen.length >= 2) {
+        const sirali = [...olculen].sort((a, b) => (a.deger as number) - (b.deger as number));
+        const iyi = m.yon === "dusukIyi" ? sirali[0] : sirali[sirali.length - 1];
+        const kotu = m.yon === "dusukIyi" ? sirali[sirali.length - 1] : sirali[0];
+        // Beraberlikte işaret KONMAZ: "en iyi" bir sıralama iddiasıdır.
+        if (iyi.deger !== kotu.deger) {
+          iyi.enIyi = true;
+          kotu.enKotu = true;
+        }
+      }
+    }
+    return { anahtar: m.anahtar, yon: m.yon, birim: m.birim, ortalama, filolar: degerler };
+  });
 
   // ── DENKLİK: Σ satırlar === toplayıcının kendi toplamı ───────────────────
   // Kısıtlı aktörde kaynak toplam da AYNI kapsama süzülür; kimlik iki durumda
@@ -504,6 +663,7 @@ async function karsilastirmayiKur(
 
   return {
     filolar,
+    normalize,
     sahipsiz,
     toplam,
     denklik,

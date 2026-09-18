@@ -6,7 +6,12 @@ import { idleEpisodeDurationMs } from "@/lib/analytics";
 import { IDLE_FUEL_L_PER_HOUR } from "@/lib/analytics-shared";
 import type { DateRange } from "@/lib/analytics-shared";
 import { FUEL_PRICE_EUR_PER_L } from "@/lib/tenant";
-import { aracYakitLitresi, type YakitSebep } from "@/lib/fuel-vehicle";
+import {
+  aracYakitLitresi,
+  aracYakitKapsamasi,
+  yakitKapisi,
+  type YakitSebep,
+} from "@/lib/fuel-vehicle";
 import { kaynakSay } from "@/lib/km-axis";
 import type { KmKaynak } from "@/lib/km-ui";
 
@@ -67,6 +72,10 @@ export type AracDonemOzeti = {
   yakit: {
     litre: number | null;
     euro: number | null;
+    /** Vardiya içi yakıt okuma oranı (0–1); vardiya yoksa null. */
+    kapsama: number | null;
+    /** Üç şartı da geçti mi (bkz. lib/fuel-vehicle.ts yakitKapisi). */
+    guvenilir: boolean;
     l100: {
       deger: number | null;
       /**
@@ -75,20 +84,24 @@ export type AracDonemOzeti = {
        * (tam sayı yüzde sensörüyle kısa pencerede oran gürültülüdür).
        */
       yaklasik: boolean;
-      sebep: L100Sebep;
+      /** l100 null ise sebebi — litreyle AYNI sebep (üçü birlikte gizlenir). */
+      sebep: YakitSebep;
     };
   };
   sebepler: {
     km: OzetSebep;
+    /** Yakıt üçlüsünün (litre · € · L/100) ortak sebebi, parametreli. */
     yakit: YakitSebep;
-    l100: L100Sebep;
   };
   /** Ölçülen / toplam vardiya — km toplamının ne kadarının eksik olduğu. */
   kapsama: { olculen: number; toplam: number };
 };
 
-/** L/100 km neden yok — "0 L/100km" ile karıştırılmaz. */
-export type L100Sebep = null | "km_yok" | "yakit_olculmedi";
+/**
+ * ⚠️ `L100Sebep` KALDIRILDI (18.09.2026). L/100'ün kendi sebep listesi vardı
+ * (`km_yok` · `yakit_olculmedi`) ve litreninkinden AYRIYDI; üçü artık birlikte
+ * gizlendiği için tek sebep var ve o `YakitSebep` (lib/fuel-vehicle.ts).
+ */
 
 /** Payda bu değerin altındaysa oran "≈" ile gösterilir (kapı değil, etiket). */
 export const L100_YAKLASIK_KM = 100;
@@ -130,11 +143,21 @@ export async function aracDonemOzeti(
    * → duvar saati ~2,0 sn. Araç kapsamıyla aynı boru hattı (aynı eleme, aynı
    * km kararı, aynı süre tanımı) çok daha küçük kümede koşuyor.
    */
-  const [shifts, epizotlar, yakit] = await Promise.all([
+  const [shifts, epizotlar, hamYakit] = await Promise.all([
     loadScoreShifts(range, vehicleId),
     okuRolanti(startISO, endISO, vehicleId),
     aracYakitLitresi(vehicleId, depoLitre == null ? null : Number(depoLitre), startISO, endISO),
   ]);
+
+  /**
+   * KAPSAMA — vardiya pencereleri ELDEKİ satırlardan kurulur, ikinci bir
+   * sorgu yok. Açık vardiyada pencere aralık sonunda kapanır (052'nin
+   * `coalesce(ended_at, p_to)` kuralının aynısı).
+   */
+  const yakitKapsama = await aracYakitKapsamasi(
+    vehicleId,
+    shifts.map((t) => ({ baslangic: t.started_at, bitis: t.ended_at ?? endISO }))
+  );
   let km = 0;
   let olculen = 0;
   let alinan: number | null = null;
@@ -173,24 +196,33 @@ export async function aracDonemOzeti(
   }
   const rolantiLitre = (rolantiMs / 3_600_000) * IDLE_FUEL_L_PER_HOUR;
 
-  // ── YAKIT ─────────────────────────────────────────────────────────────────
+  // ── YAKIT — GÜVENİLİRLİK KAPISI (lib/fuel-vehicle.ts) ────────────────────
   const gunSayisi = Math.max(
     1,
     Math.round((range.end.getTime() - range.start.getTime()) / 86_400_000)
   );
   /**
-   * L/100 km HER DÖNEMDE ÜRETİLİR (Volkan kararı, 18.09.2026).
-   *
-   * Yakıt raporundaki `l100Available` kapısı (aralık < 7 gün → kolon HİÇ
-   * çıkmaz) burada UYGULANMAZ: o kapı bir FİLO SIRALAMASI içindi; sıralama
-   * gürültülü bir oranla yapılırsa yanlış araç "en çok yakan" olur. Burada
-   * sıralama yok, tek aracın kendi sayısı var. Gürültü gizlenmiyor,
-   * ETİKETLENİYOR: `yaklasik` true ise ekran "≈" basar.
+   * KAPI ÇEKİRDEKTEN, BURADA DEĞİL. Üç şartın da (kapsama · makul aralık ·
+   * depo) tanımı `yakitKapisi`te; bu dosya yalnız KENDİ paydasını veriyor.
+   * Payda çekirdek km — ekranda yazan km'nin ta kendisi, yani kapı ekranda
+   * görünen sayıyı denetliyor.
    */
-  const l100Sebep: L100Sebep =
-    yakit.litre === null ? "yakit_olculmedi" : kmDeger === null || kmDeger === 0 ? "km_yok" : null;
-  const l100 =
-    l100Sebep === null ? ((yakit.litre as number) / (kmDeger as number)) * 100 : null;
+  const yakit = yakitKapisi({
+    hamLitre: hamYakit.litre,
+    hamSebep: hamYakit.sebep,
+    km: kmDeger,
+    kapsama: yakitKapsama,
+    eurPerL: FUEL_PRICE_EUR_PER_L,
+  });
+
+  /**
+   * `yaklasik` KAPI DEĞİL, ETİKET. Kapıyı geçmiş bir sayının ne kadar
+   * gürültülü olabileceğini söyler: payda 100 km'nin altında ya da dönem 7
+   * günden kısaysa ekran "≈" basar. Gizlemek ile uyarmak farklı şeyler.
+   */
+  const l100Yaklasik =
+    yakit.l100 !== null &&
+    ((kmDeger as number) < L100_YAKLASIK_KM || gunSayisi < L100_YAKLASIK_GUN);
 
   return {
     km: kmDeger,
@@ -206,16 +238,12 @@ export async function aracDonemOzeti(
     },
     yakit: {
       litre: yakit.litre,
-      euro: yakit.litre === null ? null : yakit.litre * FUEL_PRICE_EUR_PER_L,
-      l100: {
-        deger: l100,
-        yaklasik:
-          l100 !== null &&
-          ((kmDeger as number) < L100_YAKLASIK_KM || gunSayisi < L100_YAKLASIK_GUN),
-        sebep: l100Sebep,
-      },
+      euro: yakit.euro,
+      kapsama: yakit.kapsama,
+      guvenilir: yakit.guvenilir,
+      l100: { deger: yakit.l100, yaklasik: l100Yaklasik, sebep: yakit.sebep },
     },
-    sebepler: { km: kmSebep, yakit: yakit.sebep, l100: l100Sebep },
+    sebepler: { km: kmSebep, yakit: yakit.sebep },
     kapsama: { olculen, toplam: shifts.length },
   };
 }

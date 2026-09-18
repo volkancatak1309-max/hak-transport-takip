@@ -30,6 +30,24 @@ import { noteExport } from "@/lib/audit-export-client";
  * "Şüpheli düşüş" = yakıt seviyesi araç HAREKET ETMEDEN düştü (odometre
  * ilerlemedi): olası kaçak/hırsızlık. Suçlama değil, kırmızı bir dikkat sinyali.
  */
+/**
+ * SEBEP METNİNİN PARAMETRELERİ — tek yerde.
+ *
+ * Eski kapılar sabit eşik taşıyordu (minKm · minPct); güvenilirlik kapısı
+ * (18.09.2026) ÖLÇÜLEN sayıyı taşıyor: "vardiyanın %1'inde" · "1049,2 L/100".
+ * `guvenilirlikSebep` parametreli bir nesne (lib/fuel-vehicle.ts) ve sayı
+ * ORADAN gelir — burada yeniden hesaplanmaz, yoksa metin ile kapı ayrışırdı.
+ */
+function sebepParam(r: FuelRow) {
+  const g = r.guvenilirlikSebep;
+  return {
+    minKm: FUEL_MIN_KM,
+    minPct: FUEL_MIN_CONSUMED_PCT,
+    yuzde: g && "yuzde" in g ? g.yuzde : 0,
+    deger: g && "deger" in g ? g.deger : 0,
+  };
+}
+
 export function FuelClient({
   report,
   cost,
@@ -316,10 +334,7 @@ export function FuelClient({
         // Ekranda sebebi yazılan boşluk CSV'ye de sebebiyle gider — Excel'e
         // düşen boş hücre "sıfır" diye okunabilir, sebep okunamaz.
         r.lPer100Km === null
-          ? t(`fuel_reason_${r.lPer100Reason ?? "no_odometer"}`, {
-              minKm: FUEL_MIN_KM,
-              minPct: FUEL_MIN_CONSUMED_PCT,
-            })
+          ? t(`fuel_reason_${r.lPer100Reason ?? "no_odometer"}`, sebepParam(r))
           : num(r.lPer100Km, 1),
         r.dataUnreliable ? "" : r.refillCount,
         r.dataUnreliable ? "" : r.suspiciousDropCount,
@@ -362,7 +377,7 @@ export function FuelClient({
           // bozar. Kâğıtta KISA sebep kullanılır; uzun hâli ekranda ve CSV'de.
           l100:
             r.lPer100Km === null
-              ? t(`fuel_reason_short_${r.lPer100Reason ?? "no_odometer"}`)
+              ? t(`fuel_reason_short_${r.lPer100Reason ?? "no_odometer"}`, sebepParam(r))
               : num(r.lPer100Km, 1),
           refills:
             r.dataUnreliable || r.refillCount === 0
@@ -525,10 +540,7 @@ export function FuelClient({
             cell: (r: FuelRow) =>
               r.lPer100Km === null ? (
                 <span className="text-[11px] leading-tight text-muted-foreground">
-                  {t(`fuel_reason_${r.lPer100Reason ?? "no_odometer"}`, {
-                    minKm: FUEL_MIN_KM,
-                    minPct: FUEL_MIN_CONSUMED_PCT,
-                  })}
+                  {t(`fuel_reason_${r.lPer100Reason ?? "no_odometer"}`, sebepParam(r))}
                 </span>
               ) : (
                 num(r.lPer100Km, 1)

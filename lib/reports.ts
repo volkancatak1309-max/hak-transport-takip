@@ -9,9 +9,12 @@ import {
   LITRE_RPC_V1,
   FUEL_VOLUME_MAX_STEP_L,
   UNRELIABLE_ZERO_RATIO,
+  yakitKapisi,
   type FuelStatRow,
   type FuelVolumeStatRow,
+  type YakitSebep,
 } from "@/lib/fuel-vehicle";
+import { loadScoreShifts } from "@/lib/score-core";
 import {
   computeSafetyScores,
   workerDrivingAt,
@@ -40,6 +43,7 @@ import {
   okuRolanti,
   okuFiloSpan,
   okuAracSpan,
+  okuYakitKapsama,
 } from "@/lib/report-reads";
 import { kmRaporDegeri } from "@/lib/km-ui";
 import { AZG_DAILY_MAX_MS } from "@/lib/azg-rules";
@@ -811,7 +815,14 @@ export type FuelRatioReason =
   | "too_little_fuel"
   | "window_mismatch"
   | "unreliable_sensor"
-  | "no_capacity";
+  | "no_capacity"
+  /**
+   * GÜVENİLİRLİK KAPISI (18.09.2026, lib/fuel-vehicle.ts). Üçü de YENİ ve
+   * üçü de litreyi DE gizler — eski kapılar yalnız oranı gizliyordu.
+   */
+  | "kapsama_dusuk"
+  | "l100_aralik_disi"
+  | "km_yok";
 
 export type FuelRow = {
   vehicleId: string;
@@ -832,6 +843,12 @@ export type FuelRow = {
   /** Dönemde yakılan yakıt = dolumlar + (ilk − son), 0'a kırpılı (yüzde). */
   consumedPct: number;
   consumedLiters: number | null;
+  /**
+   * ⚠️ ÇEKİRDEK km (19.09.2026) — `lib/km-axis.ts`, odometre ekseni DEĞİL.
+   * Araç detayı özetinin ve sürücü puanının kullandığı AYNI sayı; kapı
+   * böylece her yüzeyde aynı kararı veriyor. `buildDistanceReport` hâlâ
+   * odometre ekseninde (bkz. buildFuelReport içindeki karar notu).
+   */
   km: number | null;
   lPer100Km: number | null;
   /**
@@ -852,10 +869,20 @@ export type FuelRow = {
   /** Sıfır okumaların payı (0–1). */
   zeroRatio: number;
   /**
-   * true → sensör güvenilmez; tüketim/dolum sayıları GÖSTERİLMEZ ve filo
-   * toplamlarına girmez. Yarım doğru sayı, yokluktan daha zararlıdır.
+   * true → SAYI GÖSTERİLMEZ ve filo toplamlarına girmez.
+   *
+   * ⚠️ ANLAMI GENİŞLEDİ (18.09.2026). Eskiden yalnız "sensör yarı ölü" (ham
+   * %0 oranı) demekti; artık `lib/fuel-vehicle.ts`teki ÜÇ ŞARTIN herhangi
+   * birinin düşmesi demek: kapsama < %80 · L/100 ∉ [4,60] · depo hacmi yok.
+   * Alan adı korundu çünkü tüketicilerin (FuelClient, CSV, PDF, CO₂ panosu,
+   * filo karşılaştırma) hepsi zaten bu bayrağa bakıp gizliyor ve toplamdan
+   * düşüyordu — kapının genişlemesi kendiliğinden her yüzeye yayılıyor.
    */
   dataUnreliable: boolean;
+  /** Vardiya içi yakıt okuma oranı (0–1); vardiyası yoksa null. */
+  kapsama: number | null;
+  /** Neden gizlendiği, PARAMETRESİYLE (ekran metni bunu kullanır). */
+  guvenilirlikSebep: YakitSebep;
 };
 
 /**
@@ -1482,10 +1509,77 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     return null;
   };
 
-  const rows: FuelRow[] = vehicles.map((v) => {
+  /**
+   * ═══ GÜVENİLİRLİK KAPISI (18.09.2026) — İKİ AŞAMA, TEK KURAL ═════════════
+   *
+   * 1. aşama: satırlar HAM hâlleriyle kurulur (aşağıdaki `hamRows`) — üç kol
+   *    (litre hattı · veri yok · yüzde hattı) hiç değişmedi.
+   * 2. aşama: her satır `lib/fuel-vehicle.ts`teki `yakitKapisi`nden geçer.
+   *
+   * NEDEN İKİ AŞAMA: kapı SAF bir fonksiyon (ağ yok) ve muhafız/ölçüm betiği
+   * onu doğrudan çağırabilsin diye öyle kalmalı; kapsama ise SORGU ister.
+   * Ham değer hiçbir yere sızmaz — `rows` yalnız kapıdan geçmiş hâli taşır.
+   *
+   * ⚠️ PAYDA BU RAPORUN KENDİ km'Sİ (odometre ekseni, `distByVehicle`) —
+   * kolonunda yazan sayının ta kendisi. Araç detayı özeti aynı kapıyı ÇEKİRDEK
+   * km ile çağırıyor, çünkü orada ekranda o yazıyor. Aynı araç iki yüzeyde
+   * farklı kapı sonucu alabilir ve bu BİLİNÇLİ: iki yüzey farklı mesafe
+   * ölçüyor. Kapının başka bir sayıya bakıp gizlemesi, ekranda görünmeyen bir
+   * gerekçeyle sayı saklamak olurdu.
+   */
+  /**
+   * ═══ PAYDA ÇEKİRDEKTEN (19.09.2026, Volkan kararı) ═════════════════════
+   *
+   * `buildFuelReport` km'yi 22.07.2026'dan beri ODOMETRE uç-noktalarından
+   * alıyordu ("mesafe raporuyla AYNI kaynak"). Artık `lib/km-axis.ts`
+   * çekirdeğinden alıyor — uygulamanın her yerinde AYNI km.
+   *
+   * NEDEN DEĞİŞTİ: güvenilirlik kapısı (18.09.2026) her yüzeyde o yüzeyin
+   * KENDİ paydasını denetliyordu ve iki payda farklı olduğu için AYNI ARAÇ
+   * iki ekranda farklı karar alıyordu. Canlı kanıt DO-671GY: odometre
+   * ekseninde 76,8 L / 701 km = 11,0 L/100 (kapı geçiyor), çekirdek ekseninde
+   * 76,8 L / 64 km = 120 L/100 (kapı gizliyor). Yönetici aynı araç için
+   * yakıt raporunda sayı, araç detayında "—" görüyordu.
+   *
+   * ⚠️ MESAFE RAPORU / CSV / PDF km kolonu DEĞİŞMEDİ: onlar 13. maddedeki
+   * kesim kuralına (`kmRaporDegeri`) bağlı ve kâğıdın geçmişe sadık kalması
+   * ayrı bir karar. Burada yalnız YAKIT RAPORUNUN paydası taşındı.
+   *
+   * ⚠️ KALAN AYRIŞMA: `buildDistanceReport` hâlâ odometre ekseninde, yani
+   * Yakıt raporundaki km kolonu ile Mesafe raporundaki km kolonu aynı araçta
+   * farklı olabilir (DO-671GY: 64 ↔ 701). Bu tur kapsam dışı ve bilerek
+   * yazılı; kapatmak ayrı bir karar.
+   */
+  const vardiyalar = await loadScoreShifts(range);
+  const pencereByVehicle = new Map<string, { baslangic: string; bitis: string }[]>();
+  const cekirdekKm = new Map<string, number>();
+  const cekirdekOlculen = new Map<string, number>();
+  for (const t of vardiyalar) {
+    if (!t.vehicle_id) continue;
+    const arr = pencereByVehicle.get(t.vehicle_id) ?? [];
+    arr.push({ baslangic: t.started_at, bitis: t.ended_at ?? endISO });
+    pencereByVehicle.set(t.vehicle_id, arr);
+    const d = t.km_karar.km;
+    if (d !== null) {
+      cekirdekKm.set(t.vehicle_id, (cekirdekKm.get(t.vehicle_id) ?? 0) + d);
+      cekirdekOlculen.set(t.vehicle_id, (cekirdekOlculen.get(t.vehicle_id) ?? 0) + 1);
+    }
+  }
+  /** Çekirdek hiçbir vardiyada ölçemediyse null — 0 DEĞİL. */
+  const cekKmOf = (id: string): number | null =>
+    (cekirdekOlculen.get(id) ?? 0) > 0 ? (cekirdekKm.get(id) as number) : null;
+
+  const hamRows: FuelRow[] = vehicles.map((v) => {
     const cap = v.tank_capacity_l != null ? Number(v.tank_capacity_l) : null;
     const span = distByVehicle.get(v.id) ?? { km: null, reason: null, firstAt: null, lastAt: null };
-    const km = span.km;
+    /**
+     * PAYDA ÇEKİRDEKTEN. `span` DURUYOR ama yalnız iki iş için: ölçüm
+     * penceresi (3. kapı, yakıt/odometre pencereleri aynı zamanı ölçüyor mu)
+     * ve odometre sebebi. Km'nin kendisi artık oradan gelmiyor.
+     */
+    const km = cekKmOf(v.id);
+    /** Çekirdek ölçemediyse sebep ODOMETRENİNKİ değil, çekirdeğinki. */
+    const kmSebebi: DistanceUnavailableReason = km === null ? "olculmedi" : span.reason;
     const driverName = v.assigned_worker_id
       ? workerName.get(v.assigned_worker_id) ?? null
       : null;
@@ -1504,7 +1598,7 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
       const dropL = Number(vol.drop_l) || 0;
       const gate = l100Gate(
         km,
-        span.reason,
+        kmSebebi,
         // Yüzde kapısı yerine litre kapısı: eşiği geçmişse "yeterli tüketim"
         // say (kapı yüzde üzerinden bakıyor, litreyi oraya çeviremeyiz).
         consumedLiters >= FUEL_MIN_CONSUMED_L ? FUEL_MIN_CONSUMED_PCT : 0,
@@ -1539,6 +1633,9 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
         zeroCount: 0,
         zeroRatio: 0,
         dataUnreliable: false,
+        // Kapı 2. aşamada dolduruyor (aşağıdaki `rows`).
+        kapsama: null,
+        guvenilirlikSebep: null,
       };
     }
 
@@ -1568,6 +1665,8 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
         zeroCount: 0,
         zeroRatio: 0,
         dataUnreliable: false,
+        kapsama: null,
+        guvenilirlikSebep: null,
       };
     }
     const zeroCount = zeroByVehicle.get(v.id) ?? 0;
@@ -1589,7 +1688,7 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     // olarak zaten gösteriliyor (fuel_capacity_note).
     const gateReason = l100Gate(
       km,
-      span.reason,
+      kmSebebi,
       consumedPct,
       unreliable,
       cap != null,
@@ -1624,6 +1723,71 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
       zeroCount,
       zeroRatio,
       dataUnreliable: unreliable,
+      kapsama: null,
+      guvenilirlikSebep: null,
+    };
+  });
+
+  const kapsamaCiftleri = await mapBounded(hamRows, async (r) => {
+    const pencereler = pencereByVehicle.get(r.vehicleId) ?? [];
+    // Yakıt okuması hiç yoksa kapsama sormanın anlamı yok — sorgu atmıyoruz.
+    if (!r.hasData || pencereler.length === 0) return [r.vehicleId, null] as const;
+    return [
+      r.vehicleId,
+      await okuYakitKapsama(r.vehicleId, startISO, endISO, pencereler),
+    ] as const;
+  });
+  const kapsamaByVehicle = new Map(kapsamaCiftleri);
+
+  const rows: FuelRow[] = hamRows.map((r) => {
+    /**
+     * HAM SEBEP satırın kendisinden türer — üç kol da onu zaten söylüyor:
+     *   veri yok           → olculmedi
+     *   sensör yarı ölü    → arizali_sensor (ham %0 oranı)
+     *   yüzde var, depo yok→ depo_yok (litre hesaplanamadı)
+     */
+    const hamSebep: YakitSebep = !r.hasData
+      ? { kod: "olculmedi" }
+      : r.dataUnreliable
+        ? { kod: "arizali_sensor", yuzde: Math.round(r.zeroRatio * 100) }
+        : r.consumedLiters === null
+          ? { kod: "depo_yok" }
+          : null;
+    const kapi = yakitKapisi({
+      hamLitre: r.consumedLiters,
+      hamSebep,
+      km: r.km,
+      kapsama: kapsamaByVehicle.get(r.vehicleId) ?? null,
+      eurPerL: FUEL_PRICE_EUR_PER_L,
+    });
+    /**
+     * ESKİ KAPILAR KORUNUYOR. `lPer100Reason` zaten üç eski sebebi taşıyordu
+     * (mesafe kısa · tüketim düşük · pencere uyuşmuyor) ve onlar YALNIZ oranı
+     * gizliyordu. Yeni kapı litreyi DE gizliyor; ikisi çakışırsa YENİ sebep
+     * kazanır, çünkü daha geniş bir gizlemeyi açıklıyor.
+     */
+    const sebepKodu: FuelRatioReason =
+      kapi.sebep === null
+        ? r.lPer100Reason
+        : kapi.sebep.kod === "kapsama_dusuk"
+          ? "kapsama_dusuk"
+          : kapi.sebep.kod === "l100_aralik_disi"
+            ? "l100_aralik_disi"
+            : kapi.sebep.kod === "km_yok"
+              ? "km_yok"
+              : kapi.sebep.kod === "depo_yok"
+                ? "no_capacity"
+                : kapi.sebep.kod === "arizali_sensor"
+                  ? "unreliable_sensor"
+                  : r.lPer100Reason;
+    return {
+      ...r,
+      consumedLiters: kapi.litre,
+      lPer100Km: kapi.l100 ?? (kapi.guvenilir ? r.lPer100Km : null),
+      lPer100Reason: sebepKodu,
+      dataUnreliable: !kapi.guvenilir,
+      kapsama: kapi.kapsama,
+      guvenilirlikSebep: kapi.sebep,
     };
   });
 

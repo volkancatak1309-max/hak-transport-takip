@@ -128,6 +128,15 @@ export async function GET(req: NextRequest) {
     },
     kapsam: { isChief: guard.actor.isChief, filo: guard.actor.fleet },
     filolar: sonuc.filolar,
+    /**
+     * NORMALİZE KIYAS (18.09.2026) — beş metrik, büyüklükten arındırılmış.
+     * Ham toplam filo BÜYÜKLÜĞÜNÜ ölçer: 19 araçlı filo elbette daha çok km
+     * yapar. Her metrik kendi paydasına bölünür (km/araç · alarm/100km ·
+     * L/100km · rölanti saat/vardiya · skor) ve filo ortalamasına göre yüzde
+     * farkı taşınır. `enIyi`/`enKotu` YALNIZ yönlü metriklerde dolu —
+     * `kmPerArac` yönsüzdür (çok km yapmak ne iyi ne kötü, iş hacmidir).
+     */
+    normalize: sonuc.normalize,
     sahipsiz: sonuc.sahipsiz,
     toplam: sonuc.toplam,
     // Kimlik kanıtı yanıtta: bir gün bozulursa istemci GÖREBİLSİN.

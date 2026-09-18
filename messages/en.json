@@ -1796,8 +1796,8 @@
     "fuel_reason_short_window_mismatch": "Window mismatch",
     "fuel_reason_short_unreliable_sensor": "Sensor faulty",
     "distance_table_title": "Vehicle list",
-    "fuel_reason_no_capacity": "Tank capacity not entered",
-    "fuel_reason_short_no_capacity": "no tank capacity",
+    "fuel_reason_no_capacity": "Tank capacity not set",
+    "fuel_reason_short_no_capacity": "No tank",
     "fuel_reason_olculmedi": "Distance could not be measured",
     "fuel_reason_short_olculmedi": "not measured",
     "unit_vehicles": "vehicles with a device",
@@ -1841,7 +1841,13 @@
     "fuel_ref_stale_note": "The fuel price reference has not been refreshed for {gun} days (source {tarih}). The number is still real but ageing — the source or the scheduler may have stopped.",
     "fuel_not_measured": "not measurable — no vehicle measured in this period",
     "retention_out_of_scope": "The selected period lies entirely outside the raw-data retention window ({days} days). Because the raw trail was deleted, this period cannot be measured — the gap is not a zero.",
-    "retention_partial_scope": "The first {days} days of the selected period fall outside the raw-data retention window. Those days are NOT included in the totals; the figures cover only the retained part."
+    "retention_partial_scope": "The first {days} days of the selected period fall outside the raw-data retention window. Those days are NOT included in the totals; the figures cover only the retained part.",
+    "fuel_reason_kapsama_dusuk": "The device reports fuel level in only {yuzde}% of the shift",
+    "fuel_reason_l100_aralik_disi": "Calculated consumption is implausible ({deger} L/100 km)",
+    "fuel_reason_km_yok": "Distance not measured — the ratio cannot be checked",
+    "fuel_reason_short_kapsama_dusuk": "Coverage {yuzde}%",
+    "fuel_reason_short_l100_aralik_disi": "Implausible",
+    "fuel_reason_short_km_yok": "No km"
   },
   "messages": {
     "title": "Messages",

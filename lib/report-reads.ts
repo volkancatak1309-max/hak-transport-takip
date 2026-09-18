@@ -60,13 +60,20 @@ export function okuOlaylar(
   );
 }
 
-/** Aralıktaki rölanti epizodları (sayfalı okuma). */
+/**
+ * Aralıktaki rölanti epizodları (sayfalı okuma).
+ *
+ * `vehicleId` verilirse okuma SQL'de daraltılır ve ANAHTAR da daralır — filo
+ * geneli okuma ile araç okuması aynı memo kutusunu paylaşmaz, yoksa biri
+ * ötekinin eksik kümesini görürdü.
+ */
 export function okuRolanti(
   startISO: string,
-  endISO: string
+  endISO: string,
+  vehicleId?: string
 ): ReturnType<typeof listIdleEpisodesInRange> {
-  return turMemo(`rolanti:${startISO}:${endISO}`, () =>
-    listIdleEpisodesInRange(startISO, endISO)
+  return turMemo(`rolanti:${startISO}:${endISO}:${vehicleId ?? "*"}`, () =>
+    listIdleEpisodesInRange(startISO, endISO, vehicleId)
   );
 }
 

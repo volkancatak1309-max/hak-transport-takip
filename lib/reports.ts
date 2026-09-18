@@ -2,6 +2,17 @@ import "server-only";
 import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { fuelConsumedPct, pctToLiters } from "@/lib/fuel-math";
 import {
+  aracRpcCagir,
+  yuzdeRpcAdi,
+  litreRpcAdi,
+  YUZDE_RPC_V1,
+  LITRE_RPC_V1,
+  FUEL_VOLUME_MAX_STEP_L,
+  UNRELIABLE_ZERO_RATIO,
+  type FuelStatRow,
+  type FuelVolumeStatRow,
+} from "@/lib/fuel-vehicle";
+import {
   computeSafetyScores,
   workerDrivingAt,
   getVehicleFuelSpan,
@@ -38,7 +49,6 @@ import {
   FUEL_PRICE_AS_OF,
   FUEL_PRICE_IS_CUSTOM,
   KM_EKSENI_KESIM_TARIHI,
-  YAKIT_OZET_ENABLED,
 } from "@/lib/tenant";
 import { resolveCostRates } from "@/lib/cost-rates-db";
 import {
@@ -925,62 +935,16 @@ export type FuelReport = {
   partialReason: FuelUnavailableReason;
 };
 
-type FuelStatRow = {
-  vehicle_id: string;
-  sample_count: number;
-  avg_pct: number | null;
-  min_pct: number | null;
-  max_pct: number | null;
-  first_pct: number | null;
-  last_pct: number | null;
-  refill_count: number;
-  refill_pct: number;
-  drop_count: number;
-  drop_pct: number;
-  /**
-   * ARIZALI SENSÖR SAYIMI — aralıktaki HAM `fuel_level_pct = 0` okuma sayısı.
-   *
-   * ⚠️ OPSİYONEL: yalnız migration 107 uygulanmış kiracıda gelir. Yoksa
-   * uygulama eski 19 sorgulu yola düşer (aşağıda `sifirKolonuVar`).
-   * 2 argümanlı `report_fuel_stats` (geri düşüş yolu) bu kolonu HİÇ döndürmez.
-   */
-  zero_count?: number | null;
-};
-
 /**
- * Okumalarının bu oranından FAZLASI %0 olan aracın yakıt sensörü güvenilmez
- * sayılır (canlı gözlem: DO-687GX %22; sağlıklı araçlarda oran %0,01'in altında,
- * yani eşik geniş bir boşluğun ortasında durur).
- */
-const UNRELIABLE_ZERO_RATIO = 0.1;
-
-/** report_fuel_volume_stats (migration 039) satırı — litre cinsinden. */
-type FuelVolumeStatRow = {
-  vehicle_id: string;
-  sample_count: number;
-  avg_l: number | null;
-  min_l: number | null;
-  max_l: number | null;
-  first_l: number | null;
-  last_l: number | null;
-  refill_count: number;
-  refill_l: number;
-  drop_count: number;
-  drop_l: number;
-  /** Ardışık iki okuma arasındaki en büyük MUTLAK sıçrama (gürültü muhafızı). */
-  max_step_l: number;
-};
-
-/**
- * LİTRE GÜRÜLTÜ MUHAFIZI (27.07.2026). Ardışık adım bu eşiği aşıyorsa aracın
- * hacim serisi güvenilmez sayılır ve rapora HİÇ girmez ("Veri yok").
+ * ⚠️ ÜÇ TANIM `lib/fuel-vehicle.ts`E TAŞINDI (18.09.2026): `FuelStatRow`,
+ * `FuelVolumeStatRow`, `FUEL_VOLUME_MAX_STEP_L`, `UNRELIABLE_ZERO_RATIO` ve
+ * araç-filtreli RPC çağrısının kendisi.
  *
- * Ölçüm (canlı, 3 gün): temiz araçlarda en büyük adım 0,1–1,0 L
- * (DO-776GS 0,1 · DO-753GS 0,3 · DO-945HL 0,5 · DO-775GS 1,0);
- * çöp seride 30–79 L (DO-777GS 79 · DO-747GU 65 · DO-687GX 43).
- * 5 L bu iki kümenin arasındaki geniş boşlukta durur.
+ * Sebep: araç detayının dönem özeti AYNI RPC'leri TEK araç için çağırıyor.
+ * Satır şekli, RPC adı ve argüman adları iki dosyada yazılı olsaydı bir
+ * migration birini güncelleyip ötekini bırakabilirdi — ve fark sessiz olurdu:
+ * yanlış argüman adı `missing_function` verir, o da "veri yok" diye okunur.
  */
-const FUEL_VOLUME_MAX_STEP_L = 5;
 
 /**
  * Litre yolunda "ölçülebilir tüketim" eşiği — yüzdedeki %15'in karşılığı.
@@ -1194,24 +1158,18 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
    * ⚠️ GERİ DÜŞÜŞ TAM: v2 yoksa (101 uygulanmamış) rapor KOMPLE eski yola
    * döner — yarısı yeni yarısı eski bir sonuç ÜRETİLMEZ.
    */
-  const yuzdeRpc = YAKIT_OZET_ENABLED
-    ? "report_fuel_stats_vehicle_v2"
-    : "report_fuel_stats_vehicle";
+  // RPC adı ve argüman şekli lib/fuel-vehicle.ts'te — araç detayının dönem
+  // özeti AYNI çağrıyı tek araç için yapıyor, ikinci bir tanım yok.
+  const yuzdeRpc = yuzdeRpcAdi();
   const yuzdeCagir = (rpc: string) =>
-    mapBounded(vehicles, (v) =>
-      supabaseAdmin.rpc(rpc, {
-        p_from: startISO,
-        p_to: endISO,
-        p_vehicle_id: v.id,
-      })
-    );
+    mapBounded(vehicles, (v) => aracRpcCagir(rpc, v.id, startISO, endISO));
   let perVehicle = await yuzdeCagir(yuzdeRpc);
   if (
-    yuzdeRpc !== "report_fuel_stats_vehicle" &&
+    yuzdeRpc !== YUZDE_RPC_V1 &&
     perVehicle.some((r) => r.error && classifyRpcError(r.error) === "missing_function")
   ) {
     // 101 bu kiracıda çalışmamış. Tek tur bedel, sonra bugünkü yol.
-    perVehicle = await yuzdeCagir("report_fuel_stats_vehicle");
+    perVehicle = await yuzdeCagir(YUZDE_RPC_V1);
   }
   const missingFn = perVehicle.find(
     (r) => r.error && classifyRpcError(r.error) === "missing_function"
@@ -1250,11 +1208,7 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
     for (const i of retryIdx) {
       // ⚠️ Tekrar AYNI sürümle yapılır: ilk tur v2 ile koştuysa tekrar da
       // v2 olmalı, yoksa tek araç sessizce başka bir yoldan hesaplanırdı.
-      perVehicle[i] = await supabaseAdmin.rpc(yuzdeRpc, {
-        p_from: startISO,
-        p_to: endISO,
-        p_vehicle_id: vehicles[i].id,
-      });
+      perVehicle[i] = await aracRpcCagir(yuzdeRpc, vehicles[i].id, startISO, endISO);
     }
     const stillFailed = perVehicle
       .map((r, i) => (r.error ? i : -1))
@@ -1341,23 +1295,15 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
      * yarısı yeni yarısı eski bir sonuç ÜRETİLMEZ. Yüzde hattı bundan
      * bağımsız: 101 var 103 yok olabilir ve her iki hat da doğru çalışır.
      */
-    const litreRpc = YAKIT_OZET_ENABLED
-      ? "report_fuel_volume_stats_vehicle_v2"
-      : "report_fuel_volume_stats_vehicle";
+    const litreRpc = litreRpcAdi();
     const litreCagir = (rpc: string) =>
-      mapBounded(litreGerekenler, (v) =>
-        supabaseAdmin.rpc(rpc, {
-          p_from: startISO,
-          p_to: endISO,
-          p_vehicle_id: v.id,
-        })
-      );
+      mapBounded(litreGerekenler, (v) => aracRpcCagir(rpc, v.id, startISO, endISO));
     let volPer = await litreCagir(litreRpc);
     if (
-      litreRpc !== "report_fuel_volume_stats_vehicle" &&
+      litreRpc !== LITRE_RPC_V1 &&
       volPer.some((r) => r.error && classifyRpcError(r.error) === "missing_function")
     ) {
-      volPer = await litreCagir("report_fuel_volume_stats_vehicle");
+      volPer = await litreCagir(LITRE_RPC_V1);
     }
     const volMissing = volPer.find(
       (r) => r.error && classifyRpcError(r.error) === "missing_function"
@@ -1375,12 +1321,8 @@ export async function buildFuelReport(range: DateRange): Promise<FuelReport> {
         .filter((i) => i >= 0);
       for (const i of volRetry) {
         // ⚠️ Tekrar AYNI sürümle (yüzde hattındaki kuralın aynısı).
-        volPer[i] = await supabaseAdmin.rpc(litreRpc, {
-          p_from: startISO,
-          p_to: endISO,
-          // ⚠️ İNDİS `litreGerekenler`e ait, `vehicles`e DEĞİL.
-          p_vehicle_id: litreGerekenler[i].id,
-        });
+        // ⚠️ İNDİS `litreGerekenler`e ait, `vehicles`e DEĞİL.
+        volPer[i] = await aracRpcCagir(litreRpc, litreGerekenler[i].id, startISO, endISO);
       }
       volRows = volPer.flatMap((r) => (r.data ?? []) as FuelVolumeStatRow[]);
     }

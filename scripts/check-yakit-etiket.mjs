@@ -36,7 +36,17 @@ const m101 = oku("db/migrations/101_yakit_seri_etiket.sql");
 const m102 = oku("db/migrations/102_yakit_v2_pencere_duzeltme.sql");
 const m103 = oku("db/migrations/103_yakit_hacim_seri_etiket.sql");
 const m094 = oku("db/migrations/094_yakit_hacim_arac_ekseni.sql");
-const raporLib = oku("lib/reports.ts");
+/**
+ * ⚠️ İKİ DOSYA (18.09.2026): araç-filtreli RPC çağrısı, sürüm seçimi ve satır
+ * tipleri `lib/fuel-vehicle.ts`e taşındı — araç detayının dönem özeti AYNI
+ * çağrıyı tek araç için yapıyor. Muhafızın sorusu değişmedi ("kural yerinde
+ * mi"), yalnız kuralın yaşadığı yer genişledi; bu yüzden ikisi birlikte
+ * taranıyor. Tek dosyaya bakmak, kuralın taşınmasını "kural kalktı" sanmak
+ * olurdu.
+ */
+const SATIR = String.fromCharCode(10);
+const yakitLib = oku("lib/fuel-vehicle.ts");
+const raporLib = [oku("lib/reports.ts"), yakitLib].join(SATIR);
 const tenantLib = oku("lib/tenant.ts");
 const cron = oku("app/api/cron/yakit-etiket/route.ts");
 const cronDoc = oku("docs/CRON-KAYITLARI.md");
@@ -218,14 +228,21 @@ if (v1 && v2) {
 // ── 4 · UYGULAMA: BAYRAK + GERİ DÜŞÜŞ ──────────────────────────────────────
 kontrol("YAKIT_OZET_ENABLED bayrağı tek yerde", /export const YAKIT_OZET_ENABLED = envBool\(/.test(tenantLib));
 kontrol("bayrak varsayılanı açık", /YAKIT_OZET_ENABLED = envBool\(process\.env\.YAKIT_OZET_ENABLED, true\)/.test(tenantLib));
-kontrol("yakıt raporu bayrağa bakıyor", /YAKIT_OZET_ENABLED[\s\S]{0,120}report_fuel_stats_vehicle_v2/.test(raporLib));
+// Bayrak → v2 bağı artık İKİ adımda: sabit adı ve seçici fonksiyon
+// (lib/fuel-vehicle.ts). İkisi de sınanıyor; biri kopsa zincir kopar.
+kontrol(
+  "yakıt raporu bayrağa bakıyor (yüzde)",
+  /YUZDE_RPC_V2 = "report_fuel_stats_vehicle_v2"/.test(raporLib) &&
+    /YAKIT_OZET_ENABLED[\s\S]{0,60}YUZDE_RPC_V2/.test(raporLib) &&
+    /yuzdeRpc = yuzdeRpcAdi\(\)/.test(raporLib)
+);
 kontrol(
   "🔑 v2 yoksa rapor KOMPLE eski yola dönüyor (yarım sonuç yok)",
-  /missing_function[\s\S]{0,200}yuzdeCagir\("report_fuel_stats_vehicle"\)/.test(raporLib)
+  /missing_function[\s\S]{0,240}yuzdeCagir\(YUZDE_RPC_V1\)/.test(raporLib)
 );
 kontrol(
   "zaman aşımı tekrarı AYNI sürümle yapılıyor",
-  /perVehicle\[i\] = await supabaseAdmin\.rpc\(yuzdeRpc,/.test(raporLib)
+  /perVehicle\[i\] = await aracRpcCagir\(yuzdeRpc,/.test(raporLib)
 );
 
 // ── 5 · CRON ───────────────────────────────────────────────────────────────
@@ -355,15 +372,17 @@ if (v1l && v2l) {
 
 kontrol(
   "🔑 yakıt raporu litre hattını da bayrağa bağladı",
-  /YAKIT_OZET_ENABLED[\s\S]{0,140}report_fuel_volume_stats_vehicle_v2/.test(raporLib)
+  /LITRE_RPC_V2 = "report_fuel_volume_stats_vehicle_v2"/.test(raporLib) &&
+    /YAKIT_OZET_ENABLED[\s\S]{0,60}LITRE_RPC_V2/.test(raporLib) &&
+    /litreRpc = litreRpcAdi\(\)/.test(raporLib)
 );
 kontrol(
   "🔑 litre v2 yoksa LİTRE HATTI komple eskiye dönüyor",
-  /missing_function[\s\S]{0,220}litreCagir\("report_fuel_volume_stats_vehicle"\)/.test(raporLib)
+  /missing_function[\s\S]{0,240}litreCagir\(LITRE_RPC_V1\)/.test(raporLib)
 );
 kontrol(
   "litre zaman aşımı tekrarı AYNI sürümle",
-  /volPer\[i\] = await supabaseAdmin\.rpc\(litreRpc,/.test(raporLib)
+  /volPer\[i\] = await aracRpcCagir\(litreRpc,/.test(raporLib)
 );
 kontrol(
   "🔑 cron AYNI koşuda İKİ tabloyu da dolduruyor",
@@ -517,7 +536,7 @@ kontrol("107 · litre hattına dokunmuyor", !K107.includes("report_fuel_volume_s
  * koruyor: biri silinirse ya kolon sessizce yok sayılır ya da olmayan kolon
  * okunmaya çalışılır.
  */
-const RAPORLAR = oku("lib/reports.ts");
+const RAPORLAR = [oku("lib/reports.ts"), oku("lib/fuel-vehicle.ts")].join(SATIR);
 kontrol(
   "uygulama kararı YANITA bakıyor (bayrağa değil)",
   /const sifirKolonuVar = statRows\.some\(\(r\) => r\.zero_count !== undefined\)/.test(RAPORLAR)

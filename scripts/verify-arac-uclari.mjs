@@ -327,7 +327,8 @@ console.log(`\n── U5  GET …/metrikler?tarih=${hedefGun} ──`);
 const met = gunMetrikleri(kesinIz);
 console.log(kisa({ ok: true, plaka: arac.plate, tarih: hedefGun, ...met }, 1200));
 iddia("motorDk sıfır değil NULL olabiliyor", met.sebep.motor === "var" ? met.motorDk !== null : met.motorDk === null, `sebep=${met.sebep.motor}`);
-iddia("gpsKm ölçüldü", met.sebep.gps === "var" ? met.gpsKm !== null : met.gpsKm === null, `sebep=${met.sebep.gps}`);
+// 18.09.2026: `gpsKm` kaldırıldı ("tek km"). Alanın GERİ GELMEDİĞİ sınanıyor.
+iddia("gpsKm alanı YOK", !("gpsKm" in met) && !("gps" in (met.sebep ?? {})), JSON.stringify(met.sebep));
 iddia("rolantiDk ölçüldü", met.sebep.rolanti === "var" ? met.rolantiDk !== null : met.rolantiDk === null, `sebep=${met.sebep.rolanti}`);
 
 // Boş gün kontrolü — veri olmayan bir günde ne dönüyor?
@@ -335,8 +336,8 @@ const bosGun = adaylar.find((g) => !gunler.some((x) => x.tarih === g));
 if (bosGun) {
   const bosIz = await listVehicleTrack(arac.id, gunPenceresi(bosGun).baslangic, gunPenceresi(bosGun).bitis);
   const bosMet = gunMetrikleri(bosIz);
-  console.log(`\n  VERİSİZ GÜN (${bosGun}): ${JSON.stringify({ noktaSayisi: bosMet.noktaSayisi, motorDk: bosMet.motorDk, gpsKm: bosMet.gpsKm, rolantiDk: bosMet.rolantiDk, sebep: bosMet.sebep })}`);
-  iddia("verisiz günde SIFIR değil NULL", bosMet.motorDk === null && bosMet.gpsKm === null && bosMet.rolantiDk === null);
+  console.log(`\n  VERİSİZ GÜN (${bosGun}): ${JSON.stringify({ noktaSayisi: bosMet.noktaSayisi, motorDk: bosMet.motorDk, rolantiDk: bosMet.rolantiDk, sebep: bosMet.sebep })}`);
+  iddia("verisiz günde SIFIR değil NULL", bosMet.motorDk === null && bosMet.rolantiDk === null);
 } else {
   console.log(`\n  VERİSİZ GÜN: son ${GUN_PENCERE_MAX} günün hepsinde veri var — ÖLÇÜLMEDİ`);
 }

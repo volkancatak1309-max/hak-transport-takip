@@ -323,11 +323,22 @@ export type GunMetrikleri = {
   belirsiz: boolean;
   motorDk: number | null;
   motorMs: number | null;
-  gpsKm: number | null;
+  /**
+   * ⚠️ `gpsKm` KALDIRILDI (18.09.2026, Volkan kararı — "tek km").
+   *
+   * İz km'si (`computeDistanceKm`) ile çekirdeğin km'si (`lib/km-axis.ts`)
+   * AYNI araç ve AYNI gün için farklı sayı veriyor ve ikisi ekranda yan yana
+   * duruyordu. Araç detayının km'si artık TEK kaynaktan geliyor:
+   * `GET /api/mobile/vehicles/[id]/ozet` → `km` + `kmKaynak`.
+   *
+   * `computeDistanceKm` KALDI: `belirsiz` bayrağı ve `ayrinti` sayaçları
+   * (boşluk · sıçrama · titreşim) ondan türüyor ve bunlar km değil, ÖLÇÜM
+   * KALİTESİ göstergeleri — gün detayında işe yarıyorlar.
+   */
   rolantiDk: number | null;
   rolantiMs: number | null;
   rolantiOlay: number | null;
-  sebep: { motor: MetrikSebep; gps: MetrikSebep; rolanti: MetrikSebep };
+  sebep: { motor: MetrikSebep; rolanti: MetrikSebep };
   ayrinti: {
     bosluk: number;
     kirpilanKontak: number;
@@ -362,7 +373,6 @@ export function gunMetrikleri(track: readonly TelemetryRow[]): GunMetrikleri {
   const hizVar = rows.some((r) => r.speed_kmh !== null);
 
   const motorSebep: MetrikSebep = !veriVar ? "veri_yok" : !kontakVar ? "kontak_yok" : "var";
-  const gpsSebep: MetrikSebep = !veriVar ? "veri_yok" : "var";
   const rolantiSebep: MetrikSebep = !veriVar
     ? "veri_yok"
     : !kontakVar
@@ -380,11 +390,10 @@ export function gunMetrikleri(track: readonly TelemetryRow[]): GunMetrikleri {
     belirsiz: motor.uncertain || mesafe.uncertain || rolanti.uncertain,
     motorDk: motorSebep === "var" ? Math.round(motor.ms / 60_000) : null,
     motorMs: motorSebep === "var" ? motor.ms : null,
-    gpsKm: gpsSebep === "var" ? yuvarla(mesafe.km, 2) : null,
     rolantiDk: rolantiSebep === "var" ? Math.round(rolanti.totalIdleMs / 60_000) : null,
     rolantiMs: rolantiSebep === "var" ? rolanti.totalIdleMs : null,
     rolantiOlay: rolantiSebep === "var" ? rolanti.idleEvents : null,
-    sebep: { motor: motorSebep, gps: gpsSebep, rolanti: rolantiSebep },
+    sebep: { motor: motorSebep, rolanti: rolantiSebep },
     ayrinti: {
       bosluk: mesafe.gapCount,
       kirpilanKontak: motor.clampedCount,

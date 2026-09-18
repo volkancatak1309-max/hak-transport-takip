@@ -93,6 +93,14 @@ export type ScoreShiftRow = Pick<
   | "break_minutes"
   | "cargo_count"
   | "undelivered_count"
+  /**
+   * ⚠️ PUAN İÇİN GEREKMEZ (18.09.2026). Araç detayının dönem özeti "alınan
+   * paket"i buradan okuyor ve AYNI vardiya satırlarından okumak zorunda —
+   * ikinci bir `time_entries` sorgusu açsaydı iki yüzey iki farklı vardiya
+   * kümesi sayardı. Kolon eklemek ek gidiş-geliş DEĞİL, aynı select'te bir
+   * alan daha.
+   */
+  | "start_package_count"
 >;
 
 /** Km kararı iliştirilmiş vardiya — ekranın ve puanın ORTAK satırı. */
@@ -128,7 +136,23 @@ export type ScoreInput = {
  * kez kararlaştırılır, her çağıran onu okur. Tek RPC — vardiya başına çağrı
  * yok (bkz. lib/km-axis.ts).
  */
-export function loadScoreShifts(range: DateRange): Promise<ScoreShift[]> {
+export function loadScoreShifts(
+  range: DateRange,
+  /**
+   * ⚠️ YALNIZ SQL DARALTMASI — KM KARARI DEĞİŞMEZ (18.09.2026).
+   *
+   * Araç detayının dönem özeti tek aracın vardiyalarını istiyor. Filo genelini
+   * okuyup JS'te süzmek ÖLÇÜLDÜ: "ay" penceresinde 1.545 ms (416 satır +
+   * 416 satırlık `markKmMeasured` + 052). Araç daraltmasıyla aynı boru hattı
+   * 27 satır üstünde koşuyor.
+   *
+   * Daraltma bir FORK DEĞİL: aynı sorgu, aynı iki eleme, aynı
+   * `markKmMeasured` → `markKmKarar` sırası; yalnız `where`e bir eşitlik
+   * eklenir. `kmKarariVer` satır satır karar verdiği için sonuç birebir aynı —
+   * kanıt betiği bunu filo geneli çekirdekle karşılaştırarak ölçüyor.
+   */
+  vehicleId?: string
+): Promise<ScoreShift[]> {
   /**
    * TUR İÇİ PAYLAŞIM (lib/report-reads.ts ile aynı kalıp ve aynı gerekçe).
    * Bir turda iki toplayıcı da (ör. filo karşılaştırma → Performans + kendi
@@ -136,41 +160,47 @@ export function loadScoreShifts(range: DateRange): Promise<ScoreShift[]> {
    * BİREBİR aynı sonucu döndürür. Kap yoksa (panel, cron) davranış eskisi:
    * `turMemo` doğrudan üreticiyi çağırır.
    */
-  return turMemo(`skorVardiya:${range.start.toISOString()}:${range.end.toISOString()}`, () =>
-    okuScoreShifts(range)
+  return turMemo(
+    `skorVardiya:${range.start.toISOString()}:${range.end.toISOString()}:${vehicleId ?? "*"}`,
+    () => okuScoreShifts(range, vehicleId)
   );
 }
 
-async function okuScoreShifts(range: DateRange): Promise<ScoreShift[]> {
+async function okuScoreShifts(range: DateRange, vehicleId?: string): Promise<ScoreShift[]> {
   const scope = await getTestScope();
   const driverScope = await getDriverScope();
   // SAYFALI: PostgREST 1000 satırda kesiyor ve `.limit()` bunu aşamıyor
   // (25.07.2026 ölçümü). ~29 şoför × 1 vardiya/gün ile tavan ~34 günde dolar.
   const { data } = await fetchAllRows<ScoreShiftRow>(
-    (from, to) =>
+    (from, to) => {
+      // test-filtered: `withoutTestRows(...)` aşağıda, aynı ifadenin dönüşünde.
+      // driver-scoped: `onlyDrivers(...)` aynı dönüşte — kalıcı test şoförü ve
+      // yönetici hesapları ikisinde de eleniyor. Sorgu burada parçalı kuruluyor
+      // çünkü araç kapsamı (`.eq("vehicle_id", …)`) yalnız `where`e eklenmeli.
+      const temel = supabaseAdmin
+        .from("time_entries")
+        .select(
+          "id, worker_id, vehicle_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count, start_package_count"
+        )
+        // VARDİYA TANIMI: başlangıç anı pencerenin içinde (dosya başlığı).
+        .gte("started_at", range.start.toISOString())
+        .lte("started_at", range.end.toISOString());
+      // Araç kapsamı YALNIZ `where`e eklenir; eleme ve sıra aşağıda, tek yerde.
+      const kapsamli = vehicleId ? temel.eq("vehicle_id", vehicleId) : temel;
       // driver-scoped: yönetici hesabından açılmış vardiyalar puana da, ekrana
       // da girmez (canlıda iki demo satır 20.100 km taşıyordu). Ayrılan
       // şoförlerin vardiyaları KALIR — onlar şoför, arşiv 7 yıl.
-      onlyDrivers(
+      return onlyDrivers(
         // test-filtered: kalıcı test şoförü (028) puan üretmemeli.
         withoutTestRows(
-          supabaseAdmin
-            .from("time_entries")
-            .select(
-              "id, worker_id, vehicle_id, started_at, ended_at, start_km, end_km, break_minutes, cargo_count, undelivered_count"
-            )
-            // VARDİYA TANIMI: başlangıç anı pencerenin içinde (dosya başlığı).
-            .gte("started_at", range.start.toISOString())
-            .lte("started_at", range.end.toISOString())
-            .order("started_at", { ascending: true })
-            .order("id")
-            .range(from, to),
+          kapsamli.order("started_at", { ascending: true }).order("id").range(from, to),
           "worker_id",
           scope.workerIds
         ),
         "worker_id",
         driverScope
-      ),
+      );
+    },
     "loadScoreShifts/time_entries"
   );
   // km_measured: cihazı sessiz vardiyanın 0 km'si ölçüm DEĞİLDİR; km_karar:

@@ -10,29 +10,31 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/mobile/vehicles/[id]/metrikler?tarih=YYYY-MM-DD
- * Motor saati · GPS km · rölanti — "Bugün" kutularının mobilde eksik olan üçü.
+ * Motor saati · rölanti — bir GÜNÜN cihaz izinden türeyen metrikleri.
+ *
+ * ⚠️ `gpsKm` KALDIRILDI (18.09.2026, "tek km" kararı). Araç detayının km'si
+ * artık TEK kaynaktan gelir: `GET /api/mobile/vehicles/[id]/ozet` → `km` +
+ * `kmKaynak` (çekirdek: cihaz → sayaç → null). İz km'si aynı gün için farklı
+ * bir sayı veriyordu ve ikisi ekranda yan yana duruyordu.
+ *
+ * ⚠️ İSTEMCİ BORCU: yayınlanmış mobil sürüm hâlâ "GPS km" karosu çiziyor;
+ * alan gelmediği için karo "—" gösterir. Karo bir sonraki mobil sürümde
+ * KALDIRILMALI (yerine `ozet.km`).
  *
  * KAPI: requireMobileAdmin — kardeş araç uçlarıyla aynı katman.
  * VERİ: `computeEngineHours` + `computeDistanceKm` + `computeIdleTime` — panelin
  * araç detay sayfasında YAN YANA çağrılan üç fonksiyonun aynısı, tek
  * `listVehicleTrack` sonucunu paylaşarak (panel de öyle yapıyor).
  *
- * ── GPS KM ≠ ODOMETRE KM ───────────────────────────────────────────────────
- * `/api/mobile/vehicles/[id]` içindeki `bugun.km` ŞOFÖRÜN girdiği sayaçtan
- * gelir (`end_km − start_km`) ve açık vardiyada null olur. Buradaki `gpsKm`
- * cihazın konum serisinden türer; ikisi aynı gün için farklı sayı verebilir ve
- * bu bir hata DEĞİLDİR. Aynı kutuya yazılmamalı.
- *
  * ── HESAPLANAMAYAN SIFIR DEĞİLDİR ──────────────────────────────────────────
  * "0 dk rölanti" ile "rölantiyi ölçemedik" aynı piksel, iki ayrı gerçek. Kapılar:
- *   nokta < 2             → üçü de null, sebep `veri_yok`
+ *   nokta < 2             → ikisi de null, sebep `veri_yok`
  *   hiç kontak verisi yok → motor + rölanti null, sebep `kontak_yok`
  *   hiç hız verisi yok    → rölanti null, sebep `hiz_yok`
  * `sebep` bloğu her metrik için ayrı yazılır; `null` tek başına hangisi
- * olduğunu söyleyemezdi. GPS km yalnız konum ister — iki nokta varsa daima
- * ölçülür ve çıkan sıfır GERÇEK sıfırdır (araç kıpırdamamış).
+ * olduğunu söyleyemezdi.
  *
- * `belirsiz` = üç hesaptan biri veri boşluğu atladı ya da bir kontak aralığını
+ * `belirsiz` = hesaplardan biri veri boşluğu atladı ya da bir kontak aralığını
  * kırptı: sayı yaklaşıktır, "~" ile gösterilmeli.
  */
 export async function GET(

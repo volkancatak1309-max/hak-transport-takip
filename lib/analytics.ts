@@ -872,7 +872,15 @@ export async function getVehicleFuelSpan(
   };
 }
 
-function idleEpisodeDurationMs(ep: { started_at: string; ended_at: string | null; last_seen_at: string }): number {
+/**
+ * RÖLANTİ EPİZODUNUN SÜRESİ — TEK TANIM.
+ *
+ * ⚠️ DIŞA AÇILDI (18.09.2026): araç detayının dönem özeti rölantiyi ARAÇ
+ * ekseninde topluyor, Rölanti İsrafı panosu ise ŞOFÖR ekseninde. İkisinin
+ * AYNI sayıyı vermesi ancak süre tanımı tek olursa mümkün — tetik süresinin
+ * (IDLE_TRIGGER_S) eklenmesi dahil.
+ */
+export function idleEpisodeDurationMs(ep: { started_at: string; ended_at: string | null; last_seen_at: string }): number {
   const startMs = new Date(ep.started_at).getTime();
   const endMs = new Date(ep.ended_at ?? ep.last_seen_at).getTime();
   return Math.max(0, endMs - startMs) + IDLE_TRIGGER_S * 1000;

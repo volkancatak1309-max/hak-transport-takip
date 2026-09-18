@@ -104,7 +104,52 @@ export type AttentionTarget = {
    */
   tur: "arac" | "sofor" | "vardiya" | "belge" | "bakim" | "isemri";
   id: string;
+  /**
+   * İKİNCİL BAĞ (18.09.2026) — "hedefin kendi ekranı yoksa nereye düş".
+   *
+   * Üç hedef türünün mobilde KARŞILIĞI YOK: `belge` (worker_documents),
+   * `bakim` (bakım planı) ve `isemri` için tekil bir mobil uç/ekran bulunmuyor
+   * (ölçüldü: `app/api/mobile/` altında belge ve bakım uçları yok,
+   * `fault-reports` araç eksenli). Yalnız birincil hedefi göndermek, o
+   * satırları yine dokunulamaz bırakırdı — tam da 17.09'da çözülen kusur.
+   *
+   * İkincil bağ istemciye şunu söyler: birincil ekranı açamazsan AÇILABİLİR
+   * bir yer var. Birincil hedef DEĞİŞMİYOR; bu bir yedek, bir yerine geçen değil.
+   *
+   * ⚠️ Yalnız gerçekten bilinen kimlik yazılır; türetilmez, tahmin edilmez.
+   */
+  aracId?: string;
+  personelId?: string;
 };
+
+/**
+ * ÜÇ HEDEF KİMLİĞİ TEK YERDE.
+ *
+ * Bu üç türün hedefi iki parçalı (birincil kayıt + ikincil bağ) ve parçalar
+ * FARKLI kaynaklardan geliyor. Push noktasında elle yazılsaydı, ikincil bağı
+ * unutmak sessizce eski davranışa (dokunulamaz satır) dönmek olurdu ve bunu
+ * hiçbir tip hatası yakalamazdı — alan opsiyonel.
+ *
+ * Bu üç fonksiyon aynı zamanda `verify:dikkat-hedef`in sınadığı şeydir:
+ * sentetik test ürünün KENDİ çağrısını koşturur, kopyasını değil.
+ */
+export const belgeHedefi = (belgeId: string, personelId: string): AttentionTarget => ({
+  tur: "belge",
+  id: belgeId,
+  personelId,
+});
+
+export const bakimHedefi = (planId: string, aracId: string): AttentionTarget => ({
+  tur: "bakim",
+  id: planId,
+  aracId,
+});
+
+export const isEmriHedefi = (emirId: string, aracId: string): AttentionTarget => ({
+  tur: "isemri",
+  id: emirId,
+  aracId,
+});
 
 /**
  * ⚠️ `target` HER KALEMDE ZORUNLU. Kesişim olarak yazılması bilinçli: yeni bir
@@ -1740,7 +1785,8 @@ function buildAttention(
       // aynı şoförün iki farklı belgesi ayrı ayrı ertelenebilmeli.
       id: `${d.id}-document`,
       // Hedef BELGE kaydı (078), kişi değil: yenilenecek olan belgedir.
-      target: { tur: "belge", id: d.id },
+      // İkincil bağ KİŞİ: mobilde belge ekranı yok, kişi ekranı var.
+      target: belgeHedefi(d.id, d.workerId),
       worker_name: d.workerName,
       type_label: d.typeLabel,
       due: d.expiresAt,
@@ -1764,7 +1810,8 @@ function buildAttention(
       kind: "workOrder",
       // Kimlik emrin KENDİ id'si: erteleme (058) tek tek emre yazılabilmeli.
       id: `${e.id}-workorder`,
-      target: { tur: "isemri", id: e.id },
+      // İkincil bağ ARAÇ: iş emrinin tekil mobil ekranı yok, araç detayı var.
+      target: isEmriHedefi(e.id, e.vehicleId),
       plate: e.plaka,
       aciklama: e.aciklama,
       oncelik: e.oncelik,
@@ -1786,9 +1833,10 @@ function buildAttention(
       /**
        * Hedef BAKIM PLANI. ⚠️ Kimliğin öneki de plan kimliğidir — önek
        * tahmini bu türü araç sanıp YANLIŞ araca götürürdü; hedefin ayrı
-       * bir alan olmasının en açık gerekçesi bu satır.
+       * bir alan olmasının en açık gerekçesi bu satır. İkincil bağ ARAÇ ve
+       * plan kimliğinden BAĞIMSIZ olarak veriden geliyor (`d.vehicleId`).
        */
-      target: { tur: "bakim", id: d.planId },
+      target: bakimHedefi(d.planId, d.vehicleId),
       plate: d.plaka,
       tip: d.tip,
       eksen: d.eksen,

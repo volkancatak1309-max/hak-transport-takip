@@ -69,7 +69,7 @@ export async function GET(
     aracId: arac.id,
     plaka: route.plate ?? arac.plaka,
     tarih,
-    saatDilimi: mobileTenant().saatDilimi,
+    saatDilimi: (await mobileTenant()).saatDilimi,
     toplamNokta: route.totalRaw,
     nokta: noktalar.length,
     orneklendi: noktalar.length < route.totalRaw,

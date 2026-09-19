@@ -5,6 +5,7 @@ import {
   workedMs,
 } from "@/lib/format";
 import { markKmMeasured } from "@/lib/km-quality";
+import { kiraciAyarlari } from "@/lib/tenant-settings";
 import { markKmKarar, type WithKmKarar } from "@/lib/km-axis";
 import { listExpiringDocuments, type ExpiringDocument } from "@/lib/documents-db";
 import { bakimDurumlari, type BakimDurumu } from "@/lib/bakim-db";
@@ -619,6 +620,17 @@ export async function getDashboardData(
    */
   fleetScope: FleetScope = UNRESTRICTED
 ): Promise<DashboardData> {
+  /**
+   * ⚠️ ÖNCE AYARLAR, SONRA GÜN SINIRI (19.09.2026, migration 108).
+   *
+   * `startOfTodayVienna()` SENKRON ve dilimi `lib/tz.ts` `tenantTz()`ten alıyor;
+   * o da tablo değerini ancak `kiraciAyarlari()` bir kez okuduktan sonra
+   * biliyor. Sıra ters olsaydı panonun günü env'e göre kesilir, aynı isteğin
+   * geri kalanı tabloya göre çalışırdı — tek yanıtta iki farklı gün.
+   *
+   * Maliyeti YOK sayılır: 30 sn'lik süreç-içi önbellek, ilk istekte tek satır.
+   */
+  await kiraciAyarlari();
   const todayStart = startOfTodayVienna();
 
   // Test kayıtları (migration 028) panonun HİÇBİR bölümünde görünmez: roster,

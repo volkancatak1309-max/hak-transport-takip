@@ -10,6 +10,8 @@ import { ConsumptionRow, ConsumptionRowSkeleton } from "./ConsumptionRow";
 import { DocumentTypesSection } from "./DocumentTypesSection";
 import { listDocumentTypes } from "@/lib/documents-db";
 import { DvirMaddeleriSection } from "./DvirMaddeleriSection";
+import { TenantSettingsSection } from "./TenantSettingsSection";
+import { kiraciAyarlari } from "@/lib/tenant-settings";
 import { listDvirMaddeleri } from "@/lib/dvir-db";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +47,9 @@ export default async function AyarlarPage() {
   const { types: docTypes, tabloYok: docTabloYok } = await listDocumentTypes();
   // Kontrol maddeleri de küçük bir sözlük (kiracı başına on-yirmi satır).
   const { maddeler: dvirMaddeler, tabloYok: dvirTabloYok } = await listDvirMaddeleri(false);
+  // Bölgesel ayarlar: tek satırlık singleton okuması (30 sn önbellekli) —
+  // maliyet bloğunun aksine ağır bir sorgu değil, Suspense'e gerek yok.
+  const bolgesel = await kiraciAyarlari();
 
   return (
     <DashboardShell
@@ -69,6 +74,13 @@ export default async function AyarlarPage() {
               <ConsumptionRow />
             </Suspense>
           }
+        />
+        <TenantSettingsSection
+          birimSistemi={bolgesel.birimSistemi}
+          saatDilimi={bolgesel.saatDilimi}
+          kaynak={bolgesel.kaynak}
+          tabloYok={bolgesel.tabloYok}
+          satirTz={bolgesel.satir?.timezone ?? null}
         />
         <DocumentTypesSection types={docTypes} tabloYok={docTabloYok} />
         <DvirMaddeleriSection maddeler={dvirMaddeler} tabloYok={dvirTabloYok} />

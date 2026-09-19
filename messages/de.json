@@ -1989,7 +1989,18 @@
     "dvir_field_vtype_hint": "Leer lassen, damit der Punkt für alle Fahrzeuge gilt.",
     "doc_field_sort": "Reihenfolge",
     "doc_type_delete_desc": "Die Art wird gelöscht. Existieren Dokumente dieser Art, ist Löschen nicht möglich — dann deaktivieren.",
-    "dvir_item_delete_desc": "Der Punkt wird gelöscht. Kommt er in einem ausgefüllten Formular vor, ist Löschen nicht möglich — dann deaktivieren."
+    "dvir_item_delete_desc": "Der Punkt wird gelöscht. Kommt er in einem ausgefüllten Formular vor, ist Löschen nicht möglich — dann deaktivieren.",
+    "region_title": "Regionale Einstellungen",
+    "region_desc": "Maßeinheit und Zeitzone. Die Währung ist fest auf EUR eingestellt.",
+    "region_unit": "Maßeinheit",
+    "region_unit_metric": "Metrisch (km · L · L/100 km)",
+    "region_unit_imperial": "Imperial (Meilen · Gallonen · mpg)",
+    "region_unit_hint": "Werte werden serverseitig immer metrisch berechnet; diese Einstellung bestimmt nur die Darstellung.",
+    "region_tz": "Zeitzone",
+    "region_tz_hint": "IANA-Name, z. B. Europe/Vienna. Leer lassen, um den Standard der Installation zu verwenden.",
+    "region_tz_warn": "Bestimmt die Tagesgrenze: Welchem Tag eine Schicht zugerechnet wird und die Tageszuordnung im AZG-Bericht hängen davon ab.",
+    "region_tz_invalid": "Zeitzone nicht erkannt. Erwartet wird ein IANA-Name (z. B. Europe/Istanbul).",
+    "region_migration_needed": "In dieser Installation fehlt die Tabelle für Mandanteneinstellungen (Migration 108 ausstehend); die Werte stammen aus der Env-/Standardkette."
   },
   "takip": {
     "durum_hazirlaniyor": "In Vorbereitung",

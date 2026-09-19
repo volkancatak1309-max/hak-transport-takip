@@ -2,7 +2,7 @@ import "server-only";
 import { getManagedFleet } from "@/lib/fleet-scope";
 import { DEFAULT_LOCALE, type Locale } from "@/i18n/request";
 import { TENANT } from "@/lib/brand";
-import { TENANT_TZ } from "@/lib/tz";
+import { kiraciAyarlari, type BirimSistemi } from "@/lib/tenant-settings";
 
 /**
  * Mobil yanıtlarındaki kullanıcı nesnesi — TEK KAYNAK.
@@ -56,6 +56,19 @@ export type MobileTenant = {
   dil: Locale;
   /** IANA saat dilimi, ör. "Europe/Vienna". Bkz. `saatDilimi` notu aşağıda. */
   saatDilimi: string;
+  /**
+   * ÖLÇÜ BİRİMİ — 'metric' | 'imperial' (migration 108, 19.09.2026).
+   *
+   * ⚠️ SUNUCU BU BAYRAĞA GÖRE ÇEVİRİM YAPMIYOR ve bu bilinçli: sayılar her
+   * zaman metrik dönüyor (km · L · L/100km), bayrak istemciye NASIL
+   * GÖSTERECEĞİNİ söylüyor. Sunucuda çevirseydik aynı alan kimi kiracıda mil
+   * kimi kiracıda km taşırdı ve istemci hangisi olduğunu ancak bu bayrağa
+   * bakarak bilebilirdi — yani bayrak yine gerekliydi, üstüne bir de
+   * yuvarlama hatası birikirdi.
+   *
+   * Para birimi burada YOK: EUR sabit.
+   */
+  birimSistemi: BirimSistemi;
 };
 
 /**
@@ -70,6 +83,21 @@ export type MobileTenant = {
  * ⚠️ HEM /login HEM /me DÖNER ve bu bilinçli: mobil yalnız /me'yi bekleseydi
  * ilk açılışta saatler cihaz diliminde çizilip yanıt gelince ZIPLAYACAKTI.
  */
-export function mobileTenant(): MobileTenant {
-  return { kod: TENANT, dil: DEFAULT_LOCALE, saatDilimi: TENANT_TZ };
+export async function mobileTenant(): Promise<MobileTenant> {
+  /**
+   * ⚠️ ARTIK ASENKRON (19.09.2026). Saat dilimi ve ölçü birimi kiracı ayarı
+   * oldu (migration 108) ve tablodan okunuyor. Senkron kalsaydı mobil, panelin
+   * göstereceği dilimden BAŞKA bir dilim döndürürdü — 09.08.2026'da bu alanın
+   * var olma sebebi olan kusurun aynısı, yalnız kaynağı farklı.
+   *
+   * `kiraciAyarlari()` 30 sn'lik süreç-içi önbellekli; sekiz çağıran uç başına
+   * bir DB gidiş-gelişi ANLAMINA GELMEZ.
+   */
+  const ayar = await kiraciAyarlari();
+  return {
+    kod: TENANT,
+    dil: DEFAULT_LOCALE,
+    saatDilimi: ayar.saatDilimi,
+    birimSistemi: ayar.birimSistemi,
+  };
 }

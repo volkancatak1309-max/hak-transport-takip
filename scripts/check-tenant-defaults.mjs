@@ -524,3 +524,158 @@ console.log(
     : `  Bu build'de tanımlı NEXT_PUBLIC_ env yok (${vacuous} adın hepsi varsayılan dalında) — ` +
       "K2 boşta, K1 tek başına kusuru tutar."
 );
+
+// ══════════════════════════════════════════════════════════════════════════
+// FAZ 3 · KİRACI AYARLARI (migration 108, 19.09.2026)
+// ══════════════════════════════════════════════════════════════════════════
+/**
+ * NE ÇÖZÜYOR: saat dilimi artık İKİ kaynaktan geliyor — derleme sabiti
+ * (`TENANT_TZ`, istemci için) ve tablo (`tenant_settings`, sunucu için). Bu
+ * ikilik tip sisteminden GÖRÜNMEZ ve sessizce ayrışabilir:
+ *
+ *   · `lib/format.ts` sabiti doğrudan okursa, tablo değeri hiçbir gün
+ *     sınırına ULAŞMAZ ve panel env'e göre, mobil tabloya göre gün keser;
+ *   · `calismaZamaniTzAyarla` ikinci bir yerden çağrılırsa, o çağrı aynı
+ *     lambda örneğine düşen SONRAKİ isteği de etkiler ve kusur örnek ömrü
+ *     kadar yaşar;
+ *   · tabloyu ikinci bir modül okursa, "çalışma zamanı okuması tek yerden"
+ *     sözü ölür.
+ *
+ * F1 — `lib/format.ts` sabiti DEĞİL `tenantTz()` kullanır.
+ * F2 — `calismaZamaniTzAyarla` YALNIZ lib/tz.ts (tanım) + lib/tenant-settings.ts.
+ * F3 — `tenant_settings` tablosunu YALNIZ lib/tenant-settings.ts okur/yazar.
+ * F4 — ayar katmanı `server-only` (istemci paketine giremez).
+ * F5 — `mobileTenant()` asenkron ve `birimSistemi` taşır.
+ * F6 — PARA BİRİMİ ayar DEĞİL: ne tabloda ne beyaz listede currency geçer.
+ * F7 — pano gün sınırından ÖNCE ayarları okur.
+ */
+{
+  const { readFileSync: oku3, readdirSync: liste3 } = await import("node:fs");
+  const { join: birlestir } = await import("node:path");
+  const f3 = [];
+  const kod = (g) => oku3(birlestir(ROOT, g), "utf8");
+
+  // F1
+  const fmt = kod("lib/format.ts");
+  const yorumsuzFmt = fmt.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+  if (/\bTENANT_TZ\b/.test(yorumsuzFmt)) {
+    f3.push(
+      "F1 — lib/format.ts `TENANT_TZ` SABİTİNİ okuyor.\n" +
+        "  Sabit derleme anında gömülür; tablo değeri (108) o gün sınırına ULAŞMAZ.\n" +
+        "  Çözüm: `tenantTz()` çağır (lib/tz.ts)."
+    );
+  }
+  if (!/tenantTz\(\)/.test(fmt)) {
+    f3.push("F1 — lib/format.ts `tenantTz()` çağırmıyor; dilim çalışma zamanında çözülmüyor.");
+  }
+
+  // F2 — çağıranı tara (repo genelinde, node_modules ve .next hariç).
+  const tsDosyalari = [];
+  (function tara(d) {
+    for (const e of liste3(birlestir(ROOT, d), { withFileTypes: true })) {
+      if (e.name === "node_modules" || e.name === ".next" || e.name === ".git") continue;
+      const y = `${d}/${e.name}`;
+      if (e.isDirectory()) tara(y);
+      else if (/\.(ts|tsx|mjs)$/.test(e.name)) tsDosyalari.push(y.replace(/^\.\//, ""));
+    }
+  })(".");
+  const IZINLI_TZ_YAZAN = new Set([
+    "lib/tz.ts",
+    "lib/tenant-settings.ts",
+    "scripts/check-tenant-defaults.mjs",
+    // Ölçüm harness'ı: migration 108 uygulanmadan ÖNCE zincirin çalıştığını
+    // kanıtlıyor ve çağrı sonunda değeri geri alıyor. Uygulama kodu değil.
+    "scripts/verify-kiraci-ayarlari.mjs",
+  ]);
+  const izinsizYazan = tsDosyalari.filter(
+    (f) => !IZINLI_TZ_YAZAN.has(f) && /calismaZamaniTzAyarla\s*\(/.test(kod(f))
+  );
+  if (izinsizYazan.length > 0) {
+    f3.push(
+      `F2 — \`calismaZamaniTzAyarla\` izinsiz yerden çağrılıyor (${izinsizYazan.length}):\n    ` +
+        izinsizYazan.join("\n    ") +
+        "\n\n  Modül düzeyinde bir değer; bir uç onu 'geçici olarak' kurarsa aynı\n" +
+        "  lambda örneğine düşen SONRAKİ istek de o dilimle cevaplanır."
+    );
+  }
+
+  // F3
+  const IZINLI_TABLO = new Set([
+    "lib/tenant-settings.ts",
+    "scripts/check-tenant-defaults.mjs",
+    "scripts/verify-kiraci-ayarlari.mjs",
+  ]);
+  // ⚠️ HAM DİZE ARAMA YETMEZ: `auditChange(..., "tenant_settings", ...)` varlık
+  // ADI geçiriyor ve o bir tablo erişimi DEĞİL. Aranan şey `.from("...")`.
+  const izinsizOkuyan = tsDosyalari.filter(
+    (f) => !IZINLI_TABLO.has(f) && /\.from\(\s*["'`]tenant_settings["'`]/.test(kod(f))
+  );
+  if (izinsizOkuyan.length > 0) {
+    f3.push(
+      `F3 — \`tenant_settings\` tablosuna ikinci bir erişim (${izinsizOkuyan.length}):\n    ` +
+        izinsizOkuyan.join("\n    ") +
+        "\n\n  Çalışma zamanı okuması TEK yerden olmalı; ikinci okuyucu öncelik\n" +
+        "  zincirini (tablo > env > varsayılan) kendi yorumuyla kopyalar."
+    );
+  }
+
+  // F4
+  const ayarKod = kod("lib/tenant-settings.ts");
+  if (!/^import\s+["']server-only["']/m.test(ayarKod)) {
+    f3.push("F4 — lib/tenant-settings.ts `server-only` değil; istemci paketine girebilir.");
+  }
+
+  // F5
+  const mu = kod("lib/mobile-user.ts");
+  if (!/export async function mobileTenant\(\)/.test(mu)) {
+    f3.push("F5 — mobileTenant() asenkron değil; tabloyu okuyamaz, env sabitine düşer.");
+  }
+  if (!/birimSistemi/.test(mu)) {
+    f3.push("F5 — mobileTenant() `birimSistemi` taşımıyor.");
+  }
+
+  // F6 — EUR sabit. Ayar yüzeylerinde para birimi geçmemeli.
+  const migration = kod("db/migrations/108_kiraci_ayarlari.sql");
+  const migrationKod = migration.replace(/^--.*$/gm, "");
+  if (/currency|para_birimi/i.test(migrationKod)) {
+    f3.push("F6 — 108 migration'ında para birimi kolonu var; EUR SABİT kalmalı.");
+  }
+  const mobilUc = kod("app/api/mobile/tenant/route.ts");
+  const izinli = /IZINLI_ALANLAR = new Set\(\[([^\]]*)\]\)/.exec(mobilUc)?.[1] ?? "";
+  if (!izinli) f3.push("F6 — mobil ayar ucunda beyaz liste bulunamadı.");
+  if (/currency|paraBirimi/i.test(izinli)) {
+    f3.push("F6 — mobil ayar ucunun beyaz listesinde para birimi var; EUR SABİT.");
+  }
+  if ((izinli.match(/"/g) ?? []).length !== 4) {
+    f3.push(
+      `F6 — beyaz liste tam olarak İKİ alan olmalı (birimSistemi + saatDilimi): ${izinli.trim()}`
+    );
+  }
+
+  // F7
+  const pano = kod("lib/admin-dashboard.ts");
+  const panoKod = pano
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^[ 	]*\/\/.*$/gm, "");
+  const i = panoKod.indexOf("export async function getDashboardData");
+  const govde = i >= 0 ? panoKod.slice(i, i + 2500) : "";
+  const ayarIdx = govde.indexOf("await kiraciAyarlari()");
+  const gunIdx = govde.indexOf("startOfTodayVienna()");
+  if (ayarIdx < 0 || gunIdx < 0 || ayarIdx > gunIdx) {
+    f3.push(
+      "F7 — pano gün sınırını ayarları okumadan ÖNCE kesiyor.\n" +
+        "  `startOfTodayVienna()` senkron ve dilimi tenantTz()'ten alıyor; sıra ters\n" +
+        "  olursa aynı yanıtta iki farklı gün doğar."
+    );
+  }
+
+  if (f3.length > 0) {
+    console.error(`\n✗ FAZ 3 — KİRACI AYARLARI: ${f3.length} bulgu:\n`);
+    for (const h of f3) console.error("  " + h + "\n");
+    process.exit(1);
+  }
+  console.log(
+    `✓ Faz 3 — kiracı ayarları: dilim tek okuyucudan (${tsDosyalari.length} dosya tarandı), ` +
+      "para birimi EUR sabit, pano sırası doğru."
+  );
+}

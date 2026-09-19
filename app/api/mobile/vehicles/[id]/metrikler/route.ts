@@ -60,7 +60,7 @@ export async function GET(
     aracId: arac.id,
     plaka: arac.plaka,
     tarih,
-    saatDilimi: mobileTenant().saatDilimi,
+    saatDilimi: (await mobileTenant()).saatDilimi,
     pencere: iz.pencere,
     ...gunMetrikleri(iz.track),
   });

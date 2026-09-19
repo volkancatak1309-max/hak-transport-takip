@@ -1989,7 +1989,18 @@
     "dvir_field_vtype_hint": "Boş bırakırsanız tüm araçlarda sorulur.",
     "doc_field_sort": "Sıra",
     "doc_type_delete_desc": "Tür silinir. Bu türde kayıtlı belge varsa silinemez — o durumda pasifleştirin.",
-    "dvir_item_delete_desc": "Madde silinir. Doldurulmuş bir formda geçiyorsa silinemez — o durumda pasifleştirin."
+    "dvir_item_delete_desc": "Madde silinir. Doldurulmuş bir formda geçiyorsa silinemez — o durumda pasifleştirin.",
+    "region_title": "Bölgesel ayarlar",
+    "region_desc": "Ölçü birimi ve saat dilimi. Para birimi EUR olarak sabittir.",
+    "region_unit": "Ölçü birimi",
+    "region_unit_metric": "Metrik (km · L · L/100 km)",
+    "region_unit_imperial": "İmperyal (mil · galon · mpg)",
+    "region_unit_hint": "Sayılar sunucuda her zaman metrik hesaplanır; bu ayar yalnız nasıl gösterileceğini belirler.",
+    "region_tz": "Saat dilimi",
+    "region_tz_hint": "IANA adı, ör. Europe/Vienna. Boş bırakılırsa kurulumun varsayılanı geçerli olur.",
+    "region_tz_warn": "Gün sınırını belirler: bir vardiyanın hangi güne sayıldığı ve AZG raporunun gün atfı buna bağlıdır.",
+    "region_tz_invalid": "Saat dilimi tanınmadı. IANA adı bekleniyor (ör. Europe/Istanbul).",
+    "region_migration_needed": "Bu kurulumda kiracı ayarları tablosu yok (migration 108 bekliyor); değerler env/varsayılan zincirinden geliyor."
   },
   "takip": {
     "durum_hazirlaniyor": "Hazırlanıyor",

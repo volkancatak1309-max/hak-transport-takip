@@ -59,7 +59,7 @@ export async function GET(
     ok: true,
     aracId: arac.id,
     plaka: arac.plaka,
-    saatDilimi: mobileTenant().saatDilimi,
+    saatDilimi: (await mobileTenant()).saatDilimi,
     pencere: {
       gun: n,
       enFazla: GUN_PENCERE_MAX,

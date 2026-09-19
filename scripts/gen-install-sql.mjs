@@ -105,6 +105,9 @@ const ORDER = [
   "103_yakit_hacim_seri_etiket.sql",
   "104_yuzde_odo_kapisi_hizalama.sql",
   "105_filo_span_tek_cekirdek.sql",
+  // 106/107 `_beklemede/` altında (yakıt işi) — henüz hiçbir kiracıda koşmadı,
+  // bu yüzden kurulum listesinde de yok. Kiracı ayarları o yüzden 108.
+  "108_kiraci_ayarlari.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

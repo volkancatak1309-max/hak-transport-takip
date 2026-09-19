@@ -4,11 +4,11 @@ import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requireAdmin } from "@/lib/session";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
-import { getDriverScope } from "@/lib/driver-scope";
 import { vehicleSchema } from "@/lib/validation";
 import { ACTIVE_FLEETS } from "@/lib/tenant";
 import type { Vehicle } from "@/lib/types";
 import { auditChange } from "@/lib/audit-change";
+import { aracGuncelle, aracOlustur, type AracYama } from "@/lib/vehicle-update";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -132,97 +132,19 @@ function parseVehicle(formData: FormData) {
   });
 }
 
-/**
- * Atama yazıldıktan SONRA çalışan tutarlılık adımı.
+/*
+ * ── `applyDriverAssignment` · `conflictPlate` · `checkVehicleConflicts` ·
+ *    `assertDriverAssignable` ARTIK `lib/vehicle-update.ts`TE (19.09.2026) ──
  *
- *  1) Bir şoför aynı anda tek araca atanabilir: şoför paneli ve Çalışanlar
- *     sayfası ilişkiden TEK araç okur (limit 1), ikinci atama sessizce
- *     görünmez olurdu. Bu yüzden şoförün varsa eski aracı serbest bırakılır.
- *  2) workers.plate AYNASI. Kanonik kaynak vehicles.assigned_worker_id ama
- *     eski okuma noktaları (harita şoför listesi, rota geçmişi, seferler,
- *     session.plate) hâlâ workers.plate'e bakıyor. Ayna burada güncellenmezse
- *     bu ekranlar yeni personelde kalıcı "—" gösterirdi — plaka alanı personel
- *     formundan kaldırıldığı için artık başka yazan yok.
+ * Dördü de mobil `PATCH /api/mobile/vehicles/[id]` ucunun da uymak zorunda
+ * olduğu kurallardı ve action gövdesinde oturdukları sürece oradan
+ * ÇAĞRILAMIYORLARDI (`"use server"` + `requireAdmin()` çerez ister). Kopyalamak
+ * ikinci bir tekillik kuralı, ikinci bir şoför-ataması aynası demekti: aynı
+ * plaka panelde reddedilirken telefonda kabul edilirdi.
+ *
+ * Aşağıdaki iki action artık yalnız KAPI + FORM ÇÖZÜMÜ: yetkiyi denetler,
+ * FormData'yı alan kümesine çevirir, çekirdeği çağırır, yolları tazeler.
  */
-async function applyDriverAssignment(
-  vehicleId: string,
-  plate: string,
-  workerId: string | null,
-  previousWorkerId: string | null
-): Promise<void> {
-  if (workerId) {
-    await supabaseAdmin
-      .from("vehicles")
-      .update({ assigned_worker_id: null })
-      .eq("assigned_worker_id", workerId)
-      .neq("id", vehicleId);
-  }
-  // Aracı bırakan şoförün aynası temizlenir (başka araca geçtiyse aşağıda
-  // zaten yeni plakasıyla yeniden yazılır).
-  if (previousWorkerId && previousWorkerId !== workerId) {
-    await supabaseAdmin
-      .from("workers")
-      .update({ plate: null })
-      .eq("id", previousWorkerId);
-  }
-  if (workerId) {
-    await supabaseAdmin.from("workers").update({ plate }).eq("id", workerId);
-  }
-}
-
-/** Plate of a DIFFERENT vehicle already using `value` in `field`, else null. */
-async function conflictPlate(
-  field: "plate" | "imei" | "flespi_device_id",
-  value: string | number,
-  excludeId: string | null
-): Promise<string | null> {
-  let q = supabaseAdmin.from("vehicles").select("id, plate").eq(field, value);
-  if (excludeId) q = q.neq("id", excludeId);
-  const { data } = await q.limit(1).maybeSingle();
-  return data ? (data.plate as string) : null;
-}
-
-/** Friendly uniqueness pre-check so we never surface a raw 23505 and can name
- *  the conflicting vehicle. Returns a result to short-circuit on, else null. */
-async function checkVehicleConflicts(
-  plate: string,
-  imei: string | null,
-  deviceId: number | null,
-  excludeId: string | null
-): Promise<VehicleActionResult | null> {
-  const p = await conflictPlate("plate", plate, excludeId);
-  if (p) return { ok: false, error: "plate_taken", conflict: p };
-  if (imei) {
-    const c = await conflictPlate("imei", imei, excludeId);
-    if (c) return { ok: false, error: "imei_taken", conflict: c };
-  }
-  if (deviceId != null) {
-    const c = await conflictPlate("flespi_device_id", deviceId, excludeId);
-    if (c) return { ok: false, error: "device_taken", conflict: c };
-  }
-  return null;
-}
-
-/**
- * Araca ŞOFÖR OLMAYAN biri atanamaz (yönetici / test hesabı).
- *
- * Seçici zaten yalnız şoför gösteriyor (app/admin/araclar/**), ama bu sunucu
- * kapısı istemciye güvenmez — shift.ts'teki "not_a_driver" kapısıyla aynı
- * gerekçe. Kritik olan yanı: vehicles.assigned_worker_id, olayların şoför
- * eksenine çevrildiği TEK bağdır (lib/analytics.ts resolveDriver). Buraya bir
- * yönetici yazılırsa Top-10, Rölanti Panosu ve Aylık Pivot'ta o aracın olayları
- * "Atanmamış" satırına düşer — sızıntı olmaz ama aracın gerçek sahibi kaybolur.
- *
- * null (atamayı temizleme) her zaman serbest. Şefler is_admin=false → geçer.
- */
-async function assertDriverAssignable(
-  workerId: string | null
-): Promise<VehicleActionResult | null> {
-  if (!workerId) return null;
-  const driverScope = await getDriverScope();
-  if (driverScope.isDriver(workerId)) return null;
-  return { ok: false, error: "Yönetici hesabı araca şoför olarak atanamaz" };
-}
 
 export async function createVehicle(
   formData: FormData
@@ -233,23 +155,18 @@ export async function createVehicle(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
   }
   const d = parsed.data;
-  const plate = d.plate.toUpperCase();
 
-  const conflict = await checkVehicleConflicts(
-    plate,
-    d.imei ?? null,
-    d.flespi_device_id ?? null,
-    null
-  );
-  if (conflict) return conflict;
-
-  const notDriver = await assertDriverAssignable(d.assigned_worker_id ?? null);
-  if (notDriver) return notDriver;
-
-  const { data, error } = await supabaseAdmin
-    .from("vehicles")
-    .insert({
-      plate,
+  /**
+   * FORM BÜTÜN ALANLARI GÖNDERİR — bu yüzden hepsi AÇIKÇA geçiliyor.
+   *
+   * Çekirdek kısmi çalışıyor (`undefined` = dokunma) ama panelin davranışı
+   * DEĞİŞMEDİ: boş bırakılan bir alan burada `null` olarak geçer, yani eskisi
+   * gibi gerçekten boşaltılır. Kısmi olan MOBİL uçtur, panel formu değil.
+   */
+  const r = await aracOlustur({
+    actorId: session.worker_id ?? null,
+    alanlar: {
+      plate: d.plate,
       make: d.make ?? null,
       model: d.model ?? null,
       year: d.year ?? null,
@@ -261,22 +178,14 @@ export async function createVehicle(
       insurance_due: d.insurance_due ?? null,
       tank_capacity_l: d.tank_capacity_l ?? null,
       assigned_worker_id: d.assigned_worker_id ?? null,
-    })
-    .select("id")
-    .maybeSingle();
-  if (error || !data) return { ok: false, error: error?.message ?? "insert" };
-  await applyDriverAssignment(
-    data.id as string,
-    plate,
-    d.assigned_worker_id ?? null,
-    null
-  );
-  await auditChange(session.worker_id ?? null, "create", "vehicles",
-    data.id as string, null, { ...d, plate });
+    },
+  });
+  if (!r.ok) return r;
+
   revalidatePath("/admin/araclar");
   revalidatePath("/admin/workers");
   revalidatePath("/panel");
-  return { ok: true, id: data.id as string };
+  return { ok: true, id: r.id };
 }
 
 export async function updateVehicle(
@@ -290,45 +199,25 @@ export async function updateVehicle(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "validation" };
   }
   const d = parsed.data;
-  const plate = d.plate.toUpperCase();
 
-  const conflict = await checkVehicleConflicts(
-    plate,
-    d.imei ?? null,
-    d.flespi_device_id ?? null,
-    id
-  );
-  if (conflict) return conflict;
-
-  // Atama alanı yalnız GERÇEKTEN değiştirildiyse yazılır. Form açıldığındaki
-  // değeri (assigned_worker_id_prev) geri gönderiyoruz: aksi hâlde muayene
-  // tarihini düzeltmek için dakikalar önce açılmış bir dialog kaydedildiğinde,
-  // bu arada başka bir yöneticinin yaptığı şoför değişikliği sessizce geri
-  // alınırdı (lost update).
+  /**
+   * ⚠️ ATAMA ALANI YALNIZ GERÇEKTEN DEĞİŞTİYSE GÖNDERİLİR.
+   *
+   * Form açıldığındaki değeri (`assigned_worker_id_prev`) geri gönderiyoruz:
+   * aksi hâlde muayene tarihini düzeltmek için dakikalar önce açılmış bir
+   * dialog kaydedildiğinde, bu arada başka bir yöneticinin yaptığı şoför
+   * değişikliği sessizce geri alınırdı (lost update).
+   *
+   * Çekirdekte "atama dokunuldu mu" sorusunun karşılığı ALANIN VARLIĞI; burada
+   * alan bilerek DIŞARIDA bırakılıyor. Eski kodda aynı kararı `assignmentTouched`
+   * bayrağı veriyordu — davranış birebir aynı.
+   */
   const prevRaw = formData.get("assigned_worker_id_prev");
   const prevFromForm = typeof prevRaw === "string" && prevRaw ? prevRaw : null;
   const nextWorkerId = d.assigned_worker_id ?? null;
-  const assignmentTouched = prevFromForm !== nextWorkerId;
 
-  // Yalnız atama GERÇEKTEN değiştiyse denetlenir: dokunulmamış bir formda eski
-  // (varsayımsal) yönetici ataması kaydı kilitlemesin — muayene tarihi
-  // düzeltmek isteyen yönetici hata duvarına çarpmamalı.
-  if (assignmentTouched) {
-    const notDriver = await assertDriverAssignable(nextWorkerId);
-    if (notDriver) return notDriver;
-  }
-
-  // Bu okuma ZATEN vardı (atama ayrışması için); değişiklik izi de aynı
-  // satıra ihtiyaç duyduğu için kolon listesi genişletildi — ek sorgu YOK.
-  const { data: current } = await supabaseAdmin
-    .from("vehicles")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-  const currentWorkerId = (current?.assigned_worker_id as string) ?? null;
-
-  const update: Record<string, unknown> = {
-    plate,
+  const yama: AracYama = {
+    plate: d.plate,
     make: d.make ?? null,
     model: d.model ?? null,
     year: d.year ?? null,
@@ -340,25 +229,15 @@ export async function updateVehicle(
     insurance_due: d.insurance_due ?? null,
     tank_capacity_l: d.tank_capacity_l ?? null,
   };
-  if (assignmentTouched) update.assigned_worker_id = nextWorkerId;
+  if (prevFromForm !== nextWorkerId) yama.assigned_worker_id = nextWorkerId;
 
-  const { error } = await supabaseAdmin.from("vehicles").update(update).eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  if (assignmentTouched) {
-    await applyDriverAssignment(id, plate, nextWorkerId, currentWorkerId);
-  } else if (currentWorkerId) {
-    // Atama değişmedi ama plaka değişmiş olabilir — ayna yine hizalanmalı.
-    await supabaseAdmin
-      .from("workers")
-      .update({ plate })
-      .eq("id", currentWorkerId);
-  }
-  await auditChange(session.worker_id ?? null, "update", "vehicles", id,
-    current as Record<string, unknown> | null, update);
+  const r = await aracGuncelle({ actorId: session.worker_id ?? null, id, yama });
+  if (!r.ok) return r;
+
   revalidatePath("/admin/araclar");
   revalidatePath("/admin/workers");
   revalidatePath("/panel");
-  return { ok: true, id };
+  return { ok: true, id: r.id };
 }
 
 export async function deleteVehicle(id: string): Promise<VehicleActionResult> {

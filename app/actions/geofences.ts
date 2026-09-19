@@ -7,6 +7,7 @@ import { geofenceSchema } from "@/lib/validation";
 import type { Geofence } from "@/lib/types";
 import { auditChange } from "@/lib/audit-change";
 import { bolgeZiyaretleriniKapat } from "@/lib/zone-visits";
+import { kolonYok, musterisiz } from "@/lib/geofences-db";
 
 export type GeofenceResultAction = { ok: boolean; error?: string; id?: string };
 
@@ -76,48 +77,27 @@ function parse(formData: FormData) {
   });
 }
 
-/**
- * Müşteri alanları — amaç 'customer' DEĞİLSE temizlenir.
+/*
+ * ── `musteriAlanlari` · `kolonYok` · `musterisiz` ARTIK `lib/geofences-db.ts`TE
+ *    (19.09.2026) ─────────────────────────────────────────────────────────
  *
- * Temizlemek (null/varsayılan yazmak) atlamaktan daha doğru: bir bölge
- * müşteriden kurala çevrildiğinde eski müşteri adı satırda kalsaydı, rapor
- * onu artık okumasa bile denetim izinde yanlış bir gerçek gibi dururdu.
+ * Üçü de mobil `PATCH /api/mobile/geofences/[id]` ucunun uymak zorunda olduğu
+ * kurallardı: amaç 'customer' değilse müşteri alanları temizlenir, 064
+ * koşulmamış kurulumda yazma kolonsuz yeniden denenir, müşteri bölgesi orada
+ * sessizce kural bölgesine DÜŞMEZ. Action gövdesinde kaldıkları sürece
+ * mobilden çağrılamıyorlardı ve kopyalamak ikinci bir kural kümesi demekti.
+ *
+ * ⚠️ PANEL DAVRANIŞI DEĞİŞMEDİ: aşağıdaki iki action aynı fonksiyonları aynı
+ * sırayla çağırıyor; yalnız adresleri değişti.
  */
-function musteriAlanlari(d: { purpose: string; customer_name: string | null; min_dwell_s: number }) {
-  return d.purpose === "customer"
+const musteriAlanlariForm = (d: {
+  purpose: string;
+  customer_name: string | null;
+  min_dwell_s: number;
+}) =>
+  d.purpose === "customer"
     ? { customer_name: d.customer_name, min_dwell_s: d.min_dwell_s }
     : { customer_name: null, min_dwell_s: 120 };
-}
-
-/**
- * 064 YOKSA YAZMA DA DÜŞMELİ — okuma tarafındaki kademeli düşüşün karşılığı.
- *
- * 19.08.2026'da ölçüldü: `customer_name` / `min_dwell_s` kolonları HER yazmaya
- * ekleniyordu. 064 koşulmamış bir kurulumda (demo) bu, **kural bölgesi bile
- * oluşturulamaz** hâle getirdi — üstelik kullanıcıya yalnız "Kaydedilemedi"
- * diyerek, sebebini söylemeden. Bir müşteri bölgesi ÖZELLİĞİ eklerken mevcut
- * bölge yönetimini kırmak kabul edilemez.
- *
- * Kural: yeni kolonlar yalnız VARSA yazılır. Kolon yoksa (`42703` /
- * PostgREST `PGRST204`) aynı satır o alanlar olmadan yeniden denenir ve eski
- * davranış aynen sürer. Yalnız `purpose='customer'` gerçekten 064'e muhtaçtır;
- * o durumda sessizce kural bölgesine düşmek YANLIŞ olurdu (kullanıcı ölçüm
- * açtığını sanır, hiç ölçüm olmaz) → ayrı hata koduyla reddedilir.
- */
-function kolonYok(e: { code?: string; message?: string } | null): boolean {
-  if (!e) return false;
-  if (e.code === "42703" || e.code === "PGRST204") return true;
-  const m = (e.message ?? "").toLowerCase();
-  return m.includes("customer_name") || m.includes("min_dwell_s");
-}
-
-/** Müşteri alanları çıkarılmış kopya — 064 öncesi kurulumlar için. */
-function musterisiz<T extends Record<string, unknown>>(satir: T): Record<string, unknown> {
-  const kalan: Record<string, unknown> = { ...satir };
-  delete kalan.customer_name;
-  delete kalan.min_dwell_s;
-  return kalan;
-}
 
 export async function createGeofence(
   formData: FormData
@@ -137,7 +117,7 @@ export async function createGeofence(
     purpose: parsed.data.purpose,
     // Müşteri alanları YALNIZ purpose='customer' iken dolar: bir kural
     // bölgesine müşteri adı iliştirmek raporda hayalet satır üretirdi.
-    ...musteriAlanlari(parsed.data),
+    ...musteriAlanlariForm(parsed.data),
     active: true,
   };
   let { data, error } = await supabaseAdmin
@@ -187,7 +167,7 @@ export async function updateGeofence(
     radius_m: parsed.data.radius_m,
     rule_kind: parsed.data.rule_kind,
     purpose: parsed.data.purpose,
-    ...musteriAlanlari(parsed.data),
+    ...musteriAlanlariForm(parsed.data),
   };
   let { error } = await supabaseAdmin.from("geofences").update(yama).eq("id", id);
   if (kolonYok(error)) {

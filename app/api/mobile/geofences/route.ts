@@ -52,6 +52,25 @@ export const MOBIL_YARICAP_MAX = 5000;
 
 const AD_MAX = 80;
 
+/**
+ * DAVRANIŞ anahtarının mobil adı: `amac` (= `purpose`).
+ *
+ * ⚠️ `kategori` İLE KARIŞTIRILMAZ ve bu ayrım kasıtlı:
+ *   kategori → ROZET. Motor okumaz, ekran renklendirir.
+ *   amac     → DAVRANIŞ. 'depot' beş şeyi sürüyor: otomatik vardiya tetiği,
+ *              depo kilidi, başlangıç anı türetme, şoför paneli rozeti, kural
+ *              değerlendirmesinden muafiyet. 'customer' ziyaret süresi
+ *              ölçümünü açar (064 kolonları şart).
+ *
+ * Bir bölge kategori olarak "depot" görünüp vardiya tetiği OLMAYABİLİR —
+ * mobilden AÇILAN bölgeler hâlâ böyle doğar ('rule'). Depo yapmak ayrı ve
+ * bilinçli bir PATCH ister.
+ */
+const BOLGE_AMACLARI = ["rule", "depot", "customer"] as const;
+
+/** PATCH ucunun hata gövdesinde `gecerli` olarak döndürdüğü küme. */
+export const BOLGE_AMAC_KUMESI = BOLGE_AMACLARI;
+
 export type AlanHatasi = { alan: string; sebep: string };
 
 /** Ortak alan doğrulaması — POST (zorunlu) ve PATCH (kısmi) aynı kuralları paylaşır. */
@@ -96,6 +115,16 @@ export function bolgeAlanlariniDogrula(
     }
     out.center_lat = lat;
     out.center_lng = lng;
+  }
+
+  // `amac` OLUŞTURMADA YOK, yalnız PATCH'te: yanlışlıkla açılan bir bölge
+  // kendiliğinden vardiya tetiği olmamalı (bkz. lib/geofences-db.ts başlığı).
+  if (!zorunlu && varMi("amac")) {
+    const a = g.amac;
+    if (typeof a !== "string" || !(BOLGE_AMACLARI as readonly string[]).includes(a)) {
+      return { ok: false, hata: { alan: "amac", sebep: "gecersiz" } };
+    }
+    out.purpose = a;
   }
 
   if (zorunlu || varMi("yaricapM")) {

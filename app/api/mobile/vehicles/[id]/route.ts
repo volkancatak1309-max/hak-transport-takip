@@ -1,6 +1,9 @@
 import type { NextRequest } from "next/server";
+import { revalidatePath } from "next/cache";
 import { requireMobileAdmin } from "@/lib/mobile-scope";
 import { getVehicleDetail } from "@/lib/vehicles";
+import { aracGuncelle } from "@/lib/vehicle-update";
+import { aracAlanlariniDogrula, ARAC_IZINLI_ANAHTARLAR } from "../route";
 import { listVehicleFaultReports } from "@/lib/fault-reports-db";
 import { mobileError } from "@/lib/mobile-auth";
 import { fleetLabeller } from "@/lib/mobile-labels";
@@ -88,6 +91,23 @@ export async function GET(
       },
       depoLitre: v.tank_capacity_l,
       notlar: v.notes,
+      /**
+       * YAZILABİLEN ALAN OKUNABİLİR OLMAK ZORUNDA (19.09.2026).
+       *
+       * `PATCH` bu ikisini değiştirebiliyor; gövdede dönmezlerse düzenleme
+       * ekranı mevcut değeri göremeden üzerine yazardı. `yakitTuru` CO₂
+       * katsayısını seçen alan (089); kolon eklenmemiş bir kurulumda
+       * `select("*")` onu hiç getirmez ve burada null'a düşer — istemci tek
+       * şey okur.
+       */
+      yakitTuru: (v as { fuel_type?: string | null }).fuel_type ?? null,
+      /**
+       * `durum`un boolean kısayolu — PATCH `{aktif:false}` ile pasife alma
+       * tam olarak bunu yazar. `maintenance` de aktif DEĞİLDİR: araç
+       * kullanımda olmadığı için false döner ve ekran gerçek durumu `durum`
+       * alanından gösterir.
+       */
+      aktif: v.status === "active",
     },
     bugun: {
       km: d.today.km,
@@ -139,5 +159,109 @@ export async function GET(
           : null,
       };
     }),
+  });
+}
+
+/**
+ * PATCH /api/mobile/vehicles/[id] — ARAÇ KAYDINI DÜZENLE (yönetici).
+ *
+ * ═══ KISMİ — GÖVDEDE OLMAYAN ALAN DEĞİŞMEZ ════════════════════════════════
+ *
+ * Panelin formu her alanı gönderdiği için `updateVehicle` bütün kolonları
+ * birden yazıyor ve boş bırakılanı `null`a çekiyor. Bu bir FORM davranışı, bir
+ * VERİ kuralı değil — ve PATCH'te aynısı felaket olurdu: telefondan yalnız
+ * muayene tarihini düzelten bir yönetici, aracın IMEI'sini, depo hacmini ve
+ * şoför atamasını da silerdi.
+ *
+ * Kural: alan YOK → dokunulmaz. Alan `null` → o kolon GERÇEKTEN boşaltılır
+ * (ör. `{soforId: null}` atamayı kaldırır). İkisi ayrı şeydir.
+ *
+ * ═══ KURALLAR PANELDEN, KOPYALANMADI ══════════════════════════════════════
+ *
+ * Yazma `lib/vehicle-update.ts` çekirdeğinden geçiyor; panelin `updateVehicle`ı
+ * da 19.09.2026'dan beri AYNI çekirdeği çağırıyor. Böylece:
+ *   · plaka BÜYÜK harfe çevrilir,
+ *   · plaka tekil — çakışırsa 409 ve ÇAKIŞAN ARACIN PLAKASI söylenir,
+ *   · araca yönetici/test hesabı şoför olarak atanamaz,
+ *   · bir şoför tek araca atanır (eski aracı serbest bırakılır) ve
+ *     `workers.plate` aynası hizalanır,
+ *   · denetim izi (`auditChange`) eski hâlle birlikte düşer.
+ *
+ * ═══ NE YAZILAMAZ ═════════════════════════════════════════════════════════
+ * Beyaz liste dışındaki her anahtar 400 `invalid_field` + `sebep:"izinsiz"`.
+ * Bu uçtan YAZILAMAYANLAR ve sebepleri:
+ *   `is_test`  → verinin raporlardan elenmesini belirleyen anahtar; tek
+ *                dokunuşla gerçek bir aracı bütün ölçümlerden düşürürdü.
+ *   `imei` · `flespi_device_id` · `vin` → cihaz eşleme akışı ayrı; tekillik
+ *                çakışması orada çözülür.
+ *   `filo`     → görsel/raporsal ayrım, panelde seçilir.
+ *
+ * ═══ DEĞİŞİKLİĞİN ETKİSİ ANINDA ═══════════════════════════════════════════
+ * `muayeneSon`/`sigortaSon` Dikkat panosunun ±30 günlük penceresini besliyor
+ * (lib/admin-dashboard.ts); `depoLitre` yakıt kapısının üç şartından biri
+ * (lib/fuel-vehicle.ts) — hacim silinirse o aracın litre/€/L100 değerleri
+ * `depo_yok` sebebiyle "—" olur. İkisi de TÜRETİLMİŞ: ayrıca bir yeniden
+ * hesaplama tetiklemek gerekmiyor, bir sonraki okuma yeni sayıyı verir.
+ *
+ * ═══ HATA KODLARI ═════════════════════════════════════════════════════════
+ *   401 missing_token / invalid_token / revoked / inactive
+ *   403 admin_required
+ *   400 invalid_body · invalid_field (alan + sebep; izinsiz alanda `izinli`)
+ *       · empty_patch (gövde tanınan hiçbir alan taşımıyor)
+ *   404 not_found
+ *   409 plate_taken (`conflict` = çakışan aracın plakası)
+ *   500 write_failed
+ */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const guard = await requireMobileAdmin(req);
+  if (!guard.ok) return guard.response;
+
+  const { id } = await params;
+
+  let govde: Record<string, unknown> | null = null;
+  try {
+    const j = await req.json();
+    govde = j && typeof j === "object" && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
+  } catch {
+    govde = null;
+  }
+  if (!govde) return mobileError(400, "invalid_body", { bicim: "json_nesne" });
+
+  const d = aracAlanlariniDogrula(govde, false);
+  if (!d.ok) {
+    return mobileError(400, "invalid_field", { ...d.hata, ...(d.izinli ? { izinli: d.izinli } : {}) });
+  }
+  if (Object.keys(d.deger).length === 0) {
+    return mobileError(400, "empty_patch", { alanlar: ARAC_IZINLI_ANAHTARLAR });
+  }
+
+  const r = await aracGuncelle({ actorId: guard.actor.worker.id, id, yama: d.deger });
+  if (!r.ok) {
+    if (r.error === "not_found") return mobileError(404, "not_found");
+    if (r.error.endsWith("_taken")) return mobileError(409, r.error, { conflict: r.conflict });
+    if (r.error.startsWith("Yönetici hesabı")) {
+      return mobileError(400, "invalid_field", { alan: "soforId", sebep: "sofor_degil" });
+    }
+    return mobileError(500, "write_failed", { detail: r.error });
+  }
+
+  let panelTazelendi = true;
+  try {
+    revalidatePath("/admin/araclar");
+    revalidatePath("/admin/workers");
+    revalidatePath("/panel");
+  } catch {
+    panelTazelendi = false;
+  }
+
+  return Response.json({
+    ok: true,
+    id: r.id,
+    /** Hangi kolonlar GERÇEKTEN değişti — boş dizi "aynı değer gönderildi". */
+    degisen: r.degisen,
+    panelTazelendi,
   });
 }

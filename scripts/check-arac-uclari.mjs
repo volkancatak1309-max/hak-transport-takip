@@ -23,6 +23,12 @@
  * SENTETİK olan tek yer aşağıda `// SENTETİK:` ile işaretlidir ve sebebi
  * yazılıdır (canlı veride o durum HİÇ oluşmuyor → ölçülemezdi).
  *
+ * ── YAZMA YÜZEYİ (19.09.2026) ──────────────────────────────────────────────
+ * Beş OKUMA ucuna `PATCH /vehicles/[id]` + `POST /vehicles` ve bölgelerde
+ * `amac` yazması eklendi. Bu yüzeyin sözleri de tip sisteminden görünmez:
+ * beyaz listeye bir kolon eklenmesi tsc'yi susturmaz ama `is_test`i telefondan
+ * yazılabilir yapar. Aşağıdaki son blok onları sınar.
+ *
  * Çalıştır:  npm run lint:arac-uclari
  */
 import { readFileSync } from "node:fs";
@@ -331,6 +337,85 @@ kontrol(
   !/^\s*import\s+(?!type\b)[^;]*@\/lib\/telemetry["']/m.test(vd)
 );
 
+// ── YAZMA YÜZEYİ: PATCH/POST araç + bölge amacı (19.09.2026) ───────────────
+/**
+ * Y1 — KAPI. Yazma uçları da okuma uçlarıyla AYNI katman (requireMobileAdmin).
+ * Y2 — UÇ KENDİ YAZMAZ. `vehicles` tablosuna `.update/.insert/.delete` YALNIZ
+ *      lib/vehicle-update.ts'te; kurallar (plaka tekilliği, şoför ataması,
+ *      workers.plate aynası, denetim izi) orada duruyor.
+ * Y3 — BEYAZ LİSTE DAR. `is_test` yazılabilseydi gerçek bir araç tek dokunuşla
+ *      bütün raporlardan düşerdi; cihaz kimlikleri ayrı bir eşleme akışının işi.
+ * Y4 — KISMİ. Yamadaki `undefined` DOKUNMA demek; tam-yazma davranışı geri
+ *      gelirse muayene tarihini düzelten yönetici IMEI'yi ve depo hacmini siler.
+ * Y5 — PANEL AYNI ÇEKİRDEK. `updateVehicle`/`createVehicle` kendi kopyasını
+ *      tutmuyor; aksi hâlde aynı plaka panelde reddedilip mobilde kabul edilirdi.
+ * Y6 — SİLME YOK. Araç satırı vardiya/olay/yakıt kayıtlarının bağlandığı yer;
+ *      pasife alma (`aktif:false`) aynı işi geri alınabilir biçimde yapar.
+ * Y7 — BÖLGE: `amac` PATCH'te yazılır, POST'ta YAZILMAZ. Yanlışlıkla açılan bir
+ *      bölge kendiliğinden vardiya tetiği olmamalı (ölçüm: vardiyaların %68'i
+ *      depo tetiğiyle açılıyor, canlıda yalnız 2 depo bölgesi var).
+ */
+const YAZMA_UCLARI = [
+  "app/api/mobile/vehicles/route.ts",
+  "app/api/mobile/vehicles/[id]/route.ts",
+];
+for (const u of YAZMA_UCLARI) {
+  const src = oku(u);
+  const ad = u.includes("[id]") ? "vehicles/[id]" : "vehicles";
+  kontrol(`Y1 ${ad}: requireMobileAdmin kapısı`, src.includes("requireMobileAdmin("));
+  // Y2: uç kendi yazmaz. `.from("vehicles")` okuma için bile geçmiyor bu iki
+  // dosyada; yazma fiillerini aramak kuralı doğru yerden tutar.
+  kontrol(
+    `Y2 ${ad}: uç KENDİ yazmıyor (çekirdek çağırıyor)`,
+    !/\.(update|insert|upsert|delete)\(/.test(src),
+    (src.match(/\.(update|insert|upsert|delete)\(/g) ?? []).join(" ")
+  );
+  kontrol(`Y6 ${ad}: DELETE işleyicisi YOK`, !/export async function DELETE/.test(src));
+}
+
+const listeUc = oku("app/api/mobile/vehicles/route.ts");
+const harita = /ARAC_ALAN_HARITASI[^=]*=\s*\{([\s\S]*?)\}/.exec(listeUc)?.[1] ?? "";
+kontrol("Y3 beyaz liste bulundu", harita.length > 0);
+for (const yasak of ["is_test", "imei", "flespi_device_id", "vin", "fleet", "id:"]) {
+  kontrol(`Y3 beyaz listede "${yasak}" YOK`, !harita.includes(yasak), harita.replace(/\s+/g, " ").slice(0, 120));
+}
+
+const cekirdek = oku("lib/vehicle-update.ts");
+kontrol("Y4 çekirdek undefined alanları ELİYOR", /v !== undefined/.test(cekirdek));
+kontrol("Y4 çekirdek DİFF yazıyor (aynı değer UPDATE üretmez)", /\(mevcut\[k\] \?\? null\) !== \(v \?\? null\)/.test(cekirdek));
+kontrol("Y4 plaka BÜYÜK harfe çevriliyor", /toUpperCase\(\)/.test(cekirdek));
+kontrol("Y4 şoför ataması denetleniyor", /assertDriverAssignable\(/.test(cekirdek));
+kontrol("Y4 workers.plate aynası hizalanıyor", /applyDriverAssignment\(/.test(cekirdek));
+kontrol("Y4 denetim izi düşüyor", /auditChange\(/.test(cekirdek));
+
+const panelArac = oku("app/actions/vehicles.ts");
+kontrol("Y5 panel updateVehicle çekirdeği çağırıyor", /aracGuncelle\(/.test(panelArac));
+kontrol("Y5 panel createVehicle çekirdeği çağırıyor", /aracOlustur\(/.test(panelArac));
+kontrol(
+  "Y5 panelde İKİNCİ bir atama aynası kalmadı",
+  !/async function applyDriverAssignment/.test(panelArac)
+);
+
+const bolgeListe = oku("app/api/mobile/geofences/route.ts");
+const bolgeDetay = oku("app/api/mobile/geofences/[id]/route.ts");
+kontrol("Y7 `amac` doğrulaması yalnız KISMİ dalda (POST kabul etmez)", /!zorunlu && varMi\("amac"\)/.test(bolgeListe));
+kontrol("Y7 PATCH `amac` hatasında geçerli kümeyi söylüyor", /BOLGE_AMAC_KUMESI/.test(bolgeDetay));
+kontrol("Y7 bölge amacı değişikliği ize düşüyor", /auditChange\(/.test(bolgeDetay));
+const bolgeCekirdek = oku("lib/geofences-db.ts");
+kontrol(
+  "Y7 amaç 'customer' değilse müşteri alanları TEMİZLENİYOR",
+  /musteriAlanlari\(yama\.purpose\)/.test(bolgeCekirdek)
+);
+kontrol(
+  "Y7 064 yokken müşteri bölgesi sessizce kurala DÜŞMÜYOR",
+  /MusteriKapaliHatasi/.test(bolgeCekirdek) && /MusteriKapaliHatasi/.test(bolgeDetay)
+);
+const panelBolge = oku("app/actions/geofences.ts");
+kontrol(
+  "Y7 panel 064 düşüşünü ÇEKİRDEKTEN alıyor (kopya yok)",
+  /from "@\/lib\/geofences-db"/.test(panelBolge) && !/function kolonYok/.test(panelBolge)
+);
+
 // ── Sonuç ──────────────────────────────────────────────────────────────────
 if (dusen.length === 0) {
   console.log(`✓ araç uçları muhafızı: ${gecen} denetim geçti (U1-U5 + kaynak).`);
@@ -346,5 +431,10 @@ console.error(`
     · hız limiti diye bir alan ÜRETİLMEZ — veride yok
     · gün sınırı kiracı saat diliminde, DST-güvenli
     · beş ucun kapısı requireMobileAdmin
+    · yazma uçları KENDİ yazmaz: kural lib/vehicle-update.ts'te
+    · beyaz liste dar — is_test / cihaz kimlikleri telefondan yazılamaz
+    · PATCH kısmi: gövdede olmayan alan null'a ÇEKİLMEZ
+    · silme yok; pasife alma geri alınabilir
+    · bölge amacı PATCH'te yazılır, oluşturmada 'rule' doğar
 `);
 process.exit(1);

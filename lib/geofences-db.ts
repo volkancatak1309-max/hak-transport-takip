@@ -29,11 +29,18 @@ import { bolgeZiyaretleriniKapat } from "@/lib/zone-visits";
  *              kilidi, başlangıç anı türetme, şoför paneli rozeti, kural
  *              değerlendirmesinden muafiyet.
  *
- * ⚠️ MOBİL `purpose` YAZMAZ (bilinçli). Yazabilseydi telefondaki bir menü
- * seçimi otomatik vardiya başlatmayı kapatabilirdi; ölçüldü (18.08.2026):
- * son 30 günde 511 vardiyanın 346'sı (%68) depo tetiğiyle açılıyor ve canlıda
- * yalnız 2 depo bölgesi var. Mobilden açılan her bölge purpose='rule' doğar;
- * gerçek depo tanımlamak PANELİN işidir.
+ * ⚠️ MOBİL `purpose` YAZABİLİR — AMA YALNIZ PATCH'TEN (19.09.2026, Volkan
+ * kararı). Önceki kural "mobil purpose yazmaz"dı ve gerekçesi ölçülmüştü
+ * (18.08.2026: son 30 günde 511 vardiyanın 346'sı — %68 — depo tetiğiyle
+ * açılıyor, canlıda yalnız 2 depo bölgesi var). O ölçüm HÂLÂ GEÇERLİ ve bu
+ * alanın neden ağır olduğunu anlatıyor; değişen şey, yöneticinin telefondan da
+ * depo tanımlayabilmesi gerektiği.
+ *
+ * Risk iki yerde sınırlanıyor:
+ *   · kapı `requireMobileAdmin` — şef ve şoför bu ucu hiç göremiyor;
+ *   · OLUŞTURMA hâlâ 'rule' doğuruyor (`insertGeofence`), yani yanlışlıkla
+ *     açılan bir bölge kendiliğinden vardiya tetiği OLMAZ. Depo yapmak ayrı ve
+ *     bilinçli bir PATCH ister.
  *
  * ═══ ARŞİV ═══
  * `archived_at` null = arşivde değil. Arşivlemek bölgeyi AYNI ZAMANDA KAPATIR
@@ -137,20 +144,87 @@ export type GeofencePatch = Partial<
 > &
   Partial<Pick<GeofenceRow, "purpose" | "rule_kind">>;
 
+/**
+ * MÜŞTERİ ALANLARI — amaç 'customer' DEĞİLSE temizlenir.
+ *
+ * Temizlemek (null/varsayılan yazmak) atlamaktan daha doğru: bir bölge
+ * müşteriden kurala çevrildiğinde eski müşteri adı satırda kalsaydı, rapor onu
+ * artık okumasa bile denetim izinde yanlış bir gerçek gibi dururdu.
+ *
+ * ⚠️ 'customer'A ÇEVİRİRKEN HİÇBİR ŞEY YAZILMAZ. Müşteri adı ve `min_dwell_s`
+ * panelin formundan gelir; mobil onları göndermiyor ve varsayılan uydurmak
+ * yanlış olurdu ("120 sn eşik koydum" demeden eşik koymak). Alanlar olduğu gibi
+ * kalır, panel doldurur.
+ *
+ * Panelin `app/actions/geofences.ts`i BU FONKSİYONU kullanır — 19.09.2026'da
+ * oradan buraya taşındı, davranışı değişmeden.
+ */
+export function musteriAlanlari(purpose: GeofencePurpose): Record<string, unknown> {
+  return purpose === "customer" ? {} : { customer_name: null, min_dwell_s: 120 };
+}
+
+/**
+ * 064 YOKSA YAZMA DA DÜŞMELİ — okuma tarafındaki kademeli düşüşün karşılığı.
+ *
+ * 19.08.2026'da ölçüldü: `customer_name` / `min_dwell_s` kolonları HER yazmaya
+ * ekleniyordu. 064 koşulmamış bir kurulumda bu, kural bölgesi bile
+ * OLUŞTURULAMAZ hâle getirdi — üstelik kullanıcıya yalnız "Kaydedilemedi"
+ * diyerek, sebebini söylemeden.
+ *
+ * Kural: yeni kolonlar yalnız VARSA yazılır. Yoksa (`42703` / PostgREST
+ * `PGRST204`) aynı satır o alanlar olmadan yeniden denenir. Yalnız
+ * `purpose='customer'` gerçekten 064'e muhtaçtır; orada sessizce kural
+ * bölgesine düşmek YANLIŞ olurdu (kullanıcı ölçüm açtığını sanır, hiç ölçüm
+ * olmaz) → `musteri_kapali` hatasıyla reddedilir.
+ */
+export function kolonYok(e: { code?: string; message?: string } | null): boolean {
+  if (!e) return false;
+  if (e.code === "42703" || e.code === "PGRST204") return true;
+  const m = (e.message ?? "").toLowerCase();
+  return m.includes("customer_name") || m.includes("min_dwell_s");
+}
+
+/** Müşteri alanları çıkarılmış kopya — 064 öncesi kurulumlar için. */
+export function musterisiz<T extends Record<string, unknown>>(satir: T): Record<string, unknown> {
+  const kalan: Record<string, unknown> = { ...satir };
+  delete kalan.customer_name;
+  delete kalan.min_dwell_s;
+  return kalan;
+}
+
+/** 064 yok ve müşteri bölgesi istendi — çağıran bunu kullanıcıya SÖYLEMELİ. */
+export class MusteriKapaliHatasi extends Error {
+  constructor() {
+    super("musteri_kapali");
+  }
+}
+
 export async function patchGeofence(
   id: string,
   yama: GeofencePatch
 ): Promise<GeofenceRow | null> {
-  const alanlar = Object.fromEntries(
+  const alanlar: Record<string, unknown> = Object.fromEntries(
     Object.entries(yama).filter(([, v]) => v !== undefined)
   );
+  // Amaç değişiyorsa müşteri alanları panelin kuralıyla AYNI biçimde toparlanır.
+  if (yama.purpose !== undefined) Object.assign(alanlar, musteriAlanlari(yama.purpose));
   if (Object.keys(alanlar).length === 0) return getGeofenceById(id);
-  const { data, error } = await supabaseAdmin
+
+  let { data, error } = await supabaseAdmin
     .from("geofences")
     .update(alanlar)
     .eq("id", id)
     .select(COLS)
     .maybeSingle();
+  if (kolonYok(error)) {
+    if (yama.purpose === "customer") throw new MusteriKapaliHatasi();
+    ({ data, error } = await supabaseAdmin
+      .from("geofences")
+      .update(musterisiz(alanlar))
+      .eq("id", id)
+      .select(COLS)
+      .maybeSingle());
+  }
   if (error) throw new Error(`geofences_patch:${error.code}:${error.message}`);
   return (data as unknown as GeofenceRow) ?? null;
 }
@@ -221,6 +295,12 @@ export function geofenceGovdesi(z: GeofenceRow) {
      * ibaresini kategoriye değil BUNA bakarak göstermeli.
      */
     vardiyaTetigi: z.purpose === "depot",
+    /**
+     * `vardiyaTetigi`nin YAZILABİLİR hâli (19.09.2026). Boolean tek başına
+     * üçüncü değeri ('customer' — ziyaret süresi ölçümü) ifade edemiyordu;
+     * PATCH bu alanı alır, GET aynı adla döndürür.
+     */
+    amac: z.purpose,
     olusturuldu: z.created_at,
   };
 }

@@ -377,4 +377,17 @@ export const vehicleSchema = z.object({
   // Depo hacmi (litre) — yakıt raporunun litre/L100km hesabı için. Boş bırakılabilir
   // (o araç %-bazlı kalır). Makul üst sınır: ağır ticari araç deposu ~1500 L'yi aşmaz.
   tank_capacity_l: z.coerce.number().positive("errTank").max(1500, "errTank").optional().nullable(),
+  // Aracın yakıt türü (089) — CO₂ katsayısını BU belirler. Kolon eklenmeden önce
+  // her araç dizel sayılıyordu, varsayılan o davranışı koruyor. Küme
+  // `fuel_expenses.fuel_type` ile AYNI: iki tabloda iki farklı tür olsaydı aynı
+  // aracın fişi ile kaydı çelişirdi.
+  //
+  // ⚠️ PANEL FORMU BU ALANI GÖNDERMİYOR (bugün) — `.optional()` olduğu için
+  // `parseVehicle` çıktısında yer almaz ve kolon dokunulmadan kalır. Alan
+  // buraya MOBİL uç için eklendi; sınırın tek yerde durması şart, yoksa
+  // telefonda kabul edilen bir tür panelde reddedilirdi.
+  fuel_type: z.enum(["diesel", "benzin", "lpg", "elektro"], { message: "errFuelType" }).optional(),
+  // Serbest not. Üst sınır cömert ama sınırsız DEĞİL: sınırsız metin, denetim
+  // izini (audit_log meta) tek satırda şişirebilecek tek alandır.
+  notes: z.string().trim().max(2000, "errNotes").optional().nullable(),
 });

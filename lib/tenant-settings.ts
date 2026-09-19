@@ -188,7 +188,23 @@ export async function kiraciAyarlariniYaz(
     if (yama.birimSistemi !== null && !BIRIM_SISTEMLERI.includes(yama.birimSistemi)) {
       return { ok: false, sebep: "gecersiz", alan: "birimSistemi" };
     }
-    alanlar.unit_system = yama.birimSistemi;
+    /**
+     * ⚠️ `null` BURADA KOLONA YAZILMAZ — VARSAYILAN YAZILIR. İki alan aynı
+     * "temizle" sözünü FARKLI biçimde tutmak zorunda ve sebebi kolonların
+     * kendisinde (migration 108):
+     *
+     *   `timezone`     NULL'lanabilir → `null` GERÇEKTEN yazılır, çünkü altta
+     *                  bir kademe daha var (env NEXT_PUBLIC_TENANT_TZ). NULL,
+     *                  "kiracı girmedi, env kazansın" demek.
+     *   `unit_system`  NOT NULL default 'metric' → altında kademe YOK. NULL
+     *                  yazmak 23502 ile reddedilirdi ve kullanıcı "temizle"
+     *                  dediğinde 500 görürdü.
+     *
+     * 19.09.2026'da canlıda ölçüldü: `{birimSistemi:null}` PATCH'i değeri
+     * imperial'da BIRAKIYORDU. "Geri dönüş yolu olmayan ayar, ayar değil
+     * tuzaktır" kuralı bu satırla gerçekten sağlanıyor.
+     */
+    alanlar.unit_system = yama.birimSistemi ?? VARSAYILAN_BIRIM;
   }
 
   if (yama.saatDilimi !== undefined) {

@@ -69,8 +69,10 @@ const IZINLI_ALANLAR = new Set(["birimSistemi", "saatDilimi"]);
  * varsayılana dön". Kullanıcı kendi girdiği bir değerden GERİ DÖNEBİLMELİ;
  * dönüş yolu olmayan ayar, ayar değil tuzaktır (076'nın kuralı).
  *
- * ⚠️ `birimSistemi: null` → 'metric' varsayılanı. `saatDilimi: null` → env
- * (`NEXT_PUBLIC_TENANT_TZ`), o da yoksa 'Europe/Vienna'.
+ * ⚠️ `birimSistemi: null` → 'metric' varsayılanı KOLONA YAZILIR (kolon NOT NULL,
+ * altında env kademesi yok). `saatDilimi: null` → kolona GERÇEKTEN null yazılır
+ * ve zincir env'e (`NEXT_PUBLIC_TENANT_TZ`), o da yoksa 'Europe/Vienna'ya düşer.
+ * Fark kolonların kendisinden geliyor; bkz. lib/tenant-settings.ts.
  *
  * ═══ KAPI: YALNIZ YÖNETİCİ ════════════════════════════════════════════════
  * `requireMobileAdmin` ↔ panelde /admin/ayarlar `requireAdmin()`. Şef ve şoför

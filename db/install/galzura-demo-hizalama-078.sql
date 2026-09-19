@@ -11394,6 +11394,9 @@ notify pgrst, 'reload schema';
 -- ╚═══════════════════════════════════════════════════════════════════════╝
 
 -- HAK61 / Galzura Fleet — Migration 108 (KİRACI AYARLARI: ÖLÇÜ BİRİMİ + SAAT DİLİMİ)
+-- ✅ ÇALIŞTIRILDI 19.09.2026 — ÜÇ KİRACI (HAK61 · Sendigo · galzura-demo)
+--    Doğrulama sonucu: tablo 1 / satır 0 (üçünde de) — yani tablo yaratıldı,
+--    kiracı henüz ayar girmedi ve zincir env/kod varsayılanından besleniyor.
 -- =====================================================================
 -- Ölçü birimi (metric|imperial) ve saat dilimi kiracının kendi ayarı olsun:
 -- panelden ve mobilden değiştirilebilsin, deploy gerektirmesin. Additive +

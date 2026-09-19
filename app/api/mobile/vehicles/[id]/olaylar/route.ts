@@ -73,7 +73,7 @@ export async function GET(
     aracId: arac.id,
     plaka: arac.plaka,
     tarih,
-    saatDilimi: mobileTenant().saatDilimi,
+    saatDilimi: (await mobileTenant()).saatDilimi,
     pencere,
     adet: kalemler.length,
     kritikAdet: kalemler.filter((k) => alarmKademe(k.tur) === "kritik").length,

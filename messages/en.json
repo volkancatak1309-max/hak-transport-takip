@@ -1989,7 +1989,18 @@
     "dvir_field_vtype_hint": "Leave empty to ask for every vehicle.",
     "doc_field_sort": "Order",
     "doc_type_delete_desc": "The type is deleted. If documents of this type exist it cannot be deleted — deactivate it instead.",
-    "dvir_item_delete_desc": "The item is deleted. If it appears in a submitted form it cannot be deleted — deactivate it instead."
+    "dvir_item_delete_desc": "The item is deleted. If it appears in a submitted form it cannot be deleted — deactivate it instead.",
+    "region_title": "Regional settings",
+    "region_desc": "Unit system and time zone. The currency is fixed to EUR.",
+    "region_unit": "Unit system",
+    "region_unit_metric": "Metric (km · L · L/100 km)",
+    "region_unit_imperial": "Imperial (miles · gallons · mpg)",
+    "region_unit_hint": "Values are always computed in metric on the server; this setting only controls how they are displayed.",
+    "region_tz": "Time zone",
+    "region_tz_hint": "IANA name, e.g. Europe/Vienna. Leave empty to use the installation default.",
+    "region_tz_warn": "Sets the day boundary: which day a shift counts towards, and the day attribution in the AZG report.",
+    "region_tz_invalid": "Time zone not recognised. An IANA name is expected (e.g. Europe/Istanbul).",
+    "region_migration_needed": "This installation has no tenant settings table (migration 108 pending); values come from the env/default chain."
   },
   "takip": {
     "durum_hazirlaniyor": "Getting ready",

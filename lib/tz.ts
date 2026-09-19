@@ -30,7 +30,27 @@
  * 03.08.2026'da Sendigo'nun canlı paketinde ölçüldü (bkz. lib/tenant.ts:27-39):
  * sunucu doğru okurken istemci sessizce varsayılana düşüyordu.
  *
- * ── NEDEN VERİTABANI DEĞİL ─────────────────────────────────────────────────
+ * ── ⚠️ ARTIK VERİTABANI DA VAR (19.09.2026, migration 108) ─────────────────
+ * Aşağıdaki "neden veritabanı değil" gerekçesi TEKNİK yanıyla HÂLÂ geçerli ve
+ * bu yüzden silinmedi: `lib/format.ts`'in sınır fonksiyonları SENKRONDUR ve
+ * istemcide çalışır, asenkron bir DB okuması onları BESLEYEMEZ. Değişen şey
+ * müşterinin saat dilimini kendi değiştirebilmesi gerektiği (env değiştirmek
+ * DEPLOY ister — 076'da maliyet oranları için verilen kararın aynısı).
+ *
+ * Çözüm iki katmanlı:
+ *   · `TENANT_TZ`  — DERLEME sabiti. İstemci paketine gömülür, senkron kalır.
+ *                    Tarayıcıda TEK kaynak budur ve olmak zorundadır.
+ *   · `tenantTz()` — ÇALIŞMA ZAMANI değeri. Sunucuda `lib/tenant-settings.ts`
+ *                    tabloyu okuduğunda burayı besler; istemcide besleyen
+ *                    kimse olmadığı için `TENANT_TZ`e düşer, yani BUGÜNKÜ
+ *                    davranışın birebir aynısı.
+ *
+ * ⚠️ MODÜL DÜZEYİNDE DEĞİŞKEN — ve bu bilinçli. Değer KİRACIYA ait, kullanıcıya
+ * değil: her kiracının ayrı veritabanı ve ayrı dağıtımı var, dolayısıyla bir
+ * lambda örneğindeki değer o örneğe düşen HER isteğin doğru cevabıdır. Kullanıcı
+ * başına bir değer olsaydı bu kalıp sızıntı olurdu.
+ *
+ * ── NEDEN VERİTABANI DEĞİL (09.08.2026 kararı — teknik yanı geçerli) ───────
  * Kiracı ayarları bu projede zaten env katmanıdır (lib/brand.ts + lib/tenant.ts)
  * ve DB'de kiracı ayar tablosu yoktur — her kiracının AYRI veritabanı vardır.
  * Ayrıca `lib/format.ts`'in sınır fonksiyonları SENKRONDUR ve istemcide çalışır;
@@ -73,3 +93,48 @@ export const TENANT_TZ_INVALID: boolean = RAW !== "" && !gecerliMi(RAW);
  * patlatır (lib/tenant.ts). Güvenli olan istemci, gürültülü olan sunucudur.
  */
 export const TENANT_TZ: string = TENANT_TZ_INVALID || RAW === "" ? DEFAULT_TZ : RAW;
+
+/**
+ * ÇALIŞMA ZAMANI SAAT DİLİMİ — sunucuda tablo değeriyle beslenir.
+ *
+ * `null` = "henüz okunmadı ya da tablo yok" → `TENANT_TZ`e düşülür. İstemcide
+ * HER ZAMAN null kalır: `lib/tenant-settings.ts` `server-only` ve tarayıcıya
+ * hiç girmiyor.
+ */
+let calismaZamaniTz: string | null = null;
+
+/**
+ * Sunucu tarafı ayar katmanının tek yazma noktası (lib/tenant-settings.ts).
+ *
+ * ⚠️ BAŞKA HİÇBİR YERDEN ÇAĞRILMAZ. Bir uç kendi saat dilimini "geçici olarak"
+ * kurarsa, aynı lambda örneğine düşen sonraki istek o dilimle cevap verir ve
+ * kusur örnek-ömrü kadar yaşar. `scripts/check-tenant-defaults.mjs` çağıranı
+ * tek dosyayla sınırlıyor.
+ *
+ * Geçersiz dilim SESSİZCE yok sayılır: `Intl` bilinmeyen bir dilimde RangeError
+ * atar ve bu, ekranı komple beyaza çevirirdi. Doğrulama yazma yolunda
+ * (PATCH / panel action) yapılıyor; burası son hat.
+ */
+export function calismaZamaniTzAyarla(tz: string | null): void {
+  if (tz === null) {
+    calismaZamaniTz = null;
+    return;
+  }
+  if (gecerliMi(tz)) calismaZamaniTz = tz;
+}
+
+/**
+ * KULLANILACAK saat dilimi: çalışma zamanı değeri > derleme sabiti.
+ *
+ * `lib/format.ts`'in bütün sınır fonksiyonları BUNU çağırır. Sabiti doğrudan
+ * okumak, tablo değerini görmeyen bir yüzey üretir — 09.08.2026'da panelin
+ * sabitini mobile kopyalamanın ürettiği kusurun aynısı, yalnız ekseni farklı.
+ */
+export function tenantTz(): string {
+  return calismaZamaniTz ?? TENANT_TZ;
+}
+
+/** IANA adı `Intl` tarafından çözülüyor mu — yazma yolunun doğrulaması. */
+export function ianaGecerliMi(tz: string): boolean {
+  return gecerliMi(tz);
+}

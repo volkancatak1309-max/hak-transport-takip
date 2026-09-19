@@ -109,6 +109,6 @@ export async function POST(req: NextRequest) {
     // Kiracı /me ile AYNI nesne. Burada da dönmesi bilinçli: mobil saat dilimini
     // /me'ye kadar bekleseydi ilk ekran cihaz diliminde çizilip yanıt gelince
     // saatler ZIPLARDI (09.08.2026 kararı, bkz. lib/mobile-user.ts).
-    tenant: mobileTenant(),
+    tenant: await mobileTenant(),
   });
 }

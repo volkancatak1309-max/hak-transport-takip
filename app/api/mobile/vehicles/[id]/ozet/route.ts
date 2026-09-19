@@ -84,7 +84,7 @@ export async function GET(
     ok: true,
     aracId: arac.id,
     plaka: arac.plaka,
-    saatDilimi: mobileTenant().saatDilimi,
+    saatDilimi: (await mobileTenant()).saatDilimi,
     donem: donemGovdesi(d),
     km: ozet.km,
     /**

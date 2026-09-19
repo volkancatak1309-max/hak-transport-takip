@@ -1,4 +1,12 @@
-import { TENANT_TZ } from "@/lib/tz";
+import { tenantTz } from "@/lib/tz";
+
+/*
+ * ⚠️ `TENANT_TZ` SABİTİ DEĞİL, `tenantTz()` ÇAĞRILIYOR (19.09.2026).
+ *
+ * Sabit DERLEME anında gömülür; saat dilimi artık kiracı ayarı (migration 108)
+ * ve tabloda değişebiliyor. `tenantTz()` sunucuda tablo değerini, istemcide
+ * derleme sabitini döndürür — istemci davranışı DEĞİŞMEDİ.
+ */
 
 export function formatDuration(ms: number): string {
   if (ms < 0) ms = 0;
@@ -73,7 +81,7 @@ export function formatDateTime(iso: string | null | undefined, locale: string = 
   const d = new Date(iso);
   const tag = locale === "de" ? "de-AT" : "tr-TR";
   return d.toLocaleString(tag, {
-    timeZone: TENANT_TZ,
+    timeZone: tenantTz(),
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -87,7 +95,7 @@ export function formatTime(iso: string | null | undefined, locale: string = "tr"
   const d = new Date(iso);
   const tag = locale === "de" ? "de-AT" : "tr-TR";
   return d.toLocaleTimeString(tag, {
-    timeZone: TENANT_TZ,
+    timeZone: tenantTz(),
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -115,7 +123,7 @@ export function formatDate(iso: string | null | undefined, locale: string = "tr"
   const d = new Date(iso);
   const tag = locale === "de" ? "de-AT" : "tr-TR";
   return d.toLocaleDateString(tag, {
-    timeZone: TENANT_TZ,
+    timeZone: tenantTz(),
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -125,7 +133,7 @@ export function formatDate(iso: string | null | undefined, locale: string = "tr"
 export function formatWeekday(iso: string, locale: string = "tr"): string {
   const d = new Date(iso);
   const tag = locale === "de" ? "de-AT" : "tr-TR";
-  return d.toLocaleDateString(tag, { timeZone: TENANT_TZ, weekday: "short" });
+  return d.toLocaleDateString(tag, { timeZone: tenantTz(), weekday: "short" });
 }
 
 export function workedMs(entry: {
@@ -184,7 +192,7 @@ export function kmDiff(entry: {
  */
 export function viennaDayKey(iso: string | Date): string {
   const d = typeof iso === "string" ? new Date(iso) : iso;
-  return d.toLocaleDateString("en-CA", { timeZone: TENANT_TZ });
+  return d.toLocaleDateString("en-CA", { timeZone: tenantTz() });
 }
 
 // ---------------------------------------------------------------------------
@@ -258,7 +266,7 @@ function zonedWallTimeToUtc(
 
 /** Add `n` calendar days to a Vienna day-start instant (DST-safe). */
 export function addCalendarDaysVienna(dayStart: Date, n: number): Date {
-  const p = tzParts(dayStart, TENANT_TZ);
+  const p = tzParts(dayStart, tenantTz());
   const shifted = new Date(Date.UTC(p.year, p.month - 1, p.day + n));
   return zonedWallTimeToUtc(
     shifted.getUTCFullYear(),
@@ -267,14 +275,14 @@ export function addCalendarDaysVienna(dayStart: Date, n: number): Date {
     0,
     0,
     0,
-    TENANT_TZ
+    tenantTz()
   );
 }
 
 /** Start of the Vienna calendar day containing `ref` (default now), as UTC. */
 export function startOfDayVienna(ref: Date = new Date()): Date {
-  const p = tzParts(ref, TENANT_TZ);
-  return zonedWallTimeToUtc(p.year, p.month, p.day, 0, 0, 0, TENANT_TZ);
+  const p = tzParts(ref, tenantTz());
+  return zonedWallTimeToUtc(p.year, p.month, p.day, 0, 0, 0, tenantTz());
 }
 
 /** Last millisecond of the Vienna calendar day containing `ref`. */
@@ -292,7 +300,7 @@ export function endOfTodayVienna(): Date {
 
 /** Monday 00:00 (Vienna) of the current week, as a UTC instant. */
 export function startOfWeekVienna(): Date {
-  const p = tzParts(new Date(), TENANT_TZ);
+  const p = tzParts(new Date(), tenantTz());
   const dow = (new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay() + 6) % 7; // Mon=0
   const monday = new Date(Date.UTC(p.year, p.month - 1, p.day - dow));
   return zonedWallTimeToUtc(
@@ -302,7 +310,7 @@ export function startOfWeekVienna(): Date {
     0,
     0,
     0,
-    TENANT_TZ
+    tenantTz()
   );
 }
 
@@ -313,14 +321,14 @@ export function endOfWeekVienna(): Date {
 
 /** First day 00:00 (Vienna) of the current month, as a UTC instant. */
 export function startOfMonthVienna(): Date {
-  const p = tzParts(new Date(), TENANT_TZ);
-  return zonedWallTimeToUtc(p.year, p.month, 1, 0, 0, 0, TENANT_TZ);
+  const p = tzParts(new Date(), tenantTz());
+  return zonedWallTimeToUtc(p.year, p.month, 1, 0, 0, 0, tenantTz());
 }
 
 /** Last millisecond of the current Vienna month. */
 export function endOfMonthVienna(): Date {
-  const p = tzParts(new Date(), TENANT_TZ);
-  const nextMonth = zonedWallTimeToUtc(p.year, p.month + 1, 1, 0, 0, 0, TENANT_TZ);
+  const p = tzParts(new Date(), tenantTz());
+  const nextMonth = zonedWallTimeToUtc(p.year, p.month + 1, 1, 0, 0, 0, tenantTz());
   return new Date(nextMonth.getTime() - 1);
 }
 
@@ -367,7 +375,7 @@ export function startOfDayViennaFromYmd(s: string): Date | null {
   ) {
     return null;
   }
-  return zonedWallTimeToUtc(y, mo, d, 0, 0, 0, TENANT_TZ);
+  return zonedWallTimeToUtc(y, mo, d, 0, 0, 0, tenantTz());
 }
 
 /** Parse a YYYY-MM-DD string as the end (last ms) of that Vienna day. */

@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     /** PATCH ile değiştirilebilen alan — kanonik biçimde (E.164). */
     telefon: (kayit as { phone: string | null } | null)?.phone ?? null,
     mustChangePin: auth.worker.must_change_pin,
-    tenant: mobileTenant(),
+    tenant: await mobileTenant(),
   });
 }
 

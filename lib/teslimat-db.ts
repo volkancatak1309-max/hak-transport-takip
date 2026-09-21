@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { tabloYokMu, kolonYokMu } from "@/lib/fault-reports";
+import { signedReceiptUrls } from "@/lib/storage";
 
 /**
  * TESLİMAT KANITI (ePOD) — veri katmanı (migration 080).
@@ -30,6 +31,10 @@ import { tabloYokMu, kolonYokMu } from "@/lib/fault-reports";
 /** Fotoğrafların gittiği özel kova (080'de yaratılıyor). */
 export const TESLIMAT_KOVASI = "teslimat-kaniti";
 
+/** Teslimatın sonucu (109). Panel yolu bunu GÖNDERMEZ → DB varsayılanı 'teslim'. */
+export const TESLIMAT_SONUCLARI = ["teslim", "teslim_edilemedi"] as const;
+export type TeslimatSonuc = (typeof TESLIMAT_SONUCLARI)[number];
+
 export type TeslimatGirdi = {
   seferId: string;
   workerId: string;
@@ -42,6 +47,19 @@ export type TeslimatGirdi = {
   notlar?: string | null;
   /** İmza, SVG yol verisi (vektör) — birincil biçim. */
   imzaSvg?: string | null;
+  /** İmza, RASTER yedek yolu (Storage). `imzaSvg` ile BİRLİKTE gönderilemez. */
+  imzaYol?: string | null;
+  /**
+   * SONUÇ (109) — VERİLMEZSE KOLON HİÇ GÖNDERİLMEZ.
+   *
+   * `durakId`in desenini izliyor: 109 uygulanmamış bir kurulumda `sonuc`
+   * kolonu yoktur ve onu göndermek insert'i 42703 ile düşürürdü. Panelin
+   * bugünkü akışı sonucu bilmiyor (yalnız başarılı teslimatı tanıyor) ve
+   * göndermiyor — orada DB varsayılanı 'teslim' yazar.
+   */
+  sonuc?: TeslimatSonuc;
+  /** Teslim EDİLEMEDİYSE sebebi. `sonuc` verilmeden gönderilemez. */
+  sebep?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   dogrulukM?: number | null;
@@ -64,6 +82,13 @@ export type Teslimat = {
   zoneId: string | null;
   aliciAd: string | null;
   notlar: string | null;
+  /**
+   * 109 uygulanmamış kurulumda `null` — "ölçülmedi" demek, "teslim edildi"
+   * DEĞİL. Varsayılanı burada uydurmak, kaydedilmemiş bir sonucu kaydedilmiş
+   * gibi göstermek olurdu.
+   */
+  sonuc: TeslimatSonuc | null;
+  sebep: string | null;
   imzaSvg: string | null;
   imzaYol: string | null;
   teslimAt: string;
@@ -76,30 +101,51 @@ export type Teslimat = {
 };
 
 /**
- * ⚠️ İKİ KOLON LİSTESİ — 082 UYGULANMAMIŞ KURULUM İÇİN.
+ * ⚠️ KOLON KADEMELERİ — 082/109 UYGULANMAMIŞ KURULUMLAR İÇİN.
  *
- * `durak_id` 082 ile geliyor. Kolonu koşulsuz seçmek, 082'yi çalıştırmamış bir
- * kiracıda TÜM ePOD okumasını 42703 ile düşürürdü — yani 080 ile gelen
- * çalışan bir özelliği yeni bir migration'a rehin almak. Okuma önce yeni
- * listeyle denenir, kolon yoksa ESKİ listeye düşer ve durum bir kez loglanır.
- * Sessiz düşüş yok, kırılma da yok.
+ * `durak_id` 082, `sonuc`/`sebep` 109 ile geliyor. Kolonları koşulsuz seçmek,
+ * o migration'ı çalıştırmamış bir kiracıda TÜM ePOD okumasını 42703 ile
+ * düşürürdü — yani 080 ile gelen çalışan bir özelliği yeni bir migration'a
+ * rehin almak. Okuma en dolu listeyle başlar, kolon yoksa bir alt kademeye
+ * düşer ve HANGİSİNİN eksik olduğu bir kez loglanır. Sessiz düşüş yok,
+ * kırılma da yok.
+ *
+ * ⚠️ KADEME SIRASI KEYFİ DEĞİL: 109'un taslak tablosu `sefer_duraklari`ya
+ * yabancı anahtarla bağlı, yani 109 çalıştıysa 082 de çalışmıştır. Bu yüzden
+ * "durak_id yok ama sonuc var" kademesi YOKTUR — olamaz.
  */
-const COLS =
-  "id, sefer_id, durak_no, durak_id, worker_id, zone_id, alici_ad, notlar, imza_svg, imza_yol, teslim_at, latitude, longitude, konum_dogruluk_m, iptal_at, iptal_sebep";
-const COLS_082_ONCESI =
+const TABAN_COLS =
   "id, sefer_id, durak_no, worker_id, zone_id, alici_ad, notlar, imza_svg, imza_yol, teslim_at, latitude, longitude, konum_dogruluk_m, iptal_at, iptal_sebep";
 
-let durakKolonuUyarildi = false;
-function durakKolonuYok(): string {
-  if (!durakKolonuUyarildi) {
-    durakKolonuUyarildi = true;
-    console.warn(
-      "[teslimat-db] `teslimatlar.durak_id` yok — migration 082 uygulanmamış. " +
-        "Kanıt okuması eski kolon listesine düştü; çok duraklı bağ KAPALI."
-    );
+const KOLON_KADEMELERI: { cols: string; eksik: string }[] = [
+  { cols: `${TABAN_COLS}, durak_id, sonuc, sebep`, eksik: "" },
+  { cols: `${TABAN_COLS}, durak_id`, eksik: "`sonuc`/`sebep` yok — migration 109 uygulanmamış. Teslimat sonucu OKUNAMIYOR." },
+  { cols: TABAN_COLS, eksik: "`durak_id` yok — migration 082 uygulanmamış. Çok duraklı bağ KAPALI." },
+];
+
+const uyarilan = new Set<number>();
+
+/**
+ * Kademeli okuma: ilk kademeden başlar, `kolonYokMu` gördükçe iner.
+ * Çağıranların hepsi aynı merdiveni kullansın diye tek yerde.
+ */
+async function kademeliOku<T>(
+  calistir: (cols: string) => PromiseLike<{ data: T | null; error: { code?: string | null; message?: string | null } | null }>
+): Promise<{ data: T | null; error: { code?: string | null; message?: string | null } | null }> {
+  let son: Awaited<ReturnType<typeof calistir>> = { data: null, error: null };
+  for (let i = 0; i < KOLON_KADEMELERI.length; i++) {
+    son = await calistir(KOLON_KADEMELERI[i].cols);
+    if (!son.error || !kolonYokMu(son.error)) return son;
+    const sonraki = KOLON_KADEMELERI[i + 1];
+    if (!sonraki) return son;
+    if (!uyarilan.has(i + 1)) {
+      uyarilan.add(i + 1);
+      console.warn(`[teslimat-db] ${sonraki.eksik}`);
+    }
   }
-  return COLS_082_ONCESI;
+  return son;
 }
+
 const FOTO_COLS = "id, teslimat_id, storage_path, taken_at, latitude, longitude";
 
 function cevir(r: Record<string, unknown>, fotolar: TeslimatFoto[]): Teslimat {
@@ -112,6 +158,8 @@ function cevir(r: Record<string, unknown>, fotolar: TeslimatFoto[]): Teslimat {
     zoneId: r.zone_id ? String(r.zone_id) : null,
     aliciAd: r.alici_ad ? String(r.alici_ad) : null,
     notlar: r.notlar ? String(r.notlar) : null,
+    sonuc: r.sonuc === "teslim" || r.sonuc === "teslim_edilemedi" ? r.sonuc : null,
+    sebep: r.sebep ? String(r.sebep) : null,
     imzaSvg: r.imza_svg ? String(r.imza_svg) : null,
     imzaYol: r.imza_yol ? String(r.imza_yol) : null,
     teslimAt: String(r.teslim_at),
@@ -126,7 +174,11 @@ function cevir(r: Record<string, unknown>, fotolar: TeslimatFoto[]): Teslimat {
 
 export type YazmaSonuc =
   | { ok: true; id: string }
-  | { ok: false; sebep: "tablo_yok" | "durak_dolu" | "kanit_yok" | "hata"; mesaj?: string };
+  | {
+      ok: false;
+      sebep: "tablo_yok" | "kolon_yok" | "durak_dolu" | "kanit_yok" | "hata";
+      mesaj?: string;
+    };
 
 /** PostgREST tekil kısıt ihlali. */
 function cakismaMi(e: { code?: string | null }): boolean {
@@ -149,9 +201,23 @@ export async function createTeslimat(
   fotoVarMi: boolean
 ): Promise<YazmaSonuc> {
   const imza = g.imzaSvg?.trim() || null;
+  const imzaYol = g.imzaYol?.trim() || null;
   const not = g.notlar?.trim() || null;
   const alici = g.aliciAd?.trim() || null;
-  if (!imza && !fotoVarMi && !not && !alici) {
+  const sebep = g.sebep?.trim() || null;
+
+  /**
+   * ⚠️ BAŞARISIZ TESLİMATIN KANITI SEBEBİDİR (109).
+   *
+   * "En az bir kanıt" kuralı 080'den beri imza/fotoğraf/not/alıcı arıyordu ve
+   * o kural YALNIZ başarılı teslimat için yazılmıştı. Teslim EDİLEMEDİYSE
+   * imza alınacak kimse, çekilecek teslim fotoğrafı yoktur; kaydın taşıdığı
+   * bilgi sebebin kendisidir — ve o zaten zorunlu (şemada `teslimat_sebep_butun`).
+   * Sebebi kanıt saymasaydık, meşru bir "teslim edilemedi" kaydı `kanit_yok`
+   * ile reddedilirdi.
+   */
+  const basarisiz = g.sonuc === "teslim_edilemedi";
+  if (!imza && !imzaYol && !fotoVarMi && !not && !alici && !(basarisiz && sebep)) {
     return { ok: false, sebep: "kanit_yok" };
   }
 
@@ -163,11 +229,21 @@ export async function createTeslimat(
       // ⚠️ Yalnız DOLUYSA gönderiliyor: 082 uygulanmamış kurulumda `durak_id`
       // kolonu yoktur ve null göndermek insert'i 42703 ile düşürürdü.
       ...(g.durakId ? { durak_id: g.durakId } : {}),
+      /**
+       * ⚠️ AYNI DESEN, 109 İÇİN: `sonuc` verilmediyse kolon HİÇ gönderilmez ve
+       * 109 uygulanmamış kurulumda panelin yolu kırılmadan çalışmayı sürdürür
+       * (orada DB varsayılanı 'teslim' yazar). Verildiyse gönderilir ve kolon
+       * yoksa 42703 döner — SESSİZCE 'teslim'e düşmez: "teslim edilemedi"yi
+       * sessizce "teslim edildi" diye kaydetmek, kanıdın kendisini tersine
+       * çevirmek olurdu.
+       */
+      ...(g.sonuc ? { sonuc: g.sonuc, sebep: basarisiz ? sebep : null } : {}),
       worker_id: g.workerId,
       zone_id: g.zoneId ?? null,
       alici_ad: alici,
       notlar: not,
       imza_svg: imza,
+      imza_yol: imzaYol,
       latitude: g.latitude ?? null,
       longitude: g.longitude ?? null,
       konum_dogruluk_m: g.dogrulukM ?? null,
@@ -180,9 +256,11 @@ export async function createTeslimat(
       ok: false,
       sebep: error && tabloYokMu(error)
         ? "tablo_yok"
-        : error && cakismaMi(error)
-          ? "durak_dolu"
-          : "hata",
+        : error && kolonYokMu(error)
+          ? "kolon_yok"
+          : error && cakismaMi(error)
+            ? "durak_dolu"
+            : "hata",
       mesaj: error?.message,
     };
   }
@@ -221,11 +299,9 @@ export async function addTeslimatFoto(
 export async function listTeslimatBySefer(
   seferId: string
 ): Promise<{ teslimatlar: Teslimat[]; tabloYok: boolean }> {
-  const oku = (cols: string) =>
-    supabaseAdmin.from("teslimatlar").select(cols).eq("sefer_id", seferId).order("durak_no");
-
-  let { data, error } = await oku(COLS);
-  if (error && kolonYokMu(error)) ({ data, error } = await oku(durakKolonuYok()));
+  const { data, error } = await kademeliOku((cols) =>
+    supabaseAdmin.from("teslimatlar").select(cols).eq("sefer_id", seferId).order("durak_no")
+  );
   if (error) return { teslimatlar: [], tabloYok: tabloYokMu(error) };
 
   const satirlar = (data ?? []) as unknown as Record<string, unknown>[];
@@ -260,11 +336,9 @@ export async function listTeslimatBySefer(
 
 /** Tek kanıt — sahiplik denetimi için (çağıran karşılaştırır). */
 export async function getTeslimat(id: string): Promise<Teslimat | null> {
-  const oku = (cols: string) =>
-    supabaseAdmin.from("teslimatlar").select(cols).eq("id", id).maybeSingle();
-
-  let { data, error } = await oku(COLS);
-  if (error && kolonYokMu(error)) ({ data, error } = await oku(durakKolonuYok()));
+  const { data, error } = await kademeliOku((cols) =>
+    supabaseAdmin.from("teslimatlar").select(cols).eq("id", id).maybeSingle()
+  );
   if (error || !data) return null;
   const { data: fotoData } = await supabaseAdmin
     .from("teslimat_fotograflari")
@@ -354,4 +428,280 @@ export async function getTeslimatByDurak(
     tabloYok: false,
     kolonYok: false,
   };
+}
+
+// ── OKUMA GÖRÜNÜMÜ — PANEL VE MOBİL TEK YERDEN İMZALAR ─────────────────────
+
+export type KanitFotoGorunum = TeslimatFoto & { url: string | null };
+export type KanitGorunum = Omit<Teslimat, "fotograflar"> & {
+  fotograflar: KanitFotoGorunum[];
+  /** İmza RASTER ise onun kısa ömürlü URL'i; vektör imzada (imza_svg) null. */
+  imzaUrl: string | null;
+};
+
+/**
+ * Kanıt satırlarını GÖRÜNÜME çevirir: özel kovadaki her yol kısa ömürlü imzalı
+ * URL olur.
+ *
+ * ⚠️ BU FONKSİYON İKİ YÜZEYİN ORTAK OKUMASIDIR — panel sunucu eylemi
+ * (`app/actions/teslimat.ts`) ve mobil GET ucu aynı gövdeyi üretir. Eskiden
+ * imzalama panelin action dosyasında ÖZEL bir yardımcıydı; mobil uç eklenirken
+ * kopyalansaydı iki yüzey aynı kanıta farklı alanlarla bakardı ve TTL'i biri
+ * değiştirdiğinde diğeri geride kalırdı. `lib/is-emri-db.ts`in kuralı burada
+ * da geçerli: kural çekirdekte, yüzeyler çağırır.
+ *
+ * ⚠️ İMZA DA İMZALANIYOR (109): `imza_yol` 080'de RASTER YEDEK olarak
+ * tanımlanmıştı ama bugüne dek ne yazılıyor ne okunuyordu (ölçüldü 21.09.2026).
+ * Mobil "kanıt bırak" ucu PNG imza kabul ettiği an o yol dolmaya başlıyor ve
+ * imzalanmadan gösterilemez — özel kova.
+ *
+ * Tek turda imzalanıyor: N kanıt × M fotoğraf için tek Storage isteği
+ * (`signedReceiptUrls`), satır başına gidiş-dönüş değil.
+ */
+export async function imzaliKanitlar(teslimatlar: Teslimat[]): Promise<KanitGorunum[]> {
+  const yollar = [
+    ...teslimatlar.flatMap((t) => t.fotograflar.map((f) => f.storagePath)),
+    ...teslimatlar.map((t) => t.imzaYol).filter((y): y is string => Boolean(y)),
+  ];
+  const harita = yollar.length
+    ? await signedReceiptUrls(TESLIMAT_KOVASI, yollar)
+    : new Map<string, string>();
+  return teslimatlar.map((t) => ({
+    ...t,
+    fotograflar: t.fotograflar.map((f) => ({ ...f, url: harita.get(f.storagePath) ?? null })),
+    imzaUrl: t.imzaYol ? (harita.get(t.imzaYol) ?? null) : null,
+  }));
+}
+
+// ── KANIT TASLAĞI (109) ────────────────────────────────────────────────────
+
+/**
+ * TASLAK = kanıt AÇILMADAN önce yüklenmiş dosya. DELİL DEĞİLDİR.
+ *
+ * ═══ NEDEN VAR ═══
+ *
+ * Panelin akışı "önce kanıt kaydı, sonra fotoğraflar"; telefonunki TERSİ —
+ * şoför kapıda önce fotoğrafı çeker, "teslim ettim" düğmesine bastığı an işin
+ * SONUDUR. Panelin sırasını telefona dayatmak, fotoğraf yüklenmeden yarım bir
+ * delil kaydı açmak demekti.
+ *
+ * ⚠️ Taslak DEĞİŞEBİLİR ve SİLİNEBİLİR; kanıt (`teslimatlar`,
+ * `teslimat_fotograflari`) değişemez ve silinemez (080 HK080 tetikleyicileri).
+ * Bağlama anında satır kanıt tablosuna INSERT edilir — kanıt tarafında tek bir
+ * UPDATE yolu AÇILMADI. Migration 109 başlığı bu üç yolun neden (a) ve (b)
+ * değil (c) olduğunu ölçümle anlatıyor.
+ */
+export const TASLAK_TABLO = "teslimat_taslak_dosyalari";
+export type TaslakTur = "foto" | "imza";
+
+export type TaslakDosya = {
+  id: string;
+  seferId: string;
+  durakId: string;
+  workerId: string;
+  tur: TaslakTur;
+  storagePath: string;
+  takenAt: string;
+  latitude: number | null;
+  longitude: number | null;
+  dogrulukM: number | null;
+};
+
+const TASLAK_COLS =
+  "id, sefer_id, durak_id, worker_id, tur, storage_path, taken_at, latitude, longitude, konum_dogruluk_m";
+
+function taslakCevir(r: Record<string, unknown>): TaslakDosya {
+  return {
+    id: String(r.id),
+    seferId: String(r.sefer_id),
+    durakId: String(r.durak_id),
+    workerId: String(r.worker_id),
+    tur: r.tur === "imza" ? "imza" : "foto",
+    storagePath: String(r.storage_path),
+    takenAt: String(r.taken_at),
+    latitude: r.latitude == null ? null : Number(r.latitude),
+    longitude: r.longitude == null ? null : Number(r.longitude),
+    dogrulukM: r.konum_dogruluk_m == null ? null : Number(r.konum_dogruluk_m),
+  };
+}
+
+/** Taslak satırı açar. Dosya yüklemesi çağıranda (`yukleVeYaz`). */
+export async function createTaslak(
+  g: {
+    seferId: string;
+    durakId: string;
+    workerId: string;
+    tur: TaslakTur;
+    storagePath: string;
+  },
+  konum: { latitude?: number | null; longitude?: number | null; dogrulukM?: number | null }
+): Promise<YazmaSonuc> {
+  const { data, error } = await supabaseAdmin
+    .from(TASLAK_TABLO)
+    .insert({
+      sefer_id: g.seferId,
+      durak_id: g.durakId,
+      worker_id: g.workerId,
+      tur: g.tur,
+      storage_path: g.storagePath,
+      latitude: konum.latitude ?? null,
+      longitude: konum.longitude ?? null,
+      konum_dogruluk_m: konum.dogrulukM ?? null,
+    })
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    return {
+      ok: false,
+      sebep: error && tabloYokMu(error) ? "tablo_yok" : "hata",
+      mesaj: error?.message,
+    };
+  }
+  return { ok: true, id: String((data as { id: string }).id) };
+}
+
+/**
+ * Kimliği verilen taslakları getirir — AMA yalnız SAHİBİNİN ve YALNIZ O DURAĞIN.
+ *
+ * ⚠️ Süzgeç sorguda, çağıranda değil: "sonra kontrol ederim" diye alınan bir
+ * satır, unutulan bir `if` ile başkasının dosyasını kanıta bağlardı. Sorgu
+ * eşleşmeyeni HİÇ GETİRMEZ, çağıran da sayıyı karşılaştırır (bkz. `tamamMi`).
+ */
+export async function getTaslaklar(
+  ids: string[],
+  sahip: { durakId: string; workerId: string }
+): Promise<{
+  taslaklar: TaslakDosya[];
+  tabloYok: boolean;
+  /** 🔴 Tablo VAR ama sorgu düştü (timeout, 5xx). "Taslak yok" DEĞİL. */
+  dbHatasi: boolean;
+  tamamMi: boolean;
+}> {
+  const benzersiz = [...new Set(ids.filter(Boolean))];
+  if (benzersiz.length === 0) {
+    return { taslaklar: [], tabloYok: false, dbHatasi: false, tamamMi: true };
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from(TASLAK_TABLO)
+    .select(TASLAK_COLS)
+    .in("id", benzersiz)
+    .eq("durak_id", sahip.durakId)
+    .eq("worker_id", sahip.workerId)
+    .order("taken_at");
+
+  /**
+   * ⚠️ ÜÇ HÂL AYRI AYRI DÖNÜYOR — ikisini birleştirmek şoföre pahalıya patlar.
+   *
+   * ÖLÇÜLDÜ: eskiden her hata `tamamMi:false`ya düşüyordu ve uç bunu
+   * `400 taslak_yok` diye çeviriyordu. Yani PostgREST'te bir statement timeout
+   * (57014) ya da geçici 5xx, şoföre "yüklediğin fotoğraflar yok" diyordu —
+   * şoför de üç fotoğrafı yeniden çeker, kotasını ikinci kez yerdi. Oysa
+   * dosyalar yerli yerinde duruyordu.
+   *
+   *   tabloYok  → 109 uygulanmamış           → uç 409 ozellik_kapali
+   *   dbHatasi  → geçici arıza               → uç 503 (yeniden dene)
+   *   !tamamMi  → GERÇEKTEN eksik/yabancı id → uç 400 taslak_yok
+   */
+  if (error) {
+    const yok = tabloYokMu(error);
+    return { taslaklar: [], tabloYok: yok, dbHatasi: !yok, tamamMi: false };
+  }
+  const taslaklar = ((data ?? []) as Record<string, unknown>[]).map(taslakCevir);
+  return {
+    taslaklar,
+    tabloYok: false,
+    dbHatasi: false,
+    tamamMi: taslaklar.length === benzersiz.length,
+  };
+}
+
+/**
+ * Bağlanan taslak satırlarını siler.
+ *
+ * ⚠️ DOSYA SİLİNMEZ — yol artık `teslimat_fotograflari` (ya da
+ * `teslimatlar.imza_yol`) tarafından tutuluyor. Dosyayı silmek delili silmek
+ * olurdu.
+ *
+ * Düşerse kanıt YİNE DE geçerlidir: geride kalan taslak satırı zararsızdır,
+ * çünkü aynı dosyanın ikinci kez kanıta bağlanmasını `teslimat_foto_yol_uq`
+ * (080) 23505 ile zaten reddeder. Bu yüzden sonuç DÖNER ama çağıranı
+ * düşürmez — yanıtta görünür, yutulmaz.
+ */
+export async function deleteTaslaklar(ids: string[]): Promise<{ ok: boolean; silinen: number }> {
+  const benzersiz = [...new Set(ids.filter(Boolean))];
+  if (benzersiz.length === 0) return { ok: true, silinen: 0 };
+  const { data, error } = await supabaseAdmin
+    .from(TASLAK_TABLO)
+    .delete()
+    .in("id", benzersiz)
+    .select("id");
+  if (error) return { ok: false, silinen: 0 };
+  return { ok: true, silinen: (data ?? []).length };
+}
+
+/**
+ * Bir durakta BEKLEYEN (henüz kanıta bağlanmamış) taslaklar — yalnız sahibinin.
+ *
+ * ⚠️ `workerId` ZORUNLU PARAMETRE, isteğe bağlı bir süzgeç değil: yöneticinin
+ * şoförün yarım kalmış yüklemesini görmesi, bitmemiş bir işi delil sanmasına
+ * yol açardı. Taslak sahibine aittir; kanıt herkese.
+ */
+export async function listTaslakByDurak(
+  durakId: string,
+  workerId: string
+): Promise<{ taslaklar: TaslakDosya[]; tabloYok: boolean }> {
+  const { data, error } = await supabaseAdmin
+    .from(TASLAK_TABLO)
+    .select(TASLAK_COLS)
+    .eq("durak_id", durakId)
+    .eq("worker_id", workerId)
+    .order("taken_at");
+  if (error) return { taslaklar: [], tabloYok: tabloYokMu(error) };
+  return {
+    taslaklar: ((data ?? []) as Record<string, unknown>[]).map(taslakCevir),
+    tabloYok: false,
+  };
+}
+
+/**
+ * Seferde GEÇERLİ (iptal edilmemiş) kanıt var mı — şoför değişimini kilitler.
+ *
+ * ═══ NEDEN GEREKLİ ═══
+ *
+ * 🔴 ÖLÇÜLDÜ (21.09.2026): kanıt ucunun kapısı "yalnız seferin şoförü" olarak
+ * daraltıldı, ama `PATCH /api/mobile/sefer/[id]` gövdesindeki `soforId` seferin
+ * şoförünü SONRADAN değiştirebiliyordu ve o yolda kanıt hiç sorulmuyordu. İki
+ * ayrı kusur doğuruyordu:
+ *
+ *   (a) KİLİTLENME — A kanıt bırakır, yönetici seferi B'ye devreder. Artık
+ *       `kanit.workerId (A) !== worker.id (B)`: B kendi durağının fotoğrafını
+ *       ekleyemez (403) ve `teslimat_durak_id_uq` yüzünden yeni kanıt da
+ *       açamaz (409). Tam da kapının önlediği çıkışsız hâl, arka kapıdan geri
+ *       gelirdi.
+ *   (b) KAPI BYPASS — yönetici seferi KENDİNE devreder, kanıt bırakır, geri
+ *       devreder. "Yönetici kanıt yazamaz" kuralı iki adımda delinirdi.
+ *
+ * İki adımda delinebilen bir kapı, kapı değildir.
+ *
+ * ⚠️ İPTAL EDİLMİŞ kanıt SAYILMAZ: geçersiz ilan edilmiş bir delil, seferin
+ * şoförünü sonsuza dek kilitlememeli. `teslimat_durak_id_uq`in `iptal_at is
+ * null` şartıyla aynı ilke.
+ *
+ * ⚠️ TABLO YOKSA "yok" DÖNER (fail-open) ve bu bilinçli: 080'i çalıştırmamış
+ * bir kurulumda kanıt DİYE BİR ŞEY yok, dolayısıyla kilitlenecek bir bağ da
+ * yok. Fail-closed olsaydı ePOD'suz bir kiracıda şoför değişimi tümden
+ * kapanırdı — var olmayan bir delili korumak için çalışan bir özelliği kapatmak.
+ */
+export async function seferdeGecerliKanitVarMi(
+  seferId: string
+): Promise<{ varMi: boolean; sayi: number; tabloYok: boolean }> {
+  const { data, error } = await supabaseAdmin
+    .from("teslimatlar")
+    .select("id")
+    .eq("sefer_id", seferId)
+    .is("iptal_at", null);
+  if (error) return { varMi: false, sayi: 0, tabloYok: tabloYokMu(error) };
+  const sayi = (data ?? []).length;
+  return { varMi: sayi > 0, sayi, tabloYok: false };
 }

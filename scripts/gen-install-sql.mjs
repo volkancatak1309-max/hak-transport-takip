@@ -108,6 +108,7 @@ const ORDER = [
   // 106/107 `_beklemede/` altında (yakıt işi) — henüz hiçbir kiracıda koşmadı,
   // bu yüzden kurulum listesinde de yok. Kiracı ayarları o yüzden 108.
   "108_kiraci_ayarlari.sql",
+  "109_teslimat_sonuc_ve_taslak.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

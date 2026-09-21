@@ -12,6 +12,7 @@ import {
   type SeferYama,
 } from "@/lib/sefer-db";
 import { listDuraklar } from "@/lib/sefer-duraklari";
+import { seferdeGecerliKanitVarMi } from "@/lib/teslimat-db";
 import { govdeOku } from "../route";
 
 export const runtime = "nodejs";
@@ -96,6 +97,35 @@ export async function PATCH(
       .from("workers").select("id, is_active").eq("id", w).maybeSingle();
     if (!kisi) return mobileError(404, "worker_not_found", { alan: "soforId" });
     if (kisi.is_active !== true) return mobileError(409, "worker_pasif", { alan: "soforId" });
+
+    /**
+     * 🔴 KANIT VARSA ŞOFÖR DEĞİŞMEZ (109 turunda eklendi).
+     *
+     * Kanıt ucunun kapısı "yalnız seferin şoförü" olarak daraltıldı; bu uç o
+     * kapının ARKA KAPISIYDI. İki adımda delinebilen bir kapı, kapı değildir:
+     *
+     *   · KİLİTLENME — A kanıt bırakır, sefer B'ye devredilir; B kendi
+     *     durağının fotoğrafını ekleyemez (403 `kanit_senin_degil`) ve yeni
+     *     kanıt da açamaz (409, `teslimat_durak_id_uq`).
+     *   · BYPASS — yönetici seferi kendine devreder, kanıt yazar, geri
+     *     devreder. "Yönetici kanıt yazamaz" kuralı çiğnenmiş olur.
+     *
+     * ⚠️ Yalnız GERÇEK bir değişim engelleniyor: aynı şoförü yeniden yazmak
+     * (istemcinin tüm formu göndermesi) meşrudur ve reddedilmemeli.
+     * İPTAL EDİLMİŞ kanıt saymaz — düzeltme yolu açık kalmalı.
+     */
+    if (w !== mevcut.worker_id) {
+      const k = await seferdeGecerliKanitVarMi(id);
+      if (k.varMi) {
+        return mobileError(409, "kanit_var", {
+          alan: "soforId",
+          kanitSayisi: k.sayi,
+          aciklama:
+            "Bu seferde geçerli teslimat kanıtı var; şoför değişirse kanıdın sahibi ile seferin şoförü ayrışır. Önce kanıtı iptal edin.",
+        });
+      }
+    }
+
     yama.worker_id = w;
   }
 

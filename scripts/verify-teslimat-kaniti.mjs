@@ -109,6 +109,7 @@ console.log(`║ hedef  ${url}  (yerel QA · 109 uygulanmış)`);
 
 const TEL_SOFOR = "+430000000901";
 const TEL_DIGER = "+430000000902";
+const TEL_YONETICI = "+430000000903";
 const PIN = "183434";
 
 const temizlik = { teslimatIds: [], taslakIds: [], durakIds: [], seferIds: [], workerIds: [] };
@@ -118,10 +119,10 @@ try {
   baslik("0. TOHUM — şoför · ikinci şoför · sefer · durak");
 
   const pinHash = await bcrypt.hash(PIN, 10);
-  const wYaz = async (ad, tel) => {
+  const wYaz = async (ad, tel, yonetici = false) => {
     const { data, error } = await supabaseAdmin
       .from("workers")
-      .insert({ name: ad, phone: tel, pin_hash: pinHash, is_admin: false, is_active: true })
+      .insert({ name: ad, phone: tel, pin_hash: pinHash, is_admin: yonetici, is_active: true })
       .select("id, name, phone, is_admin, token_version")
       .maybeSingle();
     if (error) throw new Error(`${ad} yazılamadı: ${error.message}`);
@@ -130,8 +131,10 @@ try {
   };
   const sofor = await wYaz("QA Sofor", TEL_SOFOR);
   const diger = await wYaz("QA Diger Sofor", TEL_DIGER);
-  bilgi(`şoför  ${sofor.id}`);
-  bilgi(`diğer  ${diger.id}`);
+  const yonetici = await wYaz("QA Yonetici", TEL_YONETICI, true);
+  bilgi(`şoför    ${sofor.id}`);
+  bilgi(`diğer    ${diger.id}`);
+  bilgi(`yönetici ${yonetici.id}  is_admin=${yonetici.is_admin}`);
 
   const bugun = new Date().toISOString().slice(0, 10);
   const { data: sefer, error: sErr } = await supabaseAdmin
@@ -171,6 +174,12 @@ try {
   const tokenDiger = g2.govde?.accessToken ?? g2.govde?.access_token ?? null;
   iddia("ikinci şoför de giriş yaptı", Boolean(tokenDiger), `${g2.kod}`);
 
+  const g3 = await cevap(
+    await LOGIN(jsonIstek("/api/mobile/auth/login", { govde: { phone: TEL_YONETICI, pin: PIN } }))
+  );
+  const tokenYonetici = g3.govde?.accessToken ?? g3.govde?.access_token ?? null;
+  iddia("yönetici de giriş yaptı", Boolean(tokenYonetici), `${g3.kod}`);
+
   // ══════════════════════════════════════════════════════════════════════════
   baslik("2. KAPILAR");
 
@@ -189,6 +198,46 @@ try {
     "başkasının seferi → 403 sefer_sizin_degil",
     r403.kod === 403 && r403.govde?.error === "sefer_sizin_degil",
     `${r403.kod} ${r403.govde?.error}`
+  );
+
+  // 🔴 VOLKAN KARARI 21.09.2026 — kanıtı YALNIZ seferin şoförü bırakır.
+  const rYonetici = await cevap(
+    await KANIT.POST(
+      jsonIstek(YOL, { token: tokenYonetici, govde: { sonuc: "teslim", not: "yonetici denemesi" } }),
+      params(sefer.id, durak.id)
+    )
+  );
+  iddia(
+    "🔴 YÖNETİCİ POST → 403 (yazmada muafiyet YOK)",
+    rYonetici.kod === 403 && rYonetici.govde?.error === "sefer_sizin_degil",
+    `${rYonetici.kod} ${rYonetici.govde?.error}`
+  );
+
+  const rYoneticiTaslak = await cevap(
+    await FOTO(
+      fotoIstek(FOTO_YOL, {
+        token: tokenYonetici,
+        dosya: JPG,
+        ad: "y.jpg",
+        tip: "image/jpeg",
+        alanlar: { taslak: "1" },
+      }),
+      params(sefer.id, durak.id)
+    )
+  );
+  iddia(
+    "🔴 YÖNETİCİ TASLAK → 403 (iki kapı aynı cümle)",
+    rYoneticiTaslak.kod === 403 && rYoneticiTaslak.govde?.error === "sefer_sizin_degil",
+    `${rYoneticiTaslak.kod} ${rYoneticiTaslak.govde?.error}`
+  );
+
+  const rYoneticiGet = await cevap(
+    await KANIT.GET(jsonIstek(YOL, { token: tokenYonetici, method: "GET" }), params(sefer.id, durak.id))
+  );
+  iddia(
+    "yönetici GET → 200 (GÖRME yöneticide kalıyor)",
+    rYoneticiGet.kod === 200,
+    `${rYoneticiGet.kod}`
   );
 
   const r400 = await cevap(
@@ -332,7 +381,13 @@ try {
     )
   );
   iddia("kanıt → 200", rKanit.kod === 200 && rKanit.govde?.ok === true, `${rKanit.kod}`);
-  const kanitId = rKanit.govde?.kanit?.id ?? null;
+  /**
+   * ⚠️ `kanitId` ÖNCE OKUNUYOR, `kanit.id` YEDEK. Ucun kendi uyarısı:
+   * geri okuma düşerse gövde `kanit:null` + `kanitId:"<uuid>"` olur ve SATIR
+   * YAZILMIŞTIR. Yalnız `kanit?.id` okunsaydı temizlik o satırı kaçırır,
+   * ardından durak silmesi `teslimatlar.durak_id` yüzünden düşerdi.
+   */
+  const kanitId = rKanit.govde?.kanitId ?? rKanit.govde?.kanit?.id ?? null;
   if (kanitId) temizlik.teslimatIds.push(kanitId);
   iddia("sonuc = teslim", rKanit.govde?.kanit?.sonuc === "teslim", `${rKanit.govde?.kanit?.sonuc}`);
   iddia("sebep NULL", rKanit.govde?.kanit?.sebep === null, `${rKanit.govde?.kanit?.sebep}`);
@@ -387,6 +442,28 @@ try {
   iddia("GET'te de fotoğraf URL'i var", Boolean(rGet.govde?.kanit?.fotograflar?.[0]?.url), null);
   iddia("GET'te de imza URL'i var", Boolean(rGet.govde?.kanit?.imzaUrl), null);
   iddia("bekleyen taslak listesi boş", (rGet.govde?.bekleyenTaslaklar ?? []).length === 0, null);
+
+  /**
+   * ⚠️ YÖNETİCİ GET'İ BURADA, KANIT DOĞDUKTAN SONRA ÖLÇÜLÜYOR.
+   * "2. KAPILAR"daki yönetici GET'i durakta kanıt YOKKEN çağrılıyordu ve yalnız
+   * 200'e bakıyordu — yani "görme yöneticide kalır" yarısı fiilen ölçülmüyordu.
+   * Gövde de iddia ediliyor: yönetici GERÇEK kanıdı ve imzalı URL'lerini görmeli.
+   */
+  const rYonGet2 = await cevap(
+    await KANIT.GET(jsonIstek(YOL, { token: tokenYonetici, method: "GET" }), params(sefer.id, durak.id))
+  );
+  iddia("yönetici GET → 200 (kanıt VARKEN)", rYonGet2.kod === 200, `${rYonGet2.kod}`);
+  iddia("yönetici AYNI kanıdı görüyor", rYonGet2.govde?.kanit?.id === kanitId, `${rYonGet2.govde?.kanit?.id}`);
+  iddia(
+    "yönetici fotoğrafın imzalı URL'ini görüyor",
+    Boolean(rYonGet2.govde?.kanit?.fotograflar?.[0]?.url),
+    null
+  );
+  iddia(
+    "yönetici BAŞKASININ taslağını GÖRMÜYOR",
+    (rYonGet2.govde?.bekleyenTaslaklar ?? []).length === 0,
+    `${(rYonGet2.govde?.bekleyenTaslaklar ?? []).length}`
+  );
 
   // ══════════════════════════════════════════════════════════════════════════
   baslik("6. PANEL AYNI ÇEKİRDEĞİ OKUYOR MU (kopya yok)");
@@ -541,9 +618,16 @@ try {
 } finally {
   // ── TEMİZLİK: her şey geri alınır ────────────────────────────────────────
   baslik("10. TEMİZLİK");
+  /**
+   * ⚠️ SİLME HATASI YUTULMUYOR. Eskiden `error` destructure bile edilmiyordu:
+   * bir silme düşse betik yine "temizlendi" der, kalıntı sessizce dururdu —
+   * tam da bu betiğin önlemek için var olduğu şey.
+   */
+  const silmeHatalari = [];
   const sil = async (tablo, kolon, idler) => {
     if (!idler.length) return 0;
-    const { data } = await supabaseAdmin.from(tablo).delete().in(kolon, idler).select("id");
+    const { data, error } = await supabaseAdmin.from(tablo).delete().in(kolon, idler).select("id");
+    if (error) silmeHatalari.push(`${tablo}: ${error.code} ${error.message}`);
     return (data ?? []).length;
   };
   const f = await sil("teslimat_fotograflari", "teslimat_id", temizlik.teslimatIds);
@@ -562,6 +646,11 @@ try {
     .select("id", { count: "exact", head: true });
   iddia("SONRA: teslimatlar = 0", kalanKanit === 0, `${kalanKanit}`);
   iddia("SONRA: taslak = 0", kalanTaslak === 0, `${kalanTaslak}`);
+  iddia(
+    "hiçbir silme DÜŞMEDİ",
+    silmeHatalari.length === 0,
+    silmeHatalari.length ? silmeHatalari.join(" · ") : "0 hata"
+  );
 
   console.log(
     `\n╚══ ${dusen === 0 ? "✅ TÜM İDDİALAR GEÇTİ" : `🔴 ${dusen} İDDİA DÜŞTÜ`} ══════════════════\n`

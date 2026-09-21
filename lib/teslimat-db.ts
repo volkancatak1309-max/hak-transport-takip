@@ -570,9 +570,17 @@ export async function createTaslak(
 export async function getTaslaklar(
   ids: string[],
   sahip: { durakId: string; workerId: string }
-): Promise<{ taslaklar: TaslakDosya[]; tabloYok: boolean; tamamMi: boolean }> {
+): Promise<{
+  taslaklar: TaslakDosya[];
+  tabloYok: boolean;
+  /** 🔴 Tablo VAR ama sorgu düştü (timeout, 5xx). "Taslak yok" DEĞİL. */
+  dbHatasi: boolean;
+  tamamMi: boolean;
+}> {
   const benzersiz = [...new Set(ids.filter(Boolean))];
-  if (benzersiz.length === 0) return { taslaklar: [], tabloYok: false, tamamMi: true };
+  if (benzersiz.length === 0) {
+    return { taslaklar: [], tabloYok: false, dbHatasi: false, tamamMi: true };
+  }
 
   const { data, error } = await supabaseAdmin
     .from(TASLAK_TABLO)
@@ -582,9 +590,30 @@ export async function getTaslaklar(
     .eq("worker_id", sahip.workerId)
     .order("taken_at");
 
-  if (error) return { taslaklar: [], tabloYok: tabloYokMu(error), tamamMi: false };
+  /**
+   * ⚠️ ÜÇ HÂL AYRI AYRI DÖNÜYOR — ikisini birleştirmek şoföre pahalıya patlar.
+   *
+   * ÖLÇÜLDÜ: eskiden her hata `tamamMi:false`ya düşüyordu ve uç bunu
+   * `400 taslak_yok` diye çeviriyordu. Yani PostgREST'te bir statement timeout
+   * (57014) ya da geçici 5xx, şoföre "yüklediğin fotoğraflar yok" diyordu —
+   * şoför de üç fotoğrafı yeniden çeker, kotasını ikinci kez yerdi. Oysa
+   * dosyalar yerli yerinde duruyordu.
+   *
+   *   tabloYok  → 109 uygulanmamış           → uç 409 ozellik_kapali
+   *   dbHatasi  → geçici arıza               → uç 503 (yeniden dene)
+   *   !tamamMi  → GERÇEKTEN eksik/yabancı id → uç 400 taslak_yok
+   */
+  if (error) {
+    const yok = tabloYokMu(error);
+    return { taslaklar: [], tabloYok: yok, dbHatasi: !yok, tamamMi: false };
+  }
   const taslaklar = ((data ?? []) as Record<string, unknown>[]).map(taslakCevir);
-  return { taslaklar, tabloYok: false, tamamMi: taslaklar.length === benzersiz.length };
+  return {
+    taslaklar,
+    tabloYok: false,
+    dbHatasi: false,
+    tamamMi: taslaklar.length === benzersiz.length,
+  };
 }
 
 /**
@@ -633,4 +662,46 @@ export async function listTaslakByDurak(
     taslaklar: ((data ?? []) as Record<string, unknown>[]).map(taslakCevir),
     tabloYok: false,
   };
+}
+
+/**
+ * Seferde GEÇERLİ (iptal edilmemiş) kanıt var mı — şoför değişimini kilitler.
+ *
+ * ═══ NEDEN GEREKLİ ═══
+ *
+ * 🔴 ÖLÇÜLDÜ (21.09.2026): kanıt ucunun kapısı "yalnız seferin şoförü" olarak
+ * daraltıldı, ama `PATCH /api/mobile/sefer/[id]` gövdesindeki `soforId` seferin
+ * şoförünü SONRADAN değiştirebiliyordu ve o yolda kanıt hiç sorulmuyordu. İki
+ * ayrı kusur doğuruyordu:
+ *
+ *   (a) KİLİTLENME — A kanıt bırakır, yönetici seferi B'ye devreder. Artık
+ *       `kanit.workerId (A) !== worker.id (B)`: B kendi durağının fotoğrafını
+ *       ekleyemez (403) ve `teslimat_durak_id_uq` yüzünden yeni kanıt da
+ *       açamaz (409). Tam da kapının önlediği çıkışsız hâl, arka kapıdan geri
+ *       gelirdi.
+ *   (b) KAPI BYPASS — yönetici seferi KENDİNE devreder, kanıt bırakır, geri
+ *       devreder. "Yönetici kanıt yazamaz" kuralı iki adımda delinirdi.
+ *
+ * İki adımda delinebilen bir kapı, kapı değildir.
+ *
+ * ⚠️ İPTAL EDİLMİŞ kanıt SAYILMAZ: geçersiz ilan edilmiş bir delil, seferin
+ * şoförünü sonsuza dek kilitlememeli. `teslimat_durak_id_uq`in `iptal_at is
+ * null` şartıyla aynı ilke.
+ *
+ * ⚠️ TABLO YOKSA "yok" DÖNER (fail-open) ve bu bilinçli: 080'i çalıştırmamış
+ * bir kurulumda kanıt DİYE BİR ŞEY yok, dolayısıyla kilitlenecek bir bağ da
+ * yok. Fail-closed olsaydı ePOD'suz bir kiracıda şoför değişimi tümden
+ * kapanırdı — var olmayan bir delili korumak için çalışan bir özelliği kapatmak.
+ */
+export async function seferdeGecerliKanitVarMi(
+  seferId: string
+): Promise<{ varMi: boolean; sayi: number; tabloYok: boolean }> {
+  const { data, error } = await supabaseAdmin
+    .from("teslimatlar")
+    .select("id")
+    .eq("sefer_id", seferId)
+    .is("iptal_at", null);
+  if (error) return { varMi: false, sayi: 0, tabloYok: tabloYokMu(error) };
+  const sayi = (data ?? []).length;
+  return { varMi: sayi > 0, sayi, tabloYok: false };
 }

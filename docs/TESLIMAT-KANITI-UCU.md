@@ -14,9 +14,9 @@ fotoğraf ucu pratikte kilitliydi.
 
 | Yol | Ne yapar | Kapı |
 |---|---|---|
-| `POST /api/mobile/sefer/[id]/duraklar/[durakId]/kanit` | kanıt bırakır + durak durumunu ilerletir | şoför (kendi seferi) **ya da** yönetici |
-| `GET` aynı yol | kanıt + foto/imza imzalı URL'leri + bekleyen taslaklar | aynı |
-| `POST …/duraklar/[durakId]/foto` + `taslak=1` | kanıt AÇILMADAN dosya yükler, `id` döner | aynı |
+| `POST /api/mobile/sefer/[id]/duraklar/[durakId]/kanit` | kanıt bırakır + durak durumunu ilerletir | 🔴 **yalnız seferin şoförü** — yönetici de 403 |
+| `GET` aynı yol | kanıt + foto/imza imzalı URL'leri + bekleyen taslaklar | şoför **ya da** yönetici (görme yöneticide) |
+| `POST …/duraklar/[durakId]/foto` + `taslak=1` | kanıt AÇILMADAN dosya yükler, `id` döner | POST ile **aynı** cümle |
 
 ### Gövde
 
@@ -76,6 +76,32 @@ fotoğraf "eklendi" sanılır, oysa hiçbir kanıta bağlı değildir.
 
 ---
 
+## 2b · 🔴 Kapı: kanıtı yalnız seferin şoförü bırakır
+
+**Volkan kararı, 21.09.2026.** Yazma tarafında yönetici muafiyeti **yok**;
+görme (`GET`) ve **iptal** yöneticide kalır.
+
+Panelin ePOD kuralının birebir aynısı (`app/actions/teslimat.ts`): *"teslimatı
+yapan kişi kanıtı da bırakan kişidir, aksi hâlde delilin kaynağı bulanıklaşır."*
+Sefer ağacındaki yazma yüzeylerinin hepsi aynı cümleyi kuruyor — `…/durum`,
+`/sefer/[id]/durum`, `app/actions/duraklar.ts`, panel kanıt eylemi; bu uç
+beşincisi.
+
+**Muafiyet açık kalsaydı uç kendi kendini kilitliyordu — ölçüldü:** kanıt
+`teslimatlar.worker_id`ye yöneticinin kimliğiyle yazılır; foto ucunun
+`kanit.workerId !== worker.id → 403 kanit_senin_degil` kapısı yüzünden **seferin
+şoförü kendi teslimatının fotoğrafını o kanıta ekleyemez**, ve
+`teslimat_durak_id_uq` (082) yüzünden ikinci kanıt da açamaz. Tek çıkış yolu
+yöneticinin kanıtı iptal etmesi olurdu. Kapı daraltılınca bu hâl **imkânsız**:
+kanıdın sahibi ile seferin şoförü daima aynı kişi.
+
+Kapı `kapiVeDurak(…, { seferAcikOlmali, yoneticiMuaf })` içinde tek yerde;
+POST `false`, GET `true` geçiyor. Bayrak `false` iken `is_admin` **hiç
+okunmuyor**. Taslak ucu da aynı cümleyi kuruyor — taslak sonradan kanıta
+dönüştüğü için gevşek olamaz.
+
+---
+
 ## 3 · Durak durumu — panel kuralıyla
 
 ```
@@ -110,6 +136,10 @@ hata sayıp kanıdı reddetmek, eldeki delili bir plan satırının durumu yüz�
 olsaydı `iptalTeslimat`ın null→dolu yazması, yani iptal yolunun kendisi
 kırılırdı. Kural "bir kez yazılır, sonra donar".
 
+✅ **109 ÜÇ KİRACIDA DA ÇALIŞTIRILDI (21.09.2026)** — doğrulama: kolon 2 /
+taslak tablosu 1. Aşağıdaki kademeli düşüş artık yeni açılacak kiracılar için
+duruyor.
+
 ⚠️ **109 uygulanmazsa** kanıt ucu `409 ozellik_kapali {migration:"109"}` döner.
 Panelin kanıt akışı, şoför ekranı ve mevcut fotoğraf ucu aynen çalışır.
 `sonuc` **sessizce atlanmaz**: "teslim edilemedi"yi sessizce "teslim edildi"
@@ -134,7 +164,7 @@ ne yazılıyor ne imzalanıyordu (ölçüldü). Artık ikisi de oluyor (`imzaUrl
 
 ## 6 · Kanıt
 
-### Uçtan uca — gerçek Postgres, 109 UYGULANMIŞ (58/58 ✓)
+### Uçtan uca — gerçek Postgres, 109 UYGULANMIŞ (62/62 ✓)
 
 ```bash
 docker run -d --name hak-qa -e POSTGRES_PASSWORD=qa -e POSTGRES_DB=hak -p 55432:5432 postgres:16
@@ -145,7 +175,8 @@ node scripts/qa-supabase-proxy.mjs &          # /rest/v1 + /storage/v1 köprüs�
 npm run verify:teslimat-kaniti
 ```
 
-Ölçülenler: gerçek giriş (telefon+PIN) → 401/403/400 kapıları → taslak yükleme
+Ölçülenler: gerçek giriş (telefon+PIN) → 401/403/400 kapıları (**yönetici POST
+403 · yönetici taslak 403 · yönetici GET 200** dahil) → taslak yükleme
 → kanıt (teslim) → **durak tamamlandi** → GET + imzalı URL'ler → panel/mobil
 gövde paritesi → `teslim_edilemedi` → **durak atlandi + atlama_sebep** → ikinci
 kanıt **409** → HK080 değişmezliği (5 iddia) → CHECK kısıtları (23514) →
@@ -179,13 +210,6 @@ tetikleyiciden `sonuc` silinirse **üçünü de yakalıyor.**
 
 ## 7 · Açık kalanlar
 
-- **Migration 109 hiçbir kiracıda koşmadı.** Depoda DDL kanalı yok; SQL Volkan'da.
-- 🔴 **Yönetici kanıt bırakırsa o durak şoföre kilitlenir.** Kanıt yöneticinin
-  `worker_id`si ile yazılır; foto ucunun `kanit.workerId !== worker.id → 403`
-  kapısı yüzünden seferin şoförü o kanıta fotoğraf **ekleyemez** ve
-  `teslimat_durak_id_uq` yüzünden ikinci kanıt da açamaz. Çıkış yolu yalnız
-  yöneticinin `teslimatIptalEt`i. Tasarlanan düzeltme yolu budur, ama
-  yöneticiye yazma açık kalacaksa foto ucunun kapısı da gözden geçirilmeli.
 - **`teslim_edilemedi` yuvayı işgal eder.** Aynı durağa ikinci teslim denemesi
   409 alır. 080'in yazılı cevabı: *"yeniden teslim denemesi YENİ BİR duraktır"*
   — yönetici yeni durak açar.

@@ -11415,6 +11415,11 @@ comment on column public.tenant_settings.timezone is
 -- ╚═══════════════════════════════════════════════════════════════════════╝
 
 -- HAK61 / Galzura Fleet — Migration 109 (TESLİMAT SONUCU + KANIT TASLAĞI)
+-- ✅ ÇALIŞTIRILDI 21.09.2026 — ÜÇ KİRACI (HAK61 · Sendigo · galzura-demo)
+--    Doğrulama sonucu: `sonuc`+`sebep` kolonu 2 / `teslimat_taslak_dosyalari`
+--    tablosu 1 (üçünde de). Yani iki kolon da eklendi, taslak tablosu yaratıldı
+--    ve hiçbir kiracıda satır yok — eklenen NOT NULL kolonun varsayılanını
+--    yazacağı bir satır zaten yoktu (aşağıdaki ölçüm).
 -- =====================================================================
 -- Faz C-2: mobil "kanıt bırak" ucu. İki eksik parça ekleniyor.
 -- Additive + idempotent; mevcut hiçbir satır silinmez, hiçbir kolon düşürülmez.

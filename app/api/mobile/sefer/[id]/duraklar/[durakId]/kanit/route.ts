@@ -67,20 +67,35 @@ export const dynamic = "force-dynamic";
  * en çok ihtiyaç duyulan anda kaydı reddetmek olurdu. Panel de nullable
  * gönderiyor (`getGeoFix` null dönebilir).
  *
- * ═══ KAPI: ŞOFÖR KENDİ SEFERİ · YÖNETİCİ HEPSİ ═══
+ * ═══ 🔴 KAPI: KANITI YALNIZ SEFERİN ŞOFÖRÜ BIRAKIR ═══
  *
- * `requireMobileWorker` + satır sahipliği (`GET …/duraklar` ucunun BİREBİR
- * aynı cümlesi): şoför yalnız `sefer.worker_id`si kendisi olan sefere kanıt
- * bırakır, yönetici hepsine.
+ * POST → `requireMobileWorker` + `sefer.worker_id === worker.id`. **YÖNETİCİ
+ * DE 403 ALIR** (Volkan kararı 21.09.2026). Görme ve İPTAL yöneticide kalır.
  *
- * ⚠️ BU, `…/durum` UCUNUN KURALINDAN FARKLI VE FARK BİLİNÇLİ. Orada yönetici
- * durağı İLERLETEMEZ, çünkü "vardım 09:12" şoförün eylemidir ve yöneticinin
- * bastığı bir düğme o damgayı yalan yapar. Burada ise kaydın KİM tarafından
- * bırakıldığı `worker_id` kolonunda AÇIKÇA duruyor: yöneticinin bıraktığı kanıt
- * yöneticinin adına yazılır, şoförün adına değil. Yani damga kimseyi taklit
- * etmiyor. Panelin ePOD kuralı (yalnız şoför yazar) telefonda daraltılmadı:
- * saha gerçeğinde şoförün telefonu ölür ve teslimatı kaydedecek biri gerekir —
- * ama kimin kaydettiği kaybolmaz.
+ * Panelin ePOD kuralının BİREBİR aynısı (`app/actions/teslimat.ts`):
+ * *"teslimatı yapan kişi kanıtı da bırakan kişidir, aksi hâlde delilin kaynağı
+ * bulanıklaşır."* Sefer ağacındaki dört yazma yüzeyinin dördü de aynı cümleyi
+ * kuruyor — `…/durum`, `/sefer/[id]/durum`, `app/actions/duraklar.ts` ve panel
+ * kanıt eylemi. Bu uç o sıranın beşincisi.
+ *
+ * ⚠️ YÖNETİCİ MUAFİYETİ AÇILSAYDI KENDİ KENDİNİ KİLİTLERDİ — ÖLÇÜLDÜ: kanıt
+ * `teslimatlar.worker_id`ye YÖNETİCİNİN kimliğiyle yazılır; foto ucunun
+ * `kanit.workerId !== worker.id → 403 kanit_senin_degil` kapısı yüzünden
+ * SEFERİN ŞOFÖRÜ kendi teslimatının fotoğrafını o kanıta EKLEYEMEZ, ve
+ * `teslimat_durak_id_uq` (082) yüzünden ikinci kanıt da açamaz. Tek çıkış yolu
+ * yöneticinin kanıtı iptal etmesi olurdu.
+ *
+ * ⚠️ AMA KAPIYI DARALTMAK TEK BAŞINA YETMİYORDU — ARKA KAPI VARDI (ölçüldü,
+ * 21.09.2026): `PATCH /api/mobile/sefer/[id]` gövdesindeki `soforId` seferin
+ * şoförünü SONRADAN değiştirebiliyor ve kanıt hiç sorulmuyordu. Yönetici seferi
+ * kendine devredip kanıt yazıp geri devredebilir, ya da kanıt bırakılmış bir
+ * seferi başkasına devredip o şoföru kilitleyebilirdi. O uç artık geçerli kanıt
+ * varken şoför değişimini 409 `kanit_var` ile reddediyor
+ * (`seferdeGecerliKanitVarMi`). İki kapı birlikte, kanıdın sahibi ile seferin
+ * şoförünü ayrılmaz kılıyor.
+ *
+ * GET → yönetici muaf (`GET …/duraklar` ucunun aynı cümlesi). Okuma yetkisi
+ * yazma yetkisi değildir: yönetici delili GÖRÜR, üretmez.
  *
  * ⚠️ KAPANMIŞ SEFERE KANIT YOK (409 `sefer_kapali`) — panelin cümlesinin
  * aynısı: olayın kendisinden sonra delil üretilmez.
@@ -117,7 +132,7 @@ export const dynamic = "force-dynamic";
  *
  * ═══ HATA KODLARI ═══
  *   401 missing_token / invalid_token / revoked / inactive   (ortak kapı)
- *   403 sefer_sizin_degil
+ *   403 sefer_sizin_degil    — POST'ta YÖNETİCİ DE bunu alır (yazma muafiyeti yok)
  *   404 not_found             — sefer ya da durak yok / durak bu seferin değil
  *   409 sefer_kapali · kanit_zaten_var
  *       ozellik_kapali        — migration 080/082/109 uygulanmamış
@@ -132,20 +147,26 @@ type Yol = { params: Promise<{ id: string; durakId: string }> };
 const FOTO_TAVAN = 5;
 
 /**
- * Seferi ve durağı çözer, kapıyı uygular. POST ve GET AYNI cümleyi kullansın
- * diye tek yerde: biri gevşetilirse ötekinin sıkı kalması, kapının sızdığını
- * gizlerdi.
+ * Seferi ve durağı çözer, kapıyı uygular. POST ve GET AYNI gövdeyi kullansın
+ * diye tek yerde — TEK FARKLA: yönetici muafiyeti.
+ *
+ * `yoneticiMuaf` bir parametre, çünkü iki yüzeyin kuralı GERÇEKTEN farklı ve
+ * bu fark yazıyla sabit: **yazma yalnız seferin şoförü, okuma yöneticiye de
+ * açık.** Tek bir bayrakta toplanması, ikisinin yanlışlıkla ayrışmasını
+ * (ya da yazmanın sessizce gevşemesini) tek satırda görünür kılıyor.
  */
 async function kapiVeDurak(
   seferId: string,
   durakId: string,
   worker: MobileWorker,
-  seferAcikOlmali: boolean
+  secenek: { seferAcikOlmali: boolean; yoneticiMuaf: boolean }
 ) {
+  const { seferAcikOlmali, yoneticiMuaf } = secenek;
   const sefer = await getSeferById(seferId);
   if (!sefer) return { ok: false as const, response: mobileError(404, "not_found") };
 
-  const yonetici = worker.is_admin === true;
+  // ⚠️ YAZMADA MUAFİYET YOK: `yoneticiMuaf` false ise `is_admin` HİÇ okunmaz.
+  const yonetici = yoneticiMuaf && worker.is_admin === true;
   if (!yonetici && sefer.worker_id !== worker.id) {
     return { ok: false as const, response: mobileError(403, "sefer_sizin_degil") };
   }
@@ -280,7 +301,11 @@ export async function POST(req: NextRequest, { params }: Yol) {
   if (!konum.ok) return mobileError(400, "invalid_field", { alan: konum.alan });
 
   // ── KAPI + DURAK ───────────────────────────────────────────────────────
-  const c = await kapiVeDurak(seferId, durakId, worker, true);
+  // 🔴 YAZMA: yönetici muafiyeti YOK — kanıtı yalnız seferin şoförü bırakır.
+  const c = await kapiVeDurak(seferId, durakId, worker, {
+    seferAcikOlmali: true,
+    yoneticiMuaf: false,
+  });
   if (!c.ok) return c.response;
   const { sefer, durak } = c;
 
@@ -292,6 +317,12 @@ export async function POST(req: NextRequest, { params }: Yol) {
   const istenen = [...fotoIds, ...(imzaId ? [imzaId] : [])];
   const t = await getTaslaklar(istenen, { durakId, workerId: worker.id });
   if (t.tabloYok) return mobileError(409, "ozellik_kapali", { migration: "109" });
+  /**
+   * 🔴 GEÇİCİ ARIZA "TASLAĞIN YOK" DEĞİLDİR. Sorgu düştüyse dosyalar yerinde
+   * duruyor; şoföre 400 demek onu fotoğrafları yeniden çekmeye ve kotasını
+   * ikinci kez harcamaya iter. 503, "tekrar dene" demenin dürüst yoludur.
+   */
+  if (t.dbHatasi) return mobileError(503, "db_error", { adim: "taslak_okuma" });
   if (!t.tamamMi) {
     return mobileError(400, "taslak_yok", {
       istenen: istenen.length,
@@ -437,7 +468,11 @@ export async function GET(req: NextRequest, { params }: Yol) {
   const { id: seferId, durakId } = await params;
 
   // Okuma kapanmış seferde de meşru: bitmiş bir işin delili sorulabilir.
-  const c = await kapiVeDurak(seferId, durakId, worker, false);
+  // Yönetici MUAF — delili görmek onu üretmek değildir.
+  const c = await kapiVeDurak(seferId, durakId, worker, {
+    seferAcikOlmali: false,
+    yoneticiMuaf: true,
+  });
   if (!c.ok) return c.response;
 
   const bulundu = await getTeslimatByDurak(seferId, durakId);

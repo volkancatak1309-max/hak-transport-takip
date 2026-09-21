@@ -75,7 +75,7 @@ export const dynamic = "force-dynamic";
  *   404 sefer_yok             — durakta geçerli kanıt yok
  *       not_found             — sefer/durak yok (taslak yolu)
  *   409 kanit_yok             — önce teslimat kaydedilmeli (taslak=1 YOKSA)
- *       sefer_kapali          — kapanmış sefere taslak yüklenmez
+ *       sefer_kapali          — kapanmış sefere ne taslak ne fotoğraf (ÜÇ yol da)
  *       ozellik_kapali        — migration 080/082/109 uygulanmamış
  *   400 dosya_yok · cok_buyuk · tip_yasak · gecersiz_govde · gecersiz_tur
  *   429 hiz_siniri            + Retry-After
@@ -151,6 +151,22 @@ export async function POST(
     return mobileError(403, "kanit_senin_degil");
   }
 
+  /**
+   * 🔴 KAPANMIŞ SEFERE FOTOĞRAF DA YOK (109 turunda eklendi).
+   *
+   * ÖLÇÜLDÜ: bu yol `ACIK_DURUMLAR`ı HİÇ okumuyordu. Yani şoför seferi
+   * `tamamlandi`ya getirdikten sonra bile mevcut kanıda yeni fotoğraf
+   * ekleyebiliyordu — kanıt ucu ve taslak yolu aynı istekte 409 `sefer_kapali`
+   * verirken üçüncü yol açık kalıyordu. "Olayın kendisinden sonra delil
+   * üretilmez" kuralının üç kapıda da AYNI olması gerekiyor; biri açıkken
+   * diğer ikisinin kapalı olması kuralı değil yalnız görüntüsünü korur.
+   */
+  const sefer = await getSeferById(seferId);
+  if (!sefer) return mobileError(404, "not_found");
+  if (!ACIK_DURUMLAR.includes(sefer.durum)) {
+    return mobileError(409, "sefer_kapali", { mevcutDurum: sefer.durum });
+  }
+
   // ── YÜKLE + YAZ, YETİM BIRAKMADAN ──────────────────────────────────────
   let yazmaSebep: string | null = null;
   const c = await yukleVeYaz(TESLIMAT_KOVASI, worker.id, file, async (yol) => {
@@ -214,11 +230,14 @@ function yuklemeHatasi(
 /**
  * TASLAK YÜKLEME (109) — kanıt açılmadan önce dosyayı park eder.
  *
- * ═══ KAPI: `…/kanit` UCUYLA BİREBİR AYNI CÜMLE ═══
+ * ═══ 🔴 KAPI: `…/kanit` UCUYLA BİREBİR AYNI CÜMLE ═══
  *
- * Şoför YALNIZ kendi seferine, yönetici her sefere. Taslak sonradan kanıda
- * dönüşeceği için kapı kanıt ucundan GEVŞEK OLAMAZ — gevşek olsaydı, kanıt
- * ucunun reddettiği kişi dosyayı yine de sisteme sokardı.
+ * YALNIZ SEFERİN ŞOFÖRÜ. **Yönetici de 403 alır** — kanıt ucunun kuralının
+ * aynısı (Volkan kararı 21.09.2026).
+ *
+ * Taslak sonradan KANITA DÖNÜŞÜYOR; kapı kanıt ucundan gevşek olsaydı, kanıt
+ * ucunun reddettiği kişi dosyayı yine de sisteme sokar ve o dosya birinin
+ * delili olurdu. İki kapının aynı cümleyi kurması tesadüf değil, şart.
  *
  * ⚠️ KAPANMIŞ SEFERE TASLAK DA YOK: kanıt ucunun kuralının aynısı. Bitmiş bir
  * işin dosyasını sonradan yüklemek, olayın kendisinden sonra delil üretmenin
@@ -227,7 +246,7 @@ function yuklemeHatasi(
 async function taslakYukle(a: {
   seferId: string;
   durakId: string;
-  worker: { id: string; is_admin?: boolean | null };
+  worker: { id: string };
   form: FormData;
   file: File;
   konum: { latitude: number | null; longitude: number | null; dogrulukM: number | null };
@@ -240,8 +259,8 @@ async function taslakYukle(a: {
 
   const sefer = await getSeferById(a.seferId);
   if (!sefer) return mobileError(404, "not_found");
-  const yonetici = a.worker.is_admin === true;
-  if (!yonetici && sefer.worker_id !== a.worker.id) {
+  // ⚠️ `is_admin` HİÇ OKUNMUYOR — yazma tarafında yönetici muafiyeti YOK.
+  if (sefer.worker_id !== a.worker.id) {
     return mobileError(403, "sefer_sizin_degil");
   }
   if (!ACIK_DURUMLAR.includes(sefer.durum)) {

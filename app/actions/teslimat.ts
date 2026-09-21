@@ -5,7 +5,6 @@ import { requireWorker, requireFleetView } from "@/lib/session";
 import { getFleetScope, UNRESTRICTED } from "@/lib/fleet-scope";
 import { getSeferById, ACIK_DURUMLAR } from "@/lib/sefer-db";
 import { getDurak, listDuraklar } from "@/lib/sefer-duraklari";
-import { signedReceiptUrls } from "@/lib/storage";
 import { yukleVeYaz } from "@/lib/upload-core";
 import {
   createTeslimat,
@@ -13,8 +12,9 @@ import {
   listTeslimatBySefer,
   getTeslimat,
   iptalTeslimat,
+  imzaliKanitlar,
   TESLIMAT_KOVASI,
-  type Teslimat,
+  type KanitGorunum,
 } from "@/lib/teslimat-db";
 import { audit } from "@/lib/security-log";
 
@@ -50,6 +50,8 @@ export type KanitSonuc =
         | "durak_yok"
         | "durak_secilmedi"
         | "tablo_yok"
+        /** 109 uygulanmamış — yalnız sonuç/sebep gönderen yollarda görülür. */
+        | "kolon_yok"
         | "hata";
       mesaj?: string;
     };
@@ -173,24 +175,18 @@ export async function teslimatFotoEkle(formData: FormData): Promise<KanitSonuc> 
 
 // ── OKUMA ─────────────────────────────────────────────────────────────────
 
-export type KanitGorunum = Omit<Teslimat, "fotograflar"> & {
-  fotograflar: (Teslimat["fotograflar"][number] & { url: string | null })[];
-};
-
 /**
- * Fotoğraf yolları KISA ÖMÜRLÜ imzalı URL'e çevrilir.
+ * ⚠️ İMZALAMA ARTIK ÇEKİRDEKTE (`lib/teslimat-db.ts` `imzaliKanitlar`).
  *
- * Kova özel; kalıcı bir adres vermek, linki eline geçiren herkese süresiz
- * erişim vermek olurdu. Toplu imzalama tek istekte (lib/storage.ts).
+ * Buradaki özel `imzali()` yardımcısı KALDIRILDI ve tipi de çekirdekten
+ * yeniden dışa veriliyor: mobil GET ucu (`/sefer/[id]/duraklar/[durakId]/kanit`)
+ * aynı gövdeyi üretmek zorunda. Kopyalansaydı iki yüzey aynı kanıta farklı
+ * alanlarla bakar, TTL'i biri değiştirdiğinde öteki geride kalırdı — bu
+ * depoda o hata bir kez yaşandı (bkz. `app/api/mobile/_rapor/csv.ts` başlığı).
+ *
+ * Çağıran tarafta değişen TEK şey: gövdeye `imzaUrl` eklendi (raster imza).
  */
-async function imzali(teslimatlar: Teslimat[]): Promise<KanitGorunum[]> {
-  const yollar = teslimatlar.flatMap((t) => t.fotograflar.map((f) => f.storagePath));
-  const harita = yollar.length ? await signedReceiptUrls(TESLIMAT_KOVASI, yollar) : new Map();
-  return teslimatlar.map((t) => ({
-    ...t,
-    fotograflar: t.fotograflar.map((f) => ({ ...f, url: harita.get(f.storagePath) ?? null })),
-  }));
-}
+export type { KanitGorunum };
 
 /** ŞOFÖR: kendi seferinin kanıtları. */
 export async function getSoforTeslimatlari(
@@ -202,7 +198,7 @@ export async function getSoforTeslimatlari(
     return { kanitlar: [], tabloYok: false };
   }
   const { teslimatlar, tabloYok } = await listTeslimatBySefer(seferId);
-  return { kanitlar: await imzali(teslimatlar), tabloYok };
+  return { kanitlar: await imzaliKanitlar(teslimatlar), tabloYok };
 }
 
 /** YÖNETİCİ/ŞEF: seferin kanıtları (kapsam denetimiyle). */
@@ -217,7 +213,7 @@ export async function getSeferTeslimatlari(
   }
   const { teslimatlar, tabloYok } = await listTeslimatBySefer(seferId);
   await audit(session.worker_id ?? null, "page_view", `teslimat:sefer:${seferId}`);
-  return { kanitlar: await imzali(teslimatlar), tabloYok };
+  return { kanitlar: await imzaliKanitlar(teslimatlar), tabloYok };
 }
 
 /**

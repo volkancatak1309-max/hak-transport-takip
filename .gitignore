@@ -46,3 +46,6 @@ next-env.d.ts
 # Gerçek anahtar TAŞIMAZ ama .env adıyla depoda durmasına gerek yok:
 # yükleyici yoksa kendisi üretiyor.
 scripts/kuru.env
+
+# Yerel QA yığınının dosya deposu (scripts/qa-supabase-proxy.mjs) — gecici.
+.qa-storage/

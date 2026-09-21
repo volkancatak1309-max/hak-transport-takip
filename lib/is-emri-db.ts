@@ -1,5 +1,5 @@
 import "server-only";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, fetchAllRows } from "@/lib/supabase";
 import { tabloYokMu } from "@/lib/fault-reports";
 import { kullanimdaMi, type SilmeSonucu } from "@/lib/silme-sonucu";
 import type { IsEmri, IsEmriDurum, IsEmriOncelik } from "@/lib/is-emri";
@@ -43,7 +43,42 @@ const COLS =
 
 export type IsEmriSonuc<T> =
   | { ok: true; veri: T }
-  | { ok: false; sebep: "tablo_yok" | "yok" | "hata"; mesaj?: string };
+  | {
+      ok: false;
+      sebep: "tablo_yok" | "yok" | "hata" | "kapanis_notu_gerekli" | "bos_yama";
+      mesaj?: string;
+    };
+
+/**
+ * ÖNCELİK SIRASI — kritik önce, düşük sonra.
+ *
+ * ⚠️ NEDEN VERİTABANINDA DEĞİL: `oncelik` bir `text` kolonu ve PostgREST yalnız
+ * kolonun KENDİ sırasına göre sıralayabiliyor; alfabetik sıra
+ * (dusuk · kritik · normal · yuksek) bu kuyruk için ANLAMSIZ. Doğru sırayı
+ * şemaya taşımak ya bir enum tipi ya da bir `oncelik_sira` kolonu ister —
+ * ikisi de migration demek. Kuyruk küçük (bir yapılacaklar listesi, bir kayıt
+ * defteri değil), o yüzden sıralama BELLEKTE yapılıyor ve okuma
+ * `fetchAllRows` ile sayfalanıyor: 1000 satır tavanına dayanılırsa o dosya
+ * yüksek sesle uyarır (bkz. lib/supabase.ts warnTruncated).
+ */
+const ONCELIK_SIRA: Record<string, number> = {
+  kritik: 0,
+  yuksek: 1,
+  normal: 2,
+  dusuk: 3,
+};
+
+function oncelikSirasi(o: string): number {
+  return ONCELIK_SIRA[o] ?? ONCELIK_SIRA.normal;
+}
+
+/** Önce öncelik (kritik→düşük), sonra tarih (yeni→eski). */
+export function siralaIsEmirleri(emirler: IsEmri[]): IsEmri[] {
+  return [...emirler].sort((a, b) => {
+    const f = oncelikSirasi(a.oncelik) - oncelikSirasi(b.oncelik);
+    return f !== 0 ? f : b.createdAt.localeCompare(a.createdAt);
+  });
+}
 
 async function zenginlestir(satirlar: Record<string, unknown>[]): Promise<IsEmri[]> {
   if (satirlar.length === 0) return [];
@@ -83,28 +118,132 @@ async function zenginlestir(satirlar: Record<string, unknown>[]): Promise<IsEmri
   }));
 }
 
+/** Liste süzgeci — `hepsi` = durum süzmesi YOK (kapalılar dahil). */
+export type IsEmriDurumSuzgec = IsEmriDurum | "hepsi";
+
 /**
  * İş emirleri.
  *
  * `yalnizAcik` varsayılan TRUE: yöneticinin ekranı bir KUYRUKTUR, arşiv değil.
- * Kapanmışları görmek isteyen açıkça ister.
+ * Kapanmışları görmek isteyen açıkça ister. `durum` verilirse `yalnizAcik`
+ * YOK SAYILIR — ikisi aynı soruyu soruyor ve çakışmaları sessizce çözmek
+ * yerine biri açıkça kazanıyor.
+ *
+ * SIRA: önce öncelik (kritik→düşük), sonra tarih (yeni→eski). Sıralama
+ * bellekte (bkz. ONCELIK_SIRA başlığı), okuma `fetchAllRows` ile sayfalı —
+ * yani PostgREST'in 1000 satır tavanına sessizce takılmıyor.
+ *
+ * `toplam` SÜZÜLMÜŞ kümenin gerçek uzunluğudur, sayfanın değil: istemci
+ * "kaç tane var" sorusunu tahmin etmesin.
  */
 export async function listIsEmirleri(opts?: {
   vehicleIds?: string[] | null;
   yalnizAcik?: boolean;
+  durum?: IsEmriDurumSuzgec;
+  oncelik?: IsEmriOncelik;
+  vehicleId?: string | null;
   limit?: number;
-}): Promise<{ emirler: IsEmri[]; tabloYok: boolean }> {
-  let q = supabaseAdmin.from("vehicle_fault_reports").select(COLS);
-  if (opts?.vehicleIds) {
-    if (opts.vehicleIds.length === 0) return { emirler: [], tabloYok: false };
-    q = q.in("vehicle_id", opts.vehicleIds);
+  offset?: number;
+}): Promise<{ emirler: IsEmri[]; tabloYok: boolean; toplam: number }> {
+  if (opts?.vehicleIds && opts.vehicleIds.length === 0) {
+    return { emirler: [], tabloYok: false, toplam: 0 };
   }
-  if (opts?.yalnizAcik !== false) q = q.neq("durum", "kapali");
-  const { data, error } = await q
-    .order("created_at", { ascending: false })
-    .limit(opts?.limit ?? 100);
-  if (error) return { emirler: [], tabloYok: tabloYokMu(error) };
-  return { emirler: await zenginlestir((data ?? []) as Record<string, unknown>[]), tabloYok: false };
+  // Kapsam DIŞI bir araç istendi: boş küme, 403 DEĞİL — liste ucu bir varlık
+  // sorgusu değil; "senin filonda böyle bir araç yok" cevabı da bir sızıntıdır.
+  if (opts?.vehicleId && opts.vehicleIds && !opts.vehicleIds.includes(opts.vehicleId)) {
+    return { emirler: [], tabloYok: false, toplam: 0 };
+  }
+
+  const { data, error } = await fetchAllRows<Record<string, unknown>>((from, to) => {
+    let q = supabaseAdmin.from("vehicle_fault_reports").select(COLS);
+    if (opts?.vehicleIds) q = q.in("vehicle_id", opts.vehicleIds);
+    if (opts?.vehicleId) q = q.eq("vehicle_id", opts.vehicleId);
+    if (opts?.oncelik) q = q.eq("oncelik", opts.oncelik);
+    if (opts?.durum && opts.durum !== "hepsi") q = q.eq("durum", opts.durum);
+    else if (!opts?.durum && opts?.yalnizAcik !== false) q = q.neq("durum", "kapali");
+    return q.order("created_at", { ascending: false }).range(from, to);
+  }, "listIsEmirleri");
+
+  if (error) return { emirler: [], tabloYok: tabloYokMu(error), toplam: 0 };
+
+  const tumu = siralaIsEmirleri(await zenginlestir(data));
+  const offset = Math.max(0, opts?.offset ?? 0);
+  const limit = opts?.limit ?? 100;
+  return { emirler: tumu.slice(offset, offset + limit), tabloYok: false, toplam: tumu.length };
+}
+
+/**
+ * ŞOFÖRÜN YAZABİLECEĞİ ARAÇLAR — açık vardiyasının aracı + kendisine ATANMIŞ araç.
+ *
+ * ═══ NEDEN "HER ARAÇ" DEĞİL ═══
+ *
+ * Arıza bildirimi bir YAZMA ucudur ve araç kimliğini çağıran gönderiyor. Şoföre
+ * serbest araç seçimi vermek, filodaki her aracın kimliğini deneyerek kayıt
+ * açabilmek demekti — hem çöp kuyruk, hem "hangi araçlar var" sorusunun
+ * dolaylı cevabı. Bu yüzden yazma ANAHTARLI: şoför yalnız BUGÜN kullandığı ya
+ * da kendisine atanmış araç için bildirim açabilir.
+ *
+ * ═══ NEDEN İKİ KAYNAK ═══
+ *
+ * Atanmış araç kalıcı bağdır; açık vardiya ANLIK gerçektir. Geçici araçla
+ * (bkz. lib/fleet-scope.ts) çıkan şoför atamasından farklı bir araç kullanıyor
+ * olabilir ve arızayı tam o araçta görür. Yalnız atamaya baksaydık, o bildirim
+ * hiç açılamazdı.
+ *
+ * FAIL-CLOSED: okuma hata verirse BOŞ küme döner — yani yazma reddedilir.
+ */
+export async function soforAracKapsami(workerId: string): Promise<Set<string>> {
+  const [{ data: vardiya }, { data: atanan }] = await Promise.all([
+    supabaseAdmin
+      .from("time_entries")
+      .select("vehicle_id")
+      .eq("worker_id", workerId)
+      .is("ended_at", null)
+      .not("vehicle_id", "is", null)
+      .order("started_at", { ascending: false })
+      .limit(1),
+    supabaseAdmin.from("vehicles").select("id").eq("assigned_worker_id", workerId),
+  ]);
+
+  const kume = new Set<string>();
+  for (const r of (vardiya ?? []) as { vehicle_id: string | null }[]) {
+    if (r.vehicle_id) kume.add(r.vehicle_id);
+  }
+  for (const r of (atanan ?? []) as { id: string }[]) kume.add(r.id);
+  return kume;
+}
+
+/**
+ * "BU AKTÖR BU ARACA İŞ EMRİ / ARIZA YAZABİLİR Mİ" — TEK KURAL, İKİ ÇAĞIRAN.
+ *
+ * Yeni mobil uç (`POST /api/mobile/is-emirleri`) ve arıza bildirimi ucu
+ * (`POST /api/mobile/vehicles/[id]/ariza-bildir`) aynı soruyu soruyor. Kuralı
+ * iki yere yazmak, birini sonradan gevşetip diğerini unutmanın garantisiydi.
+ *
+ * Dönen `kaynak`, satıra yazılacak köken: yönetici/şef eliyle açılan emir
+ * `elle`, şoförün bildirdiği `surucu`. Kaynak İSTEMCİDEN ALINMAZ — rolden
+ * türer; "elle" yazan bir şoför isteği kurulamaz çünkü alanı yok.
+ */
+export type IsEmriYazmaIzni =
+  | { ok: true; kaynak: "elle" | "surucu"; sofor: boolean }
+  | { ok: false; sebep: "kapsam_disi" };
+
+export async function isEmriYazmaIzni(aktor: {
+  workerId: string;
+  isAdmin: boolean;
+  isChief: boolean;
+  isFleetVehicle: (id: string) => boolean;
+}, vehicleId: string): Promise<IsEmriYazmaIzni> {
+  if (aktor.isAdmin) return { ok: true, kaynak: "elle", sofor: false };
+  if (aktor.isChief) {
+    return aktor.isFleetVehicle(vehicleId)
+      ? { ok: true, kaynak: "elle", sofor: false }
+      : { ok: false, sebep: "kapsam_disi" };
+  }
+  const kume = await soforAracKapsami(aktor.workerId);
+  return kume.has(vehicleId)
+    ? { ok: true, kaynak: "surucu", sofor: true }
+    : { ok: false, sebep: "kapsam_disi" };
 }
 
 /**
@@ -142,13 +281,21 @@ export async function getIsEmri(id: string): Promise<IsEmri | null> {
   return e ?? null;
 }
 
-/** Elle iş emri (panelden) — kaynak 'elle' ya da 'dtc'. */
+/**
+ * İş emri yaratır.
+ *
+ * `kaynak` emrin KÖKENİ: panelden/mobilden elle açılan `elle`, şoförün
+ * bildirdiği `surucu`, DTC'den çevrilen `dtc`, bakım planından doğan
+ * `periyodik`. Kökenin sonucu var: `deleteIsEmri` YALNIZ `elle` olanı siler.
+ * Bu yüzden kaynak hiçbir zaman istemciden gelmez, çağıranın rolünden türer
+ * (bkz. isEmriYazmaIzni).
+ */
 export async function createIsEmri(
   g: {
     vehicleId: string;
     aciklama: string;
     oncelik?: IsEmriOncelik;
-    kaynak?: "elle" | "dtc" | "periyodik";
+    kaynak?: "elle" | "surucu" | "dtc" | "periyodik";
     atananId?: string | null;
   },
   actorWorkerId: string
@@ -189,8 +336,32 @@ export async function updateIsEmri(
     servisAt?: string | null;
     kapanisNotu?: string | null;
   },
-  actorWorkerId: string | null
+  actorWorkerId: string | null,
+  opts?: {
+    /**
+     * Kapatırken kapanış notu ZORUNLU olsun mu.
+     *
+     * ⚠️ POLİTİKA ÇAĞIRANDA, KURAL BURADA. Mobil uç bunu AÇIK gönderiyor;
+     * panel GÖNDERMİYOR ve bugünkü davranışını koruyor (bugün notsuz
+     * kapatabiliyor — canlı HAK61/Sendigo'da çalışan bir akış). Kuralın
+     * gövdesi tek yerde (burada), sıkılığı yüzeyin kararı. Paneli de
+     * sıkmak ayrı ve bilinçli bir karar olmalı.
+     */
+    kapanisNotuZorunlu?: boolean;
+    /** Çağıran kaydı zaten okuduysa ikinci okumayı atlamak için. */
+    mevcut?: IsEmri | null;
+  }
 ): Promise<IsEmriSonuc<{ id: string }>> {
+  if (opts?.kapanisNotuZorunlu && yama.durum === "kapali") {
+    // Yeni not gövdede yoksa KAYITTAKİNE bakılır: notu zaten yazılmış bir emri
+    // yeniden kapatmak (ya da kapalıyken başka bir alanını düzeltmek) not
+    // istemesin — zorunluluk "kapanış gerekçesiz kalmasın" demek, "her istekte
+    // tekrar yaz" demek değil.
+    const yeni = yama.kapanisNotu?.trim();
+    const eskiNot = opts.mevcut?.kapanisNotu?.trim();
+    if (!yeni && !eskiNot) return { ok: false, sebep: "kapanis_notu_gerekli" };
+  }
+
   const satir: Record<string, unknown> = {};
   if (yama.durum) satir.durum = yama.durum;
   if (yama.oncelik) satir.oncelik = yama.oncelik;
@@ -212,7 +383,7 @@ export async function updateIsEmri(
     satir.closed_by = null;
   }
 
-  if (Object.keys(satir).length === 0) return { ok: false, sebep: "hata", mesaj: "bos_yama" };
+  if (Object.keys(satir).length === 0) return { ok: false, sebep: "bos_yama" };
 
   let q = supabaseAdmin.from("vehicle_fault_reports").update(satir).eq("id", id);
   // Kapalıyı tekrar kapatmak damgayı tazelemesin.

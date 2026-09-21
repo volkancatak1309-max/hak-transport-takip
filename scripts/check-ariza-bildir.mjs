@@ -163,13 +163,33 @@ kontrol("yeniden açma ('acik') geçerli", arizaDurumunuAyikla({ durum: "acik" }
 const UC = "app/api/mobile/vehicles/[id]/ariza-bildir/route.ts";
 const src = readFileSync(path.join(ROOT, UC), "utf8");
 
-// Kapı: kardeş araç uçlarıyla aynı katman. Gevşerse her şoför her araca yazar.
-kontrol("requireMobileAdmin kapısı", src.includes("requireMobileAdmin("));
-kontrol("daha gevşek kapı KULLANILMIYOR", !/requireMobileWorker\(|requireMobileFleetView\(/.test(src));
+/**
+ * KAPI 21.09.2026'DA GENİŞLEDİ (Faz C-1): şoför de arıza bildirebiliyor.
+ *
+ * Eski denetim "requireMobileAdmin" arıyordu ve o kapı bu ucun TEK freniydi.
+ * Kapı gevşediğine göre fren BAŞKA YERDE olmak zorunda: `isEmriYazmaIzni`
+ * şoförü kendi aracına kilitliyor (açık vardiyasının aracı + atanmış aracı).
+ * Bu yüzden denetim ikiye ayrıldı — kapının kendisi VE kapsamın çağrılmış
+ * olması. Kapsam çağrısı silinirse her şoför her araca yazar; muhafız da tam
+ * bunu yakalamak için burada.
+ */
+kontrol("requireMobileWorkerScoped kapısı", src.includes("requireMobileWorkerScoped("));
+kontrol(
+  "oturumsuz ya da kapsamsız kapı KULLANILMIYOR",
+  !/requireMobileWorker\(|requireMobileFleetView\(/.test(src)
+);
+kontrol("araç kapsamı ORTAK çekirdekten soruluyor", /isEmriYazmaIzni\(/.test(src));
+kontrol(
+  "kapsam dışı araç 403 alıyor",
+  /if\s*\(!izin\.ok\)\s*return mobileError\(403/.test(src)
+);
 
 // Yazma ANAHTARLI: hedef ve kimlik gövdeden GELMEZ.
 kontrol("vehicle_id YOLDAN geliyor", /vehicle_id:\s*id\b/.test(src));
-kontrol("reported_by OTURUMDAN geliyor", /reported_by:\s*guard\.actor\.worker\.id/.test(src));
+kontrol(
+  "reported_by OTURUMDAN geliyor",
+  /reported_by:\s*(guard\.actor\.)?worker\.id/.test(src)
+);
 // `durum` gövdeden okunursa bildiren kendi bildirimini doğrudan "kapali"
 // açabilirdi — kapatma ayrı bir yüzeydir ve bugün YOK.
 // `(body as {...}).durum` gibi sarmalanmış hâlleri de yakalasın diye satırın
@@ -301,7 +321,7 @@ console.error(`
     · yeni bildirim daima 'acik'; durum YALNIZ PATCH ile değişir
     · durum kümesi iki değerli, uç şema CHECK'inden gevşek olamaz
     · PATCH yalnız durumu yazar — açıklama geçmişe dönük DEĞİŞTİRİLEMEZ
-    · üç kapı da requireMobileAdmin
+    · yazma ucu şofore açık AMA araç kapsamına anahtarlı; okuma/PATCH yönetici
     · boş listenin sebebi (yok / tablo_yok / hata) ve tavan SÖYLENİR
 `);
 process.exit(1);

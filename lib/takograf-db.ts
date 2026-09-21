@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase";
+import { dosyaSil } from "@/lib/upload-core";
 import { servisAyristir } from "@/lib/takograf-servis";
 import {
   TAKOGRAF_KOVA,
@@ -296,7 +297,18 @@ export type YuklemeHataKodu =
 
 export type YuklemeSonucu =
   | { ok: true; id: string; dosya: TakografDosya }
-  | { ok: false; hata: YuklemeHataKodu; mevcutId?: string; ayrinti?: string };
+  | {
+      ok: false;
+      hata: YuklemeHataKodu;
+      mevcutId?: string;
+      ayrinti?: string;
+      /**
+       * Depoya yazılmış dosya geri alındı mı. YALNIZ satır yazılamadığında
+       * anlamlıdır; `zaten_yuklu` ön-kontrolünde (henüz yükleme yok) ve
+       * doğrulama hatalarında tanımsızdır.
+       */
+      dosyaTemizlendi?: boolean;
+    };
 
 /**
  * 🔴 TEK YÜKLEME YOLU.
@@ -354,11 +366,32 @@ export async function dosyaYukle(girdi: {
     .single();
 
   if (ekleHata || !eklenen) {
-    if (cakismaMi(ekleHata)) return { ok: false, hata: "zaten_yuklu" };
+    /**
+     * 🔴 YETİM KORUMASI (Faz C-3'te eklendi).
+     *
+     * ÖLÇÜLDÜ: bu üç çıkışta dosya Storage'a YAZILMIŞTI ve satır yazılamadı —
+     * yani kimsenin göremediği, hiçbir kayda bağlı olmayan bir dosya kalıyordu.
+     * `scripts/check-dosya-yukleme.mjs` bu bedeli D1 istisnasının yanına açıkça
+     * yazmıştı: "o yolda yetim koruması YOK … o tur geldiğinde bu istisna
+     * kaldırılacak."
+     *
+     * ⚠️ BU, "DOSYA HER KOŞULDA SAKLANIR" KURALIYLA ÇELİŞMİYOR — ve ayrım
+     * ADIM BAZINDA: burada henüz bir KAYIT YOK, dolayısıyla saklanacak bir
+     * kanıt da yok; silinen şey bir delil değil, hiç kaydedilmemiş bir dosya.
+     * Kural 3. adımdan (servis/ayrıştırma) itibaren geçerli: orada dosya DA
+     * satır DA yerinde kalır, durum 'bekliyor'/'basarisiz' olur.
+     *
+     * Silme sonucu YUTULMUYOR: temizlik başarısızsa yetim VARDIR ve çağıran
+     * bunu `dosyaTemizlendi:false` olarak görür.
+     */
+    const sil = await dosyaSil(TAKOGRAF_KOVA, [yol]);
+    const temiz = sil.ok && sil.silinen > 0;
+    if (cakismaMi(ekleHata)) return { ok: false, hata: "zaten_yuklu", dosyaTemizlendi: temiz };
     return {
       ok: false,
       hata: tabloYokMu(ekleHata) ? "migration_091_yok" : "kayit_yazilamadi",
       ayrinti: ekleHata?.message,
+      dosyaTemizlendi: temiz,
     };
   }
   const id = String((eklenen as { id: string }).id);
@@ -475,4 +508,228 @@ async function satirlariYaz(id: string, c: ServisCevabi): Promise<void> {
 export function kimlikEtiketi(d: TakografDosya): string | null {
   if (d.tur === "kart") return kimlikKisalt(d.kartNo);
   return d.aracPlaka || kimlikKisalt(d.aracVin);
+}
+
+// ═══════════════════ MOBİL: SÜZGEÇLİ · SAYFALI LİSTE ════════════════════
+
+/**
+ * ⚠️ NEDEN YENİ BİR FONKSİYON, NEDEN `dosyalar()` GENİŞLETİLMEDİ.
+ *
+ * `dosyalar(limit = 200)` panelin çağrısı ve DAVRANIŞI DEĞİŞMEMELİ: panel tüm
+ * listeyi tek seferde çekip `sayaclar()` ile süzgeç rozetlerini istemcide
+ * üretiyor. Ona sayfalama sokmak, görünmeyen bir davranış değişikliği olurdu.
+ * Mobil ise telefon ekranı ve zayıf bağlantı için sayfalı istiyor.
+ *
+ * ⚠️ `faaliyetSayisi`/`olaySayisi` BU LİSTEDE YOK — bilinçli bir eksik.
+ * `satirSayimlari()` sayıları SATIR ÇEKEREK üretiyor ve PostgREST'in 1000
+ * satır tavanına takılıyor (ÖLÇÜLDÜ 21.09.2026, galzura-demo: 1.270.885
+ * satırlık bir tabloda limitsiz select 1000, `.limit(40000)` de 1000 döndü).
+ * Bir VU dosyası 3.430 faaliyet satırı üretebiliyor (091 başlığı), yani
+ * listedeki sayılar SESSİZCE yanlış olurdu. Doğru sayım künye ucunda,
+ * `count: "exact"` ile alınıyor.
+ */
+export type DosyaSuzgeci = {
+  tur?: DosyaTuru | null;
+  /** `kart_no` üzerinde parça eşleşme. */
+  kart?: string | null;
+  /** `arac_plaka` VEYA `arac_vin` üzerinde parça eşleşme. */
+  plaka?: string | null;
+  yukleyenWorkerId?: string | null;
+  /** Takvim ayı — dosyanın dönemiyle ÖRTÜŞME aranır. */
+  donem?: { bas: string; bit: string } | null;
+  limit?: number;
+  offset?: number;
+};
+
+export type DosyaListesi = {
+  satirlar: TakografDosya[];
+  toplam: number;
+  tabloYok: boolean;
+  /**
+   * Dönem süzgeci verildiğinde, dönemi NULL olduğu için listeye GİREMEYEN
+   * dosya sayısı. Sessiz kalmak, ayrıştırılamamış dosyaları yok saymak olurdu.
+   */
+  donemsizGizlendi: number | null;
+};
+
+/** PostgREST `or()` deseninde anlam taşıyan karakterleri etkisizleştirir. */
+function ilikeKac(s: string): string {
+  return s.replace(/[%_,()*.]/g, " ").trim();
+}
+
+export async function dosyaListesi(f: DosyaSuzgeci = {}): Promise<DosyaListesi> {
+  const limit = Math.min(200, Math.max(1, f.limit ?? 50));
+  const offset = Math.max(0, f.offset ?? 0);
+
+  const kartDeseni = f.kart ? `%${ilikeKac(f.kart)}%` : null;
+  // Plaka VEYA VIN: kullanıcı hangisini yazdığını bilmek zorunda değil.
+  const plakaDeseni = f.plaka
+    ? `arac_plaka.ilike.*${ilikeKac(f.plaka)}*,arac_vin.ilike.*${ilikeKac(f.plaka)}*`
+    : null;
+
+  let q = supabaseAdmin.from("takograf_dosyalari").select("*", { count: "exact" });
+  if (f.tur) q = q.eq("tur", f.tur);
+  if (f.yukleyenWorkerId) q = q.eq("yukleyen_worker_id", f.yukleyenWorkerId);
+  if (kartDeseni) q = q.ilike("kart_no", kartDeseni);
+  if (plakaDeseni) q = q.or(plakaDeseni);
+  /**
+   * ÖRTÜŞME: dosyanın [donem_bas, donem_bit] aralığı istenen ayla kesişiyorsa
+   * eşleşir. "Dönemi tam o ay olan" demek, 28 günlük kart dosyalarının ay
+   * sınırını aşan çoğunu elerdi.
+   */
+  if (f.donem) q = q.lte("donem_bas", f.donem.bit).gte("donem_bit", f.donem.bas);
+
+  const { data, error, count } = await q
+    /**
+     * ⚠️ İKİNCİL ANAHTAR ZORUNLU: aynı `yuklendi_at`li iki satırda ofset
+     * sayfalaması determinist olmazsa bir satır iki sayfada görünür ya da
+     * hiç görünmez.
+     */
+    .order("yuklendi_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) {
+    return { satirlar: [], toplam: 0, tabloYok: tabloYokMu(error), donemsizGizlendi: null };
+  }
+
+  const ham = (data ?? []) as unknown as Record<string, unknown>[];
+  const [adlar, plakalar] = await Promise.all([
+    workerAdlari(
+      ham.flatMap((r) => [r.worker_id, r.yukleyen_worker_id]).filter(Boolean).map(String)
+    ),
+    vehiclePlakalari(ham.map((r) => r.vehicle_id).filter(Boolean).map(String)),
+  ]);
+
+  /**
+   * ⚠️ DÖNEM SÜZGECİ SESSİZ ELEME YAPMAZ.
+   *
+   * Dönemi NULL olan dosyalar (ayrıştırılamamış ya da servise hiç
+   * ulaşılamamış olanlar) bu süzgecin dışında kalır — ve bu doğru: dönemi
+   * bilinmeyen bir dosyanın "Mart'a ait" olduğunu iddia edemeyiz. Ama kaç
+   * tane olduğunu SÖYLEMEMEK, kullanıcıya eksik bir listeyi tam gibi
+   * göstermek olurdu.
+   *
+   * Sayım AYNI dönem-dışı süzgeçlerle daraltılıyor: "bu türde/plakada,
+   * dönemi bilinmediği için gösteremediğim N dosya var".
+   */
+  let donemsizGizlendi: number | null = null;
+  if (f.donem) {
+    let dq = supabaseAdmin
+      .from("takograf_dosyalari")
+      .select("id", { count: "exact", head: true })
+      .is("donem_bas", null);
+    if (f.tur) dq = dq.eq("tur", f.tur);
+    if (f.yukleyenWorkerId) dq = dq.eq("yukleyen_worker_id", f.yukleyenWorkerId);
+    if (kartDeseni) dq = dq.ilike("kart_no", kartDeseni);
+    if (plakaDeseni) dq = dq.or(plakaDeseni);
+    const { count: c } = await dq;
+    donemsizGizlendi = c ?? 0;
+  }
+
+  return {
+    // Sayımlar YOK (başlıktaki gerekçe) — boş harita geçiliyor.
+    satirlar: ham.map((r) => cevir(r, adlar, plakalar, new Map())),
+    toplam: count ?? ham.length,
+    tabloYok: false,
+    donemsizGizlendi,
+  };
+}
+
+// ═══════════════════ MOBİL: GERÇEK SAYIM + SAYFALI ALT LİSTELER ═════════
+
+/**
+ * Bir dosyanın faaliyet/olay sayısı — SATIR ÇEKMEDEN.
+ *
+ * ⚠️ `satirSayimlari()` sayıyı satır çekerek buluyor ve 1000 tavanında
+ * sessizce yanlışa dönüyor. `count: "exact", head: true` tavandan bağımsızdır:
+ * gövde hiç dönmez, yalnız `Content-Range` başlığı okunur.
+ */
+export async function altSayim(dosyaId: string): Promise<{ faaliyet: number; olay: number }> {
+  const [f, o] = await Promise.all([
+    supabaseAdmin
+      .from("takograf_faaliyetleri")
+      .select("id", { count: "exact", head: true })
+      .eq("dosya_id", dosyaId),
+    supabaseAdmin
+      .from("takograf_olaylari")
+      .select("id", { count: "exact", head: true })
+      .eq("dosya_id", dosyaId),
+  ]);
+  return { faaliyet: f.count ?? 0, olay: o.count ?? 0 };
+}
+
+/** Sayfalı faaliyetler — künye ucu için. Toplam AYRI ve gerçek. */
+export async function faaliyetlerSayfali(
+  dosyaId: string,
+  s: { limit: number; offset: number }
+): Promise<{ satirlar: TakografFaaliyet[]; toplam: number }> {
+  const { data, error, count } = await supabaseAdmin
+    .from("takograf_faaliyetleri")
+    .select(
+      "id, sira, kart_no, worker_id, gun, baslangic, bitis, sure_dk, faaliyet, slot, vehicle_id",
+      { count: "exact" }
+    )
+    .eq("dosya_id", dosyaId)
+    .order("sira", { ascending: true })
+    .range(s.offset, s.offset + s.limit - 1);
+  if (error) return { satirlar: [], toplam: 0 };
+
+  const ham = (data ?? []) as Record<string, unknown>[];
+  const [adlar, plakalar] = await Promise.all([
+    workerAdlari(ham.map((r) => r.worker_id).filter(Boolean).map(String)),
+    vehiclePlakalari(ham.map((r) => r.vehicle_id).filter(Boolean).map(String)),
+  ]);
+  return {
+    toplam: count ?? ham.length,
+    satirlar: ham.map((r) => ({
+      id: String(r.id),
+      sira: Number(r.sira ?? 0),
+      kartNo: r.kart_no ? String(r.kart_no) : null,
+      workerAd: r.worker_id ? (adlar.get(String(r.worker_id)) ?? null) : null,
+      gun: r.gun ? String(r.gun) : null,
+      baslangic: r.baslangic ? String(r.baslangic) : null,
+      bitis: r.bitis ? String(r.bitis) : null,
+      sureDk: r.sure_dk === null || r.sure_dk === undefined ? null : Number(r.sure_dk),
+      faaliyet: (r.faaliyet ? String(r.faaliyet) : null) as FaaliyetTuru | null,
+      slot: r.slot ? String(r.slot) : null,
+      aracPlaka: r.vehicle_id ? (plakalar.get(String(r.vehicle_id)) ?? null) : null,
+    })),
+  };
+}
+
+/** Sayfalı olaylar — künye ucu için. */
+export async function olaylarSayfali(
+  dosyaId: string,
+  s: { limit: number; offset: number }
+): Promise<{ satirlar: TakografOlay[]; toplam: number }> {
+  const { data, error, count } = await supabaseAdmin
+    .from("takograf_olaylari")
+    .select("id, sira, tur, bas, bit, ciddiyet, arac_plaka", { count: "exact" })
+    .eq("dosya_id", dosyaId)
+    .order("sira", { ascending: true })
+    .range(s.offset, s.offset + s.limit - 1);
+  if (error) return { satirlar: [], toplam: 0 };
+  return {
+    toplam: count ?? (data ?? []).length,
+    satirlar: ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+      id: String(r.id),
+      sira: Number(r.sira ?? 0),
+      tur: r.tur ? String(r.tur) : null,
+      bas: r.bas ? String(r.bas) : null,
+      bit: r.bit ? String(r.bit) : null,
+      ciddiyet: r.ciddiyet ? String(r.ciddiyet) : null,
+      aracPlaka: r.arac_plaka ? String(r.arac_plaka) : null,
+    })),
+  };
+}
+
+/** Aynı SHA'ya sahip mevcut kaydın kimliği — 409 yanıtını doldurmak için. */
+export async function shaIleBul(sha: string): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from("takograf_dosyalari")
+    .select("id")
+    .eq("sha256", sha)
+    .maybeSingle();
+  return data ? String((data as { id: string }).id) : null;
 }

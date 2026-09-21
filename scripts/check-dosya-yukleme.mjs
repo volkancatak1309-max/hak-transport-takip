@@ -92,10 +92,25 @@ const cekirdek = hepsi.find((f) => f.p === CEKIRDEK).k;
    *     değil, sürücü kartı/araç ünitesi dökümü.
    *   • Kendi SHA256 tekilliği ve `bekliyor` durum makinesi var.
    *
-   * Bedeli DE ölçüldü ve açık: o yolda yetim koruması YOK — `dosyaYukle`
-   * (takograf'ın kendi fonksiyonu) başarılı olup satır yazılamazsa dosya
-   * arşivde kalır. Takograf yükleme sırası Volkan'ın kararında ÜÇÜNCÜ; o tur
-   * geldiğinde bu istisna kaldırılacak.
+   * ✅ BEDELİ ÖDENDİ (21.09.2026, Faz C-3 — takograf yükleme turu).
+   *
+   * Eskiden buraya "o yolda yetim koruması YOK" yazıyordu: `dosyaYukle`
+   * Storage'a yazıp satırı yazamazsa dosya arşivde yetim kalıyordu. O açık
+   * KAPANDI — `lib/takograf-db.ts` satır yazma dalında `dosyaSil(...)` çağırıp
+   * sonucu `dosyaTemizlendi` ile taşıyor (ÇEKİRDEĞİN silme fonksiyonu; ikinci
+   * bir `storage.remove` yazılmadı, D2 hâlâ tek kapıyı görüyor).
+   *
+   * Hız sınırı da bu turda bağlandı — ama UÇTA, çekirdeğin KENDİ
+   * `hizSiniriHarca`/`hizSiniriIadeEt` fonksiyonlarıyla
+   * (`app/api/mobile/takograf/route.ts`). İkinci bir sayaç yazılmadı.
+   *
+   * ⚠️ İSTİSNANIN KENDİSİ KALIYOR ve yukarıdaki üç gerekçe hâlâ geçerli.
+   * Kaldırmak, `yukleVeYaz`ın "yazma düşerse dosyayı SİL" kuralını 3. adıma da
+   * taşırdı — oysa takografta servis/ayrıştırma düşse bile dosya DA satır DA
+   * KALMAK ZORUNDA (091: "ayrıştırılamasa bile SİLİNMEZ"). Ayrım adım bazında:
+   * satır yokken silinir (yetim), satır varken asla.
+   *
+   * Bu iki şartı `scripts/check-takograf-uclari.mjs` denetliyor.
    */
   const D1_ISTISNA = new Set(["lib/takograf-db.ts"]);
   const yazanlar = hepsi

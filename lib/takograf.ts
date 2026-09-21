@@ -30,6 +30,11 @@ export const SERVIS_ZAMAN_ASIMI_MS = 35_000;
 // ═══════════════════════════ TÜRLER ═══════════════════════════════════
 
 export type DosyaTuru = "kart" | "vu";
+/**
+ * Tur listesi TEK KAYNAK — `MUHUR_DURUMLARI` ile ayni desen.
+ * Uclar gecerli turleri elle yazmasin: iki liste ilk degisiklikte ayrisir.
+ */
+export const DOSYA_TURLERI: DosyaTuru[] = ["kart", "vu"];
 export type MuhurDurumu = "dogrulandi" | "dogrulanamadi" | "denenmedi";
 export type AyristirmaDurumu = "bekliyor" | "tamam" | "basarisiz";
 export type FaaliyetTuru = "surus" | "is" | "hazir" | "mola" | "bilinmiyor";

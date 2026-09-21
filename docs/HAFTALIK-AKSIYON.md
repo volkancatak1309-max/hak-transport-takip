@@ -2,6 +2,14 @@
 
 **Migration 084 · `/admin/haftalik` · `/api/cron/haftalik-aksiyon`**
 
+> ✅ **084 ÜÇ KİRACIDA DA UYGULANMIŞ — durum tespiti 21.09.2026.**
+> `haftalik_aksiyonlar` ve `haftalik_aksiyon_turlari` HAK61 · Sendigo ·
+> galzura-demo üçünde de VAR (PostgREST şema envanteriyle ölçüldü). Koşum
+> TARİHİ ölçülmedi, yalnız sonucu — bu yüzden "çalıştırıldı ‹tarih›" değil
+> durum tespiti. **Eski "migration Volkan'da bekliyor" notu BAYATTI.**
+> Cron kaydının ayrı bir soru olduğunu unutmayın: tablo var demek zamanlayıcı
+> kurulu demek DEĞİL — `docs/CRON-KAYITLARI.md` § Özet tablo, 6. satır.
+
 10–200 araçlık filoda tam zamanlı filo müdürü yok. Sistem her hafta **en fazla
 5 YAPILACAK İŞ** çıkarır. Gösterge değil, iş. Kural tabanlı — yapay zeka yok,
 her kalem hangi sayıdan hangi eşikten çıktığını ekranda söyler.

@@ -1,17 +1,75 @@
-# Kiracı şema hizalama — 043 → 078
+# Kiracı şema hizalama — 043 → 108
 
-> Ölçüm ve prova: **24.08.2026**. Dosyalar: `db/install/sendigo-hizalama-078.sql`,
+> Dosyalar: `db/install/sendigo-hizalama-078.sql`,
 > `db/install/galzura-demo-hizalama-078.sql`, `db/install/ENVANTER.sql`.
 > Üreteç: `scripts/gen-align-sql.mjs` · muhafız: `npm run lint:install-sql`.
+>
+> ⚠️ **DOSYA ADLARINDAKİ `-078` BAYAT, İÇERİK DEĞİL.** `gen-align-sql.mjs:376`
+> çıktı adını sabit yazıyor, başlığı ise `ORDER` listesinden türetiyor; bugün
+> ikisi de **044 → 108** kapsıyor (Sendigo 59, galzura-demo 60 migration).
+> Ad, `check-install-sql.mjs`'in tazelik denetimine (`K2`) sabitlenmiş durumda;
+> değiştirmek muhafızı da birlikte değiştirmeyi gerektirir.
+
+---
+
+## 0 · GÜNCEL DURUM — ölçüldü 21.09.2026
+
+Yöntem: üç kiracının PostgREST OpenAPI şeması (`GET /rest/v1/`, service-role
+anahtarı) çekildi; `db/migrations/044…108`'in yarattığı **her tablo, view,
+kolon ve RPC** canlıda tek tek arandı. Hizalama dosyaları aynı turda yeniden
+üretildi ve diskteki sürümle **birebir aynı** çıktı (bayt bayt).
+
+| Kiracı | Şema seviyesi | Hizalama dosyasının bugünkü deltası |
+|---|---|---|
+| **Sendigo** | **108** | **0 eksik tablo · 0 eksik view · 0 eksik kolon** — dosyayı çalıştırmak tam no-op |
+| **galzura-demo** | **108** | **0 eksik tablo · 0 eksik view · 0 eksik kolon** — tam no-op |
+| **HAK61** | 108 **eksi 045/046/047/048** | **8 eksik tablo · 7 eksik kolon** (aşağıda) |
+
+**Sendigo'da 079–097 arasında eksik YOK.** Aralığın tamamı uygulanmış; buna
+084 (`haftalik_aksiyonlar` + `haftalik_aksiyon_turlari`) de dahil — "084
+bekliyor" notu bayattı, tablolar üç kiracıda da VAR.
+
+### HAK61 — güvenlik katmanı hiç koşmamış
+
+`SECURITY_LAYER_ENABLED` ve `ACCESS_GATES_ENABLED` HAK61 Vercel projesinde
+tanımsız (varsayılan `false`), yani katman kapalı ve kod fail-open dalına
+düşüyor — bugün bir şey kırmıyor. Ama `workers.is_owner`a bakan her yüzey
+HAK61'de sessizce "patron yok" diyor.
+
+- **8 tablo:** `login_sessions` · `audit_log` (045) · `device_approvals` ·
+  `country_approvals` · `kill_switch` · `kill_switch_attempts` ·
+  `kill_switch_secret` (046) · `pdf_fingerprints` (047)
+- **7 kolon:** `workers.is_owner` · `workers.session_version` (045) ·
+  `workers.allowed_countries` · `workers.access_hours_start` ·
+  `workers.access_hours_end` (046) · `workers.gate_exempt` (048) ·
+  `login_sessions.source` (045, tabloyla birlikte gelir)
+
+> 🔴 **`kill_switch_secret` HAK61'e satır YAZILMADAN kurulmalı.** Özgün 046 o
+> tabloya kendi hash'ini yazar; hizalama yolunda bu satır çıkarılır ve anahtar
+> **fail-closed** kalır (satır yoksa açılamaz). Cevabı kim belirleyecekse
+> kendi hash'ini ayrı ve bilinçli bir adımda yazar.
+
+### Ölçüm yönteminin bilinen kör noktası
+
+PostgREST OpenAPI **trigger fonksiyonlarını listelemez**. İlk turda 8 fonksiyon
+"eksik" göründü; yedisi `returns trigger` (`teslimat_degismez`,
+`teslimat_foto_degismez`, `dvir_form_degismez`, `dvir_yanit_degismez`,
+`takograf_dosya_degismez`, `takograf_dosya_silinemez`, `mesaj_arsive_yazilamaz`),
+sekizincisi 051'in bilerek düşürdüğü `vehicle_odometer_spans`. Üç kiracıda da
+birebir aynı liste çıkıyor — yani yöntem kusuru, gerçek eksik değil. **RPC
+envanterini bu kanaldan çıkarırken trigger fonksiyonlarını beklemeyin.**
+
+---
+
+## 1 · 24.08.2026 ölçümü (tarihsel kayıt)
+
+> Aşağısı 043 → 078 turunun kaydıdır ve **o günkü** durumu anlatır. Bugünkü
+> durum için § 0'a bakın.
 
 Kurulum dosyası 24.08.2026'ya kadar **043'te bayattı**. Sendigo ve galzura-demo
 o dosyayla açıldığı için mesajlaşma, belge takibi, maliyet motoru, yakıt fiyatı,
 sefer sistemi ve bölge ziyaretleri o kurulumlarda **şema düzeyinde hiç yoktu**.
 Bu belge onları bugünkü şemaya çeken işi anlatır.
-
----
-
-## 1 · Ölçüm
 
 ### Sendigo — ÖLÇÜLDÜ (canlı, PostgREST + service key)
 
@@ -199,6 +257,10 @@ yapılıp tekrar çalıştırıldığında çıkış **0**, 48 tablo.
 ---
 
 ## 4 · Çalıştırma
+
+> ⚠️ **Sendigo ve galzura-demo için bu bölümün işi BİTTİ** (21.09.2026 ölçümü,
+> § 0): ikisinde de delta sıfır, dosya çalıştırılırsa tam no-op olur. Aşağısı
+> yeni açılan ya da geride kalmış bir kiracı için geçerlidir.
 
 1. **(galzura-demo için zorunlu, Sendigo'da isteğe bağlı)** `ENVANTER.sql` →
    çıktıyı sakla. Salt okuma.

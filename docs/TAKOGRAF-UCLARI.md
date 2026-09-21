@@ -183,6 +183,31 @@ koşumda `servisYapilandirildi:false`, satır `bekliyor`da kalıyor. Bu bir arı
 değil, bu makinede o sırrın olmaması. Ayrıştırmanın gerçekten çalıştığı canlı
 host turunda ölçülüyor.
 
+### Canlı host turu — demo.galzura.com, dağıtımdan SONRA (**yeni satır açmadan**)
+
+Yerel koşumda servis sırrı yoktu; gerçek ayrıştırma burada ölçüldü. Yeni dosya
+YÜKLENMEDİ —  zaten var olan QA satırı üzerinde çalıştı, yani
+**sıfır** kalıcı satır eklendi.
+
+| adım | sonuç |
+|---|---|
+| jetonsuz  | **401** — uç dağıtılmış, kapı çalışıyor |
+|  | **200** |
+|  | **200** ·  |
+|  | **200** · **1.394 ms** |
+| → ayrıştırma |  → **** · sürüm  |
+| → mühür |  · kapalı kod **** (ham metin gövdede YOK) |
+| → sayım | **155 faaliyet · 27 olay** |
+|  | **200** · 10/155  · 5/27 ·  ✓ |
+| → olay |  |
+|  | **200** ·  · 98.598 bayt · 300 sn |
+|  | **200** · 2 eşleşti ·  |
+|  | **400**  ·  |
+
+🔑 **Senkron kararı ölçümle doğrulandı: 1.394 ms.** 35 sn'lik zaman aşımı bir
+tavan; gerçek ayrıştırma onun ellide biri.  yine de duruyor —
+tavan bir gün ısırırsa sessizce kesilmesin diye.
+
 ### Muhafız
 
 `npm run lint:takograf-uclari` — `verify` zincirinde. **Arıza enjeksiyonuyla

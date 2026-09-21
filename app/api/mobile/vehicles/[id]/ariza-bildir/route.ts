@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
-import { requireMobileAdmin } from "@/lib/mobile-scope";
+import { requireMobileWorkerScoped } from "@/lib/mobile-scope";
+import { isEmriYazmaIzni } from "@/lib/is-emri-db";
 import { mobileError } from "@/lib/mobile-auth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { aracOzeti } from "@/lib/vehicle-day-db";
@@ -25,11 +26,17 @@ export const dynamic = "force-dynamic";
  * SESSİZCE yok olurdu. Ayrı tablo (`vehicle_fault_reports`, migration 056) bu
  * yüzden var; iki kaynak aynı ekranda yan yana gösterilebilir, aynı satırda değil.
  *
- * ── KAPI: requireMobileAdmin ──────────────────────────────────────────────
- * Kardeş araç uçlarıyla (`/vehicles/[id]`, `…/rota`, `…/olaylar` …) AYNI katman.
- * Panelde `/admin/araclar` requireAdmin ile korunuyor; filo şefi ve şoför oraya
- * giremiyor, burada da 403 `admin_required` alırlar. Şoförün de bildirebilmesi
- * ayrı bir karardır (farklı kapı, farklı kapsam) ve bu turun kapsamında değil.
+ * ── KAPI: requireMobileWorkerScoped + ARAÇ KAPSAMI (21.09.2026'da GENİŞLEDİ) ─
+ * Bu uç 11.08.2026'da `requireMobileAdmin` ile açılmıştı ve başlığı "şoförün de
+ * bildirebilmesi ayrı bir karardır" diyordu. O karar VERİLDİ (Volkan, Faz C-1):
+ * arızayı ilk gören direksiyondaki kişidir, onu kapıda çevirmek bildirimin hiç
+ * yazılmaması demekti.
+ *
+ * Kapı artık oturumu yeterli sayıyor AMA yazma ANAHTARLI kalıyor: hangi araca
+ * yazılabileceğini `lib/is-emri-db.ts` isEmriYazmaIzni söylüyor — yönetici her
+ * araca, şef kendi filosuna, şoför YALNIZ açık vardiyasının ya da kendisine
+ * atanmış aracına. Kural `POST /api/mobile/is-emirleri` ile ORTAK; iki uç aynı
+ * soruyu iki kez cevaplamıyor.
  *
  * ── YAZMA ANAHTARLI ───────────────────────────────────────────────────────
  * `vehicle_id` YOLDAN gelir, gövdeden değil; `reported_by` OTURUMDAN gelir,
@@ -44,21 +51,36 @@ export const dynamic = "force-dynamic";
  * alan yoksa `missing_fields`; string değilse ya da trim sonrası boşsa
  * `invalid` + `sebep`; 2000 karakteri aşarsa `too_long` + `uzunluk`.
  *
- * ⚠️ HIZ SINIRI (rate limit) YOK — paket ucuyla aynı durum. Kapı yönetici
- * kimliği olduğu için yüzey dar, ama bu bir sınır değil bir eksiktir.
+ * ⚠️ HIZ SINIRI (rate limit) YOK — paket ucuyla aynı durum. Kapı GENİŞLEDİĞİ
+ * için bu eksik artık daha çok önemli: yüzey bugün her şoföre açık ve tek
+ * frenimiz araç kapsamı (kendi aracına yazabilir). Ayrı karar, ayrı tur.
  */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const guard = await requireMobileAdmin(req);
+  const guard = await requireMobileWorkerScoped(req);
   if (!guard.ok) return guard.response;
+  const { worker, isChief, fleetScope } = guard.actor;
 
   const { id } = await params;
   // Araç GERÇEKTEN var mı — yoksa yabancı anahtar hatası 503'e düşer ve
   // "sunucu arızası" gibi okunurdu. 404 doğru cümle.
   const arac = await aracOzeti(id);
   if (!arac) return mobileError(404, "not_found");
+
+  // Kapsam VARLIKTAN SONRA: 404 ile 403'ü ayırmak, var olmayan bir araca
+  // "yetkin yok" demekten dürüst. Kapsam dışı araç zaten 403 alıyor.
+  const izin = await isEmriYazmaIzni(
+    {
+      workerId: worker.id,
+      isAdmin: worker.is_admin,
+      isChief,
+      isFleetVehicle: (v) => fleetScope.isFleetVehicle(v),
+    },
+    id
+  );
+  if (!izin.ok) return mobileError(403, "kapsam_disi", { alan: "aracId" });
 
   let body: unknown;
   try {
@@ -82,7 +104,7 @@ export async function POST(
     .from("vehicle_fault_reports")
     .insert({
       vehicle_id: id,
-      reported_by: guard.actor.worker.id,
+      reported_by: worker.id,
       aciklama: ayikla.aciklama,
     })
     .select("id, vehicle_id, reported_by, aciklama, durum, created_at")

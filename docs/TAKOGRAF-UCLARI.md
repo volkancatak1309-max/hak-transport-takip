@@ -186,27 +186,27 @@ host turunda ölçülüyor.
 ### Canlı host turu — demo.galzura.com, dağıtımdan SONRA (**yeni satır açmadan**)
 
 Yerel koşumda servis sırrı yoktu; gerçek ayrıştırma burada ölçüldü. Yeni dosya
-YÜKLENMEDİ —  zaten var olan QA satırı üzerinde çalıştı, yani
-**sıfır** kalıcı satır eklendi.
+**yüklenmedi** — `yeniden-oku` zaten var olan QA satırı üzerinde çalıştı, yani
+arşive **sıfır** kalıcı satır eklendi.
 
 | adım | sonuç |
 |---|---|
-| jetonsuz  | **401** — uç dağıtılmış, kapı çalışıyor |
-|  | **200** |
-|  | **200** ·  |
-|  | **200** · **1.394 ms** |
-| → ayrıştırma |  → **** · sürüm  |
-| → mühür |  · kapalı kod **** (ham metin gövdede YOK) |
+| jetonsuz `GET /api/mobile/takograf` | **401** — uç dağıtılmış, kapı çalışıyor |
+| `POST /api/mobile/auth/login` | **200** |
+| `GET ?tur=vu&limit=10` | **200** · `{limit:10, offset:0, total:2, hasMore:false}` |
+| `POST /{id}/yeniden-oku` | **200** · **1.394 ms** |
+| → ayrıştırma | `bekliyor` → **`tamam`** · sürüm `tachograph-go@95ca680` |
+| → mühür | `dogrulanamadi` · kapalı kod **`imza_yok`** (ham metin gövdede YOK) |
 | → sayım | **155 faaliyet · 27 olay** |
-|  | **200** · 10/155  · 5/27 ·  ✓ |
-| → olay |  |
-|  | **200** ·  · 98.598 bayt · 300 sn |
-|  | **200** · 2 eşleşti ·  |
-|  | **400**  ·  |
+| `GET /{id}?fLimit=10&oLimit=5` | **200** · 10/155 `hasMore:true` · 5/27 · `sayim == toplam` ✓ |
+| → olay | `metinAnahtari: ev_general_last_card_session_not_correctly_closed` |
+| `GET /{id}/indir` | **200** · `qa-mobil-c3-20260921.ddd` · 98.598 bayt · 300 sn |
+| `GET ?donem=2026-01` | **200** · 2 eşleşti · `donemsizGizlendi: 0` |
+| `GET ?sofor=abc` | **400** `invalid` · `kimlik_bagi_yok` |
 
 🔑 **Senkron kararı ölçümle doğrulandı: 1.394 ms.** 35 sn'lik zaman aşımı bir
-tavan; gerçek ayrıştırma onun ellide biri.  yine de duruyor —
-tavan bir gün ısırırsa sessizce kesilmesin diye.
+TAVAN; gerçek ayrıştırma onun ellide biri. `maxDuration = 300` yine de duruyor —
+tavan bir gün ısırırsa istek sessizce kesilmesin diye.
 
 ### Muhafız
 

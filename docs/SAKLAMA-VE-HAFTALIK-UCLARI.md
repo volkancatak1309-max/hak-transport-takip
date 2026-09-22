@@ -126,8 +126,14 @@ ucun tamamını açar).
 | kiracı | kayıt alan adı | durum (ölçüldü 22.09.2026) |
 |---|---|---|
 | HAK61 | `hak-transport-takip.vercel.app` | ✅ **KURULU VE ÇALIŞIYOR** |
-| Sendigo | `sendigo-delta.vercel.app` | ❌ kurulu değil — **0 tur** |
-| galzura-demo | `demo.galzura.com` | ❌ kurulu değil — **0 tur** |
+| Sendigo | `sendigo-delta.vercel.app` | ✅ **KURULDU 22.09.2026** (turdan sonra) |
+| galzura-demo | `demo.galzura.com` | ✅ **KURULDU 22.09.2026** (turdan sonra) |
+
+> ⚠️ **Bu tablo turun ÖLÇÜM ANINI yansıtıyordu** (Sendigo ve demo o an 0 tur).
+> Volkan kayıtları aynı gün kurdu; güncel durum ve kanıt
+> `docs/CRON-KAYITLARI.md` 6. işte. Test çağrıları `kuru` değildi, yani
+> ikisinde de 2026-09-21 haftasının turu yazıldı (Sendigo 2 kalem,
+> demo 5 kalem) — mobil `GET /api/mobile/haftalik` artık orada da DOLU döner.
 
 **HAK61 kanıtı `haftalik_aksiyon_turlari`nden:** son dört tur Pazartesi
 `03:30 UTC` = **06:30 Europe/Vienna**'da üretilmiş — belgedeki zamanlamayla

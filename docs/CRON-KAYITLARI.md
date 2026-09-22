@@ -22,7 +22,7 @@ Vercel projesinden alınır.
 | 3 | Belge uyarısı | `/api/cron/document-alerts` | `CRON_SECRET` | **günde TAM 1 · 06:00** | Belge takibi açık kiracı (migration 078 — bugün yalnız HAK61) |
 | 4 | Demo telemetri temizliği | `/api/cron/demo-retention` | `CRON_SECRET` | günde 1 · gece | **YALNIZ galzura-demo** |
 | 5 | Periyodik bakım uyarısı | `/api/cron/bakim-alerts` | `CRON_SECRET` | **günde TAM 1 · 06:15** | Bakım planı kuran her kiracı (migration 081) |
-| 6 | Haftalık aksiyon | `/api/cron/haftalik-aksiyon` | `CRON_SECRET` | **haftada TAM 1 · Pazartesi 06:30** | Haftalık panel isteyen her kiracı (migration 084) |
+| 6 | **Haftalık aksiyon** ✅ **KURULDU** | `/api/cron/haftalik-aksiyon` | `CRON_SECRET` | **haftada TAM 1 · Pazartesi 06:30 Europe/Vienna** | **ÜÇ KİRACIDA DA KURULU** (22.09.2026) — migration 084 |
 | 7 | Mevzuat erken uyarı | `/api/cron/mevzuat-tarama` | `CRON_SECRET` | **15 dakika** | Canlı mevzuat katmanı isteyen her kiracı (migration 086) |
 | 8 | **Dönem skoru + rozet** ✅ **KURULDU** | `/api/cron/skor-donem` | `CRON_SECRET` | **haftada TAM 1 · Pazartesi 06:45 Europe/Vienna** | **ÜÇ KİRACIDA DA KURULU** (19.09.2026) — migration 088 |
 | 9 | **Saklama UYARISI** (silmez) | `/api/cron/saklama` | `CRON_SECRET` | **günde 1 · gece 03:00** | Saklama katmanı kuran her kiracı (migration 090) |
@@ -220,10 +220,37 @@ Otomatik kapanış kaldırıldı; kapanmamış vardiyalar Dikkat panosundaki
 
 ---
 
-## 6 · Haftalık aksiyon — HAFTADA TAM BİR KEZ
+## 6 · Haftalık aksiyon — HAFTADA TAM BİR KEZ  ✅ KURULDU
+
+> **Kayıt kuruldu: 22.09.2026 — Sendigo ve galzura-demo.** HAK61'de kayıt
+> zaten vardı ve çalışıyordu. Yöntem `POST`, sır **`Authorization: Bearer`**
+> başlığıyla, zamanlama **Pazartesi 06:30 Europe/Vienna**. Test çağrısı
+> ikisinde de **HTTP 200**.
+>
+> **Kanıt `haftalik_aksiyon_turlari`nden (22.09.2026 ölçümü)** — test
+> çağrıları `kuru` DEĞİLDİ, yani her iki kiracıda bu haftanın turunu
+> gerçekten yazdılar:
+>
+> | kiracı | hafta | üretildi (UTC) | kalem | elenen | bildirim alıcı/jeton |
+> |---|---|---|---|---|---|
+> | Sendigo | 2026-09-21 | 22.09 13:40:19 | 2 | 0 | 3 / **0** |
+> | galzura-demo | 2026-09-21 | 22.09 13:42:01 | 5 | 7 | 6 / **0** |
+>
+> HAK61'in kaydı değişmedi ve düzenli koşuyor: son dört tur Pazartesi
+> `03:30 UTC` = **06:30 Europe/Vienna** (31.08 · 07.09 · 14.09 · 21.09),
+> her biri 5 kalem, bildirim 6 alıcı / 1 jeton.
+>
+> ⚠️ **`jeton: 0` bir arıza DEĞİL**: Sendigo ve demo'da yöneticilerin
+> kayıtlı mobil cihazı yok. Panel bunu "N yönetici — kayıtlı cihaz yok"
+> diye yazar (aşağıdaki üç durumlu tablo).
+>
+> ⚠️ Bu haftanın (2026-09-21) turu ikisinde de YAZILDI; ilk zamanlanmış
+> koşum **29.09.2026 Pazartesi**tir ve yeni haftayı üretir. 22-28.09
+> arasında tetiklenirse `{"zatenVardi": true}` döner, hiçbir şey yazmaz.
 
 ```
-POST https://<alan-adi>/api/cron/haftalik-aksiyon?secret=<CRON_SECRET>
+POST https://<alan-adı>/api/cron/haftalik-aksiyon
+Authorization: Bearer <CRON_SECRET>
 ```
 
 **Sıklık: Pazartesi 06:30.** Neden Pazartesi sabahı: tur GEÇEN HAFTAYI yorumluyor
@@ -239,7 +266,8 @@ gelmez. (Bakım cron'undaki "günde tam 1" deseninin haftalık karşılığı.)
 cevaplar. Yeni kiracıda eşikleri görmek için:
 
 ```
-POST /api/cron/haftalik-aksiyon?secret=<CRON_SECRET>&kuru=1
+POST https://<alan-adı>/api/cron/haftalik-aksiyon?kuru=1
+Authorization: Bearer <CRON_SECRET>
 ```
 
 ### Yanıt kodları

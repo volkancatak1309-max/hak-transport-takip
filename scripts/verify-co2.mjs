@@ -21,8 +21,6 @@ import {
 import { co2AyariYaz, co2Panosu } from "@/lib/co2-db";
 
 const YONETICI = "a0000000-0000-4000-8000-00000000000a";
-const ALPEN = "d1000000-0000-4000-8000-0000000000d1";
-const NORD = "d2000000-0000-4000-8000-0000000000d2";
 
 let dusen = 0;
 const iddia = (b, k, kanit) => {
@@ -122,27 +120,7 @@ async function main() {
   );
 
   // ══════════════════════════════════════════════════════════════════════
-  baslik("3 · MÜŞTERİ KIRILIMI — İHALE FORMATI");
-
-  console.log("  ── MÜŞTERİLER");
-  for (const m of p.musteriler) {
-    console.log(
-      `     ${m.ad.padEnd(24)} ${m.seferSayisi} sefer · ${String(m.km ?? "—").padStart(5)} km · ${String(m.kg === null ? "ölçülemedi" : n1(m.kg)).padStart(10)} kg · ölçülemeyen ${m.olculemeyenSefer}`
-    );
-  }
-  const alpen = p.musteriler.find((m) => m.musteriId === ALPEN);
-  const nord = p.musteriler.find((m) => m.musteriId === NORD);
-  iddia("🔑 MÜŞTERİ BAZLI CO₂ HESAPLANDI", (alpen?.kg ?? 0) > 0, `${alpen?.ad}: ${n1(alpen?.kg)} kg · ${alpen?.km} km`);
-  iddia(
-    "  yoğunluk aracın g/km'siyle tutarlı",
-    alpen && alpen.gKm !== null && Math.abs(alpen.gKm - (p.araclar.find((a) => a.plate === "DO-201AA")?.gKm ?? 0)) < 1,
-    `müşteri ${n1(alpen?.gKm)} g/km · araç ${n1(p.araclar.find((a) => a.plate === "DO-201AA")?.gKm)} g/km`
-  );
-  iddia(
-    "🔑 KM'Sİ ÖLÇÜLEMEYEN SEFER TOPLAMA GİRMEDİ ama SAYILDI",
-    nord?.kg === null && nord?.olculemeyenSefer === 1,
-    `${nord?.ad}: kg=${nord?.kg} · ölçülemeyen ${nord?.olculemeyenSefer}/${nord?.seferSayisi} sefer`
-  );
+  baslik("3 · ŞOFÖR KIRILIMI + AYLIK TREND");
 
   console.log("  ── ŞOFÖRLER");
   for (const s of p.soforler) {

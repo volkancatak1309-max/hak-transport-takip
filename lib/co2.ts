@@ -171,16 +171,6 @@ export type CO2SoforSatiri = {
   olculemeyenKm: number;
 };
 
-export type CO2MusteriSatiri = {
-  musteriId: string | null;
-  ad: string;
-  seferSayisi: number;
-  km: number | null;
-  kg: number | null;
-  gKm: number | null;
-  /** Km'si ölçülemeyen sefer sayısı — bu seferler toplama GİRMEZ. */
-  olculemeyenSefer: number;
-};
 
 /**
  * 🔴 ORAN KÜMESİ KURALI (31.08.2026).

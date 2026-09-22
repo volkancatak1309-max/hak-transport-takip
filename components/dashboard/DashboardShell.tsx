@@ -22,7 +22,6 @@ import {
   CalendarCheck,
   ClipboardCheck,
   Award,
-  Euro,
   Leaf,
   BarChart3,
   FileBarChart,
@@ -154,7 +153,6 @@ export function DashboardShell({
         // Şef de görür ama KAPSAMLI: kendi filosu dışındaki kalem sunucudan
         // hiç çıkmıyor (app/actions/haftalik-aksiyon.ts).
         { href: "/admin/haftalik", label: t("weekly"), icon: ClipboardCheck },
-        { href: "/admin/karlilik", label: t("profitability"), icon: Euro },
         { href: "/admin/mevzuat", label: t("compliance"), icon: ShieldCheck },
         { href: "/admin/odul", label: t("recognition"), icon: Award },
         { href: "/admin/co2", label: t("co2"), icon: Leaf },
@@ -181,7 +179,6 @@ export function DashboardShell({
         // /admin GÜNÜN panosu ("bugün ne var"), bu HAFTANIN yorumu
         // ("bu hafta ne yap"). İkisi aynı aile, farklı zaman ölçeği.
         { href: "/admin/haftalik", label: t("weekly"), icon: ClipboardCheck },
-        { href: "/admin/karlilik", label: t("profitability"), icon: Euro },
         { href: "/admin/mevzuat", label: t("compliance"), icon: ShieldCheck },
         // TAKOGRAF ARŞİVİ (091) — Mevzuat'ın HEMEN ardında, bilinçli.
         // Mevzuat "kural ne diyor"u, bu ekran "kanıtım nerede"yi yanıtlıyor;

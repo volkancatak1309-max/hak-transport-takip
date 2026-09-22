@@ -1,8 +1,8 @@
 import "server-only";
 import { getTranslations } from "next-intl/server";
-import { buildDistanceReport, buildFuelReport } from "@/lib/reports";
+import { buildDistanceReport, buildFuelReport, buildSpeedReport } from "@/lib/reports";
 import { loadRangeShifts, persNrHaritasi } from "@/lib/report-shifts";
-import { FUEL_MIN_KM, FUEL_MIN_CONSUMED_PCT } from "@/lib/metric-thresholds";
+import { FUEL_MIN_KM, FUEL_MIN_CONSUMED_PCT, SPEED_MIN_KM } from "@/lib/metric-thresholds";
 import { PACKAGES_ENABLED, KM_EKSENI_KESIM_TARIHI } from "@/lib/tenant";
 import { kmRaporDegeri } from "@/lib/km-ui";
 import { DEFAULT_LOCALE } from "@/i18n/request";
@@ -21,8 +21,10 @@ import {
   workedMs,
   formatDate,
   formatTime,
+  formatDateTime,
   formatDurationShort,
 } from "@/lib/format";
+import { buildZoneVisitReport } from "@/lib/zone-visit-report";
 import type { DateRange } from "@/lib/analytics-shared";
 
 /**
@@ -253,6 +255,114 @@ export async function buildFuelCsv(range: DateRange, dil?: string | null): Promi
     govde: utf8Bom(metin),
     contentType: "text/csv;charset=utf-8",
     dosyaAdi: `hak-yakit-${bugun()}.csv`,
+    satir: satirlar.length,
+  };
+}
+
+// ── 4) HIZ ──────────────────────────────────────────────────────────────────
+
+/**
+ * Raporlar › Hız ekranının (`SpeedClient.tsx`) CSV ikizi.
+ *
+ * ⚠️ PANELDE BU DÜĞME YOK — ölçüldü (22.09.2026): `SpeedClient.tsx` içinde
+ * `csv`/`EXPORT_ENABLED` geçmiyor, ekran yalnız tabloyu gösteriyor. Yani bu
+ * dosya panelden KOPYALANMADI, panelin TABLOSUNDAN türetildi: aynı sütunlar,
+ * aynı sıra, aynı boşluk kuralları. Panele düğme eklenirse biçim BURASI
+ * olmalı, yoksa iki yüzey iki farklı dosya üretir.
+ *
+ * ⚠️ ORAN YERİNE SEBEP. `per100Km === null` olduğunda hücre BOŞ bırakılmaz;
+ * panelin ekrana yazdığı gerekçe metni (`ratio_reason_*`) yazılır. Boş hücre
+ * Excel'de "sıfır ihlal" diye okunur — oysa ölçülemeyen bir paydadır.
+ *
+ * ⚠️ `maxSpeedKmh` cihazın ihlal anında bildirdiği değerdir; birim sütun
+ * başlığında değil hücrede de yok — sayı olarak kalır ki Excel'de toplanabilsin.
+ */
+export async function buildSpeedCsv(range: DateRange, dil?: string | null): Promise<CsvCikti> {
+  const locale = csvDili(dil);
+  const t = await getTranslations({ locale, namespace: "reports" });
+  const rapor = await buildSpeedReport(range);
+  const nf = locale === "de" ? "de-AT" : locale === "en" ? "en-GB" : "tr-TR";
+
+  const baslik = [
+    t("col_plate"),
+    t("col_driver"),
+    t("col_violations"),
+    t("col_max_speed"),
+    t("col_per_100km"),
+  ];
+
+  const satirlar = rapor.rows.map((r) => [
+    r.plate,
+    r.driverName ?? "",
+    String(r.violations),
+    r.maxSpeedKmh === null ? "" : String(r.maxSpeedKmh),
+    r.per100Km === null
+      ? t(`ratio_reason_${r.per100Reason ?? "no_odometer"}`, { min: SPEED_MIN_KM })
+      : r.per100Km.toLocaleString(nf, { maximumFractionDigits: 1 }),
+  ]);
+
+  const metin = satirlariBirlestir([baslik, ...satirlar], ";");
+  return {
+    govde: utf8Bom(metin),
+    contentType: "text/csv;charset=utf-8",
+    dosyaAdi: `hak-hiz-${bugun()}.csv`,
+    satir: satirlar.length,
+  };
+}
+
+// ── 5) BÖLGE SÜRELERİ ───────────────────────────────────────────────────────
+
+/**
+ * Raporlar › Bölge Süreleri CSV'sinin (`ZoneVisitsClient.tsx` `exportCsv`)
+ * sunucu ikizi — sekiz sütun, aynı sıra, aynı boşluk kuralları.
+ *
+ * ⚠️ AÇIK ZİYARET BOŞ KALIR. `durationMs === null` "henüz çıkmadı" demektir;
+ * 0 yazmak Excel'de "hiç durmadı" diye okunur. Panelin kendi notu.
+ *
+ * ⚠️ BELİRSİZLİK CSV'YE TAŞINIR — ve İKİ SEBEP AYRI: `bolge` ölçümü BİZ
+ * durdurduk (bölge pasifleşti/arşivlendi), `sinyal` cihaz sustu. Bu dosya
+ * müşteri faturasının ekine giriyor; ekranı görmeyen kişi farkı ancak burada
+ * okuyabilir.
+ *
+ * Tarih/saat biçimi panelin `formatDateTime`ı ile aynı fonksiyondan gelir;
+ * ikinci bir biçimleme yolu açmak aynı ziyaretin iki yüzeyde farklı
+ * yazılmasına giden en kısa yoldur.
+ */
+export async function buildZoneDurationsCsv(
+  range: DateRange,
+  dil?: string | null
+): Promise<CsvCikti> {
+  const locale = csvDili(dil);
+  const t = await getTranslations({ locale, namespace: "reports" });
+  const rapor = await buildZoneVisitReport(range);
+
+  const baslik = [
+    t("zone_col_customer"),
+    t("zone_col_zone"),
+    t("col_plate"),
+    t("col_driver"),
+    t("zone_col_in"),
+    t("zone_col_out"),
+    t("zone_col_minutes"),
+    t("zone_col_note"),
+  ];
+
+  const satirlar = rapor.rows.map((r) => [
+    r.customerName ?? "",
+    r.zoneName,
+    r.plate,
+    r.driverName ?? "",
+    formatDateTime(r.startedAt, locale),
+    r.endedAt ? formatDateTime(r.endedAt, locale) : "",
+    r.durationMs === null ? "" : String(Math.round(r.durationMs / 60000)),
+    r.belirsizSebep === "bolge" ? t("zone_closed") : r.belirsiz ? t("zone_uncertain") : "",
+  ]);
+
+  const metin = satirlariBirlestir([baslik, ...satirlar], ";");
+  return {
+    govde: utf8Bom(metin),
+    contentType: "text/csv;charset=utf-8",
+    dosyaAdi: `hak-bolge-sureleri-${bugun()}.csv`,
     satir: satirlar.length,
   };
 }

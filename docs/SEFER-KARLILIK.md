@@ -1,3 +1,16 @@
+# ⛔ BU MODÜL ÜRÜNDEN KALDIRILDI (22.09.2026)
+
+Volkan kararı: **sefer başına gelir diye bir şey olmayacak.** `/admin/karlilik`
+sayfası, menü kalemi, `app/actions/karlilik.ts`, `lib/karlilik*.ts`, müşteri/gelir
+CRUD'u, sefere müşteri atama ve haftalık panelin `musteri_zarar` kuralı silindi.
+`tenant_cost_rates` (076/077) KALDI — rölanti ve yakıt € hesabı ona bağlı.
+
+**Veritabanına DOKUNULMADI:** migration 085 duruyor, `musteriler` ve
+`sefer_gelirleri` tabloları yerinde (üç kiracıda da 0 satırdı, ölçüldü).
+Aşağıdaki belge o turun ölçüm kaydı olarak korunuyor.
+
+---
+
 # Sefer bazlı kârlılık — gelir tarafı
 
 **Migration 085 · `/admin/karlilik` · `lib/karlilik.ts` + `lib/karlilik-db.ts`**

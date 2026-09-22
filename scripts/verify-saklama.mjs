@@ -283,7 +283,7 @@ await saklamaAyariYaz({ uyariGun: 30, ulkeKodu: "AT", gerekce: null }, null);
     yasalDayanak: dt.yasalDayanak,
   });
   iddia("🔑 084 kuralı kalem üretiyor", kalem !== null);
-  iddia("kalemin öznesi YOK (kiracının kendisi)", kalem.workerId === null && kalem.vehicleId === null && kalem.musteriId === null);
+  iddia("kalemin öznesi YOK (kiracının kendisi)", kalem.workerId === null && kalem.vehicleId === null);
   iddia("kalem /admin/saklama'ya gidiyor", kalem.hedefYol === "/admin/saklama");
   iddia("🔑 çıpa yokken cümlede SAYI GEÇMİYOR", kalem.gerekce.includes("DOĞRULANMADI"), "uydurma sayı yok");
   iddia("kanıt yasalCipaDogrulandi=false taşıyor", kalem.kanit.yasalCipaDogrulandi === false);

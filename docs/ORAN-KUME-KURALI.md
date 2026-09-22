@@ -1,3 +1,7 @@
+> ⛔ **22.09.2026 — `lib/karlilik.ts` / `lib/karlilik-db.ts` ÜRÜNDEN KALDIRILDI.**
+> Bu belgedeki o dosyalara ait satırlar TARİHSEL kayıttır; kod artık yok.
+> Migration 085 ve `musteriler`/`sefer_gelirleri` tabloları DOKUNULMADAN duruyor.
+
 # Oran küme kuralı — pay ve payda aynı kümeden
 
 > 31.08.2026 · Dal `fix/oran-kume-kurali` · **push/deploy YOK.**

@@ -306,3 +306,60 @@ görünüyor. Bunlar 12 saattir çalışan insanlar değil, **kapanmamış kayı
 `VARDIYA_BAYAT_MS` (24 sa) eşiğinin **altında** kaldıkları için değerlendirme
 dışı da kalmıyorlar. Uç burada panelle birebir aynı sayıyı gösteriyor; bu
 ucun değil verinin özelliği (`bayatVardiya: 0`, yani 24 saati aşan yok).
+
+---
+
+## 10 · Canlı HOST turu — demo.galzura.com, gerçek HTTP (22.09.2026)
+
+Dağıtım **`a12c405`**, üç kiracıda da **READY**. **35/35 iddia geçti.**
+
+§9 uçları *yerel rota + canlı DB* ile ölçüyordu; bu tur **dağıtılmış uca gerçek
+HTTP** atıyor.
+
+| adım | hedef | kod | not |
+|---|---|---|---|
+| `GET` · `PATCH` jetonsuz | **üç kiracı** | **401** | `missing_token` · demo 292 ms · HAK61 554 ms · Sendigo 534 ms |
+| `POST /auth/login` | demo | **200** | `rol=admin` |
+| `GET /mevzuat` | demo | **200** | **641 ms** · AT_AZG · 60/30/15 · 3 kural |
+| `GET ?durum=acik` · `?durum=kapali` | demo | **400** | `kapanis_ekseni_yok` |
+| `GET ?sofor=abc` | demo | **400** | `alan: sofor` |
+| `GET ?gun=999` · `?gun=0` | demo | **400** | `alan: gun` |
+| `GET ?limit=1&gun=30` | demo | **200** | `page.limit=1` · `pencereGun=30` |
+| `PATCH {kademe:{erken:61}}` | demo | **200** | `60 → 61` · `panelTazelendi: true` |
+| `GET` (doğrulama) | demo | **200** | `erken = 61` |
+| `PATCH {erken:60}` (geri al) | demo | **200** | `61 → 60` |
+| `GET` (son doğrulama) | demo | **200** | `AT_AZG · 60/30/15 · surusTahmini=false` |
+| `PATCH {erken:10}` · `{son:0}` | demo | **400** | `kademe_sirasi` |
+| `PATCH {erken:60.5}` | demo | **400** | `bicim: tamsayi` |
+| `PATCH {kademe:{bilinmeyen:5}}` | demo | **400** | `alan: kademe` |
+| `PATCH {ulke:"AT"}` | demo | **400** | `ulke_kolonu_yok` |
+| `PATCH {kuralSeti:"XX"}` | demo | **400** | `alan: kuralSeti` |
+| `PATCH {surusTahmini:"evet"}` | demo | **400** | `alan: surusTahmini` |
+| `PATCH {}` | demo | **400** | `bos_govde` |
+
+**HAK61 ve Sendigo'da yalnız jetonsuz 401 ölçüldü** — canlı müşteride tek
+baytlık yazma yok; soru sadece "uç dağıtıldı mı" idi ve cevabı JSON `401`.
+
+### 🔑 "Kapatma ucu yok" ÖLÇÜLDÜ — ve naif kontrol yanlış ölçüyordu
+
+İlk koşumda `POST /api/mobile/mevzuat/uyari/<id>/kapat` için "200 dönmemeli"
+kontrolü **düştü**. Sebep ucun değil uygulamanın davranışıydı — ölçüldü:
+
+| istek | kod | gövde |
+|---|---|---|
+| `POST` olmayan rota (`…/uyari/<id>/kapat`) | **200** | **156 KB HTML** (not-found sayfası) |
+| `POST` uydurma rota (`…/kesinlikle-boyle-bir-sey-yok`) | **200** | 156 KB HTML — **birebir aynı davranış** |
+| `GET` aynı iki yol | **404** | aynı HTML |
+| `POST` **VAR OLAN** rota (`/api/mobile/mevzuat`, POST handler'ı yok) | **405** | **0 bayt** |
+
+Yani ayırt edici kod değil **cevabın cinsi**: var olan bir rota tanımsız
+metoda **405 + 0 bayt**, olmayan bir rota **HTML sayfa** döner. Kapatma yolu
+ikinci gruba düşüyor ve uydurma bir yolla birebir aynı cevabı veriyor →
+**uç tanımlı değil**. (Aynı tuzak `kiraci-sorgu` turunda da kayda geçmişti:
+olmayan rota 404 değil 200+HTML.)
+
+### DB tur sonrası
+
+`tenant_mevzuat` = `AT_AZG · surus_tahmini=false · 60/30/15` — tur öncesiyle
+birebir. `mevzuat_uyarilari` = **0 satır**, değişmedi. Değişen tek şey
+`updated_at`/`updated_by`: yazma ürün yolundan geçti ve izini bıraktı.

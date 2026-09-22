@@ -8,6 +8,7 @@ import {
   getTur,
   listTurlar,
   aksiyonKapat,
+  kalemKapsamda,
   type HaftalikAksiyon,
   type HaftalikTur,
 } from "@/lib/haftalik-aksiyon-db";
@@ -58,17 +59,8 @@ async function kapsam(): Promise<{
   return { workerId: session.worker_id ?? null, scope, fleet };
 }
 
-/**
- * Kalem bu kapsamda görünür mü — özne yoksa (filo geneli) HERKESE açık.
- *
- * Öznesi olmayan kalem (filo geneli) daraltılmaz: kapsam yalnız ŞOFÖR ve
- * ARAÇ ekseninde uygulanır, çünkü kapsamı çözülebilen tek iki eksen bunlar.
- */
-function kapsamda(a: HaftalikAksiyon, scope: FleetScope): boolean {
-  if (a.workerId) return scope.isFleetWorker(a.workerId);
-  if (a.vehicleId) return scope.isFleetVehicle(a.vehicleId);
-  return true;
-}
+/** Kapsam kuralı `lib/haftalik-aksiyon-db.ts` `kalemKapsamda`da — mobil uçla ORTAK. */
+const kapsamda = kalemKapsamda;
 
 /**
  * PANELİ GETİR — verilen hafta ya da EN SON tur.

@@ -35,6 +35,7 @@ import {
   type SusturmaKaydi,
   type Tarama,
 } from "@/lib/haftalik-aksiyon";
+import type { FleetScope } from "@/lib/fleet-scope";
 import { ROZET_SKOR_ESIK } from "@/lib/odul";
 import { donemleriOku } from "@/lib/odul-db";
 import { uyarilar as saklamaUyarilari } from "@/lib/saklama-db";
@@ -698,4 +699,26 @@ export async function bildirimSonucuYaz(
       bildirim_hata: sonuc.hata,
     })
     .eq("id", turId);
+}
+
+/**
+ * KALEM BU KAPSAMDA GÖRÜNÜR MÜ — panel ve mobil uç İÇİN TEK KAYNAK.
+ *
+ * Öznesi olmayan kalem (filo geneli) daraltılmaz: kapsam yalnız ŞOFÖR ve ARAÇ
+ * ekseninde uygulanır, çünkü kapsamı çözülebilen tek iki eksen bunlar.
+ *
+ * ⚠️ BU YORDAM `app/actions/haftalik-aksiyon.ts` İÇİNDEN BURAYA TAŞINDI.
+ * Mobil uç aynı kuralı uygulamak zorunda ve `"use server"` bir modülden
+ * senkron fonksiyon dışa aktarılamıyor (o dosyanın her export'u async olmak
+ * ZORUNDA). Kuralı mobil tarafta yeniden yazmak, iki yüzeyin zamanla
+ * ayrışması demekti — şefin panelde göremediği bir plakayı telefonunda
+ * görmesi tam da bu ayrışmanın adı olurdu.
+ */
+export function kalemKapsamda(
+  a: { workerId: string | null; vehicleId: string | null },
+  scope: FleetScope
+): boolean {
+  if (a.workerId) return scope.isFleetWorker(a.workerId);
+  if (a.vehicleId) return scope.isFleetVehicle(a.vehicleId);
+  return true;
 }

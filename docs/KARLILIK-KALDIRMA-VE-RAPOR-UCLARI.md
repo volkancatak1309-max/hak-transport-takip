@@ -141,3 +141,65 @@ kapı var, PDF'te yok — uçlar o desene uydu.
 ⚠️ ESLint sayımı bir ara **44**'e çıkmıştı: `MusteriTablosu` silinince
 `CO2Client.tsx`teki `Info` ikonu kullanılmaz kaldı. İmport kaldırıldı, sayım
 tabana döndü. Kaldırma turlarında bu kalıp kolayca gözden kaçar.
+
+
+---
+
+## 4 · Canlı kanıt — demo.galzura.com, gerçek giriş (22.09.2026)
+
+Dağıtım `a6e2908`, üç kiracıda da **READY**. **26/26 iddia geçti.**
+
+| adım | rol | kod | not |
+|---|---|---|---|
+| `GET speed.csv` | jetonsuz | **401** | `missing_token` |
+| `GET zone-durations.csv` | jetonsuz | **401** | `missing_token` |
+| `GET co2.pdf` | jetonsuz | **401** | `missing_token` |
+| `POST /auth/login` | yönetici | **200** | telefon + PIN |
+| `GET speed.csv` | yönetici | **409** | `feature_disabled` · `bayrak: EXPORT_ENABLED` |
+| `GET zone-durations.csv` | yönetici | **409** | aynı |
+| `GET co2.pdf?range=ay&dil=de` | yönetici | **200** | **21.783 bayt** · `%PDF-1.3` · kapsama **16/30** |
+| `GET co2.pdf?range=yanlis` | yönetici | **400** | `invalid_range` |
+| `GET co2.pdf?dil=fr` | yönetici | **400** | `invalid_dil` |
+| `GET /admin/karlilik` | — | **404** | karşılaştırma: `/admin/co2` **200** |
+| `GET speed.csv` · `zone-durations.csv` · `co2.pdf` | **şoför** | **403** | üçünde de `admin_required` |
+
+### 🔴 Demo'da CSV 409 dönüyor — ve bu DOĞRU
+
+Ölçüldü: **galzura-demo'nun Vercel env'inde `NEXT_PUBLIC_EXPORT_ENABLED`
+AÇIKÇA TANIMLI ve kapalı.** HAK61 ve Sendigo'da o anahtar **hiç yok**, yani
+oralarda koddaki varsayılan (`true`) geçerli. Yani 409 uçların kusuru değil,
+bu kiracının ayarı — ve uç tam da yazıldığı gibi davranıyor: 404 değil **409
+`feature_disabled`**, bayrağın adıyla ("uç var, kurulumunuzda kapalı").
+
+Bayrağı bir kiracıda açmak ürün kararıdır; bu turda yapılmadı. CSV **gövdesi**
+bu yüzden bayrak açıkken, **gerçek demo veritabanı** üzerinde, **gerçek rota
+fonksiyonlarıyla** ölçüldü:
+
+| uç | pencere | kod | gövde | satır | başlık |
+|---|---|---|---|---|---|
+| `speed.csv` | `range=ay` | **200** | **1.128 bayt** | 30 | `Plaka;Şoför;İhlal;En yüksek;Aşırı hız / 100 km` |
+| `zone-durations.csv` | `range=tumzaman` | **200** | **3.182 bayt** | 34 | `Müşteri;Bölge;Plaka;Şoför;Giriş;Çıkış;Süre (dk);Not` |
+
+Her ikisinde de UTF-8 BOM ✓ · `;` ayraç ✓ · `x-rapor-satir` başlığı gerçek
+satır sayısıyla tutarlı ✓ · `attachment` + dosya adı ✓. Açık ziyaretin süresi
+**boş** geldi (0 değil) — panelin kuralı korunmuş.
+
+### ⚠️ Sıra: kapı → BAYRAK → parametre
+
+Demo'da `speed.csv?range=yanlis` **400 değil 409** dönüyor, çünkü bayrak kapısı
+parametre doğrulamasından ÖNCE. Bu, kardeş `distance.csv`in sırasının birebir
+aynısı. Bayrağı açık bir kiracıda aynı istek 400 alır; `co2.pdf`te (bayrak
+kapısı yok) bugün de 400 alıyor — ölçüldü.
+
+### ⚠️ `co2.pdf` 27–31 saniye sürüyor
+
+Canlı ölçüm: **30.666 ms** ve **27.192 ms** (iki ayrı koşum, `?range=ay`).
+Maliyet `co2PanosuOzet` → `buildFuelReport`ta; panelin `/admin/co2` sayfası da
+aynı hesabı yapıyor, yani bu ucun getirdiği bir yavaşlık değil. Yine de uca
+`export const maxDuration = 300` eklendi: platform varsayılanına güvenmek, bir
+gün sessizce kesilen bir isteğe dönüşür ve istemci sebebini bilmeden "indirme
+başarısız" görür. Kardeş rapor uçlarında bu satır yok çünkü onların süresi
+saniyeler mertebesinde.
+
+**Kalıcı etki: yok.** Tur yalnız okuma yaptı; 403 kanıtı için açılan geçici
+şoför hesabı (`+43 0000 000911`) sonunda silindi ve doğrulandı.

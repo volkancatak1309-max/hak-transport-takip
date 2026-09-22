@@ -15,6 +15,21 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
+ * ⚠️ SÜRE AÇIKÇA YAZILIYOR — ÖLÇÜLDÜ, TAHMİN DEĞİL.
+ *
+ * Canlı ölçüm (22.09.2026, demo.galzura.com, `?range=ay`): **30.666 ms**.
+ * Maliyet `co2PanosuOzet` içindeki `buildFuelReport`ta — panelin `/admin/co2`
+ * sayfası da aynı hesabı yapıyor. Platformun varsayılan süresine güvenmek,
+ * bir gün sessizce kesilen bir isteğe dönüşürdü: istemci "indirme başarısız"
+ * görür, sebebini kimse söyleyemez. Emsal `app/api/mobile/takograf/route.ts`.
+ *
+ * Kardeş rapor uçlarında bu satır YOK ve olmasına gerek de yok: CSV kurucuları
+ * ve AZG/Schichtbericht saniyeler mertebesinde ölçüldü. Buraya konmasının
+ * sebebi bu ucun ÖLÇÜLEN süresidir.
+ */
+export const maxDuration = 300;
+
+/**
  * GET /api/mobile/reports/co2.pdf?range=…&from=&to=&dil=tr|de|en
  *
  * Raporlar › CO₂ ekranının (`/admin/co2`) üç dil düğmesinin sunucu karşılığı.

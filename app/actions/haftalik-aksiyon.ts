@@ -61,10 +61,8 @@ async function kapsam(): Promise<{
 /**
  * Kalem bu kapsamda görünür mü — özne yoksa (filo geneli) HERKESE açık.
  *
- * ⚠️ MÜŞTERİ ÖZNESİ (085) FİLOYA BÖLÜNMEZ. Bir müşteri bordo ve mavi filonun
- * ikisiyle de çalışabilir; kalemi bir filoya atamak keyfî olurdu. Kârlılık
- * bir FİLO GERÇEĞİ değil ŞİRKET gerçeğidir — o yüzden filo geneli kalemlerle
- * aynı kolda: şef de görür.
+ * Öznesi olmayan kalem (filo geneli) daraltılmaz: kapsam yalnız ŞOFÖR ve
+ * ARAÇ ekseninde uygulanır, çünkü kapsamı çözülebilen tek iki eksen bunlar.
  */
 function kapsamda(a: HaftalikAksiyon, scope: FleetScope): boolean {
   if (a.workerId) return scope.isFleetWorker(a.workerId);
@@ -92,26 +90,17 @@ export async function getHaftalikPanel(haftaBasiGunu?: string): Promise<Haftalik
   // ── Özne adları
   const workerIds = [...new Set(gorunur.map((a) => a.workerId).filter(Boolean))] as string[];
   const vehicleIds = [...new Set(gorunur.map((a) => a.vehicleId).filter(Boolean))] as string[];
-  const musteriIds = [...new Set(gorunur.map((a) => a.musteriId).filter(Boolean))] as string[];
-  const [w, v, m] = await Promise.all([
+  const [w, v] = await Promise.all([
     workerIds.length
       ? supabaseAdmin.from("workers").select("id, name").in("id", workerIds)
       : Promise.resolve({ data: [] }),
     vehicleIds.length
       ? supabaseAdmin.from("vehicles").select("id, plate").in("id", vehicleIds)
       : Promise.resolve({ data: [] }),
-    musteriIds.length
-      ? supabaseAdmin.from("musteriler").select("id, ad").in("id", musteriIds)
-      : Promise.resolve({ data: [] }),
   ]);
   const ad = new Map(((w.data ?? []) as { id: string; name: string }[]).map((r) => [r.id, r.name]));
   const plaka = new Map(
     ((v.data ?? []) as { id: string; plate: string }[]).map((r) => [r.id, r.plate])
-  );
-  // 085 uygulanmamış kurulumda sorgu hata döner ve `data` boş kalır — kalem
-  // yine görünür, yalnız adı çözülmez. Ekran "—" gösterir, çökmez.
-  const musteriAd = new Map(
-    ((m.data ?? []) as { id: string; ad: string }[]).map((r) => [r.id, r.ad])
   );
 
   return {
@@ -122,9 +111,7 @@ export async function getHaftalikPanel(haftaBasiGunu?: string): Promise<Haftalik
         ? (ad.get(a.workerId) ?? null)
         : a.vehicleId
           ? (plaka.get(a.vehicleId) ?? null)
-          : a.musteriId
-            ? (musteriAd.get(a.musteriId) ?? null)
-            : null,
+          : null,
       susturmaBitis:
         a.durum === "ilgisiz" && a.kapatildiAt
           ? new Date(Date.parse(a.kapatildiAt) + HAFTALIK_SUSTURMA_GUN * 86_400_000).toISOString()

@@ -4,7 +4,6 @@ import { kume, topla, oranOlcekli } from "@/lib/oran-kume";
 import { supabaseAdmin } from "@/lib/supabase";
 import { buildFuelReport } from "@/lib/reports";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
-import { seferKmOlc } from "@/lib/karlilik-db";
 import { mapBounded } from "@/lib/db-fanout";
 import {
   CO2_KATSAYI_SURUM,
@@ -13,7 +12,6 @@ import {
   hedefDurumu,
   type CO2AracSatiri,
   type CO2Esas,
-  type CO2MusteriSatiri,
   type CO2SoforSatiri,
   type CO2Toplam,
 } from "@/lib/co2";
@@ -116,7 +114,6 @@ export type CO2Panosu = {
   toplam: CO2Toplam;
   araclar: CO2AracSatiri[];
   soforler: CO2SoforSatiri[];
-  musteriler: CO2MusteriSatiri[];
   /**
    * Aylık seri — trend.
    *
@@ -200,7 +197,7 @@ async function aracYakitTurleri(): Promise<{ harita: Map<string, FuelType>; kolo
  * yapar.
  */
 export type CO2Parca = {
-  /** Seçilen pencerenin raporu: `toplam`, `araclar`, `soforler`, `musteriler`. */
+  /** Seçilen pencerenin raporu: `toplam`, `araclar`, `soforler`. */
   govde: boolean;
   /** Son 6 ayın serisi. Yalnız `bit` + ayar + yakıt türlerine bağlı. */
   aylik: boolean;
@@ -256,7 +253,6 @@ async function panoHesapla(bas: Date, bit: Date, parca: CO2Parca): Promise<CO2Pa
       toplam: bosToplam,
       araclar: [],
       soforler: [],
-      musteriler: [],
       aylik: parca.aylik ? await aylikSeri(bit, ayar, turler) : [],
       hedef: null,
       katsayiSurum: CO2_KATSAYI_SURUM,
@@ -275,7 +271,6 @@ async function panoHesapla(bas: Date, bit: Date, parca: CO2Parca): Promise<CO2Pa
       toplam: bosToplam,
       araclar: [],
       soforler: [],
-      musteriler: [],
       aylik: [],
       hedef: null,
       katsayiSurum: CO2_KATSAYI_SURUM,
@@ -359,7 +354,6 @@ async function panoHesapla(bas: Date, bit: Date, parca: CO2Parca): Promise<CO2Pa
   };
 
   const soforler = await soforKirilimi(araclar, bas, bit);
-  const musteriler = await musteriKirilimi(araclar, bas, bit);
   const aylik = parca.aylik ? await aylikSeri(bit, ayar, turler) : [];
 
   return {
@@ -370,7 +364,6 @@ async function panoHesapla(bas: Date, bit: Date, parca: CO2Parca): Promise<CO2Pa
     toplam,
     araclar: araclar.sort((a, b) => (b.kg ?? -1) - (a.kg ?? -1)),
     soforler,
-    musteriler,
     aylik,
     hedef: hedefDurumu(toplam.gKm, ayar.hedefGKm),
     katsayiSurum: CO2_KATSAYI_SURUM,
@@ -452,80 +445,6 @@ async function soforKirilimi(
       kg: a.km > 0 ? a.kg : null,
       gKm: a.km > 0 ? (a.kg * 1000) / a.km : null,
       olculemeyenKm: a.olculemeyenKm,
-    }))
-    .sort((a, b) => (b.kg ?? -1) - (a.kg ?? -1));
-}
-
-/**
- * MÜŞTERİ KIRILIMI — İHALE FORMATI (085 sefer/müşteri ekseni).
- *
- * ⚠️ BU BİR PAYLAŞTIRMA DEĞİL, ÖLÇÜMDÜR:
- *   seferin CO₂'si = SEFERİN ÖLÇÜLEN KM'Sİ × ARACIN ÖLÇÜLEN yoğunluğu
- *
- * Sefer km'si odometre penceresinden ölçülüyor (085) ve aracın g/km'si
- * telemetri litresinden. İkisi de ölçüm; çarpımları da öyle. Km'si
- * ölçülemeyen sefer toplama GİRMEZ ve ayrıca sayılır.
- */
-async function musteriKirilimi(
-  araclar: CO2AracSatiri[],
-  bas: Date,
-  bit: Date
-): Promise<CO2MusteriSatiri[]> {
-  const { data, error } = await supabaseAdmin
-    .from("seferler")
-    .select("id, musteri_id, vehicle_id, yolda_at, tamamlandi_at")
-    .eq("durum", "tamamlandi")
-    .gte("tarih", bas.toISOString().slice(0, 10))
-    .lte("tarih", bit.toISOString().slice(0, 10))
-    .limit(1000);
-  if (error) return [];
-
-  const seferler = (data ?? []) as {
-    id: string;
-    musteri_id: string | null;
-    vehicle_id: string | null;
-    yolda_at: string | null;
-    tamamlandi_at: string | null;
-  }[];
-  if (seferler.length === 0) return [];
-
-  const yogunluk = new Map(araclar.filter((a) => a.gKm !== null).map((a) => [a.vehicleId, a.gKm!]));
-
-  const olculenler = await mapBounded(seferler, async (s) => {
-    const km = await seferKmOlc(s.vehicle_id, s.yolda_at, s.tamamlandi_at);
-    const g = s.vehicle_id ? yogunluk.get(s.vehicle_id) : undefined;
-    return { s, km: km.km, g: g ?? null };
-  });
-
-  const kova = new Map<string, { km: number; kg: number; sefer: number; olculemeyen: number }>();
-  for (const { s, km, g } of olculenler) {
-    const anahtar = s.musteri_id ?? "";
-    const acc = kova.get(anahtar) ?? { km: 0, kg: 0, sefer: 0, olculemeyen: 0 };
-    acc.sefer++;
-    if (km === null || g === null) acc.olculemeyen++;
-    else {
-      acc.km += km;
-      acc.kg += (km * g) / 1000;
-    }
-    kova.set(anahtar, acc);
-  }
-
-  const ids = [...kova.keys()].filter(Boolean);
-  const adlar = new Map<string, string>();
-  if (ids.length > 0) {
-    const { data: mData } = await supabaseAdmin.from("musteriler").select("id, ad").in("id", ids);
-    for (const m of (mData ?? []) as { id: string; ad: string }[]) adlar.set(m.id, m.ad);
-  }
-
-  return [...kova.entries()]
-    .map(([id, a]) => ({
-      musteriId: id || null,
-      ad: id ? (adlar.get(id) ?? "—") : "— müşteri atanmadı",
-      seferSayisi: a.sefer,
-      km: a.km > 0 ? a.km : null,
-      kg: a.km > 0 ? a.kg : null,
-      gKm: a.km > 0 ? (a.kg * 1000) / a.km : null,
-      olculemeyenSefer: a.olculemeyen,
     }))
     .sort((a, b) => (b.kg ?? -1) - (a.kg ?? -1));
 }

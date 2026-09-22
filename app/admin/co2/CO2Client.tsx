@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { AlertTriangle, Download, Info, Leaf, Loader2, Target } from "lucide-react";
+import { AlertTriangle, Download, Leaf, Loader2, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader, EmptyState, StatusChip, SegmentedControl } from "@/components/ui-v2";
@@ -31,7 +31,7 @@ const say = (n: number | null, basamak = 1) =>
 export function CO2Client({ pano, yonetici }: { pano: CO2Panosu; yonetici: boolean }) {
   const t = useTranslations("co2");
   const [ayarAcik, setAyarAcik] = useState(false);
-  const [eksen, setEksen] = useState<"arac" | "sofor" | "musteri">("musteri");
+  const [eksen, setEksen] = useState<"arac" | "sofor">("arac");
   const [pdfBekle, pdfBasla] = useTransition();
 
   /**
@@ -205,7 +205,6 @@ export function CO2Client({ pano, yonetici }: { pano: CO2Panosu; yonetici: boole
       <div className="space-y-3">
         <SegmentedControl
           options={[
-            { value: "musteri", label: t("eksen_musteri") },
             { value: "arac", label: t("eksen_arac") },
             { value: "sofor", label: t("eksen_sofor") },
           ]}
@@ -213,7 +212,6 @@ export function CO2Client({ pano, yonetici }: { pano: CO2Panosu; yonetici: boole
           onChange={(v) => setEksen(v as typeof eksen)}
         />
 
-        {eksen === "musteri" && <MusteriTablosu pano={pano} />}
         {eksen === "arac" && <AracTablosu pano={pano} />}
         {eksen === "sofor" && <SoforTablosu pano={pano} />}
       </div>
@@ -227,7 +225,6 @@ export function CO2Client({ pano, yonetici }: { pano: CO2Panosu; yonetici: boole
           <li>{CO2_KAYNAK.ttw}</li>
           {pano.ayar.esas === "WTW" && <li>{CO2_KAYNAK.wtt}</li>}
           <li>{CO2_KAYNAK.standart}</li>
-          <li>{t("metod_musteri")}</li>
           <li>{t("metod_sofor")}</li>
           <li>{t("metod_olculemeyen")}</li>
           {pano.ayar.sebekeGkWh !== null && (
@@ -339,50 +336,6 @@ function SoforTablosu({ pano }: { pano: CO2Panosu }) {
         </tbody>
       </table>
     </div>
-  );
-}
-
-function MusteriTablosu({ pano }: { pano: CO2Panosu }) {
-  const t = useTranslations("co2");
-  if (pano.musteriler.length === 0) {
-    return <p className="text-xs text-muted-foreground">{t("musteri_bos")}</p>;
-  }
-  return (
-    <>
-      {/* İHALE FORMATI: müşteri satırı dışarıya verilecek olan. */}
-      <p className="flex items-start gap-2 rounded-xl border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-        <Info className="mt-0.5 size-3.5 shrink-0" />
-        <span>{t("musteri_aciklama")}</span>
-      </p>
-      <div className="overflow-x-auto rounded-xl border border-border">
-        <table className="w-full min-w-[620px] text-sm">
-          <thead className="border-b border-border text-xs text-muted-foreground">
-            <tr>
-              <th className="p-3 text-left font-medium">{t("kolon_musteri")}</th>
-              <th className="p-3 text-right font-medium">{t("kolon_sefer")}</th>
-              <th className="p-3 text-right font-medium">{t("kolon_km")}</th>
-              <th className="p-3 text-right font-medium">{t("kolon_kg")}</th>
-              <th className="p-3 text-right font-medium">{t("kolon_gkm")}</th>
-              <th className="p-3 text-left font-medium">{t("kolon_kapsama")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pano.musteriler.map((m) => (
-              <tr key={m.musteriId ?? "yok"} className="border-b border-border/60 last:border-0">
-                <td className="p-3">{m.ad}</td>
-                <td className="nums p-3 text-right">{m.seferSayisi}</td>
-                <td className="nums p-3 text-right">{say(m.km, 0) ?? "—"}</td>
-                <td className="nums p-3 text-right">{kg(m.kg) ?? t("olculemedi")}</td>
-                <td className="nums p-3 text-right">{say(m.gKm, 0) ?? "—"}</td>
-                <td className="p-3 text-xs text-muted-foreground">
-                  {m.olculemeyenSefer > 0 ? t("olculemeyen_sefer", { n: m.olculemeyenSefer }) : t("tam")}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
   );
 }
 

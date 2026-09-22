@@ -167,7 +167,6 @@ export async function GET(req: NextRequest) {
       katsayiSurum: pano.katsayiSurum,
       araclar: pano.araclar,
       soforler: pano.soforler,
-      musteriler: pano.musteriler,
       ...(bolum === "tam" ? { aylik: pano.aylik } : {}),
     },
   });

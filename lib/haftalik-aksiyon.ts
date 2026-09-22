@@ -73,7 +73,7 @@ export const TABAN = {
    * ödedi. Skor düşüşünün (500) ALTINDA çünkü skor bir insanın sürüşüdür ve
    * bugün kaza yapabilir; saklama aşımı bir gün içinde kötüleşmez.
    *
-   * ⚠️ ÖZNESİ YOK (worker/vehicle/musteri üçü de null) — kiracının kendi
+   * ⚠️ ÖZNESİ YOK (worker ve vehicle ikisi de null) — kiracının kendi
    * durumu. Tekil indeks `coalesce(...)` ile tek kovaya düşürüyor, yani
    * haftada EN FAZLA BİR saklama kalemi çıkar. Doğrusu da bu: aynı uyarıyı
    * iki tabloya bölüp iki kalem üretmek paneli kirletirdi.
@@ -81,16 +81,6 @@ export const TABAN = {
   saklama_uyarisi: 450,
   /** Vardiya kapanmıyor — düzen/veri kalitesi. */
   vardiya_kapanmadi: 300,
-  /**
-   * Müşteri zarar ettiriyor (085) — PARA, ama yakıt sapmasından DÜŞÜK taban.
-   *
-   * Gerekçe: yakıt sapması bir ARIZA işaretidir (sensör, sürüş, kaçak) ve
-   * düzeltmesi filonun kendi elinde. Zararlı müşteri bir SÖZLEŞME sorunudur:
-   * çözümü fiyat görüşmesi, yani daha yavaş ve karşı tarafa bağlı. Geri
-   * dönülemezlik sırasında bu yüzden altta. Tutar büyükse `etki` ekseni
-   * zaten yukarı taşır.
-   */
-  musteri_zarar: 350,
   /**
    * Ayın en iyisi (088) — TABAN EN DÜŞÜK, ve bu bilinçli.
    *
@@ -147,12 +137,6 @@ export type AksiyonAdayi = {
   kural: KuralAdi;
   workerId: string | null;
   vehicleId: string | null;
-  /**
-   * ÜÇÜNCÜ ÖZNE EKSENİ (085). Müşteri ne şoför ne araçtır; ikisinden birine
-   * sıkıştırılsaydı 084'ün tekil indeksi tüm müşterileri TEK kovaya toplar ve
-   * haftada yalnız bir zararlı müşteri yazılabilirdi.
-   */
-  musteriId: string | null;
   oncelik: number;
   baslik: string;
   gerekce: string;
@@ -243,16 +227,15 @@ export function oncelikHesapla(g: {
 /**
  * Adayın ÖZNE KİMLİĞİ — tek kaynak.
  *
- * Sıra: şoför → araç → müşteri → (yok: filo geneli). Bu sıra `haftalik_aksiyonlar`
+ * Sıra: şoför → araç → (yok: filo geneli). Bu sıra `haftalik_aksiyonlar`
  * tekil indeksindeki `coalesce` sırasıyla BİREBİR aynı olmak zorunda; ayrışırsa
  * susturma ve tekillik iki farklı özneyi aynı sanar.
  */
 export function ozneKimligi(a: {
   workerId: string | null;
   vehicleId: string | null;
-  musteriId?: string | null;
 }): string | null {
-  return a.workerId ?? a.vehicleId ?? a.musteriId ?? null;
+  return a.workerId ?? a.vehicleId ?? null;
 }
 
 export function adaylariSec(adaylar: AksiyonAdayi[]): SecimSonucu {
@@ -380,7 +363,6 @@ export function kuralSkorDususu(g: SkorGirdi): AksiyonAdayi | null {
     kural: "skor_dususu",
     workerId: g.workerId,
     vehicleId: null,
-    musteriId: null,
     // Aciliyet: düşüş ne kadar tazeyse o kadar acil — burada hepsi bu hafta.
     // Etki: düşüşün büyüklüğü (10 puan = 30, 50 puan = 150).
     oncelik: oncelikHesapla({ kural: "skor_dususu", aciliyet: 60, etki: dusus * 3 }),
@@ -429,7 +411,6 @@ export function kuralYakitSapmasi(g: YakitGirdi): AksiyonAdayi | null {
     kural: "yakit_sapmasi",
     workerId: null,
     vehicleId: g.vehicleId,
-    musteriId: null,
     // Yakıt bir SÜREGELEN kayıp: aciliyeti düşük, etkisi sapmayla büyür.
     oncelik: oncelikHesapla({
       kural: "yakit_sapmasi",
@@ -475,7 +456,6 @@ export function kuralSessizArac(g: SessizGirdi): AksiyonAdayi | null {
     kural: "sessiz_arac",
     workerId: null,
     vehicleId: g.vehicleId,
-    musteriId: null,
     // Aciliyet süreyle artar ama doyar: 3 gün ile 30 gün arasındaki fark
     // yöneticinin yapacağı işi değiştirmiyor (ikisinde de cihaza bakılacak).
     oncelik: oncelikHesapla({ kural: "sessiz_arac", aciliyet: Math.min(gun, 14) * 8, etki: 40 }),
@@ -514,7 +494,6 @@ export function kuralBelgeBitiyor(g: BelgeGirdi): AksiyonAdayi | null {
     kural: "belge_bitiyor",
     workerId: g.workerId,
     vehicleId: null,
-    musteriId: null,
     // Aciliyet: gün azaldıkça hızla artar; dolmuşsa tavan.
     oncelik: oncelikHesapla({
       kural: "belge_bitiyor",
@@ -561,7 +540,6 @@ export function kuralBakimGecikti(g: BakimGirdi): AksiyonAdayi | null {
     kural: "bakim_gecikti",
     workerId: null,
     vehicleId: g.vehicleId,
-    musteriId: null,
     oncelik: oncelikHesapla({
       kural: "bakim_gecikti",
       aciliyet: EKSEN_TAVAN,
@@ -609,7 +587,6 @@ export function kuralIsEmriBekliyor(g: IsEmriGirdi): AksiyonAdayi | null {
     kural: "is_emri_bekliyor",
     workerId: null,
     vehicleId: g.vehicleId,
-    musteriId: null,
     oncelik: oncelikHesapla({
       kural: "is_emri_bekliyor",
       aciliyet: Math.min(g.yasGun * 4, EKSEN_TAVAN),
@@ -650,7 +627,6 @@ export function kuralVardiyaKapanmadi(g: VardiyaGirdi): AksiyonAdayi | null {
     kural: "vardiya_kapanmadi",
     workerId: null,
     vehicleId: null,
-    musteriId: null,
     oncelik: oncelikHesapla({
       kural: "vardiya_kapanmadi",
       aciliyet: 30,
@@ -666,72 +642,6 @@ export function kuralVardiyaKapanmadi(g: VardiyaGirdi): AksiyonAdayi | null {
       toplam: g.toplam,
     },
     hedefYol: `/admin`,
-  };
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// KURAL: MÜŞTERİ ZARAR ETTİRİYOR (085)
-// ══════════════════════════════════════════════════════════════════════════
-
-export type MusteriZararGirdi = {
-  musteriId: string;
-  ad: string;
-  seferSayisi: number;
-  gelirEur: number;
-  maliyetEur: number;
-  katkiPayiEur: number;
-  /** Asgari örneklem — `lib/karlilik.ts` ZARAR_MIN_SEFER. */
-  minSefer: number;
-  pencereGun: number;
-};
-
-/**
- * KURAL: bir müşteri son `pencereGun` günde NEGATİF katkı payı üretti.
- *
- * ⚠️ EŞİK SIFIRDIR VE ÖLÇÜLMESİ GEREKMEZ: "gelir, atfedilebilen maliyeti
- * karşılamıyor" cümlesi filoya göreli değil, aritmetiktir. Filo-göreli bir
- * eşik (örn. "ortalamanın %20 altı") burada YANLIŞ olurdu — az kârlı müşteri
- * zararlı değildir.
- *
- * ⚠️ KAPI: `seferSayisi >= minSefer`. Tek seferden sözleşme sonucu çıkarmak,
- * zayıf paydadan filo ortalaması üretmenin aynısı (yakıt kuralının dersi).
- *
- * ⚠️ Buraya YALNIZ maliyeti ölçülmüş seferler girer (çağıran süzer). Maliyeti
- * bilinmeyen sefer "bedava" görünür ve müşteriyi haksız yere kârlı yapar.
- */
-export function kuralMusteriZarar(g: MusteriZararGirdi): AksiyonAdayi | null {
-  if (g.seferSayisi < g.minSefer) return null;
-  if (g.katkiPayiEur >= 0) return null;
-
-  const zarar = Math.abs(g.katkiPayiEur);
-  const seferBasi = zarar / g.seferSayisi;
-
-  return {
-    kural: "musteri_zarar",
-    workerId: null,
-    vehicleId: null,
-    musteriId: g.musteriId,
-    oncelik: oncelikHesapla({
-      kural: "musteri_zarar",
-      // Aciliyet sefer SAYISINA bağlı: her sefer zararı büyütüyor.
-      aciliyet: Math.min(g.seferSayisi * 10, EKSEN_TAVAN),
-      // Etki doğrudan PARA: 20 € zarar = 1 puan, tavan 150 (3.000 €).
-      etki: Math.min(zarar / 20, EKSEN_TAVAN),
-    }),
-    baslik: `${g.ad} ile fiyatı görüşün — son ${g.seferSayisi} seferde ${zarar.toFixed(0)} € zarar`,
-    gerekce: `${g.pencereGun} günde ${g.seferSayisi} sefer: ${g.gelirEur.toFixed(0)} € gelir, ${g.maliyetEur.toFixed(0)} € atfedilebilen maliyet. Katkı payı ${g.katkiPayiEur.toFixed(0)} € (sefer başına ${seferBasi.toFixed(0)} € zarar). Eşik: 0 € — gelir atfedilebilen maliyeti karşılamıyor. Araç sabit gideri bu hesaba DAHİL DEĞİL, yani gerçek zarar daha büyük.`,
-    kanit: {
-      olculen: Number(g.katkiPayiEur.toFixed(2)),
-      esik: 0,
-      birim: "€",
-      seferSayisi: g.seferSayisi,
-      gelirEur: Number(g.gelirEur.toFixed(2)),
-      maliyetEur: Number(g.maliyetEur.toFixed(2)),
-      pencereGun: g.pencereGun,
-      /** Ekranda ZORUNLU uyarı: bu sayı net kâr değil, katkı payı. */
-      sabitGiderHaric: true,
-    },
-    hedefYol: `/admin/karlilik`,
   };
 }
 
@@ -773,7 +683,6 @@ export function kuralAyinEnIyisi(g: AyinEnIyisiGirdi): AksiyonAdayi | null {
     kural: "ayin_en_iyisi",
     workerId: g.workerId,
     vehicleId: null,
-    musteriId: null,
     oncelik: oncelikHesapla({
       kural: "ayin_en_iyisi",
       // Aciliyet DÜŞÜK: tebrik gecikince değerini tamamen kaybetmez.
@@ -843,7 +752,6 @@ export function kuralSaklamaUyarisi(g: SaklamaGirdi): AksiyonAdayi | null {
     // ⚠️ Üçü de null: öznesi kiracının kendisi.
     workerId: null,
     vehicleId: null,
-    musteriId: null,
     oncelik: oncelikHesapla({
       kural: "saklama_uyarisi",
       // Aciliyet AŞIMLA büyür: 91 günlük bir aşım hatırlatma, 400 günlük

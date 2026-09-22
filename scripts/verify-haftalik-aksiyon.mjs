@@ -161,8 +161,8 @@ async function main() {
   /**
    * ⚠️ SAYI SABİTLENMEZ — KURAL LİSTESİNDEN TÜRETİLİR.
    *
-   * "Yedi kural" diye sabitlenmişti ve 085 (musteri_zarar) ile 088
-   * (ayin_en_iyisi) eklenince iddia BAYATLADI: motor doğru çalıştığı hâlde
+   * "Yedi kural" diye sabitlenmişti ve 088 (ayin_en_iyisi) ile 090
+   * (saklama_uyarisi) eklenince iddia BAYATLADI: motor doğru çalıştığı hâlde
    * betik kırıldı. Beklenen küme `TABAN`ın anahtarlarıdır; yeni bir kural
    * eklemek bu iddiayı bozmamalı, EKSİK bir kural bozmalı.
    */

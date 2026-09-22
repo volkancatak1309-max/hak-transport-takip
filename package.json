@@ -37,7 +37,6 @@
     "verify:sahipsiz-olay": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sahipsiz-olay.mjs",
     "verify:sefer-tur3": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sefer-tur3.mjs",
     "verify:haftalik-aksiyon": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-haftalik-aksiyon.mjs",
-    "verify:sefer-karlilik": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sefer-karlilik.mjs",
     "verify:mevzuat": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-mevzuat.mjs",
     "verify:vardiya-duzelt": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-vardiya-duzelt.mjs",
     "verify:sofor-odul": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-sofor-odul.mjs",

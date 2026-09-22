@@ -41,7 +41,7 @@ Aynı yetki (`requireMobileAdmin`), aynı aralık dili (`aralikCoz`:
 | alan | içerik |
 |---|---|
 | `ozet` | Eski `co2` nesnesinin **birebir aynı şekli** (`kg`, `gKm`, `litre`, `esas`, `kapsama`, `hedefGKm`, `hedefTuttu`) |
-| `pano` | Tam kırılım: `araclar`, `soforler`, `musteriler`, `aylik` (6 ay), `tabloYok`, `yakitYok`, `katsayiSurum` |
+| `pano` | Tam kırılım: `araclar`, `soforler`, `aylik` (6 ay), `tabloYok`, `yakitYok`, `katsayiSurum` |<br>⚠️ **22.09.2026:** `musteriler` alanı KALDIRILDI — kârlılık modülü üründen çıktı, müşteri ekseni artık hiçbir yerde yazılmıyor. |
 | `donem` | `/analytics` ile aynı şekil |
 
 ---
@@ -92,7 +92,7 @@ Bu turda düzeltilmedi çünkü çözümü kapsam dışı iki işte:
 ### 2.3 ⚠️ Yol boyunca çıkan israf bulgusu
 
 Eski kod `co2Panosu`nun **yalnızca** `toplam` + `ayar` + `hedef` alanlarını
-okuyordu. `aylik`, `araclar`, `soforler`, `musteriler` hiç kullanılmıyordu.
+okuyordu. `aylik`, `araclar`, `soforler` hiç kullanılmıyordu.
 Yani **7 raporun 6'sı hesaplanıp atılıyordu.**
 
 `hedef` alanı `hedefDurumu(toplam.gKm, ayar.hedefGKm)` — aylık seriye
@@ -162,7 +162,7 @@ görünür.
    durumuyla ve **uzun timeout'la (≥60 sn)**. Açılışa koyarsan bugünkü sorun
    birebir geri gelir.
 
-6. **`pano` alanı** (araç/şoför/müşteri kırılımı + 6 aylık seri) mobilde
+6. **`pano` alanı** (araç/şoför kırılımı + 6 aylık seri) mobilde
    karşılığı yoksa **okunmasın** — ileride CO₂ ekranı yapılırsa hazır.
 
 ### 4.3 Bilgi

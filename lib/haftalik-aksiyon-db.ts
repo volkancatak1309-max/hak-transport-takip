@@ -21,7 +21,6 @@ import {
   AYIN_EN_IYISI_MIN_SKORLANAN,
   kuralAyinEnIyisi,
   kuralSaklamaUyarisi,
-  kuralMusteriZarar,
   ozneKimligi,
   susturulmusMu,
   BELGE_ESIK_GUN,
@@ -36,8 +35,6 @@ import {
   type SusturmaKaydi,
   type Tarama,
 } from "@/lib/haftalik-aksiyon";
-import { ZARAR_MIN_SEFER, ZARAR_PENCERE_GUN } from "@/lib/karlilik";
-import { zararEdenMusteriler } from "@/lib/karlilik-db";
 import { ROZET_SKOR_ESIK } from "@/lib/odul";
 import { donemleriOku } from "@/lib/odul-db";
 import { uyarilar as saklamaUyarilari } from "@/lib/saklama-db";
@@ -65,7 +62,7 @@ import { uyarilar as saklamaUyarilari } from "@/lib/saklama-db";
 const TUR_COLS =
   "id, hafta_basi, uretildi_at, tarama, aksiyon_sayisi, elenen_sayisi, bildirim_alici, bildirim_jeton, bildirim_hata, created_at";
 const AKSIYON_COLS =
-  "id, tur_id, kural, worker_id, vehicle_id, musteri_id, oncelik, baslik, gerekce, kanit, hedef_yol, durum, kapatan, kapatildi_at, kapatma_notu, created_at";
+  "id, tur_id, kural, worker_id, vehicle_id, oncelik, baslik, gerekce, kanit, hedef_yol, durum, kapatan, kapatildi_at, kapatma_notu, created_at";
 
 export type HaftalikTur = {
   id: string;
@@ -86,8 +83,6 @@ export type HaftalikAksiyon = {
   kural: string;
   workerId: string | null;
   vehicleId: string | null;
-  /** Üçüncü özne ekseni (085) — müşteri. Kolon yoksa her zaman null. */
-  musteriId: string | null;
   oncelik: number;
   baslik: string;
   gerekce: string;
@@ -120,7 +115,6 @@ function aksiyonCevir(r: Record<string, unknown>): HaftalikAksiyon {
     kural: String(r.kural),
     workerId: r.worker_id ? String(r.worker_id) : null,
     vehicleId: r.vehicle_id ? String(r.vehicle_id) : null,
-    musteriId: r.musteri_id ? String(r.musteri_id) : null,
     oncelik: Number(r.oncelik),
     baslik: String(r.baslik),
     gerekce: String(r.gerekce),
@@ -184,7 +178,7 @@ export async function getTur(
 export async function susturmaKayitlari(): Promise<SusturmaKaydi[]> {
   const { data, error } = await supabaseAdmin
     .from("haftalik_aksiyonlar")
-    .select("kural, worker_id, vehicle_id, musteri_id, kapatildi_at")
+    .select("kural, worker_id, vehicle_id, kapatildi_at")
     .eq("durum", "ilgisiz")
     .order("kapatildi_at", { ascending: false })
     .limit(500);
@@ -192,13 +186,7 @@ export async function susturmaKayitlari(): Promise<SusturmaKaydi[]> {
   return (data as Record<string, unknown>[]).map((r) => ({
     kural: String(r.kural),
     // ⚠️ SIRA `ozneKimligi` ve tekil indeksin coalesce sırasıyla AYNI olmalı.
-    ozneId: r.worker_id
-      ? String(r.worker_id)
-      : r.vehicle_id
-        ? String(r.vehicle_id)
-        : r.musteri_id
-          ? String(r.musteri_id)
-          : null,
+    ozneId: r.worker_id ? String(r.worker_id) : r.vehicle_id ? String(r.vehicle_id) : null,
     kapatildiAt: String(r.kapatildi_at),
   }));
 }
@@ -341,7 +329,6 @@ export async function haftalikTuruUret(simdi: Date = new Date()): Promise<Uretim
         kural: a.kural,
         worker_id: a.workerId,
         vehicle_id: a.vehicleId,
-        musteri_id: a.musteriId,
         oncelik: a.oncelik,
         baslik: a.baslik.slice(0, 200),
         gerekce: a.gerekce.slice(0, 500),
@@ -568,34 +555,7 @@ async function adaylariTopla(
     };
   });
 
-  // ── 8) MÜŞTERİ ZARAR ETTİRİYOR (085)
-  await kuralKos("musteri_zarar", `katkı payı < 0 · ${ZARAR_MIN_SEFER}+ sefer`, async () => {
-    const { satirlar, aday, tabloYok } = await zararEdenMusteriler(simdi);
-    /**
-     * 085 UYGULANMAMIŞSA KURAL "ÇALIŞMADI" DER, "0 BULDU" DEMEZ.
-     * Bu ayrım panelin `tarama` bölümünün tek varlık sebebi: gelir tablosu
-     * olmayan bir kurulumda 0 kalem, sessiz bir arıza değil kayda geçmiş
-     * bir eksikliktir.
-     */
-    if (tabloYok) throw new Error("085 yok (sefer_gelirleri/musteriler)");
-    return {
-      aday,
-      cikanlar: satirlar.map((m) =>
-        kuralMusteriZarar({
-          musteriId: m.musteriId,
-          ad: m.ad,
-          seferSayisi: m.seferSayisi,
-          gelirEur: m.gelirEur,
-          maliyetEur: m.maliyetEur,
-          katkiPayiEur: m.katkiPayiEur,
-          minSefer: ZARAR_MIN_SEFER,
-          pencereGun: ZARAR_PENCERE_GUN,
-        })
-      ),
-    };
-  });
-
-  // ── 9) AYIN EN İYİSİ (088) — tek OLUMLU kural
+  // ── 8) AYIN EN İYİSİ (088) — tek OLUMLU kural
   await kuralKos("ayin_en_iyisi", `skor ≥ ${ROZET_SKOR_ESIK} · ${AYIN_EN_IYISI_MIN_SKORLANAN}+ skorlanan`, async () => {
     const { donemler, tabloYok } = await donemleriOku();
     /**

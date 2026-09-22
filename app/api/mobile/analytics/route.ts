@@ -366,7 +366,7 @@ export async function GET(req: NextRequest) {
    * HİÇ ulaşamıyordu. Tek satırlık bir CO₂ özeti bütün ekranı düşürüyordu.
    *
    * ⚠️ VE İSRAF: bu uç `co2Panosu`nun YALNIZCA `toplam` + `ayar` + `hedef`
-   * alanlarını okuyordu. `aylik`, `araclar`, `soforler`, `musteriler` hiç
+   * alanlarını okuyordu. `aylik`, `araclar`, `soforler` hiç
    * kullanılmıyordu — yani 7 raporun 6'sı hesaplanıp ATILIYORDU.
    *
    * Yeni yer: `GET /api/mobile/analytics/co2` (aynı aralık dili, aynı yetki).

@@ -6,9 +6,13 @@ import { listVehicleTrack } from "@/lib/telemetry";
 import { workedMs, viennaDayKey } from "@/lib/format";
 import { touchesNightWindow } from "@/lib/azg-rules";
 import { getTestScope, withoutTestRows } from "@/lib/test-data";
+import { UNRESTRICTED, onlyFleet, type FleetScope } from "@/lib/fleet-scope";
+import { getDriverScope, onlyDrivers } from "@/lib/driver-scope";
+import { listExpiringDocuments, type ExpiringDocument } from "@/lib/documents-db";
 import {
   KURAL_SETLERI,
   VARSAYILAN_KADEME,
+  kademeDenetle,
   kuralDurumu,
   setinTemeli,
   soforDurumu,
@@ -164,19 +168,41 @@ type AcikVardiya = {
  *
  * Yalnız AÇIK vardiyalar taranır: kapanmış vardiyanın "kalan süresi" diye
  * bir şey yok, o geçmişe dönük raporun konusu.
+ *
+ * ═══ `fleetScope` — EKLENDİ (Faz D-4), VARSAYILANI BUGÜNKÜ DAVRANIŞ ═══
+ *
+ * Parametre verilmezse `UNRESTRICTED` geçerlidir, yani panelin ve tarama
+ * cron'unun davranışı **bir satır bile değişmez**. Mobil uç kendi kapısından
+ * (`requireMobileFleetView`) çıkan kapsamı AÇIKÇA veriyor.
+ *
+ * ⚠️ PANEL BU PARAMETREYİ BUGÜN GEÇMİYOR ve bu bilinçli bir SINIRDIR, bir
+ * paklama değil: `/admin/mevzuat` `requireFleetView` ile şefi içeri alıyor
+ * ama satırları filoya daraltmıyor — yani şef panelde bugün TÜM açık
+ * vardiyaları görüyor. O davranışı bu turda değiştirmedik (canlı müşteride
+ * bir şefin ekranını sessizce daraltmak ayrı bir karardır); mobil uç ise
+ * fail-closed tarafta durup kapsamı UYGULUYOR. Fark yanıtta `kapsam`
+ * bloğuyla GÖRÜNÜR — bkz. docs/MEVZUAT-UCLARI.md §3.
  */
-export async function mevzuatPanosu(simdi: Date = new Date()): Promise<MevzuatPanosu> {
+export async function mevzuatPanosu(
+  simdi: Date = new Date(),
+  fleetScope: FleetScope = UNRESTRICTED
+): Promise<MevzuatPanosu> {
   const ayar = await mevzuatAyari();
   const scope = await getTestScope();
 
-  const { data, error } = await withoutTestRows(
-    supabaseAdmin
-      .from("time_entries")
-      .select("id, worker_id, vehicle_id, started_at, ended_at, break_minutes")
-      .is("ended_at", null)
-      .limit(500),
+  const { data, error } = await onlyFleet(
+    withoutTestRows(
+      supabaseAdmin
+        .from("time_entries")
+        .select("id, worker_id, vehicle_id, started_at, ended_at, break_minutes")
+        .is("ended_at", null)
+        .limit(500),
+      "worker_id",
+      scope.workerIds
+    ),
     "worker_id",
-    scope.workerIds
+    fleetScope.workerIds,
+    fleetScope
   );
 
   const acik = (error ? [] : ((data ?? []) as AcikVardiya[])).filter((r) => r.worker_id);
@@ -249,10 +275,15 @@ export async function mevzuatPanosu(simdi: Date = new Date()): Promise<MevzuatPa
    * test hesabı ELENMELİ. Yukarıdaki isim sözlüğünün aksine burası bir
    * ETİKET değil bir SAYI — kalıcı test şoförü paydayı bir kişi şişirirdi.
    */
-  const { count: aktifSayi } = await withoutTestRows(
-    supabaseAdmin.from("workers").select("id", { count: "exact", head: true }).eq("is_active", true),
+  const { count: aktifSayi } = await onlyFleet(
+    withoutTestRows(
+      supabaseAdmin.from("workers").select("id", { count: "exact", head: true }).eq("is_active", true),
+      "id",
+      scope.workerIds
+    ),
     "id",
-    scope.workerIds
+    fleetScope.workerIds,
+    fleetScope
   );
 
   return {
@@ -409,26 +440,26 @@ export async function uyariGecmisi(
 
   if (error) return { satirlar: [], tabloYok: tabloYokMu(error) };
 
+  return { tabloYok: false, satirlar: (data ?? []).map(uyariCevir) };
+}
+
+/** Defter satırı → API biçimi. Panel geçmişi ve mobil liste TEK çeviriciyi kullanır. */
+function uyariCevir(ham: unknown): UyariKaydi {
+  const r = ham as Record<string, unknown>;
+  const sayiVeyaNull = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   return {
-    tabloYok: false,
-    satirlar: (data ?? []).map((ham) => {
-      const r = ham as Record<string, unknown>;
-      return {
-        id: String(r.id),
-        workerId: String(r.worker_id),
-        gun: String(r.gun),
-        kural: String(r.kural),
-        kademe: String(r.kademe) as Kademe,
-        olcumTemeli: String(r.olcum_temeli),
-        kalanDk: r.kalan_dk === null || r.kalan_dk === undefined ? null : Number(r.kalan_dk),
-        esikDk: Number(r.esik_dk),
-        olculenDk: r.olculen_dk === null || r.olculen_dk === undefined ? null : Number(r.olculen_dk),
-        soforJeton: r.sofor_jeton === null || r.sofor_jeton === undefined ? null : Number(r.sofor_jeton),
-        yoneticiJeton:
-          r.yonetici_jeton === null || r.yonetici_jeton === undefined ? null : Number(r.yonetici_jeton),
-        createdAt: String(r.created_at),
-      };
-    }),
+    id: String(r.id),
+    workerId: String(r.worker_id),
+    gun: String(r.gun),
+    kural: String(r.kural),
+    kademe: String(r.kademe) as Kademe,
+    olcumTemeli: String(r.olcum_temeli),
+    kalanDk: sayiVeyaNull(r.kalan_dk),
+    esikDk: Number(r.esik_dk),
+    olculenDk: sayiVeyaNull(r.olculen_dk),
+    soforJeton: sayiVeyaNull(r.sofor_jeton),
+    yoneticiJeton: sayiVeyaNull(r.yonetici_jeton),
+    createdAt: String(r.created_at),
   };
 }
 
@@ -438,9 +469,10 @@ export async function mevzuatAyariYaz(
   workerId: string | null
 ): Promise<{ ok: boolean; hata?: string }> {
   const { kademe } = girdi;
-  if (!(kademe.erken > kademe.yaklasti && kademe.yaklasti > kademe.son && kademe.son > 0)) {
-    return { ok: false, hata: "kademe_sirasi" };
-  }
+  // Sıra kuralı SAF katmanda (lib/mevzuat.ts kademeDenetle) — mobil PATCH ucu
+  // 400 döndürebilmek için aynı fonksiyonu yazmadan ÖNCE çağırıyor.
+  const sira = kademeDenetle(kademe);
+  if (sira) return { ok: false, hata: sira };
   const { error } = await supabaseAdmin
     .from("tenant_mevzuat")
     .update({
@@ -456,4 +488,129 @@ export async function mevzuatAyariYaz(
 
   if (error) return { ok: false, hata: tabloYokMu(error) ? "tablo_yok" : "hata" };
   return { ok: true };
+}
+
+// ═══════════════ MOBİL PANO OKUMALARI (Faz D-4) ══════════════════════════
+
+export type UyariListesi = {
+  satirlar: UyariKaydi[];
+  /** Süzgeçten geçen TOPLAM satır (sayfa değil) — PostgREST `count: "exact"`. */
+  toplam: number;
+  tabloYok: boolean;
+};
+
+/**
+ * GÖNDERİLMİŞ UYARI DEFTERİ — süzgeçli ve SAYFALI okuma.
+ *
+ * `uyariGecmisi`nin (panel, son 7 gün, 300 satır tavanı) mobil ikizi. İki fark
+ * ve ikisi de bilinçli:
+ *
+ *   1. **SAYFALI.** Telefon 300 satırlık bir gövdeyi ne indirmeli ne çizmeli.
+ *      `total` sunucudan gelen GERÇEK sayıdır (`count: "exact"`), istemci
+ *      "kaç tane var"ı tahmin etmez — lib/mobile-list.ts sözleşmesi.
+ *   2. **KAPSAMLI.** Şef kendi filosu dışındaki şoförün uyarısını görmez.
+ *      `mevzuatPanosu`daki gerekçenin aynısı (o fonksiyonun başlığı).
+ *
+ * ⚠️ `durum=acik|kapali` DİYE BİR SÜZGEÇ YOK ÇÜNKÜ ÜRÜNDE KAPANIŞ YOK.
+ * `mevzuat_uyarilari` bir DEFTERDİR ve bilerek DEĞİŞMEZDİR: gönderilmiş bir
+ * bildirimi kapatmak/silmek onu gönderilmemiş gibi gösterir ve tekil indeksin
+ * spam korumasını bozar (kural `scripts/check-crud-ekranlari.mjs` MUAF
+ * listesinde yazılı, panelde de kapatma düğmesi YOK). Uç bu yüzden `?durum=`
+ * geldiğinde 400 döner — sessizce yutup "süzdüm" demez.
+ */
+export async function uyariListesi(s: {
+  gunSayisi: number;
+  soforId: string | null;
+  limit: number;
+  offset: number;
+  fleetScope: FleetScope;
+}): Promise<UyariListesi> {
+  const bas = new Date(Date.now() - s.gunSayisi * 86_400_000).toISOString().slice(0, 10);
+
+  let q = supabaseAdmin
+    .from("mevzuat_uyarilari")
+    .select("*", { count: "exact" })
+    .gte("gun", bas);
+  if (s.soforId) q = q.eq("worker_id", s.soforId);
+  q = onlyFleet(q, "worker_id", s.fleetScope.workerIds, s.fleetScope);
+
+  const { data, error, count } = await q
+    .order("created_at", { ascending: false })
+    .range(s.offset, s.offset + s.limit - 1);
+
+  if (error) return { satirlar: [], toplam: 0, tabloYok: tabloYokMu(error) };
+  return { satirlar: (data ?? []).map(uyariCevir), toplam: count ?? 0, tabloYok: false };
+}
+
+export type MevzuatBelgeleri = {
+  satirlar: ExpiringDocument[];
+  /** Süresi DOLMUŞ (days < 0). */
+  dolmus: number;
+  /** Eşiğe girmiş ama henüz dolmamış. */
+  yaklasan: number;
+  /** Kiracının tanımlı AKTİF belge türü sayısı — "0 satır"ın sebebini ayırır. */
+  turSayisi: number;
+  /** migration 078 yok → belge ekseni hiç okunamadı. */
+  tabloYok: boolean;
+};
+
+/**
+ * SÜRESİ DOLMUŞ / YAKLAŞAN ŞOFÖR BELGELERİ (migration 078).
+ *
+ * ═══ 🔴 "EKSİK BELGE" DİYE BİR KAVRAM ÜRÜNDE YOK — ÖLÇÜLDÜ ═══
+ *
+ * 078'de bir belge türünün ZORUNLU olduğunu söyleyen hiçbir alan yok
+ * (`document_types`: `code, label, warn_days, requires_number, active,
+ * sort_order` — `requires_number` belgenin NUMARASININ zorunluluğudur, kendisinin
+ * değil). Yani "Ali'de SRC yok" cümlesini kuracak veri yok: sistem yalnız
+ * GİRİLMİŞ belgelerin tarihini bilir. Bu eksen bilerek böyle — tür listesi
+ * kiracıya ait (TR'de SRC + psikoteknik, DACH'ta Aufenthaltstitel, AB'de CPC)
+ * ve "kimde hangisi zorunlu" sorusu ülkeye ve yüke göre değişir.
+ *
+ * Uç bu yüzden ÖLÇÜLEBİLENİ döndürür: süresi dolmuş + eşiğe girmiş belgeler.
+ * `turSayisi` ile birlikte "0 satır" okunabilir hâle gelir: tür hiç tanımlı
+ * değilse eksen kapalıdır, tanımlıysa gerçekten temizdir.
+ *
+ * ═══ KAPSAM — /admin (Dikkat panosu) İLE AYNI ÜÇLÜ ═══
+ *
+ * `withoutTestRows` (test hesabı) → `onlyDrivers` (yönetici şoför değildir,
+ * `counts_as_driver` muafiyetiyle) → `onlyFleet` (şefin filosu). Üçü de kendi
+ * tek kaynağından geliyor; hiçbiri burada yeniden yazılmadı. Kapsam boş
+ * çıkarsa `listExpiringDocuments` BOŞ döner (fail-closed), kısıtsıza düşmez.
+ */
+export async function mevzuatBelgeleri(
+  fleetScope: FleetScope,
+  simdi: Date = new Date()
+): Promise<MevzuatBelgeleri> {
+  const [scope, driverScope] = await Promise.all([getTestScope(), getDriverScope()]);
+
+  const { data } = await onlyFleet(
+    onlyDrivers(
+      withoutTestRows(
+        supabaseAdmin.from("workers").select("id").eq("is_active", true),
+        "id",
+        scope.workerIds
+      ),
+      "id",
+      driverScope
+    ),
+    "id",
+    fleetScope.workerIds,
+    fleetScope
+  );
+  const ids = ((data ?? []) as { id: string }[]).map((r) => r.id);
+
+  const { listDocumentTypes } = await import("@/lib/documents-db");
+  const [{ items, tabloYok }, { types }] = await Promise.all([
+    listExpiringDocuments(ids, simdi),
+    listDocumentTypes(true),
+  ]);
+
+  return {
+    satirlar: items,
+    dolmus: items.filter((d) => d.days < 0).length,
+    yaklasan: items.filter((d) => d.days >= 0).length,
+    turSayisi: types.length,
+    tabloYok,
+  };
 }

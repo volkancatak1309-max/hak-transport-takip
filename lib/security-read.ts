@@ -112,32 +112,83 @@ async function workerNames(): Promise<Map<string, string>> {
   return new Map(((data ?? []) as { id: string; name: string }[]).map((w) => [w.id, w.name]));
 }
 
-/** Son N giriş oturumu (en yeniden eskiye). */
+const SESSION_COLS =
+  "id, worker_id, started_at, last_seen_at, ended_at, ended_reason, ip, user_agent, device_hash, city, country, new_device, concurrent, source";
+
+/** Son N giriş oturumu (en yeniden eskiye). Panel yolu — sayfasız. */
 export async function listSessions(limit = 200): Promise<SessionRow[]> {
-  if (!SECURITY_LAYER_ENABLED) return [];
+  const { satirlar } = await sessionSayfasi({ limit, offset: 0 });
+  return satirlar;
+}
+
+/**
+ * SAYFALI OTURUM OKUMASI — mobil ucun yolu (Faz D-5).
+ *
+ * `listSessions` bunun sayfasız sarmalayıcısı; satır çevirisi ve "canlı"
+ * hesabı TEK yerde kalsın diye ikisi aynı gövdeyi kullanıyor. `toplam`
+ * PostgREST `count: "exact"`tan gelir — istemci "kaç tane var"ı tahmin etmez.
+ *
+ * ⚠️ `acikMi` süzgeci `ended_at is null` demektir, "canlı" demek DEĞİL:
+ * çıkış yapmadan tarayıcı kapatılınca satır sonsuza kadar açık kalır.
+ * Canlılık ayrı bir alan (`live`, 30 dk penceresi) ve süzgece
+ * DÖNÜŞTÜRÜLMEDİ — sorguda `last_seen_at >= now()-30dk` yazmak aynı eşiği
+ * ikinci kez tanımlamak olurdu.
+ */
+export async function sessionSayfasi(o: {
+  limit: number;
+  offset: number;
+  workerId?: string | null;
+  acikMi?: boolean;
+}): Promise<{ satirlar: SessionRow[]; toplam: number }> {
+  if (!SECURITY_LAYER_ENABLED) return { satirlar: [], toplam: 0 };
   try {
-    const { data, error } = await supabaseAdmin
-      .from("login_sessions")
-      .select(
-        "id, worker_id, started_at, last_seen_at, ended_at, ended_reason, ip, user_agent, device_hash, city, country, new_device, concurrent, source"
-      )
+    let q = supabaseAdmin.from("login_sessions").select(SESSION_COLS, { count: "exact" });
+    if (o.workerId) q = q.eq("worker_id", o.workerId);
+    if (o.acikMi === true) q = q.is("ended_at", null);
+    if (o.acikMi === false) q = q.not("ended_at", "is", null);
+
+    const { data, error, count } = await q
       .order("started_at", { ascending: false })
-      .limit(limit);
-    if (error || !data) return [];
+      .range(o.offset, o.offset + o.limit - 1);
+    if (error || !data) return { satirlar: [], toplam: 0 };
+
     const isim = await workerNames();
     const canliEsik = Date.now() - CANLI_PENCERE_MS;
-    return data.map((r) => {
+    const satirlar = (data as unknown[]).map((r) => {
       const row = r as Omit<SessionRow, "worker_name" | "live">;
       return {
         ...row,
         worker_name: isim.get(row.worker_id) ?? "—",
-        live:
-          row.ended_at === null &&
-          new Date(row.last_seen_at).getTime() >= canliEsik,
+        live: row.ended_at === null && new Date(row.last_seen_at).getTime() >= canliEsik,
       };
     });
+    return { satirlar, toplam: count ?? satirlar.length };
   } catch {
-    return [];
+    return { satirlar: [], toplam: 0 };
+  }
+}
+
+/** Tek oturum satırı — kesme ucunun satırın SAHİBİNİ bulması için. */
+export async function sessionTek(id: string): Promise<SessionRow | null> {
+  if (!SECURITY_LAYER_ENABLED) return null;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("login_sessions")
+      .select(SESSION_COLS)
+      .eq("id", id)
+      .maybeSingle();
+    if (error || !data) return null;
+    const isim = await workerNames();
+    const row = data as unknown as Omit<SessionRow, "worker_name" | "live">;
+    return {
+      ...row,
+      worker_name: isim.get(row.worker_id) ?? "—",
+      live:
+        row.ended_at === null &&
+        new Date(row.last_seen_at).getTime() >= Date.now() - CANLI_PENCERE_MS,
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -200,18 +251,45 @@ function metaDegisim(action: string, meta: unknown): ChangeField[] {
     );
 }
 
-/** Son eylem izi (yalnız audit_log). */
+/** Son eylem izi (yalnız audit_log). Panel yolu — sayfasız. */
 export async function listAudit(limit = 200): Promise<AuditRow[]> {
-  if (!SECURITY_LAYER_ENABLED) return [];
+  const { satirlar } = await auditSayfasi({ limit, offset: 0 });
+  return satirlar;
+}
+
+/**
+ * SAYFALI DENETİM İZİ — mobil ucun yolu (Faz D-5).
+ *
+ * `listAudit` bunun sayfasız sarmalayıcısı; `metaDegisim` maskelemesi ve
+ * isim sözlüğü TEK yerde kalıyor.
+ *
+ * ⚠️ YALNIZ `audit_log`. Panelin `listActionTimeline`i beş tabloyu
+ * birleştiriyor ama SAYFALANAMAZ: her tablodan kendi payını çekip bellekte
+ * sıralıyor, yani "3. sayfa" diye tutarlı bir kavram yok. Mobil uç bu yüzden
+ * tek tabloyu sayfalıyor ve gövdede bunu SÖYLÜYOR (`kaynak: "audit_log"` +
+ * `birlesikDegil`) — sessizce eksik göstermek, izin tamamı sanılırdı.
+ */
+export async function auditSayfasi(o: {
+  limit: number;
+  offset: number;
+  islem?: string | null;
+  workerId?: string | null;
+}): Promise<{ satirlar: AuditRow[]; toplam: number }> {
+  if (!SECURITY_LAYER_ENABLED) return { satirlar: [], toplam: 0 };
   try {
-    const { data, error } = await supabaseAdmin
+    let q = supabaseAdmin
       .from("audit_log")
-      .select("id, worker_id, at, action, target, ip, meta")
+      .select("id, worker_id, at, action, target, ip, meta", { count: "exact" });
+    if (o.islem) q = q.eq("action", o.islem);
+    if (o.workerId) q = q.eq("worker_id", o.workerId);
+
+    const { data, error, count } = await q
       .order("at", { ascending: false })
-      .limit(limit);
-    if (error || !data) return [];
+      .range(o.offset, o.offset + o.limit - 1);
+    if (error || !data) return { satirlar: [], toplam: 0 };
+
     const isim = await workerNames();
-    return (data as Record<string, unknown>[]).map((r) => ({
+    const satirlar = (data as Record<string, unknown>[]).map((r) => ({
       id: r.id as string,
       worker_id: (r.worker_id as string | null) ?? null,
       worker_name: r.worker_id ? isim.get(r.worker_id as string) ?? "—" : "—",
@@ -222,8 +300,33 @@ export async function listAudit(limit = 200): Promise<AuditRow[]> {
       degisim: metaDegisim(r.action as string, r.meta),
       kaynak: "audit_log" as TimelineSource,
     }));
+    return { satirlar, toplam: count ?? satirlar.length };
   } catch {
-    return [];
+    return { satirlar: [], toplam: 0 };
+  }
+}
+
+/**
+ * Son N saatteki satır sayısı — durum panosunun "son 24 sa giriş" ölçütü.
+ *
+ * ⚠️ `null` = ÖLÇÜLEMEDİ, `0` DEĞİL. Sıfır yazmak "hiç giriş olmadı" derdi
+ * ve sorgu hatası sessizce bir ölçüm gibi okunurdu (km-quality dersi).
+ */
+export async function sayacSonSaat(
+  tablo: "login_sessions" | "audit_log",
+  saat: number
+): Promise<number | null> {
+  if (!SECURITY_LAYER_ENABLED) return null;
+  const kolon = tablo === "login_sessions" ? "started_at" : "at";
+  try {
+    const { count, error } = await supabaseAdmin
+      .from(tablo)
+      .select("id", { count: "exact", head: true })
+      .gte(kolon, new Date(Date.now() - saat * 3_600_000).toISOString());
+    if (error) return null;
+    return count ?? 0;
+  } catch {
+    return null;
   }
 }
 

@@ -1,67 +1,55 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { supabaseAdmin } from "@/lib/supabase";
 import { requireOwner } from "@/lib/session";
 import { audit } from "@/lib/security-log";
 import { clientIpFromHeaders } from "@/lib/auth-core";
 import { ACCESS_GATES_ENABLED, SECURITY_LAYER_ENABLED } from "@/lib/tenant";
+import { getKillSwitchState, recordAttempt } from "@/lib/kill-switch";
 import {
-  getKillSwitchState,
-  recordAttempt,
-  verifySecret,
-  activateKillSwitch,
-  deactivateKillSwitch,
-} from "@/lib/kill-switch";
+  ANAHTAR_ONAY_METNI,
+  anahtarCek,
+  anahtarGeriAl,
+  muafiyetYaz,
+  onayKarari,
+  saatleriDenetle,
+  saatleriYaz,
+  type OnayTablosu,
+} from "@/lib/guvenlik-eylem";
 
 /**
  * ERİŞİM KAPILARI — PATRON EYLEMLERİ (046).
  *
  * Hepsi `requireOwner()` ile başlar. UI'da düğmeyi gizlemek kozmetiktir; son
  * sözü bu kapı söyler (action doğrudan çağrılabilir).
+ *
+ * ═══ KURALLAR `lib/guvenlik-eylem.ts`TE ═══
+ * "Yalnız BEKLEYEN satır karara bağlanır", "iki saat ucu birlikte ya da
+ * hiçbiri", "önce kilit sonra cevap" — üçü de artık tek çekirdekte ve mobil
+ * uçlar aynısını çağırıyor. Buradaki fonksiyonlar kapı + bayrak + tazeleme.
  */
 
 export type AccessResult = { ok: boolean; error?: string };
-
-/** "ONAYLIYORUM" — büyük/küçük ve baştaki/sondaki boşluk hoşgörülür. */
-const ONAY_METNI = "ONAYLIYORUM";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // KAPI 1 + 2 — ONAYLAR
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function karar(
-  tablo: "device_approvals" | "country_approvals",
-  id: string,
-  onayla: boolean
-): Promise<AccessResult> {
+async function karar(tablo: OnayTablosu, id: string, onayla: boolean): Promise<AccessResult> {
   const session = await requireOwner();
   if (!ACCESS_GATES_ENABLED) return { ok: false, error: "gates_disabled" };
-  if (!id) return { ok: false, error: "missing_id" };
-  try {
-    const { error } = await supabaseAdmin
-      .from(tablo)
-      .update({
-        status: onayla ? "approved" : "denied",
-        decided_at: new Date().toISOString(),
-        decided_by: session.worker_id,
-      })
-      .eq("id", id)
-      // Yalnız BEKLEYEN satır karara bağlanır: iki sekmesi açık bir patron
-      // aynı satıra iki kez basarsa ikincisi sessizce hiçbir şey yapmaz.
-      .eq("status", "pending");
-    if (error) return { ok: false, error: error.message };
 
-    await audit(
-      session.worker_id ?? null,
-      onayla ? "access_approve" : "access_deny",
-      `${tablo}:${id}`
-    );
-    revalidatePath("/admin/guvenlik");
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "error" };
-  }
+  const r = await onayKarari(tablo, id, onayla, session.worker_id ?? null);
+  /**
+   * `not_pending` PANELDE HATA DEĞİL. İki sekmesi açık bir patron aynı satıra
+   * iki kez basarsa ikincisi sessizce hiçbir şey yapmalı — eski davranış
+   * buydu (update 0 satır etkiler, `{ok:true}` dönerdi) ve ekran o varsayımla
+   * yazıldı. Mobil uç aynı durumu 409 ile AYIRT EDİYOR; ayrım çağıranda,
+   * kural çekirdekte.
+   */
+  if (!r.ok && r.error !== "not_pending") return { ok: false, error: r.error };
+  revalidatePath("/admin/guvenlik");
+  return { ok: true };
 }
 
 export async function approveDeviceAction(id: string, onayla: boolean) {
@@ -76,25 +64,10 @@ export async function approveCountryAction(id: string, onayla: boolean) {
 // KAPI 3 — SAAT ARALIĞI
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** "HH:MM" biçimi ve geçerli saat/dakika. Boş dize → null (kısıt kaldır). */
-function saatAyikla(v: string | null | undefined): string | null | "gecersiz" {
-  const t = (v ?? "").trim();
-  if (!t) return null;
-  const m = /^(\d{1,2}):(\d{2})$/.exec(t);
-  if (!m) return "gecersiz";
-  const sa = Number(m[1]);
-  const dk = Number(m[2]);
-  if (sa > 23 || dk > 59) return "gecersiz";
-  return `${String(sa).padStart(2, "0")}:${m[2]}`;
-}
-
 /**
  * Kişi bazında giriş saati aralığı. İkisi de boş → kısıt kaldırılır (kiracı
- * varsayılanına döner).
- *
- * ⚠️ TEK UÇ BOŞ KABUL EDİLMEZ: yalnız başlangıcı verip bitişi boş bırakmak,
- * "07:00'den sonra serbest" gibi okunur ama kod diğer ucu varsayılandan alır ve
- * patronun kastetmediği bir aralık doğar. İkisi birlikte ya da hiçbiri.
+ * varsayılanına döner). Biçim ve "tek uç boş kabul edilmez" kuralı
+ * `saatleriDenetle` içinde.
  */
 export async function setAccessHoursAction(
   workerId: string,
@@ -103,47 +76,32 @@ export async function setAccessHoursAction(
 ): Promise<AccessResult> {
   const session = await requireOwner();
   if (!ACCESS_GATES_ENABLED) return { ok: false, error: "gates_disabled" };
-  if (!workerId) return { ok: false, error: "missing_worker" };
 
-  const s = saatAyikla(start);
-  const e = saatAyikla(end);
-  if (s === "gecersiz" || e === "gecersiz") {
-    return { ok: false, error: "Saat biçimi SS:DD olmalı (ör. 07:00)" };
-  }
-  if ((s === null) !== (e === null)) {
-    return { ok: false, error: "İki ucu birlikte doldurun ya da ikisini de boşaltın" };
+  const d = saatleriDenetle(start, end);
+  // Tek `if` ile daraltma: iki ayrı karşılaştırma TypeScript'te ayrık birleşimi
+  // daraltmıyor ve `d.start` erişilemez kalıyor (tsc yakaladı).
+  if (d.hata !== null) {
+    return {
+      ok: false,
+      error:
+        d.hata === "bicim"
+          ? "Saat biçimi SS:DD olmalı (ör. 07:00)"
+          : "İki ucu birlikte doldurun ya da ikisini de boşaltın",
+    };
   }
 
-  try {
-    const { error } = await supabaseAdmin
-      .from("workers")
-      .update({ access_hours_start: s, access_hours_end: e })
-      .eq("id", workerId);
-    if (error) return { ok: false, error: error.message };
-    await audit(session.worker_id ?? null, "access_hours", workerId, {
-      start: s,
-      end: e,
-    });
-    revalidatePath("/admin/guvenlik");
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "error" };
-  }
+  const r = await saatleriYaz(workerId, d.start, d.end, session.worker_id ?? null);
+  if (!r.ok) return { ok: false, error: r.error };
+  revalidatePath("/admin/guvenlik");
+  return { ok: true };
 }
 
 /**
  * KAPILARDAN MUAFİYET (migration 048) — kişi bazında aç/kapa.
  *
- * MUAF: cihaz onayı · ülke onayı · saat kilidi.
- * MUAF DEĞİL: ölü adam anahtarı — orada tek istisna patrondur ve öyle kalmalı,
- * yoksa "sistemi kapat" düğmesi birkaç kişiyi içeride bırakan bir düğmeye
- * dönerdi.
- *
  * ⚠️ Muafiyet YETKİ ya da GÖRÜNÜRLÜK VERMEZ: muaf kişi /admin/guvenlik'i
  * açamaz (requireOwner) ve patronu personel listelerinde göremez (045 ayrı
- * eksen). İki kavram bilerek ayrı tutuluyor.
- *
- * Değişiklik eski/yeni değeriyle ize düşer — SQL'le yapılan düşmez.
+ * eksen). Kapsam ve gerekçe çekirdeğin başlığında.
  */
 export async function setGateExemptAction(
   workerId: string,
@@ -151,27 +109,11 @@ export async function setGateExemptAction(
 ): Promise<AccessResult> {
   const session = await requireOwner();
   if (!ACCESS_GATES_ENABLED) return { ok: false, error: "gates_disabled" };
-  if (!workerId) return { ok: false, error: "missing_worker" };
-  try {
-    const { data: once } = await supabaseAdmin
-      .from("workers")
-      .select("id, name, gate_exempt")
-      .eq("id", workerId)
-      .maybeSingle();
-    const { error } = await supabaseAdmin
-      .from("workers")
-      .update({ gate_exempt: exempt })
-      .eq("id", workerId);
-    if (error) return { ok: false, error: error.message };
 
-    const { auditChange } = await import("@/lib/audit-change");
-    await auditChange(session.worker_id ?? null, "update", "workers", workerId,
-      once as Record<string, unknown> | null, { gate_exempt: exempt });
-    revalidatePath("/admin/guvenlik");
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "error" };
-  }
+  const r = await muafiyetYaz(workerId, exempt, session.worker_id ?? null);
+  if (!r.ok) return { ok: false, error: r.error };
+  revalidatePath("/admin/guvenlik");
+  return { ok: true };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -225,12 +167,16 @@ export async function lookupFingerprintAction(raw: string) {
  *
  * Sunucuda doğrulanır, çünkü aşama 3'e geçiş istemcide karar verilseydi
  * doğrudan aktivasyon çağrılabilirdi. Her deneme ize girer.
+ *
+ * ⚠️ PANELDE AYRI BİR ADIM, ÇEKİRDEKTE TEK AKIŞ. Ekran iki ayrı düğmeyle
+ * ilerliyor (önce metin, sonra gizli soru), mobil uç ikisini tek gövdede
+ * alıyor; ikisi de `anahtarCek` içindeki AYNI sırayı uyguluyor.
  */
 export async function killSwitchConfirmAction(text: string): Promise<AccessResult> {
   const session = await requireOwner();
   if (!ACCESS_GATES_ENABLED) return { ok: false, error: "gates_disabled" };
   const ip = clientIpFromHeaders(await headers());
-  const dogru = (text ?? "").trim().toUpperCase() === ONAY_METNI;
+  const dogru = (text ?? "").trim().toUpperCase() === ANAHTAR_ONAY_METNI;
   await recordAttempt(session.worker_id ?? null, ip, "confirm", dogru);
   return dogru ? { ok: true } : { ok: false, error: "confirm_mismatch" };
 }
@@ -238,13 +184,8 @@ export async function killSwitchConfirmAction(text: string): Promise<AccessResul
 /**
  * AŞAMA 3 — gizli soru + aktivasyon.
  *
- * Sıra önemli ve şöyle: ÖNCE kilit denetlenir, SONRA cevap doğrulanır, HER
- * DURUMDA iz yazılır. Kilit denetimini cevaptan sonraya bıraksaydık kilitli
- * bir anahtarda bile cevap denenebilir, yani kilit deneme sayısını
- * sınırlamamış olurdu.
- *
- * Cevap DÜZ METİN olarak hiçbir yerde tutulmuyor; karşılaştırma bcrypt ile
- * kill_switch_secret üzerinden yapılır (migration 046).
+ * Panel aşama 2'yi ayrı geçtiği için buraya onay metni ZATEN DOĞRU olarak
+ * verilir; sıra, kilit denetimi ve iz yazımı çekirdekte.
  */
 export async function killSwitchActivateAction(
   answer: string,
@@ -254,31 +195,21 @@ export async function killSwitchActivateAction(
   if (!ACCESS_GATES_ENABLED) return { ok: false, error: "gates_disabled" };
   const ip = clientIpFromHeaders(await headers());
 
-  const durum = await getKillSwitchState();
-  if (durum.lockedUntil) {
-    // Kilitliyken deneme HİÇ yapılmaz — iz yazılır ama cevap değerlendirilmez.
-    await recordAttempt(session.worker_id ?? null, ip, "secret", false);
-    return { ok: false, error: "locked", lockedUntil: durum.lockedUntil, kalanHak: 0 };
-  }
-
-  const dogru = await verifySecret((answer ?? "").trim());
-  await recordAttempt(session.worker_id ?? null, ip, "secret", dogru);
-
-  if (!dogru) {
-    const sonra = await getKillSwitchState();
+  const r = await anahtarCek(
+    session.worker_id ?? null,
+    ip,
+    ANAHTAR_ONAY_METNI,
+    answer,
+    reason
+  );
+  if (!r.ok) {
     return {
       ok: false,
-      error: sonra.lockedUntil ? "locked" : "wrong_answer",
-      lockedUntil: sonra.lockedUntil ?? undefined,
-      kalanHak: sonra.kalanHak,
+      error: r.error,
+      lockedUntil: r.lockedUntil ?? undefined,
+      kalanHak: r.kalanHak,
     };
   }
-
-  const r = await activateKillSwitch(session.worker_id!, (reason ?? "").trim() || null);
-  if (!r.ok) return { ok: false, error: r.error };
-  await audit(session.worker_id ?? null, "kill_switch_on", null, {
-    reason: (reason ?? "").trim() || null,
-  });
   revalidatePath("/admin/guvenlik");
   return { ok: true };
 }
@@ -293,9 +224,14 @@ export async function killSwitchActivateAction(
 export async function killSwitchDeactivateAction(): Promise<AccessResult> {
   const session = await requireOwner();
   if (!ACCESS_GATES_ENABLED) return { ok: false, error: "gates_disabled" };
-  const r = await deactivateKillSwitch(session.worker_id!);
+  const r = await anahtarGeriAl(session.worker_id ?? null);
   if (!r.ok) return { ok: false, error: r.error };
-  await audit(session.worker_id ?? null, "kill_switch_off", null);
   revalidatePath("/admin/guvenlik");
   return { ok: true };
+}
+
+/** Anahtar durumu — ekran ilk yüklemede sunucu bileşeninden alır, bu yedek yol. */
+export async function killSwitchStateAction() {
+  await requireOwner();
+  return getKillSwitchState();
 }

@@ -162,3 +162,59 @@ export async function requireMobileManualStart(
   }
   return { ok: true, auth, worker: gate.worker };
 }
+
+/**
+ * PATRON KAPISI (045) — `requireOwner()`ın JSON dönen ikizi.
+ *
+ * ═══ KATMAN KAPALIYKEN 403 DEĞİL, DÜRÜST BİR CEVAP ═══
+ *
+ * Güvenlik katmanı kiracı başına açılıyor (`SECURITY_LAYER_ENABLED`) ve bugün
+ * yalnız galzura-demo'da açık. HAK61'de 045-048 migration'ları HİÇ KOŞMADI:
+ * `workers.is_owner` kolonu bile yok. Orada patron kapısını uygulasaydık uç
+ * kalıcı olarak 403 döner ve istemci "yetkim yok" ile "bu kurulumda böyle bir
+ * şey yok"u ayırt edemezdi — `servisYapilandirildi` (091) ile aynı ayrım.
+ *
+ * Bu yüzden SIRA şöyle ve sırası kuralın kendisi:
+ *
+ *   1. jeton yok            → 401
+ *   2. yönetici değil       → 403 `admin_required`  (şoför hiçbir şey öğrenmez)
+ *   3. katman KAPALI        → `{ katman: "kapali" }` — veri YOK, ayar bilgisi var
+ *   4. `is_owner` değil     → 403 `owner_required`
+ *   5. patron               → `{ katman: "acik" }`
+ *
+ * 3. adım bir VERİ sızıntısı değil bir KURULUM gerçeğidir: hiçbir oturum, iz
+ * ya da onay satırı dönmez. Yine de yöneticiden aşağısına verilmez — şoförün
+ * kiracının güvenlik kurulumunu sorgulaması için bir sebep yok.
+ *
+ * ⚠️ `isOwnerWorker` bilerek `SECURITY_LAYER_ENABLED` denetlemez
+ * (lib/owner-scope.ts): bayrak denetimi BURADA, kapıdan önce. Kolon yoksa
+ * sorgu hata döner ve fonksiyon `false` verir — hata = KAPALI.
+ */
+export type MobileOwnerGuard =
+  | { ok: true; katman: "acik"; actor: MobileActor }
+  | { ok: true; katman: "kapali"; actor: MobileActor }
+  | { ok: false; response: Response };
+
+export async function requireMobileOwner(req: Request): Promise<MobileOwnerGuard> {
+  const auth = await verifyMobileRequest(req);
+  if (!auth.ok) return { ok: false, response: mobileError(auth.status, auth.code) };
+
+  // Yönetici olmayan hiçbir şey öğrenmez — katman durumu bile.
+  if (!auth.worker.is_admin) return { ok: false, response: mobileError(403, "admin_required") };
+
+  const actor: MobileActor = {
+    worker: auth.worker,
+    fleet: null,
+    isChief: false,
+    fleetScope: UNRESTRICTED,
+  };
+
+  const { SECURITY_LAYER_ENABLED } = await import("@/lib/tenant");
+  if (!SECURITY_LAYER_ENABLED) return { ok: true, katman: "kapali", actor };
+
+  const { isOwnerWorker } = await import("@/lib/owner-scope");
+  if (!(await isOwnerWorker(auth.worker.id))) {
+    return { ok: false, response: mobileError(403, "owner_required") };
+  }
+  return { ok: true, katman: "acik", actor };
+}

@@ -138,26 +138,61 @@ export async function listAccessRules(): Promise<AccessRule[]> {
       scope.workerIds
     );
     if (error || !data) return [];
-    return (data as Record<string, unknown>[]).map((w) => {
-      const start = hhmm(w.access_hours_start);
-      const end = hhmm(w.access_hours_end);
-      const countries = (w.allowed_countries as string[] | null) ?? null;
-      return {
-        id: w.id as string,
-        name: (w.name as string) ?? "—",
-        start,
-        end,
-        etkin:
-          start && end
-            ? `${start}–${end}`
-            : `${ACCESS_HOURS_START}–${ACCESS_HOURS_END} (varsayılan)`,
-        countries,
-        etkinCountries: countries ?? ACCESS_COUNTRIES,
-        is_owner: w.is_owner === true,
-        gate_exempt: w.gate_exempt === true,
-      };
-    });
+    return (data as Record<string, unknown>[]).map(kuralCevir);
   } catch {
     return [];
+  }
+}
+
+const ACCESS_COLS =
+  "id, name, is_owner, gate_exempt, access_hours_start, access_hours_end, allowed_countries";
+
+/** Kural satırı → API biçimi. Liste ve tek-kişi okuması TEK çeviriciyi kullanır. */
+function kuralCevir(w: Record<string, unknown>): AccessRule {
+  const start = hhmm(w.access_hours_start);
+  const end = hhmm(w.access_hours_end);
+  const countries = (w.allowed_countries as string[] | null) ?? null;
+  return {
+    id: w.id as string,
+    name: (w.name as string) ?? "—",
+    start,
+    end,
+    etkin:
+      start && end
+        ? `${start}–${end}`
+        : `${ACCESS_HOURS_START}–${ACCESS_HOURS_END} (varsayılan)`,
+    countries,
+    etkinCountries: countries ?? ACCESS_COUNTRIES,
+    is_owner: w.is_owner === true,
+    gate_exempt: w.gate_exempt === true,
+  };
+}
+
+/**
+ * TEK KİŞİNİN erişim kuralı — mobil `/erisim/[workerId]` ucunun yolu.
+ *
+ * ⚠️ `listAccessRules` TEST hesabını eler ve YALNIZ `is_active` olanları
+ * getirir; bu okuma ANAHTARLI (`.eq("id")`) olduğu için ikisini de
+ * uygulamıyor. Gerekçe: liste bir YÖNETİM listesidir (kalabalık yapmasın),
+ * tek kişi okuması ise bir SORGUDUR — patron bir kimlik yazmışsa cevabı
+ * almalı. Pasif ya da test hesabını "bulunamadı" göstermek, var olan bir
+ * kaydı yok sanmaya yol açardı; satır `is_active`/`is_test` alanlarını
+ * TAŞIYOR, karar çağıranda.
+ */
+export async function accessRuleTek(
+  workerId: string
+): Promise<(AccessRule & { is_active: boolean }) | null> {
+  if (!ACCESS_GATES_ENABLED) return null;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("workers")
+      .select(ACCESS_COLS + ", is_active")
+      .eq("id", workerId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const w = data as unknown as Record<string, unknown>;
+    return { ...kuralCevir(w), is_active: w.is_active === true };
+  } catch {
+    return null;
   }
 }

@@ -266,7 +266,12 @@ Bu, **HAK61/Sendigo'daki gerçek hâlin birebir provası**.
 ### 11.2 AÇIK KATMAN tam turu — **62/62** (+ anahtar ölçümü ilk koşumdan)
 
 `SECURITY_LAYER_ENABLED=true ACCESS_GATES_ENABLED=true ENV_FILE=.env.galzura-demo …`
-— üretimdeki demo ayarının aynısı, gerçek demo veritabanı, gerçek rota fonksiyonları.
+— gerçek demo veritabanı, gerçek rota fonksiyonları.
+
+⚠️ **Bu, üretimdeki demo ayarının aynısı DEĞİL.** Canlı host turu ölçtü:
+demo üretiminde `SECURITY_LAYER_ENABLED` **açık**, `ACCESS_GATES_ENABLED`
+**kapalı** (§14). Buradaki koşum kapıları ELLE açarak kapı yollarını da
+kanıtlıyor; üretimin gerçek hâli §14'te.
 
 **Durum panosu (ölçülen):**
 
@@ -374,3 +379,89 @@ migration gerekmiyor.
   `lookupFingerprintAction`) mobile açılmadı — görevde yoktu.
 - **`audit_log` yazma ucu yok ve olmayacak**: iz ürünün kendi eylemlerinden
   doğar; dışarıdan satır yazılabilen bir iz, iz değildir.
+
+---
+
+## 14 · Canlı HOST turu — gerçek HTTP (22.09.2026)
+
+Dağıtım **`573e469`**, üç kiracıda da **READY**. **28/28 iddia geçti.**
+
+§11 uçları *yerel rota + canlı DB* ile ölçüyordu; bu tur **dağıtılmış uca
+gerçek HTTP** atıyor.
+
+### 🔑 ÜRETİMİN GERÇEK HÂLİ: katman AÇIK, kapılar KAPALI
+
+```
+GET https://demo.galzura.com/api/mobile/guvenlik
+→ 200  { katman: "acik", kapilar: "kapali", … }
+```
+
+Bu turun en değerli bulgusu ve **tam da tasarımın sınandığı yer**: iki bayrak
+bağımsız ve uç bunu ayrı ayrı söylüyor.
+
+| blok | demo üretiminde |
+|---|---|
+| `oturum` · `kadro` · `son24Saat` · `/oturumlar` · `/denetim` | **DOLU** (katman açık) |
+| `kapilar_detay` · `anahtar` · `bekleyen` | **`null`** (kapılar kapalı) |
+| `/onaylar` · `/onaylar/[id]` · `/erisim/[id]` · `/kill-switch` | **`{kapilar:"kapali", veri:null, bayrak:"ACCESS_GATES_ENABLED"}`** |
+
+`null` ile `0` arasındaki fark burada bütün mesele: *"0 bekleyen onay"* ile
+*"onay mekanizması hiç çalışmıyor"* aynı ekrana aynı şekilde yazılamaz.
+
+⚠️ **Bayrak kapısı parametre doğrulamasından ÖNCE.** Kapılar kapalıyken
+geçersiz bir gövde bile 400 değil **200 + `kapilar:"kapali"`** alıyor —
+`speed.csv`in `feature_disabled` sırasının aynısı ve bilinçli.
+
+⚠️ **Kapılar kapalıyken PATCH hiçbir şey yazmıyor** (`veri: null`), ve katmana
+bağlı uçlar bundan **etkilenmiyor** (oturumlar hâlâ 200). İkisi de ölçüldü.
+
+### Tur tablosu
+
+| adım | hedef | kod | ölçüm |
+|---|---|---|---|
+| beş uç · jetonsuz | **üç kiracı** | **401** | `missing_token` ×5, üçünde de |
+| `POST /auth/login` | demo | **200** | rol=admin |
+| `GET /guvenlik` | demo | **200** | **334 ms** · katman açık / kapılar kapalı |
+| — kapı blokları | demo | — | `kapilar_detay` · `anahtar` · `bekleyen` = **null** |
+| — katman blokları | demo | — | oturum.açık **4** · kadro **37** · son 24 sa giriş **98** / iz **191** |
+| `GET /oturumlar?sayfa=1&limit=5` | demo | **200** | 5 satır · toplam **515** · sonSayfa 103 · **202 ms** |
+| — örnek satır | demo | — | `Volkan Çatak · mobile · DE/Frankfurt am Main · açık=true canlı=true` |
+| `?sayfa=2` | demo | **200** | farklı satır (offset 5) |
+| `?acik=1` | demo | **200** | 4 açık, hepsi `acik:true` |
+| `?sayfa` + `?offset` | demo | **400** | `sayfa_ve_offset_birlikte` |
+| `?sofor=abc` | demo | **400** | `alan: sofor` |
+| `GET /onaylar` | demo | **200** | `kapilar:"kapali"` |
+| `POST /onaylar/<id>` | demo | **200** | `kapilar:"kapali"` (400/404'ten ÖNCE) |
+| `GET` · `PATCH /erisim/<id>` | demo | **200** | `kapilar:"kapali"` · **yazma yok** |
+| `POST /kill-switch` | demo | **200** | `kapilar:"kapali"` |
+| `GET /denetim?sayfa=1&limit=5` | demo | **200** | toplam **1215** · `birlesikDegil:true` · **173 ms** |
+| `?islem=page_view` | demo | **200** | **1047** satır, hepsi `page_view` |
+| `?islem=Page%20View` | demo | **400** | biçim |
+
+### 🔴 Kapılar kapalı olduğu için üretimde ÖLÇÜLEMEYENLER
+
+Aşağıdakiler yalnız **§11.2'deki yerel açık-kapı turunda** ölçüldü (gerçek demo
+veritabanı, gerçek rota fonksiyonları, bayraklar elle açık):
+
+- onay ret → **409** ikinci karar · tür otomatik çözümü
+- erişim yaması ve geri alma · `tek_uc` · `bicim` · `ulke_yazma_yolu_yok`
+- anahtar: `confirm_mismatch` · `wrong_answer` (hak **3 → 2**) · **çekilmedi**
+- oturum kesme: `session_version` **0→1**, `token_version` **0→1**
+
+`ACCESS_GATES_ENABLED` demoda açılırsa bu yolların hepsi canlı hostta da
+ölçülebilir. **Bu turda açılmadı** — bayrak bir ürün kararıdır ve kapıları
+açmak o kiracıda herkesin giriş davranışını değiştirir.
+
+---
+
+## 15 · Volkan'a üç madde
+
+1. 🔴 **Demo'nun anahtar sırrı hâlâ fabrika cevabı.** `sirVarsayilan: true`
+   ölçüldü — `kill_switch_secret.answer_hash`, `db/migrations/046`in tohum
+   değeriyle birebir aynı. [[kiraci-hizalama]]'daki "AÇIK KALAN İŞ" doğrulandı.
+2. ⚠️ **Demo'da `ACCESS_GATES_ENABLED` kapalı.** Env'de tanımlı ama etkin değeri
+   kapalı; `device_approvals`ta 2 satır ve izde 3 `access_approve` var, yani bir
+   ara açıktı. Kapı yolları bu yüzden üretimde ölçülemedi (§14).
+3. 🔑 **HAK61 ve Sendigo'da patron ATANMAMIŞ** (`is_owner` = 0 kişi). Şema hazır,
+   bayrak kapalı. Bayrak bir gün açılırsa uçlar herkese `owner_required` döner —
+   fail-closed, ama önce bir patron atamak gerekir.

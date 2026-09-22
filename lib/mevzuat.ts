@@ -258,6 +258,27 @@ export type KuralDurumu = {
 
 export type KademeAyari = { erken: number; yaklasti: number; son: number };
 
+/**
+ * KADEME SIRASI DENETİMİ — TEK KAYNAK.
+ *
+ * Kademeler DARALARAK gitmeli: 60 > 30 > 15 > 0. Kural üç yerde birden
+ * geçerli ve üçünün de AYNI cümleyi söylemesi gerekiyor:
+ *
+ *   · şema      — 086 `mevzuat_kademe_sirali` CHECK kısıtı
+ *   · yazma     — `mevzuatAyariYaz` (panel action + mobil PATCH ortak çekirdeği)
+ *   · uç        — mobil PATCH 400 döndürebilmek için kararı YAZMADAN ÖNCE ister
+ *
+ * ⚠️ UÇ KENDİ KARŞILAŞTIRMASINI YAZMAZ. Yazsaydı, eşik kuralı bir gün
+ * değiştiğinde panel ile telefon sessizce ayrışırdı; `ayarDenetle` (090) için
+ * verilen kararın aynısı. Buradaki hata kodu yazma yolunun döndürdüğü kodla
+ * BİREBİR aynı dizedir — istemci iki yoldan da aynı cevabı görür.
+ */
+export function kademeDenetle(k: KademeAyari): "kademe_sirasi" | null {
+  return k.erken > k.yaklasti && k.yaklasti > k.son && k.son > 0
+    ? null
+    : "kademe_sirasi";
+}
+
 /** Kalan süreye göre kademe. Eşik aşıldıysa 'ihlal'. */
 export function kademeSec(kalanDk: number, ayar: KademeAyari): Kademe | null {
   if (kalanDk < 0) return "ihlal";

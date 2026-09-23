@@ -591,6 +591,31 @@ export const SECURITY_LAYER_PUBLIC = envBool(
 export const SINGLE_SESSION = envBool(process.env.SINGLE_SESSION, false);
 
 /**
+ * AI ASİSTAN (v1, 23.09.2026) — salt okuma soru-cevap ucu.
+ *
+ * ⚠️ VARSAYILANI `false` VE `NEXT_PUBLIC_` DEĞİL — ikisi de bilinçli.
+ *
+ * NEDEN VARSAYILAN KAPALI: asistan her soruda Anthropic API'sine para harcayan
+ * bir dış çağrı yapıyor. Varsayılanı açık olsaydı HAK61 ve Sendigo'ya tek bir
+ * env eklenmeden, yalnız dağıtımla birlikte bir maliyet kalemi ve bir dış veri
+ * yolu açılırdı. Değişmezlik sözleşmesi (dosya başlığı) tam olarak bunu
+ * yasaklıyor: env'siz build = bugünkü davranış.
+ *
+ * NEDEN SUNUCU TARAFI: bayrak bir GÖRÜNÜRLÜK ayarı değil bir YETKİ kapısıdır.
+ * `NEXT_PUBLIC_` olsaydı tarayıcıda okunabilir ama son sözü yine sunucu
+ * söylerdi; öneksiz tutmak kapının tek yerde olduğunu garanti eder. İstemci
+ * "asistan var mı" sorusunu ucun 503 `asistan_kapali` cevabından öğrenir —
+ * ayrı bir ayna bayrağa gerek yok, çünkü asistan bir düğme değil bir EKRAN ve
+ * o ekran zaten ilk isteğinde cevabı alır.
+ *
+ * ⚠️ BAYRAK TEK BAŞINA YETMEZ: `ANTHROPIC_API_KEY` de gerekiyor. İkisi AYRI
+ * sebeplerle eksik olabilir ve uç ikisini AYRI `sebep` alanıyla söyler —
+ * "bayrak_kapali" ile "anahtar_yok" farklı işler gerektirir (birinde karar,
+ * ötekinde kurulum). Sessiz eksik yasağının (lib/km-quality.ts) aynı uygulaması.
+ */
+export const ASISTAN_ENABLED = envBool(process.env.ASISTAN_ENABLED, false);
+
+/**
  * YAKIT SERİSİ ÖN-ETİKETİ KULLANILSIN MI? (migration 101, 16.09.2026)
  *
  * `true` → yakıt raporu `report_fuel_stats_vehicle_v2`yi çağırır; 31 satırlık

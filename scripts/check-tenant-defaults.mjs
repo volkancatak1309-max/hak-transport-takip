@@ -83,6 +83,11 @@ const EXPECTED = {
   // sözü ölçülebilir biçimde bozulur.
   "tenant.SECURITY_LAYER_PUBLIC": false,
   "tenant.SINGLE_SESSION": false,
+  // AI ASİSTAN (23.09.2026) — "eskiden ne yapıyordu" karşılığı YOK; bu yeni.
+  // Kayıt burada çünkü bu bayrak bir DIŞ ÇAĞRI ve bir MALİYET açıyor: sessizce
+  // true'ya kayarsa HAK61/Sendigo'da hiç istenmemiş bir Anthropic API yolu
+  // açılır. Bayrağın kapalı olması demo dışındaki her kurulumun varsayılanı.
+  "tenant.ASISTAN_ENABLED": false,
   // Dışa aktarma bugün AÇIK (4 CSV yüzeyi çalışıyor) — kaymamalı.
   "tenant.EXPORT_ENABLED": true,
   // Filigran YOKTU; boş dize "filigran basma" demek.
@@ -268,6 +273,7 @@ const out = {
   "tenant.ACCESS_HOURS_START": tenant.ACCESS_HOURS_START,
   "tenant.ACCESS_HOURS_END": tenant.ACCESS_HOURS_END,
   "tenant.SINGLE_SESSION": tenant.SINGLE_SESSION,
+  "tenant.ASISTAN_ENABLED": tenant.ASISTAN_ENABLED,
   "tenant.EXPORT_ENABLED": tenant.EXPORT_ENABLED,
   "tenant.PDF_WATERMARK": tenant.PDF_WATERMARK,
   "tenant.DRIVER_VEHICLE_CHOICE": tenant.DRIVER_VEHICLE_CHOICE,

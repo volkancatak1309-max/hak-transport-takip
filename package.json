@@ -19,7 +19,7 @@
     "verify:tz-parity": "node scripts/verify-tz-parity.mjs",
     "brand:assets": "node scripts/gen-brand-assets.mjs",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
-    "verify": "npm run lint && npm run lint:test-filters && npm run lint:owner-scope && npm run lint:arac-uclari && npm run lint:ariza-bildir && npm run lint:aksiyon-erteleme && npm run lint:filo-yonetimi && npm run lint:i18n && npm run lint:oran-kume && npm run lint:telemetri-siniri && npm run lint:kontrast && npm run lint:crud && npm run lint:install-sql && npm run lint:takip && npm run lint:kiraci-sorgu && npm run lint:mobil-uc-1 && npm run lint:dosya-yukleme && npm run lint:panel-km && npm run lint:filo-span && npm run lint:is-emri && npm run lint:teslimat-kaniti && npm run lint:takograf-uclari && npm run lint:saklama-haftalik && npm run lint:mevzuat-uclari && npm run lint:guvenlik-uclari && npm run build && npm run lint:tenant-defaults",
+    "verify": "npm run lint && npm run lint:test-filters && npm run lint:owner-scope && npm run lint:arac-uclari && npm run lint:ariza-bildir && npm run lint:aksiyon-erteleme && npm run lint:filo-yonetimi && npm run lint:i18n && npm run lint:oran-kume && npm run lint:telemetri-siniri && npm run lint:kontrast && npm run lint:crud && npm run lint:install-sql && npm run lint:takip && npm run lint:kiraci-sorgu && npm run lint:mobil-uc-1 && npm run lint:dosya-yukleme && npm run lint:panel-km && npm run lint:filo-span && npm run lint:is-emri && npm run lint:teslimat-kaniti && npm run lint:takograf-uclari && npm run lint:saklama-haftalik && npm run lint:mevzuat-uclari && npm run lint:guvenlik-uclari && npm run lint:asistan && npm run build && npm run lint:tenant-defaults",
     "lint:ariza-bildir": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-alias.mjs scripts/check-ariza-bildir.mjs",
     "verify:ariza-bildir": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-ariza-bildir.mjs",
     "lint:aksiyon-erteleme": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-alias.mjs scripts/check-aksiyon-erteleme.mjs",
@@ -53,6 +53,8 @@
     "lint:saklama-haftalik": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-saklama-haftalik-uclari.mjs",
     "lint:mevzuat-uclari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-mevzuat-uclari.mjs",
     "lint:guvenlik-uclari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-guvenlik-uclari.mjs",
+    "lint:asistan": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-asistan.mjs",
+    "verify:asistan": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-asistan.mjs",
     "verify:guvenlik-uclari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-guvenlik-uclari.mjs",
     "verify:mevzuat-uclari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-mevzuat-uclari.mjs",
     "verify:takograf-uclari": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/ts-server.mjs scripts/verify-takograf-uclari.mjs",
@@ -105,6 +107,7 @@
     "verify:yakit-son-toplama": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify-yakit-son-toplama.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@base-ui/react": "^1.5.0",
     "@maplibre/maplibre-gl-leaflet": "^0.1.3",
     "@react-pdf/renderer": "^4.5.1",

@@ -8,6 +8,7 @@ import {
   konusmaGetir,
   konusmaGecmisi,
   govdeCoz,
+  govdeHataDurumu,
   sonMesajiIsle,
 } from "@/lib/messaging";
 import { mesajBildir } from "@/lib/push";
@@ -44,6 +45,16 @@ export const dynamic = "force-dynamic";
  * olan üyeliği ve grubun geçmişi bozulmaz (lib/messaging-groups.ts).
  * Yazışma bir kayıttır; kişi ayrıldı diye silinmez ya da görünmez olmaz.
  * Çıkarılmış üyenin geçmişi `left_at` anında kesilir; süzgeç çekirdekte.
+ *
+ * ── MODERASYON (111) ───────────────────────────────────────────────────────
+ *   · GRUPTA okuyanın ENGELLEDİĞİ kişilerin mesajları geçmişten düşer
+ *     (sunucuda; birebirde uygulanmaz — işveren kanalı).
+ *   · Yönetici SİLMESİ: `?silinen=iz` isteyen istemciye silinen mesaj metni
+ *     BOŞ ve `silindiMi:true` olarak döner ("kaldırıldı" izi). İstemeyen
+ *     (1.4.0 build 3 ve öncesi) istemcide satır hiç dönmez — alanı tanımayan
+ *     istemci boş balon çizerdi. Metin İKİ yolda da istemciye gitmez.
+ *   · POST süzgeçten geçer: liste kelimesi → 422 `uygunsuz_icerik`, mesaj
+ *     YAZILMAZ (lib/mesaj-suzgec.ts).
  */
 
 async function kapi(req: NextRequest, adres: string) {
@@ -88,7 +99,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     });
   }
 
-  const g = await konusmaGecmisi(hedef.konusmaId, page, hedef.pencereSonu);
+  const g = await konusmaGecmisi(hedef.konusmaId, page, hedef.pencereSonu, {
+    okuyanId: k.actor.worker.id,
+    grup: hedef.tur === "grup",
+    silinenler: new URL(req.url).searchParams.get("silinen") === "iz" ? "iz" : "gizle",
+  });
   if (!g.ok) return mobileError(503, g.code);
 
   return Response.json({
@@ -132,7 +147,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   }
   const inp = (body ?? {}) as Record<string, unknown>;
   const govde = govdeCoz(inp.govde ?? inp.body);
-  if (!govde.ok) return mobileError(400, govde.code);
+  // Süzgeç eşleşmesi 422 `uygunsuz_icerik`; biçim hataları 400.
+  if (!govde.ok) return mobileError(govdeHataDurumu(govde.code), govde.code);
 
   // Grupta konuşma zaten var; birebirde ilk mesajda açılır.
   let konusmaId = hedef.konusmaId;

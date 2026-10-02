@@ -1,6 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { READ_RECEIPTS_ENABLED } from "@/lib/tenant";
+import { uygunsuzIcerik } from "@/lib/mesaj-suzgec";
+import { engellenenler, engelSuzgeci } from "@/lib/mesaj-engel";
 
 /**
  * Erişim kararını veren aktör — YAPISAL tip, sınıf değil.
@@ -216,19 +218,35 @@ export function onizleme(body: string): string {
  *
  * `ignoreDuplicates`: aynı mesajı ikinci kez açmak ilk okuma anını EZMEMELİ —
  * "ne zaman okudu" sorusunun cevabı ilk açılıştır.
+ *
+ * ── ENGELLİNİN MESAJINA MAKBUZ YAZILMAZ (111) ──────────────────────────────
+ * Grupta engellediği kişinin mesajları okuyana HİÇ gösterilmiyor; onlara
+ * "okudu" yazmak, gönderene ✓/"3/5 okudu" ile YALAN söylemek olurdu. `grup`
+ * zorunlu parametre: çağıran unutursa derleyici yakalar, süzgeç sessizce
+ * atlanmaz. Engel listesi okunamazsa makbuz da yazılmaz (yan etki; sessiz).
  */
 export async function makbuzYaz(
   konusmaId: string,
-  okuyanWorkerId: string
+  okuyanWorkerId: string,
+  grup: boolean
 ): Promise<{ yazildi: number; kapali: boolean }> {
   if (!READ_RECEIPTS_ENABLED) return { yazildi: 0, kapali: true };
 
-  const { data, error } = await supabaseAdmin
+  let engel: string | null = null;
+  if (grup) {
+    const e = await engellenenler(okuyanWorkerId);
+    if (!e.ok) return { yazildi: 0, kapali: false };
+    engel = engelSuzgeci(e.idler);
+  }
+
+  let q = supabaseAdmin
     .from("messages")
     .select("id")
     .eq("conversation_id", konusmaId)
     .is("deleted_at", null)
     .neq("sender_worker_id", okuyanWorkerId);
+  if (engel) q = q.or(engel);
+  const { data, error } = await q;
   if (error || !data || data.length === 0) return { yazildi: 0, kapali: false };
 
   const satirlar = (data as { id: string }[]).map((m) => ({
@@ -252,10 +270,15 @@ export async function makbuzYaz(
  * Bayrak kapalıyken makbuz TABLOSU BOŞ kalır, yani her mesaj "okunmamış"
  * görünürdü — yanıltıcı. Bu yüzden kapalıyken sayaç ÜRETİLMEZ (null döner) ve
  * uçlar `okunmamis: null` gösterir: "bilinmiyor", "sıfır" değil.
+ *
+ * `engel` (111): GRUP konuşmalarında okuyanın engellediği kişilerin mesajları
+ * sayılmaz — göremediği bir mesaj için rozet göstermek, açınca boş çıkan bir
+ * "1 okunmamış" demek olurdu. Birebirde uygulanmaz (işveren kanalı).
  */
 export async function okunmamisSayaclari(
   konusmaIdler: string[],
-  okuyanWorkerId: string
+  okuyanWorkerId: string,
+  engel: { grupIdler: ReadonlySet<string>; engelliler: ReadonlySet<string> } | null
 ): Promise<Map<string, number> | null> {
   if (!READ_RECEIPTS_ENABLED) return null;
   const out = new Map<string, number>();
@@ -263,12 +286,22 @@ export async function okunmamisSayaclari(
 
   const { data: msg, error } = await supabaseAdmin
     .from("messages")
-    .select("id, conversation_id")
+    .select("id, conversation_id, sender_worker_id")
     .in("conversation_id", konusmaIdler)
     .is("deleted_at", null)
     .neq("sender_worker_id", okuyanWorkerId);
   if (error) return null;
-  const mesajlar = (msg ?? []) as { id: string; conversation_id: string }[];
+  const mesajlar = ((msg ?? []) as {
+    id: string;
+    conversation_id: string;
+    sender_worker_id: string | null;
+  }[]).filter(
+    (m) =>
+      !engel ||
+      !engel.grupIdler.has(m.conversation_id) ||
+      !m.sender_worker_id ||
+      !engel.engelliler.has(m.sender_worker_id)
+  );
   if (mesajlar.length === 0) return out;
 
   const { data: rec, error: recErr } = await supabaseAdmin
@@ -303,13 +336,31 @@ export async function sonMesajiIsle(
     .eq("id", konusmaId);
 }
 
-/** Gövde doğrulama — şemadaki CHECK ile AYNI sınır (1..4000, kırpılmış). */
+/**
+ * Gövde doğrulama — şemadaki CHECK ile AYNI sınır (1..4000, kırpılmış) +
+ * KELİME SÜZGECİ (111, lib/mesaj-suzgec.ts).
+ *
+ * ── SÜZGEÇ NEDEN BURADA ────────────────────────────────────────────────────
+ * Bu fonksiyon dört gönderim yolunun ORTAK kapısı: mobil birebir/grup POST,
+ * mobil duyuru, panel gönder, panel duyuru. Süzgeci her yola ayrı koymak,
+ * yarın eklenecek beşinci yolda unutulması demekti. Eşleşirse mesaj YAZILMAZ;
+ * kod `uygunsuz_icerik`, durum 422 (`govdeHataDurumu`).
+ */
 export function govdeCoz(ham: unknown): { ok: true; body: string } | { ok: false; code: string } {
   if (typeof ham !== "string") return { ok: false, code: "body_required" };
   const b = ham.trim();
   if (b.length === 0) return { ok: false, code: "body_empty" };
   if (b.length > 4000) return { ok: false, code: "body_too_long" };
+  if (uygunsuzIcerik(b)) return { ok: false, code: "uygunsuz_icerik" };
   return { ok: true, body: b };
+}
+
+/**
+ * `govdeCoz` hatasının HTTP durumu. Biçim hataları 400; süzgeç 422 — istek
+ * biçim olarak doğru, içerik kabul edilmiyor (RFC 9110 §15.5.21).
+ */
+export function govdeHataDurumu(code: string): 400 | 422 {
+  return code === "uygunsuz_icerik" ? 422 : 400;
 }
 
 // ── GRUPLAR (migration 073) ─────────────────────────────────────────────────
@@ -697,10 +748,51 @@ export async function konusmaListesi(
     }
   }
 
-  // ── 3) OKUNMAMIŞ SAYAÇLARI — birebir + grup, tek geçiş ────────────────────
+  // ── 3) ENGEL (111) — grup satırlarının önizlemesi ve sayacı ───────────────
+  // Okuyanın engellediği biri gruba son yazan kişiyse, denormalize önizleme
+  // (`conversations.last_message_preview`, herkes için TEK alan) o kişinin
+  // METNİNİ taşır — engellenen mesaj liste satırından sızardı. Önizleme
+  // "son yazan kim" bilgisini tutmadığı için hangi satırın etkilendiği
+  // bilinemez; bu yüzden engeli OLAN okuyanda grup önizlemeleri mesaj
+  // tablosundan yeniden kurulur. Engeli olmayan okuyanda (bugünkü herkes)
+  // TEK ek sorgu bile yok.
+  let engel: { grupIdler: ReadonlySet<string>; engelliler: ReadonlySet<string> } | null = null;
+  if (grupIdler.length > 0) {
+    const e = await engellenenler(actor.worker.id);
+    if (!e.ok) return { ok: false, code: "db_error" };
+    if (e.idler.length > 0) {
+      engel = { grupIdler: new Set(grupIdler), engelliler: new Set(e.idler) };
+      const suzgec = engelSuzgeci(e.idler);
+      const grupSatirlari = satirlar.filter((s) => s.tur === "grup" && s.konusmaId);
+      const sonlar = await Promise.all(
+        grupSatirlari.map(async (s) => {
+          let q = supabaseAdmin
+            .from("messages")
+            .select("body, sender_role, created_at")
+            .eq("conversation_id", s.konusmaId as string)
+            .is("deleted_at", null);
+          if (suzgec) q = q.or(suzgec);
+          const { data: son, error: sonErr } = await q
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          return { s, son, hata: sonErr !== null };
+        })
+      );
+      if (sonlar.some((x) => x.hata)) return { ok: false, code: "db_error" };
+      for (const { s, son } of sonlar) {
+        s.sonMesajAn = (son?.created_at as string | undefined) ?? null;
+        s.sonMesajOnizleme = son ? onizleme(son.body as string) : null;
+        s.sonGonderenRol = (son?.sender_role as string | undefined) ?? null;
+      }
+    }
+  }
+
+  // ── 4) OKUNMAMIŞ SAYAÇLARI — birebir + grup, tek geçiş ────────────────────
   const okunmamis = await okunmamisSayaclari(
     satirlar.map((s) => s.konusmaId).filter(Boolean) as string[],
-    actor.worker.id
+    actor.worker.id,
+    engel
   );
   for (const s of satirlar) {
     s.okunmamis = okunmamis ? (s.konusmaId ? okunmamis.get(s.konusmaId) ?? 0 : 0) : null;
@@ -732,11 +824,40 @@ export type MesajSatiri = {
   gonderenRol: string;
   /** Grupta ZORUNLU: "bu mesajı hangi şoför yazdı" görünmeli. */
   gonderenAd: string | null;
+  /** Silinmiş mesajda BOŞ dize — metin istemciye gitmez (111). */
   govde: string;
   duyuruMu: boolean;
   an: string;
-  /** null = okundu bilgisi kapalı. [] = kimse okumadı. */
+  /** null = okundu bilgisi kapalı. [] = kimse okumadı. Silinmişte null. */
   okuyanlar: { workerId: string; an: string }[] | null;
+  /**
+   * Yönetici tarafından SİLİNDİ (111). Yalnız `silinenler: "iz"` isteyen
+   * okumada true gelebilir; istemci "Mesaj yönetici tarafından kaldırıldı"
+   * çizer. Metin, okundu bilgisi DÖNMEZ.
+   */
+  silindiMi: boolean;
+};
+
+/**
+ * Bir geçmiş okumasının KİM İÇİN ve NASIL yapıldığı (111).
+ *
+ * ZORUNLU parametre, isteğe bağlı DEĞİL: `pencereSonu` gibi bu da "çağıranın
+ * hatırlamasına bırakılmayan" bir süzgeç. Unutan çağıran derlenmez.
+ */
+export type KonusmaGorunumu = {
+  /** Okuyan kişi — engel süzgeci onun listesiyle uygulanır. */
+  okuyanId: string;
+  /** Grup mu — engel süzgeci YALNIZ grupta (birebir işveren kanalı). */
+  grup: boolean;
+  /**
+   * Yönetici silmesi nasıl görünsün:
+   *   "iz"    → satır döner, METİN BOŞ, `silindiMi: true`. Panel ve yeni
+   *             mobil istemci bunu "kaldırıldı" izi olarak çizer.
+   *   "gizle" → satır HİÇ dönmez. 1.4.0 (build 3) ve öncesi mobil istemci
+   *             `silindiMi` alanını tanımıyor; ona iz gönderseydik boş bir
+   *             balon çizerdi. Varsayılan bu — istemci açıkça istemedikçe.
+   */
+  silinenler: "iz" | "gizle";
 };
 
 /**
@@ -745,18 +866,36 @@ export type MesajSatiri = {
  * `pencereSonu` doluysa (gruptan çıkarılmış üye) o andan SONRAKİ mesajlar
  * DÖNMEZ. Süzgeç burada, çağıranın hatırlamasına bırakılmıyor: unutulduğu
  * yerde çıkarılan üye grubu okumaya devam ederdi.
+ *
+ * ── ENGEL SÜZGECİ (111) — SUNUCUDA ──────────────────────────────────────────
+ * Grupta okuyanın engellediği kişilerin mesajları SORGUDAN düşer: telefona
+ * hiç inmez. İstemcide gizlemek yetmezdi — veri yine cihazda olurdu ve eski
+ * sürüm istemci onu gösterirdi. Sayfa toplamı (`count`) da süzülmüş kümeyi
+ * sayar, yani sayfalama tutarlı kalır.
  */
 export async function konusmaGecmisi(
   konusmaId: string,
   page: { limit: number; offset: number },
-  pencereSonu?: string | null
+  pencereSonu: string | null,
+  gorunum: KonusmaGorunumu
 ): Promise<{ ok: true; mesajlar: MesajSatiri[]; total: number } | { ok: false; code: string }> {
+  let engel: string | null = null;
+  if (gorunum.grup) {
+    const e = await engellenenler(gorunum.okuyanId);
+    // Engel listesi okunamıyorsa engellenmiş mesajı göstermektense 503.
+    if (!e.ok) return { ok: false, code: "db_error" };
+    engel = engelSuzgeci(e.idler);
+  }
+
   let q = supabaseAdmin
     .from("messages")
-    .select("id, sender_worker_id, sender_role, body, broadcast_id, created_at", { count: "exact" })
-    .eq("conversation_id", konusmaId)
-    .is("deleted_at", null);
+    .select("id, sender_worker_id, sender_role, body, broadcast_id, created_at, deleted_at", {
+      count: "exact",
+    })
+    .eq("conversation_id", konusmaId);
+  if (gorunum.silinenler === "gizle") q = q.is("deleted_at", null);
   if (pencereSonu) q = q.lte("created_at", pencereSonu);
+  if (engel) q = q.or(engel);
 
   const { data, error, count } = await q
     .order("created_at", { ascending: false })
@@ -770,6 +909,7 @@ export async function konusmaGecmisi(
     body: string;
     broadcast_id: string | null;
     created_at: string;
+    deleted_at: string | null;
   }[];
 
   // Gönderen adları — TEK sorgu. Grupta kimin yazdığı GÖRÜNMELİ; birebirde de
@@ -810,15 +950,21 @@ export async function konusmaGecmisi(
   return {
     ok: true,
     total: count ?? rows.length,
-    mesajlar: rows.map((m) => ({
-      id: m.id,
-      gonderenId: m.sender_worker_id,
-      gonderenRol: m.sender_role,
-      gonderenAd: m.sender_worker_id ? adlar.get(m.sender_worker_id) ?? null : null,
-      govde: m.body,
-      duyuruMu: m.broadcast_id !== null,
-      an: m.created_at,
-      okuyanlar: READ_RECEIPTS_ENABLED ? okuyanlar.get(m.id) ?? [] : null,
-    })),
+    mesajlar: rows.map((m) => {
+      // SİLİNMİŞ → İZ: kim yazdı ve ne zaman kalır (balonun yönü ve sırası
+      // bozulmasın), METİN ve okundu bilgisi GİTMEZ.
+      const silindi = m.deleted_at !== null;
+      return {
+        id: m.id,
+        gonderenId: m.sender_worker_id,
+        gonderenRol: m.sender_role,
+        gonderenAd: m.sender_worker_id ? adlar.get(m.sender_worker_id) ?? null : null,
+        govde: silindi ? "" : m.body,
+        duyuruMu: m.broadcast_id !== null,
+        an: m.created_at,
+        okuyanlar: silindi || !READ_RECEIPTS_ENABLED ? null : okuyanlar.get(m.id) ?? [],
+        silindiMi: silindi,
+      };
+    }),
   };
 }

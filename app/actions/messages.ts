@@ -30,6 +30,20 @@ import {
   grupArsivle,
   type GrupUyesi,
 } from "@/lib/messaging-groups";
+import {
+  acikBildirimSayisi,
+  bildirimYaz,
+  bildirimListesi,
+  bildirimCoz,
+  mesajSil,
+  engelle,
+  engelKaldir,
+  engelleriGetir,
+  type BildirilenMesaj,
+  type BildirimDurumu,
+  type EngelSatiri,
+} from "@/lib/mesaj-moderasyon";
+import { setWorkerActive } from "@/lib/worker-account-db";
 
 /**
  * PANEL MESAJLAŞMA EYLEMLERİ (/admin/mesajlar).
@@ -88,7 +102,13 @@ async function panelAktoru(): Promise<{
 
 /** Sayfanın açılışta çektiği liste. Sunucu bileşeninden de çağrılabilir. */
 export async function listeAction(): Promise<
-  MesajSonuc<{ rol: MesajRol; satirlar: KonusmaSatiri[]; okunduBilgisi: boolean }>
+  MesajSonuc<{
+    rol: MesajRol;
+    satirlar: KonusmaSatiri[];
+    okunduBilgisi: boolean;
+    /** Açık bildirimi olan mesaj sayısı (111) — YALNIZ yöneticide; şefte null. */
+    bildirimSayisi: number | null;
+  }>
 > {
   const { actor, rol, kapsam } = await panelAktoru();
   // 500: panelde sayfalama yok — filo bu ölçeğin çok altında ve liste tek
@@ -98,7 +118,12 @@ export async function listeAction(): Promise<
   if (!r.ok) return { ok: false, error: r.code };
   return {
     ok: true,
-    data: { rol, satirlar: r.satirlar, okunduBilgisi: READ_RECEIPTS_ENABLED },
+    data: {
+      rol,
+      satirlar: r.satirlar,
+      okunduBilgisi: READ_RECEIPTS_ENABLED,
+      bildirimSayisi: actor.worker.is_admin ? await acikBildirimSayisi() : null,
+    },
   };
 }
 
@@ -137,7 +162,13 @@ export async function gecmisAction(adres: string): Promise<
     };
   }
 
-  const g = await konusmaGecmisi(hedef.konusmaId, { limit: 200, offset: 0 }, hedef.pencereSonu);
+  // Panel silinen mesajın İZİNİ çizer ("kaldırıldı"); grupta engellediğim
+  // kişilerin mesajları sunucuda düşer (111) — mobil uçla aynı çekirdek.
+  const g = await konusmaGecmisi(hedef.konusmaId, { limit: 200, offset: 0 }, hedef.pencereSonu, {
+    okuyanId: actor.worker.id,
+    grup: hedef.tur === "grup",
+    silinenler: "iz",
+  });
   if (!g.ok) return { ok: false, error: g.code };
   return {
     ok: true,
@@ -255,6 +286,7 @@ export async function gonderAction(
         duyuruMu: false,
         an: data.created_at as string,
         okuyanlar: READ_RECEIPTS_ENABLED ? [] : null,
+        silindiMi: false,
       },
     },
   };
@@ -276,7 +308,8 @@ export async function okunduAction(
   // geçmişi okunabilir olmalı, yoksa arşivlemek silmekle aynı şey olurdu.
   if (h.hedef.konusmaId === null) return { ok: true, data: { yeniOkundu: 0 } };
 
-  const r = await makbuzYaz(h.hedef.konusmaId, viewerId);
+  // Grupta engellediğim kişinin mesajına makbuz yazılmaz (111) — çekirdekte.
+  const r = await makbuzYaz(h.hedef.konusmaId, viewerId, h.hedef.tur === "grup");
   return { ok: true, data: { yeniOkundu: r.yazildi } };
 }
 
@@ -508,4 +541,118 @@ export async function okuyanlarAction(
         .sort((a, b) => (a.an < b.an ? -1 : 1)),
     },
   };
+}
+
+// ── MODERASYON (migration 111) ──────────────────────────────────────────────
+//
+// lib/mesaj-moderasyon.ts'in ince sarmalayıcıları; mobil uçlar
+// (`/api/mobile/messages/{mesaj,bildirimler,engeller}`) AYNI fonksiyonları
+// çağırıyor. Yönetici eylemleri İKİ hatlı: `requireAdmin()` (panelin kapısı,
+// gölge modunda yazmayı da durdurur) + çekirdeğin DB'den okunan `is_admin`
+// denetimi. Şef bu eylemleri ağdan çağırsa da çekirdek 403 döner.
+
+/** Bir mesajı yönetime bildir — panelde şef ve yönetici kullanır. */
+export async function bildirAction(
+  mesajId: string,
+  sebep: string,
+  not: string | null
+): Promise<MesajSonuc<{ zatenBildirildi: boolean }>> {
+  const { actor } = await panelAktoru();
+  const r = await bildirimYaz(actor, mesajId, sebep, not);
+  if (!r.ok) return { ok: false, error: r.code };
+  revalidatePath("/admin/mesajlar/bildirilen");
+  return { ok: true, data: { zatenBildirildi: r.data.zatenBildirildi } };
+}
+
+export async function engellerAction(): Promise<MesajSonuc<{ engeller: EngelSatiri[] }>> {
+  const { actor } = await panelAktoru();
+  const r = await engelleriGetir(actor);
+  if (!r.ok) return { ok: false, error: r.code };
+  return { ok: true, data: r.data };
+}
+
+export async function engelleAction(
+  workerId: string
+): Promise<MesajSonuc<{ adSoyad: string; zatenEngelli: boolean }>> {
+  const { actor } = await panelAktoru();
+  const r = await engelle(actor, workerId);
+  if (!r.ok) return { ok: false, error: r.code };
+  return { ok: true, data: { adSoyad: r.data.adSoyad, zatenEngelli: r.data.zatenEngelli } };
+}
+
+export async function engelKaldirAction(
+  workerId: string
+): Promise<MesajSonuc<{ kaldirildi: boolean }>> {
+  const { actor } = await panelAktoru();
+  const r = await engelKaldir(actor, workerId);
+  if (!r.ok) return { ok: false, error: r.code };
+  return { ok: true, data: r.data };
+}
+
+/** YÖNETİCİ SİLMESİ — yumuşak; metin DB'de kalır, herkes "kaldırıldı" görür. */
+export async function mesajSilAction(
+  mesajId: string
+): Promise<MesajSonuc<{ zatenSilinmisti: boolean }>> {
+  await requireAdmin();
+  const { actor, viewerId } = await panelAktoru();
+  const r = await mesajSil(actor, mesajId);
+  if (!r.ok) return { ok: false, error: r.code };
+  if (!r.data.zatenSilinmisti) {
+    await audit(viewerId, "message_delete", `mesaj:${mesajId} kaynak=panel`);
+  }
+  revalidatePath("/admin/mesajlar");
+  revalidatePath("/admin/mesajlar/bildirilen");
+  return { ok: true, data: { zatenSilinmisti: r.data.zatenSilinmisti } };
+}
+
+/** Bildirilen mesajlar — YALNIZ yönetici. */
+export async function bildirimlerAction(
+  durum: BildirimDurumu
+): Promise<MesajSonuc<{ kayitlar: BildirilenMesaj[]; acikSayisi: number | null; kirpildi: boolean }>> {
+  await requireAdmin();
+  const { actor } = await panelAktoru();
+  const r = await bildirimListesi(actor, durum === "resolved" ? "resolved" : "open");
+  if (!r.ok) return { ok: false, error: r.code };
+  return { ok: true, data: r.data };
+}
+
+export async function bildirimCozAction(mesajId: string): Promise<MesajSonuc<{ cozulen: number }>> {
+  await requireAdmin();
+  const { actor, viewerId } = await panelAktoru();
+  const r = await bildirimCoz(actor, mesajId);
+  if (!r.ok) return { ok: false, error: r.code };
+  if (r.data.cozulen > 0) {
+    await audit(viewerId, "message_report_resolve", `mesaj:${mesajId} kaynak=panel`);
+  }
+  revalidatePath("/admin/mesajlar/bildirilen");
+  return { ok: true, data: r.data };
+}
+
+/**
+ * HESABI PASİFE AL — bildirilen mesajın göndereni ya da birebir sohbetin
+ * muhatabı için. Yeni bir kural YOK: Çalışanlar ekranının ve mobil
+ * `POST /api/mobile/workers/[id]/pasif` ucunun çekirdeği (`setWorkerActive`).
+ *
+ * AÇIK DEĞER (`false`) gönderilir, toggle DEĞİL: moderasyon ekranında
+ * "pasife al" demek, zaten pasif olan birini geri açmamalı (mobil ucun
+ * gerekçesi). Zaten pasifse yazma yapılmaz, `degisti: false` döner.
+ */
+export async function pasifeAlAction(
+  workerId: string
+): Promise<MesajSonuc<{ degisti: boolean }>> {
+  const session = await requireAdmin();
+  // Aktör gerçek oturum sahibi — `toggleActiveAction`la aynı (gölge modunda
+  // requireAdmin zaten yazmayı durdurur).
+  const r = await setWorkerActive(session.worker_id, workerId, false);
+  if (!r.ok) {
+    // Patron koruması ve "kayıt yok" AYNI cevabı verir (045, mobil uçla aynı).
+    return { ok: false, error: r.sebep === "write_failed" ? "write_failed" : "not_found" };
+  }
+  if (r.degisti) {
+    revalidatePath("/admin/workers");
+    revalidatePath("/admin/izinler");
+    revalidatePath("/admin/mesajlar");
+    revalidatePath("/admin/mesajlar/bildirilen");
+  }
+  return { ok: true, data: { degisti: r.degisti } };
 }

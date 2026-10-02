@@ -2,6 +2,8 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getFleetScope, type FleetScope } from "@/lib/fleet-scope";
 import { onizleme } from "@/lib/messaging";
+import { gondereniEngelleyenler } from "@/lib/mesaj-engel";
+import { DEFAULT_LOCALE } from "@/i18n/request";
 
 /**
  * PUSH GÖNDERİMİ — Expo Push Service.
@@ -226,7 +228,17 @@ async function yonetimTarafi(soforId: string): Promise<string[]> {
   return alicilar;
 }
 
-/** Gruptaki AKTİF üyeler (çıkarılmış olanlar hariç), gönderen dışında. */
+/**
+ * Gruptaki AKTİF üyeler (çıkarılmış olanlar hariç), gönderen dışında.
+ *
+ * ── GÖNDERENİ ENGELLEYENLER DÜŞER (111) ────────────────────────────────────
+ * Engelleyen kişi o göndericinin grup mesajlarını hiç görmüyor (süzgeç okuma
+ * yolunda); kilit ekranına önizleme düşürmek o sözü bildirim yüzeyinden
+ * bozmak olurdu. Engel listesi OKUNAMAZSA (tablo yokluğu dışında bir hata)
+ * grup bildirimi tümden ATLANIR: engellenmiş birinin mesajını bir kez bile
+ * kilit ekranına düşürmektense bu turun bildirimi gitmez — mesajın kendisi
+ * yazılmıştır ve uygulamada görünür.
+ */
 async function grupUyeleri(konusmaId: string, gonderenId: string): Promise<string[]> {
   const { data, error } = await supabaseAdmin
     .from("conversation_members")
@@ -234,9 +246,11 @@ async function grupUyeleri(konusmaId: string, gonderenId: string): Promise<strin
     .eq("conversation_id", konusmaId)
     .is("left_at", null);
   if (error || !data) return [];
+  const engelleyen = await gondereniEngelleyenler(gonderenId);
+  if (!engelleyen.ok) return [];
   return (data as { worker_id: string }[])
     .map((r) => r.worker_id)
-    .filter((id) => id !== gonderenId);
+    .filter((id) => id !== gonderenId && !engelleyen.idler.has(id));
 }
 
 export type BildirimGirdisi = {
@@ -538,6 +552,94 @@ export async function duyuruBildir(g: {
     await gonder(mesajlar);
   } catch {
     // Duyuru yazıldı; bildirim yolu onu düşürmez.
+  }
+}
+
+/** Bildirim sebebinin push metnindeki adı — mobil/panel etiketleriyle aynı. */
+const SIKAYET_METNI = {
+  tr: {
+    baslik: "Bildirilen mesaj",
+    govde: (ad: string, sebep: string) => `${ad} bir mesajı bildirdi: ${sebep}`,
+    sebep: { harassment: "Taciz", inappropriate: "Uygunsuz içerik", spam: "Spam", other: "Diğer" },
+  },
+  de: {
+    baslik: "Gemeldete Nachricht",
+    govde: (ad: string, sebep: string) => `${ad} hat eine Nachricht gemeldet: ${sebep}`,
+    sebep: { harassment: "Belästigung", inappropriate: "Unangemessener Inhalt", spam: "Spam", other: "Sonstiges" },
+  },
+  en: {
+    baslik: "Reported message",
+    govde: (ad: string, sebep: string) => `${ad} reported a message: ${sebep}`,
+    sebep: { harassment: "Harassment", inappropriate: "Inappropriate content", spam: "Spam", other: "Other" },
+  },
+} as const;
+
+/**
+ * MESAJ BİLDİRİMİ → YÖNETİCİLERE (migration 111, App Store 1.2).
+ *
+ * ── ALICI: FİRMANIN BÜTÜN YÖNETİCİLERİ ────────────────────────────────────
+ * "Bildirilen mesajlar" listesi yalnız yöneticiye açık (`is_admin`); şef ve
+ * şoför görmez. Bildirimin alıcı kümesi de bu yüzden aynı küme — kilit
+ * ekranında, uygulamada açamayacağı bir listeyi haber vermek olmazdı.
+ * Bildiren yöneticinin kendisiyse ona gitmez.
+ *
+ * ── METİN: MESAJIN KENDİSİ YOK ────────────────────────────────────────────
+ * Gövdede bildirenin adı ve SEBEP var, bildirilen metin YOK: kaba olduğu
+ * bildirilen bir cümleyi yöneticinin kilit ekranına taşımak istenmez ve metin
+ * Expo üzerinden geçmesin. Yönetici dokununca listeyi açar
+ * (`data.tur = "mesaj_bildirimi"`).
+ *
+ * ── DİL: KURULUMUN DİLİ ───────────────────────────────────────────────────
+ * Kullanıcı başına dil kolonu yok (lib/mobile-user.ts notu); push metni
+ * sunucuda kuruluyor ve kurulumun varsayılan dilinde gider (HAK61 tr,
+ * Sendigo de). Belge/bakım bildirimlerinin aksine sabit Türkçe DEĞİL — bu
+ * yüzey mağaza incelemecisinin de göreceği bir yüzey.
+ */
+export async function mesajSikayetiBildir(g: {
+  mesajId: string;
+  bildirenId: string;
+  sebep: "harassment" | "inappropriate" | "spam" | "other";
+}): Promise<void> {
+  try {
+    // test-visible: alıcılar YÖNETİCİLER (yonetimTarafi'ndaki gerekçenin
+    // aynısı) — test hesabı da yönetici ve "Bildirilen mesajlar" listesini
+    // zaten görüyor; bildirim ona yeni bir şey sızdırmaz. Elemek push yolunu
+    // test hesabından DENENEMEZ kılardı.
+    const { data, error } = await supabaseAdmin
+      .from("workers")
+      .select("id")
+      .eq("is_active", true)
+      .eq("is_admin", true);
+    if (error || !data) return;
+    const alicilar = (data as { id: string }[]).map((w) => w.id).filter((id) => id !== g.bildirenId);
+    if (alicilar.length === 0) return;
+
+    const jetonlar = await jetonlariGetir(alicilar);
+    if (jetonlar.length === 0) return;
+
+    const { data: bildiren } = await supabaseAdmin
+      .from("workers")
+      .select("name")
+      .eq("id", g.bildirenId)
+      .maybeSingle();
+    const m = SIKAYET_METNI[DEFAULT_LOCALE];
+    const ad = (bildiren?.name as string | null) ?? "—";
+
+    await gonder(
+      jetonlar.map(({ token }) => ({
+        to: token,
+        title: m.baslik,
+        body: m.govde(ad, m.sebep[g.sebep]),
+        data: { tur: "mesaj_bildirimi", mesajId: g.mesajId },
+        sound: "default" as const,
+        channelId: KANAL,
+        // Moderasyon zamana bağlı (Apple: 24 saat içinde aksiyon) — Doze'da
+        // saatlerce beklemesin.
+        priority: "high" as const,
+      }))
+    );
+  } catch {
+    // Bildirim yazıldı; push yolu onu düşürmez (modül başlığındaki gerekçe).
   }
 }
 

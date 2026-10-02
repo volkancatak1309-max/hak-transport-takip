@@ -109,6 +109,9 @@ const ORDER = [
   // bu yüzden kurulum listesinde de yok. Kiracı ayarları o yüzden 108.
   "108_kiraci_ayarlari.sql",
   "109_teslimat_sonuc_ve_taslak.sql",
+  // 110 sesli asistana AYRILDI (mobil docs/asistan-sesli-tasarim.md §1.7) —
+  // dosyası henüz yok. Mesaj bildir/engelle o yüzden 111.
+  "111_mesaj_bildir_engelle.sql",
 ];
 
 /** Listedeki son migration numarası — başlıklar bunu yazar, elle güncellenmez. */

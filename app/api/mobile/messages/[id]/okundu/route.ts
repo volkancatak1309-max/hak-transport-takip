@@ -46,7 +46,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     });
   }
 
-  const sonuc = await makbuzYaz(h.hedef.konusmaId, guard.actor.worker.id);
+  // Grupta engellenen kişinin (111) mesajına makbuz yazılmaz — çekirdekte.
+  const sonuc = await makbuzYaz(
+    h.hedef.konusmaId,
+    guard.actor.worker.id,
+    h.hedef.tur === "grup"
+  );
 
   return Response.json({
     ok: true,

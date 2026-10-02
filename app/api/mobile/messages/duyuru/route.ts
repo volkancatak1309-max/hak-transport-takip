@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { requireMobileAdmin } from "@/lib/mobile-scope";
 import { mobileError } from "@/lib/mobile-auth";
 import { supabaseAdmin } from "@/lib/supabase";
-import { govdeCoz, onizleme } from "@/lib/messaging";
+import { govdeCoz, govdeHataDurumu, onizleme } from "@/lib/messaging";
 import { duyuruBildir } from "@/lib/push";
 
 export const runtime = "nodejs";
@@ -46,7 +46,8 @@ export async function POST(req: NextRequest) {
   }
   const inp = (body ?? {}) as Record<string, unknown>;
   const govde = govdeCoz(inp.govde ?? inp.body);
-  if (!govde.ok) return mobileError(400, govde.code);
+  // Süzgeç (111) duyuruya da uygulanır: kapı govdeCoz'da, tek yerde.
+  if (!govde.ok) return mobileError(govdeHataDurumu(govde.code), govde.code);
 
   // Alıcılar — panelin şoför tanımıyla aynı cümle (migration 041 muafiyeti).
   // test-filtered: is_test elenir; duyuru test hesabına GITMEZ.

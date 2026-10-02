@@ -422,6 +422,13 @@ export type AuditAction =
   // yok), yani yeni değer şema değişikliği İSTEMEZ.
   | "message_send"
   | "message_broadcast"
+  // ── MESAJ MODERASYONU (111) ──────────────────────────────────────────────
+  // Yönetici silmesi ve bildirim çözümü bir YÖNETİCİ KARARIDIR; "bu mesajı
+  // kim kaldırdı" `messages.deleted_by`da da duruyor, ama panel ve mobil
+  // yüzeylerin ortak zaman çizgisi burası. Engelleme İZLENMEZ: kişisel bir
+  // tercih, yönetim kararı değil (veri minimizasyonu).
+  | "message_delete"
+  | "message_report_resolve"
   // ── TAKOGRAF ARŞİVİ (091) ────────────────────────────────────────────────
   // Bir .ddd dosyasını indirmek "rapor dışa aktarma" ile aynı şey DEĞİLDİR:
   // dosya şoförün ham çalışma kaydıdır ve sistemden çıktığı an denetim izi

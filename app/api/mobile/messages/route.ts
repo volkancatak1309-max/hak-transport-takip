@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { requireMobileWorkerScoped } from "@/lib/mobile-scope";
 import { konusmaListesi } from "@/lib/messaging";
+import { acikBildirimSayisi } from "@/lib/mesaj-moderasyon";
 import { READ_RECEIPTS_ENABLED } from "@/lib/tenant";
 import { parsePage, pageInfo } from "@/lib/mobile-list";
 
@@ -31,9 +32,20 @@ export async function GET(req: NextRequest) {
   const r = await konusmaListesi(guard.actor, rol, kapsam, page);
   if (!r.ok) return Response.json({ ok: false, error: r.code }, { status: 503 });
 
+  /**
+   * AÇIK BİLDİRİMİ OLAN MESAJ SAYISI (111) — YALNIZ YÖNETİCİYE.
+   *
+   * Liste ekranındaki "Bildirilen mesajlar" girişinin rozeti; ayrı bir
+   * istek atılmasın diye burada. Şef ve şoförde `null` (alan VAR, değer yok):
+   * o liste onlara kapalı ve sayısı da bir bilgidir. Yöneticide null =
+   * "bilinmiyor" (tablo yok / okunamadı), 0 = gerçekten yok.
+   */
+  const bildirimSayisi = worker.is_admin ? await acikBildirimSayisi() : null;
+
   return Response.json({
     ok: true,
     kapsam: { rol, filo: rol === "fleet_chief" ? kapsam?.length ?? 0 : null },
+    bildirimSayisi,
     // Gruplar SAYFALANMIYOR (bir kişinin grup sayısı iki haneyi geçmez), bu
     // yüzden `sayfa.total` ile karıştırılmasın diye AYRI dönüyor.
     grupSayisi: r.grupSayisi,

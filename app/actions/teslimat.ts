@@ -178,15 +178,20 @@ export async function teslimatFotoEkle(formData: FormData): Promise<KanitSonuc> 
 /**
  * ⚠️ İMZALAMA ARTIK ÇEKİRDEKTE (`lib/teslimat-db.ts` `imzaliKanitlar`).
  *
- * Buradaki özel `imzali()` yardımcısı KALDIRILDI ve tipi de çekirdekten
- * yeniden dışa veriliyor: mobil GET ucu (`/sefer/[id]/duraklar/[durakId]/kanit`)
- * aynı gövdeyi üretmek zorunda. Kopyalansaydı iki yüzey aynı kanıta farklı
- * alanlarla bakar, TTL'i biri değiştirdiğinde öteki geride kalırdı — bu
- * depoda o hata bir kez yaşandı (bkz. `app/api/mobile/_rapor/csv.ts` başlığı).
+ * Buradaki özel `imzali()` yardımcısı KALDIRILDI: mobil GET ucu
+ * (`/sefer/[id]/duraklar/[durakId]/kanit`) aynı gövdeyi üretmek zorunda.
+ * Kopyalansaydı iki yüzey aynı kanıta farklı alanlarla bakar, TTL'i biri
+ * değiştirdiğinde öteki geride kalırdı — bu depoda o hata bir kez yaşandı
+ * (bkz. `app/api/mobile/_rapor/csv.ts` başlığı).
+ *
+ * ⚠️ `KanitGorunum` tipi buradan YENİDEN DIŞA VERİLMEZ; tüketici onu
+ * `@/lib/teslimat-db`'den `import type` ile alır. Bu "use server" dosyasındaki
+ * `export type { KanitGorunum };` Next 16.2.6'da değere dönüşüp modül
+ * yüklenirken ReferenceError atıyor, sayfadaki TÜM eylemleri düşürüyordu
+ * (02.10.2026, /admin/seferler "Yeni sefer" 500). Muhafız: lint:use-server-tip.
  *
  * Çağıran tarafta değişen TEK şey: gövdeye `imzaUrl` eklendi (raster imza).
  */
-export type { KanitGorunum };
 
 /** ŞOFÖR: kendi seferinin kanıtları. */
 export async function getSoforTeslimatlari(

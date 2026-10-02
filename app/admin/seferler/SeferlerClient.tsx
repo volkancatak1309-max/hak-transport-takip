@@ -48,7 +48,8 @@ import {
   type SeferSatir,
   type TakipLinkGorunum,
 } from "@/app/actions/seferler";
-import { getSeferTeslimatlari, teslimatIptalEt, type KanitGorunum } from "@/app/actions/teslimat";
+import { getSeferTeslimatlari, teslimatIptalEt } from "@/app/actions/teslimat";
+import type { KanitGorunum } from "@/lib/teslimat-db";
 import { DuraklarBolumu } from "./DuraklarBolumu";
 import { ImzaGoster } from "@/components/teslimat/ImzaPad";
 

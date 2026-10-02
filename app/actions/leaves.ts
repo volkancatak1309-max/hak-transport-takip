@@ -40,8 +40,6 @@ export type LeaveActionResult = {
   id?: string;
 };
 
-export type { LeaveInput };
-
 /**
  * PANEL YÜZEYİNİN İZİN YAZMA KAPISI — çerez oturumu + redirect'li
  * requireFleetView.

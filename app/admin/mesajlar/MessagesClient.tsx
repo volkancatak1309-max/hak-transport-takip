@@ -1,12 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import {
-  Archive, ArchiveRestore, Check, CheckCheck, Lock, Megaphone, Phone,
-  Search, Send, ArrowLeft, Users, UserPlus, X,
+  Archive, ArchiveRestore, Ban, Check, CheckCheck, Flag, Lock, Megaphone,
+  MoreHorizontal, Phone, Search, Send, ArrowLeft, Trash2, Users, UserPlus, UserX, X,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,9 +38,16 @@ import {
   uyeCikarAction,
   grupArsivAction,
   okuyanlarAction,
+  bildirAction,
+  engelleAction,
+  engelKaldirAction,
+  engellerAction,
+  mesajSilAction,
+  pasifeAlAction,
   type MesajRol,
   type GrupDetayi,
 } from "@/app/actions/messages";
+import type { EngelSatiri, Sebep } from "@/lib/mesaj-moderasyon";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { KonusmaSatiri, MesajSatiri } from "@/lib/messaging";
 import { telHref, waHref } from "@/lib/phone";
@@ -58,7 +72,19 @@ type Props = {
   rol: MesajRol;
   okunduBilgisi: boolean;
   satirlar: KonusmaSatiri[];
+  /** Ekrana bakan kişi — "kendi mesajım mı" (bildir/engelle çizilmez) için. */
+  viewerId: string;
+  /** Açık bildirimi olan mesaj sayısı (111) — yalnız yöneticide; şefte null. */
+  bildirimSayisi: number | null;
 };
+
+/** Bildirim sebepleri — sunucu kümesiyle (lib/mesaj-moderasyon.ts) AYNI sıra. */
+const SEBEPLER: { kod: Sebep; anahtar: "reasonHarassment" | "reasonInappropriate" | "reasonSpam" | "reasonOther" }[] = [
+  { kod: "harassment", anahtar: "reasonHarassment" },
+  { kod: "inappropriate", anahtar: "reasonInappropriate" },
+  { kod: "spam", anahtar: "reasonSpam" },
+  { kod: "other", anahtar: "reasonOther" },
+];
 
 /**
  * Bir satırın ADRESİ — sunucunun `[id]` olarak kabul ettiği değer.
@@ -72,9 +98,18 @@ function adres(s: KonusmaSatiri): string {
 }
 
 
-export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
+export function MessagesClient({ rol, okunduBilgisi, satirlar, viewerId, bildirimSayisi }: Props) {
   const t = useTranslations("messages");
   const locale = useLocale();
+
+  // ── MODERASYON (111) — bildir · engelle · sil · pasife al ──
+  const [bildirilecek, setBildirilecek] = useState<MesajSatiri | null>(null);
+  const [sebep, setSebep] = useState<Sebep | null>(null);
+  const [bildirimNotu, setBildirimNotu] = useState("");
+  const [engellenecek, setEngellenecek] = useState<{ id: string; ad: string } | null>(null);
+  const [silinecek, setSilinecek] = useState<MesajSatiri | null>(null);
+  const [pasifeAlinacak, setPasifeAlinacak] = useState<{ id: string; ad: string } | null>(null);
+  const [engeller, setEngeller] = useState<EngelSatiri[] | null>(null);
 
   const [liste, setListe] = useState<KonusmaSatiri[]>(satirlar);
   const [secili, setSecili] = useState<string | null>(null);
@@ -178,7 +213,86 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
     // Ayrılmış personel: pasif hesapla AYNI DEĞİL — geçmişi okunabilir, yalnız
     // yeni mesaj kapalı. Cümlenin bunu söylemesi gerekiyor.
     if (kod === "worker_left") return t("errWorkerLeft");
+    // ── Moderasyon (111) ──
+    if (kod === "uygunsuz_icerik") return t("errFiltered");
+    if (kod === "own_message") return t("errOwnMessage");
+    if (kod === "message_deleted") return t("errMessageDeleted");
+    if (kod === "admin_required") return t("errForbidden");
+    if (kod === "tablo_yok") return t("errNotSetUp");
     return t("errGeneric");
+  }
+
+  /** Engel listem — grup yönetim penceresi açılınca tazelenir. */
+  async function engelleriYukle() {
+    const r = await engellerAction();
+    setEngeller(r.ok ? r.data.engeller : []);
+    if (!r.ok) toast.error(hataMetni(r.error));
+  }
+
+  function bildirGonder() {
+    const m = bildirilecek;
+    if (!m || !sebep) return;
+    baslat(async () => {
+      const r = await bildirAction(m.id, sebep, bildirimNotu.trim() || null);
+      if (!r.ok) { toast.error(hataMetni(r.error)); return; }
+      // Çift bildirim de aynı cümleyi görür: kullanıcı için sonuç aynı.
+      toast.success(t("reported"));
+      setBildirilecek(null); setSebep(null); setBildirimNotu("");
+    });
+  }
+
+  function engelleGonder() {
+    const h = engellenecek;
+    if (!h) return;
+    baslat(async () => {
+      const r = await engelleAction(h.id);
+      if (!r.ok) { toast.error(hataMetni(r.error)); return; }
+      toast.success(t("blocked", { ad: h.ad }));
+      setEngellenecek(null);
+      // Sunucu süzüyor — geçmişi yeniden çek ki engellinin mesajları düşsün.
+      if (secili) await konusmaAc(secili);
+      if (engeller !== null) await engelleriYukle();
+    });
+  }
+
+  function engelKaldirGonder(workerId: string) {
+    baslat(async () => {
+      const r = await engelKaldirAction(workerId);
+      if (!r.ok) { toast.error(hataMetni(r.error)); return; }
+      toast.success(t("unblocked"));
+      await engelleriYukle();
+      if (secili) await konusmaAc(secili);
+    });
+  }
+
+  function silGonder() {
+    const m = silinecek;
+    if (!m) return;
+    baslat(async () => {
+      const r = await mesajSilAction(m.id);
+      if (!r.ok) { toast.error(hataMetni(r.error)); return; }
+      toast.success(t("deletedToast"));
+      setSilinecek(null);
+      // Yerinde İZE çevir — sunucunun okuma yolunun döndüreceği şeklin aynısı.
+      setMesajlar((l) =>
+        l.map((x) => (x.id === m.id ? { ...x, govde: "", silindiMi: true, okuyanlar: null } : x))
+      );
+    });
+  }
+
+  function pasifeAlGonder() {
+    const h = pasifeAlinacak;
+    if (!h) return;
+    baslat(async () => {
+      const r = await pasifeAlAction(h.id);
+      if (!r.ok) { toast.error(hataMetni(r.error)); return; }
+      toast.success(t("deactivated", { ad: h.ad }));
+      setPasifeAlinacak(null);
+      // Pasif hesabın konuşması listede durmaz (konusmaListesi is_active
+      // süzüyor) — açık sohbeti kapat, satırı düşür.
+      setListe((l) => l.filter((s) => s.soforId !== h.id));
+      setSecili(null);
+    });
   }
 
   async function konusmaAc(hedefAdres: string) {
@@ -374,6 +488,26 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
             <span className="hidden lg:inline">{t("broadcast")}</span>
           </Button>
         )}
+        {/* BİLDİRİLEN MESAJLAR (111) — YALNIZ yönetici; şef bu listeyi
+            görmez (sayfa da requireAdmin). Sayı rozetle: açık iş var mı
+            ekrana girmeden belli olsun. */}
+        {rol === "admin" && (
+          <Link
+            href="/admin/mesajlar/bildirilen"
+            className={buttonVariants({ variant: "secondary", size: "sm", className: "shrink-0 gap-1.5" })}
+            aria-label={
+              bildirimSayisi ? `${t("reportedTitle")} · ${bildirimSayisi}` : t("reportedTitle")
+            }
+          >
+            <Flag className="size-4" aria-hidden />
+            <span className="hidden lg:inline">{t("reportedButton")}</span>
+            {bildirimSayisi !== null && bildirimSayisi > 0 && (
+              <span className="rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-semibold leading-none text-primary-foreground tabular-nums">
+                {bildirimSayisi}
+              </span>
+            )}
+          </Link>
+        )}
       </div>
 
       {rol === "fleet_chief" && (
@@ -472,7 +606,7 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
           {seciliSatir.tur === "grup" && detay && (
             <button
               type="button"
-              onClick={() => { setYonetAcik(true); setAdTaslak(detay.baslik); setSecilenUyeler(new Set()); }}
+              onClick={() => { setYonetAcik(true); setAdTaslak(detay.baslik); setSecilenUyeler(new Set()); void engelleriYukle(); }}
               className="truncate text-left text-[11px] text-muted-foreground underline-offset-2 hover:underline"
             >
               {t("memberCount", { n: detay.uyeler.filter((u) => !u.cikarildiMi).length })}
@@ -484,7 +618,7 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
         {seciliSatir.tur === "grup" && detay?.yonetebilir && (
           <>
             <Button variant="ghost" size="sm" className="gap-1.5"
-              onClick={() => { setYonetAcik(true); setAdTaslak(detay.baslik); setSecilenUyeler(new Set()); }}>
+              onClick={() => { setYonetAcik(true); setAdTaslak(detay.baslik); setSecilenUyeler(new Set()); void engelleriYukle(); }}>
               <Users className="size-4" aria-hidden />
               <span className="hidden sm:inline">{t("manage")}</span>
             </Button>
@@ -514,6 +648,26 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
           >
             <Phone className="size-4" aria-hidden />
             <span className="hidden sm:inline">{t("call")}</span>
+          </Button>
+        )}
+        {/* HESABI PASİFE AL (111) — birebirde YÖNETİCİ. Birebir kanal işveren
+            kanalı ve orada ENGELLE yok; yöneticinin karşılığı hesabı
+            kapatmak (mevcut çekirdek: setWorkerActive). Şefe çizilmez —
+            sunucu da reddeder (requireAdmin). */}
+        {seciliSatir.tur === "birebir" &&
+          rol === "admin" &&
+          seciliSatir.soforId &&
+          seciliSatir.soforId !== viewerId && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5"
+            onClick={() =>
+              setPasifeAlinacak({ id: seciliSatir.soforId as string, ad: seciliSatir.baslik })
+            }
+          >
+            <UserX className="size-4" aria-hidden />
+            <span className="hidden sm:inline">{t("deactivateUser")}</span>
           </Button>
         )}
       </div>
@@ -550,6 +704,33 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
             // muhatabı "Yönetim", hangi yöneticinin yazdığı onun sorunu değil
             // (bkz. lib/messaging.ts, şoför başına tek konuşma).
             const benim = m.gonderenRol === "admin";
+
+            /* SİLİNMİŞ MESAJ — İZ (111). Sunucu metni göndermiyor; balonun
+               yeri ve yönü kalıyor ki sohbetin akışı "burada bir şey vardı"
+               desin. Eylem menüsü YOK: kaldırılmış bir mesajı bildirmenin ya da
+               yeniden silmenin anlamı yok. */
+            if (m.silindiMi) {
+              return (
+                <div key={m.id} className={`flex ${benim ? "justify-end" : "justify-start"}`}>
+                  <div className="max-w-[min(38rem,85%)] rounded-lg border border-dashed border-border px-3 py-2 text-muted-foreground">
+                    <p className="text-sm italic">{t("removedByAdmin")}</p>
+                    <span className="mt-1 block text-right text-[11px] tabular-nums opacity-70">
+                      {damga(m.an)}
+                    </span>
+                  </div>
+                </div>
+              );
+            }
+
+            /* EYLEM MENÜSÜ (111) — balonun meta satırında, HER ZAMAN görünür.
+               Hover'a bağlı bir düğme dokunmatikte bulunamaz (mobil parite
+               dersi). Kendi mesajında bildir/engelle yok; silme yalnız
+               yöneticide (sunucu da öyle). */
+            const kendiMesajim = m.gonderenId === viewerId;
+            const bildirebilir = !kendiMesajim;
+            const engelleyebilir = seciliSatir.tur === "grup" && !kendiMesajim && m.gonderenId !== null;
+            const silebilir = rol === "admin";
+            const menuVar = bildirebilir || engelleyebilir || silebilir;
             return (
               <div key={m.id} className={`flex ${benim ? "justify-end" : "justify-start"}`}>
                 <div
@@ -571,6 +752,44 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
                   )}
                   <p className="whitespace-pre-wrap break-words text-sm">{m.govde}</p>
                   <span className="mt-1 flex items-center justify-end gap-1 text-[11px] tabular-nums opacity-70">
+                    {menuVar && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <button
+                              type="button"
+                              className="mr-auto -ml-1 rounded p-0.5 hover:bg-foreground/10"
+                              aria-label={t("msgActions")}
+                            />
+                          }
+                        >
+                          <MoreHorizontal className="size-3.5" aria-hidden />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align={benim ? "end" : "start"} className="w-auto min-w-44">
+                          {bildirebilir && (
+                            <DropdownMenuItem
+                              onClick={() => { setBildirilecek(m); setSebep(null); setBildirimNotu(""); }}
+                            >
+                              <Flag className="size-4" aria-hidden /> {t("reportMessage")}
+                            </DropdownMenuItem>
+                          )}
+                          {engelleyebilir && (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                setEngellenecek({ id: m.gonderenId as string, ad: m.gonderenAd ?? "—" })
+                              }
+                            >
+                              <Ban className="size-4" aria-hidden /> {t("blockUser")}
+                            </DropdownMenuItem>
+                          )}
+                          {silebilir && (
+                            <DropdownMenuItem variant="destructive" onClick={() => setSilinecek(m)}>
+                              <Trash2 className="size-4" aria-hidden /> {t("deleteMessage")}
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                     {damga(m.an)}
                     {/* Tik YALNIZ kendi mesajımızda ve YALNIZ bayrak açıkken.
                         `okuyanlar` null gelirse (bayrak kapalı) hiç çizilmez. */}
@@ -787,6 +1006,33 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
                       <span className={`min-w-0 flex-1 truncate text-sm ${u.cikarildiMi ? "text-muted-foreground line-through" : ""}`}>
                         {u.adSoyad}
                       </span>
+                      {/* ENGELLE / ENGELİ KALDIR (111) — her üye için, kendisi
+                          hariç. Yönetim yetkisi İSTEMEZ: engel kişisel bir tercih
+                          ve yalnız engelleyenin görünümünü değiştirir. */}
+                      {u.workerId !== viewerId && engeller !== null && (
+                        engeller.some((e) => e.workerId === u.workerId) ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => engelKaldirGonder(u.workerId)}
+                            disabled={gonderiliyor}
+                          >
+                            {t("unblock")}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => setEngellenecek({ id: u.workerId, ad: u.adSoyad })}
+                            disabled={gonderiliyor}
+                            aria-label={`${t("blockUser")}: ${u.adSoyad}`}
+                          >
+                            <Ban className="size-3.5" aria-hidden />
+                            <span className="hidden sm:inline">{t("blockShort")}</span>
+                          </Button>
+                        )
+                      )}
                       {u.cikarildiMi ? (
                         <span className="shrink-0 text-[11px] text-muted-foreground">{t("removed")}</span>
                       ) : (
@@ -836,10 +1082,145 @@ export function MessagesClient({ rol, okunduBilgisi, satirlar }: Props) {
                   </Button>
                 </div>
               )}
+
+              {/* ENGELLENEN KULLANICILAR (111) — engel kişi ekseninde, grup
+                  ekseninde DEĞİL: burada listelenen herkes, bütün gruplarda
+                  süzülüyor. Kaldırma yolu her zaman görünür. */}
+              <div className="space-y-1.5">
+                <Label>{t("blockedUsers")}</Label>
+                {engeller === null ? (
+                  <p className="text-xs text-muted-foreground">…</p>
+                ) : engeller.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t("blockedNone")}</p>
+                ) : (
+                  <ul className="max-h-40 overflow-y-auto rounded-md border border-border/60">
+                    {engeller.map((e) => (
+                      <li
+                        key={e.workerId}
+                        className="flex items-center gap-2 border-b border-border/40 px-2 py-1.5 last:border-b-0"
+                      >
+                        <Ban className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate text-sm">{e.adSoyad}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => engelKaldirGonder(e.workerId)}
+                          disabled={gonderiliyor}
+                        >
+                          {t("unblock")}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="ghost" onClick={() => setYonetAcik(false)}>{t("cancel")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MESAJI BİLDİR (111) ──
+          Sebep ZORUNLU, not isteğe bağlı. Son düğme onaydır: bildirim
+          yöneticilere push olarak gider, yanlışlıkla tek dokunuşla olmasın. */}
+      <Dialog
+        open={bildirilecek !== null}
+        onOpenChange={(a) => { if (!a) { setBildirilecek(null); setSebep(null); setBildirimNotu(""); } }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("reportTitle")}</DialogTitle>
+            <DialogDescription>{t("reportDesc")}</DialogDescription>
+          </DialogHeader>
+          <fieldset className="space-y-1.5">
+            <legend className="sr-only">{t("reportReason")}</legend>
+            {SEBEPLER.map((s) => (
+              <label
+                key={s.kod}
+                className="flex cursor-pointer items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-sm hover:bg-accent/50 has-[:checked]:border-primary"
+              >
+                <input
+                  type="radio"
+                  name="bildirim-sebep"
+                  value={s.kod}
+                  checked={sebep === s.kod}
+                  onChange={() => setSebep(s.kod)}
+                  className="accent-primary"
+                />
+                {t(s.anahtar)}
+              </label>
+            ))}
+          </fieldset>
+          <div className="space-y-1.5">
+            <Label htmlFor="bildirim-notu">{t("reportNoteLabel")}</Label>
+            <Textarea
+              id="bildirim-notu"
+              value={bildirimNotu}
+              onChange={(e) => setBildirimNotu(e.target.value)}
+              rows={3}
+              maxLength={500}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBildirilecek(null)}>{t("cancel")}</Button>
+            <Button onClick={bildirGonder} disabled={gonderiliyor || sebep === null}>
+              <Flag className="size-4" aria-hidden /> {t("reportSend")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── KULLANICIYI ENGELLE (111) ── */}
+      <Dialog open={engellenecek !== null} onOpenChange={(a) => !a && setEngellenecek(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("blockTitle", { ad: engellenecek?.ad ?? "" })}</DialogTitle>
+            <DialogDescription>{t("blockDesc")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEngellenecek(null)}>{t("cancel")}</Button>
+            <Button variant="destructive" onClick={engelleGonder} disabled={gonderiliyor}>
+              <Ban className="size-4" aria-hidden /> {t("blockConfirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MESAJI SİL — YALNIZ YÖNETİCİ (111) ── */}
+      <Dialog open={silinecek !== null} onOpenChange={(a) => !a && setSilinecek(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("deleteTitle")}</DialogTitle>
+            <DialogDescription>{t("deleteDesc")}</DialogDescription>
+          </DialogHeader>
+          {silinecek && (
+            <p className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted px-3 py-2 text-sm">
+              {silinecek.govde}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSilinecek(null)}>{t("cancel")}</Button>
+            <Button variant="destructive" onClick={silGonder} disabled={gonderiliyor}>
+              <Trash2 className="size-4" aria-hidden /> {t("deleteConfirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── HESABI PASİFE AL — YALNIZ YÖNETİCİ (111) ── */}
+      <Dialog open={pasifeAlinacak !== null} onOpenChange={(a) => !a && setPasifeAlinacak(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("deactivateTitle", { ad: pasifeAlinacak?.ad ?? "" })}</DialogTitle>
+            <DialogDescription>{t("deactivateDesc")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPasifeAlinacak(null)}>{t("cancel")}</Button>
+            <Button variant="destructive" onClick={pasifeAlGonder} disabled={gonderiliyor}>
+              <UserX className="size-4" aria-hidden /> {t("deactivateConfirm")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

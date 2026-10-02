@@ -131,6 +131,8 @@ const EYLEM_ADI: Record<string, string> = {
   login_unlock: "Giriş kilidini açtı",
   shadow_enter: "GÖLGE MODUNA girdi",
   shadow_exit: "Gölge modundan çıktı",
+  message_delete: "Mesajı kaldırdı",
+  message_report_resolve: "Mesaj bildirimini çözdü",
 };
 
 /**

@@ -42,6 +42,8 @@ export default async function MesajlarPage() {
         rol={liste.ok ? liste.data.rol : "fleet_chief"}
         okunduBilgisi={liste.ok ? liste.data.okunduBilgisi : false}
         satirlar={liste.ok ? liste.data.satirlar : []}
+        viewerId={viewerId}
+        bildirimSayisi={liste.ok ? liste.data.bildirimSayisi : null}
       />
     </DashboardShell>
   );

@@ -28,6 +28,7 @@ Vercel projesinden alınır.
 | 9 | **Saklama UYARISI** (silmez) | `/api/cron/saklama` | `CRON_SECRET` | **günde 1 · gece 03:00** | Saklama katmanı kuran her kiracı (migration 090) |
 | 10 | **Aylık metrik** (kapanmış ay özeti) | `/api/cron/aylik-metrik` | `CRON_SECRET` | **günde 1 · gece 03:30** | CO₂/yakıt aylık trendi isteyen her kiracı (migration 090) |
 | 11 | **Yakıt serisi etiketi** (yüzde + litre) ✅ **KURULDU** | `/api/cron/yakit-etiket` | `CRON_SECRET` | **günde 1 · gece 03:15 Europe/Vienna** | **ÜÇ KİRACIDA DA KURULU** (17.09.2026) — migration 101+102+103+104 |
+| 12 | **Sesli asistan kayıt temizliği** ⏸ **KURULMADI** | `/api/cron/asistan-kayit-temizle` | `CRON_SECRET` | günde 1 · gece 03:45 Europe/Vienna | Migration **110** uygulanan her kiracı (bugün HİÇBİRİ — `sesli-asistan-web` dalı, onay bekliyor). Süreler SQL'de sabit: kullanım 2 ay, Bildir 90 gün. Migration yoksa 503 `migration_110_yok`. Runbook: `docs/runbook/sesli-asistan-faz2a.md` |
 | ~~9~~ | ~~Vardiya bekçisi~~ | ~~`/api/cron/shift-watchdog`~~ | — | — | **KALDIRILDI — kaydı SİL** |
 
 ### 🔴 SIR **BAŞLIKLA** GÖNDERİLİR — sorgu dizesi YASAK

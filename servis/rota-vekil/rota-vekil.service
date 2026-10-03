@@ -1,0 +1,27 @@
+# Galzura Fleet — rota vekili (VROOM + OSRM'in önündeki kimlik kapısı).
+# KULLANICI servisi: galzura hesabında `systemctl --user` (Linger=yes açık —
+# takograf-okuyucu ile aynı desen, sudo gerekmez). Kurulum:
+# docs/rota-optimizasyonu.md §5.
+#
+#   mkdir -p ~/rota-vekil/etc
+#   cp rota-vekil.mjs ~/rota-vekil/
+#   printf 'ROTA_VEKIL_SIRRI=%s\n' "$(openssl rand -hex 32)" > ~/rota-vekil/etc/rota-vekil.env
+#   chmod 600 ~/rota-vekil/etc/rota-vekil.env
+#   cp rota-vekil.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now rota-vekil
+
+[Unit]
+Description=Galzura Fleet rota vekili (VROOM + OSRM kimlik kapisi)
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/rota-vekil/etc/rota-vekil.env
+ExecStart=/usr/bin/node %h/rota-vekil/rota-vekil.mjs
+Restart=always
+RestartSec=3
+MemoryMax=128M
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

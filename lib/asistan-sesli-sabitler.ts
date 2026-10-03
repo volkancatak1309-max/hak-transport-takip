@@ -79,6 +79,85 @@ export const SESLI_VARSAYILAN_SES = "marin";
 /** Karar 1: tek konuşma 10 dk. Gün/ay sınırları sonraki fazda (migration gerekir). */
 export const SESLI_OTURUM_SINIRI_SN = 600;
 
+/**
+ * Realtime döküm (canlı yazı) modelleri — sayfada seçilir (Faz 1b). Döküm yalnız EKRANDIR:
+ * model kullanıcıyı sesten anlar; döküm hatası cevabı bozmaz (03.10 testi: "Bugün kim
+ * izinli?" → ekranda "Bugünki ne yazın?", cevap doğruydu).
+ *  • gpt-live-transcribe — güncel rehberin önerisi, akışla yazar, dil tahmini DÖNDÜRMEZ.
+ *  • gpt-4o-transcribe   — eski nesil, Türkçede kıyas için (26.02.2027'de kapanıyor).
+ *  • gpt-transcribe      — tur bitince yazar ama algılanan dili (`languages`) döndürür.
+ */
+export const SESLI_TRANSKRIPSIYON_MODELLERI = ["gpt-live-transcribe", "gpt-4o-transcribe", "gpt-transcribe"] as const;
+export const SESLI_VARSAYILAN_TRANSKRIPSIYON = "gpt-live-transcribe";
+
+/** İki motor: OpenAI Realtime (gpt-realtime-2.1 / mini) ve GPT-Live (gpt-live-1). */
+export const SESLI_MOTORLAR = ["realtime", "live"] as const;
+export type SesliMotor = (typeof SESLI_MOTORLAR)[number];
+
+/**
+ * GPT-Live — ayrı API (`POST /v1/live/sessions`, sunucu proje anahtarıyla SDP değişimi).
+ * Akıl ve araçlar "Responses delegation" ile arka modelde; rehberin önerdiği başlangıç
+ * modeli `gpt-6-luna` (live-delegation rehberi, 03.10.2026).
+ */
+export const CANLI_MODEL = "gpt-live-1";
+export const CANLI_ARKA_MODEL = "gpt-6-luna";
+/** GPT-Live sesleri (live-conversations rehberi). `marin` bu motorda YOK. Portekizce iki ses dışarıda. */
+export const CANLI_SESLER = [
+  "quartz",
+  "ripple",
+  "vesper",
+  "willow",
+  "stone",
+  "gleam",
+  "meridian",
+  "beacon",
+  "delta",
+  "cinder",
+] as const;
+export const CANLI_VARSAYILAN_SES = "quartz";
+/** Ses oturumu dakikası (saniye bazlı faturalama). Arka model ve araç kullanımı AYRICA. */
+export const CANLI_DAKIKA_USD = 0.05;
+
+export type SesliDil = "tr" | "de" | "en";
+export const SESLI_DIL_ADI: Record<SesliDil, string> = { tr: "Turkish", de: "German", en: "English" };
+
+const IPUCU: Record<SesliDil, { harf: RegExp | null; kelime: RegExp }> = {
+  tr: {
+    harf: /[ğşıİĞŞ]/,
+    kelime:
+      /(^|\s)(bugün|kaç|ne|nerede|kim|var|mı|mi|mu|mü|araç|araçlar|sefer|izinli|şoför|sürücü|hangi|yolda|değil|evet|hayır|lütfen|şu an|şimdi)(?=\s|$|[?.!,])/gu,
+  },
+  de: {
+    harf: /[ßäÄ]/,
+    kelime:
+      /(^|\s)(wie|viele|heute|wer|wo|ist|sind|das|der|die|und|nicht|fahrzeug|fahrzeuge|fahrer|urlaub|bitte|welche|gibt|unterwegs|jetzt)(?=\s|$|[?.!,])/gu,
+  },
+  en: {
+    harf: null,
+    kelime:
+      /(^|\s)(the|how|many|what|who|where|is|are|today|vehicle|vehicles|driver|drivers|leave|please|which|any|right|now)(?=\s|$|[?.!,])/gu,
+  },
+};
+
+/**
+ * Basit dil tahmini (döküm metninden). Kanıt yoksa `null` — o zaman dil DEĞİŞMEZ.
+ * Kısa dolgu sesleri ("eee", "ok") dil kanıtı sayılmaz (rehber: "ignore short filler
+ * sounds … for language detection").
+ */
+export function dilTahmin(metin: string): SesliDil | null {
+  // Harf ipucu ÖZGÜN metinde (İ/ı ayrımı kaybolmasın); kelimeler yerel-bağımsız küçük harfte
+  // (`toLocaleLowerCase("tr")` İngilizce "Is"i "ıs" yapıp kalıbı bozardı).
+  const m = ` ${metin.toLowerCase()} `;
+  if (m.trim().length < 4) return null;
+  const puan = (Object.keys(IPUCU) as SesliDil[]).map((dil) => {
+    const ip = IPUCU[dil];
+    return [dil, (ip.harf?.test(metin) ? 2 : 0) + (m.match(ip.kelime)?.length ?? 0)] as const;
+  });
+  puan.sort((a, b) => b[1] - a[1]);
+  const [ilk, ikinci] = puan;
+  return ilk[1] >= 1 && ilk[1] > ikinci[1] ? ilk[0] : null;
+}
+
 /** `response.done` → `response.usage`'tan toplanan token sayıları. */
 export type SesliKullanim = {
   metinGirdi: number;

@@ -4,16 +4,18 @@ import {
   SESLI_MODELLER,
   SESLI_OTURUM_SINIRI_SN,
   SESLI_SESLER,
+  SESLI_TRANSKRIPSIYON_MODELLERI,
   SESLI_VARSAYILAN_MODEL,
   SESLI_VARSAYILAN_SES,
+  SESLI_VARSAYILAN_TRANSKRIPSIYON,
 } from "@/lib/asistan-sesli-sabitler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/asistan/oturum `{ model?, ses? }` — sesli asistan için kısa ömürlü
- * OpenAI Realtime anahtarı (Faz 1 web prototipi).
+ * POST /api/asistan/oturum `{ model?, ses?, transkripsiyon? }` — sesli asistan için kısa
+ * ömürlü OpenAI Realtime anahtarı (Faz 1 web prototipi; döküm modeli seçimi Faz 1b).
  *
  * Kapı sırası: `ASISTAN_SESLI=1` değil → 404 · kiracı galzura-demo değil → 404 ·
  * oturum yok → 401 · yönetici değil (şoför, filo şefi) → 403. Sonra izin listesi:
@@ -40,8 +42,24 @@ export async function POST(req: Request) {
   if (typeof ses !== "string" || !(SESLI_SESLER as readonly string[]).includes(ses)) {
     return Response.json({ ok: false, error: "invalid", alan: "ses", gecerli: SESLI_SESLER }, { status: 400 });
   }
+  const transkripsiyon = govde.transkripsiyon === undefined ? SESLI_VARSAYILAN_TRANSKRIPSIYON : govde.transkripsiyon;
+  if (
+    typeof transkripsiyon !== "string" ||
+    !(SESLI_TRANSKRIPSIYON_MODELLERI as readonly string[]).includes(transkripsiyon)
+  ) {
+    return Response.json(
+      { ok: false, error: "invalid", alan: "transkripsiyon", gecerli: SESLI_TRANSKRIPSIYON_MODELLERI },
+      { status: 400 }
+    );
+  }
 
-  const r = await istemciSirriUret({ model, ses, workerId: kapi.workerId, araclar: sesliAracSemalari() });
+  const r = await istemciSirriUret({
+    model,
+    ses,
+    transkripsiyon,
+    workerId: kapi.workerId,
+    araclar: sesliAracSemalari(),
+  });
   if (!r.ok) {
     return Response.json(
       {
@@ -63,6 +81,10 @@ export async function POST(req: Request) {
       model,
       ses,
       transkripsiyon: r.transkripsiyon,
+      dokumSade: r.dokumSade,
+      // Talimat sır değil: tarayıcı kullanıcının dili değişince "Current user language"
+      // satırını ekleyip `session.update` ile tazeler (Faz 1b ek güvence).
+      talimat: r.talimat,
       sinirSn: SESLI_OTURUM_SINIRI_SN,
     },
     { headers: { "Cache-Control": "no-store" } }

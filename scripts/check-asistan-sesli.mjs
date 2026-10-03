@@ -11,7 +11,7 @@
  *      dosyalarında `console.` yok (hata gövdesi/anahtar loga düşmesin).
  *   2) YAZMA YOK: araç katmanı yalnız `GET` işleyicisi içe aktarır, `supabaseAdmin`
  *      yok, rapor (`/reports`) ve patron (`/guvenlik`) uçları araç değil.
- *   3) KAPI: bayrak → kiracı → oturum sırası; iki uç da ilk iş `sesliKapi()`;
+ *   3) KAPI: bayrak → kiracı → oturum sırası; üç uç da (oturum, arac, canli) ilk iş `sesliKapi()`;
  *      sayfa `sesliAcikMi()` + `notFound()`; bayrak varsayılanı kapalı ("1" dışı).
  * Ayrıca: `gpt-live-1` izin listesinde yok (Realtime API'yi desteklemiyor), 10 dk
  * sınırı, istemde kiracı adı ("HAK61") yok.
@@ -34,6 +34,7 @@ const D = {
   sabitler: "lib/asistan-sesli-sabitler.ts",
   oturum: "app/api/asistan/oturum/route.ts",
   arac: "app/api/asistan/arac/route.ts",
+  canli: "app/api/asistan/canli/route.ts",
   sayfa: "app/admin/asistan/page.tsx",
   istemci: "app/admin/asistan/AsistanSesliClient.tsx",
   tenant: "lib/tenant.ts",
@@ -81,9 +82,15 @@ const KURALLAR = [
     const i = [govde.indexOf("!ASISTAN_SESLI"), govde.indexOf("TENANT !== SESLI_KIRACI"), govde.indexOf("getSession()"), govde.indexOf("requireAdmin()")];
     return i.every((x, k) => x >= 0 && (k === 0 || x > i[k - 1])) ? null : `sıra: ${i.join(",")}`;
   }],
-  ["iki uç da önce sesliKapi", (f) => {
-    const bozuk = [D.oturum, D.arac].filter((p) => !/export async function POST\([^)]*\)\s*\{\s*const kapi = await sesliKapi\(\);\s*if \(!kapi\.ok\) return kapi\.response;/.test(kod(f[p])));
+  ["üç uç da önce sesliKapi", (f) => {
+    const bozuk = [D.oturum, D.arac, D.canli].filter((p) => !/export async function POST\([^)]*\)\s*\{\s*const kapi = await sesliKapi\(\);\s*if \(!kapi\.ok\) return kapi\.response;/.test(kod(f[p])));
     return bozuk.length ? `ilk iş kapı değil: ${bozuk.join(", ")}` : null;
+  }],
+  ["OpenAI uç adresleri yalnız çekirdekte", (f) => {
+    const yer = Object.entries(f.hepsi)
+      .filter(([, s]) => /realtime\/client_secrets|v1\/live\/sessions/.test(kod(s)))
+      .map(([p]) => p);
+    return yer.length === 1 && yer[0] === D.cekirdek ? null : `client_secrets/live sessions geçen: ${yer.join(", ") || "yok"}`;
   }],
   ["sayfa 404 kapısı", (f) => {
     const s = kod(f[D.sayfa]);
@@ -91,13 +98,23 @@ const KURALLAR = [
   }],
   ["bayrak varsayılanı kapalı (katı \"1\")", (f) =>
     /export const ASISTAN_SESLI = process\.env\.ASISTAN_SESLI\?\.trim\(\) === "1";/.test(f[D.tenant]) ? null : "bayrak tanımı değişmiş"],
-  ["gpt-live-1 izin listesinde değil", (f) =>
-    /id:\s*"gpt-live-1"/.test(kod(f[D.sabitler])) ? "gpt-live-1 listede" : null],
+  ["gpt-live-1 Realtime listesinde değil", (f) =>
+    /id:\s*"gpt-live-1"/.test(kod(f[D.sabitler])) ? "gpt-live-1 Realtime listesinde" : null],
   ["10 dk sınırı", (f) => (/SESLI_OTURUM_SINIRI_SN = 600;/.test(f[D.sabitler]) ? null : "oturum sınırı 600 değil")],
   ["istemde kiracı adı yok", (f) => {
     const m = f[D.cekirdek].match(/const SISTEM_ISTEMI = `([\s\S]*?)`;/);
     if (!m) return "istem bulunamadı";
     return /HAK61|Sendigo/i.test(m[1]) ? "istemde kiracı adı" : null;
+  }],
+  // Faz 1b (03.10 testi): Türkçe soruya İngilizce cevap + robotik anons. Dil kuralı EN ÜSTTE
+  // durmalı ve "son mesajın dili" demeli; anons yasağı metinde kalmalı.
+  ["istem dil kuralıyla başlar, anons yasağı var", (f) => {
+    const m = f[D.cekirdek].match(/const SISTEM_ISTEMI = `([\s\S]*?)`;/);
+    if (!m) return "istem bulunamadı";
+    if (!m[1].startsWith("# Language")) return "ilk bölüm dil kuralı değil";
+    if (!/LAST message/.test(m[1])) return "dil kuralı 'son mesaj' demiyor";
+    if (!/Do NOT announce what you are about to do/.test(m[1])) return "anons yasağı yok";
+    return null;
   }],
 ];
 
@@ -124,14 +141,20 @@ const BOZMALAR = [
   ["kapı sırası bayrak → kiracı → oturum", (f) => {
     f[D.cekirdek] = f[D.cekirdek].replace("if (!ASISTAN_SESLI) return", "if (false) return");
   }],
-  ["iki uç da önce sesliKapi", (f) => { f[D.arac] = f[D.arac].replace("const kapi = await sesliKapi();", "const kapi = { ok: true };"); }],
+  ["üç uç da önce sesliKapi", (f) => { f[D.canli] = f[D.canli].replace("const kapi = await sesliKapi();", "const kapi = { ok: true };"); }],
+  ["OpenAI uç adresleri yalnız çekirdekte", (f) => {
+    f.hepsi[D.istemci] += '\nconst u = "https://api.openai.com/v1/live/sessions";';
+  }],
+  ["istem dil kuralıyla başlar, anons yasağı var", (f) => {
+    f[D.cekirdek] = f[D.cekirdek].replace("Do NOT announce what you are about to do", "Briefly say what you will do");
+  }],
   ["bayrak varsayılanı kapalı (katı \"1\")", (f) => {
     f[D.tenant] = f[D.tenant].replace('process.env.ASISTAN_SESLI?.trim() === "1";', 'process.env.ASISTAN_SESLI?.trim() !== "0";');
   }],
   ["istemde kiracı adı yok", (f) => {
     f[D.cekirdek] = f[D.cekirdek].replace("You are the voice assistant of Galzura Fleet", "You are the voice assistant of HAK61");
   }],
-  ["gpt-live-1 izin listesinde değil", (f) => { f[D.sabitler] += '\nconst z = [{ id: "gpt-live-1" }];'; }],
+  ["gpt-live-1 Realtime listesinde değil", (f) => { f[D.sabitler] += '\nconst z = [{ id: "gpt-live-1" }];'; }],
 ];
 let kacan = 0;
 for (const [ad, boz] of BOZMALAR) {

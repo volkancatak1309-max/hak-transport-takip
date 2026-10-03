@@ -2685,5 +2685,57 @@
     "err_arsivden_okunamadi": "Datei konnte nicht aus dem Archiv gelesen werden",
     "err_baglanti_uretilemedi": "Download-Link konnte nicht erstellt werden",
     "err_download": "Download-Link konnte nicht erstellt werden"
+  },
+  "haftalikMetin": {
+    "skor_dususu": {
+      "baslik": "Sprechen Sie mit {ad} — der Sicherheitsscore sinkt",
+      "gerekce3": "Der Score ist drei Wochen in Folge gesunken: {seri} ({dusus} Punkte in der letzten Woche).",
+      "gerekce2": "Score {seri} ({dusus} Punkte weniger, zwei Wochen in Folge gemessen)."
+    },
+    "yakit_sapmasi": {
+      "baslik": "Lassen Sie {plaka} prüfen — verbraucht {yuzde} % mehr als der Flottendurchschnitt",
+      "gerekce": "In den letzten {gun} Tagen {olculen} l/100 km; Flottendurchschnitt {ortalama}. Schwelle: {esikYuzde} % über dem Durchschnitt ({esik})."
+    },
+    "sessiz_arac": {
+      "baslik": "Lassen Sie das Gerät in {plaka} prüfen — seit {gun, plural, one {# Tag} other {# Tagen}} kein Signal",
+      "gerekce": "Letzte Telemetrie vor {gun, plural, one {# Tag} other {# Tagen}}. Schwelle: {esikSaat} Stunden. Position, Kilometer und Kraftstoff des Fahrzeugs konnten in dieser Zeit NICHT gemessen werden."
+    },
+    "belge_bitiyor": {
+      "baslikDoldu": "{ad} — {belge} IST ABGELAUFEN, bitte sofort erneuern",
+      "baslik": "Termin für {ad} vereinbaren — {belge} läuft in {gun, plural, one {# Tag} other {# Tagen}} ab",
+      "gerekceDoldu": "{belge} ist am {tarih} abgelaufen (vor {gecen, plural, one {# Tag} other {# Tagen}}).",
+      "gerekce": "{belge} gültig bis {tarih}. Schwelle: {esik} Tage vor Ablauf."
+    },
+    "bakim_gecikti": {
+      "baslik": "Schicken Sie {plaka} in die Werkstatt — Wartung „{tip}“ überfällig",
+      "gerekceOlculemiyor": "Wartung „{tip}“ ist überfällig (Intervall nicht messbar).",
+      "gerekceKm": "Wartung „{tip}“ ist {asim} km überfällig. Schwelle: 0 (Wartungszeitpunkt).",
+      "gerekceGun": "Wartung „{tip}“ ist seit {asim, plural, one {# Tag} other {# Tagen}} überfällig. Schwelle: 0 (Wartungszeitpunkt)."
+    },
+    "is_emri_bekliyor": {
+      "baslik": "Schließen Sie den Arbeitsauftrag für {plaka} — seit {gun, plural, one {# Tag} other {# Tagen}} offen",
+      "gerekce": "„{aciklama}“ wartet seit {gun, plural, one {# Tag} other {# Tagen}}. Schwelle: {esik} Tage.",
+      "gerekceAciklamasiz": "Der offene Arbeitsauftrag wartet seit {gun, plural, one {# Tag} other {# Tagen}}. Schwelle: {esik} Tage."
+    },
+    "vardiya_kapanmadi": {
+      "baslik": "Erinnern Sie Ihre Fahrer — {adet, plural, one {# Schicht ist} other {# Schichten sind}} diese Woche offen geblieben",
+      "gerekce": "{adet} von {toplam} Schichten ({oran} %) wurden nicht geschlossen. Schwelle: {esik} %. Offene Schichten machen Arbeitszeit und Kilometer unmessbar."
+    },
+    "ayin_en_iyisi": {
+      "baslik": "{ad} fährt in diesem Zeitraum am sichersten — gratulieren Sie ({skor} Punkte)",
+      "gerekce": "Im Zeitraum ab {donem} hat {ad} unter {sayi} bewerteten Fahrerinnen und Fahrern den höchsten Sicherheitsscore: {skor} Punkte (Abzeichen-Schwelle {esik}). Positives Feedback ist das günstigste Mittel gegen Fahrerfluktuation."
+    },
+    "saklama_uyarisi": {
+      "baslik": "{satir} Standort-Rohdatensätze haben die Aufbewahrungsschwelle überschritten — bitte entscheiden",
+      "gerekce": "Der älteste Datensatz ist {enEski} Tage alt; Ihre Schwelle beträgt {esik} Tage (überschritten um {asim} Tage). {cipa} Die Entscheidung über das Löschen und den Zeitpunkt liegt beim VERANTWORTLICHEN; das System löscht nicht automatisch.",
+      "cipa": "Gesetzlicher Bezugspunkt für {ulke}: {gun} Tage.",
+      "cipaDayanak": "Gesetzlicher Bezugspunkt für {ulke}: {gun} Tage ({dayanak}).",
+      "cipaYok": "Gesetzlicher Bezugspunkt für {ulke} NOCH NICHT GEPRÜFT — hier steht bewusst keine Zahl."
+    },
+    "birim": {
+      "gun": "Tage",
+      "saat": "Stunden",
+      "puan": "Punkte"
+    }
   }
 }

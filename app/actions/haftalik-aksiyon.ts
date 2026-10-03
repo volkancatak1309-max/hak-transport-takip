@@ -14,6 +14,9 @@ import {
 } from "@/lib/haftalik-aksiyon-db";
 import { HAFTALIK_SUSTURMA_GUN, HAFTALIK_TAVAN, type Tarama } from "@/lib/haftalik-aksiyon";
 import { audit } from "@/lib/security-log";
+import { getTranslations } from "next-intl/server";
+import { getLocale } from "@/i18n/request";
+import { haftalikMetni, type HaftalikCevirmen } from "@/lib/haftalik-metin";
 
 /**
  * HAFTALIK AKSİYON PANELİ — sunucu eylemleri (migration 084).
@@ -95,25 +98,40 @@ export async function getHaftalikPanel(haftaBasiGunu?: string): Promise<Haftalik
     ((v.data ?? []) as { id: string; plate: string }[]).map((r) => [r.id, r.plate])
   );
 
+  // ── Metin okurun panel dilinde (03.10.2026): saklanan yapıdan kurulur, aynı dilde aynen.
+  const dil = await getLocale();
+  const t = (await getTranslations({ locale: dil, namespace: "haftalikMetin" })) as unknown as HaftalikCevirmen;
+
   return {
     tur,
-    aksiyonlar: gorunur.map((a) => ({
-      ...a,
-      ozneAd: a.workerId
+    aksiyonlar: gorunur.map((a) => {
+      const ozneAd = a.workerId
         ? (ad.get(a.workerId) ?? null)
         : a.vehicleId
           ? (plaka.get(a.vehicleId) ?? null)
-          : null,
+          : null;
+      const metin = haftalikMetni(
+        { kural: a.kural, kanit: a.kanit, baslik: a.baslik, gerekce: a.gerekce, ozneAdi: ozneAd },
+        dil,
+        t
+      );
+      return {
+      ...a,
+      baslik: metin.baslik,
+      gerekce: metin.gerekce,
+      kanit: { ...a.kanit, birim: metin.birim ?? a.kanit.birim ?? null },
+      ozneAd,
       susturmaBitis:
         a.durum === "ilgisiz" && a.kapatildiAt
           ? new Date(Date.parse(a.kapatildiAt) + HAFTALIK_SUSTURMA_GUN * 86_400_000).toISOString()
           : null,
-    })),
-    haftalar: turlar.map((t) => ({
-      haftaBasi: t.haftaBasi,
-      aksiyonSayisi: t.aksiyonSayisi,
+      };
+    }),
+    haftalar: turlar.map((tr) => ({
+      haftaBasi: tr.haftaBasi,
+      aksiyonSayisi: tr.aksiyonSayisi,
       // Açık sayısı yalnız GÖRÜNTÜLENEN turda kesin; listede tur toplamı yeter.
-      acikSayisi: t.aksiyonSayisi,
+      acikSayisi: tr.aksiyonSayisi,
     })),
     tabloYok,
     fleet,

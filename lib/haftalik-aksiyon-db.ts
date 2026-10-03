@@ -36,6 +36,9 @@ import {
   type Tarama,
 } from "@/lib/haftalik-aksiyon";
 import type { FleetScope } from "@/lib/fleet-scope";
+import { getTranslations } from "next-intl/server";
+import { DEFAULT_LOCALE } from "@/i18n/request";
+import { ESKI_METIN_DILI, haftalikMetni, type HaftalikCevirmen } from "@/lib/haftalik-metin";
 import { ROZET_SKOR_ESIK } from "@/lib/odul";
 import { donemleriOku } from "@/lib/odul-db";
 import { uyarilar as saklamaUyarilari } from "@/lib/saklama-db";
@@ -261,6 +264,42 @@ export type UretimSonuc =
 const GUN_MS = 86_400_000;
 
 /**
+ * KAYIT METNİ KİRACININ DİLİNDE (03.10.2026, aksiyon kartı dili).
+ *
+ * Kural motorunun şablonları Türkçe (`lib/haftalik-aksiyon.ts`). Kayıttaki metin artık
+ * kurulumun varsayılan dilinde (`DEFAULT_LOCALE`: HAK61/demo tr, Sendigo de) yazılır —
+ * haftalık bildirimdeki ilk başlık da bundan okunuyor. Metnin dili kanıta yazılır
+ * (`kanit.metinDili`); okuyan taraf (`lib/haftalik-metin.ts`) aynı dildeki okura metni
+ * AYNEN, başka dildeki okura yeniden kurarak gösterir. Kurulamazsa Türkçe kalır ve
+ * `metinDili: "tr"` yazılır — dil etiketi metinle her zaman tutarlı.
+ */
+export async function kiracininDilinde(secilen: AksiyonAdayi[]): Promise<AksiyonAdayi[]> {
+  const etiketle = (a: AksiyonAdayi, dil: string): AksiyonAdayi => ({ ...a, kanit: { ...a.kanit, metinDili: dil } });
+  if (DEFAULT_LOCALE === ESKI_METIN_DILI) return secilen.map((a) => etiketle(a, ESKI_METIN_DILI));
+  let t: HaftalikCevirmen;
+  try {
+    t = (await getTranslations({ locale: DEFAULT_LOCALE, namespace: "haftalikMetin" })) as unknown as HaftalikCevirmen;
+  } catch {
+    return secilen.map((a) => etiketle(a, ESKI_METIN_DILI));
+  }
+  return secilen.map((a) => {
+    const m = haftalikMetni(
+      {
+        kural: a.kural,
+        kanit: { ...a.kanit, metinDili: ESKI_METIN_DILI },
+        baslik: a.baslik,
+        gerekce: a.gerekce,
+        ozneAdi: a.ozneAdi ?? null,
+      },
+      DEFAULT_LOCALE,
+      t
+    );
+    if (m.kaynak !== "kuruldu") return etiketle(a, ESKI_METIN_DILI);
+    return { ...etiketle(a, DEFAULT_LOCALE), baslik: m.baslik, gerekce: m.gerekce };
+  });
+}
+
+/**
  * HAFTALIK TURU ÜRET.
  *
  * ═══ TEK GEÇİŞ, DOKUZ KURAL ═══
@@ -301,7 +340,9 @@ export async function haftalikTuruUret(simdi: Date = new Date()): Promise<Uretim
   const { adaylar, tarama } = await adaylariTopla(simdi);
 
   // ── SEÇİM — tavan + çeşitlilik (saf katman)
-  const { secilen, elenen } = adaylariSec(adaylar);
+  const secim = adaylariSec(adaylar);
+  const elenen = secim.elenen;
+  const secilen = await kiracininDilinde(secim.secilen);
 
   // ── YAZ
   const { data: turData, error: turHata } = await supabaseAdmin

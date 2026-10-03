@@ -143,6 +143,12 @@ export type AksiyonAdayi = {
   /** Açıklanabilirlik: ölçülen değer + eşik + birim (+ kurala özel alanlar). */
   kanit: Record<string, unknown>;
   hedefYol: string | null;
+  /**
+   * Öznenin o anki görünen adı (şoför adı ya da plaka). Kayıt metnini kiracının diline
+   * çevirirken kullanılır (`lib/haftalik-metin.ts`); tabloya ayrıca YAZILMAZ — okuyan
+   * taraf adı güncel kayıttan çözer.
+   */
+  ozneAdi?: string | null;
 };
 
 /** Kural başına tarama sayacı — "çalışmadı" ile "geçen yok" ayrımı. */
@@ -380,6 +386,7 @@ export function kuralSkorDususu(g: SkorGirdi): AksiyonAdayi | null {
       seri,
     },
     hedefYol: `/admin/workers/${g.workerId}`,
+    ozneAdi: g.ad,
   };
 }
 
@@ -428,9 +435,12 @@ export function kuralYakitSapmasi(g: YakitGirdi): AksiyonAdayi | null {
       sapmaYuzde: Math.round(sapma),
       ornekSayisi: g.ornekSayisi,
       pencereGun: YAKIT_PENCERE_GUN,
+      /** Eşik YÜZDESİ — metin başka dilde yeniden kurulurken (sabit değişse de) o günkü değer. */
+      esikYuzde: YAKIT_SAPMA_YUZDE,
       ...(ceza > 0 ? { kesinlikNotu: `örneklem ${g.ornekSayisi} < ${YAKIT_ZAYIF_ORNEKLEM}` } : {}),
     },
     hedefYol: `/admin/araclar/${g.vehicleId}`,
+    ozneAdi: g.plaka,
   };
 }
 
@@ -468,6 +478,7 @@ export function kuralSessizArac(g: SessizGirdi): AksiyonAdayi | null {
       gun,
     },
     hedefYol: `/admin/araclar/${g.vehicleId}`,
+    ozneAdi: g.plaka,
   };
 }
 
@@ -515,6 +526,7 @@ export function kuralBelgeBitiyor(g: BelgeGirdi): AksiyonAdayi | null {
       doldu,
     },
     hedefYol: `/admin/workers/${g.workerId}`,
+    ozneAdi: g.ad,
   };
 }
 
@@ -568,6 +580,7 @@ export function kuralBakimGecikti(g: BakimGirdi): AksiyonAdayi | null {
       asim,
     },
     hedefYol: `/admin/bakim`,
+    ozneAdi: g.plaka,
   };
 }
 
@@ -600,8 +613,11 @@ export function kuralIsEmriBekliyor(g: IsEmriGirdi): AksiyonAdayi | null {
       birim: "gün",
       emirId: g.emirId,
       emirOnceligi: g.oncelikEtiketi,
+      /** Gerekçedeki alıntının aynısı (80 karakter) — metin başka dilde kurulurken. */
+      aciklama: g.aciklama.slice(0, 80),
     },
     hedefYol: `/admin/is-emirleri`,
+    ozneAdi: g.plaka,
   };
 }
 
@@ -700,6 +716,7 @@ export function kuralAyinEnIyisi(g: AyinEnIyisiGirdi): AksiyonAdayi | null {
       donemBas: g.donemBas,
     },
     hedefYol: `/admin/odul`,
+    ozneAdi: g.ad,
   };
 }
 
@@ -772,6 +789,8 @@ export function kuralSaklamaUyarisi(g: SaklamaGirdi): AksiyonAdayi | null {
       ulkeKodu: g.ulkeKodu,
       yasalEsikGun: g.yasalEsikGun,
       yasalCipaDogrulandi: g.yasalEsikGun !== null,
+      /** Gerekçedeki dayanak — metin başka dilde kurulurken aynı kaynak gösterilsin. */
+      yasalDayanak: g.yasalDayanak,
     },
     hedefYol: "/admin/saklama",
   };

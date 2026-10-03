@@ -14,6 +14,9 @@ import {
   HAFTALIK_TAVAN,
   haftaBasi,
 } from "@/lib/haftalik-aksiyon";
+import { getTranslations } from "next-intl/server";
+import { istekDili } from "@/lib/istek-dili";
+import { haftalikMetni, type HaftalikCevirmen } from "@/lib/haftalik-metin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +58,13 @@ export const dynamic = "force-dynamic";
  * **0 satır** (ölçüldü 22.09.2026) — o kiracıda zamanlayıcı kaydı hiç
  * kurulmamış. Uç 200 + boş liste + `sonUretim: null` döner; 404 ya da 503
  * DEĞİL, çünkü uç da tablo da çalışıyor.
+ *
+ * ═══ DİL (03.10.2026, aksiyon kartı dili) ═══
+ * `baslik` / `gerekce` ve kanıt şeridinin `birim`i İSTEĞİN DİLİNDE döner
+ * (`lib/istek-dili.ts`: `?dil=` → `Accept-Language` → kurulumun dili). Metin saklanan
+ * yapıdan (`kural` + `kanit` + özne adı) okuma anında kurulur (`lib/haftalik-metin.ts`);
+ * saklanan metnin diliyle aynı dildeki okur metni AYNEN görür. Ham birim `kanit.birimKodu`da,
+ * kullanılan dil kök `dil` alanında.
  *
  * HATA KODLARI:
  *   401 · 403 fleet_view_required (şoför)
@@ -139,6 +149,11 @@ export async function GET(req: NextRequest) {
   const plaka = new Map(
     ((v.data ?? []) as { id: string; plate: string }[]).map((r) => [r.id, r.plate])
   );
+  const ozneAdi = (a: { workerId: string | null; vehicleId: string | null }) =>
+    a.workerId ? (ad.get(a.workerId) ?? null) : a.vehicleId ? (plaka.get(a.vehicleId) ?? null) : null;
+
+  const dil = istekDili(req);
+  const t = (await getTranslations({ locale: dil, namespace: "haftalikMetin" })) as unknown as HaftalikCevirmen;
 
   await audit(guard.actor.worker.id, "page_view", `haftalik${haftaBasiGunu ? `:${haftaBasiGunu}` : ""} kaynak=mobil`);
 
@@ -146,6 +161,8 @@ export async function GET(req: NextRequest) {
 
   return Response.json({
     ok: true,
+    /** Metinlerin dili (`?dil=` → `Accept-Language` → kurulumun dili). */
+    dil,
     tur: tur
       ? {
           haftaBasi: tur.haftaBasi,
@@ -166,13 +183,19 @@ export async function GET(req: NextRequest) {
           tarama: tur.tarama,
         }
       : null,
-    aksiyonlar: gorunur.map((a) => ({
+    aksiyonlar: gorunur.map((a) => {
+      const metin = haftalikMetni(
+        { kural: a.kural, kanit: a.kanit, baslik: a.baslik, gerekce: a.gerekce, ozneAdi: ozneAdi(a) },
+        dil,
+        t
+      );
+      return {
       id: a.id,
       kural: a.kural,
       oncelik: a.oncelik,
-      baslik: a.baslik,
-      gerekce: a.gerekce,
-      kanit: a.kanit,
+      baslik: metin.baslik,
+      gerekce: metin.gerekce,
+      kanit: { ...a.kanit, birim: metin.birim ?? a.kanit.birim ?? null, birimKodu: a.kanit.birim ?? null },
       hedefYol: a.hedefYol,
       durum: a.durum,
       kapatan: a.kapatan,
@@ -181,18 +204,15 @@ export async function GET(req: NextRequest) {
       ozne: {
         workerId: a.workerId,
         vehicleId: a.vehicleId,
-        ad: a.workerId
-          ? (ad.get(a.workerId) ?? null)
-          : a.vehicleId
-            ? (plaka.get(a.vehicleId) ?? null)
-            : null,
+        ad: ozneAdi(a),
       },
       /** "İlgisiz" kapatıldıysa bu kural+özne ne zamana kadar susturuldu. */
       susturmaBitis:
         a.durum === "ilgisiz" && a.kapatildiAt
           ? new Date(Date.parse(a.kapatildiAt) + HAFTALIK_SUSTURMA_GUN * 86_400_000).toISOString()
           : null,
-    })),
+      };
+    }),
     /** Geçmiş haftalar — seçici için. */
     haftalar: turlar.map((t) => ({
       haftaBasi: t.haftaBasi,

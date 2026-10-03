@@ -2685,5 +2685,57 @@
     "err_arsivden_okunamadi": "Dosya arşivden okunamadı",
     "err_baglanti_uretilemedi": "İndirme bağlantısı üretilemedi",
     "err_download": "İndirme bağlantısı üretilemedi"
+  },
+  "haftalikMetin": {
+    "skor_dususu": {
+      "baslik": "{ad} ile konuşun — güvenlik skoru düşüyor",
+      "gerekce3": "Skor üç hafta üst üste düştü: {seri} ({dusus} puan son haftada).",
+      "gerekce2": "Skor {seri} ({dusus} puan düştü, iki hafta üst üste ölçüldü)."
+    },
+    "yakit_sapmasi": {
+      "baslik": "{plaka} kontrol ettirin — filo ortalamasının %{yuzde} üstünde yakıyor",
+      "gerekce": "Son {gun} günde {olculen} L/100km; filo ortalaması {ortalama}. Eşik: ortalamanın %{esikYuzde} üstü ({esik})."
+    },
+    "sessiz_arac": {
+      "baslik": "{plaka} cihazına baktırın — {gun} gündür sinyal yok",
+      "gerekce": "Son telemetri {gun} gün önce. Eşik: {esikSaat} saat. Araç konumu, km'si ve yakıtı bu süre boyunca ÖLÇÜLEMEDİ."
+    },
+    "belge_bitiyor": {
+      "baslikDoldu": "{ad} — {belge} SÜRESİ DOLDU, hemen yenileyin",
+      "baslik": "{ad} için randevu alın — {belge} {gun} gün sonra doluyor",
+      "gerekceDoldu": "{belge} {tarih} tarihinde doldu ({gecen} gün geçti).",
+      "gerekce": "{belge} son geçerlilik {tarih}. Eşik: {esik} gün kala."
+    },
+    "bakim_gecikti": {
+      "baslik": "{plaka} servise gönderin — {tip} bakımı gecikti",
+      "gerekceOlculemiyor": "{tip} bakımı geçti (eksen ölçülemiyor).",
+      "gerekceKm": "{tip} bakımı {asim} km gecikti. Eşik: 0 (bakım anı).",
+      "gerekceGun": "{tip} bakımı {asim} gün gecikti. Eşik: 0 (bakım anı)."
+    },
+    "is_emri_bekliyor": {
+      "baslik": "{plaka} iş emrini kapatın — {gun} gündür açık",
+      "gerekce": "\"{aciklama}\" {gun} gündür bekliyor. Eşik: {esik} gün.",
+      "gerekceAciklamasiz": "Açık iş emri {gun} gündür bekliyor. Eşik: {esik} gün."
+    },
+    "vardiya_kapanmadi": {
+      "baslik": "Şoförlere hatırlatın — bu hafta {adet} vardiya kapanmadan kaldı",
+      "gerekce": "{toplam} vardiyanın {adet} tanesi (%{oran}) kapatılmamış. Eşik: %{esik}. Kapanmayan vardiya çalışma süresini ve km'yi ölçülemez kılıyor."
+    },
+    "ayin_en_iyisi": {
+      "baslik": "{ad} bu dönem en iyi sürücü — tebrik edin ({skor} puan)",
+      "gerekce": "{donem} döneminde {sayi} skorlanan şoför arasında en yüksek güvenlik skoru: {ad}, {skor} puan (rozet eşiği {esik}). Olumlu geri bildirim şoför devrini düşüren en ucuz araçtır."
+    },
+    "saklama_uyarisi": {
+      "baslik": "{satir} ham konum satırı saklama eşiğini geçti — karar verin",
+      "gerekce": "En eski kayıt {enEski} günlük; kiracı eşiğiniz {esik} gün (aşım {asim} gün). {cipa} Silme kararı ve zamanı VERİ SORUMLUSUNUNDUR; sistem otomatik silmez.",
+      "cipa": "{ulke} için yasal çıpa {gun} gün.",
+      "cipaDayanak": "{ulke} için yasal çıpa {gun} gün ({dayanak}).",
+      "cipaYok": "{ulke} için yasal çıpa HENÜZ DOĞRULANMADI — bu satırda bilerek sayı yazmıyoruz."
+    },
+    "birim": {
+      "gun": "gün",
+      "saat": "saat",
+      "puan": "puan"
+    }
   }
 }

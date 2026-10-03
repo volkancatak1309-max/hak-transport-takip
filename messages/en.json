@@ -2685,5 +2685,57 @@
     "err_arsivden_okunamadi": "File could not be read from the archive",
     "err_baglanti_uretilemedi": "Download link could not be created",
     "err_download": "Download link could not be created"
+  },
+  "haftalikMetin": {
+    "skor_dususu": {
+      "baslik": "Talk to {ad} — safety score is dropping",
+      "gerekce3": "Score dropped three weeks in a row: {seri} ({dusus} points in the last week).",
+      "gerekce2": "Score {seri} ({dusus} points down, measured two weeks in a row)."
+    },
+    "yakit_sapmasi": {
+      "baslik": "Have {plaka} checked — using {yuzde}% more fuel than the fleet average",
+      "gerekce": "Last {gun} days: {olculen} L/100 km; fleet average {ortalama}. Threshold: {esikYuzde}% above the average ({esik})."
+    },
+    "sessiz_arac": {
+      "baslik": "Have the tracker in {plaka} checked — no signal for {gun, plural, one {# day} other {# days}}",
+      "gerekce": "Last telemetry {gun, plural, one {# day} other {# days}} ago. Threshold: {esikSaat} hours. Position, km and fuel of this vehicle could NOT be measured during this time."
+    },
+    "belge_bitiyor": {
+      "baslikDoldu": "{ad} — {belge} HAS EXPIRED, renew it now",
+      "baslik": "Book an appointment for {ad} — {belge} expires in {gun, plural, one {# day} other {# days}}",
+      "gerekceDoldu": "{belge} expired on {tarih} ({gecen, plural, one {# day} other {# days}} ago).",
+      "gerekce": "{belge} is valid until {tarih}. Threshold: {esik} days before expiry."
+    },
+    "bakim_gecikti": {
+      "baslik": "Send {plaka} to the workshop — service “{tip}” is overdue",
+      "gerekceOlculemiyor": "Service “{tip}” is past due (the interval cannot be measured).",
+      "gerekceKm": "Service “{tip}” is {asim} km overdue. Threshold: 0 (service point).",
+      "gerekceGun": "Service “{tip}” is {asim, plural, one {# day} other {# days}} overdue. Threshold: 0 (service point)."
+    },
+    "is_emri_bekliyor": {
+      "baslik": "Close the work order for {plaka} — open for {gun, plural, one {# day} other {# days}}",
+      "gerekce": "“{aciklama}” has been waiting for {gun, plural, one {# day} other {# days}}. Threshold: {esik} days.",
+      "gerekceAciklamasiz": "The open work order has been waiting for {gun, plural, one {# day} other {# days}}. Threshold: {esik} days."
+    },
+    "vardiya_kapanmadi": {
+      "baslik": "Remind your drivers — {adet, plural, one {# shift was} other {# shifts were}} left open this week",
+      "gerekce": "{adet} of {toplam} shifts ({oran}%) were not closed. Threshold: {esik}%. Open shifts make working time and km impossible to measure."
+    },
+    "ayin_en_iyisi": {
+      "baslik": "{ad} is this period’s best driver — congratulate them ({skor} points)",
+      "gerekce": "In the period starting {donem}, {ad} has the highest safety score among {sayi} scored drivers: {skor} points (badge threshold {esik}). Positive feedback is the cheapest way to reduce driver turnover."
+    },
+    "saklama_uyarisi": {
+      "baslik": "{satir} raw location records are past the retention threshold — please decide",
+      "gerekce": "The oldest record is {enEski} days old; your threshold is {esik} days (exceeded by {asim} days). {cipa} The decision to delete, and when, lies with the DATA CONTROLLER; the system does not delete automatically.",
+      "cipa": "Legal reference for {ulke}: {gun} days.",
+      "cipaDayanak": "Legal reference for {ulke}: {gun} days ({dayanak}).",
+      "cipaYok": "Legal reference for {ulke} NOT YET VERIFIED — we deliberately give no number here."
+    },
+    "birim": {
+      "gun": "days",
+      "saat": "hours",
+      "puan": "points"
+    }
   }
 }

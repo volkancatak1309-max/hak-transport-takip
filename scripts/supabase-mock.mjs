@@ -103,6 +103,11 @@ function zincir(table) {
     durum.filters.push(["not", a, b, d]);
     return c;
   };
+  // PostgREST mantıksal VEYA (lib/fleet-scope.ts kullanıyor) — yalnız kaydedilir.
+  c.or = (a) => {
+    durum.filters.push(["or", a]);
+    return c;
+  };
   c.order = (a, o) => {
     durum.filters.push(["order", a, o]);
     return c;

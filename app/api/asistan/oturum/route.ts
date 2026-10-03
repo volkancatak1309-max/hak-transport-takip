@@ -1,5 +1,6 @@
 import { sesliKapi, istemciSirriUret } from "@/lib/asistan-sesli";
 import { sesliAracSemalari } from "@/lib/asistan-sesli-araclar";
+import { oturumAc, oturumHataylaKapat } from "@/lib/asistan-sesli-kayit";
 import {
   SESLI_MODELLER,
   SESLI_OTURUM_SINIRI_SN,
@@ -23,7 +24,12 @@ export const dynamic = "force-dynamic";
  * modeli dinlediğini bilmeli).
  *
  * Yanıtta yalnız 60 sn yaşayan anahtar var; `OPENAI_API_KEY` hiçbir gövdeye girmez.
- * Veritabanına bir şey yazılmaz.
+ *
+ * FAZ 2a (`ASISTAN_SESLI_KAYIT=1`, migration 110): anahtar istenmeden ÖNCE kişi/gün,
+ * kişi/ay ve kiracı/ay bütçesi denetlenir (429 `gun_siniri` / `ay_siniri` / `butce`,
+ * açık oturum varsa 409 `oturum_acik`); kayıt satırı açılır ve imzalı `oturumJetonu` +
+ * `sinirSn` (= min(10 dk, kalan gün, kalan ay)) döner. Bayrak kapalıyken veritabanına bir
+ * şey yazılmaz (prototipin bugünkü davranışı).
  */
 export async function POST(req: Request) {
   const kapi = await sesliKapi();
@@ -49,6 +55,9 @@ export async function POST(req: Request) {
     );
   }
 
+  const kayit = await oturumAc({ workerId: kapi.workerId, motor: "realtime", model, ses: SESLI_SES });
+  if (!kayit.ok) return Response.json({ ok: false, error: kayit.kod }, { status: kayit.durum });
+
   const r = await istemciSirriUret({
     model,
     transkripsiyon,
@@ -56,6 +65,7 @@ export async function POST(req: Request) {
     araclar: sesliAracSemalari(),
   });
   if (!r.ok) {
+    if (!kayit.kayitsiz) await oturumHataylaKapat(kayit.kullanimId);
     return Response.json(
       {
         ok: false,
@@ -80,7 +90,9 @@ export async function POST(req: Request) {
       // Talimat sır değil: tarayıcı kullanıcının dili değişince "Current user language"
       // satırını ekleyip `session.update` ile tazeler (Faz 1b ek güvence).
       talimat: r.talimat,
-      sinirSn: SESLI_OTURUM_SINIRI_SN,
+      sinirSn: kayit.kayitsiz ? SESLI_OTURUM_SINIRI_SN : kayit.kalanSn,
+      kayit: !kayit.kayitsiz,
+      oturumJetonu: kayit.kayitsiz ? null : kayit.oturumJetonu,
     },
     { headers: { "Cache-Control": "no-store" } }
   );

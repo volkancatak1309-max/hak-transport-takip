@@ -12,6 +12,7 @@ import {
   CANLI_SES,
   SESLI_DIL_ADI,
   SESLI_MODELLER,
+  SESLI_NABIZ_ARALIGI_MS,
   SESLI_OTURUM_SINIRI_SN,
   SESLI_SES,
   SESLI_TRANSKRIPSIYON_MODELLERI,
@@ -50,7 +51,12 @@ import { realtimeAkis, type AkisEylemi, type RealtimeAkis } from "@/lib/asistan-
  * `{isit:true}` ağır araçların 60 sn'lik önbelleğini doldurur; ilk ısıtmanın süreleri
  * döküme yazılır (soğuk süre ölçümü).
  *
- * SAKLAMA YOK (karar 5): döküm yalnız bellekte; "Bildir" konsola + indirilen JSON'a yazar.
+ * FAZ 2a (`kayitAcik` = sunucuda `ASISTAN_SESLI_KAYIT=1`): oturum açılırken sunucu sınırları
+ * denetler ve imzalı bir oturum jetonu verir; araç ve ön ısıtma istekleri jetonu taşır, ~15 sn'de
+ * bir kalp atışı gider (saniyeyi sunucu sayar), bitişte son atış kaydı kapatır; "Bildir" tabloya
+ * yazılır. Kapalıyken prototipin bugünkü davranışı aynen sürer.
+ *
+ * SAKLAMA YOK (karar 5): döküm yalnız bellekte; "Bildir" (kayıt kapalıyken) konsola + indirilen JSON'a yazar.
  * Kısa ömürlü anahtar yerel değişkende kalır, duruma ya da loga yazılmaz.
  */
 
@@ -70,6 +76,16 @@ const ARAC_ISTEK_ZAMAN_ASIMI_MS = 25_000;
 const YAZI_GECMIS_TAVANI = 12;
 /** Bu hatalar akışın olağan parçası; durum makinesi kendi notunu yazar, ham hata gösterilmez. */
 const SESSIZ_HATALAR = new Set(["conversation_already_has_active_response", "response_cancel_not_active"]);
+/** Sunucunun Faz 2a sınır/kayıt kodları — kullanıcıya kendi dilinde anlatılır (`limit.*`). */
+const LIMIT_KODLARI = new Set([
+  "gun_siniri",
+  "ay_siniri",
+  "butce",
+  "oturum_acik",
+  "oturum_suresi_doldu",
+  "kayit_tablo_yok",
+  "jeton_sirri_yok",
+]);
 
 function sureMetni(sn: number): string {
   const m = Math.floor(sn / 60);
@@ -87,7 +103,7 @@ const saniye = (ms: unknown) => (sayi(ms) / 1000).toFixed(1);
 
 const SECIM = "h-9 w-full rounded-md border border-input bg-background px-2 text-sm";
 
-export function AsistanSesliClient() {
+export function AsistanSesliClient({ kayitAcik = false }: { kayitAcik?: boolean }) {
   const t = useTranslations("asistanSesli");
   const [motor, setMotor] = useState<SesliMotor>("realtime");
   const [model, setModel] = useState(SESLI_VARSAYILAN_MODEL);
@@ -95,6 +111,8 @@ export function AsistanSesliClient() {
   const [durum, setDurum] = useState<Durum>("hazir");
   const [satirlar, setSatirlar] = useState<Satir[]>([]);
   const [gecenSn, setGecenSn] = useState(0);
+  /** Oturumun süre sınırı — kayıt açıkken sunucunun verdiği (min 10 dk / kalan gün / kalan ay). */
+  const [sinirSn, setSinirSn] = useState(SESLI_OTURUM_SINIRI_SN);
   const [kullanim, setKullanim] = useState<SesliKullanim>(bosKullanim);
   const [arkaToken, setArkaToken] = useState({ girdi: 0, cikti: 0 });
   const [yaziToken, setYaziToken] = useState({ girdi: 0, cikti: 0 });
@@ -122,6 +140,17 @@ export function AsistanSesliClient() {
   const oturumNoRef = useRef(0);
   /** Bağlanırken "Bitir"e basıldıysa kurulum yarıda bırakılır. */
   const iptalRef = useRef(false);
+  /** Faz 2a: sunucunun verdiği imzalı oturum jetonu — araç, ön ısıtma ve kalp atışı taşır. */
+  const oturumJetonuRef = useRef<string | null>(null);
+  /** Bildir'in kaydı oturuma bağlayabilmesi için (oturum bitince de durur). */
+  const bildirJetonuRef = useRef<string | null>(null);
+  const sinirSnRef = useRef(SESLI_OTURUM_SINIRI_SN);
+  const nabizRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Kalp atışına giden son maliyet tahmini ve arka model tokenları. */
+  const maliyetRef = useRef(0);
+  const arkaTokenRef = useRef({ girdi: 0, cikti: 0 });
+  /** Bildir için araç kayıtları: döküm satırının sırası + ad + süre + önbellek etiketi. */
+  const aracKayitlariRef = useRef<{ satirNo: number; ad: string; sureMs: number | null; onbellek: string | null }[]>([]);
   /** OpenAI öğe kimliği → döküm satırı (Realtime; döküm sesten SONRA gelebilir). */
   const satirKimligiRef = useRef(new Map<string, string>());
   const motorRef = useRef<SesliMotor>("realtime");
@@ -155,9 +184,28 @@ export function AsistanSesliClient() {
     if (dc && dc.readyState === "open") dc.send(JSON.stringify(olay));
   }, []);
 
+  /** Faz 2a: son kalp atışı — kayıt kapanır. Sayfa kapanırken de gitsin diye `keepalive`. */
+  const sonNabizGonder = useCallback((sebep: BitisSebebi) => {
+    const jeton = oturumJetonuRef.current;
+    if (!jeton) return;
+    oturumJetonuRef.current = null;
+    void fetch("/api/asistan/nabiz", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        oturumJetonu: jeton,
+        bitti: true,
+        sebep,
+        tahminiMaliyetUsd: maliyetRef.current,
+        arkaToken: arkaTokenRef.current,
+      }),
+    }).catch(() => {});
+  }, []);
+
   /** Bağlantıyı kapatır. YALNIZ referanslar — sayfadan çıkarken de çağrılır, durum yazmaz. */
   const kapat = useCallback(() => {
-    for (const ref of [sayacRef, tikRef, isitmaRef]) {
+    for (const ref of [sayacRef, tikRef, isitmaRef, nabizRef]) {
       if (ref.current) {
         clearInterval(ref.current);
         ref.current = null;
@@ -181,12 +229,30 @@ export function AsistanSesliClient() {
   const bitir = useCallback(
     (sebep: BitisSebebi) => {
       if (!pcRef.current) return;
+      sonNabizGonder(sebep);
       kapat();
       setBitisSebebi(sebep);
       setDurum("bitti");
     },
-    [kapat]
+    [kapat, sonNabizGonder]
   );
+
+  /** Faz 2a: kalp atışı. Sunucu "süre doldu" derse görüşme kapanır. */
+  const nabizAt = useCallback(async () => {
+    const jeton = oturumJetonuRef.current;
+    if (!jeton) return;
+    try {
+      const r = await fetch("/api/asistan/nabiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ oturumJetonu: jeton, tahminiMaliyetUsd: maliyetRef.current, arkaToken: arkaTokenRef.current }),
+      });
+      const j = await jsonOku(r);
+      if (j?.ok && j.bitir === true) bitir("sure_doldu");
+    } catch {
+      // Ağ hatası: bir sonraki atış yeniden dener; saniyeyi zaten sunucu sayıyor.
+    }
+  }, [bitir]);
 
   /** "Bitir" düğmesi: bağlantı varsa kapatır, kurulum sürüyorsa yarıda keser. */
   const kullaniciBitirdi = () => {
@@ -194,6 +260,7 @@ export function AsistanSesliClient() {
       bitir("kullanici");
       return;
     }
+    sonNabizGonder("kullanici");
     iptalRef.current = true;
     setBitisSebebi("kullanici");
     setDurum("bitti");
@@ -208,7 +275,13 @@ export function AsistanSesliClient() {
     return () => document.removeEventListener("visibilitychange", gorunurluk);
   }, [bitir]);
 
-  useEffect(() => () => kapat(), [kapat]);
+  useEffect(
+    () => () => {
+      sonNabizGonder("kullanici");
+      kapat();
+    },
+    [kapat, sonNabizGonder]
+  );
 
   const onbellekEki = useCallback(
     (d: unknown) => (d === "tam" ? ` · ${t("onbellekTam")}` : d === "kismi" ? ` · ${t("onbellekKismi")}` : ""),
@@ -223,18 +296,27 @@ export function AsistanSesliClient() {
       const kesici = new AbortController();
       const zamanlayici = setTimeout(() => kesici.abort(), ARAC_ISTEK_ZAMAN_ASIMI_MS);
       try {
+        const jeton = oturumJetonuRef.current;
         const r = await fetch("/api/asistan/arac", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...(jeton ? { "x-sesli-oturum": jeton } : {}) },
           body: JSON.stringify({ ad, girdi: argumanlar }),
           signal: kesici.signal,
         });
         const j = await jsonOku(r);
         const toplam = ((performance.now() - t0) / 1000).toFixed(1);
         if (r.ok && j?.ok) {
+          aracKayitlariRef.current.push({
+            satirNo: Number(satirId.slice(1)),
+            ad,
+            sureMs: typeof j.sureMs === "number" ? j.sureMs : null,
+            onbellek: typeof j.onbellek === "string" ? j.onbellek : null,
+          });
           satirYaz(satirId, () => `${t("aracBitti", { ad, sn: saniye(j.sureMs), toplam })}${onbellekEki(j.onbellek)}`);
           return j.sonuc;
         }
+        // Faz 2a: oturumun süresi SUNUCUDA doldu → araç veri vermez, görüşme kapanır.
+        if (r.status === 401 && j?.error === "oturum_suresi_doldu") bitir("sure_doldu");
         satirYaz(satirId, () => t("aracHata", { ad }));
         return { hata: j?.error ?? "arac_ucu_hatasi", durum: r.status };
       } catch {
@@ -244,7 +326,7 @@ export function AsistanSesliClient() {
         clearTimeout(zamanlayici);
       }
     },
-    [onbellekEki, satirEkle, satirYaz, t]
+    [bitir, onbellekEki, satirEkle, satirYaz, t]
   );
 
   /** Realtime durum makinesinin eylemlerini uygular. */
@@ -434,9 +516,10 @@ export function AsistanSesliClient() {
     async (ilk: boolean) => {
       const oturum = oturumNoRef.current;
       try {
+        const jeton = oturumJetonuRef.current;
         const r = await fetch("/api/asistan/arac", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...(jeton ? { "x-sesli-oturum": jeton } : {}) },
           body: JSON.stringify({ isit: true, ilk }),
         });
         const j = await jsonOku(r);
@@ -475,6 +558,11 @@ export function AsistanSesliClient() {
     canliCagrilarRef.current.clear();
     dilRef.current = null;
     akisRef.current = null;
+    oturumJetonuRef.current = null;
+    bildirJetonuRef.current = null;
+    aracKayitlariRef.current = [];
+    sinirSnRef.current = SESLI_OTURUM_SINIRI_SN;
+    setSinirSn(SESLI_OTURUM_SINIRI_SN);
     iptalRef.current = false;
     motorRef.current = motor;
     setDurum("baglaniyor");
@@ -493,8 +581,21 @@ export function AsistanSesliClient() {
         mic?.getTracks().forEach((iz) => iz.stop());
         return;
       }
-      // Bağlantı kurulurken ağır araçlar önbelleğe alınır (soru gelmeden).
-      void isit(true);
+      // Bağlantı kurulurken ağır araçlar önbelleğe alınır (soru gelmeden). Kayıt açıkken
+      // ön ısıtma da jeton ister → oturum açıldıktan sonra başlar.
+      if (!kayitAcik) void isit(true);
+      /** Sunucunun oturum yanıtından jeton + sınır (kayıt açıkken). */
+      const oturumuAl = (j: Record<string, unknown>) => {
+        const jeton = typeof j.oturumJetonu === "string" ? j.oturumJetonu : null;
+        oturumJetonuRef.current = jeton;
+        bildirJetonuRef.current = jeton;
+        const sinir = typeof j.sinirSn === "number" && j.sinirSn > 0 ? j.sinirSn : SESLI_OTURUM_SINIRI_SN;
+        sinirSnRef.current = sinir;
+        setSinirSn(sinir);
+        if (kayitAcik) void isit(true);
+      };
+      const oturumHatasi = (kod: string, varsayilan: string) =>
+        new Error(LIMIT_KODLARI.has(kod) ? t(`limit.${kod}`) : varsayilan);
 
       // Realtime: önce kısa ömürlü anahtar. Live: anahtar yok, SDP sunucudan geçer.
       let istemciSirri = "";
@@ -506,7 +607,10 @@ export function AsistanSesliClient() {
         });
         const j = await jsonOku(r);
         if (!j) throw new Error(t("hata.oturumGecersiz"));
-        if (!r.ok || !j.ok) throw new Error(t("hata.oturum", { kod: String(j.error ?? r.status) }));
+        if (!r.ok || !j.ok) {
+          throw oturumHatasi(String(j.error ?? ""), t("hata.oturum", { kod: String(j.error ?? r.status) }));
+        }
+        oturumuAl(j);
         istemciSirri = String(j.istemciSirri ?? "");
         akisRef.current = realtimeAkis(String(j.talimat ?? ""));
         setOturumBilgisi({
@@ -546,8 +650,12 @@ export function AsistanSesliClient() {
         sayacRef.current = setInterval(() => {
           const sn = Math.floor((Date.now() - baslangicRef.current) / 1000);
           setGecenSn(sn);
-          if (sn >= SESLI_OTURUM_SINIRI_SN) bitir("sure_doldu");
+          if (sn >= sinirSnRef.current) bitir("sure_doldu");
         }, 1000);
+        if (oturumJetonuRef.current) {
+          void nabizAt();
+          nabizRef.current = setInterval(() => void nabizAt(), SESLI_NABIZ_ARALIGI_MS);
+        }
         if (motor === "realtime") {
           tikRef.current = setInterval(() => {
             const akis = akisRef.current;
@@ -592,8 +700,9 @@ export function AsistanSesliClient() {
         if (!j) throw new Error(t("hata.oturumGecersiz"));
         if (!r.ok || !j.ok) {
           const ayrinti = [j.error, j.saglayiciDurum, j.saglayiciKod].filter(Boolean).join(" · ");
-          throw new Error(t("hata.canli", { kod: ayrinti || String(r.status) }));
+          throw oturumHatasi(String(j.error ?? ""), t("hata.canli", { kod: ayrinti || String(r.status) }));
         }
+        oturumuAl(j);
         cevapSdp = String(j.sdp ?? "");
         setOturumBilgisi({
           motor: "live",
@@ -606,6 +715,7 @@ export function AsistanSesliClient() {
       await pc.setRemoteDescription({ type: "answer", sdp: cevapSdp });
     } catch (e) {
       if (!pcRef.current) mic?.getTracks().forEach((iz) => iz.stop());
+      sonNabizGonder("hata");
       kapat();
       setDurum("hata");
       setBitisSebebi("hata");
@@ -648,7 +758,8 @@ export function AsistanSesliClient() {
         setYaziToken((o) => ({ girdi: o.girdi + sayi(k.girdi), cikti: o.cikti + sayi(k.cikti) }));
       } else {
         const kod = [j?.error, j?.saglayiciDurum, j?.saglayiciKod].filter(Boolean).join(" · ") || String(r.status);
-        satirYaz(satirId, () => t("yaziHata", { kod }));
+        const sinirKodu = String(j?.error ?? "");
+        satirYaz(satirId, () => (LIMIT_KODLARI.has(sinirKodu) ? t(`limit.${sinirKodu}`) : t("yaziHata", { kod })));
       }
     } catch {
       satirYaz(satirId, () => t("yaziHata", { kod: "ag" }));
@@ -673,8 +784,21 @@ export function AsistanSesliClient() {
     setYazi("");
   };
 
-  /** Karar 5: "Bildir" bu fazda yalnız konsola + indirilen JSON'a yazar. */
-  const bildir = () => {
+  /** JSON indirme — kayıt kapalıyken (ve sunucuya yazılamazsa yedek olarak). */
+  const jsonIndir = (kayit: { an: string }) => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(kayit, null, 2)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sesli-asistan-bildirim-${kayit.an.replace(/[:.]/g, "-")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /**
+   * Karar 5: "Bildir". Kayıt açıkken (Faz 2a) son soru-cevap `asistan_bildirimleri`ne yazılır
+   * (90 gün); yazılamazsa JSON indirilir. Kayıt kapalıyken konsol + JSON (prototip).
+   */
+  const bildir = async () => {
     const sira = [...satirlar].reverse().findIndex((s) => s.rol === "kullanici" && s.metin !== YAZIYOR);
     if (sira === -1) {
       setBilgi(t("bildirYok"));
@@ -700,15 +824,42 @@ export function AsistanSesliClient() {
       araclar: sonrasi.filter((s) => s.rol === "arac").map((s) => s.metin),
       sistem: sonrasi.filter((s) => s.rol === "sistem").map((s) => s.metin),
       oturumSn: gecenSn,
-      not: "Faz 1 prototipi: sunucuya gönderilmez, saklanmaz.",
+      not: kayitAcik ? "Faz 2a: sunucuya yazılır (90 gün)." : "Faz 1 prototipi: sunucuya gönderilmez, saklanmaz.",
     };
     console.info("[sesli-asistan:bildir]", kayit);
-    const url = URL.createObjectURL(new Blob([JSON.stringify(kayit, null, 2)], { type: "application/json" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `sesli-asistan-bildirim-${kayit.an.replace(/[:.]/g, "-")}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (kayitAcik) {
+      const soruNo = Number(satirlar[soruIndeksi].id.slice(1));
+      const araclar = aracKayitlariRef.current
+        .filter((a) => a.satirNo > soruNo)
+        .map(({ ad, sureMs, onbellek }) => ({ ad, sureMs, onbellek }));
+      try {
+        const r = await fetch("/api/asistan/bildir", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            oturumJetonu: bildirJetonuRef.current,
+            motor: kayit.motor,
+            model: kayit.model,
+            dil: kayit.dil,
+            soru: kayit.soru,
+            cevap: kayit.cevap,
+            araclar,
+          }),
+        });
+        const j = await jsonOku(r);
+        if (r.ok && j?.ok) {
+          setBilgi(t("bildirKaydedildi"));
+          return;
+        }
+        jsonIndir(kayit);
+        setBilgi(t("bildirKayitHata", { kod: String(j?.error ?? r.status) }));
+      } catch {
+        jsonIndir(kayit);
+        setBilgi(t("bildirKayitHata", { kod: "ag" }));
+      }
+      return;
+    }
+    jsonIndir(kayit);
     setBilgi(t("bildirIndi"));
   };
 
@@ -721,6 +872,14 @@ export function AsistanSesliClient() {
         lunaMaliyetUsd(yaziToken.girdi, yaziToken.cikti)
       : tahminiMaliyetUsd(oturumBilgisi?.model ?? model, kullanim);
   const yaziAcik = etkinMotor === "live" ? !yaziBekliyor : canli;
+
+  // Kalp atışı en son tahmini ve arka model tokenlarını taşır (sunucu tabanla kıyaslar).
+  useEffect(() => {
+    maliyetRef.current = maliyet;
+  }, [maliyet]);
+  useEffect(() => {
+    arkaTokenRef.current = arkaToken;
+  }, [arkaToken]);
 
   return (
     <div className="space-y-4">
@@ -799,7 +958,7 @@ export function AsistanSesliClient() {
             )}
             <span className="text-sm font-medium">{t(`durum.${durum}`)}</span>
             <span className="text-sm tabular-nums text-muted-foreground">
-              {t("sure")}: {sureMetni(gecenSn)} / {sureMetni(SESLI_OTURUM_SINIRI_SN)}
+              {t("sure")}: {sureMetni(gecenSn)} / {sureMetni(sinirSn)}
             </span>
             <span className="text-sm tabular-nums text-muted-foreground">
               {t("maliyet")}: ${maliyet.toFixed(4)}
@@ -828,6 +987,9 @@ export function AsistanSesliClient() {
               })}
             </p>
           )}
+          {kayitAcik ? (
+            <p className="text-xs text-muted-foreground">{t("kayitNot", { dk: Math.round(sinirSn / 60) })}</p>
+          ) : null}
           {oturumBilgisi?.motor === "realtime" && oturumBilgisi.ek ? (
             <p className="text-xs text-muted-foreground">
               {t("transkripsiyon", { model: oturumBilgisi.ek })}
@@ -845,7 +1007,7 @@ export function AsistanSesliClient() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle className="text-base">{t("dokum")}</CardTitle>
-          <Button variant="outline" size="sm" onClick={bildir} title={t("bildirIpucu")}>
+          <Button variant="outline" size="sm" onClick={() => void bildir()} title={kayitAcik ? t("bildirIpucuKayit") : t("bildirIpucu")}>
             {t("bildir")}
           </Button>
         </CardHeader>

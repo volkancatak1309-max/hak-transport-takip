@@ -2,6 +2,7 @@ import { sesliKapi, aracYetkiBasligi, yaziCevapla, type YaziGecmisi } from "@/li
 import { sesliAracBul, sesliAracSemalari, sesliAracYurut } from "@/lib/asistan-sesli-araclar";
 import { YAZI_MODEL } from "@/lib/asistan-sesli-sabitler";
 import { TENANT } from "@/lib/brand";
+import { yaziKaydet, yaziOnKontrol } from "@/lib/asistan-sesli-kayit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,11 @@ const GECMIS_METIN_TAVANI = 2_000;
  *
  * Kapılar `/api/asistan/oturum` ile aynı. Araçlar `/api/asistan/arac` ile aynı yürütücüden
  * (`sesliAracYurut`) ve aynı önbellekten geçer. `gecmis` istemcinin belleğinden gelir (en
- * fazla 12 kısa mesaj); sunucu sohbeti saklamaz (karar 5). Veritabanına bir şey yazılmaz.
+ * fazla 12 kısa mesaj); sunucu sohbeti saklamaz (karar 5).
+ *
+ * FAZ 2a (`ASISTAN_SESLI_KAYIT=1`): çağrıdan önce kiracı/ay bütçesi (429 `butce`),
+ * sonra token kullanımı `asistan_kullanim`a (motor `yazi`, içerik yok). Bayrak kapalıyken
+ * veritabanına bir şey yazılmaz.
  */
 export async function POST(req: Request) {
   const kapi = await sesliKapi();
@@ -43,6 +48,9 @@ export async function POST(req: Request) {
     }
     if (gMetin.trim()) gecmis.push({ rol, metin: gMetin });
   }
+
+  const on = await yaziOnKontrol(kapi.workerId);
+  if (!on.ok) return Response.json({ ok: false, error: on.kod }, { status: on.durum });
 
   const yetkiBasligi = await aracYetkiBasligi(kapi.workerId);
   if (!yetkiBasligi) return Response.json({ ok: false, error: "db_error" }, { status: 503 });
@@ -76,6 +84,8 @@ export async function POST(req: Request) {
       { status: r.durum }
     );
   }
+
+  await yaziKaydet({ workerId: kapi.workerId, girdi: r.kullanim.girdi, cikti: r.kullanim.cikti });
 
   return Response.json(
     { ok: true, metin: r.metin, model: YAZI_MODEL, kullanim: r.kullanim, araclar, sureMs: Date.now() - baslangic },

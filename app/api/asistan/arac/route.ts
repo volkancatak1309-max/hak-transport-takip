@@ -1,6 +1,7 @@
 import { sesliKapi, aracYetkiBasligi } from "@/lib/asistan-sesli";
 import { sesliAracBul, sesliAracYurut, sesliIsit, type SesliBaglam } from "@/lib/asistan-sesli-araclar";
 import { TENANT } from "@/lib/brand";
+import { KAYIT_ACIK, jetonDogrula } from "@/lib/asistan-sesli-kayit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,11 @@ export const dynamic = "force-dynamic";
  *
  * Önbellek anahtarı kiracı + kullanıcı: bir yöneticinin ısıttığı veri başka birine
  * dönmez. Argüman hatası, zaman aşımı ve uç hataları 200 + `sonuc.hata` olarak döner.
+ *
+ * FAZ 2a (`ASISTAN_SESLI_KAYIT=1`): istek `x-sesli-oturum` başlığında oturum açılırken
+ * verilen imzalı jetonu taşımalı; jeton başka kullanıcınınsa ya da oturumun süresi
+ * (10 dk / kalan gün / kalan ay) dolduysa 401 — süre SUNUCUDA biter, asistan veriye
+ * ulaşamaz.
  */
 export async function POST(req: Request) {
   const kapi = await sesliKapi();
@@ -29,6 +35,11 @@ export async function POST(req: Request) {
   }
   const arac = isitma ? null : sesliAracBul(String(govde.ad));
   if (!isitma && !arac) return Response.json({ ok: false, error: "bilinmeyen_arac" }, { status: 400 });
+
+  if (KAYIT_ACIK) {
+    const j = jetonDogrula(req.headers.get("x-sesli-oturum"), kapi.workerId);
+    if (!j.ok) return Response.json({ ok: false, error: j.kod }, { status: j.durum });
+  }
 
   const yetkiBasligi = await aracYetkiBasligi(kapi.workerId);
   if (!yetkiBasligi) return Response.json({ ok: false, error: "db_error" }, { status: 503 });

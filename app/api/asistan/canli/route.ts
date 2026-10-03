@@ -1,5 +1,6 @@
 import { sesliKapi, canliOturumAc } from "@/lib/asistan-sesli";
 import { sesliAracSemalari } from "@/lib/asistan-sesli-araclar";
+import { oturumAc, oturumHataylaKapat } from "@/lib/asistan-sesli-kayit";
 import { CANLI_ARKA_MODEL, CANLI_MODEL, CANLI_SES, SESLI_OTURUM_SINIRI_SN } from "@/lib/asistan-sesli-sabitler";
 
 export const runtime = "nodejs";
@@ -18,7 +19,8 @@ const SDP_TAVANI = 100_000;
  * (`gpt-6-luna`); araç çağrıları tarayıcıya veri kanalından gelir ve yine
  * `/api/asistan/arac`'tan geçer (aynı kapı, aynı yetki).
  *
- * Kapılar `/api/asistan/oturum` ile aynı. Veritabanına bir şey yazılmaz.
+ * Kapılar `/api/asistan/oturum` ile aynı; Faz 2a sınırları ve kayıt da aynı
+ * (`ASISTAN_SESLI_KAYIT=1` iken). Bayrak kapalıyken veritabanına bir şey yazılmaz.
  */
 export async function POST(req: Request) {
   const kapi = await sesliKapi();
@@ -29,8 +31,12 @@ export async function POST(req: Request) {
   if (typeof sdp !== "string" || !sdp.startsWith("v=") || sdp.length > SDP_TAVANI) {
     return Response.json({ ok: false, error: "invalid", alan: "sdp" }, { status: 400 });
   }
+  const kayit = await oturumAc({ workerId: kapi.workerId, motor: "live", model: CANLI_MODEL, ses: CANLI_SES });
+  if (!kayit.ok) return Response.json({ ok: false, error: kayit.kod }, { status: kayit.durum });
+
   const r = await canliOturumAc({ sdp, workerId: kapi.workerId, araclar: sesliAracSemalari() });
   if (!r.ok) {
+    if (!kayit.kayitsiz) await oturumHataylaKapat(kayit.kullanimId);
     return Response.json(
       {
         ok: false,
@@ -51,7 +57,9 @@ export async function POST(req: Request) {
       model: CANLI_MODEL,
       arkaModel: CANLI_ARKA_MODEL,
       ses: CANLI_SES,
-      sinirSn: SESLI_OTURUM_SINIRI_SN,
+      sinirSn: kayit.kayitsiz ? SESLI_OTURUM_SINIRI_SN : kayit.kalanSn,
+      kayit: !kayit.kayitsiz,
+      oturumJetonu: kayit.kayitsiz ? null : kayit.oturumJetonu,
     },
     { headers: { "Cache-Control": "no-store" } }
   );

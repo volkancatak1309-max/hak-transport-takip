@@ -2771,6 +2771,19 @@
     "canliMaliyetSesKatmani": "Voice layer only ($0.05/min, billed per second), back-end model excluded — its usage has not been reported yet.",
     "yaziMaliyet": "Text path: {girdi} input / {cikti} output tokens.",
     "canliYaziYolu": "GPT-Live does not document typed input, so typed questions go through a separate text path ({model}) with the same tools and instructions. No voice session needed.",
-    "canliSesSuresi": "Billed voice duration (server): {sn} s."
+    "canliSesSuresi": "Billed voice duration (server): {sn} s.",
+    "limit": {
+      "gun_siniri": "You have used your 20 minutes of voice assistant for today. You can use it again tomorrow.",
+      "ay_siniri": "You have used your 60 minutes of voice assistant for this month. It resets at the start of next month.",
+      "butce": "This month's voice assistant budget is used up. It resets at the start of next month.",
+      "oturum_acik": "You already have a conversation open in another tab or device. End it first.",
+      "oturum_suresi_doldu": "The conversation time is up.",
+      "kayit_tablo_yok": "Usage recording is not set up for this installation yet (migration 110).",
+      "jeton_sirri_yok": "A server setting is missing (session secret)."
+    },
+    "bildirKaydedildi": "Report saved (kept for 90 days).",
+    "bildirKayitHata": "The report could not be saved ({kod}); downloaded as JSON instead.",
+    "bildirIpucuKayit": "Saves the last question with its answer and tool timings (90 days). No audio is stored.",
+    "kayitNot": "Time and limits are counted on the server: this conversation lasts at most {dk} min."
   }
 }

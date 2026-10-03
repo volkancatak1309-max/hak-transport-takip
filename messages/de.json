@@ -2771,6 +2771,19 @@
     "canliMaliyetSesKatmani": "Nur Sprachschicht (0,05 $/Min., sekundengenau), ohne Backend-Modell — dessen Verbrauch wurde noch nicht gemeldet.",
     "yaziMaliyet": "Textweg: {girdi} Eingabe- / {cikti} Ausgabe-Token.",
     "canliYaziYolu": "Bei GPT-Live ist Texteingabe nicht dokumentiert; schriftliche Fragen beantwortet ein eigener Textweg ({model}) mit denselben Tools und Anweisungen. Keine Sprachsitzung nötig.",
-    "canliSesSuresi": "Abgerechnete Sprechdauer (Server): {sn} s."
+    "canliSesSuresi": "Abgerechnete Sprechdauer (Server): {sn} s.",
+    "limit": {
+      "gun_siniri": "Ihre 20 Minuten Sprachassistent für heute sind aufgebraucht. Morgen geht es wieder.",
+      "ay_siniri": "Ihre 60 Minuten Sprachassistent für diesen Monat sind aufgebraucht. Zum Monatsbeginn geht es wieder.",
+      "butce": "Das Monatsbudget für den Sprachassistenten ist aufgebraucht. Zum Monatsbeginn geht es wieder.",
+      "oturum_acik": "In einem anderen Tab oder auf einem anderen Gerät läuft noch ein Gespräch. Beenden Sie es zuerst.",
+      "oturum_suresi_doldu": "Die Gesprächszeit ist abgelaufen.",
+      "kayit_tablo_yok": "Die Nutzungserfassung ist in dieser Installation noch nicht eingerichtet (Migration 110).",
+      "jeton_sirri_yok": "Servereinstellung fehlt (Sitzungsschlüssel)."
+    },
+    "bildirKaydedildi": "Meldung gespeichert (90 Tage Aufbewahrung).",
+    "bildirKayitHata": "Meldung konnte nicht gespeichert werden ({kod}); als JSON heruntergeladen.",
+    "bildirIpucuKayit": "Speichert die letzte Frage samt Antwort und Tool-Laufzeiten (90 Tage). Es wird kein Audio gespeichert.",
+    "kayitNot": "Dauer und Limits werden auf dem Server gezählt: dieses Gespräch höchstens {dk} Min."
   }
 }

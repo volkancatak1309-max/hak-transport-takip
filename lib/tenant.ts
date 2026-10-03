@@ -632,6 +632,20 @@ export const ASISTAN_ENABLED = envBool(process.env.ASISTAN_ENABLED, false);
 export const ASISTAN_SESLI = process.env.ASISTAN_SESLI?.trim() === "1";
 
 /**
+ * SESLİ ASİSTAN KAYIT + SUNUCU SINIRLARI (Faz 2a hazırlığı, 03.10.2026).
+ *
+ * Açıkken (yalnız migration 110 uygulanmış kiracıda açılmalı): oturum açmadan önce kişi/gün
+ * 20 dk, kişi/ay 60 dk ve kiracı/ay bütçesi denetlenir; oturumun süresi sunucuda kalp
+ * atışlarıyla sayılır, 10 dk dolunca araçlar kapanır; "Bildir" `asistan_bildirimleri`ne
+ * yazılır. Kapalıyken prototipin bugünkü davranışı aynen sürer (sınır tarayıcıda, Bildir
+ * konsol + JSON) ve hiçbir tabloya dokunulmaz.
+ *
+ * KATI "1" — `ASISTAN_SESLI` ile aynı gerekçe. Migration yokken açılırsa uçlar
+ * `503 kayit_tablo_yok` döner (oturum açılmaz) — sessizce sınırsız çalışmaz.
+ */
+export const ASISTAN_SESLI_KAYIT = process.env.ASISTAN_SESLI_KAYIT?.trim() === "1";
+
+/**
  * YAKIT SERİSİ ÖN-ETİKETİ KULLANILSIN MI? (migration 101, 16.09.2026)
  *
  * `true` → yakıt raporu `report_fuel_stats_vehicle_v2`yi çağırır; 31 satırlık

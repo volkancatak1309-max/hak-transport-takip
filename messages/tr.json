@@ -2771,6 +2771,19 @@
     "canliMaliyetSesKatmani": "Yalnız ses katmanı (0,05 $/dk, saniye bazlı), arka model hariç — arka model kullanımı henüz dönmedi.",
     "yaziMaliyet": "Yazılı yol: {girdi} giriş / {cikti} çıkış token.",
     "canliYaziYolu": "GPT-Live'da yazılı giriş belgelenmediği için yazılı sorular ayrı metin yoluyla ({model}) cevaplanır: aynı araçlar, aynı talimat. Ses oturumu gerekmez.",
-    "canliSesSuresi": "Faturalanan ses süresi (sunucu): {sn} sn."
+    "canliSesSuresi": "Faturalanan ses süresi (sunucu): {sn} sn.",
+    "limit": {
+      "gun_siniri": "Bugünkü 20 dakikalık sesli asistan süreni doldurdun. Yarın yeniden kullanabilirsin.",
+      "ay_siniri": "Bu ayki 60 dakikalık sesli asistan süreni doldurdun. Ay başında yeniden açılır.",
+      "butce": "Bu ayın sesli asistan bütçesi doldu. Ay başında yeniden açılır.",
+      "oturum_acik": "Başka bir sekmede ya da cihazda açık bir görüşmen var. Önce onu bitir.",
+      "oturum_suresi_doldu": "Görüşmenin süresi doldu.",
+      "kayit_tablo_yok": "Kullanım kaydı bu kurulumda henüz hazır değil (migration 110).",
+      "jeton_sirri_yok": "Sunucu ayarı eksik (oturum sırrı)."
+    },
+    "bildirKaydedildi": "Bildirim kaydedildi (90 gün saklanır).",
+    "bildirKayitHata": "Bildirim kaydedilemedi ({kod}); JSON olarak indirildi.",
+    "bildirIpucuKayit": "Son soru-cevabı ve araç sürelerini kaydeder (90 gün). Ses kaydı tutulmaz.",
+    "kayitNot": "Süre ve sınırlar sunucuda sayılıyor: bu görüşme en fazla {dk} dk."
   }
 }

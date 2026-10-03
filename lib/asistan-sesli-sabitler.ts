@@ -61,8 +61,31 @@ export const SESLI_VARSAYILAN_MODEL = "gpt-realtime-2.1";
  */
 export const SESLI_SES = "marin";
 
-/** Karar 1: tek konuşma 10 dk. Gün/ay sınırları sonraki fazda (migration gerekir). */
+/** Karar 1: tek konuşma 10 dk. Faz 2a'da SUNUCUDA da uygulanır (`ASISTAN_SESLI_KAYIT`). */
 export const SESLI_OTURUM_SINIRI_SN = 600;
+
+/**
+ * FAZ 2a SINIRLARI (karar 1; 03.10 teyit: aylık 60 dk KİŞİ başına). Bayrak
+ * `ASISTAN_SESLI_KAYIT=1` iken sunucu oturum açmadan önce denetler (migration 110).
+ */
+export const SESLI_GUNLUK_SINIR_SN = 20 * 60;
+export const SESLI_AYLIK_SINIR_SN = 60 * 60;
+/** Kiracı/ay bütçesi — demo kararı 25 $ (env `ASISTAN_SESLI_BUTCE_USD` ezer). */
+export const SESLI_KIRACI_AYLIK_BUTCE_USD = 25;
+/** Kalan süre bunun altındaysa yeni oturum açılmaz (birkaç saniyelik oturum anlamsız). */
+export const SESLI_ASGARI_OTURUM_SN = 30;
+/** Kalp atışı aralığı — sunucu oturum saniyesini bununla sayar. */
+export const SESLI_NABIZ_ARALIGI_MS = 15_000;
+
+/**
+ * Realtime için SUNUCU maliyet tabanı ($/dk) — tasarım belgesi §5.2 "Tipik" senaryo
+ * [TAHMİN]. Sunucu Realtime'ın token kullanımını göremez (tarayıcı doğrudan bağlanıyor);
+ * kayda istemcinin bildirdiği tahmin ile bu tabanın BÜYÜĞÜ yazılır.
+ */
+export const REALTIME_TABAN_DAKIKA_USD: Record<string, number> = {
+  "gpt-realtime-2.1": 0.054,
+  "gpt-realtime-2.1-mini": 0.015,
+};
 
 /**
  * Realtime döküm (canlı yazı) modelleri — sayfada seçilir (Faz 1b). Döküm yalnız EKRANDIR:

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { getSession, requireAdmin } from "@/lib/session";
 import { sesliAcikMi } from "@/lib/asistan-sesli";
+import { ASISTAN_SESLI_KAYIT } from "@/lib/tenant";
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { AsistanSesliClient } from "./AsistanSesliClient";
 
@@ -33,7 +34,7 @@ export default async function AsistanSesliPage() {
       title={t("title")}
     >
       <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 sm:px-6">
-        <AsistanSesliClient />
+        <AsistanSesliClient kayitAcik={ASISTAN_SESLI_KAYIT} />
       </div>
     </DashboardShell>
   );

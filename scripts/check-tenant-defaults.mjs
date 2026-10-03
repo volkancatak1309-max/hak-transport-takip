@@ -88,6 +88,13 @@ const EXPECTED = {
   // true'ya kayarsa HAK61/Sendigo'da hiç istenmemiş bir Anthropic API yolu
   // açılır. Bayrağın kapalı olması demo dışındaki her kurulumun varsayılanı.
   "tenant.ASISTAN_ENABLED": false,
+  // ROTA OPTİMİZASYONU (03.10.2026) — "eskiden ne yapıyordu" karşılığı YOK;
+  // asistanla aynı gerekçe: bayrak bir DIŞ ÇAĞRI açıyor (kendi rota sunucumuz
+  // ya da yedek Google). Sessizce true olursa HAK61/Sendigo'da istenmemiş bir
+  // düğme ve bir dış yol açılır. Tavanlar yalnız modül açıkken anlamlı.
+  "tenant.ROTA_OPTIMIZASYONU_ENABLED": false,
+  "tenant.ROTA_GUNLUK_TAVAN": 100,
+  "tenant.ROTA_AZAMI_DURAK": 100,
   // Dışa aktarma bugün AÇIK (4 CSV yüzeyi çalışıyor) — kaymamalı.
   "tenant.EXPORT_ENABLED": true,
   // Filigran YOKTU; boş dize "filigran basma" demek.
@@ -274,6 +281,9 @@ const out = {
   "tenant.ACCESS_HOURS_END": tenant.ACCESS_HOURS_END,
   "tenant.SINGLE_SESSION": tenant.SINGLE_SESSION,
   "tenant.ASISTAN_ENABLED": tenant.ASISTAN_ENABLED,
+  "tenant.ROTA_OPTIMIZASYONU_ENABLED": tenant.ROTA_OPTIMIZASYONU_ENABLED,
+  "tenant.ROTA_GUNLUK_TAVAN": tenant.ROTA_GUNLUK_TAVAN,
+  "tenant.ROTA_AZAMI_DURAK": tenant.ROTA_AZAMI_DURAK,
   "tenant.EXPORT_ENABLED": tenant.EXPORT_ENABLED,
   "tenant.PDF_WATERMARK": tenant.PDF_WATERMARK,
   "tenant.DRIVER_VEHICLE_CHOICE": tenant.DRIVER_VEHICLE_CHOICE,

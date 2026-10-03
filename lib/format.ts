@@ -385,6 +385,31 @@ export function endOfDayViennaFromYmd(s: string): Date | null {
   return new Date(addCalendarDaysVienna(start, 1).getTime() - 1);
 }
 
+/**
+ * Kiracı saat diliminde `ymd` gününün DUVAR SAATİ → UTC anı. `sn` gece
+ * yarısından saniye; 86.400'ü aşarsa ertesi güne taşar. Geçersiz tarihte null.
+ *
+ * Neden "gün başı + sn" değil: yaz saati geçiş gününde 09:00, gece yarısından
+ * 8 ya da 10 saat sonradır. Duvar saati her zaman doğru anı verir (rota
+ * optimizasyonunun varış saatleri — lib/rota/plan.ts).
+ */
+export function tenantDuvarSaatiUtc(ymd: string, sn: number): Date | null {
+  if (!startOfDayViennaFromYmd(ymd)) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd)!;
+  const toplam = Math.max(0, Math.round(sn));
+  const gun = Math.floor(toplam / 86_400);
+  const kalan = toplam % 86_400;
+  return zonedWallTimeToUtc(
+    +m[1],
+    +m[2],
+    +m[3] + gun,
+    Math.floor(kalan / 3600),
+    Math.floor((kalan % 3600) / 60),
+    kalan % 60,
+    tenantTz()
+  );
+}
+
 /* ── Para & sayı formatlayıcıları (DESIGN-SYSTEM Ek A) ──────────────────────
    eur() kopyaları (masraf/yakıt client + action'ları) FAZ 4'te buraya taşınır;
    yeni bileşenler yalnız bunları kullanır. */

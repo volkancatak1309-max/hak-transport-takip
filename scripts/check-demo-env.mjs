@@ -89,6 +89,12 @@ const ENV = {
   // ölü adam anahtarı. Ülke ve saat varsayılanları bilerek env'siz bırakıldı
   // (TR,AT / 07:00-21:00); kişi bazında ayar patron ekranından yapılıyor.
   ACCESS_GATES_ENABLED: "true",
+
+  // ── Rota optimizasyonu (03.10.2026) — demoda AÇIK ───────────────────────
+  // Satış demosu bu düğmeyi gösteriyor. Sağlayıcı adresleri ve sır
+  // (ROTA_VROOM_URL, ROTA_OSRM_URL, ROTA_SERVIS_SIRRI) davranış değil kurulum
+  // ve sır — burada tutulmaz: docs/rota-optimizasyonu.md.
+  ROTA_OPTIMIZASYONU: "true",
 };
 
 /**
@@ -151,6 +157,9 @@ const EXPECTED = {
   // Güvenlik skoru K sabiti HAK61 filosuna kalibre; demo AYNI 29 aracı okuyor,
   // dolayısıyla kalibrasyon iddiası burada geçerli — açık kalır.
   "tenant.SAFETY_SCORE_CALIBRATED": true,
+
+  // Rota optimizasyonu demoda açık; düşerse satış demosunun düğmesi kaybolur.
+  "tenant.ROTA_OPTIMIZASYONU_ENABLED": true,
 };
 
 if (process.argv.includes("--print")) {
@@ -223,6 +232,7 @@ process.stdout.write(JSON.stringify({
   "tenant.ADMIN_DRIVER_PANEL_LINK": tenant.ADMIN_DRIVER_PANEL_LINK,
   "tenant.LENKZEIT_WARNING_ENABLED": tenant.LENKZEIT_WARNING_ENABLED,
   "tenant.SAFETY_SCORE_CALIBRATED": tenant.SAFETY_SCORE_CALIBRATED,
+  "tenant.ROTA_OPTIMIZASYONU_ENABLED": tenant.ROTA_OPTIMIZASYONU_ENABLED,
 }));
 `;
 

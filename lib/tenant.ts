@@ -616,6 +616,30 @@ export const SINGLE_SESSION = envBool(process.env.SINGLE_SESSION, false);
 export const ASISTAN_ENABLED = envBool(process.env.ASISTAN_ENABLED, false);
 
 /**
+ * ROTA OPTİMİZASYONU (Faz 1, 03.10.2026) — tek araç durak sıralama, PREMIUM.
+ *
+ * ⚠️ VARSAYILANI `false` VE `NEXT_PUBLIC_` DEĞİL — ASISTAN_ENABLED'ın iki
+ * gerekçesinin aynısı: (1) özellik bir DIŞ servise (kendi rota sunucumuz ya da
+ * yedek Google) istek atıyor; env'siz build bugünkü davranış olmalı. (2) Bayrak
+ * bir YETKİ kapısı: düğmenin görünüp görünmeyeceğini sunucu
+ * `getSeferSecenekleri` cevabıyla söylüyor, sunucu eylemi ayrıca denetliyor.
+ *
+ * Demo'da açık (`ROTA_OPTIMIZASYONU=true`, scripts/check-demo-env.mjs).
+ * Sağlayıcı seçimi ve adresleri: lib/rota/saglayici.ts · docs/rota-optimizasyonu.md.
+ */
+export const ROTA_OPTIMIZASYONU_ENABLED = envBool(process.env.ROTA_OPTIMIZASYONU, false);
+
+/**
+ * Şirket (kiracı) başına GÜNLÜK optimizasyon tavanı. Kendi sunucumuzda çağrı
+ * başına para yok ama yük var; yedek Google'da her çağrı ücretli. Sayaç
+ * kiracının kendi veritabanında (lib/rota/kota.ts) — her kiracı ayrı DB.
+ */
+export const ROTA_GUNLUK_TAVAN = envInt(process.env.ROTA_GUNLUK_TAVAN, 100);
+
+/** Tek hesapta sıralanabilecek en fazla bekleyen durak (gereksinim 50; pay 2×). */
+export const ROTA_AZAMI_DURAK = envInt(process.env.ROTA_AZAMI_DURAK, 100);
+
+/**
  * YAKIT SERİSİ ÖN-ETİKETİ KULLANILSIN MI? (migration 101, 16.09.2026)
  *
  * `true` → yakıt raporu `report_fuel_stats_vehicle_v2`yi çağırır; 31 satırlık

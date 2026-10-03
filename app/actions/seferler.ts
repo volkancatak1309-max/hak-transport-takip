@@ -32,6 +32,8 @@ import {
 } from "@/lib/takip-db";
 import { TAKIP_LINK_TTL_MIN } from "@/lib/tenant";
 import { audit } from "@/lib/security-log";
+import { rotaYetenegi } from "@/lib/rota/saglayici";
+import type { RotaYetenegi } from "@/lib/rota/tipler";
 
 /**
  * PANEL SEFER EKRANI — sunucu eylemleri.
@@ -109,6 +111,11 @@ export type SeferSecenekleri = {
   bolgeler: SeferSecenek[];
   /** Takip linki ömrü (dk) — form "2 saat geçerli" diyebilsin. */
   takipTtlDk: number;
+  /**
+   * ROTA OPTİMİZASYONU yeteneği — modül kapalıysa null ve düğme HİÇ çizilmez.
+   * Sunucuda hesaplanır; adres, sır ya da anahtar taşımaz (lib/rota/saglayici.ts).
+   */
+  rota: RotaYetenegi | null;
 };
 
 export type SeferSonuc =
@@ -302,7 +309,7 @@ export async function getSeferSecenekleri(): Promise<SeferSecenekleri> {
     ...zonlar.filter((z) => z.purpose !== "customer"),
   ].map((z) => ({ id: z.id, ad: z.name, ikincil: z.purpose }));
 
-  return { soforler, araclar, bolgeler, takipTtlDk: TAKIP_LINK_TTL_MIN };
+  return { soforler, araclar, bolgeler, takipTtlDk: TAKIP_LINK_TTL_MIN, rota: rotaYetenegi() };
 }
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;

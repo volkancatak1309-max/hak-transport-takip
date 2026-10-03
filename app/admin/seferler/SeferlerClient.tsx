@@ -460,7 +460,12 @@ function SeferDetayi({
 
   return (
     <Dialog open onOpenChange={(o) => !o && kapat()}>
-      <DialogContent className="max-w-md">
+      {/*
+        KAYDIRILABİLİR — çok duraklı seferde kutu ekrandan taşıyordu (ölçüldü,
+        03.10.2026: 10 durakla 2.406 px, üstü −978 px, kaydırma yok; başlık ve
+        Duraklar düğmeleri erişilemez). Durak formundaki kalıbın aynısı.
+      */}
+      <DialogContent className="max-h-[90vh] max-w-md overflow-x-hidden overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{sefer.sofor_ad}</DialogTitle>
         </DialogHeader>
@@ -566,6 +571,7 @@ function SeferDetayi({
           */}
           <DuraklarBolumu
             seferId={sefer.id}
+            seferTarih={sefer.tarih}
             seferAcik={acik}
             secenekler={secenekler}
             yenile={yenile}

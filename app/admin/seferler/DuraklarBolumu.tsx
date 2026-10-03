@@ -53,6 +53,7 @@ import {
   type SeferSecenekleri,
   type TakipLinkGorunum,
 } from "@/app/actions/seferler";
+import { RotaOptimizasyonu } from "./RotaOptimizasyonu";
 
 /**
  * SEFERİN DURAKLARI — yönetici/şef yüzeyi (migration 082).
@@ -86,11 +87,14 @@ const DURUM_TONU: Record<string, ChipTone> = {
 
 export function DuraklarBolumu({
   seferId,
+  seferTarih,
   seferAcik,
   secenekler,
   yenile,
 }: {
   seferId: string;
+  /** Seferin günü (YYYY-MM-DD) — rota optimizasyonunun saatleri bu güne kurulur. */
+  seferTarih: string;
   /** Kapanmış seferde durak EKLENMEZ/DÜZENLENMEZ — plan bitmiş bir günü değiştiremez. */
   seferAcik: boolean;
   secenekler: SeferSecenekleri;
@@ -173,7 +177,25 @@ export function DuraklarBolumu({
     <div className="space-y-3 rounded-xl border border-border p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium">{t("baslik")}</span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/*
+            ROTA OPTİMİZASYONU — modül kapalıysa `secenekler.rota` null gelir
+            ve düğme HİÇ çizilmez (sunucu kararı, lib/rota/saglayici.ts).
+          */}
+          {seferAcik && secenekler.rota && liste.duraklar.length > 0 && (
+            <RotaOptimizasyonu
+              seferId={seferId}
+              seferTarih={seferTarih}
+              duraklar={liste.duraklar}
+              rota={secenekler.rota}
+              bolgeler={secenekler.bolgeler}
+              mesgul={calisiyor}
+              onUygulandi={async () => {
+                await yukle();
+                basla(yenile);
+              }}
+            />
+          )}
           {o.toplam > 0 && (
             <StatusChip tone={o.biten === o.toplam ? "neutral" : "info"}>
               {t("ilerleme", { biten: o.biten, toplam: o.toplam })}

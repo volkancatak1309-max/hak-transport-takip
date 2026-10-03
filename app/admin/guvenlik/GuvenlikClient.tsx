@@ -119,6 +119,8 @@ const EYLEM_ADI: Record<string, string> = {
   create: "Kayıt oluşturdu",
   update: "Kayıt değiştirdi",
   delete: "Kayıt sildi",
+  // Maliyet/kullanım kaydı (lib/rota/kayit.ts) — kaç durak, hangi sağlayıcı.
+  rota_optimizasyonu: "Rota optimizasyonu",
   // Dört eski iz tablosundan gelen satırlar (birleşik zaman çizgisi)
   admin_grant: "Yönetici yetkisi verdi",
   admin_revoke: "Yönetici yetkisini aldı",

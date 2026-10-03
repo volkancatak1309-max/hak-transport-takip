@@ -26,6 +26,13 @@
  *      istemci `conversation.item.create`'i kendisi yollamaz. Senaryolar ayrı betikte:
  *      `lint:asistan-sesli-akis`.
  *
+ * Faz 2a hazırlığı (03.10.2026, bayrak `ASISTAN_SESLI_KAYIT`, migration 110 ÇALIŞTIRILMADI):
+ *   9) SINIRLAR OTURUMDAN ÖNCE: oturum/canli uçlarında `oturumAc` OpenAI çağrısından önce.
+ *  10) SÜRE SUNUCUDA: araç ucu kayıt açıkken imzalı jeton ister; kalp atışında saniyeyi sunucu
+ *      sayar (istemcinin süresi okunmaz).
+ *  11) MİGRATION BEKLEMEDE: 110 `_beklemede/` altında, kurulum listesinde yok; saklama süreleri
+ *      SQL gövdesinde sabit (2 ay / 90 gün), cron süre seçemez, CRON_SECRET ister.
+ *
  * Kurallar önce gerçek dosyalarda geçmeli, sonra her kural için bozulmuş bir kopyada
  * DÜŞMELİ (arıza enjeksiyonu) — geçiyor olması tek başına çalıştığını kanıtlamaz.
  *
@@ -46,6 +53,13 @@ const D = {
   arac: "app/api/asistan/arac/route.ts",
   canli: "app/api/asistan/canli/route.ts",
   yazi: "app/api/asistan/yazi/route.ts",
+  nabiz: "app/api/asistan/nabiz/route.ts",
+  bildir: "app/api/asistan/bildir/route.ts",
+  kayit: "lib/asistan-sesli-kayit.ts",
+  sinir: "lib/asistan-sesli-sinir.ts",
+  cron: "app/api/cron/asistan-kayit-temizle/route.ts",
+  migration: "db/migrations/_beklemede/110_sesli_asistan_kayit.sql",
+  kurulum: "scripts/gen-install-sql.mjs",
   onbellek: "lib/asistan-sesli-onbellek.ts",
   akis: "lib/asistan-sesli-akis.ts",
   sayfa: "app/admin/asistan/page.tsx",
@@ -79,7 +93,7 @@ const KURALLAR = [
     Object.values(f.hepsi).some((s) => /NEXT_PUBLIC_OPENAI/.test(s)) ? "NEXT_PUBLIC_OPENAI bulundu" : null],
   ["istemci process.env okumaz", (f) => (/process\.env/.test(kod(f[D.istemci])) ? "istemcide process.env" : null)],
   ["sunucu dosyalarında console yok", (f) => {
-    const kirli = [D.cekirdek, D.araclar, D.oturum, D.arac, D.canli, D.yazi, D.onbellek, D.akis].filter((p) =>
+    const kirli = [D.cekirdek, D.araclar, D.oturum, D.arac, D.canli, D.yazi, D.onbellek, D.akis, D.nabiz, D.bildir, D.kayit, D.sinir, D.cron].filter((p) =>
       /\bconsole\./.test(kod(f[p]))
     );
     return kirli.length ? `console: ${kirli.join(", ")}` : null;
@@ -97,8 +111,8 @@ const KURALLAR = [
     const i = [govde.indexOf("!ASISTAN_SESLI"), govde.indexOf("TENANT !== SESLI_KIRACI"), govde.indexOf("getSession()"), govde.indexOf("requireAdmin()")];
     return i.every((x, k) => x >= 0 && (k === 0 || x > i[k - 1])) ? null : `sıra: ${i.join(",")}`;
   }],
-  ["dört uç da önce sesliKapi", (f) => {
-    const bozuk = [D.oturum, D.arac, D.canli, D.yazi].filter((p) => !/export async function POST\([^)]*\)\s*\{\s*const kapi = await sesliKapi\(\);\s*if \(!kapi\.ok\) return kapi\.response;/.test(kod(f[p])));
+  ["altı uç da önce sesliKapi", (f) => {
+    const bozuk = [D.oturum, D.arac, D.canli, D.yazi, D.nabiz, D.bildir].filter((p) => !/export async function POST\([^)]*\)\s*\{\s*const kapi = await sesliKapi\(\);\s*if \(!kapi\.ok\) return kapi\.response;/.test(kod(f[p])));
     return bozuk.length ? `ilk iş kapı değil: ${bozuk.join(", ")}` : null;
   }],
   ["OpenAI uç adresleri yalnız çekirdekte", (f) => {
@@ -170,6 +184,47 @@ const KURALLAR = [
     if (!/voice: SESLI_SES/.test(s) || !/voice: CANLI_SES/.test(s)) return "çekirdek sabit sesi kullanmıyor";
     return null;
   }],
+  // ── Faz 2a ─────────────────────────────────────────────────────────────
+  ["kayıt bayrağı katı \"1\"", (f) =>
+    /export const ASISTAN_SESLI_KAYIT = process\.env\.ASISTAN_SESLI_KAYIT\?\.trim\(\) === "1";/.test(f[D.tenant]) ? null : "kayıt bayrağı tanımı değişmiş"],
+  ["sınırlar OpenAI oturumundan önce", (f) => {
+    const o = kod(f[D.oturum]);
+    const c = kod(f[D.canli]);
+    const oi = o.indexOf("await oturumAc(");
+    const ci = c.indexOf("await oturumAc(");
+    if (oi < 0 || ci < 0) return "oturumAc çağrısı yok";
+    if (!(oi < o.indexOf("await istemciSirriUret("))) return "oturum: sınır OpenAI'dan sonra";
+    if (!(ci < c.indexOf("await canliOturumAc("))) return "canli: sınır OpenAI'dan sonra";
+    return null;
+  }],
+  ["araç ucu kayıt açıkken jeton ister", (f) =>
+    /if \(KAYIT_ACIK\) \{\s*const j = jetonDogrula\(req\.headers\.get\("x-sesli-oturum"\), kapi\.workerId\);\s*if \(!j\.ok\) return/.test(kod(f[D.arac])) ? null : "araç ucunda jeton kapısı yok"],
+  ["saniyeyi sunucu sayar", (f) => {
+    if (!/const saniye = nabizSaniyesi\(p\.jeton, an,/.test(kod(f[D.kayit]))) return "nabız saniyesi sunucuda hesaplanmıyor";
+    if (/govde\.saniye|govde\.sureSn|govde\.gecenSn/.test(kod(f[D.nabiz]))) return "nabız ucu istemcinin süresini okuyor";
+    return null;
+  }],
+  ["migration 110 beklemede, kurulumda yok", (f) => {
+    if (!f[D.migration]) return "110 taslağı yok";
+    if (/"110_/.test(f[D.kurulum])) return "110 kurulum listesinde (onaysız)";
+    if (f.kokMigration110) return "110 db/migrations/ köküne alınmış (onaysız)";
+    if (!/interval '90 days'/.test(f[D.migration]) || !/interval '2 months'/.test(f[D.migration])) return "saklama süreleri SQL gövdesinde değil";
+    if (!/enable row level security/.test(f[D.migration])) return "RLS yok";
+    return null;
+  }],
+  ["temizlik cron'u sır ister, süre seçemez", (f) => {
+    const s = kod(f[D.cron]);
+    if (!/process\.env\.CRON_SECRET/.test(s) || !/safeEqual\(/.test(s)) return "CRON_SECRET/safeEqual yok";
+    if (!/if \(!authorized\(req\)\)/.test(s)) return "yetki denetimi yok";
+    if (/p_gun|p_days|interval/.test(s)) return "cron saklama süresi seçiyor";
+    return null;
+  }],
+  ["Faz 2a sınır sabitleri (20 dk / 60 dk / 25 $)", (f) => {
+    const s = f[D.sabitler];
+    return /SESLI_GUNLUK_SINIR_SN = 20 \* 60;/.test(s) && /SESLI_AYLIK_SINIR_SN = 60 \* 60;/.test(s) && /SESLI_KIRACI_AYLIK_BUTCE_USD = 25;/.test(s)
+      ? null
+      : "sınır sabitleri değişmiş";
+  }],
   // Test 2 kilitlenmesi istemcinin kendi response.create / item.create kararlarından doğdu.
   ["Realtime akışı durum makinesinde", (f) => {
     const s = kod(f[D.istemci]);
@@ -182,6 +237,7 @@ const KURALLAR = [
 function dosyalar() {
   const f = {};
   for (const p of Object.values(D)) f[p] = oku(p);
+  f.kokMigration110 = readdirSync(path.join(ROOT, "db/migrations")).some((ad) => /^110_/.test(ad));
   f.hepsi = Object.fromEntries(tumKaynak().map((p) => [p, oku(p)]));
   return f;
 }
@@ -202,8 +258,22 @@ const BOZMALAR = [
   ["kapı sırası bayrak → kiracı → oturum", (f) => {
     f[D.cekirdek] = f[D.cekirdek].replace("if (!ASISTAN_SESLI) return", "if (false) return");
   }],
-  ["dört uç da önce sesliKapi", (f) => { f[D.canli] = f[D.canli].replace("const kapi = await sesliKapi();", "const kapi = { ok: true };"); }],
-  ["dört uç da önce sesliKapi", (f) => { f[D.yazi] = f[D.yazi].replace("const kapi = await sesliKapi();", "const kapi = { ok: true };"); }],
+  ["altı uç da önce sesliKapi", (f) => { f[D.canli] = f[D.canli].replace("const kapi = await sesliKapi();", "const kapi = { ok: true };"); }],
+  ["altı uç da önce sesliKapi", (f) => { f[D.yazi] = f[D.yazi].replace("const kapi = await sesliKapi();", "const kapi = { ok: true };"); }],
+  ["altı uç da önce sesliKapi", (f) => { f[D.nabiz] = f[D.nabiz].replace("const kapi = await sesliKapi();", "const kapi = { ok: true };"); }],
+  ["altı uç da önce sesliKapi", (f) => { f[D.bildir] = f[D.bildir].replace("const kapi = await sesliKapi();", "const kapi = { ok: true };"); }],
+  ["kayıt bayrağı katı \"1\"", (f) => {
+    f[D.tenant] = f[D.tenant].replace('process.env.ASISTAN_SESLI_KAYIT?.trim() === "1";', 'process.env.ASISTAN_SESLI_KAYIT?.trim() !== "0";');
+  }],
+  ["sınırlar OpenAI oturumundan önce", (f) => {
+    f[D.oturum] = f[D.oturum].replace("const kayit = await oturumAc(", "const kayit0 = 0;\n  const r0 = await istemciSirriUret(x);\n  const kayit = await oturumAc(");
+  }],
+  ["araç ucu kayıt açıkken jeton ister", (f) => { f[D.arac] = f[D.arac].replace("if (KAYIT_ACIK) {", "if (false) {"); }],
+  ["saniyeyi sunucu sayar", (f) => { f[D.nabiz] = f[D.nabiz].replace("bitti: govde.bitti === true,", "bitti: govde.bitti === true, saniye: govde.saniye,"); }],
+  ["migration 110 beklemede, kurulumda yok", (f) => { f[D.kurulum] += '\nconst x = ["110_sesli_asistan_kayit.sql"];'; }],
+  ["migration 110 beklemede, kurulumda yok", (f) => { f[D.migration] = f[D.migration].replace("interval '90 days'", "make_interval(days => p_gun)"); }],
+  ["temizlik cron'u sır ister, süre seçemez", (f) => { f[D.cron] = f[D.cron].replace("if (!authorized(req)) {", "if (false) {"); }],
+  ["Faz 2a sınır sabitleri (20 dk / 60 dk / 25 $)", (f) => { f[D.sabitler] = f[D.sabitler].replace("SESLI_GUNLUK_SINIR_SN = 20 * 60;", "SESLI_GUNLUK_SINIR_SN = 200 * 60;"); }],
   ["OpenAI uç adresleri yalnız çekirdekte", (f) => {
     f.hepsi[D.istemci] += '\nconst r = "https://api.openai.com/v1/responses";';
   }],

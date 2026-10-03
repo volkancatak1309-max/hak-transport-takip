@@ -11,7 +11,10 @@
  *   • geçmiş gün: vardiyasız / sıfır km / ölçülemeyen km, liste kesilince null;
  *   • tarih: dün/bugün/yarın, ay ve yıl sınırı, takvimde olmayan gün;
  *   • önbellek: 60 sn ömür, uçuştaki isteği paylaşma, hata saklanmaz, kimliksiz çağrı
- *     saklanmaz, ön ısıtmanın tazeleme eşiği.
+ *     saklanmaz, ön ısıtmanın tazeleme eşiği;
+ *   • Faz 2a sınırları (`lib/asistan-sesli-sinir.ts`): imzalı oturum jetonu (kurcalama,
+ *     başka kullanıcı, süre), sunucu saniyesi (kırpma, geri gitmeme), gün/ay sayımı (kapalı,
+ *     canlı, ölü oturum), sınır kararı ve maliyet tabanı.
  *
  * `ts-server-kuru` ile koşar (server-only şimi + sahte env); veritabanına bağlanmaz.
  * Kullanım: npm run lint:asistan-sesli-ozet
@@ -25,6 +28,16 @@ import {
   yerBul,
 } from "../lib/asistan-sesli-ozet.ts";
 import { onbellekli, onbellegiBosalt } from "../lib/asistan-sesli-onbellek.ts";
+import {
+  etkinSaniye,
+  jetonCoz,
+  jetonDurumu,
+  jetonImzala,
+  kayitMaliyeti,
+  maliyetTabani,
+  nabizSaniyesi,
+  sinirKarari,
+} from "../lib/asistan-sesli-sinir.ts";
 
 let dusen = 0;
 let gecen = 0;
@@ -213,8 +226,53 @@ esit("plaka süzgeci", gecmisGunOzeti("2026-10-02", filo, vardiya, "113").vardiy
   esit("kimliksiz çağrı önbelleğe girmez", kimliksiz, 2);
 }
 
+// ── Faz 2a sınırları ────────────────────────────────────────────────────────
+{
+  const SIR = "a".repeat(64);
+  const AN = Date.parse("2026-10-03T10:00:00Z");
+  const j = { k: "kayit-1", w: "isci-1", b: AN, s: 600 };
+  const jeton = jetonImzala(j, SIR);
+  esit("jeton: imzala → çöz aynı", jetonCoz(jeton, SIR), j);
+  const [govde, imza] = jeton.split(".");
+  const kurcali = Buffer.from(JSON.stringify({ ...j, s: 6000 })).toString("base64url");
+  esit("jeton: gövde kurcalanırsa reddedilir", jetonCoz(kurcali + "." + imza, SIR), null);
+  esit("jeton: başka sırla reddedilir", jetonCoz(jeton, "b".repeat(64)), null);
+  esit("jeton: bozuk biçim", [jetonCoz("x", SIR), jetonCoz(govde + "." + imza + ".fazla", SIR), jetonCoz(42, SIR)], [null, null, null]);
+  esit("jeton: başka kullanıcı", jetonDurumu(j, "isci-2", AN), "baska_kullanici");
+  esit("jeton: süre içinde", jetonDurumu(j, "isci-1", AN + 599_000), "gecerli");
+  esit("jeton: 30 sn tolerans", jetonDurumu(j, "isci-1", AN + 625_000), "gecerli");
+  esit("jeton: tolerans sonrası doldu", jetonDurumu(j, "isci-1", AN + 631_000), "suresi_doldu");
+
+  esit("saniye: geçen süre", nabizSaniyesi(j, AN + 120_400, 0), 120);
+  esit("saniye: sınırla kırpılır", nabizSaniyesi(j, AN + 900_000, 0), 600);
+  esit("saniye: geri gitmez", nabizSaniyesi(j, AN + 60_000, 200), 200);
+
+  const iso = (ms) => new Date(ms).toISOString();
+  esit("etkin: kapalı oturum → yazılan", etkinSaniye({ basladi_at: iso(AN - 900_000), son_nabiz_at: iso(AN - 700_000), bitti_at: iso(AN - 700_000), saniye: 190 }, AN), 190);
+  esit("etkin: canlı oturum → geçen süre", etkinSaniye({ basladi_at: iso(AN - 300_000), son_nabiz_at: iso(AN - 10_000), bitti_at: null, saniye: 285 }, AN), 300);
+  esit("etkin: ölü, atış almış → yazılan", etkinSaniye({ basladi_at: iso(AN - 3_600_000), son_nabiz_at: iso(AN - 3_400_000), bitti_at: null, saniye: 200 }, AN), 200);
+  esit("etkin: ölü, hiç atış yok → tam sınır (temkinli)", etkinSaniye({ basladi_at: iso(AN - 3_600_000), son_nabiz_at: null, bitti_at: null, saniye: 0 }, AN), 600);
+
+  const temel = { gunSn: 0, aySn: 0, kiraciAyUsd: 0, butceUsd: 25, acikOturumVar: false };
+  esit("sınır: boş → 10 dk", sinirKarari(temel), { izin: true, kalanSn: 600 });
+  esit("sınır: gün kalanı 10 dk'dan az → kalan gün", sinirKarari({ ...temel, gunSn: 1000 }), { izin: true, kalanSn: 200 });
+  esit("sınır: ay kalanı belirleyici", sinirKarari({ ...temel, aySn: 3500 }), { izin: true, kalanSn: 100 });
+  esit("sınır: gün doldu (30 sn altı)", sinirKarari({ ...temel, gunSn: 1180 }), { izin: false, engel: "gun_siniri" });
+  esit("sınır: ay doldu", sinirKarari({ ...temel, aySn: 3600 }), { izin: false, engel: "ay_siniri" });
+  esit("sınır: bütçe doldu", sinirKarari({ ...temel, kiraciAyUsd: 25 }), { izin: false, engel: "butce" });
+  esit("sınır: açık oturum önce", sinirKarari({ ...temel, acikOturumVar: true, kiraciAyUsd: 99 }), { izin: false, engel: "oturum_acik" });
+
+  esit("maliyet: Live 0,05 $/dk", maliyetTabani("live", "gpt-live-1", 600), 0.5);
+  esit("maliyet: Realtime 2.1 tabanı", Math.round(maliyetTabani("realtime", "gpt-realtime-2.1", 600) * 1000) / 1000, 0.54);
+  esit("maliyet: mini tabanı", Math.round(maliyetTabani("realtime", "gpt-realtime-2.1-mini", 600) * 1000) / 1000, 0.15);
+  esit("maliyet: istemci düşük bildirirse taban", kayitMaliyeti(0.5, 0.01), 0.5);
+  esit("maliyet: istemci yüksekse istemci", kayitMaliyeti(0.5, 0.8), 0.8);
+  esit("maliyet: istemci 5 $ ile kırpılır", kayitMaliyeti(0.1, 999), 5);
+  esit("maliyet: geçersiz istemci değeri → taban", kayitMaliyeti(0.2, "abc"), 0.2);
+}
+
 if (dusen > 0) {
   console.log(`\n✗ SESLİ ASİSTAN ÖZET/ÖNBELLEK — ${dusen} denetim düştü (${gecen} geçti).\n`);
   process.exit(1);
 }
-console.log(`✓ sesli asistan özet + önbellek: ${gecen} denetim geçti.`);
+console.log(`✓ sesli asistan özet + önbellek + sınır: ${gecen} denetim geçti.`);

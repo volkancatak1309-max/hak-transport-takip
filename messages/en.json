@@ -2685,5 +2685,58 @@
     "err_arsivden_okunamadi": "File could not be read from the archive",
     "err_baglanti_uretilemedi": "Download link could not be created",
     "err_download": "Download link could not be created"
+  },
+  "asistanSesli": {
+    "title": "Voice assistant (prototype)",
+    "aciklama": "Demo only. The conversation is not stored: the transcript lives only in this tab and is gone when it closes. The assistant is read-only.",
+    "model": "Model",
+    "ses": "Voice",
+    "adaySesler": "Candidates",
+    "digerSesler": "Other voices",
+    "baslat": "Start",
+    "bitir": "End",
+    "durum": {
+      "hazir": "Ready",
+      "baglaniyor": "Connecting…",
+      "canli": "Live",
+      "bitti": "Ended",
+      "hata": "Error"
+    },
+    "sure": "Duration",
+    "maliyet": "Estimated cost",
+    "maliyetNot": "At OpenAI prices (03.10.2026); live transcript not included.",
+    "tokenlar": "Tokens — audio: {sesGirdi} in / {sesCikti} out · text: {metinGirdi} in / {metinCikti} out.",
+    "transkripsiyon": "Transcription model: {model}",
+    "mikrofonYok": "No microphone access: you can only type your questions; answers are still spoken.",
+    "bitisSebebi": {
+      "kullanici": "You ended the conversation.",
+      "sure_doldu": "10 minutes are up; the conversation was closed.",
+      "arka_plan": "The tab went to the background; the conversation was closed.",
+      "baglanti_koptu": "The connection dropped.",
+      "hata": "The conversation ended with an error."
+    },
+    "dokum": "Transcript (not stored)",
+    "bildir": "Report",
+    "bildirIpucu": "Downloads the last question and answer as JSON and writes it to the browser console. Nothing is sent to the server.",
+    "bildirYok": "There is no question and answer to report.",
+    "bildirIndi": "Last question and answer downloaded as JSON (not sent to the server).",
+    "bos": "Press Start and speak. Example: “How many vehicles are on the road today?” · “Where is W-GF-113?” · “Who is on leave today?”",
+    "rol": {
+      "kullanici": "You",
+      "asistan": "Assistant",
+      "arac": "Data",
+      "sistem": "System"
+    },
+    "aracCalisiyor": "{ad} running…",
+    "aracBitti": "{ad} · {sn} s",
+    "aracHata": "{ad} · error",
+    "yaziYer": "Type a question… (Enter sends)",
+    "gonder": "Send",
+    "hata": {
+      "oturum": "Could not open a session: {kod}",
+      "openai": "Could not connect to OpenAI (HTTP {durum}).",
+      "genel": "Unexpected error: {mesaj}",
+      "oturumGecersiz": "Your sign-in looks invalid; reload the page and sign in again."
+    }
   }
 }

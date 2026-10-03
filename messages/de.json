@@ -2685,5 +2685,58 @@
     "err_arsivden_okunamadi": "Datei konnte nicht aus dem Archiv gelesen werden",
     "err_baglanti_uretilemedi": "Download-Link konnte nicht erstellt werden",
     "err_download": "Download-Link konnte nicht erstellt werden"
+  },
+  "asistanSesli": {
+    "title": "Sprachassistent (Prototyp)",
+    "aciklama": "Nur Demo. Das Gespräch wird nicht gespeichert: Das Transkript bleibt nur in diesem Tab und verschwindet beim Schließen. Der Assistent liest nur.",
+    "model": "Modell",
+    "ses": "Stimme",
+    "adaySesler": "Kandidaten",
+    "digerSesler": "Weitere Stimmen",
+    "baslat": "Starten",
+    "bitir": "Beenden",
+    "durum": {
+      "hazir": "Bereit",
+      "baglaniyor": "Verbinde…",
+      "canli": "Live",
+      "bitti": "Beendet",
+      "hata": "Fehler"
+    },
+    "sure": "Dauer",
+    "maliyet": "Geschätzte Kosten",
+    "maliyetNot": "Zu OpenAI-Preisen (03.10.2026); ohne Kosten für das Live-Transkript.",
+    "tokenlar": "Token — Audio: {sesGirdi} Eingabe / {sesCikti} Ausgabe · Text: {metinGirdi} Eingabe / {metinCikti} Ausgabe.",
+    "transkripsiyon": "Transkriptionsmodell: {model}",
+    "mikrofonYok": "Kein Mikrofonzugriff: Du kannst nur schriftlich fragen, die Antwort kommt trotzdem als Sprache.",
+    "bitisSebebi": {
+      "kullanici": "Du hast das Gespräch beendet.",
+      "sure_doldu": "10 Minuten sind um, das Gespräch wurde beendet.",
+      "arka_plan": "Der Tab lief im Hintergrund, das Gespräch wurde beendet.",
+      "baglanti_koptu": "Die Verbindung wurde getrennt.",
+      "hata": "Das Gespräch endete mit einem Fehler."
+    },
+    "dokum": "Transkript (wird nicht gespeichert)",
+    "bildir": "Melden",
+    "bildirIpucu": "Lädt die letzte Frage und Antwort als JSON herunter und schreibt sie in die Browser-Konsole. Nichts geht an den Server.",
+    "bildirYok": "Es gibt keine Frage und Antwort zum Melden.",
+    "bildirIndi": "Letzte Frage und Antwort als JSON heruntergeladen (nicht an den Server gesendet).",
+    "bos": "Auf Starten drücken und sprechen. Beispiel: „Wie viele Fahrzeuge sind heute unterwegs?“ · „Wo ist W-GF-113?“ · „Wer hat heute Urlaub?“",
+    "rol": {
+      "kullanici": "Du",
+      "asistan": "Assistent",
+      "arac": "Daten",
+      "sistem": "System"
+    },
+    "aracCalisiyor": "{ad} läuft…",
+    "aracBitti": "{ad} · {sn} s",
+    "aracHata": "{ad} · Fehler",
+    "yaziYer": "Schriftlich fragen… (Enter sendet)",
+    "gonder": "Senden",
+    "hata": {
+      "oturum": "Sitzung konnte nicht geöffnet werden: {kod}",
+      "openai": "Verbindung zu OpenAI fehlgeschlagen (HTTP {durum}).",
+      "genel": "Unerwarteter Fehler: {mesaj}",
+      "oturumGecersiz": "Deine Anmeldung scheint ungültig zu sein; Seite neu laden und erneut anmelden."
+    }
   }
 }

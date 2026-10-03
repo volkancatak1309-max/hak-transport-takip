@@ -2685,5 +2685,58 @@
     "err_arsivden_okunamadi": "Dosya arşivden okunamadı",
     "err_baglanti_uretilemedi": "İndirme bağlantısı üretilemedi",
     "err_download": "İndirme bağlantısı üretilemedi"
+  },
+  "asistanSesli": {
+    "title": "Sesli asistan (prototip)",
+    "aciklama": "Yalnız demo. Konuşma kaydedilmez: döküm yalnız bu sekmede durur, sekme kapanınca silinir. Asistan salt okur.",
+    "model": "Model",
+    "ses": "Ses",
+    "adaySesler": "Aday sesler",
+    "digerSesler": "Diğer sesler",
+    "baslat": "Başlat",
+    "bitir": "Bitir",
+    "durum": {
+      "hazir": "Hazır",
+      "baglaniyor": "Bağlanıyor…",
+      "canli": "Canlı",
+      "bitti": "Bitti",
+      "hata": "Hata"
+    },
+    "sure": "Süre",
+    "maliyet": "Tahmini maliyet",
+    "maliyetNot": "OpenAI fiyatlarıyla (03.10.2026); canlı döküm ücreti hariç.",
+    "tokenlar": "Token — ses: {sesGirdi} giriş / {sesCikti} çıkış · yazı: {metinGirdi} giriş / {metinCikti} çıkış.",
+    "transkripsiyon": "Döküm modeli: {model}",
+    "mikrofonYok": "Mikrofon izni verilmedi: yalnız yazarak sorabilirsin, cevap yine sesli gelir.",
+    "bitisSebebi": {
+      "kullanici": "Görüşmeyi bitirdin.",
+      "sure_doldu": "10 dakika doldu, görüşme kapandı.",
+      "arka_plan": "Sekme arka plana geçti, görüşme kapandı.",
+      "baglanti_koptu": "Bağlantı koptu.",
+      "hata": "Görüşme bir hatayla kapandı."
+    },
+    "dokum": "Döküm (saklanmaz)",
+    "bildir": "Bildir",
+    "bildirIpucu": "Son soru-cevabı JSON olarak indirir ve tarayıcı konsoluna yazar. Sunucuya gönderilmez.",
+    "bildirYok": "Bildirilecek bir soru-cevap yok.",
+    "bildirIndi": "Son soru-cevap JSON olarak indirildi (sunucuya gönderilmedi).",
+    "bos": "Başlat'a bas ve konuş. Örnek: “Bugün kaç araç yolda?” · “W-GF-113 nerede?” · “Bugün kim izinli?”",
+    "rol": {
+      "kullanici": "Sen",
+      "asistan": "Asistan",
+      "arac": "Veri",
+      "sistem": "Sistem"
+    },
+    "aracCalisiyor": "{ad} çalışıyor…",
+    "aracBitti": "{ad} · {sn} sn",
+    "aracHata": "{ad} · hata",
+    "yaziYer": "Yazarak sor… (Enter gönderir)",
+    "gonder": "Gönder",
+    "hata": {
+      "oturum": "Oturum açılamadı: {kod}",
+      "openai": "OpenAI bağlantısı kurulamadı (HTTP {durum}).",
+      "genel": "Beklenmeyen hata: {mesaj}",
+      "oturumGecersiz": "Oturumun geçersiz görünüyor; sayfayı yenileyip yeniden giriş yap."
+    }
   }
 }

@@ -191,6 +191,62 @@ async function istek(
   return govde;
 }
 
+/** Teşhis ucunun tek ölçümü — yalnız durum kodu, süre ve motorun kendi kodu. */
+export type TeshisOlcumu = {
+  kod: number | null;
+  ms: number;
+  motor?: number | string | null;
+  km?: number | null;
+};
+
+/** `app/api/rota/saglik` cevabı. Sır, adres, kullanıcı verisi GİRMEZ. */
+export type RotaTeshisi = {
+  saglik: TeshisOlcumu;
+  sirsiz: TeshisOlcumu;
+  vroom: TeshisOlcumu;
+  osrm: TeshisOlcumu;
+};
+
+const TESHIS_ZAMAN_ASIMI_MS = 15_000;
+/** Sabit test noktaları (Dornbirn → Bregenz, Lustenau) — kullanıcı verisi değil. */
+const TESHIS_PROBLEMI = JSON.stringify({
+  vehicles: [{ id: 1, profile: "car", start: [9.7417, 47.4125] }],
+  jobs: [
+    { id: 1, location: [9.7471, 47.5031] },
+    { id: 2, location: [9.6589, 47.4268] },
+  ],
+});
+const TESHIS_ROTASI = "9.7417,47.4125;9.7471,47.5031";
+
+/** Ham ölçüm: istek() gibi hata FIRLATMAZ — 401 de ölçümün parçası. */
+async function olc(
+  url: string,
+  init: RequestInit,
+  sir: string | null
+): Promise<{ kod: number | null; ms: number; govde: unknown }> {
+  const t0 = performance.now();
+  try {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        ...(init.headers as Record<string, string> | undefined),
+        ...(sir ? { Authorization: `Bearer ${sir}` } : {}),
+      },
+      signal: AbortSignal.timeout(TESHIS_ZAMAN_ASIMI_MS),
+      cache: "no-store",
+    });
+    let govde: unknown = null;
+    try {
+      govde = await res.json();
+    } catch {
+      // gövde JSON değil (401'in gövdesi önemsiz)
+    }
+    return { kod: res.status, ms: Math.round(performance.now() - t0), govde };
+  } catch {
+    return { kod: null, ms: Math.round(performance.now() - t0), govde: null };
+  }
+}
+
 export class VroomSaglayici implements RotaOptimizasyonSaglayici {
   readonly kod = "vroom" as const;
   readonly ad = "VROOM + OSRM";
@@ -231,5 +287,40 @@ export class VroomSaglayici implements RotaOptimizasyonSaglayici {
 
   maliyetUsd(): number {
     return 0;
+  }
+
+  /**
+   * TEŞHİS — panelden motora uçtan uca yol (vekil + tünel) girişsiz ölçülsün
+   * diye (`app/api/rota/saglik`, yalnız önizleme). Dört ölçüm: vekil sağlığı,
+   * sırsız istek (401 beklenir), sırlı VROOM, sırlı OSRM. Cevaba yalnız durum
+   * kodu, süre ve motorun kodu girer — sır ve adres GİRMEZ.
+   */
+  async teshis(): Promise<RotaTeshisi> {
+    const kok = new URL(this.ayar.vroomUrl).origin;
+    const post: RequestInit = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: TESHIS_PROBLEMI,
+    };
+    const osrmUrl =
+      `${this.ayar.osrmUrl.replace(/\/+$/, "")}/route/v1/driving/${TESHIS_ROTASI}?overview=false`;
+    const saglik = await olc(`${kok}/health`, { method: "GET" }, null);
+    const sirsiz = await olc(this.ayar.vroomUrl, post, null);
+    const vroom = await olc(this.ayar.vroomUrl, post, this.ayar.sir);
+    const osrm = await olc(osrmUrl, { method: "GET" }, this.ayar.sir);
+    const v = vroom.govde as { code?: number } | null;
+    const o = osrm.govde as { code?: string; routes?: { distance?: number }[] } | null;
+    const metre = o?.routes?.[0]?.distance;
+    return {
+      saglik: { kod: saglik.kod, ms: saglik.ms },
+      sirsiz: { kod: sirsiz.kod, ms: sirsiz.ms },
+      vroom: { kod: vroom.kod, ms: vroom.ms, motor: v?.code ?? null },
+      osrm: {
+        kod: osrm.kod,
+        ms: osrm.ms,
+        motor: o?.code ?? null,
+        km: typeof metre === "number" ? Math.round(metre / 100) / 10 : null,
+      },
+    };
   }
 }

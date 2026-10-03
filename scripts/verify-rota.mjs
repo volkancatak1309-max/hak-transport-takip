@@ -180,11 +180,13 @@ if (KAPALI_MOD) {
   durum = { sefer: seferSatiri(), duraklar: durakSatirlari() };
   const r = await rotaOner(SEFER, { baslangic: "sonraki", bitis: "acik", hareket: "08:00" });
   const u = await rotaUygula(SEFER, [durakId(0)], "x");
+  const ucu = await import("@/app/api/rota/saglik/route");
   console.log(
     JSON.stringify({
       oner: r.ok ? "ok" : r.hata,
       uygula: u.ok ? "ok" : u.hata,
       yetenek: rotaYetenegi(),
+      saglikUcu: (await ucu.GET()).status,
       sorgu: (globalThis.__CAGRILAR__ ?? []).length,
     })
   );
@@ -705,8 +707,8 @@ const AYAR = { baslangic: "sonraki", bitis: "acik", hareket: "08:00" };
     /* aşağıda düşer */
   }
   iddia(
-    "modül kapalı → öneri ve Uygula reddedildi, yetenek null, DB'ye tek sorgu yok",
-    kapali?.oner === "modul_kapali" && kapali?.uygula === "modul_kapali" && kapali?.yetenek === null && kapali?.sorgu === 0,
+    "modül kapalı → öneri ve Uygula reddedildi, yetenek null, teşhis ucu 404, DB'ye tek sorgu yok",
+    kapali?.oner === "modul_kapali" && kapali?.uygula === "modul_kapali" && kapali?.yetenek === null && kapali?.saglikUcu === 404 && kapali?.sorgu === 0,
     JSON.stringify(kapali) ?? alt.stderr.slice(0, 200)
   );
 }
@@ -768,6 +770,45 @@ bolum("G · ROTA VEKİLİ (servis/rota-vekil)");
     iddia("1 MB üstü gövde motora İLETİLMEDİ, vekil ayakta", gelen.length === once && ayakta, `cevap=${buyuk.kod}`);
     await new Promise((ok) => setTimeout(ok, 100));
     iddia("vekil günlüğünde koordinat YOK", log.includes('"yol":"/osrm/route"') && !log.includes("47.4125") && !log.includes("9.7417"));
+
+    // Teşhis (app/api/rota/saglik): vekil üzerinden dört ölçüm; cevapta sır/adres YOK.
+    const ts = await new VroomSaglayici({ vroomUrl: `${taban}/vroom`, osrmUrl: `${taban}/osrm`, sir: SIR }).teshis();
+    iddia(
+      "teşhis: sağlık 200 · sırsız 401 · sırlı VROOM 200/code 0 · sırlı OSRM 200/Ok",
+      ts.saglik.kod === 200 && ts.sirsiz.kod === 401 && ts.vroom.kod === 200 && ts.vroom.motor === 0 && ts.osrm.kod === 200 && ts.osrm.motor === "Ok",
+      JSON.stringify(ts)
+    );
+    const ucu = await import("@/app/api/rota/saglik/route");
+    const ENV_ADLARI = ["VERCEL_ENV", "ROTA_SAGLAYICI", "ROTA_VROOM_URL", "ROTA_OSRM_URL", "ROTA_SERVIS_SIRRI", "ROTA_YEDEK"];
+    const eskiEnv = Object.fromEntries(ENV_ADLARI.map((k) => [k, process.env[k]]));
+    try {
+      process.env.VERCEL_ENV = "production";
+      iddia("teşhis ucu ÜRETİMDE 404", (await ucu.GET()).status === 404);
+      process.env.VERCEL_ENV = "preview";
+      delete process.env.ROTA_YEDEK;
+      process.env.ROTA_SAGLAYICI = "sahte";
+      iddia("teşhis ucu VROOM dışı sağlayıcıda 503", (await ucu.GET()).status === 503);
+      Object.assign(process.env, {
+        ROTA_SAGLAYICI: "vroom",
+        ROTA_VROOM_URL: `${taban}/vroom`,
+        ROTA_OSRM_URL: `${taban}/osrm`,
+        ROTA_SERVIS_SIRRI: SIR,
+      });
+      const c = await ucu.GET();
+      const j = await c.json();
+      const metin = JSON.stringify(j);
+      iddia(
+        "teşhis ucu önizlemede 200: dört ölçüm, cevapta sır ve adres YOK",
+        c.status === 200 && j.saglik?.kod === 200 && j.sirsiz?.kod === 401 && j.vroom?.kod === 200 && j.osrm?.kod === 200 &&
+          !metin.includes(SIR) && !metin.includes(String(port)) && c.headers.get("cache-control") === "no-store",
+        metin.slice(0, 160)
+      );
+    } finally {
+      for (const k of ENV_ADLARI) {
+        if (eskiEnv[k] === undefined) delete process.env[k];
+        else process.env[k] = eskiEnv[k];
+      }
+    }
   } finally {
     vekil.kill();
     ust.close();

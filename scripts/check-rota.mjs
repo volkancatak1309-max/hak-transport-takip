@@ -2,7 +2,7 @@
 /**
  * ROTA OPTİMİZASYONU MUHAFIZI — `npm run lint:rota` (verify zincirinde, build'den SONRA).
  *
- * Dokuz kaynak kuralı + bir derleme kuralı. Her biri bir kararın karşılığı;
+ * On bir kaynak kuralı + bir derleme kuralı. Her biri bir kararın karşılığı;
  * kural düşerse karar sessizce delinmiş demektir.
  *
  *   R1  Sağlayıcı/anahtar/kota/kayıt modülleri `server-only`.
@@ -18,6 +18,9 @@
  *   R8  "use server" dosyasından tip dışa aktarımı yok (02.10.2026 olayı).
  *   R9  Vekil: sabit süreli sır karşılaştırması, sırsız BAŞLAMAZ, log'da gövde
  *       ve sorgu dizgisi yok.
+ *   R10 i18n: rota ad alanı üç dilde.
+ *   R11 Teşhis ucu (`/api/rota/saglik`): üretimde ve modül kapalıyken 404, kapı
+ *       motor çağrısından önce, cevapta sır/adres yok.
  *   P1  (build sonrası) istemci paketinde sunucu izleri YOK: env adları,
  *       Google uçları, OAuth akışı, kota anahtarı.
  */
@@ -148,6 +151,18 @@ kural("R10 i18n: rota ad alanı üç dilde", () => {
     const j = JSON.parse(oku(`messages/${dil}.json`));
     if (!j.rota?.dugme || !j.rota?.servis_yok) bul("R10", `messages/${dil}.json rota.dugme/servis_yok yok`);
   }
+});
+
+kural("R11 teşhis ucu: üretimde ve modül kapalıyken 404, kapı motordan önce, cevapta sır yok", () => {
+  const s = oku("app/api/rota/saglik/route.ts");
+  const kapi = s.search(/process\.env\.VERCEL_ENV === "production" \|\| !ROTA_OPTIMIZASYONU_ENABLED\)\s*\{\s*return new NextResponse\(null, \{ status: 404 \}\)/);
+  const cagri = s.indexOf(".teshis(");
+  if (kapi < 0) bul("R11", "teşhis ucunda üretim + modül kapısı (404) yok");
+  else if (cagri < 0 || cagri < kapi) bul("R11", "teşhis ucu motoru kapıdan önce çağırıyor");
+  const v = oku("lib/rota/vroom.ts");
+  const govde = v.slice(v.indexOf("async teshis("));
+  const donus = govde.slice(govde.indexOf("return {"), govde.indexOf("\n  }\n"));
+  if (/\bsir\b|ayar|Url/.test(donus)) bul("R11", "teshis() cevabına sır ya da adres giriyor");
 });
 
 // ── P1: build sonrası istemci paketi ─────────────────────────────────────────

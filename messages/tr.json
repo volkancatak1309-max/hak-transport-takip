@@ -2736,7 +2736,25 @@
       "oturum": "Oturum açılamadı: {kod}",
       "openai": "OpenAI bağlantısı kurulamadı (HTTP {durum}).",
       "genel": "Beklenmeyen hata: {mesaj}",
-      "oturumGecersiz": "Oturumun geçersiz görünüyor; sayfayı yenileyip yeniden giriş yap."
-    }
+      "oturumGecersiz": "Oturumun geçersiz görünüyor; sayfayı yenileyip yeniden giriş yap.",
+      "canli": "GPT-Live oturumu açılamadı: {kod}"
+    },
+    "motor": "Motor",
+    "motorRealtime": "OpenAI Realtime",
+    "motorLive": "GPT-Live (gpt-live-1)",
+    "arkaModel": "arka model: {model}",
+    "dokumModeli": "Döküm modeli",
+    "dokumSadeNot": "döküm ipuçları kabul edilmedi, yalnız modelle açıldı",
+    "dil": "Dil",
+    "dilYok": "—",
+    "dilAdi": {
+      "tr": "Türkçe",
+      "de": "Almanca",
+      "en": "İngilizce"
+    },
+    "canliNot": "GPT-Live'da araçları arka model çalıştırır; marin bu motorda yok.",
+    "canliMaliyetNot": "GPT-Live ses oturumu 0,05 $/dk (saniye bazlı); arka model ve araç kullanımı hariç.",
+    "arkaTokenlar": "Arka model token: {girdi} giriş / {cikti} çıkış.",
+    "canliYaziKapali": "GPT-Live motorunda yazılı giriş belgelenmediği için kapalı."
   }
 }

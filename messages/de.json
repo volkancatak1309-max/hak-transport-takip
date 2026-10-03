@@ -2736,7 +2736,25 @@
       "oturum": "Sitzung konnte nicht geöffnet werden: {kod}",
       "openai": "Verbindung zu OpenAI fehlgeschlagen (HTTP {durum}).",
       "genel": "Unerwarteter Fehler: {mesaj}",
-      "oturumGecersiz": "Deine Anmeldung scheint ungültig zu sein; Seite neu laden und erneut anmelden."
-    }
+      "oturumGecersiz": "Deine Anmeldung scheint ungültig zu sein; Seite neu laden und erneut anmelden.",
+      "canli": "GPT-Live-Sitzung konnte nicht geöffnet werden: {kod}"
+    },
+    "motor": "Engine",
+    "motorRealtime": "OpenAI Realtime",
+    "motorLive": "GPT-Live (gpt-live-1)",
+    "arkaModel": "Backend-Modell: {model}",
+    "dokumModeli": "Transkriptionsmodell",
+    "dokumSadeNot": "Transkriptionshinweise nicht akzeptiert, nur mit dem Modell geöffnet",
+    "dil": "Sprache",
+    "dilYok": "—",
+    "dilAdi": {
+      "tr": "Türkisch",
+      "de": "Deutsch",
+      "en": "Englisch"
+    },
+    "canliNot": "Bei GPT-Live führt das Backend-Modell die Tools aus; marin gibt es bei dieser Engine nicht.",
+    "canliMaliyetNot": "GPT-Live-Sprachsitzung 0,05 $/Min. (sekundengenau); ohne Backend-Modell und Tool-Nutzung.",
+    "arkaTokenlar": "Backend-Token: {girdi} Eingabe / {cikti} Ausgabe.",
+    "canliYaziKapali": "Bei GPT-Live ist die Texteingabe aus, weil sie nicht dokumentiert ist."
   }
 }

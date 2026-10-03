@@ -2736,7 +2736,25 @@
       "oturum": "Could not open a session: {kod}",
       "openai": "Could not connect to OpenAI (HTTP {durum}).",
       "genel": "Unexpected error: {mesaj}",
-      "oturumGecersiz": "Your sign-in looks invalid; reload the page and sign in again."
-    }
+      "oturumGecersiz": "Your sign-in looks invalid; reload the page and sign in again.",
+      "canli": "Could not open a GPT-Live session: {kod}"
+    },
+    "motor": "Engine",
+    "motorRealtime": "OpenAI Realtime",
+    "motorLive": "GPT-Live (gpt-live-1)",
+    "arkaModel": "back end: {model}",
+    "dokumModeli": "Transcription model",
+    "dokumSadeNot": "transcription hints not accepted; opened with the model only",
+    "dil": "Language",
+    "dilYok": "—",
+    "dilAdi": {
+      "tr": "Turkish",
+      "de": "German",
+      "en": "English"
+    },
+    "canliNot": "With GPT-Live the back-end model runs the tools; marin is not available on this engine.",
+    "canliMaliyetNot": "GPT-Live voice session $0.05/min (billed per second); back-end model and tool use not included.",
+    "arkaTokenlar": "Back-end tokens: {girdi} in / {cikti} out.",
+    "canliYaziKapali": "Typed input is off for GPT-Live because it is not documented."
   }
 }

@@ -2691,8 +2691,6 @@
     "aciklama": "Demo only. The conversation is not stored: the transcript lives only in this tab and is gone when it closes. The assistant is read-only.",
     "model": "Model",
     "ses": "Voice",
-    "adaySesler": "Candidates",
-    "digerSesler": "Other voices",
     "baslat": "Start",
     "bitir": "End",
     "durum": {
@@ -2720,15 +2718,16 @@
     "bildirIpucu": "Downloads the last question and answer as JSON and writes it to the browser console. Nothing is sent to the server.",
     "bildirYok": "There is no question and answer to report.",
     "bildirIndi": "Last question and answer downloaded as JSON (not sent to the server).",
-    "bos": "Press Start and speak. Example: “How many vehicles are on the road today?” · “Where is W-GF-113?” · “Who is on leave today?”",
+    "bos": "Press Start and speak. Example: “How many vehicles are on the road today?” · “Where is W-GF-113?” · “Which vehicle did not work yesterday?” · “Who was the weakest driver in the last 7 days?”",
     "rol": {
       "kullanici": "You",
       "asistan": "Assistant",
       "arac": "Data",
-      "sistem": "System"
+      "sistem": "System",
+      "yazi": "Assistant · text"
     },
     "aracCalisiyor": "{ad} running…",
-    "aracBitti": "{ad} · {sn} s",
+    "aracBitti": "{ad} · server {sn} s · total {toplam} s",
     "aracHata": "{ad} · error",
     "yaziYer": "Type a question… (Enter sends)",
     "gonder": "Send",
@@ -2752,9 +2751,26 @@
       "de": "German",
       "en": "English"
     },
-    "canliNot": "With GPT-Live the back-end model runs the tools; marin is not available on this engine.",
-    "canliMaliyetNot": "GPT-Live voice session $0.05/min (billed per second); back-end model and tool use not included.",
-    "arkaTokenlar": "Back-end tokens: {girdi} in / {cikti} out.",
-    "canliYaziKapali": "Typed input is off for GPT-Live because it is not documented."
+    "canliNot": "With GPT-Live the back-end model runs the tools.",
+    "sesSabit": "{ses} (fixed)",
+    "onbellekTam": "from cache",
+    "onbellekKismi": "partly from cache",
+    "onIsitma": "Warm-up (cold times): {liste}",
+    "onIsitmaHata": "Warm-up failed: {kod}",
+    "dilDuzeltme": "Language corrected ({dil}): first audio of the new answer {ms} ms after the cut.",
+    "akisNotu": {
+      "yanit_kuyrukta": "The previous response was still running; the new one will be requested when it ends.",
+      "yanit_yeniden_istendi": "No reply to the response request; requesting again.",
+      "dil_duzeltiliyor": "The answer started in the wrong language — cutting it and regenerating in the right one.",
+      "yarim_cagri_silindi": "A tool call left incomplete by an interruption was deleted."
+    },
+    "yaziGonderiliyor": "Typed question sent…",
+    "yaziBitti": "Text path ({model}) · {sn} s · tools: {araclar}",
+    "yaziHata": "No typed answer received: {kod}",
+    "canliMaliyetTam": "GPT-Live voice layer $0.05/min + back-end model ({model}): {girdi} input / {cikti} output tokens.",
+    "canliMaliyetSesKatmani": "Voice layer only ($0.05/min, billed per second), back-end model excluded — its usage has not been reported yet.",
+    "yaziMaliyet": "Text path: {girdi} input / {cikti} output tokens.",
+    "canliYaziYolu": "GPT-Live does not document typed input, so typed questions go through a separate text path ({model}) with the same tools and instructions. No voice session needed.",
+    "canliSesSuresi": "Billed voice duration (server): {sn} s."
   }
 }

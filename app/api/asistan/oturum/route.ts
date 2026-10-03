@@ -3,10 +3,9 @@ import { sesliAracSemalari } from "@/lib/asistan-sesli-araclar";
 import {
   SESLI_MODELLER,
   SESLI_OTURUM_SINIRI_SN,
-  SESLI_SESLER,
+  SESLI_SES,
   SESLI_TRANSKRIPSIYON_MODELLERI,
   SESLI_VARSAYILAN_MODEL,
-  SESLI_VARSAYILAN_SES,
   SESLI_VARSAYILAN_TRANSKRIPSIYON,
 } from "@/lib/asistan-sesli-sabitler";
 
@@ -14,13 +13,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/asistan/oturum `{ model?, ses?, transkripsiyon? }` — sesli asistan için kısa
- * ömürlü OpenAI Realtime anahtarı (Faz 1 web prototipi; döküm modeli seçimi Faz 1b).
+ * POST /api/asistan/oturum `{ model?, transkripsiyon? }` — sesli asistan için kısa ömürlü
+ * OpenAI Realtime anahtarı (Faz 1 web prototipi; döküm modeli seçimi Faz 1b). Ses SABİT
+ * (Faz 1c, Volkan: `marin`) — istemciden ses alınmaz, gövdedeki `ses` yok sayılır.
  *
  * Kapı sırası: `ASISTAN_SESLI=1` değil → 404 · kiracı galzura-demo değil → 404 ·
  * oturum yok → 401 · yönetici değil (şoför, filo şefi) → 403. Sonra izin listesi:
- * model ve ses listede değilse 400 (sessizce varsayılana düşülmez — ölçüm yapan kişi
- * hangi modeli dinlediğini bilmeli).
+ * model listede değilse 400 (sessizce varsayılana düşülmez — ölçüm yapan kişi hangi
+ * modeli dinlediğini bilmeli).
  *
  * Yanıtta yalnız 60 sn yaşayan anahtar var; `OPENAI_API_KEY` hiçbir gövdeye girmez.
  * Veritabanına bir şey yazılmaz.
@@ -31,16 +31,12 @@ export async function POST(req: Request) {
 
   const govde = ((await req.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
   const model = govde.model === undefined ? SESLI_VARSAYILAN_MODEL : govde.model;
-  const ses = govde.ses === undefined ? SESLI_VARSAYILAN_SES : govde.ses;
 
   if (typeof model !== "string" || !SESLI_MODELLER.some((m) => m.id === model)) {
     return Response.json(
       { ok: false, error: "invalid", alan: "model", gecerli: SESLI_MODELLER.map((m) => m.id) },
       { status: 400 }
     );
-  }
-  if (typeof ses !== "string" || !(SESLI_SESLER as readonly string[]).includes(ses)) {
-    return Response.json({ ok: false, error: "invalid", alan: "ses", gecerli: SESLI_SESLER }, { status: 400 });
   }
   const transkripsiyon = govde.transkripsiyon === undefined ? SESLI_VARSAYILAN_TRANSKRIPSIYON : govde.transkripsiyon;
   if (
@@ -55,7 +51,6 @@ export async function POST(req: Request) {
 
   const r = await istemciSirriUret({
     model,
-    ses,
     transkripsiyon,
     workerId: kapi.workerId,
     araclar: sesliAracSemalari(),
@@ -79,7 +74,7 @@ export async function POST(req: Request) {
       istemciSirri: r.deger,
       bitis: r.bitis,
       model,
-      ses,
+      ses: SESLI_SES,
       transkripsiyon: r.transkripsiyon,
       dokumSade: r.dokumSade,
       // Talimat sır değil: tarayıcı kullanıcının dili değişince "Current user language"

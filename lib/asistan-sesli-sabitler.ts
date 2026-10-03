@@ -55,26 +55,11 @@ export const SESLI_MODELLER: readonly SesliModel[] = [
 
 export const SESLI_VARSAYILAN_MODEL = "gpt-realtime-2.1";
 
-/** OpenAI'ın güncel ses listesi (client_secrets başvurusu, 03.10.2026). */
-export const SESLI_SESLER = [
-  "alloy",
-  "ash",
-  "ballad",
-  "coral",
-  "echo",
-  "sage",
-  "shimmer",
-  "verse",
-  "marin",
-  "cedar",
-] as const;
-
 /**
- * İki kadın tınılı ADAY (karar 3) — menüde en üstte. Seçim Volkan'ın kulağına kalır.
- * `marin` OpenAI'ın Realtime için önerdiği iki sesten biri; `coral` ikinci aday.
+ * SES SABİT (Volkan, Faz 1c): Realtime = `marin`. Seçim menüden kalktı; sunucu istemciden
+ * ses almaz, bu sabiti kullanır.
  */
-export const SESLI_ADAY_SESLER: readonly string[] = ["marin", "coral"];
-export const SESLI_VARSAYILAN_SES = "marin";
+export const SESLI_SES = "marin";
 
 /** Karar 1: tek konuşma 10 dk. Gün/ay sınırları sonraki fazda (migration gerekir). */
 export const SESLI_OTURUM_SINIRI_SN = 600;
@@ -101,22 +86,24 @@ export type SesliMotor = (typeof SESLI_MOTORLAR)[number];
  */
 export const CANLI_MODEL = "gpt-live-1";
 export const CANLI_ARKA_MODEL = "gpt-6-luna";
-/** GPT-Live sesleri (live-conversations rehberi). `marin` bu motorda YOK. Portekizce iki ses dışarıda. */
-export const CANLI_SESLER = [
-  "quartz",
-  "ripple",
-  "vesper",
-  "willow",
-  "stone",
-  "gleam",
-  "meridian",
-  "beacon",
-  "delta",
-  "cinder",
-] as const;
-export const CANLI_VARSAYILAN_SES = "quartz";
+/** SES SABİT (Volkan, Faz 1c): GPT-Live = `gleam` (`marin` bu motorda yok). */
+export const CANLI_SES = "gleam";
 /** Ses oturumu dakikası (saniye bazlı faturalama). Arka model ve araç kullanımı AYRICA. */
 export const CANLI_DAKIKA_USD = 0.05;
+
+/**
+ * YAZILI YOL (Faz 1c): GPT-Live'da metin girişi belgelenmediği için yazılı sorular ayrı bir
+ * metin yoluyla (Responses API) cevaplanır — aynı araçlar, aynı talimat. Model: belgenin
+ * "en verimli" diye önerdiği güncel küçük model (models sayfası, 03.10.2026); aynı model
+ * GPT-Live'ın önerilen arka modeli.
+ */
+export const YAZI_MODEL = "gpt-6-luna";
+/** `gpt-6-luna` 1M token fiyatı (models sayfası, 03.10.2026): giriş 0,1 $ · çıkış 0,5 $. */
+export const LUNA_FIYAT = { girdi: 0.1, cikti: 0.5 } as const;
+
+export function lunaMaliyetUsd(girdi: number, cikti: number): number {
+  return (girdi * LUNA_FIYAT.girdi + cikti * LUNA_FIYAT.cikti) / 1_000_000;
+}
 
 export type SesliDil = "tr" | "de" | "en";
 export const SESLI_DIL_ADI: Record<SesliDil, string> = { tr: "Turkish", de: "German", en: "English" };
@@ -140,11 +127,11 @@ const IPUCU: Record<SesliDil, { harf: RegExp | null; kelime: RegExp }> = {
 };
 
 /**
- * Basit dil tahmini (döküm metninden). Kanıt yoksa `null` — o zaman dil DEĞİŞMEZ.
- * Kısa dolgu sesleri ("eee", "ok") dil kanıtı sayılmaz (rehber: "ignore short filler
- * sounds … for language detection").
+ * Dil kanıtı (döküm metninden): kazanan dil ve PUANI (özel harf 2, ipucu kelime 1).
+ * Kanıt yoksa ya da iki dil berabereyse `null`. Kısa dolgu sesleri ("eee", "ok") dil
+ * kanıtı sayılmaz (rehber: "ignore short filler sounds … for language detection").
  */
-export function dilTahmin(metin: string): SesliDil | null {
+export function dilPuani(metin: string): { dil: SesliDil; puan: number } | null {
   // Harf ipucu ÖZGÜN metinde (İ/ı ayrımı kaybolmasın); kelimeler yerel-bağımsız küçük harfte
   // (`toLocaleLowerCase("tr")` İngilizce "Is"i "ıs" yapıp kalıbı bozardı).
   const m = ` ${metin.toLowerCase()} `;
@@ -155,7 +142,12 @@ export function dilTahmin(metin: string): SesliDil | null {
   });
   puan.sort((a, b) => b[1] - a[1]);
   const [ilk, ikinci] = puan;
-  return ilk[1] >= 1 && ilk[1] > ikinci[1] ? ilk[0] : null;
+  return ilk[1] >= 1 && ilk[1] > ikinci[1] ? { dil: ilk[0], puan: ilk[1] } : null;
+}
+
+/** Basit dil tahmini. Kanıt yoksa `null` — o zaman dil DEĞİŞMEZ. */
+export function dilTahmin(metin: string): SesliDil | null {
+  return dilPuani(metin)?.dil ?? null;
 }
 
 /** `response.done` → `response.usage`'tan toplanan token sayıları. */

@@ -2691,8 +2691,6 @@
     "aciklama": "Nur Demo. Das Gespräch wird nicht gespeichert: Das Transkript bleibt nur in diesem Tab und verschwindet beim Schließen. Der Assistent liest nur.",
     "model": "Modell",
     "ses": "Stimme",
-    "adaySesler": "Kandidaten",
-    "digerSesler": "Weitere Stimmen",
     "baslat": "Starten",
     "bitir": "Beenden",
     "durum": {
@@ -2720,15 +2718,16 @@
     "bildirIpucu": "Lädt die letzte Frage und Antwort als JSON herunter und schreibt sie in die Browser-Konsole. Nichts geht an den Server.",
     "bildirYok": "Es gibt keine Frage und Antwort zum Melden.",
     "bildirIndi": "Letzte Frage und Antwort als JSON heruntergeladen (nicht an den Server gesendet).",
-    "bos": "Auf Starten drücken und sprechen. Beispiel: „Wie viele Fahrzeuge sind heute unterwegs?“ · „Wo ist W-GF-113?“ · „Wer hat heute Urlaub?“",
+    "bos": "Auf Starten drücken und sprechen. Beispiel: „Wie viele Fahrzeuge sind heute unterwegs?“ · „Wo ist W-GF-113?“ · „Welches Fahrzeug war gestern nicht im Einsatz?“ · „Wer war in den letzten 7 Tagen der schwächste Fahrer?“",
     "rol": {
       "kullanici": "Du",
       "asistan": "Assistent",
       "arac": "Daten",
-      "sistem": "System"
+      "sistem": "System",
+      "yazi": "Assistent · Text"
     },
     "aracCalisiyor": "{ad} läuft…",
-    "aracBitti": "{ad} · {sn} s",
+    "aracBitti": "{ad} · Server {sn} s · gesamt {toplam} s",
     "aracHata": "{ad} · Fehler",
     "yaziYer": "Schriftlich fragen… (Enter sendet)",
     "gonder": "Senden",
@@ -2752,9 +2751,26 @@
       "de": "Deutsch",
       "en": "Englisch"
     },
-    "canliNot": "Bei GPT-Live führt das Backend-Modell die Tools aus; marin gibt es bei dieser Engine nicht.",
-    "canliMaliyetNot": "GPT-Live-Sprachsitzung 0,05 $/Min. (sekundengenau); ohne Backend-Modell und Tool-Nutzung.",
-    "arkaTokenlar": "Backend-Token: {girdi} Eingabe / {cikti} Ausgabe.",
-    "canliYaziKapali": "Bei GPT-Live ist die Texteingabe aus, weil sie nicht dokumentiert ist."
+    "canliNot": "Bei GPT-Live führt das Backend-Modell die Tools aus.",
+    "sesSabit": "{ses} (fest)",
+    "onbellekTam": "aus dem Cache",
+    "onbellekKismi": "teilweise aus dem Cache",
+    "onIsitma": "Vorwärmen (Kaltzeiten): {liste}",
+    "onIsitmaHata": "Vorwärmen fehlgeschlagen: {kod}",
+    "dilDuzeltme": "Sprache korrigiert ({dil}): erster Ton der neuen Antwort {ms} ms nach dem Abbruch.",
+    "akisNotu": {
+      "yanit_kuyrukta": "Die vorherige Antwort lief noch; die neue wird angefordert, sobald sie fertig ist.",
+      "yanit_yeniden_istendi": "Keine Rückmeldung auf die Antwortanfrage; wird erneut angefordert.",
+      "dil_duzeltiliyor": "Die Antwort begann in der falschen Sprache — sie wird abgebrochen und in der richtigen Sprache neu erzeugt.",
+      "yarim_cagri_silindi": "Ein beim Unterbrechen unvollständiger Tool-Aufruf wurde gelöscht."
+    },
+    "yaziGonderiliyor": "Schriftliche Frage gesendet…",
+    "yaziBitti": "Textweg ({model}) · {sn} s · Tools: {araclar}",
+    "yaziHata": "Keine schriftliche Antwort erhalten: {kod}",
+    "canliMaliyetTam": "GPT-Live-Sprachschicht 0,05 $/Min. + Backend-Modell ({model}): {girdi} Eingabe- / {cikti} Ausgabe-Token.",
+    "canliMaliyetSesKatmani": "Nur Sprachschicht (0,05 $/Min., sekundengenau), ohne Backend-Modell — dessen Verbrauch wurde noch nicht gemeldet.",
+    "yaziMaliyet": "Textweg: {girdi} Eingabe- / {cikti} Ausgabe-Token.",
+    "canliYaziYolu": "Bei GPT-Live ist Texteingabe nicht dokumentiert; schriftliche Fragen beantwortet ein eigener Textweg ({model}) mit denselben Tools und Anweisungen. Keine Sprachsitzung nötig.",
+    "canliSesSuresi": "Abgerechnete Sprechdauer (Server): {sn} s."
   }
 }

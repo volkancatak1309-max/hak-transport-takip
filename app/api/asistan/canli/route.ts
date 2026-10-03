@@ -1,12 +1,6 @@
 import { sesliKapi, canliOturumAc } from "@/lib/asistan-sesli";
 import { sesliAracSemalari } from "@/lib/asistan-sesli-araclar";
-import {
-  CANLI_ARKA_MODEL,
-  CANLI_MODEL,
-  CANLI_SESLER,
-  CANLI_VARSAYILAN_SES,
-  SESLI_OTURUM_SINIRI_SN,
-} from "@/lib/asistan-sesli-sabitler";
+import { CANLI_ARKA_MODEL, CANLI_MODEL, CANLI_SES, SESLI_OTURUM_SINIRI_SN } from "@/lib/asistan-sesli-sabitler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +9,8 @@ export const dynamic = "force-dynamic";
 const SDP_TAVANI = 100_000;
 
 /**
- * POST /api/asistan/canli `{ sdp, ses? }` — GPT-Live (gpt-live-1) motoru, Faz 1b kıyası.
+ * POST /api/asistan/canli `{ sdp }` — GPT-Live (gpt-live-1) motoru, Faz 1b kıyası. Ses SABİT
+ * (Faz 1c, Volkan: `gleam`) — istemciden ses alınmaz.
  *
  * Realtime'dan farkı: tarayıcıya kısa ömürlü anahtar VERİLMEZ. Sunucu, tarayıcının WebRTC
  * teklifini proje anahtarıyla OpenAI `POST /v1/live/sessions`'a iletir ve cevap SDP'sini
@@ -34,12 +29,7 @@ export async function POST(req: Request) {
   if (typeof sdp !== "string" || !sdp.startsWith("v=") || sdp.length > SDP_TAVANI) {
     return Response.json({ ok: false, error: "invalid", alan: "sdp" }, { status: 400 });
   }
-  const ses = govde.ses === undefined ? CANLI_VARSAYILAN_SES : govde.ses;
-  if (typeof ses !== "string" || !(CANLI_SESLER as readonly string[]).includes(ses)) {
-    return Response.json({ ok: false, error: "invalid", alan: "ses", gecerli: CANLI_SESLER }, { status: 400 });
-  }
-
-  const r = await canliOturumAc({ sdp, ses, workerId: kapi.workerId, araclar: sesliAracSemalari() });
+  const r = await canliOturumAc({ sdp, workerId: kapi.workerId, araclar: sesliAracSemalari() });
   if (!r.ok) {
     return Response.json(
       {
@@ -60,7 +50,7 @@ export async function POST(req: Request) {
       oturumId: r.oturumId,
       model: CANLI_MODEL,
       arkaModel: CANLI_ARKA_MODEL,
-      ses,
+      ses: CANLI_SES,
       sinirSn: SESLI_OTURUM_SINIRI_SN,
     },
     { headers: { "Cache-Control": "no-store" } }

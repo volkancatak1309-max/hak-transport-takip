@@ -9,57 +9,67 @@ import {
   CANLI_ARKA_MODEL,
   CANLI_DAKIKA_USD,
   CANLI_MODEL,
-  CANLI_SESLER,
-  CANLI_VARSAYILAN_SES,
-  SESLI_ADAY_SESLER,
+  CANLI_SES,
   SESLI_DIL_ADI,
   SESLI_MODELLER,
   SESLI_OTURUM_SINIRI_SN,
-  SESLI_SESLER,
+  SESLI_SES,
   SESLI_TRANSKRIPSIYON_MODELLERI,
   SESLI_VARSAYILAN_MODEL,
-  SESLI_VARSAYILAN_SES,
   SESLI_VARSAYILAN_TRANSKRIPSIYON,
+  YAZI_MODEL,
   bosKullanim,
+  dilPuani,
   dilTahmin,
   kullanimEkle,
+  lunaMaliyetUsd,
   tahminiMaliyetUsd,
   type SesliDil,
   type SesliKullanim,
   type SesliMotor,
 } from "@/lib/asistan-sesli-sabitler";
+import { realtimeAkis, type AkisEylemi, type RealtimeAkis } from "@/lib/asistan-sesli-akis";
 
 /**
- * SESLİ ASİSTAN — tarayıcı tarafı (Faz 1 web prototipi; Faz 1b: iki motor + dil güvencesi).
+ * SESLİ ASİSTAN — tarayıcı tarafı (Faz 1 web prototipi; 1b iki motor + dil güvencesi;
+ * 1c akış düzeltmesi, ön ısıtma, yazılı yol, sabit sesler).
  *
  * REALTIME: mikrofon → `/api/asistan/oturum` (60 sn'lik anahtar) → WebRTC teklifi
- * `api.openai.com/v1/realtime/calls`'a → olaylar "oai-events" kanalında. Araç isteği
- * (`response.done` içinde `function_call`, yalnız `status: completed`) `/api/asistan/arac`'a
- * gider; sonuç `function_call_output` + `response.create` ile döner.
+ * `api.openai.com/v1/realtime/calls`'a → olaylar "oai-events" kanalında. Protokol kararları
+ * (araç ne zaman çalışır, `response.create` ne zaman gider, dil kilidi) SAF durum
+ * makinesinde: `lib/asistan-sesli-akis.ts` (Test 2 kilitlenmesinin kök sebebi orada).
+ * Bu dosya yalnız eylemleri uygular ve dökümü çizer.
  *
  * GPT-LIVE: mikrofon → WebRTC teklifi `/api/asistan/canli`'ya (sunucu `/v1/live/sessions`)
  * → cevap SDP'si. Döküm `session.input_transcript.delta` / `session.output_transcript.delta`
  * (kimliksiz, "bitti" olayı yok → satırlar konuşmacı değişince açılır). Araç isteği arka
  * modelden `response.event` zarfıyla gelir; sonuç `response.item.create` + `response.create`.
+ * Yazılı soru belgelenmediği için AYRI metin yoluna gider: `/api/asistan/yazi`.
  *
- * DİL GÜVENCESİ (karar 4): kullanıcının cümlesi bitince dili tespit edilir (`gpt-transcribe`
- * `languages` döndürürse o, yoksa metin sezgisi); değiştiyse Realtime'da `session.update`
- * ile talimata "Current user language" bölümü eklenir, Live'da `session.instructions.append`.
+ * ÖN ISITMA (1c): görüşme başlarken ve açık kaldıkça (45 sn'de bir) `/api/asistan/arac`
+ * `{isit:true}` ağır araçların 60 sn'lik önbelleğini doldurur; ilk ısıtmanın süreleri
+ * döküme yazılır (soğuk süre ölçümü).
  *
  * SAKLAMA YOK (karar 5): döküm yalnız bellekte; "Bildir" konsola + indirilen JSON'a yazar.
  * Kısa ömürlü anahtar yerel değişkende kalır, duruma ya da loga yazılmaz.
  */
 
-type Rol = "kullanici" | "asistan" | "arac" | "sistem";
+type Rol = "kullanici" | "asistan" | "yazi" | "arac" | "sistem";
 type Satir = { id: string; rol: Rol; metin: string };
 type Durum = "hazir" | "baglaniyor" | "canli" | "bitti" | "hata";
 type BitisSebebi = "kullanici" | "sure_doldu" | "arka_plan" | "baglanti_koptu" | "hata";
 type Olay = Record<string, unknown>;
-type AracCagrisi = { name: string; call_id: string; arguments: string };
 type OturumBilgisi = { motor: SesliMotor; model: string; ses: string; ek: string | null; dokumSade: boolean };
+type IsitmaSatiri = { ad: string; sureMs: number; onbellek: string; hata: string | null };
 
-const DIGER_SESLER = SESLI_SESLER.filter((s) => !SESLI_ADAY_SESLER.includes(s));
 const YAZIYOR = "…";
+const TIK_MS = 250;
+/** Önbellek ömrü 60 sn; 40 sn'den eski kayıt yenilenir → 45 sn'lik ısıtma önbelleği hiç boşaltmaz. */
+const ISITMA_ARALIGI_MS = 45_000;
+const ARAC_ISTEK_ZAMAN_ASIMI_MS = 25_000;
+const YAZI_GECMIS_TAVANI = 12;
+/** Bu hatalar akışın olağan parçası; durum makinesi kendi notunu yazar, ham hata gösterilmez. */
+const SESSIZ_HATALAR = new Set(["conversation_already_has_active_response", "response_cancel_not_active"]);
 
 function sureMetni(sn: number): string {
   const m = Math.floor(sn / 60);
@@ -72,17 +82,8 @@ async function jsonOku(r: Response): Promise<Record<string, unknown> | null> {
   return (await r.json().catch(() => null)) as Record<string, unknown> | null;
 }
 
-function dilBolumu(dil: SesliDil): string {
-  const ad = SESLI_DIL_ADI[dil];
-  return `\n\n# Current user language\n- Current user language: ${ad}. Reply in ${ad} until the user switches.`;
-}
-
-/** `gpt-transcribe` algılanan dili `languages: [{ code }]` olarak verir; diğerleri vermez. */
-function olayDili(olay: Olay): SesliDil | null {
-  const diller = Array.isArray(olay.languages) ? (olay.languages as Olay[]) : [];
-  const kod = String(diller[0]?.code ?? "").slice(0, 2).toLowerCase();
-  return kod === "tr" || kod === "de" || kod === "en" ? kod : null;
-}
+const sayi = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const saniye = (ms: unknown) => (sayi(ms) / 1000).toFixed(1);
 
 const SECIM = "h-9 w-full rounded-md border border-input bg-background px-2 text-sm";
 
@@ -90,18 +91,20 @@ export function AsistanSesliClient() {
   const t = useTranslations("asistanSesli");
   const [motor, setMotor] = useState<SesliMotor>("realtime");
   const [model, setModel] = useState(SESLI_VARSAYILAN_MODEL);
-  const [ses, setSes] = useState(SESLI_VARSAYILAN_SES);
-  const [canliSes, setCanliSes] = useState<string>(CANLI_VARSAYILAN_SES);
   const [transkripsiyon, setTranskripsiyon] = useState<string>(SESLI_VARSAYILAN_TRANSKRIPSIYON);
   const [durum, setDurum] = useState<Durum>("hazir");
   const [satirlar, setSatirlar] = useState<Satir[]>([]);
   const [gecenSn, setGecenSn] = useState(0);
   const [kullanim, setKullanim] = useState<SesliKullanim>(bosKullanim);
   const [arkaToken, setArkaToken] = useState({ girdi: 0, cikti: 0 });
+  const [yaziToken, setYaziToken] = useState({ girdi: 0, cikti: 0 });
+  /** GPT-Live: sunucunun saydığı ses süresi (`session.usage.updated` → `usage.seconds`). */
+  const [canliSesSn, setCanliSesSn] = useState<number | null>(null);
   const [hataMetni, setHataMetni] = useState<string | null>(null);
   const [bilgi, setBilgi] = useState<string | null>(null);
   const [bitisSebebi, setBitisSebebi] = useState<BitisSebebi | null>(null);
   const [yazi, setYazi] = useState("");
+  const [yaziBekliyor, setYaziBekliyor] = useState(false);
   const [mikrofonYok, setMikrofonYok] = useState(false);
   const [dil, setDil] = useState<SesliDil | null>(null);
   const [oturumBilgisi, setOturumBilgisi] = useState<OturumBilgisi | null>(null);
@@ -111,15 +114,20 @@ export function AsistanSesliClient() {
   const micRef = useRef<MediaStream | null>(null);
   const sesRef = useRef<HTMLAudioElement | null>(null);
   const sayacRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tikRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isitmaRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const baslangicRef = useRef(0);
   const satirSayaciRef = useRef(0);
+  /** Her görüşme bir numara alır; eski görüşmeden geç gelen sonuç yeni görüşmeye yazılmaz. */
+  const oturumNoRef = useRef(0);
   /** Bağlanırken "Bitir"e basıldıysa kurulum yarıda bırakılır. */
   const iptalRef = useRef(false);
   /** OpenAI öğe kimliği → döküm satırı (Realtime; döküm sesten SONRA gelebilir). */
   const satirKimligiRef = useRef(new Map<string, string>());
   const motorRef = useRef<SesliMotor>("realtime");
-  /** Realtime talimatı (sunucudan); dil değişince sonuna dil bölümü eklenip tazelenir. */
-  const talimatRef = useRef("");
+  /** Realtime protokol durum makinesi (görüşme başına bir tane). */
+  const akisRef = useRef<RealtimeAkis | null>(null);
+  const uygulaRef = useRef<(eylemler: AkisEylemi[]) => void>(() => {});
   const dilRef = useRef<SesliDil | null>(null);
   /** Live: kimliksiz döküm akışında o an kimin konuştuğu ve satırı. */
   const canliSiraRef = useRef<{ rol: Rol | null; satirId: string | null; kullaniciMetni: string }>({
@@ -127,6 +135,8 @@ export function AsistanSesliClient() {
     satirId: null,
     kullaniciMetni: "",
   });
+  /** Live: aynı araç çağrısı iki kez çalışmasın. */
+  const canliCagrilarRef = useRef(new Set<string>());
 
   const satirEkle = useCallback((rol: Rol, metin: string, anahtar?: string): string => {
     satirSayaciRef.current += 1;
@@ -147,10 +157,13 @@ export function AsistanSesliClient() {
 
   /** Bağlantıyı kapatır. YALNIZ referanslar — sayfadan çıkarken de çağrılır, durum yazmaz. */
   const kapat = useCallback(() => {
-    if (sayacRef.current) {
-      clearInterval(sayacRef.current);
-      sayacRef.current = null;
+    for (const ref of [sayacRef, tikRef, isitmaRef]) {
+      if (ref.current) {
+        clearInterval(ref.current);
+        ref.current = null;
+      }
     }
+    akisRef.current = null;
     const pc = pcRef.current;
     pcRef.current = null;
     if (motorRef.current === "live" && dcRef.current?.readyState === "open") {
@@ -197,65 +210,98 @@ export function AsistanSesliClient() {
 
   useEffect(() => () => kapat(), [kapat]);
 
-  /** Dil değiştiyse motora bildirir (karar 4 ek güvencesi). */
-  const dilGuncelle = useCallback(
-    (yeni: SesliDil | null) => {
-      if (!yeni || yeni === dilRef.current) return;
-      dilRef.current = yeni;
-      setDil(yeni);
-      if (motorRef.current === "realtime") {
-        // Talimat boşsa güncelleme YOLLANMAZ: `instructions` tamamen değişir, yalnız dil
-        // satırı kalırsa asistan bütün kurallarını kaybederdi.
-        if (!talimatRef.current) return;
-        gonder({ type: "session.update", session: { type: "realtime", instructions: talimatRef.current + dilBolumu(yeni) } });
-      } else {
-        const ad = SESLI_DIL_ADI[yeni];
-        gonder({
-          type: "session.instructions.append",
-          content: `Current user language: ${ad}. Reply in ${ad} until the user switches.`,
-          delegation_id: null,
-        });
-      }
-    },
-    [gonder]
+  const onbellekEki = useCallback(
+    (d: unknown) => (d === "tam" ? ` · ${t("onbellekTam")}` : d === "kismi" ? ` · ${t("onbellekKismi")}` : ""),
+    [t]
   );
 
-  const aracCalistir = useCallback(
-    async (cagri: AracCagrisi) => {
-      const satirId = satirEkle("arac", t("aracCalisiyor", { ad: cagri.name }));
-      let cikti: unknown;
+  /** Aracı sunucuda çalıştırır, döküme sunucu + toplam süreyi yazar, modelin göreceği sonucu döndürür. */
+  const aracIste = useCallback(
+    async (ad: string, argumanlar: string): Promise<unknown> => {
+      const satirId = satirEkle("arac", t("aracCalisiyor", { ad }));
+      const t0 = performance.now();
+      const kesici = new AbortController();
+      const zamanlayici = setTimeout(() => kesici.abort(), ARAC_ISTEK_ZAMAN_ASIMI_MS);
       try {
         const r = await fetch("/api/asistan/arac", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ad: cagri.name, girdi: cagri.arguments }),
+          body: JSON.stringify({ ad, girdi: argumanlar }),
+          signal: kesici.signal,
         });
         const j = await jsonOku(r);
+        const toplam = ((performance.now() - t0) / 1000).toFixed(1);
         if (r.ok && j?.ok) {
-          cikti = j.sonuc;
-          const sn = (Number(j.sureMs ?? 0) / 1000).toFixed(1);
-          satirYaz(satirId, () => t("aracBitti", { ad: cagri.name, sn }));
-        } else {
-          cikti = { hata: j?.error ?? "arac_ucu_hatasi", durum: r.status };
-          satirYaz(satirId, () => t("aracHata", { ad: cagri.name }));
+          satirYaz(satirId, () => `${t("aracBitti", { ad, sn: saniye(j.sureMs), toplam })}${onbellekEki(j.onbellek)}`);
+          return j.sonuc;
         }
+        satirYaz(satirId, () => t("aracHata", { ad }));
+        return { hata: j?.error ?? "arac_ucu_hatasi", durum: r.status };
       } catch {
-        cikti = { hata: "ag_hatasi" };
-        satirYaz(satirId, () => t("aracHata", { ad: cagri.name }));
-      }
-      const item = { type: "function_call_output", call_id: cagri.call_id, output: JSON.stringify(cikti) };
-      if (motorRef.current === "live") {
-        gonder({ type: "response.item.create", item });
-        gonder({ type: "response.create" });
-      } else {
-        gonder({ type: "conversation.item.create", item });
+        satirYaz(satirId, () => t("aracHata", { ad }));
+        return { hata: "ag_hatasi" };
+      } finally {
+        clearTimeout(zamanlayici);
       }
     },
-    [gonder, satirEkle, satirYaz, t]
+    [onbellekEki, satirEkle, satirYaz, t]
+  );
+
+  /** Realtime durum makinesinin eylemlerini uygular. */
+  const uygula = useCallback(
+    (eylemler: AkisEylemi[]) => {
+      for (const e of eylemler) {
+        switch (e.tur) {
+          case "gonder":
+            gonder(e.olay);
+            break;
+          case "arac": {
+            const oturum = oturumNoRef.current;
+            void aracIste(e.cagri.name, e.cagri.arguments).then((cikti) => {
+              const akis = akisRef.current;
+              if (!akis || oturumNoRef.current !== oturum) return;
+              uygulaRef.current(akis.aracBitti(e.cagri, cikti, Date.now()));
+            });
+            break;
+          }
+          case "dil":
+            dilRef.current = e.dil;
+            setDil(e.dil);
+            break;
+          case "olcum":
+            satirEkle("sistem", t("dilDuzeltme", { dil: t(`dilAdi.${e.dil}`), ms: e.ms }));
+            break;
+          case "not":
+            satirEkle("sistem", t(`akisNotu.${e.kod}`));
+            break;
+        }
+      }
+    },
+    [aracIste, gonder, satirEkle, t]
+  );
+
+  useEffect(() => {
+    uygulaRef.current = uygula;
+  }, [uygula]);
+
+  /** Live: dil değiştiyse motora bildirir (Realtime'da bunu durum makinesi yapar). */
+  const canliDilGuncelle = useCallback(
+    (yeni: SesliDil | null) => {
+      if (!yeni || yeni === dilRef.current) return;
+      dilRef.current = yeni;
+      setDil(yeni);
+      const ad = SESLI_DIL_ADI[yeni];
+      gonder({
+        type: "session.instructions.append",
+        content: `Current user language: ${ad}. Reply in ${ad} until the user switches.`,
+        delegation_id: null,
+      });
+    },
+    [gonder]
   );
 
   const realtimeOlay = useCallback(
-    async (olay: Olay) => {
+    (olay: Olay) => {
       const kullaniciSatiri = () => {
         const anahtar = `k:${String(olay.item_id ?? "")}`;
         return satirKimligiRef.current.get(anahtar) ?? satirEkle("kullanici", YAZIYOR, anahtar);
@@ -265,6 +311,7 @@ export function AsistanSesliClient() {
         return satirKimligiRef.current.get(anahtar) ?? satirEkle("asistan", "", anahtar);
       };
 
+      // Döküm — yalnız ekran.
       switch (olay.type) {
         case "input_audio_buffer.committed":
           kullaniciSatiri();
@@ -277,7 +324,6 @@ export function AsistanSesliClient() {
         case "conversation.item.input_audio_transcription.completed": {
           const metin = String(olay.transcript ?? "").trim();
           satirYaz(kullaniciSatiri(), (m) => metin || m);
-          dilGuncelle(olayDili(olay) ?? dilTahmin(metin));
           break;
         }
         case "response.output_audio_transcript.delta":
@@ -292,27 +338,23 @@ export function AsistanSesliClient() {
           if (son) satirYaz(asistanSatiri(), () => son);
           break;
         }
-        case "response.done": {
-          const yanit = (olay.response ?? {}) as Olay;
-          setKullanim((k) => kullanimEkle(k, yanit.usage));
-          if (yanit.status !== "completed") break;
-          const cikti = Array.isArray(yanit.output) ? (yanit.output as Olay[]) : [];
-          const cagrilar = cikti.filter((o) => o.type === "function_call") as unknown as AracCagrisi[];
-          if (cagrilar.length === 0) break;
-          for (const c of cagrilar) await aracCalistir(c);
-          gonder({ type: "response.create" });
+        case "response.done":
+          setKullanim((k) => kullanimEkle(k, ((olay.response ?? {}) as Olay).usage));
           break;
-        }
         case "error": {
           const e = (olay.error ?? {}) as Olay;
-          satirEkle("sistem", String(e.message ?? e.code ?? "error"));
+          if (!SESSIZ_HATALAR.has(String(e.code ?? ""))) satirEkle("sistem", String(e.message ?? e.code ?? "error"));
           break;
         }
         default:
           break;
       }
+
+      // Protokol — durum makinesi.
+      const akis = akisRef.current;
+      if (akis) uygula(akis.olay(olay, Date.now()));
     },
-    [aracCalistir, dilGuncelle, gonder, satirEkle, satirYaz]
+    [satirEkle, satirYaz, uygula]
   );
 
   const canliOlay = useCallback(
@@ -322,13 +364,18 @@ export function AsistanSesliClient() {
         let id = sira.satirId;
         if (sira.rol !== rol || !id) {
           // Konuşmacı kullanıcıdan asistana geçti → kullanıcının cümlesi bitti, dili tespit et.
-          if (rol === "asistan" && sira.rol === "kullanici") dilGuncelle(dilTahmin(sira.kullaniciMetni));
+          if (rol === "asistan" && sira.rol === "kullanici") canliDilGuncelle(dilTahmin(sira.kullaniciMetni));
           id = satirEkle(rol, "");
           sira.rol = rol;
           sira.satirId = id;
           if (rol === "kullanici") sira.kullaniciMetni = "";
         }
-        if (rol === "kullanici") sira.kullaniciMetni += parca;
+        if (rol === "kullanici") {
+          sira.kullaniciMetni += parca;
+          // Faz 1c: dili cümle bitmeden, yeterli kanıt birikince bildir (cevap başlamadan).
+          const kanit = dilPuani(sira.kullaniciMetni);
+          if (kanit && kanit.puan >= 2) canliDilGuncelle(kanit.dil);
+        }
         satirYaz(id, (m) => m + parca);
       };
 
@@ -343,20 +390,33 @@ export function AsistanSesliClient() {
           const ic = (olay.event ?? {}) as Olay;
           const oge = (ic.item ?? {}) as Olay;
           if (ic.type === "response.output_item.done" && oge.type === "function_call") {
+            const callId = String(oge.call_id ?? "");
+            if (!callId || canliCagrilarRef.current.has(callId)) break;
+            canliCagrilarRef.current.add(callId);
             sira.rol = "arac";
-            await aracCalistir(oge as unknown as AracCagrisi);
+            const oturum = oturumNoRef.current;
+            const cikti = await aracIste(String(oge.name ?? ""), String(oge.arguments ?? ""));
+            if (oturumNoRef.current !== oturum) break;
+            gonder({ type: "response.item.create", item: { type: "function_call_output", call_id: callId, output: JSON.stringify(cikti) } });
+            gonder({ type: "response.create" });
           } else if (ic.type === "response.completed") {
             const u = (((ic.response ?? {}) as Olay).usage ?? {}) as Olay;
-            setArkaToken((o) => ({
-              girdi: o.girdi + (typeof u.input_tokens === "number" ? u.input_tokens : 0),
-              cikti: o.cikti + (typeof u.output_tokens === "number" ? u.output_tokens : 0),
-            }));
+            setArkaToken((o) => ({ girdi: o.girdi + sayi(u.input_tokens), cikti: o.cikti + sayi(u.output_tokens) }));
           }
           break;
         }
-        case "session.closed":
+        case "session.usage.updated": {
+          // Belge: "Use the latest usage.seconds as the running total for voice duration."
+          const u = (olay.usage ?? {}) as Olay;
+          if (typeof u.seconds === "number") setCanliSesSn(u.seconds);
+          break;
+        }
+        case "session.closed": {
+          const u = (olay.usage ?? {}) as Olay;
+          if (typeof u.seconds === "number") setCanliSesSn(u.seconds);
           bitir("baglanti_koptu");
           break;
+        }
         case "error": {
           const e = (olay.error ?? {}) as Olay;
           satirEkle("sistem", String(e.message ?? e.code ?? "error"));
@@ -366,24 +426,55 @@ export function AsistanSesliClient() {
           break;
       }
     },
-    [aracCalistir, bitir, dilGuncelle, satirEkle, satirYaz]
+    [aracIste, bitir, canliDilGuncelle, gonder, satirEkle, satirYaz]
+  );
+
+  /** Ön ısıtma: ilk çağrının süreleri döküme yazılır (soğuk ölçüm); periyodik çağrılar sessiz. */
+  const isit = useCallback(
+    async (ilk: boolean) => {
+      const oturum = oturumNoRef.current;
+      try {
+        const r = await fetch("/api/asistan/arac", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isit: true, ilk }),
+        });
+        const j = await jsonOku(r);
+        if (!ilk || oturumNoRef.current !== oturum) return;
+        if (r.ok && j?.ok && Array.isArray(j.isitma)) {
+          const liste = (j.isitma as IsitmaSatiri[])
+            .map((x) => `${x.ad} ${saniye(x.sureMs)} sn${x.hata ? ` (${x.hata})` : ""}`)
+            .join(" · ");
+          satirEkle("sistem", t("onIsitma", { liste }));
+        } else {
+          satirEkle("sistem", t("onIsitmaHata", { kod: String(j?.error ?? r.status) }));
+        }
+      } catch {
+        if (ilk && oturumNoRef.current === oturum) satirEkle("sistem", t("onIsitmaHata", { kod: "ag" }));
+      }
+    },
+    [satirEkle, t]
   );
 
   const baslat = async () => {
     if (durum === "baglaniyor" || durum === "canli") return;
+    oturumNoRef.current += 1;
     setHataMetni(null);
     setBilgi(null);
     setBitisSebebi(null);
     setSatirlar([]);
     setKullanim(bosKullanim());
     setArkaToken({ girdi: 0, cikti: 0 });
+    setYaziToken({ girdi: 0, cikti: 0 });
+    setCanliSesSn(null);
     setGecenSn(0);
     setOturumBilgisi(null);
     setDil(null);
     satirKimligiRef.current.clear();
     canliSiraRef.current = { rol: null, satirId: null, kullaniciMetni: "" };
+    canliCagrilarRef.current.clear();
     dilRef.current = null;
-    talimatRef.current = "";
+    akisRef.current = null;
     iptalRef.current = false;
     motorRef.current = motor;
     setDurum("baglaniyor");
@@ -402,6 +493,8 @@ export function AsistanSesliClient() {
         mic?.getTracks().forEach((iz) => iz.stop());
         return;
       }
+      // Bağlantı kurulurken ağır araçlar önbelleğe alınır (soru gelmeden).
+      void isit(true);
 
       // Realtime: önce kısa ömürlü anahtar. Live: anahtar yok, SDP sunucudan geçer.
       let istemciSirri = "";
@@ -409,17 +502,17 @@ export function AsistanSesliClient() {
         const r = await fetch("/api/asistan/oturum", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model, ses, transkripsiyon }),
+          body: JSON.stringify({ model, transkripsiyon }),
         });
         const j = await jsonOku(r);
         if (!j) throw new Error(t("hata.oturumGecersiz"));
         if (!r.ok || !j.ok) throw new Error(t("hata.oturum", { kod: String(j.error ?? r.status) }));
         istemciSirri = String(j.istemciSirri ?? "");
-        talimatRef.current = String(j.talimat ?? "");
+        akisRef.current = realtimeAkis(String(j.talimat ?? ""));
         setOturumBilgisi({
           motor: "realtime",
           model: String(j.model ?? model),
-          ses: String(j.ses ?? ses),
+          ses: String(j.ses ?? SESLI_SES),
           ek: String(j.transkripsiyon ?? ""),
           dokumSade: j.dokumSade === true,
         });
@@ -455,6 +548,13 @@ export function AsistanSesliClient() {
           setGecenSn(sn);
           if (sn >= SESLI_OTURUM_SINIRI_SN) bitir("sure_doldu");
         }, 1000);
+        if (motor === "realtime") {
+          tikRef.current = setInterval(() => {
+            const akis = akisRef.current;
+            if (akis) uygulaRef.current(akis.tik(Date.now()));
+          }, TIK_MS);
+        }
+        isitmaRef.current = setInterval(() => void isit(false), ISITMA_ARALIGI_MS);
       });
       const isle = motor === "realtime" ? realtimeOlay : canliOlay;
       dc.addEventListener("message", (e) => {
@@ -486,7 +586,7 @@ export function AsistanSesliClient() {
         const r = await fetch("/api/asistan/canli", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sdp: teklif.sdp, ses: canliSes }),
+          body: JSON.stringify({ sdp: teklif.sdp }),
         });
         const j = await jsonOku(r);
         if (!j) throw new Error(t("hata.oturumGecersiz"));
@@ -498,7 +598,7 @@ export function AsistanSesliClient() {
         setOturumBilgisi({
           motor: "live",
           model: String(j.model ?? CANLI_MODEL),
-          ses: String(j.ses ?? canliSes),
+          ses: String(j.ses ?? CANLI_SES),
           ek: String(j.arkaModel ?? CANLI_ARKA_MODEL),
           dokumSade: false,
         });
@@ -513,16 +613,63 @@ export function AsistanSesliClient() {
     }
   };
 
+  const canli = durum === "canli";
+  const mesgul = durum === "baglaniyor" || canli;
+  /** Yazılı yolun motoru: seçim kutusu görüşme boyunca kilitli, yani açık görüşmenin motoru. */
+  const etkinMotor: SesliMotor = motor;
+  /** Maliyet göstergesi: son görüşmenin motoru (görüşme bitip seçim değişse de o görüşmeyi gösterir). */
+  const maliyetMotoru: SesliMotor = oturumBilgisi?.motor ?? motor;
+
+  /** GPT-Live yazılı yolu: `/api/asistan/yazi` — ses oturumundan bağımsız, aynı araçlar. */
+  const yaziSor = async (metin: string) => {
+    const gecmis = satirlar
+      .filter((s) => (s.rol === "kullanici" || s.rol === "asistan" || s.rol === "yazi") && s.metin && s.metin !== YAZIYOR)
+      .slice(-YAZI_GECMIS_TAVANI)
+      .map((s) => ({ rol: s.rol === "kullanici" ? "kullanici" : "asistan", metin: s.metin.slice(0, 2000) }));
+    satirEkle("kullanici", metin);
+    const satirId = satirEkle("arac", t("yaziGonderiliyor"));
+    setYaziBekliyor(true);
+    const kanit = dilTahmin(metin);
+    if (kanit && etkinMotor === "live") canliDilGuncelle(kanit);
+    try {
+      const r = await fetch("/api/asistan/yazi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metin, gecmis }),
+      });
+      const j = await jsonOku(r);
+      if (r.ok && j?.ok) {
+        const araclar = Array.isArray(j.araclar) ? (j.araclar as Record<string, unknown>[]) : [];
+        const aracMetni =
+          araclar.map((a) => `${String(a.ad)} ${saniye(a.sureMs)} sn${onbellekEki(a.onbellek)}`).join(", ") || "—";
+        satirYaz(satirId, () => t("yaziBitti", { model: String(j.model ?? YAZI_MODEL), sn: saniye(j.sureMs), araclar: aracMetni }));
+        satirEkle("yazi", String(j.metin ?? ""));
+        const k = (j.kullanim ?? {}) as Record<string, unknown>;
+        setYaziToken((o) => ({ girdi: o.girdi + sayi(k.girdi), cikti: o.cikti + sayi(k.cikti) }));
+      } else {
+        const kod = [j?.error, j?.saglayiciDurum, j?.saglayiciKod].filter(Boolean).join(" · ") || String(r.status);
+        satirYaz(satirId, () => t("yaziHata", { kod }));
+      }
+    } catch {
+      satirYaz(satirId, () => t("yaziHata", { kod: "ag" }));
+    } finally {
+      setYaziBekliyor(false);
+    }
+  };
+
   const yaziGonder = () => {
     const metin = yazi.trim();
-    if (!metin || durum !== "canli" || motorRef.current !== "realtime") return;
+    if (!metin) return;
+    if (etkinMotor === "live") {
+      if (yaziBekliyor) return;
+      setYazi("");
+      void yaziSor(metin);
+      return;
+    }
+    const akis = akisRef.current;
+    if (!canli || !akis) return;
     satirEkle("kullanici", metin);
-    dilGuncelle(dilTahmin(metin));
-    gonder({
-      type: "conversation.item.create",
-      item: { type: "message", role: "user", content: [{ type: "input_text", text: metin }] },
-    });
-    gonder({ type: "response.create" });
+    uygula(akis.metinGonder(metin, Date.now()));
     setYazi("");
   };
 
@@ -537,20 +684,21 @@ export function AsistanSesliClient() {
     const sonrasi = satirlar.slice(soruIndeksi + 1);
     const kayit = {
       tur: "sesli_asistan_bildirimi",
-      surum: 2,
+      surum: 3,
       an: new Date().toISOString(),
-      motor: oturumBilgisi?.motor ?? motor,
-      model: oturumBilgisi?.model ?? model,
-      ses: oturumBilgisi?.ses ?? ses,
+      motor: oturumBilgisi?.motor ?? etkinMotor,
+      model: oturumBilgisi?.model ?? (etkinMotor === "live" ? CANLI_MODEL : model),
+      ses: oturumBilgisi?.ses ?? (etkinMotor === "live" ? CANLI_SES : SESLI_SES),
       ek: oturumBilgisi?.ek ?? null,
       dil: dil,
       soru: satirlar[soruIndeksi].metin,
       cevap: sonrasi
-        .filter((s) => s.rol === "asistan")
+        .filter((s) => s.rol === "asistan" || s.rol === "yazi")
         .map((s) => s.metin)
         .join(" ")
         .trim(),
       araclar: sonrasi.filter((s) => s.rol === "arac").map((s) => s.metin),
+      sistem: sonrasi.filter((s) => s.rol === "sistem").map((s) => s.metin),
       oturumSn: gecenSn,
       not: "Faz 1 prototipi: sunucuya gönderilmez, saklanmaz.",
     };
@@ -564,13 +712,15 @@ export function AsistanSesliClient() {
     setBilgi(t("bildirIndi"));
   };
 
-  const canli = durum === "canli";
-  const mesgul = durum === "baglaniyor" || canli;
-  const aktifMotor = oturumBilgisi?.motor ?? motor;
+  const arkaVar = arkaToken.girdi + arkaToken.cikti > 0;
+  const yaziVar = yaziToken.girdi + yaziToken.cikti > 0;
   const maliyet =
-    aktifMotor === "live"
-      ? (gecenSn / 60) * CANLI_DAKIKA_USD
+    maliyetMotoru === "live"
+      ? ((canliSesSn ?? gecenSn) / 60) * CANLI_DAKIKA_USD +
+        lunaMaliyetUsd(arkaToken.girdi, arkaToken.cikti) +
+        lunaMaliyetUsd(yaziToken.girdi, yaziToken.cikti)
       : tahminiMaliyetUsd(oturumBilgisi?.model ?? model, kullanim);
+  const yaziAcik = etkinMotor === "live" ? !yaziBekliyor : canli;
 
   return (
     <div className="space-y-4">
@@ -612,35 +762,12 @@ export function AsistanSesliClient() {
                 </p>
               </div>
             )}
-            <label className="space-y-1 text-sm">
+            <div className="space-y-1 text-sm">
               <span className="text-muted-foreground">{t("ses")}</span>
-              {motor === "realtime" ? (
-                <select value={ses} onChange={(e) => setSes(e.target.value)} disabled={mesgul} className={SECIM}>
-                  <optgroup label={t("adaySesler")}>
-                    {SESLI_ADAY_SESLER.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label={t("digerSesler")}>
-                    {DIGER_SESLER.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-              ) : (
-                <select value={canliSes} onChange={(e) => setCanliSes(e.target.value)} disabled={mesgul} className={SECIM}>
-                  {CANLI_SESLER.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </label>
+              <p className="flex h-9 items-center text-sm">
+                {t("sesSabit", { ses: motor === "realtime" ? SESLI_SES : CANLI_SES })}
+              </p>
+            </div>
             {motor === "realtime" ? (
               <label className="space-y-1 text-sm">
                 <span className="text-muted-foreground">{t("dokumModeli")}</span>
@@ -682,9 +809,13 @@ export function AsistanSesliClient() {
             </span>
           </div>
 
-          {aktifMotor === "live" ? (
+          {maliyetMotoru === "live" ? (
             <p className="text-xs text-muted-foreground">
-              {t("canliMaliyetNot")} {t("arkaTokenlar", { girdi: arkaToken.girdi, cikti: arkaToken.cikti })}
+              {arkaVar
+                ? t("canliMaliyetTam", { model: CANLI_ARKA_MODEL, girdi: arkaToken.girdi, cikti: arkaToken.cikti })
+                : t("canliMaliyetSesKatmani")}
+              {canliSesSn !== null ? ` ${t("canliSesSuresi", { sn: canliSesSn })}` : ""}
+              {yaziVar ? ` ${t("yaziMaliyet", { girdi: yaziToken.girdi, cikti: yaziToken.cikti })}` : ""}
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
@@ -727,8 +858,8 @@ export function AsistanSesliClient() {
                 <p
                   key={s.id}
                   className={
-                    s.rol === "asistan"
-                      ? "text-sm"
+                    s.rol === "asistan" || s.rol === "yazi"
+                      ? "whitespace-pre-line text-sm"
                       : s.rol === "kullanici"
                         ? "text-sm font-medium"
                         : "text-xs text-muted-foreground"
@@ -741,28 +872,27 @@ export function AsistanSesliClient() {
             )}
           </div>
           {bilgi ? <p className="text-xs text-muted-foreground">{bilgi}</p> : null}
-          {motor === "live" ? (
-            <p className="text-xs text-muted-foreground">{t("canliYaziKapali")}</p>
-          ) : (
-            <div className="flex items-end gap-2">
-              <Textarea
-                value={yazi}
-                onChange={(e) => setYazi(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    yaziGonder();
-                  }
-                }}
-                placeholder={t("yaziYer")}
-                disabled={!canli}
-                rows={2}
-              />
-              <Button onClick={yaziGonder} disabled={!canli || !yazi.trim()}>
-                {t("gonder")}
-              </Button>
-            </div>
-          )}
+          {etkinMotor === "live" ? (
+            <p className="text-xs text-muted-foreground">{t("canliYaziYolu", { model: YAZI_MODEL })}</p>
+          ) : null}
+          <div className="flex items-end gap-2">
+            <Textarea
+              value={yazi}
+              onChange={(e) => setYazi(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  yaziGonder();
+                }
+              }}
+              placeholder={t("yaziYer")}
+              disabled={!yaziAcik}
+              rows={2}
+            />
+            <Button onClick={yaziGonder} disabled={!yaziAcik || !yazi.trim()}>
+              {t("gonder")}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

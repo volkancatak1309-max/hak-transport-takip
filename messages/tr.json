@@ -2691,8 +2691,6 @@
     "aciklama": "Yalnız demo. Konuşma kaydedilmez: döküm yalnız bu sekmede durur, sekme kapanınca silinir. Asistan salt okur.",
     "model": "Model",
     "ses": "Ses",
-    "adaySesler": "Aday sesler",
-    "digerSesler": "Diğer sesler",
     "baslat": "Başlat",
     "bitir": "Bitir",
     "durum": {
@@ -2720,15 +2718,16 @@
     "bildirIpucu": "Son soru-cevabı JSON olarak indirir ve tarayıcı konsoluna yazar. Sunucuya gönderilmez.",
     "bildirYok": "Bildirilecek bir soru-cevap yok.",
     "bildirIndi": "Son soru-cevap JSON olarak indirildi (sunucuya gönderilmedi).",
-    "bos": "Başlat'a bas ve konuş. Örnek: “Bugün kaç araç yolda?” · “W-GF-113 nerede?” · “Bugün kim izinli?”",
+    "bos": "Başlat'a bas ve konuş. Örnek: “Bugün kaç araç yolda?” · “W-GF-113 nerede?” · “Dün hangi araç çalışmadı?” · “Son 7 günün en kötü şoförü kim?”",
     "rol": {
       "kullanici": "Sen",
       "asistan": "Asistan",
       "arac": "Veri",
-      "sistem": "Sistem"
+      "sistem": "Sistem",
+      "yazi": "Asistan · yazı"
     },
     "aracCalisiyor": "{ad} çalışıyor…",
-    "aracBitti": "{ad} · {sn} sn",
+    "aracBitti": "{ad} · sunucu {sn} sn · toplam {toplam} sn",
     "aracHata": "{ad} · hata",
     "yaziYer": "Yazarak sor… (Enter gönderir)",
     "gonder": "Gönder",
@@ -2752,9 +2751,26 @@
       "de": "Almanca",
       "en": "İngilizce"
     },
-    "canliNot": "GPT-Live'da araçları arka model çalıştırır; marin bu motorda yok.",
-    "canliMaliyetNot": "GPT-Live ses oturumu 0,05 $/dk (saniye bazlı); arka model ve araç kullanımı hariç.",
-    "arkaTokenlar": "Arka model token: {girdi} giriş / {cikti} çıkış.",
-    "canliYaziKapali": "GPT-Live motorunda yazılı giriş belgelenmediği için kapalı."
+    "canliNot": "GPT-Live'da araçları arka model çalıştırır.",
+    "sesSabit": "{ses} (sabit)",
+    "onbellekTam": "önbellekten",
+    "onbellekKismi": "kısmen önbellekten",
+    "onIsitma": "Ön ısıtma (soğuk süreler): {liste}",
+    "onIsitmaHata": "Ön ısıtma yapılamadı: {kod}",
+    "dilDuzeltme": "Dil düzeltildi ({dil}): yeni cevabın ilk sesi kesmeden {ms} ms sonra.",
+    "akisNotu": {
+      "yanit_kuyrukta": "Önceki yanıt sürüyordu; yeni yanıt o bitince istenecek.",
+      "yanit_yeniden_istendi": "Yanıt isteğine dönüş gelmedi; yeniden isteniyor.",
+      "dil_duzeltiliyor": "Cevap yanlış dilde başladı — kesilip doğru dilde yeniden üretiliyor.",
+      "yarim_cagri_silindi": "Söz kesmede yarım kalan araç çağrısı silindi."
+    },
+    "yaziGonderiliyor": "Yazılı soru gönderildi…",
+    "yaziBitti": "Yazılı yol ({model}) · {sn} sn · araçlar: {araclar}",
+    "yaziHata": "Yazılı cevap alınamadı: {kod}",
+    "canliMaliyetTam": "GPT-Live ses katmanı 0,05 $/dk + arka model ({model}): {girdi} giriş / {cikti} çıkış token.",
+    "canliMaliyetSesKatmani": "Yalnız ses katmanı (0,05 $/dk, saniye bazlı), arka model hariç — arka model kullanımı henüz dönmedi.",
+    "yaziMaliyet": "Yazılı yol: {girdi} giriş / {cikti} çıkış token.",
+    "canliYaziYolu": "GPT-Live'da yazılı giriş belgelenmediği için yazılı sorular ayrı metin yoluyla ({model}) cevaplanır: aynı araçlar, aynı talimat. Ses oturumu gerekmez.",
+    "canliSesSuresi": "Faturalanan ses süresi (sunucu): {sn} sn."
   }
 }

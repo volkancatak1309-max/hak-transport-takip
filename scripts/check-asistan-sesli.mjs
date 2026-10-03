@@ -11,10 +11,20 @@
  *      dosyalarında `console.` yok (hata gövdesi/anahtar loga düşmesin).
  *   2) YAZMA YOK: araç katmanı yalnız `GET` işleyicisi içe aktarır, `supabaseAdmin`
  *      yok, rapor (`/reports`) ve patron (`/guvenlik`) uçları araç değil.
- *   3) KAPI: bayrak → kiracı → oturum sırası; üç uç da (oturum, arac, canli) ilk iş `sesliKapi()`;
- *      sayfa `sesliAcikMi()` + `notFound()`; bayrak varsayılanı kapalı ("1" dışı).
+ *   3) KAPI: bayrak → kiracı → oturum sırası; dört uç da (oturum, arac, canli, yazi) ilk iş
+ *      `sesliKapi()`; sayfa `sesliAcikMi()` + `notFound()`; bayrak varsayılanı kapalı ("1" dışı).
  * Ayrıca: `gpt-live-1` izin listesinde yok (Realtime API'yi desteklemiyor), 10 dk
  * sınırı, istemde kiracı adı ("HAK61") yok.
+ *
+ * Faz 1c (03.10.2026, Test 2 düzeltmeleri):
+ *   4) RAPOR KAPISI: uç yerine rapor fonksiyonu çağıran araç (`buildPerformanceReport`,
+ *      `buildFuelReport`) ÖNCE o raporun ucunun kapısını (`requireMobileAdmin`) koşturur.
+ *   5) ÖNBELLEK KİŞİYE ÖZEL: anahtar kiracı + kullanıcı; kimliksiz çağrı önbelleğe girmez.
+ *   6) SESLER SABİT: Realtime `marin`, GPT-Live `gleam`; uçlar istemciden ses okumaz.
+ *   7) TALİMAT: dil geçişi "aynı cevapta", tek kelimelik dolgu, koordinat okunmaz.
+ *   8) AKIŞ: Realtime protokol kararları durum makinesinde (`lib/asistan-sesli-akis.ts`);
+ *      istemci `conversation.item.create`'i kendisi yollamaz. Senaryolar ayrı betikte:
+ *      `lint:asistan-sesli-akis`.
  *
  * Kurallar önce gerçek dosyalarda geçmeli, sonra her kural için bozulmuş bir kopyada
  * DÜŞMELİ (arıza enjeksiyonu) — geçiyor olması tek başına çalıştığını kanıtlamaz.
@@ -35,6 +45,9 @@ const D = {
   oturum: "app/api/asistan/oturum/route.ts",
   arac: "app/api/asistan/arac/route.ts",
   canli: "app/api/asistan/canli/route.ts",
+  yazi: "app/api/asistan/yazi/route.ts",
+  onbellek: "lib/asistan-sesli-onbellek.ts",
+  akis: "lib/asistan-sesli-akis.ts",
   sayfa: "app/admin/asistan/page.tsx",
   istemci: "app/admin/asistan/AsistanSesliClient.tsx",
   tenant: "lib/tenant.ts",
@@ -66,7 +79,9 @@ const KURALLAR = [
     Object.values(f.hepsi).some((s) => /NEXT_PUBLIC_OPENAI/.test(s)) ? "NEXT_PUBLIC_OPENAI bulundu" : null],
   ["istemci process.env okumaz", (f) => (/process\.env/.test(kod(f[D.istemci])) ? "istemcide process.env" : null)],
   ["sunucu dosyalarında console yok", (f) => {
-    const kirli = [D.cekirdek, D.araclar, D.oturum, D.arac].filter((p) => /\bconsole\./.test(kod(f[p])));
+    const kirli = [D.cekirdek, D.araclar, D.oturum, D.arac, D.canli, D.yazi, D.onbellek, D.akis].filter((p) =>
+      /\bconsole\./.test(kod(f[p]))
+    );
     return kirli.length ? `console: ${kirli.join(", ")}` : null;
   }],
   ["araçlar yalnız GET içe aktarır", (f) => {
@@ -82,15 +97,17 @@ const KURALLAR = [
     const i = [govde.indexOf("!ASISTAN_SESLI"), govde.indexOf("TENANT !== SESLI_KIRACI"), govde.indexOf("getSession()"), govde.indexOf("requireAdmin()")];
     return i.every((x, k) => x >= 0 && (k === 0 || x > i[k - 1])) ? null : `sıra: ${i.join(",")}`;
   }],
-  ["üç uç da önce sesliKapi", (f) => {
-    const bozuk = [D.oturum, D.arac, D.canli].filter((p) => !/export async function POST\([^)]*\)\s*\{\s*const kapi = await sesliKapi\(\);\s*if \(!kapi\.ok\) return kapi\.response;/.test(kod(f[p])));
+  ["dört uç da önce sesliKapi", (f) => {
+    const bozuk = [D.oturum, D.arac, D.canli, D.yazi].filter((p) => !/export async function POST\([^)]*\)\s*\{\s*const kapi = await sesliKapi\(\);\s*if \(!kapi\.ok\) return kapi\.response;/.test(kod(f[p])));
     return bozuk.length ? `ilk iş kapı değil: ${bozuk.join(", ")}` : null;
   }],
   ["OpenAI uç adresleri yalnız çekirdekte", (f) => {
     const yer = Object.entries(f.hepsi)
-      .filter(([, s]) => /realtime\/client_secrets|v1\/live\/sessions/.test(kod(s)))
+      .filter(([, s]) => /realtime\/client_secrets|v1\/live\/sessions|v1\/responses/.test(kod(s)))
       .map(([p]) => p);
-    return yer.length === 1 && yer[0] === D.cekirdek ? null : `client_secrets/live sessions geçen: ${yer.join(", ") || "yok"}`;
+    return yer.length === 1 && yer[0] === D.cekirdek
+      ? null
+      : `client_secrets/live sessions/responses geçen: ${yer.join(", ") || "yok"}`;
   }],
   ["sayfa 404 kapısı", (f) => {
     const s = kod(f[D.sayfa]);
@@ -114,6 +131,50 @@ const KURALLAR = [
     if (!m[1].startsWith("# Language")) return "ilk bölüm dil kuralı değil";
     if (!/LAST message/.test(m[1])) return "dil kuralı 'son mesaj' demiyor";
     if (!/Do NOT announce what you are about to do/.test(m[1])) return "anons yasağı yok";
+    return null;
+  }],
+  // Faz 1c (Test 2): Realtime Almanca → Türkçe geçişte Almanca sürdü; GPT-Live "Bir bakayım"
+  // dedi ve koordinatı rakam rakam okudu. Üç kural metinde kalmalı.
+  ["istem Faz 1c kuralları (dil geçişi, tek kelime dolgu, koordinat)", (f) => {
+    const m = f[D.cekirdek].match(/const SISTEM_ISTEMI = `([\s\S]*?)`;/);
+    if (!m) return "istem bulunamadı";
+    if (!/switch immediately in this same answer/.test(m[1])) return "aynı cevapta dil geçişi kuralı yok";
+    if (!/at most ONE word/.test(m[1])) return "tek kelimelik dolgu kuralı yok";
+    if (!/Never read coordinates aloud/.test(m[1])) return "koordinat yasağı yok";
+    return null;
+  }],
+  // Rapor fonksiyonu çağıran araç, raporun ucunun kapısını AYNI istekle önce koşturmalı.
+  ["rapor çağrısından önce uç kapısı", (f) => {
+    const s = kod(f[D.araclar]);
+    if (!/async function raporKapisi[\s\S]{0,240}requireMobileAdmin\(/.test(s)) return "raporKapisi requireMobileAdmin çağırmıyor";
+    const cagri = (s.match(/await build(Performance|Fuel)Report\(/g) ?? []).length;
+    const korunan = (
+      s.match(/const kapali = await raporKapisi\([^)]*\);\s*if \(kapali\) return kapali;\s*const rapor = await build(Performance|Fuel)Report\(/g) ?? []
+    ).length;
+    return cagri > 0 && cagri === korunan ? null : `rapor çağrısı ${cagri}, kapılı ${korunan}`;
+  }],
+  // Önbellek bir yöneticinin verisini başka birine döndürmemeli.
+  ["önbellek kiracı + kullanıcı anahtarlı", (f) => {
+    const bozuk = [D.arac, D.yazi].filter((p) => !/kimlik(: |\s*=\s*)`\$\{TENANT\}\|\$\{kapi\.workerId\}`/.test(kod(f[p])));
+    if (bozuk.length) return `kimlik anahtarı eksik: ${bozuk.join(", ")}`;
+    if (!/if \(!anahtar\) return \{ deger: await uret\(\)/.test(kod(f[D.onbellek]))) return "kimliksiz çağrı önbelleğe giriyor";
+    return null;
+  }],
+  // Volkan kararı (Faz 1c): sesler seçilmez, sabit.
+  ["sesler sabit (marin / gleam)", (f) => {
+    if (!/export const SESLI_SES = "marin";/.test(f[D.sabitler])) return "Realtime sesi marin değil";
+    if (!/export const CANLI_SES = "gleam";/.test(f[D.sabitler])) return "GPT-Live sesi gleam değil";
+    const okuyan = [D.oturum, D.canli].filter((p) => /govde\.ses\b/.test(kod(f[p])));
+    if (okuyan.length) return `istemciden ses okunuyor: ${okuyan.join(", ")}`;
+    const s = kod(f[D.cekirdek]);
+    if (!/voice: SESLI_SES/.test(s) || !/voice: CANLI_SES/.test(s)) return "çekirdek sabit sesi kullanmıyor";
+    return null;
+  }],
+  // Test 2 kilitlenmesi istemcinin kendi response.create / item.create kararlarından doğdu.
+  ["Realtime akışı durum makinesinde", (f) => {
+    const s = kod(f[D.istemci]);
+    if (!/realtimeAkis\(/.test(s)) return "istemci durum makinesini kullanmıyor";
+    if (/type: "conversation\.item\.create"/.test(s)) return "istemci conversation.item.create'i kendisi yolluyor";
     return null;
   }],
 ];
@@ -141,7 +202,30 @@ const BOZMALAR = [
   ["kapı sırası bayrak → kiracı → oturum", (f) => {
     f[D.cekirdek] = f[D.cekirdek].replace("if (!ASISTAN_SESLI) return", "if (false) return");
   }],
-  ["üç uç da önce sesliKapi", (f) => { f[D.canli] = f[D.canli].replace("const kapi = await sesliKapi();", "const kapi = { ok: true };"); }],
+  ["dört uç da önce sesliKapi", (f) => { f[D.canli] = f[D.canli].replace("const kapi = await sesliKapi();", "const kapi = { ok: true };"); }],
+  ["dört uç da önce sesliKapi", (f) => { f[D.yazi] = f[D.yazi].replace("const kapi = await sesliKapi();", "const kapi = { ok: true };"); }],
+  ["OpenAI uç adresleri yalnız çekirdekte", (f) => {
+    f.hepsi[D.istemci] += '\nconst r = "https://api.openai.com/v1/responses";';
+  }],
+  ["istem Faz 1c kuralları (dil geçişi, tek kelime dolgu, koordinat)", (f) => {
+    f[D.cekirdek] = f[D.cekirdek].replace("switch immediately in this same answer", "switch from the next answer on");
+  }],
+  ["istem Faz 1c kuralları (dil geçişi, tek kelime dolgu, koordinat)", (f) => {
+    f[D.cekirdek] = f[D.cekirdek].replace("Never read coordinates aloud", "Read coordinates when asked");
+  }],
+  ["rapor çağrısından önce uç kapısı", (f) => {
+    f[D.araclar] = f[D.araclar].replace('const kapali = await raporKapisi(ctx, "/api/mobile/reports/fuel.csv");', "const kapali = null;");
+  }],
+  ["önbellek kiracı + kullanıcı anahtarlı", (f) => {
+    f[D.yazi] = f[D.yazi].replace("${TENANT}|${kapi.workerId}", "${TENANT}");
+  }],
+  ["sesler sabit (marin / gleam)", (f) => { f[D.sabitler] = f[D.sabitler].replace('SESLI_SES = "marin"', 'SESLI_SES = "alloy"'); }],
+  ["sesler sabit (marin / gleam)", (f) => {
+    f[D.oturum] = f[D.oturum].replace("const model = govde.model", "const ses = govde.ses;\n  const model = govde.model");
+  }],
+  ["Realtime akışı durum makinesinde", (f) => {
+    f[D.istemci] += '\nconst x = { type: "conversation.item.create" };';
+  }],
   ["OpenAI uç adresleri yalnız çekirdekte", (f) => {
     f.hepsi[D.istemci] += '\nconst u = "https://api.openai.com/v1/live/sessions";';
   }],

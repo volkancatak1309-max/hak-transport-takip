@@ -148,6 +148,18 @@ tırmanma.
 
 ---
 
+## 5a · Dil — kart metni okurun dilinde (03.10.2026)
+
+Kart başlığı/gerekçesi kural motorunda Türkçe şablonla üretilip **metin** olarak saklanıyordu;
+İngilizce/Almanca okur kartı Türkçe görüyordu (Sendigo dahil). Artık metin **okuma anında**
+`kural` + `kanit` + özne adından, okurun dilinde kuruluyor (`lib/haftalik-metin.ts`,
+sözlük `haftalikMetin`): panelde kullanıcının panel dili, mobilde `?dil=` → `Accept-Language` →
+kurulumun dili (`lib/istek-dili.ts`). Saklanan metnin dilindeki okur metni AYNEN görür
+(`kanit.metinDili`; eski satırlarda yok → `tr`). Üretici kayıt metnini kurulumun dilinde yazar.
+Migration gerekmedi. Dağıtım ve mobil yapılacaklar: `docs/runbook/aksiyon-kart-dili.md`.
+
+---
+
 ## 6 · Prova (QA harness)
 
 İki betik var; **ikisi de gerekli** ve `npm run verify` dışında elle koşulur

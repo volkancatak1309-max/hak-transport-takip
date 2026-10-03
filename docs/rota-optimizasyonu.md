@@ -3,9 +3,12 @@
 **sağlayıcı: VROOM+OSRM (18 Tem kurulumu), Google yedek**
 
 **Tarih:** 03.10.2026 · **Dal:** `rota-optimizasyonu` (taban `e486c4b`) · **Paket:** Premium
-**Durum:** Kod, test, belge hazır · 🔴 **main'e merge YOK, production deploy YOK** ·
-demo / HAK61 / Sendigo veritabanına **yazılmadı**, migration **yok**.
-⏳ **Volkan'da:** sunucuda vekil + tünel (§5), Vercel env (§6), isteğe bağlı Google yedeği (§9).
+**Durum:** Kod, test, belge hazır · ✅ **03.10: sunucu kurulumu (§5) ve galzura-demo
+önizleme env'i (§6) yapıldı, önizlemeden motora uçtan uca ölçüldü (§6.1)** ·
+🔴 **main'e merge YOK, production deploy YOK**, Production env'e ve HAK61/Sendigo'ya
+ekleme YOK · demo / HAK61 / Sendigo veritabanına **yazılmadı**, migration **yok**.
+⏳ **Volkan'da:** girişli ekran testi (§7 Aşama 0), merge kararı ve yayın sırası (§7),
+isteğe bağlı Google yedeği (§9).
 
 | İşaret | Anlamı |
 |---|---|
@@ -53,7 +56,7 @@ Sunucu: Hetzner CX33 (Nürnberg) · `178.104.143.207` · 4 vCPU · 8 GB.
 | Bağ | **`127.0.0.1:5000`** — yalnız localhost | **`127.0.0.1:3000`** — yalnız localhost |
 | Ayar | MLD, `car` profili | OSRM'e docker ağı `galzura-routing` üstünden `osrm-austria:5000` |
 | Yeniden başlama | `--restart unless-stopped` | `--restart unless-stopped` |
-| Durum (03.10) [DOĞRULANDI] | `Up 2 months` | `Up 2 months (healthy)` |
+| Durum (03.10, kurulumdan önce) [DOĞRULANDI] | `Up 2 months` (03.10'da yeniden kuruldu — §5.0) | `Up 2 months (healthy)` |
 | Bellek (03.10) [DOĞRULANDI] | 128 MiB (+ dosya önbelleği) | 37 MiB |
 
 Makinede 03.10'da **5,4 GB** kullanılabilir bellek vardı [DOĞRULANDI, `free -m`].
@@ -67,9 +70,10 @@ Sunucunun içinden (`ssh root@…` + `curl`), 03.10.2026:
 | VROOM `GET /health` | **200**, 34 ms |
 | OSRM Dornbirn → Bregenz, ×3 | **16,42 km / 19,3 dk** — 18 Tem doğrulamasıyla birebir · 433 ms (soğuk), 15 ms, 8 ms |
 | VROOM, Vorarlberg'de 5 durak (çıkış/dönüş Dornbirn; Götzis, Wolfurt, Lauterach, Lustenau, Hard; durak başı 5 dk), ×3 | `code 0`, atanamayan **0**, 52,0 km, sürüş 72 dk + servis 25 dk · **1,39 s (soğuk), 76 ms, 68 ms** · motor içi: yükleme 26 ms, çözüm 1 ms, yönlendirme 8 ms |
-| Panel eylemi uçtan uca (10 durak = 3 çağrı: şimdiki sıranın rotası + VROOM + önerilen sıranın rotası) | **≈ 390 ms** — yerel panel → yerel vekil → SSH tüneli → sunucu. Vercel → sunucu yolu [ÖLÇÜLMEDİ] |
-| 8 duraklı kötü sıra (verify-rota H) | 217,2 km / 268 dk → **91,2 km / 188 dk**, 303 ms |
-| 50 durak (verify-rota H) | 692,2 → **221,4 km**, 521 ms |
+| Panel eylemi uçtan uca (10 durak = 3 çağrı: şimdiki sıranın rotası + VROOM + önerilen sıranın rotası) | **≈ 390 ms** — yerel panel → yerel vekil → SSH tüneli → sunucu |
+| 8 duraklı kötü sıra (verify-rota H) | 217,2 km / 268 dk → **91,2 km / 188 dk**, 303 ms (SSH tüneli) · **606 ms** (herkese açık yol: yerel PC → `rota.galzura.com` → vekil) |
+| 50 durak (verify-rota H) | 692,2 → **221,4 km**, 521 ms (SSH tüneli) · **574 ms** (herkese açık yol) |
+| **Önizleme (Vercel `fra1`) → Cloudflare → tünel → vekil → motor**, teşhis ucu ×7 (§6.1) | toplam medyan **≈ 192 ms** (164–233) · sağlık 37–97 ms · sırsız **401** 15–66 ms · sırlı VROOM **200** 78–105 ms · sırlı OSRM **200** 20–31 ms |
 
 ### 1.3 Harita kapsamı ve tarihi [DOĞRULANDI]
 
@@ -306,7 +310,7 @@ where action = 'rota_optimizasyonu' and at >= date_trunc('month', now());
 
 ---
 
-## 5 · Sunucu kurulumu — vekil + tünel (Volkan)
+## 5 · Sunucu kurulumu — vekil + tünel ✅ 03.10.2026
 
 Motor yalnız localhost'ta ve kimlik doğrulaması yok; Vercel ulaşamaz. Takograf
 servisinin deseni (`docs/TAKOGRAF-SERVIS.md` §2) aynen:
@@ -318,44 +322,59 @@ panel (Vercel fra1/dub1) ─HTTPS─► Cloudflare ─► galzura-fleet tüneli 
 
 Vekil (`servis/rota-vekil/rota-vekil.mjs`, bağımlılıksız, sunucudaki Node
 v24.14.1 yeter): sabit süreli sır karşılaştırması · sır < 32 karakterse
-**başlamaz** · yalnız `POST /vroom` ve `GET /osrm/{route|nearest|table}/v1/driving/…`
-(bilinen parametreler) · gövde ≤ 1 MB · aynı anda ≤ 8 istek · günlükte yalnız
-yöntem / yol öneki / durum / süre. 8796 portu 03.10'da boştu [DOĞRULANDI].
+**başlamaz** · `/health` dışında her yol sırsız **401**, sırla tanımsız yol 404 ·
+yalnız `POST /vroom` ve `GET /osrm/{route|nearest|table}/v1/driving/…` (bilinen
+parametreler) · gövde ≤ 1 MB · aynı anda ≤ 8 istek · günlükte yalnız yöntem /
+yol öneki / durum / süre.
 
-### 5.0 🔴 Gizlilik ön koşulu — OSRM istek günlüğü
+### 5.0 Ne yapıldı — özet [DOĞRULANDI, 03.10.2026]
 
-**Ölçüldü (03.10):** `osrm-routed` her isteğin yolunu **koordinatlarıyla
-birlikte** Docker günlüğüne yazıyor (`[info] … /route/v1/driving/<lon,lat;…>`).
-VROOM'un OSRM'e sorduğu matris istekleri de oraya düşüyor. Günlükte 388 satır
-var — **hepsi bu çalışmanın test noktaları** (müşteri verisi değil). Günlük
-sürücüsü `json-file`, **döndürme ayarı yok** (sınırsız büyür). VROOM gövde
-yazmıyor (0 satır) [DOĞRULANDI].
+| Adım | Sonuç | Kesinti |
+|---|---|---|
+| OSRM istek günlüğü kapatıldı (§5.1) | Aynı imaj (`a7091038e39a`), `--verbosity WARNING`, günlük `json-file` 10 MB × 3, eski hâliyle aynı iki ağ (`bridge` + `galzura-routing`). Eski günlük (505 satır; 496'sı koordinatlı istek — **hepsi bu çalışmanın test noktaları**) konteynerle silindi. Sonrası **0 satır** | OSRM **4,29 sn** |
+| Vekil kuruldu (§5.2) | `rota-vekil.service` (galzura kullanıcı servisi) **active + enabled**, `127.0.0.1:8796`. Sır sunucuda üretildi (32 bayt rastgele, 64 hex), dosya `600 galzura`; hiçbir çıktıya basılmadı | — |
+| Tünel + DNS (§5.3) | `rota.galzura.com → http://localhost:8796` (404'ten önce), CNAME `cloudflared tunnel route dns` ile. `cloudflared-fleet` yeniden başlatıldı; 4 kenar bağlantısı geri geldi, Proofcan tüneline dokunulmadı | takograf **0,73 sn**, uetds **1,09 sn** (Cloudflare 502/530; 0,2 sn'lik sondalarla üst sınır ≈ 1,5 sn) |
 
-Müşteri durağı bu motora girmeden önce OSRM'i istek günlüğü kapalı yeniden
-kurun (veri aynı, birkaç saniye kesinti; motoru bugün kullanan başka ürün yok):
+| Ölçüm | Sonuç |
+|---|---|
+| Sunucu içi, OSRM Dornbirn → Bregenz, önce / sonra | 16,42 km birebir · 4–12 ms / 3–12 ms |
+| Sunucu içi, VROOM 5 durak, önce / sonra | `code 0`, 52,03 km birebir · 51–62 ms / 64–90 ms |
+| Vekil, yerel (`127.0.0.1:8796`) | health 200 · sırsız **401** · yanlış sır **401** · sırlı VROOM **200** (65–83 ms) · sırlı OSRM **200** |
+| Dış yol (sunucu → Cloudflare → tünel → vekil) | health 200 (128 ms) · `/` sırsız 401 · sırsız VROOM **401** · sırlı VROOM **200** (172–188 ms) · sırlı OSRM **200** (132 ms) |
+| Yeniden başlatmadan sonra 45 sn sonda (0,3 sn aralık) | takograf / uetds / rota: **99/99 200** |
+| Günlükler | OSRM **0 satır** · vekil koordinat çifti **0** · VROOM istek gövdesi **0** · vroom-express istek dosyası **0** |
+
+Yan gözlem: yeniden başlatmadan **önceki** 5 sn'lik taban penceresinde takograf
+bir kez 502 verdi; sonraki 45 sn'de 99/99 200 ve takograf günlüğünde hata yok —
+tek seferlik, yeniden başlatmayla ilgisiz.
+
+vroom-express: `VROOM_LOG=/conf` → her isteğin gövdesi **işlenirken**
+`/home/galzura/vroom/conf/<zaman>_<uuid>.json` olarak yazılıyor ve işlem bitince
+siliniyor (`src/index.js:201–203, 271`); 03.10'da dizinde 0 dosya. `access.log`
+yalnız yöntem / yol (`/`) / durum / istemci tutuyor, koordinat 0.
+
+⚠️ galzura-brain `rota-motoru-osrm-vroom.md`'deki OSRM başlatma komutu artık eski;
+geçerli hâli §5.1.
+
+### 5.1 OSRM — istek günlüğü kapalı (uygulanan komutlar)
 
 ```bash
 # root olarak sunucuda
-docker inspect osrm-austria --format '{{json .NetworkSettings.Networks}}'   # bağlı ağları not alın
 docker run --rm ghcr.io/project-osrm/osrm-backend osrm-routed --help | grep -i verbosity
-#   ↑ bayrağın bu sürümde adı [VARSAYIM: -l / --verbosity]; çıktı farklıysa onu kullanın
-docker rm -f osrm-austria
+#   → -l [ --verbosity ] arg (=INFO)  NONE, ERROR, WARNING, INFO, DEBUG
+docker rm -f osrm-austria                  # eski günlük dosyası konteynerle birlikte gider
 docker run -d --name osrm-austria --restart unless-stopped \
-  --network galzura-routing \
   --log-opt max-size=10m --log-opt max-file=3 \
   -p 127.0.0.1:5000:5000 -v /home/galzura/osrm/data:/data \
   ghcr.io/project-osrm/osrm-backend \
   osrm-routed --algorithm mld --verbosity WARNING /data/austria-latest.osrm
-# ilk komut başka ağ da gösterdiyse: docker network connect <ağ> osrm-austria
-curl -s "http://127.0.0.1:5000/route/v1/driving/9.7417,47.4125;9.7471,47.5031?overview=false" | head -c 120
-curl -s -X POST http://127.0.0.1:3000/ -H 'Content-Type: application/json' \
-  -d '{"vehicles":[{"id":1,"start":[9.7417,47.4125]}],"jobs":[{"id":1,"location":[9.7471,47.5031]}]}' | head -c 120
-docker logs --tail 3 osrm-austria     # yeni isteklerde koordinat satırı OLMAMALI
+docker network connect galzura-routing osrm-austria   # VROOM, OSRM'e bu ağdan ad ile ulaşır
+docker logs osrm-austria | wc -l           # istekten sonra da 0
 ```
 
 Geri dönüş: aynı komut `--verbosity` ve `--log-opt` olmadan (brain notundaki hâli).
 
-### 5.1 Vekil (galzura hesabında kullanıcı servisi — takograf deseni)
+### 5.2 Vekil (galzura hesabında kullanıcı servisi — takograf deseni)
 
 ```bash
 # kendi PC'nizden, panel deposunun kökünde
@@ -372,45 +391,64 @@ $U systemctl --user enable --now rota-vekil
 $U systemctl --user status rota-vekil --no-pager | head -5
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8796/health          # 200
 curl -s -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:8796/vroom    # 401 (sırsız)
-sudo -u galzura cat /home/galzura/rota-vekil/etc/rota-vekil.env               # sırrı Vercel'e girmek için (§6)
 ```
 
-### 5.2 Tünel — `galzura-fleet`'e üçüncü hostname
+Sır Vercel'e **ekrana ve diske basılmadan** gitti (03.10): sunucudan `sed` ile
+okunup boru hattıyla `vercel api /v10/projects/galzura-demo/env -X POST --input -`
+gövdesine kondu, tür `sensitive`. Sır değiştirilecekse aynı yol: önce env dosyası,
+sonra `systemctl --user restart rota-vekil`, sonra Vercel env + redeploy.
 
-`/etc/cloudflared-fleet/config.yml` içinde, **`http_status:404` satırından önce**:
+### 5.3 Tünel — `galzura-fleet`'e üçüncü hostname
+
+`/etc/cloudflared-fleet/config.yml` (yedek: `config.yml.yedek-20261003`) — kural
+**`http_status:404` satırından önce**:
 
 ```yaml
+ingress:
+  - hostname: takograf.galzura.com
+    service: http://localhost:8790
+  - hostname: uetds.galzura.com
+    service: http://localhost:8795
   - hostname: rota.galzura.com
     service: http://localhost:8796
+  - service: http_status:404
 ```
 
 ```bash
-cloudflared --config /etc/cloudflared-fleet/config.yml tunnel ingress validate
+cloudflared --config /etc/cloudflared-fleet/config.yml tunnel ingress validate        # OK
 cloudflared --config /etc/cloudflared-fleet/config.yml tunnel ingress rule https://rota.galzura.com/health
-# DNS: Cloudflare › galzura.com › DNS › CNAME  rota → 9bd72105-afa4-417e-8f47-39ad5eb0f40a.cfargotunnel.com (Proxied)
-#      (sunucuda cloudflared oturumu varsa: cloudflared tunnel route dns galzura-fleet rota.galzura.com)
-systemctl restart cloudflared-fleet     # ⚠️ takograf + uetds birkaç saniye kesilir — sakin saatte
-curl -s -o /dev/null -w "%{http_code}\n" https://rota.galzura.com/health              # 200
-curl -s -o /dev/null -w "%{http_code}\n" -X POST https://rota.galzura.com/vroom       # 401
-curl -s -o /dev/null -w "%{http_code}\n" https://takograf.galzura.com/health          # 200 — komşu sağlam
+#   → Matched rule #2  service: http://localhost:8796
+cloudflared tunnel route dns 9bd72105-afa4-417e-8f47-39ad5eb0f40a rota.galzura.com
+#   → Added CNAME rota.galzura.com which will route to this tunnel
+#   /root/.cloudflared/cert.pem 26.08'de galzura.com için alınmış (takograf/uetds kayıtları da böyle açıldı)
+systemctl restart cloudflared-fleet     # ölçülen kesinti: takograf 0,73 sn, uetds 1,09 sn
 ```
 
-### 5.3 Geri dönüş
+### 5.4 Geri dönüş
 
-Vercel'de `ROTA_VROOM_URL`'i silmek yeter → ekran "Rota servisi tanımlı değil"
-der, başka hiçbir şey değişmez. Sunucuda: ingress satırlarını çıkarıp
-`systemctl restart cloudflared-fleet` · `$U systemctl --user disable --now rota-vekil`.
+- **En hafifi:** Vercel'de `ROTA_VROOM_URL`'i silmek → ekran "Rota servisi tanımlı
+  değil" der, başka hiçbir şey değişmez.
+- Tünel: `cp -p /etc/cloudflared-fleet/config.yml.yedek-20261003 /etc/cloudflared-fleet/config.yml && systemctl restart cloudflared-fleet`
+  (≈ 1 sn kesinti) · DNS: Cloudflare › galzura.com › DNS › `rota` CNAME'i sil.
+- Vekil: `sudo -u galzura XDG_RUNTIME_DIR=/run/user/1000 systemctl --user disable --now rota-vekil`.
+- OSRM: §5.1'deki geri dönüş.
 
 ---
 
 ## 6 · Vercel env — önce Preview
+
+✅ **03.10.2026, API ile girildi:** galzura-demo · **yalnız Preview** · **yalnız dal
+`rota-optimizasyonu`** — `ROTA_OPTIMIZASYONU=true`, `ROTA_VROOM_URL`,
+`ROTA_OSRM_URL` (encrypted), `ROTA_SERVIS_SIRRI` (**sensitive**). Production'a,
+HAK61'e ve Sendigo'ya **girilmedi** [DOĞRULANDI: o projelerde rota env'i yok].
+Aşağıdaki tablo, §7'de Production'a geçerken girilecek takımdır.
 
 | Ad | Değer | Not |
 |---|---|---|
 | `ROTA_OPTIMIZASYONU` | `true` | Modül şalteri. HAK61/Sendigo'da §7'ye kadar **girilmez** |
 | `ROTA_VROOM_URL` | `https://rota.galzura.com/vroom` | Uzak adres **https** olmalı, yoksa sağlayıcı kurulmaz |
 | `ROTA_OSRM_URL` | `https://rota.galzura.com/osrm` | |
-| `ROTA_SERVIS_SIRRI` | §5.1'deki sır | **Sensitive** · istemciye gitmez (P1 paket taraması) |
+| `ROTA_SERVIS_SIRRI` | §5.2'deki sır (vekilin `ROTA_VEKIL_SIRRI`'si) | **Sensitive** · istemciye gitmez (P1 paket taraması) · ekrana basmadan boru hattıyla girilir |
 | `ROTA_GUNLUK_TAVAN` | boş → 100 | isteğe bağlı |
 | `ROTA_AZAMI_DURAK` | boş → 100 | isteğe bağlı |
 | `ROTA_SAGLAYICI` | boş → `vroom` | `sahte` production'da kurulmaz |
@@ -418,10 +456,34 @@ der, başka hiçbir şey değişmez. Sunucuda: ingress satırlarını çıkarıp
 | `GOOGLE_ROTA_ANAHTARI` | servis hesabı JSON (düz ya da base64) | yalnız §9 · **Sensitive** |
 | `GOOGLE_HARITA_KOSULU` | boş · `eea` | yalnız fatura adresi EEA'daysa `eea` (§10) |
 
-Sıra: **galzura-demo › Settings › Environment Variables › Preview** (dal
-`rota-optimizasyonu`) → önizlemeyi yeniden dağıt → §7 Aşama 0. URL / sır
-**eksikse** ekran "Rota servisi tanımlı değil", **yanlışsa** "Rota servisine
-ulaşılamadı" der; ikisinde de çökmez, sıra değişmez.
+URL / sır **eksikse** ekran "Rota servisi tanımlı değil", **yanlışsa** "Rota
+servisine ulaşılamadı" der; ikisinde de çökmez, sıra değişmez.
+
+### 6.1 Teşhis ucu — `GET /api/rota/saglik` (yalnız önizleme)
+
+Önizleme Vercel SSO arkasında ve giriş demo veritabanına oturum yazıyor; bu uç
+panelden motora giden yolu **girişsiz** ölçer: vekil sağlığı, sırsız istek (401
+beklenir), sırlı VROOM, sırlı OSRM. Sabit test noktaları; cevaba yalnız durum
+kodu, süre ve motor kodu girer — sır, adres, kullanıcı verisi girmez.
+**Üretimde ve şalter kapalıyken 404** (boş gövde). Muhafız: `check-rota` R11.
+
+```bash
+MSYS_NO_PATHCONV=1 vercel curl /api/rota/saglik --deployment <önizleme-url>
+#   Git Bash'te MSYS_NO_PATHCONV=1 şart: yoksa /api/... Windows yoluna çevrilir.
+#   Projede zaten var olan otomasyon bypass'ını kullanır. Projeye BAĞLI OLMAYAN bir
+#   dizinden çalıştırın: bağlı dizinde bypass yoksa CLI yenisini oluşturur.
+```
+
+```json
+{"bolge":"fra1","saglik":{"kod":200,"ms":40},"sirsiz":{"kod":401,"ms":15},
+ "vroom":{"kod":200,"ms":84,"motor":0},"osrm":{"kod":200,"ms":24,"motor":"Ok","km":16.4},"toplamMs":164}
+```
+
+**Ölçüm [DOĞRULANDI, 03.10, önizleme `61afef9`, ×7]:** toplam medyan **≈ 192 ms**
+(164–233) · sağlık 37–97 ms · sırsız **401** 15–66 ms · sırlı VROOM **200**
+78–105 ms · sırlı OSRM **200** 20–31 ms. HAK61 ve Sendigo önizlemelerinde (şalter
+kapalı) aynı yol **404, boş gövde**; olmayan bir yol ise Next'in HTML 404'ü — yani
+uç orada var ve kapı çalışıyor.
 
 ---
 
@@ -429,7 +491,7 @@ ulaşılamadı" der; ikisinde de çökmez, sıra değişmez.
 
 | Aşama | Ön koşul | İş | Geçti sayılır | Geri dönüş |
 |---|---|---|---|---|
-| 0 · Önizleme | §5 + §6 Preview | Önizlemede bir seferde Hesapla / Vazgeç / Uygula | Tablo + harita geliyor; Güvenlik'te `rota_optimizasyonu` satırı, `saglayici: vroom`, `sureMs` < 2000 | env sil |
+| 0 · Önizleme | §5 ✅ + §6 Preview ✅ + §6.1 ✅ (03.10) · App Store incelemesi bitti ya da inceleme hesapları dışında bir hesap | Önizlemede **kendi hesabınla**, kendi açtığın bir seferde Hesapla / Vazgeç / Uygula | Tablo + harita geliyor; Güvenlik'te `rota_optimizasyonu` satırı, `saglayici: vroom`, `sureMs` < 2000 | env sil |
 | 1 · Demo | App Store incelemesi bitti (demo veritabanına yazmak serbest) · main'e merge (Volkan) | galzura-demo **Production** env (§6) → `seed-demo-rota.mjs --yaz` (§8) | Tohum seferinde 199,8 → 62,8 km sınıfı fark; geç 2 → 0 | `ROTA_OPTIMIZASYONU` sil + redeploy; tohum `--sil` |
 | 2 · Sendigo | Aşama 1 temiz bir hafta · konumsuz durak sayısı bakıldı (aşağıda) | Sendigo env | İlk hafta `audit_log`: `sonuc` dağılımı, `harita_disi` / `konumsuz` oranı | env sil |
 | 3 · HAK61 | Aşama 2 temiz | HAK61 env | aynı ölçüm | env sil |
@@ -539,8 +601,9 @@ Google Maps Platform.
 **Saklanan:** panel `audit_log` — yalnız sayılar ve sonuç. Vekil günlüğü —
 yöntem / önek / durum / süre. Panel hata günlüğü — sağlayıcı hata metni
 koordinatlar maskelenerek (`…`) yazılır (test: verify-rota "hata günlüğünde
-koordinat YOK"). 🔴 **OSRM günlüğü koordinat yazıyor** → §5.0 yapılmadan müşteri
-durağı bu motora girmemeli.
+koordinat YOK"). ✅ **OSRM istek günlüğü 03.10'da kapatıldı** (§5.0–5.1; sonrası
+0 satır). vroom-express isteği yalnız işlenirken diske yazıp hemen siliyor (§5.0).
+Teşhis ucu sabit test noktası kullanır, kullanıcı verisi taşımaz (§6.1).
 
 **Gizlilik politikasına eklenecek satır** — hukuki not ve DE/EN metni:
 [`docs/hukuk/rota-optimizasyonu.md`](hukuk/rota-optimizasyonu.md).
@@ -553,9 +616,10 @@ durağı bu motora girmemeli.
 |---|---|
 | `tsc --noEmit` | 0 hata |
 | `eslint .` | 43 bulgu = taban (`e486c4b`); yeni / değişen dosyalarda **0** |
-| `lint:rota-birim` (sahte supabase; sağlayıcı sözleşmeleri, kapılar, kota, hatalar, vekil) | **104/104** |
-| `verify:rota` + gerçek motor (SSH tüneli) | **107/107** |
-| `lint:rota` (R1–R10 + P1 istemci paket taraması) | 11/11 |
+| `lint:rota-birim` (sahte supabase; sağlayıcı sözleşmeleri, kapılar, kota, hatalar, vekil, teşhis ucu) | **108/108** |
+| `verify:rota` + gerçek motor | **107/107** (SSH tüneli) · **111/111** (herkese açık yol `rota.galzura.com`, 03.10 kurulum sonrası) |
+| `lint:rota` (R1–R11 + P1 istemci paket taraması) | 12/12 |
+| Önizleme derlemesi (Vercel, `61afef9`) | READY · teşhis ucu ×7 ölçüldü (§6.1) |
 | `lint:i18n` | 3 dil · 2635 anahtar birebir |
 | `lint:tenant-defaults` | Faz 1–3 yeşil (70 varsayılan) |
 | `check-demo-env` | 40/40 |
@@ -575,14 +639,13 @@ kapalıyken düğme yok · servis tanımsızken mesaj.
 
 | Ne | Neden |
 |---|---|
-| Vercel önizlemede ekran | Önizleme demo veritabanını kullanıyor; giriş oturum satırı yazar ve tek oturum kuralı inceleme hesaplarını düşürebilir — inceleme sürerken yapılmadı |
-| Vercel → Cloudflare → vekil → motor yolu ve gecikmesi | Vekil ve tünel henüz kurulmadı (§5) |
+| Vercel önizlemede **girişli** ekran (Hesapla / Uygula) | Önizleme demo veritabanını kullanıyor; giriş oturum satırı yazar, Hesapla 2 satır, Uygula sıra yazar; tek oturum kuralı inceleme hesaplarını düşürebilir — Volkan'a kaldı (§7 Aşama 0). Girişsiz yol ölçüldü (§6.1) |
+| Vercel `dub1` (HAK61) → motor gecikmesi | Yalnız `fra1` (galzura-demo) ölçüldü; HAK61'de şalter kapalı |
 | Google sağlayıcı gerçek API'ye karşı | Anahtar yok; sözleşme testi sahte cevaplarla |
 | Demo tohumu demo veritabanında | Yasak (inceleme sürüyor); kuru koşum + yerel yığın |
 | Yaz saati geçiş günü gerçek seferle | Duvar saati çevirisi `tenantDuvarSaatiUtc` ile; o gün denenmedi |
 | HAK61 / Sendigo'da konumsuz durak sayısı | Canlı veritabanı okunmadı (§7'deki sorgu) |
 | Trafik etkisi | OSRM serbest akış; gerçek süre daha uzun olabilir |
-| `osrm-routed --verbosity` bayrağı bu sürümde | Komut verildi (§5.0), sunucuda çalıştırılmadı |
 
 ---
 

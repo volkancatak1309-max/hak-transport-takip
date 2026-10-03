@@ -15,7 +15,7 @@
 | Gönderilmeyen | Ad, adres metni, müşteri / alıcı adı, şoför, plaka | aynı |
 | Yer | Kendi rota sunucumuz — Hetzner Online GmbH, Nürnberg (DE) | Google Cloud EMEA Ltd. (IE) / Google LLC (US) |
 | Yol | Vercel (fra1 / dub1) → Cloudflare tüneli (TLS Cloudflare ucunda) → Hetzner | Vercel → Google |
-| Saklama | Panel `audit_log`: yalnız sayılar ve sonuç. 🔴 OSRM istek günlüğü koordinat yazıyor (03.10 ölçümü) → teknik belge §5.0 ile kapatılacak | Google koşullarına tabi |
+| Saklama | Panel `audit_log`: yalnız sayılar ve sonuç. ✅ OSRM istek günlüğü 03.10'da kapatıldı (önce koordinat yazıyordu; sonrası 0 satır, ölçüldü — teknik belge §5.0). VROOM isteği yalnız işlenirken diske yazılıp hemen siliniyor. Vekil günlüğünde koordinat yok | Google koşullarına tabi |
 
 Durakların kendisi (adres, koordinat) panelde zaten 082'den beri tutuluyor; bu
 özellik **yeni bir veri toplamıyor**, mevcut durak koordinatını bir hesap için
@@ -52,8 +52,10 @@ rota motoruna gönderiyor.
 
 ## 4 · Gizlilik politikasına eklenecek satır
 
-⚠️ "Saklanmaz" cümlesi **teknik belge §5.0 yapılmadan doğru değil** (OSRM
-istek günlüğü). Yayından önce §5.0 tamamlanmalı ya da cümle çıkarılmalı.
+✅ "Saklanmaz" cümlesi 03.10'dan beri **ölçümle doğru**: OSRM istek günlüğü
+kapatıldı (0 satır), vroom-express isteği yalnız işlem süresince diske yazıp
+siliyor, vekil günlüğünde koordinat yok (teknik belge §5.0). Açık kalan tek konu:
+TLS'in Cloudflare ucunda açılması (avukat sorusu 1).
 
 **EN (ana metin):**
 > **Route optimisation (optional module).** To calculate the order of a trip's

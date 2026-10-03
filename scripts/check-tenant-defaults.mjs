@@ -88,6 +88,9 @@ const EXPECTED = {
   // true'ya kayarsa HAK61/Sendigo'da hiç istenmemiş bir Anthropic API yolu
   // açılır. Bayrağın kapalı olması demo dışındaki her kurulumun varsayılanı.
   "tenant.ASISTAN_ENABLED": false,
+  // SESLİ ASİSTAN (03.10.2026, Faz 1 web prototipi) — aynı gerekçe: OpenAI'a bir
+  // dış çağrı ve maliyet açar. Env'siz build'de KAPALI olmalı.
+  "tenant.ASISTAN_SESLI": false,
   // Dışa aktarma bugün AÇIK (4 CSV yüzeyi çalışıyor) — kaymamalı.
   "tenant.EXPORT_ENABLED": true,
   // Filigran YOKTU; boş dize "filigran basma" demek.
@@ -274,6 +277,7 @@ const out = {
   "tenant.ACCESS_HOURS_END": tenant.ACCESS_HOURS_END,
   "tenant.SINGLE_SESSION": tenant.SINGLE_SESSION,
   "tenant.ASISTAN_ENABLED": tenant.ASISTAN_ENABLED,
+  "tenant.ASISTAN_SESLI": tenant.ASISTAN_SESLI,
   "tenant.EXPORT_ENABLED": tenant.EXPORT_ENABLED,
   "tenant.PDF_WATERMARK": tenant.PDF_WATERMARK,
   "tenant.DRIVER_VEHICLE_CHOICE": tenant.DRIVER_VEHICLE_CHOICE,

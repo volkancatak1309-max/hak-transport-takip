@@ -616,6 +616,22 @@ export const SINGLE_SESSION = envBool(process.env.SINGLE_SESSION, false);
 export const ASISTAN_ENABLED = envBool(process.env.ASISTAN_ENABLED, false);
 
 /**
+ * SESLİ ASİSTAN (Faz 1 web prototipi, 03.10.2026) AÇIK MI?
+ *
+ * Varsayılan KAPALI. Kapı sırası `/api/asistan/*` ve `/admin/asistan`'da:
+ * bu bayrak → kiracı `galzura-demo` → yönetici. Yukarıdaki Opus bayrağından
+ * (`ASISTAN_ENABLED`) BAĞIMSIZ: o uç kapalı kalır, silinmez (Volkan kararı 12).
+ *
+ * NEDEN `envBool` DEĞİL, KATI "1": görev tanımı "ASISTAN_SESLI=1 değilse 404"
+ * diyor. `envBool` "true"/"yes"'i de kabul ederdi; prototipte açma kelimesi
+ * tek olsun ki Vercel'de yanlışlıkla açık kalmasın.
+ *
+ * Yalnız SUNUCU okur (öneksiz). `OPENAI_API_KEY` ayrıca gerekir; ucun cevabı
+ * ikisini ayrı söyler (bayrak kapalı → 404, anahtar yok → 503 `anahtar_yok`).
+ */
+export const ASISTAN_SESLI = process.env.ASISTAN_SESLI?.trim() === "1";
+
+/**
  * YAKIT SERİSİ ÖN-ETİKETİ KULLANILSIN MI? (migration 101, 16.09.2026)
  *
  * `true` → yakıt raporu `report_fuel_stats_vehicle_v2`yi çağırır; 31 satırlık
